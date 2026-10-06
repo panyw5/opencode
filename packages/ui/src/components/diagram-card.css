@@ -13,11 +13,15 @@
   contain: layout paint;
 }
 
-.diagram-card__zoom {
+.diagram-card__tools {
   position: absolute;
   top: 18px;
   right: 18px;
   z-index: 2;
+  display: flex;
+  gap: 4px;
+}
+.diagram-card__tools [data-component="icon-button"] {
   box-shadow: var(--shadow-xxs-border);
 }
 .diagram-card__preview {
@@ -27,8 +31,12 @@
   overflow: auto;
   background: var(--surface-base);
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+.diagram-card__canvas {
+  flex: none;
+  margin: auto;
 }
 [data-component="diagram-card"][data-diagram-syntax="mermaid"] .diagram-card__preview,
 [data-component="diagram-card"][data-diagram-syntax="flowchart"] .diagram-card__preview {
@@ -45,9 +53,8 @@
   height: 100%;
   object-fit: contain;
 }
-[data-component="diagram-card"][data-diagram-layout="tall"] .diagram-card__preview {
-  align-items: flex-start;
-  justify-content: flex-start;
+[data-component="diagram-card"][data-diagram-layout="tall"] .diagram-card__canvas {
+  margin-block: 0;
 }
 [data-component="diagram-card"][data-diagram-layout="tall"] .diagram-card__preview img {
   height: auto;

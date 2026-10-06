@@ -59,9 +59,52 @@ export function readDiagramMetadata(input: DiagramCardProps["input"], metadata: 
 }
 
 function DiagramLightbox(props: { svg: string; title: string; tall: boolean }): JSX.Element {
+  const [zoom, setZoom] = createSignal(1)
   const url = URL.createObjectURL(new Blob([props.svg], { type: "image/svg+xml" }))
   onCleanup(() => URL.revokeObjectURL(url))
-  return <ImagePreview src={url} alt={props.title} fit={props.tall ? "width" : "contain"} />
+  const scale = (direction: "in" | "out") => {
+    const previous = zoom()
+    const next = nextDiagramZoom(previous, direction)
+    setZoom(next)
+    console.debug(`[diagram] lightbox scale title=${props.title} direction=${direction} from=${previous} to=${next}`)
+  }
+  return (
+    <ImagePreview
+      src={url}
+      alt={props.title}
+      fit={props.tall ? "width" : "contain"}
+      zoom={zoom()}
+      toolbar={<DiagramZoomControls zoom={zoom()} onZoom={scale} />}
+    />
+  )
+}
+
+export function nextDiagramZoom(current: number, direction: "in" | "out") {
+  return Math.min(3, Math.max(0.25, current + (direction === "in" ? 0.25 : -0.25)))
+}
+
+function DiagramZoomControls(props: { zoom: number; onZoom: (direction: "in" | "out") => void }) {
+  const i18n = useI18n()
+  return (
+    <>
+      <IconButton
+        icon="minus"
+        variant="secondary"
+        aria-label={i18n.t("ui.diagram.zoomOut")}
+        title={i18n.t("ui.diagram.zoomOut")}
+        disabled={props.zoom <= 0.25}
+        onClick={() => props.onZoom("out")}
+      />
+      <IconButton
+        icon="plus"
+        variant="secondary"
+        aria-label={i18n.t("ui.diagram.zoomIn")}
+        title={i18n.t("ui.diagram.zoomIn")}
+        disabled={props.zoom >= 3}
+        onClick={() => props.onZoom("in")}
+      />
+    </>
+  )
 }
 
 export function DiagramCard(props: DiagramCardProps): JSX.Element {
@@ -72,6 +115,7 @@ export function DiagramCard(props: DiagramCardProps): JSX.Element {
   const [renderError, setRenderError] = createSignal<string>()
   const [rendering, setRendering] = createSignal(false)
   const [tall, setTall] = createSignal(false)
+  const [zoom, setZoom] = createSignal(1)
   const [palette, setPalette] = createSignal(currentDiagramPalette())
   const diagram = () => readDiagramMetadata(props.input, props.metadata)
   let element: HTMLElement | undefined
@@ -131,6 +175,7 @@ export function DiagramCard(props: DiagramCardProps): JSX.Element {
       setRenderError(undefined)
       setRendering(false)
       setTall(false)
+      setZoom(1)
       activeID = id
     }
     if (!id || !element || props.status !== "completed") return
@@ -165,6 +210,15 @@ export function DiagramCard(props: DiagramCardProps): JSX.Element {
     ))
   }
 
+  const scale = (direction: "in" | "out") => {
+    const previous = zoom()
+    const next = nextDiagramZoom(previous, direction)
+    setZoom(next)
+    console.debug(
+      `[diagram] scale session=${props.sessionID} part=${props.partID} direction=${direction} from=${previous} to=${next}`,
+    )
+  }
+
   const imageError = (event: Event & { currentTarget: HTMLImageElement }) => {
     const current = url()
     if (!current || event.currentTarget.src !== current) return
@@ -188,13 +242,14 @@ export function DiagramCard(props: DiagramCardProps): JSX.Element {
       data-diagram-state={state()}
       data-diagram-syntax={diagram()?.syntax}
       data-diagram-layout={tall() ? "tall" : "normal"}
+      data-diagram-zoom={zoom()}
     >
       <div
         class="diagram-card__preview"
         data-scrollable
         role="region"
         aria-label={title()}
-        tabIndex={tall() ? 0 : undefined}
+        tabIndex={tall() || zoom() > 1 ? 0 : undefined}
       >
         <Show
           when={url()}
@@ -207,29 +262,37 @@ export function DiagramCard(props: DiagramCardProps): JSX.Element {
           }
         >
           {(src) => (
-            <img
-              src={src()}
-              alt={title()}
-              loading="lazy"
-              decoding="async"
-              onLoad={(event) =>
-                console.debug(
-                  `[diagram] image loaded session=${props.sessionID} part=${props.partID} width=${event.currentTarget.naturalWidth} height=${event.currentTarget.naturalHeight}`,
-                )
-              }
-              onError={imageError}
-            />
+            <div
+              class="diagram-card__canvas"
+              style={{ width: `${zoom() * 100}%`, height: tall() ? "auto" : `${zoom() * 100}%` }}
+            >
+              <img
+                src={src()}
+                alt={title()}
+                loading="lazy"
+                decoding="async"
+                onLoad={(event) =>
+                  console.debug(
+                    `[diagram] image loaded session=${props.sessionID} part=${props.partID} width=${event.currentTarget.naturalWidth} height=${event.currentTarget.naturalHeight}`,
+                  )
+                }
+                onError={imageError}
+              />
+            </div>
           )}
         </Show>
       </div>
       <Show when={svg()}>
-        <IconButton
-          icon="expand"
-          class="diagram-card__zoom"
-          variant="secondary"
-          aria-label={`${i18n.t("ui.presentation.zoom")} ${title()}`}
-          onClick={open}
-        />
+        <div class="diagram-card__tools">
+          <DiagramZoomControls zoom={zoom()} onZoom={scale} />
+          <IconButton
+            icon="expand"
+            class="diagram-card__zoom"
+            variant="secondary"
+            aria-label={`${i18n.t("ui.presentation.zoom")} ${title()}`}
+            onClick={open}
+          />
+        </div>
       </Show>
       <div class="diagram-card__body">
         <div class="diagram-card__heading">

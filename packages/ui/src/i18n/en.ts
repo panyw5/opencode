@@ -77,6 +77,8 @@ export const dict: Record<string, string> = {
   "ui.presentation.retry": "Retry",
   "ui.diagram.title": "Diagram",
   "ui.diagram.renderError": "Unable to render diagram",
+  "ui.diagram.zoomIn": "Zoom in",
+  "ui.diagram.zoomOut": "Zoom out",
   "ui.presentedTask.kind.project": "Project task",
   "ui.presentedTask.kind.scheduled": "Scheduled task",
   "ui.presentedTask.open": "Open task in sidebar",

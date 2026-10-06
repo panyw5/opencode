@@ -1,8 +1,21 @@
 import { describe, expect, test } from "bun:test"
-import { readDiagramMetadata } from "./diagram-card"
+import { nextDiagramZoom, readDiagramMetadata } from "./diagram-card"
 import { mixDiagramColor, renderDiagramSvg, svgAspectRatio } from "./diagram-render"
 
 describe("diagram card", () => {
+  test("zooms in and out in reversible quarter-size steps", () => {
+    expect(nextDiagramZoom(1, "in")).toBe(1.25)
+    expect(nextDiagramZoom(1, "out")).toBe(0.75)
+    expect(nextDiagramZoom(nextDiagramZoom(1, "in"), "out")).toBe(1)
+  })
+
+  test("clamps diagram zoom to a usable range", () => {
+    expect(nextDiagramZoom(0.25, "out")).toBe(0.25)
+    expect(nextDiagramZoom(3, "in")).toBe(3)
+    expect(nextDiagramZoom(0.25, "in")).toBe(0.5)
+    expect(nextDiagramZoom(3, "out")).toBe(2.75)
+  })
+
   test("reads Mermaid source from the tool input", () => {
     expect(
       readDiagramMetadata(
@@ -14,7 +27,13 @@ describe("diagram card", () => {
 
   test("reads flowchart diagrams from the compiled Mermaid metadata", () => {
     const metadata = {
-      diagram: { id: "dg_2", syntax: "flowchart", title: "Pipeline", bytes: 64, mermaid: "flowchart TD\n  a[\"A\"] --> b" },
+      diagram: {
+        id: "dg_2",
+        syntax: "flowchart",
+        title: "Pipeline",
+        bytes: 64,
+        mermaid: 'flowchart TD\n  a["A"] --> b',
+      },
     }
     expect(readDiagramMetadata({ source: '{"edges":[{"from":"a","to":"b"}]}' }, metadata)).toEqual({
       id: "dg_2",

@@ -78,6 +78,8 @@ export const dict = {
   "ui.presentation.retry": "重试",
   "ui.diagram.title": "图表",
   "ui.diagram.renderError": "无法渲染图表",
+  "ui.diagram.zoomIn": "放大",
+  "ui.diagram.zoomOut": "缩小",
   "ui.presentedTask.kind.project": "项目任务",
   "ui.presentedTask.kind.scheduled": "定时任务",
   "ui.presentedTask.open": "在侧边栏中打开任务",
