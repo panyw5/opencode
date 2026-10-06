@@ -1,5 +1,5 @@
 # PURPOSE
-Navigate the embedded desktop browser to a URL. 
+Navigate the embedded desktop browser to a URL. PREFER using this for simple web operations and inspection; delegate to other skills for complicated web operators involving persisted authentication.
 
 Use this when you need the following:
 - a real, JavaScript-rendered, or interactive page: local
