@@ -46,10 +46,11 @@ import {
 import { QuickAssistantInput } from "./input"
 import { QuickAssistantMessages } from "./messages"
 import { QuickAssistantRequests } from "./requests"
-import { DEFAULT_PROMPT, type Prompt, type ImageAttachmentPart } from "@/context/prompt"
-import { quickPromptText } from "./editor-model"
+import { type Prompt, type ImageAttachmentPart } from "@/context/prompt"
+import { emptyQuickPrompt, quickPromptText, recoverQuickPrompt } from "./editor-model"
 import { buildRequestParts } from "../prompt-input/build-request-parts"
 import { promptText } from "../prompt-input/prompt-text"
+import { clonePromptParts } from "../prompt-input/history"
 
 function errorName(err: unknown) {
   if (!err || typeof err !== "object") return undefined
@@ -263,11 +264,12 @@ export function QuickAssistant() {
     createStore<Saved>(initial),
   )
   const [state, setState] = createStore({
-    prompt: DEFAULT_PROMPT.slice() as Prompt,
+    prompt: emptyQuickPrompt(),
     history: [] as Prompt[],
     loading: false,
   })
   let input!: HTMLDivElement
+  let sendSequence = 0
   let settleTimer: ReturnType<typeof setTimeout> | undefined
   let staleTimer: ReturnType<typeof setTimeout> | undefined
   const win = createMemo(() => platform.os === "windows")
@@ -487,7 +489,6 @@ export function QuickAssistant() {
     const current = data()
     if (working(current?.session_status[id], current?.message[id]) || waiting()) return
     clearTimers()
-    setState("loading", false)
   }
 
   const scheduleRecovery = (
@@ -506,7 +507,6 @@ export function QuickAssistant() {
         .catch((err: unknown) => {
           if (isSessionNotFoundError(err)) {
             clearSession()
-            setState("loading", false)
           }
         })
     }, QUICK_ASSISTANT_SETTLE_MS)
@@ -521,12 +521,10 @@ export function QuickAssistant() {
           if (sessionID() !== id) return
           const current = data()
           if (!working(current?.session_status[id], current?.message[id]) || waiting()) {
-            setState("loading", false)
             return
           }
           console.debug(`[quick-assistant] stale busy state cleared session=${id}`)
           markIdle(id, setStore)
-          setState("loading", false)
         })
     }, QUICK_ASSISTANT_STALE_MS)
   }
@@ -583,32 +581,45 @@ export function QuickAssistant() {
     open()
   }
 
-  const reset = async () => {
+  const stop = async () => {
+    sendSequence += 1
     const current = root()
     const id = sessionID()
     const setStore = setData()
     console.debug(
-      `[quick-assistant] reset busy=${busy() ? 1 : 0} session=${id ?? ""} messages=${list().length} context=${saved.context ? 1 : 0}`,
+      `[quick-assistant] stop start busy=${busy() ? 1 : 0} session=${id ?? ""} draft=${quickPromptText(state.prompt).length}`,
     )
     if (current && id && interacting()) {
       const aborted = await globalSDK
         .createClient({ directory: current, throwOnError: true })
         .session.abort({ sessionID: id })
-        .then(() => true)
+        .then(() => {
+          console.debug(`[quick-assistant] stop acknowledged session=${id}`)
+          return true
+        })
         .catch((err: unknown) => {
+          console.error(`[quick-assistant] stop failed session=${id}`, err)
           showToast({
             title: "Quick Assistant",
             description: formatServerError(err, language.t, language.t("common.requestFailed")),
           })
           return false
         })
-      if (!aborted) return
+      if (!aborted) return false
       if (setStore) markIdle(id, setStore)
     }
     clearTimers()
-    clearSession()
     setState("loading", false)
-    setState("prompt", DEFAULT_PROMPT.slice())
+    console.debug(`[quick-assistant] stop complete session=${id ?? ""} draft=${quickPromptText(state.prompt).length}`)
+    return true
+  }
+
+  const reset = async () => {
+    console.debug(`[quick-assistant] reset start session=${sessionID() ?? ""} messages=${list().length}`)
+    if (!(await stop())) return
+    clearSession()
+    setState("prompt", emptyQuickPrompt())
+    console.debug("[quick-assistant] reset complete draft=0")
   }
 
   command.register("quick-assistant", () => [
@@ -658,10 +669,12 @@ export function QuickAssistant() {
       if (event.type === "session.status") {
         if (event.properties.sessionID !== id) return
         setStore("session_status", id, event.properties.status)
+        console.debug(
+          `[quick-assistant] stream status session=${id} status=${event.properties.status.type} sending=${state.loading ? 1 : 0}`,
+        )
         if (event.properties.status.type === "idle" && !waiting()) {
           completePendingAssistant(id, setStore)
           clearTimers()
-          setState("loading", false)
         }
         return
       }
@@ -670,7 +683,7 @@ export function QuickAssistant() {
         if (event.properties.sessionID !== id) return
         if (!waiting()) markIdle(id, setStore)
         clearTimers()
-        if (!waiting()) setState("loading", false)
+        console.debug(`[quick-assistant] stream idle session=${id} draft=${quickPromptText(state.prompt).length}`)
         return
       }
 
@@ -678,7 +691,7 @@ export function QuickAssistant() {
       if (event.properties.sessionID !== id) return
       markIdle(id, setStore)
       clearTimers()
-      setState("loading", false)
+      console.error(`[quick-assistant] stream error session=${id}`, event.properties.error)
       showToast({
         title: "Quick Assistant",
         description: formatServerError(event.properties.error, language.t, language.t("common.requestFailed")),
@@ -697,9 +710,14 @@ export function QuickAssistant() {
       console.debug(`[quick-assistant] prompt blocked waiting-request session=${sessionID() ?? ""}`)
       return
     }
+    if (busy()) {
+      console.debug(
+        `[quick-assistant] prompt blocked reason=streaming session=${sessionID() ?? ""} draft=${quickPromptText(state.prompt).length}`,
+      )
+      return
+    }
     const current = root()
-    const draft = state.prompt.map((part) => ({ ...part }))
-    const draftKey = JSON.stringify(draft)
+    const draft = clonePromptParts(state.prompt)
     const text = quickPromptText(draft).trim()
     const images = draft.filter((part): part is ImageAttachmentPart => part.type === "image")
     const store = data()
@@ -722,8 +740,25 @@ export function QuickAssistant() {
       return
     }
     const variant = effectiveVariant()
+    const sequence = ++sendSequence
+    const activeSend = () => sequence === sendSequence
+    const attachmentDirectory = activeDir() || current
+    const restoreDraft = (stage: string) => {
+      if (!activeSend()) return
+      const recovered = recoverQuickPrompt(state.prompt, draft)
+      if (recovered) setState("prompt", recovered)
+      console.debug(
+        `[quick-assistant] send draft recovery stage=${stage} restored=${recovered ? 1 : 0} draft=${quickPromptText(state.prompt).length}`,
+      )
+    }
 
-    setState("loading", true)
+    batch(() => {
+      setState("loading", true)
+      setState("history", (items) => [draft, ...items].slice(0, 100))
+      setState("prompt", emptyQuickPrompt())
+    })
+    console.debug(`[quick-assistant] submitted draft cleared text=${quickPromptText(state.prompt).length} images=0`)
+    console.debug(`[quick-assistant] send preparation start text=${text.length} images=${images.length}`)
     let body = promptText(draft).trim()
     if (saved.context) {
       const directory = activeDir()
@@ -731,6 +766,7 @@ export function QuickAssistant() {
       if (!directory || !sourceID) {
         console.error("[quick-assistant] context load blocked reason=no-current-session")
         setState("loading", false)
+        restoreDraft("context-unavailable")
         showToast({ title: "Quick Assistant", description: language.t("quickAssistant.context.loadFailed") })
         return
       }
@@ -746,14 +782,11 @@ export function QuickAssistant() {
           )
           return { items, cursor }
         })
-        if (
-          params.id !== sourceID ||
-          activeDir() !== directory ||
-          JSON.stringify(state.prompt) !== draftKey ||
-          !saved.context
-        ) {
+        if (!activeSend()) return
+        if (params.id !== sourceID || activeDir() !== directory || !saved.context) {
           console.debug(`[quick-assistant] context load discarded source_session=${sourceID} reason=input-changed`)
           setState("loading", false)
+          restoreDraft("context-changed")
           return
         }
         const messages = fullSessionContextMessages(snapshot.items)
@@ -769,8 +802,10 @@ export function QuickAssistant() {
           `[quick-assistant] context load complete source_session=${sourceID} pages=${snapshot.pages} fetched=${snapshot.items.length} included=${messages.length} complete=${snapshot.complete ? 1 : 0} chars=${body.length}`,
         )
       } catch (error) {
+        if (!activeSend()) return
         console.error(`[quick-assistant] context load failed source_session=${sourceID}`, error)
         setState("loading", false)
+        restoreDraft("context-failed")
         showToast({ title: "Quick Assistant", description: language.t("quickAssistant.context.loadFailed") })
         return
       }
@@ -780,15 +815,19 @@ export function QuickAssistant() {
     )
     const client = globalSDK.createClient({ directory: current, throwOnError: true })
     const id = await ensureSession(client, setStore).catch((err: unknown) => {
+      if (!activeSend()) return undefined
+      console.error("[quick-assistant] session setup failed", err)
       showToast({
         title: "Quick Assistant",
         description: formatServerError(err, language.t, language.t("common.requestFailed")),
       })
       return undefined
     })
+    if (!activeSend()) return
 
     if (!id) {
       setState("loading", false)
+      restoreDraft("session-failed")
       return
     }
 
@@ -817,7 +856,7 @@ export function QuickAssistant() {
       text: body,
       messageID,
       sessionID: id,
-      sessionDirectory: activeDir() || current,
+      sessionDirectory: attachmentDirectory,
     })
     const invocation = text.match(/^\/([^\s]+)(?:\s([\s\S]*))?$/)
     const custom = invocation ? store.command.find((item) => item.name === invocation[1]) : undefined
@@ -841,10 +880,11 @@ export function QuickAssistant() {
         }
       })
       setStore("part", messageID, optimisticParts)
-      setState("history", (items) => [draft, ...items].slice(0, 100))
-      setState("prompt", DEFAULT_PROMPT.slice())
       setSaved("open", true)
     })
+    console.debug(
+      `[quick-assistant] send dispatched session=${id} message=${messageID} next_draft=${quickPromptText(state.prompt).length}`,
+    )
 
     clearTimers()
     await (
@@ -871,8 +911,13 @@ export function QuickAssistant() {
     )
       .then(() => console.debug("[quick-assistant] request accepted", { sessionID: id, messageID }))
       .catch((err: unknown) => {
+        if (!activeSend()) {
+          console.debug(`[quick-assistant] stale send failure ignored session=${id} message=${messageID}`)
+          return
+        }
         console.error("[quick-assistant] request failed", { sessionID: id, messageID, error: err })
         const aborted = errorName(err) === "AbortError"
+        if (!aborted) restoreDraft("request-failed")
         batch(() => {
           markIdle(id, setStore)
           if (aborted) {
@@ -900,7 +945,15 @@ export function QuickAssistant() {
           description: formatServerError(err, language.t, language.t("common.requestFailed")),
         })
       })
+      .finally(() => {
+        if (!activeSend()) return
+        setState("loading", false)
+        console.debug(
+          `[quick-assistant] send transport settled session=${id} busy=${busy() ? 1 : 0} draft=${quickPromptText(state.prompt).length}`,
+        )
+      })
 
+    if (!activeSend()) return
     scheduleRecovery(client, id, setStore)
     finishIfSettled(id)
   }
@@ -1023,7 +1076,7 @@ export function QuickAssistant() {
                 variant={effectiveVariant()}
                 onPrompt={(next) => setState("prompt", reconcile(next))}
                 onClose={close}
-                onReset={() => void reset()}
+                onStop={() => void stop()}
                 onNewSession={() => void reset()}
                 onContext={toggleContext}
                 onVariant={setVariant}

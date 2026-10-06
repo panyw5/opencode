@@ -35,7 +35,6 @@ export function QuickAssistantEditor(props: {
   agents: Agent[]
   commands: Command[]
   history: Prompt[]
-  disabled: boolean
   setRef: (node: HTMLDivElement) => void
   onChange: (prompt: Prompt) => void
   onSend: () => void
@@ -258,7 +257,6 @@ export function QuickAssistantEditor(props: {
     onSelect: selectSlash,
   })
   const refresh = () => {
-    if (props.disabled) return closeMenu()
     const text = serialize(editor)
     const cursor = getCursorPosition(editor)
     setState("cursor", cursor)
@@ -284,7 +282,7 @@ export function QuickAssistantEditor(props: {
   const attachments = createPromptAttachments({
     prompt: { current: () => props.prompt, cursor: () => state.cursor, set: change },
     editor: () => editor,
-    isDialogActive: () => !!dialog.active || props.disabled,
+    isDialogActive: () => !!dialog.active,
     setDraggingType: () => {},
     focusEditor: focus,
     addPart,
@@ -297,6 +295,9 @@ export function QuickAssistantEditor(props: {
       () => {
         const prompt = props.prompt
         const key = JSON.stringify(prompt)
+        console.debug(
+          `[quick-assistant:input] draft sync origin=${key === changedPrompt ? "editor" : "external"} text=${quickPromptText(prompt).length} dom=${serialize(editor).length}`,
+        )
         if (key !== changedPrompt) {
           undo = createInputUndoState(createInputUndoEntry(prompt))
           lastEdit = 0
@@ -369,20 +370,30 @@ export function QuickAssistantEditor(props: {
             editor = node
             props.setRef(node)
           }}
-          contentEditable={!props.disabled}
+          contentEditable={true}
           role="textbox"
           aria-multiline="true"
           aria-label={language.t("prompt.editor.title")}
           data-placeholder="Ask about the current OpenCode session or a quick task..."
-          class="w-full min-h-[84px] max-h-64 overflow-y-auto bg-transparent px-4 pt-3.5 pb-1 text-14-regular text-text-strong outline-none whitespace-pre-wrap break-words empty:before:content-[attr(data-placeholder)] empty:before:text-text-weaker"
+          class="w-full min-h-[84px] max-h-64 cursor-text overflow-y-auto bg-transparent px-4 pt-3.5 pb-1 text-14-regular text-text-strong outline-none whitespace-pre-wrap break-words empty:before:pointer-events-none empty:before:content-[attr(data-placeholder)] empty:before:text-text-weaker"
           style={{ "line-height": "26px" }}
           onPaste={attachments.handlePaste}
           onInput={() => {
+            console.debug(`[quick-assistant:input] input text=${serialize(editor).length}`)
             sync()
             setState("history", -1)
             refresh()
           }}
           onClick={refresh}
+          onMouseEnter={(event) => {
+            const node = event.currentTarget
+            console.debug("[quick-assistant:input] hover", {
+              editable: node.isContentEditable,
+              cursor: getComputedStyle(node).cursor,
+              placeholderPointerEvents: getComputedStyle(node, "::before").pointerEvents,
+              hitEditor: document.elementFromPoint(event.clientX, event.clientY) === node,
+            })
+          }}
           onBlur={() => {
             setState("composing", false)
             closeMenu()

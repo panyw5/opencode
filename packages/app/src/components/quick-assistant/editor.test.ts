@@ -1,9 +1,77 @@
 import { describe, expect, test } from "bun:test"
-import { parseQuickEditor, quickPromptText } from "./editor-model"
+import {
+  emptyQuickPrompt,
+  parseQuickEditor,
+  quickPromptCanSend,
+  quickPromptText,
+  recoverQuickPrompt,
+} from "./editor-model"
+import { createStore, reconcile } from "solid-js/store"
 import { buildRequestParts } from "../prompt-input/build-request-parts"
 import { merge } from "../prompt-input/expand"
 
 describe("quick assistant rich editor", () => {
+  test("editing cannot pollute the empty draft used after submission", () => {
+    const [state, setState] = createStore({ prompt: emptyQuickPrompt() })
+    setState("prompt", reconcile([{ type: "text", content: "sent message", start: 0, end: 12 }]))
+    const submitted = state.prompt.map((part) => ({ ...part }))
+    expect(quickPromptText(state.prompt)).toBe("sent message")
+    setState("prompt", emptyQuickPrompt())
+    expect(quickPromptText(state.prompt)).toBe("")
+    setState("prompt", reconcile([{ type: "text", content: "next draft", start: 0, end: 10 }]))
+    expect(quickPromptText(submitted)).toBe("sent message")
+    expect(quickPromptText(emptyQuickPrompt())).toBe("")
+  })
+
+  test("preparing and streaming block sending, not the next draft", () => {
+    const prompt = [{ type: "text" as const, content: "next draft", start: 0, end: 10 }]
+    expect(quickPromptCanSend({ prompt, loading: true, busy: false, ready: true })).toBe(false)
+    expect(quickPromptCanSend({ prompt, loading: false, busy: true, ready: true })).toBe(false)
+    expect(quickPromptText(prompt)).toBe("next draft")
+    expect(quickPromptCanSend({ prompt, loading: false, busy: false, ready: true })).toBe(true)
+    expect(quickPromptCanSend({ prompt: emptyQuickPrompt(), loading: false, busy: false, ready: true })).toBe(false)
+    expect(quickPromptCanSend({ prompt, loading: false, busy: false, ready: false })).toBe(false)
+  })
+
+  test("an image-only draft is sendable once the current reply completes", () => {
+    const prompt = [
+      {
+        type: "image" as const,
+        id: "img_1",
+        filename: "test.png",
+        mime: "image/png",
+        dataUrl: "data:image/png;base64,dGVzdA==",
+      },
+    ]
+    expect(quickPromptCanSend({ prompt, loading: false, busy: false, ready: true })).toBe(true)
+    expect(quickPromptCanSend({ prompt, loading: false, busy: true, ready: true })).toBe(false)
+  })
+
+  test("failed sends recover without sharing objects with submission history", () => {
+    const submitted = [{ type: "text" as const, content: "failed send", start: 0, end: 11 }]
+    const recovered = recoverQuickPrompt(emptyQuickPrompt(), submitted)!
+    expect(recovered).toEqual(submitted)
+    expect(recovered[0]).not.toBe(submitted[0])
+    const [state, setState] = createStore({ prompt: recovered })
+    setState("prompt", reconcile([{ type: "text", content: "edited retry", start: 0, end: 12 }]))
+    expect(quickPromptText(state.prompt)).toBe("edited retry")
+    expect(quickPromptText(submitted)).toBe("failed send")
+  })
+
+  test("send failures never overwrite a new text or image draft", () => {
+    const submitted = [{ type: "text" as const, content: "failed send", start: 0, end: 11 }]
+    const next = [{ type: "text" as const, content: "next draft", start: 0, end: 10 }]
+    expect(recoverQuickPrompt(next, submitted)).toBeUndefined()
+    expect(quickPromptText(next)).toBe("next draft")
+    const image = {
+      type: "image" as const,
+      id: "img_1",
+      filename: "test.png",
+      mime: "image/png",
+      dataUrl: "data:image/png;base64,dGVzdA==",
+    }
+    expect(recoverQuickPrompt([image], submitted)).toBeUndefined()
+  })
   test("keeps file, agent and IM pills with accurate text offsets", () => {
     const editor = document.createElement("div")
     editor.innerHTML =

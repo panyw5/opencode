@@ -1,5 +1,24 @@
 import type { Prompt } from "@/context/prompt"
 import { serialize } from "../prompt-input/editor-dom"
+import { clonePromptParts } from "../prompt-input/history"
+
+export function emptyQuickPrompt(): Prompt {
+  return [{ type: "text", content: "", start: 0, end: 0 }]
+}
+
+export function quickPromptCanSend(input: { prompt: Prompt; loading: boolean; busy: boolean; ready: boolean }) {
+  return (
+    input.ready &&
+    !input.loading &&
+    !input.busy &&
+    (!!quickPromptText(input.prompt).trim() || input.prompt.some((part) => part.type === "image"))
+  )
+}
+
+export function recoverQuickPrompt(current: Prompt, submitted: Prompt): Prompt | undefined {
+  if (quickPromptText(current) || current.some((part) => part.type === "image")) return
+  return clonePromptParts(submitted)
+}
 
 export function quickPromptText(prompt: Prompt) {
   return prompt.map((part) => ("content" in part ? part.content : "")).join("")
