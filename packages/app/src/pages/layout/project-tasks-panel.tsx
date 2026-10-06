@@ -48,6 +48,19 @@ const progressText = (task: Pick<ProjectTask, "progress">) => {
   return `${completed}/${total}${inProgress ? ` · ${inProgress} active` : ""}`
 }
 
+function newProjectTaskSession(
+  taskID: string,
+  directory: string,
+  sessionTabs: ReturnType<typeof useSessionTabs>,
+  navigate: ReturnType<typeof useNavigate>,
+) {
+  if (!directory) return
+  setPendingProjectTaskMount(directory, { taskID, inject: true })
+  const draft = sessionTabs.createDraft(directory, "button")
+  console.debug(`[project-task] new-session taskID=${taskID} directory=${directory} draftID=${draft.id}`)
+  navigate(sessionTabsTargetHref({ type: "draft", ...draft }))
+}
+
 type NewProjectTaskDraft = {
   name: string
   content: string
@@ -254,6 +267,7 @@ export function ProjectTaskDetailDialog(props: {
   const language = useLanguage()
   const dialog = useDialog()
   const navigate = useNavigate()
+  const sessionTabs = useSessionTabs()
   const dialogKey = createMemo(() => props.task.id)
   const [maximized, setMaximized] = createSignal(false)
   const [idCopied, setIdCopied] = createSignal(false)
@@ -406,6 +420,12 @@ export function ProjectTaskDetailDialog(props: {
   function openSession(sessionID: string) {
     dialog.close()
     navigate(`/${base64Encode(props.directory)}/session/${sessionID}`)
+  }
+
+  function newSession() {
+    console.debug(`[project-task] detail new-session taskID=${props.task.id} directory=${props.directory}`)
+    newProjectTaskSession(props.task.id, props.directory, sessionTabs, navigate)
+    dialog.close()
   }
 
   const copyTaskID = () => {
@@ -681,8 +701,20 @@ export function ProjectTaskDetailDialog(props: {
 
           <Show when={state.mode === "preview" ? detail() : undefined}>
             <section class="flex max-h-[28vh] min-h-0 shrink-0 flex-col gap-2 overflow-hidden">
-              <div class="text-12-medium text-text-base">
-                {language.t("projectTask.sessions.title")} ({mainSessions().length})
+              <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
+                <span class="text-12-medium text-text-base">
+                  {language.t("projectTask.sessions.title")} ({mainSessions().length})
+                </span>
+                <button
+                  type="button"
+                  data-action="project-task-new-session"
+                  class="inline-flex shrink-0 items-center gap-1 rounded-md border border-border-weak-base bg-background-base px-2 py-1 text-12-medium text-text-base transition-colors hover:bg-surface-base-hover disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={state.pending || !props.directory}
+                  onClick={newSession}
+                >
+                  <Icon name="new-session" size="small" />
+                  {language.t("projectTask.sessions.new")}
+                </button>
               </div>
               <Show
                 when={mainSessions().length > 0}
@@ -973,11 +1005,7 @@ export function ProjectTasksPanel(props: {
   }
 
   function newSession(task: ProjectTask, directory: string) {
-    if (!directory) return
-    setPendingProjectTaskMount(directory, { taskID: task.id, inject: true })
-    const draft = sessionTabs.createDraft(directory, "button")
-    console.debug(`[project-task] new-session taskID=${task.id} directory=${directory} draftID=${draft.id}`)
-    navigate(sessionTabsTargetHref({ type: "draft", ...draft }))
+    newProjectTaskSession(task.id, directory, sessionTabs, navigate)
   }
 
   const createTask = async (name: string, content: string) => {
