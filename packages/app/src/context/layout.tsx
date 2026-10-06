@@ -477,7 +477,14 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       setStore("rightPanel", "active", active)
       console.debug(`[right-panel] switch from=${previous} to=${active}`)
     }
-    const browserTabs = createBrowserTabs({ api: browserApi(), reveal: () => setRightPanel("browser") })
+    const browserTabs = createBrowserTabs({
+      api: browserApi(),
+      reveal: () => setRightPanel("browser"),
+      onEmpty: () => {
+        console.debug(`[right-panel] browser tabs empty active=${store.rightPanel.active}`)
+        if (store.rightPanel.active === "browser") setRightPanel("none")
+      },
+    })
     const rightPanelSize = createMemo(() => rightPanelGeometry(
       store.rightPanel.active, store.fileTree?.opened ?? true,
       store.session?.width ?? DEFAULT_SESSION_WIDTH, store.fileTree?.width ?? DEFAULT_PANEL_WIDTH,

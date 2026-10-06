@@ -22,6 +22,7 @@ function fixture() {
   let presented = (_request: BrowserPresentation) => {}
   let closed = (_partition: string, _epoch: number) => {}
   let reveals = 0
+  let empties = 0
   let legacyCalls = 0
   const snapshot = deferred<BrowserViewState[]>()
   const navigations: ReturnType<typeof deferred<BrowserViewState | undefined>>[] = []
@@ -65,6 +66,9 @@ function fixture() {
     reveal: () => {
       reveals++
     },
+    onEmpty: () => {
+      empties++
+    },
   })
   service.start()
   return {
@@ -75,6 +79,7 @@ function fixture() {
     present: (request: BrowserPresentation) => presented(request),
     close: (partition: string, epoch: number) => closed(partition, epoch),
     reveals: () => reveals,
+    empties: () => empties,
     legacyCalls: () => legacyCalls,
   }
 }
@@ -84,6 +89,54 @@ const flush = async () => {
 }
 
 describe("shared browser tabs", () => {
+  test("closing the last user tab collapses once and ignores late navigation", async () => {
+    const f = fixture()
+    const first = f.service.addUserTab()!
+    const second = f.service.addUserTab()!
+    f.service.close(first)
+    expect(f.empties()).toBe(0)
+    f.service.close(second)
+    expect(f.service.tabs()).toHaveLength(0)
+    expect(f.service.active()).toBe("")
+    expect(f.empties()).toBe(1)
+    f.close(second, 1)
+    f.updated(view(second, 1))
+    f.navigations[1].resolve(view(second, 1))
+    await flush()
+    expect(f.service.tabs()).toHaveLength(0)
+    expect(f.empties()).toBe(1)
+    f.service.dispose()
+  })
+  test("backend close collapses only after all user and agent tabs are gone", () => {
+    const f = fixture()
+    f.updated(view("persist:user"))
+    f.updated(view("agent-browser-session"))
+    f.close("persist:user", 1)
+    expect(f.empties()).toBe(0)
+    f.close("agent-browser-session", 0)
+    expect(f.empties()).toBe(0)
+    f.close("agent-browser-session", 1)
+    expect(f.service.tabs()).toHaveLength(0)
+    expect(f.empties()).toBe(1)
+    f.close("agent-browser-session", 1)
+    expect(f.empties()).toBe(1)
+    f.present({ id: 1, state: view("agent-browser-session", 2) })
+    expect(f.service.tabs()).toHaveLength(1)
+    expect(f.reveals()).toBe(1)
+    f.close("agent-browser-session", 2)
+    expect(f.empties()).toBe(2)
+    f.service.dispose()
+  })
+  test("empty startup and unknown close events do not collapse the panel", async () => {
+    const f = fixture()
+    f.snapshot.resolve([])
+    await flush()
+    f.close("missing", 1)
+    expect(f.empties()).toBe(0)
+    f.service.dispose()
+    f.close("missing", 2)
+    expect(f.empties()).toBe(0)
+  })
   test("background updates and loading snapshots do not steal the dock", async () => {
     const f = fixture()
     f.updated(view("agent-browser-other-session"))

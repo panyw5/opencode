@@ -33,7 +33,7 @@ export function pickFallback(list: readonly BrowserTab[], closed: string): strin
   return rest.at(-1)!.partition
 }
 
-export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () => void }) {
+export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () => void; onEmpty: () => void }) {
   const api = input.api
   const [state, setState] = createStore({
     views: {} as Record<string, BrowserViewState>,
@@ -98,12 +98,19 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
     pending.delete(partition)
     const list = tabs()
     const fallback = pickFallback(list, partition)
+    const becameEmpty = list.length === 1 && list[0].partition === partition
     batch(() => {
       setState("views", partition, undefined!)
       if (state.active === partition) setState("active", fallback)
       syncAddress()
+      if (becameEmpty) {
+        console.debug(`[browser-tabs] last tab removed partition=${partition}; collapsing browser panel`)
+        input.onEmpty()
+      }
     })
-    console.debug(`[browser-tabs] remove partition=${partition} epoch=${epoch} active=${state.active}`)
+    console.debug(
+      `[browser-tabs] remove partition=${partition} epoch=${epoch} active=${state.active} count=${tabs().length}`,
+    )
   }
   const present = (request: BrowserPresentation) => {
     if (disposed || request.id <= presented || stale(request.state)) return

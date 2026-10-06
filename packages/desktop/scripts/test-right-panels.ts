@@ -24,11 +24,21 @@ await withCdp(async (cdp, target) => {
     }
   }
   const click = async (selector: string) => {
-    const point = await cdp.evaluate<{ x: number; y: number }>(`(() => {
-      const e=document.querySelector(${JSON.stringify(selector)}); if(!e) throw Error('missing '+${JSON.stringify(selector)});
-      const r=e.getBoundingClientRect(); if(!r.width||!r.height) throw Error('hidden click target');
-      return {x:r.x+r.width/2,y:r.y+r.height/2};
-    })()`)
+    let point = { x: 0, y: 0 }
+    let previous = ""
+    let stable = 0
+    // Panel transitions can move a button between measuring it and dispatching the click.
+    await wait(async () => {
+      point = await cdp.evaluate<{ x: number; y: number }>(`(() => {
+        const e=document.querySelector(${JSON.stringify(selector)}); if(!e) throw Error('missing '+${JSON.stringify(selector)});
+        const r=e.getBoundingClientRect(); if(!r.width||!r.height) throw Error('hidden click target');
+        return {x:r.x+r.width/2,y:r.y+r.height/2};
+      })()`)
+      const current = JSON.stringify(point)
+      stable = current === previous ? stable + 1 : 0
+      previous = current
+      return stable >= 2
+    }, `click target settled: ${selector}`)
     await cdp.call("Input.dispatchMouseEvent", { type: "mouseMoved", ...point })
     for (const type of ["mousePressed", "mouseReleased"])
       await cdp.call("Input.dispatchMouseEvent", { type, ...point, button: "left", clickCount: 1 })
@@ -64,6 +74,7 @@ await withCdp(async (cdp, target) => {
     )
   }
   const initial = await state()
+  const initialViews = await cdp.evaluate<{ partition: string }[]>("window.api.browser.getState()")
   try {
     for (const label of [...labels, ...labels.toReversed(), ...labels]) await select(label)
     await click('button[aria-label="文件树"]')
@@ -223,6 +234,62 @@ await withCdp(async (cdp, target) => {
     await select("审查")
     assert.ok((await display()).views.every((view) => !view.visible))
     console.log("[right-panel-test] preview/review switch parks all native hit regions: PASS")
+
+    if (initialViews.length === 0) {
+      await select("浏览器")
+      // Only close views created by this test, never pre-existing user tabs.
+      for (const partition of created.slice(0, -1)) {
+        await cdp.evaluate(`window.api.browser.close(${JSON.stringify(partition)})`)
+        await wait(async () => !(await display()).views.some((view) => view.partition === partition), "test tab closed")
+        assert.equal((await state())["浏览器"], true, "remaining tab keeps the browser open")
+      }
+      await click('#browser-panel [aria-label="关闭标签页"]')
+      await wait(async () => !(await state())["浏览器"], "last tab automatically collapses the browser")
+      await wait(async () => (await display()).views.length === 0, "last native view removed")
+      console.log("[right-panel-test] closing the last user tab collapses the browser: PASS")
+
+      await select("浏览器")
+      await cdp.evaluate(`window.api.browser.close(${JSON.stringify(created.at(-1))})`)
+      assert.equal((await state())["浏览器"], true, "duplicate close does not collapse a manually reopened empty panel")
+      await click('#browser-panel button[aria-label="新建标签页"]')
+      const reopened = await cdp.evaluate<string>(
+        "document.querySelector('[data-browser-placeholder]').getAttribute('data-browser-placeholder')",
+      )
+      created.push(reopened)
+      await wait(async () => (await display()).views.some((view) => view.partition === reopened), "reopened user tab")
+      await click('#browser-panel [aria-label="关闭标签页"]')
+      await wait(async () => !(await state())["浏览器"], "reopened last user tab collapses")
+      await wait(async () => (await display()).views.length === 0, "reopened native view removed")
+      console.log("[right-panel-test] reopen and duplicate close regression: PASS")
+
+      await cdp.evaluate(`window.api.browser.open(${JSON.stringify(background)}, 'about:blank')`)
+      await select("浏览器")
+      await wait(
+        async () => (await display()).views.some((view) => view.partition === background),
+        "last agent tab created",
+      )
+      await click('#browser-panel [aria-label="关闭标签页"]')
+      assert.equal((await state())["浏览器"], true, "agent confirmation does not close the panel yet")
+      await click("#browser-panel button.rounded-full.border")
+      await wait(async () => !(await state())["浏览器"], "confirmed last agent tab collapses")
+      await wait(async () => (await display()).views.length === 0, "confirmed agent native view removed")
+      console.log("[right-panel-test] confirmed last agent tab close collapses the browser: PASS")
+
+      await cdp.evaluate(`window.api.browser.open(${JSON.stringify(background)}, 'about:blank')`)
+      await select("浏览器")
+      await wait(
+        async () => (await display()).views.some((view) => view.partition === background),
+        "background close test tab created",
+      )
+      await cdp.evaluate(`window.api.browser.close(${JSON.stringify(background)})`)
+      await wait(async () => !(await state())["浏览器"], "native close event collapses the browser")
+      await cdp.evaluate(`window.api.browser.open(${JSON.stringify(background)}, 'about:blank')`)
+      await select("审查")
+      await cdp.evaluate(`window.api.browser.close(${JSON.stringify(background)})`)
+      await wait(async () => (await display()).views.length === 0, "background native view removed")
+      assert.equal((await state())["审查"], true, "background last tab close preserves the review panel")
+      console.log("[right-panel-test] native last-tab close and inactive panel preservation: PASS")
+    }
 
     const marker = "RIGHT_PANEL_SIDECAR_OK"
     const result = await cdp.evaluate<{ id: string; sent: boolean; received: boolean }>(`(async () => {
