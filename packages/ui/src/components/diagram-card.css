@@ -16,7 +16,7 @@
 .diagram-card__tools {
   position: absolute;
   top: 18px;
-  right: 18px;
+  right: 34px;
   z-index: 2;
   display: flex;
   gap: 4px;
