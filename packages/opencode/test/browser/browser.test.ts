@@ -3,6 +3,7 @@ import { Effect, Exit, Fiber, Layer } from "effect"
 import { Browser } from "../../src/browser"
 import { BrowserBridge } from "../../src/browser/bridge"
 import { testEffect } from "../lib/effect"
+import { InstanceState } from "../../src/effect/instance-state"
 
 // Browser.defaultLayer already provides the bridge internally; the bridge is
 // merged in separately only so tests can drive the fake adapter directly.
@@ -35,9 +36,42 @@ const viewState = {
 }
 
 const failureOf = (exit: Exit.Exit<unknown, unknown>) =>
-  Exit.isFailure(exit) ? (exit.cause as unknown as { reasons?: Array<{ error?: unknown }> }).reasons?.[0]?.error : undefined
+  Exit.isFailure(exit)
+    ? (exit.cause as unknown as { reasons?: Array<{ error?: unknown }> }).reasons?.[0]?.error
+    : undefined
 
 describe("Browser facade", () => {
+  it.instance(
+    "routes recovery tools through an owner-scoped consultation broker rather than arbitrary partitions",
+    () =>
+      Effect.gen(function* () {
+        const browser = yield* Browser.Service
+        const bridge = yield* BrowserBridge.Service
+        const { directory } = yield* InstanceState.context
+        const fake = fakeAdapter()
+        yield* bridge.connect({ adapter: fake.adapter })
+        const fiber = yield* browser.snapshot("ses_owner", { consultationID: "gpt_recovery" }).pipe(Effect.forkChild)
+        yield* Effect.yieldNow
+        const frame = JSON.parse(fake.sent[0])
+        expect(frame.name).toBe("gpt-pro-browser")
+        expect(frame.args).toMatchObject({
+          owner: `${directory}\nses_owner`,
+          id: "gpt_recovery",
+          name: "snapshot",
+          args: {},
+        })
+        expect(frame.args.partition).toBeUndefined()
+        yield* bridge.handleFrame(
+          JSON.stringify({
+            type: "resp",
+            id: frame.id,
+            ok: true,
+            result: { snapshot: { url: "https://chatgpt.com/", title: "Chat", nodes: [] } },
+          }),
+        )
+        expect((yield* Fiber.join(fiber)).url).toBe("https://chatgpt.com/")
+      }),
+  )
   it.live("fails with a descriptive NotConnectedError when no desktop client is connected", () =>
     Effect.gen(function* () {
       const browser = yield* Browser.Service
@@ -72,9 +106,7 @@ describe("Browser facade", () => {
       expect(frame2.args.partition).toBe("agent-browser-ses_2")
       expect(frame2.args.partition).not.toBe(frame.args.partition)
 
-      yield* bridge.handleFrame(
-        JSON.stringify({ type: "resp", id: frame.id, ok: true, result: { state: viewState } }),
-      )
+      yield* bridge.handleFrame(JSON.stringify({ type: "resp", id: frame.id, ok: true, result: { state: viewState } }))
       const state = yield* Fiber.join(fiber)
       expect(state).toEqual(viewState)
 

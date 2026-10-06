@@ -1,7 +1,7 @@
 import { BrowserController, USER_PARTITION, type ViewState } from "./browser"
 import { write as writeLog } from "./logging"
 import { getGptProController } from "./gpt-pro-runtime"
-import type { GptProCommand } from "@opencode-ai/util/gpt-pro"
+import type { GptProCommand, GptProBrowserCommand } from "@opencode-ai/util/gpt-pro"
 
 // P1-D-03: connects the opencode server to the in-app browser. Main process
 // acts as the WS client; the server sends commands, we execute them against
@@ -177,6 +177,18 @@ export class BridgeClient {
       return cdp
     }
     switch (name) {
+      case "gpt-pro-browser": {
+        if (typeof args.owner !== "string" || typeof args.id !== "string" || typeof args.name !== "string")
+          throw new Error("Missing consultation browser owner, id or operation")
+        const operationArgs = args.args && typeof args.args === "object" ? (args.args as Record<string, unknown>) : {}
+        return getGptProController().browserCommand(
+          args.owner,
+          args.id,
+          args.name as GptProBrowserCommand,
+          operationArgs,
+          (partition) => this.execute(args.name as string, { ...operationArgs, partition }),
+        )
+      }
       case "gpt-pro-notifications": {
         if (typeof args.directory !== "string" || !args.directory) throw new Error("Missing notification directory")
         return getGptProController().notifications(args.directory)
@@ -213,7 +225,9 @@ export class BridgeClient {
       case "click": {
         const uid = String(args.uid ?? "")
         if (!uid) throw new Error("click requires uid")
-        const point = await requireCdp().click(uid)
+        const position =
+          args.position && typeof args.position === "object" ? (args.position as { x: number; y: number }) : undefined
+        const point = await requireCdp().click(uid, position)
         return { point, state: controller.getState().find((s) => s.partition === partition) }
       }
       case "type": {

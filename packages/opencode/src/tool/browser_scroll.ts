@@ -4,6 +4,7 @@ import DESCRIPTION from "./browser_scroll.txt"
 import { Browser } from "@/browser"
 
 const Parameters = Schema.Struct({
+  consultation_id: Browser.ConsultationParameter,
   uid: Schema.optional(
     Schema.String.annotate({
       description:
@@ -32,7 +33,8 @@ export const BrowserScrollTool = Tool.define(
       parameters: Parameters,
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
-          const state = yield* browser.requireState(ctx.sessionID)
+          const target = params.consultation_id ? { consultationID: params.consultation_id } : undefined
+          const state = yield* browser.requireState(ctx.sessionID, target)
           yield* ctx.ask({
             permission: "browser_scroll",
             patterns: [state.url],
@@ -47,6 +49,7 @@ export const BrowserScrollTool = Tool.define(
           })
 
           const after = yield* browser.scroll(ctx.sessionID, {
+            ...target,
             uid: params.uid,
             direction: params.direction,
             amount: params.amount,

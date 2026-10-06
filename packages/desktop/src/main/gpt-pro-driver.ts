@@ -1,4 +1,8 @@
-import { CHATGPT_INSPECT_EXPRESSION } from "@opencode-ai/util/chatgpt-page"
+import {
+  CHATGPT_INSPECT_EXPRESSION,
+  CHATGPT_MODEL_PICKER_EXPRESSION,
+  CHATGPT_ONBOARDING_DISMISS_EXPRESSION,
+} from "@opencode-ai/util/chatgpt-page"
 import { GPT_PRO_PARTITION, GPT_PRO_URL, isGptProOrigin, type GptProPageState } from "@opencode-ai/util/gpt-pro"
 import type { BrowserController } from "./browser"
 import { GptProPageError } from "./gpt-pro-page-error"
@@ -7,12 +11,12 @@ const sendSelector =
   '[data-testid="send-button"],button[aria-label="Send prompt"],button[aria-label="Send message"],button[aria-label="Send"],button[aria-label="发送消息"],button[aria-label="发送提示"]'
 
 const editorSelector = '#prompt-textarea, [data-composer-markdown][role="textbox"][contenteditable="true"]'
-const triggerExpression = `[...document.querySelectorAll('button[aria-label="Select ChatGPT model"]')].filter(e => e.getClientRects().length && !e.closest('[inert], [aria-hidden="true"]')).at(-1)`
+const triggerExpression = `${CHATGPT_MODEL_PICKER_EXPRESSION}.trigger`
 
 export class GptProDriver {
   private observedCdp?: ReturnType<BrowserController["cdp"]>
   private stopObserving?: () => void
-  private rejected?: { path: string; status: number }
+  private rejected?: { path: string; status: number; at: number }
   constructor(
     private readonly browser: BrowserController,
     private readonly log: (message: string) => void = () => {},
@@ -79,6 +83,17 @@ export class GptProDriver {
     const state = this.browser.getState().find((v) => v.partition === GPT_PRO_PARTITION)
     if (!state || !isGptProOrigin(state.url)) throw new Error("Login to ChatGPT in the gpt-pro browser first.")
     const page = await this.cdp().evaluate<GptProPageState>(CHATGPT_INSPECT_EXPRESSION)
+    if (this.rejected && /\/(?:prepare|init)$/.test(this.rejected.path)) {
+      if (page.users.length && (page.generating || page.answer)) {
+        this.log(
+          `driver preparation rejection superseded by rendered question/reply path=${this.rejected.path} status=${this.rejected.status}; no question resent`,
+        )
+        this.rejected = undefined
+      } else if (Date.now() - this.rejected.at < 5000) {
+        this.log(`driver waiting for website preparation recovery status=${this.rejected.status}; no input dispatched`)
+        return page
+      }
+    }
     if (this.rejected && !page.error)
       page.error = {
         kind: "request",
@@ -96,6 +111,19 @@ export class GptProDriver {
     })()`)
     this.log(`driver handoff composerFocused=${!!focused}; page contents preserved`)
   }
+  async dismissOnboarding() {
+    for (let i = 0; i < 3; i++) {
+      const overlay = await this.cdp().evaluate<{ heading: string; selector: string } | null>(
+        CHATGPT_ONBOARDING_DISMISS_EXPRESSION,
+      )
+      if (!overlay) return
+      this.log(`driver dismissing promotional overlay heading=${overlay.heading} step=${i + 1}`)
+      await this.cdp().clickSelector(overlay.selector)
+      await new Promise((resolve) => setTimeout(resolve, 125))
+    }
+    if (await this.cdp().evaluate(CHATGPT_ONBOARDING_DISMISS_EXPRESSION))
+      throw new GptProPageError("A feature overlay could not be dismissed. No question was sent.")
+  }
   async ready() {
     this.log("driver waiting for rendered Chat composer")
     const cdp = this.cdp()
@@ -110,20 +138,27 @@ export class GptProDriver {
           )
         )
           return
-        this.rejected = { path: response.path, status: response.status }
+        this.rejected = { path: response.path, status: response.status, at: Date.now() }
         this.log(`driver request rejected path=${response.path} status=${response.status}; no headers or body recorded`)
       })
     }
+    let readiness = ""
     for (let i = 0; i < 360; i++) {
       try {
         const page = await this.page()
-        if (page.error?.kind === "verification" && i < 40) {
+        const observed = `composer=${page.composer} model=${page.model || "pending"} error=${page.error?.kind ?? "none"}`
+        if (observed !== readiness) {
+          this.log(`driver readiness ${observed}`)
+          readiness = observed
+        }
+        if (page.error?.kind === "verification" && i < 120) {
           if (i === 0) this.log("driver waiting for the website's automatic browser verification; no input dispatched")
           await new Promise((resolve) => setTimeout(resolve, 250))
           continue
         }
-        if (page.error) throw new GptProPageError(page.error.message)
-        if (page.composer) {
+        if (page.error) throw new GptProPageError(page.error.message, page.error.kind)
+        await this.dismissOnboarding()
+        if (page.composer && page.model) {
           this.log("driver composer ready")
           return page
         }
@@ -137,36 +172,72 @@ export class GptProDriver {
   }
   async verify() {
     this.log("driver verifying visible model-picker evidence")
+    await this.dismissOnboarding()
     const previous = await this.page()
-    if (previous.error) throw new GptProPageError(previous.error.message)
+    if (previous.error) throw new GptProPageError(previous.error.message, previous.error.kind)
+    this.log(`driver initial model=${previous.model} verified=${previous.targetModel}`)
     if (previous.targetModel) return previous
-    await this.cdp().evaluate(`(async () => {
-      for (let i=0; i<120; i++) {
-        const trigger = ${triggerExpression}
-        if (!trigger) return true
-        if(trigger.getAttribute('aria-expanded')!=='true') trigger.click()
-        const id=trigger.getAttribute('aria-controls')
-        if (id && document.getElementById(id)?.querySelector('[data-model-picker-view-toggle]')) return true
-        await new Promise(r=>setTimeout(r,125))
+    const cdp = this.cdp()
+    try {
+      this.log("driver opening associated model picker")
+      await cdp.evaluate(`(async () => {
+        for (let i=0; i<40; i++) {
+          const picker = ${CHATGPT_MODEL_PICKER_EXPRESSION}
+          if (picker.row) return true
+          if(picker.trigger && picker.trigger.getAttribute('aria-expanded')!=='true') picker.trigger.click()
+          await new Promise(r=>setTimeout(r,125))
+        }
+        throw new Error('Cannot read the visible Chat model row')
+      })()`)
+      let page = await this.page()
+      this.log(`driver picker model=${page.model} verified=${page.targetModel}`)
+      if (page.error) throw new GptProPageError(page.error.message, page.error.kind)
+      if (!page.targetModel) {
+        // Non-Pro Power rows may omit the version entirely (e.g. "High").
+        // Adjust only this slider, then require explicit 6 Pro evidence before sending.
+        const steps = await cdp.evaluate<number>(`(() => {
+          const { menu, row } = ${CHATGPT_MODEL_PICKER_EXPRESSION}
+          if (!row || !/^(?:(?:GPT[\\s-]*)?6\\s+)?(?:Instant|Light|Standard|Medium|High|Extended|Heavy|Pro)$/i.test(row.innerText.trim())) return 0
+          const control = menu.querySelector('[data-reasoning-slider]')
+          const slider = control?.querySelector('[role="slider"]')
+          if (!control || control.closest('[inert],[hidden],[aria-hidden="true"]') || !control.getClientRects().length || !slider) return 0
+          const max = Number(slider.getAttribute('aria-valuemax'))
+          const now = Number(slider.getAttribute('aria-valuenow'))
+          if (!Number.isInteger(max) || !Number.isInteger(now) || now < 0 || max <= now || max > 10) return 0
+          control.focus()
+          return document.activeElement === control ? max - now : 0
+        })()`)
+        this.log(`driver selecting Pro power steps=${steps}`)
+        for (let i = 0; i < steps; i++) await cdp.pressArrowRight()
+        for (let i = 0; steps > 0 && !page.targetModel && i < 20; i++) {
+          await new Promise((r) => setTimeout(r, 125))
+          page = await this.page()
+          if (page.error) throw new GptProPageError(page.error.message, page.error.kind)
+        }
+        this.log(`driver selected model=${page.model} verified=${page.targetModel}`)
       }
-      throw new Error('Cannot verify the Chat model')
-    })()`)
-    let page = await this.page()
-    for (let i = 0; !page.targetModel && i < 120; i++) {
-      await this.cdp().evaluate(
-        `(() => { const trigger=${triggerExpression};if(trigger?.getAttribute('aria-expanded')!=='true')trigger?.click();return true })()`,
-      )
-      await new Promise((r) => setTimeout(r, 125))
-      page = await this.page()
+      if (!page.targetModel)
+        throw new Error(
+          "Could not select and verify GPT-6 Pro in the Chat model picker. No API, Codex, Work, or fallback model will be used.",
+        )
+    } finally {
+      try {
+        const opened = await cdp.evaluate<boolean>(
+          `(() => {const trigger=${triggerExpression}; return trigger?.getAttribute('aria-expanded')==='true' })()`,
+        )
+        if (opened) {
+          this.log("driver closing model picker without sending")
+          await cdp.pressEscape()
+        }
+      } catch (error) {
+        this.log(`driver model picker cleanup failed error=${String(error)}`)
+      }
     }
-    const opened = await this.cdp().evaluate<boolean>(
-      `(() => {const trigger=${triggerExpression}; return trigger?.getAttribute('aria-expanded')==='true' })()`,
-    )
-    if (opened) await this.cdp().pressEscape()
-    this.log(`driver model observed=${page.model} verified=${page.targetModel}`)
-    if (!page.targetModel)
-      throw new Error("Select GPT-6 Pro in the Chat model picker. No API, Codex, Work, or fallback model will be used.")
-    return page
+    const verified = await this.page()
+    this.log(`driver final model=${verified.model} verified=${verified.targetModel}`)
+    if (verified.error) throw new GptProPageError(verified.error.message, verified.error.kind)
+    if (!verified.targetModel) throw new Error("Model evidence changed after closing the picker. Nothing was sent.")
+    return verified
   }
   async fill(prompt: string) {
     this.log(`driver filling composer promptChars=${prompt.length}`)
@@ -177,27 +248,60 @@ export class GptProDriver {
     })()`)
     if (!focused) throw new Error("The Chat composer contains a draft or cannot be focused. It was not overwritten.")
     await this.cdp().insertText(prompt)
-    const page = await this.page()
-    if (page.error) throw new GptProPageError(page.error.message)
-    if (page.draft.trim() !== prompt.trim())
-      throw new Error("Chat composer verification failed. Submission was not attempted.")
-    if (!page.targetModel) throw new Error("Model evidence changed before submission. Nothing was sent.")
+    const expected = prompt.replace(/\r\n/g, "\n").trim()
+    for (let i = 0; i < 20; i++) {
+      const page = await this.page()
+      if (page.error) throw new GptProPageError(page.error.message, page.error.kind)
+      if (!page.targetModel) throw new Error("Model evidence changed before submission. Nothing was sent.")
+      const actual = page.draft.replace(/\r\n/g, "\n").trim()
+      if (actual === expected) {
+        this.log(
+          `driver composer verified expectedChars=${expected.length} actualChars=${actual.length} lines=${expected.split("\n").length}`,
+        )
+        return
+      }
+      if (i === 0 || i === 19) {
+        let mismatch = 0
+        while (mismatch < Math.min(expected.length, actual.length) && expected[mismatch] === actual[mismatch])
+          mismatch++
+        this.log(
+          `driver composer mismatch attempt=${i + 1} expectedChars=${expected.length} actualChars=${actual.length} firstMismatch=${mismatch}; no prompt content recorded`,
+        )
+      }
+      if (i < 19) await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    throw new Error("Chat composer verification failed. Submission was not attempted.")
   }
-  async submit() {
+  async element(uid: string) {
+    return {
+      composer: await this.cdp().matches(uid, editorSelector),
+      send: await this.cdp().matches(uid, `${sendSelector},button[type="submit"]`),
+    }
+  }
+  recover() {
+    this.rejected = undefined
+    this.log(
+      "driver agent recovery cleared historical request rejection; rendered errors and verification remain enforced",
+    )
+  }
+  async submit(beforeDispatch?: () => Promise<void>, uid?: string) {
     this.log("driver waiting for enabled Chat send control")
     for (let i = 0; i < 20; i++) {
       const page = await this.page()
-      if (page.error) throw new GptProPageError(page.error.message)
+      if (page.error) throw new GptProPageError(page.error.message, page.error.kind)
       if (page.sendReady) {
         if (!page.targetModel)
           throw new GptProPageError("The selected model changed before sending. Nothing was dispatched.")
         this.log("driver dispatching one trusted send-button click")
-        await this.cdp().clickSelector(
-          sendSelector
-            .split(",")
-            .map((selector) => selector + ':not(:disabled):not([aria-disabled="true"])')
-            .join(","),
-        )
+        if (uid) await this.cdp().click(uid, undefined, beforeDispatch)
+        else
+          await this.cdp().clickSelector(
+            sendSelector
+              .split(",")
+              .map((selector) => selector + ':not(:disabled):not([aria-disabled="true"])')
+              .join(","),
+            beforeDispatch,
+          )
         this.log("driver send click dispatched; waiting for website acknowledgment")
         return
       }

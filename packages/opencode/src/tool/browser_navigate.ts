@@ -4,6 +4,7 @@ import DESCRIPTION from "./browser_navigate.txt"
 import { Browser } from "@/browser"
 
 const Parameters = Schema.Struct({
+  consultation_id: Browser.ConsultationParameter,
   url: Schema.String.annotate({
     description:
       "Absolute URL (http://, https://, or file://) or an absolute local file path (e.g. /path/to/report.html, ~/report.html) to open",
@@ -27,7 +28,8 @@ export const BrowserNavigateTool = Tool.define(
             metadata: { action: "navigate", url: params.url },
           })
 
-          const state = yield* browser.navigate(ctx.sessionID, params.url)
+          const target = params.consultation_id ? { consultationID: params.consultation_id } : undefined
+          const state = yield* browser.navigate(ctx.sessionID, params.url, target)
           return {
             title: params.url,
             output: [

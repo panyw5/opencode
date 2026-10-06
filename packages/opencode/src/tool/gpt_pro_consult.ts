@@ -9,7 +9,18 @@ import * as Log from "@opencode-ai/core/util/log"
 const log = Log.create({ service: "tool.gpt_pro_consult" })
 const Parameters = Schema.Struct({
   action: Schema.optional(
-    Schema.Literals(["consult", "status", "read", "open", "stop", "pause", "resume", "intervene", "background"]),
+    Schema.Literals([
+      "consult",
+      "status",
+      "read",
+      "open",
+      "stop",
+      "pause",
+      "resume",
+      "intervene",
+      "background",
+      "send",
+    ]),
   ),
   consultation_id: Schema.optional(Schema.String),
   prompt: Schema.optional(Schema.String),
@@ -17,6 +28,10 @@ const Parameters = Schema.Struct({
   background: Schema.optional(Schema.Boolean).annotate({
     description:
       "Run asynchronously and continue your own exploration. New progress and completion are injected automatically. Do not sleep, poll or resend.",
+  }),
+  uid: Schema.optional(Schema.String).annotate({
+    description:
+      "For recovery action=send, the send button uid observed with browser_read. The program validates the original prompt, model and single-send boundary.",
   }),
 })
 
@@ -57,6 +72,7 @@ export const GptProConsultTool = Tool.define(
             error: job.error,
             text: job.text,
             background: job.background === true,
+            recovery: job.recovery,
           })
           log.info("gpt-pro command", { action, sessionID: ctx.sessionID, consultationID: params.consultation_id })
           let job = yield* browser.gptPro(owner, {
@@ -65,6 +81,7 @@ export const GptProConsultTool = Tool.define(
             prompt: params.prompt,
             requestID: ctx.callID ? `${ctx.sessionID}:${ctx.callID}` : undefined,
             background: params.background,
+            uid: params.uid,
           })
           active = { owner, id: job.id, background: job.background === true }
           const shouldWait =
@@ -74,6 +91,7 @@ export const GptProConsultTool = Tool.define(
           while (
             shouldWait &&
             !job.background &&
+            !job.recovery &&
             (!gptProTerminal(job.phase) || job.phase === "paused") &&
             Date.now() < deadline
           ) {
@@ -96,16 +114,31 @@ export const GptProConsultTool = Tool.define(
             model: job.model,
             error: job.error,
             background: job.background === true,
+            recovery: job.recovery,
+            ...(job.recovery
+              ? { managed_prompt: job.prompt, send_attempted: job.sendAttempted === true || job.submitted }
+              : {}),
             ...(job.phase === "completed"
               ? { text: job.text, html: job.html }
               : {
                   partial_text: job.text,
-                  instruction: job.background
-                    ? "The consultation is running independently. Progress and completion are injected automatically. Continue your own exploration; do not sleep, poll or resend. Partial output is not final."
+                  instruction: job.recovery
+                    ? `The fixed flow failed at ${job.recovery.stage}. Use the existing browser_* tools with consultation_id=${job.id} to inspect and repair this consultation's page, then resume this same ID. Never create a replacement or resend an attempted question. The program owns managed prompt submission and tracking. ${job.recovery.needsHuman ? "Human browser verification is required; do not automate the challenge." : "You may use action=send after verifying the exact managed prompt and GPT-6 Pro; send is guarded against duplicates."}`
                     : gptProTerminal(job.phase) && job.phase !== "paused"
                       ? "The consultation did not complete. Report its error, do not claim an answer, and do not automatically resubmit. Resolve browser verification, login or network access before a new explicit consultation."
-                      : "Use status with consultation_id to wait or read. Do not resubmit. Paused/partial output is not a final answer.",
+                      : job.background && job.phase !== "paused"
+                        ? "The consultation is running independently. Progress and completion are injected automatically. Continue your own exploration; do not sleep, poll or resend. Partial output is not final."
+                        : "Use status with consultation_id to wait or read. Do not resubmit. Paused/partial output is not a final answer.",
                 }),
+          })
+          log.info("gpt-pro command result", {
+            action,
+            sessionID: ctx.sessionID,
+            consultationID: job.id,
+            phase: job.phase,
+            background: job.background === true,
+            verifiedModel: job.model,
+            hasError: !!job.error,
           })
           return { title: "GPT-6 Pro", output, metadata: metadata(job) }
         }).pipe(

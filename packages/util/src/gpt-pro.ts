@@ -55,13 +55,29 @@ export type GptProAction =
   | "resume"
   | "intervene"
   | "background"
+  | "send"
 export type GptProCommand = {
   action?: GptProAction
   id?: string
   prompt?: string
   requestID?: string
   background?: boolean
+  uid?: string
 }
+export type GptProRecovery = {
+  stage: "open" | "ready" | "model" | "compose" | "submit" | "track"
+  reason: string
+  needsHuman?: boolean
+}
+export type GptProBrowserCommand =
+  | "state"
+  | "snapshot"
+  | "screenshot"
+  | "navigate"
+  | "click"
+  | "type"
+  | "scroll"
+  | "close"
 export type GptProNotification = {
   id: string
   consultationID: string
@@ -75,6 +91,7 @@ export type GptProNotification = {
   text: string
   truncated: boolean
   error?: string
+  recovery?: GptProRecovery
 }
 export type GptProPhase =
   | "queued"
@@ -99,6 +116,9 @@ export type GptProJob = {
   createdAt: number
   updatedAt: number
   submitted: boolean
+  sendAttempted?: boolean
+  recovery?: GptProRecovery
+  resumeCurrentPage?: boolean
   userID?: string
   userCount?: number
   model?: string

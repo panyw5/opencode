@@ -8,7 +8,7 @@ export function collectGptProNotification(
   now: number,
   intervalMs: number,
 ): GptProNotification | undefined {
-  if (!job.background) return
+  if (!job.background && !(job.recovery && job.owner.includes("\n"))) return
   const alert = alertPhases.has(job.phase)
   const text = job.text ?? ""
   if (alert) {
@@ -35,6 +35,7 @@ export function collectGptProNotification(
     text: content.slice(0, LIMIT),
     truncated: content.length > LIMIT,
     error: job.error,
+    recovery: job.recovery,
   }
   job.notificationSequence = sequence
   job.notificationAt = now

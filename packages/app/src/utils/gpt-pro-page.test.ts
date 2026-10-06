@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { inspectChatGptPage, CHATGPT_INSPECT_EXPRESSION } from "@opencode-ai/util/chatgpt-page"
+import {
+  inspectChatGptPage,
+  CHATGPT_INSPECT_EXPRESSION,
+  CHATGPT_ONBOARDING_DISMISS_EXPRESSION,
+} from "@opencode-ai/util/chatgpt-page"
 
 const originalRects = Element.prototype.getClientRects
 let originalUrl = ""
@@ -28,6 +32,59 @@ function conversation(html: string, complete = true) {
 }
 
 describe("ChatGPT reply HTML extraction", () => {
+  test("reads multiline ProseMirror paragraphs without layout-generated extra newlines", () => {
+    document.getElementById("prompt-textarea")!.innerHTML =
+      '<p>Research question?</p><p data-empty-paragraph="true"><br class="ProseMirror-trailingBreak"></p><p>Please cover:</p><p>1. First topic</p><p>2. Second topic</p><p data-empty-paragraph="true"><br class="ProseMirror-trailingBreak"></p><p>Use $F^\\dagger F$ and citations.</p>'
+    const expected =
+      "Research question?\n\nPlease cover:\n1. First topic\n2. Second topic\n\nUse $F^\\dagger F$ and citations."
+    expect(inspectChatGptPage(10000).draft).toBe(expected)
+    expect(window.eval(CHATGPT_INSPECT_EXPRESSION).draft).toBe(expected)
+  })
+  test("preserves inline line breaks and actual whitespace rather than collapsing them", () => {
+    document.getElementById("prompt-textarea")!.innerHTML =
+      '<p>First<br>Second<br class="ProseMirror-trailingBreak"></p><p>Indented:  x</p><p>Last</p>'
+    expect(inspectChatGptPage(10000).draft).toBe("First\nSecond\nIndented:  x\nLast")
+  })
+  test("uses textarea value rather than layout text for the legacy composer", () => {
+    document.getElementById("prompt-textarea")!.outerHTML = '<textarea id="prompt-textarea"></textarea>'
+    document.querySelector("textarea")!.value = "First\r\n\r\nSecond"
+    expect(inspectChatGptPage(10000).draft).toBe("First\n\nSecond")
+  })
+  test("matches the full submitted prompt without folded-message ellipsis and Show more controls", () => {
+    const prompt =
+      "Long question\n\n1. First topic\n2. Second topic\n\nDo not remove literal Show more from this sentence."
+    document.querySelector("main")!.innerHTML =
+      '<div data-message-author-role="user" data-message-id="u1"><div data-user-message-bubble><div data-search-result-target style="max-height:40px;overflow:hidden"><div class="whitespace-pre-wrap"></div></div><span aria-hidden="true">…</span><button data-markdown-copy="exclude">Show more</button></div></div>'
+    document.querySelector(".whitespace-pre-wrap")!.textContent = prompt
+    expect(inspectChatGptPage(10000).users).toEqual([{ id: "u1", text: prompt }])
+    expect(window.eval(CHATGPT_INSPECT_EXPRESSION).users).toEqual([{ id: "u1", text: prompt }])
+  })
+  test("excludes message actions even when there is no search-target wrapper", () => {
+    document.querySelector("main")!.innerHTML =
+      '<div data-message-author-role="user" data-message-id="u1"><div data-user-message-bubble>Question<button>Show less</button><span aria-hidden="true">…</span></div></div>'
+    expect(inspectChatGptPage(10000).users).toEqual([{ id: "u1", text: "Question" }])
+  })
+  test("finds only a feature introduction's explicit dismissal control", () => {
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      '<div role="dialog"><h2>Introducing new features</h2><button aria-label="Close"></button></div>',
+    )
+    const dismissal = window.eval(CHATGPT_ONBOARDING_DISMISS_EXPRESSION)
+    expect(dismissal.heading).toBe("Introducing new features")
+    expect(document.querySelector(dismissal.selector)?.getAttribute("aria-label")).toBe("Close")
+  })
+  test("does not dismiss authentication, consent, unknown or hidden dialogs", () => {
+    for (const body of [
+      '<div role="dialog"><h2>Introducing new features</h2><p>Sign in to continue</p><button>Close</button></div>',
+      '<div role="dialog"><h2>Permission required</h2><button>OK</button></div>',
+      '<div role="dialog"><h2>Something else</h2><button>Close</button></div>',
+      '<div role="dialog" aria-hidden="true"><h2>Introducing new features</h2><button>Close</button></div>',
+    ]) {
+      document.body.innerHTML = body
+      expect(window.eval(CHATGPT_ONBOARDING_DISMISS_EXPRESSION)).toBeNull()
+      expect(document.querySelector("[data-opencode-gpt-pro-dismiss]")).toBeNull()
+    }
+  })
   test("requires one visible enabled send control", () => {
     expect(inspectChatGptPage(10000).sendReady).toBe(false)
     document.body.insertAdjacentHTML("beforeend", '<button aria-label="Send prompt" disabled></button>')
@@ -74,6 +131,24 @@ describe("ChatGPT reply HTML extraction", () => {
   })
   test("a bare Pro trigger is not proof of GPT-6", () => {
     document.body.innerHTML = '<button aria-label="Select ChatGPT model">Pro</button><main></main>'
+    expect(inspectChatGptPage(10000).targetModel).toBe(false)
+  })
+  test("recognizes the live view-track structure while the trigger says Thinking effort", () => {
+    document.body.innerHTML =
+      '<button aria-label="Select ChatGPT model" aria-controls="model-menu" data-selected-reasoning-effort="medium">Thinking effort</button><main></main><div role="menu" id="model-menu"><div aria-hidden="true" inert><div data-model-picker-view-toggle>5.5 Pro</div></div><div aria-hidden="false"><div data-model-picker-view-toggle>6\nPro</div></div></div>'
+    expect(inspectChatGptPage(10000).model).toBe("GPT-6 Pro")
+    expect(window.eval(CHATGPT_INSPECT_EXPRESSION).targetModel).toBe(true)
+    document.getElementById("model-menu")!.remove()
+    document.querySelector("button")!.textContent = "Pro"
+    expect(inspectChatGptPage(10000).targetModel).toBe(true)
+  })
+  test("does not verify hidden Pro rows or ambiguous visible rows", () => {
+    document.body.innerHTML =
+      '<button aria-label="Select ChatGPT model" aria-controls="model-menu">Thinking effort</button><main></main><div role="menu" id="model-menu"><div aria-hidden="true"><div data-model-picker-view-toggle>6 Pro</div></div><div data-model-picker-view-toggle>6 High</div></div>'
+    expect(inspectChatGptPage(10000).targetModel).toBe(false)
+    document
+      .getElementById("model-menu")!
+      .insertAdjacentHTML("beforeend", "<div data-model-picker-view-toggle>6 Pro</div>")
     expect(inspectChatGptPage(10000).targetModel).toBe(false)
   })
   test("re-associates the sole visible model picker while aria-controls is being replaced", () => {

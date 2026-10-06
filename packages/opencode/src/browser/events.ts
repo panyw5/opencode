@@ -50,5 +50,12 @@ export const GptProNotificationReceived = BusEvent.define(
     text: Schema.String,
     truncated: Schema.Boolean,
     error: Schema.optional(Schema.String),
+    recovery: Schema.optional(
+      Schema.Struct({
+        stage: Schema.Literals(["open", "ready", "model", "compose", "submit", "track"]),
+        reason: Schema.String,
+        needsHuman: Schema.optional(Schema.Boolean),
+      }),
+    ),
   }),
 )

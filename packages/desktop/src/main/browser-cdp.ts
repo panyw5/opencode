@@ -209,12 +209,28 @@ export class BrowserCdp {
         nativeVirtualKeyCode: 27,
       })
   }
-  async clickSelector(selector: string) {
+  async pressArrowRight() {
+    await this.ensureAttached()
+    this.wc.focus()
+    for (const type of ["rawKeyDown", "keyUp"])
+      await this.dbg.sendCommand("Input.dispatchKeyEvent", {
+        type,
+        key: "ArrowRight",
+        code: "ArrowRight",
+        windowsVirtualKeyCode: 39,
+        nativeVirtualKeyCode: 39,
+      })
+  }
+  async clickSelector(selector: string, beforeDispatch?: () => Promise<void>) {
     const point = await this.evaluate<{ x: number; y: number }>(`(() => {
       const el=[...document.querySelectorAll(${JSON.stringify(selector)})].filter(e=>e.getClientRects().length&&!e.closest('[inert],[aria-hidden="true"]')&&getComputedStyle(e).visibility!=='hidden').at(-1)
       if(!el) throw new Error('Control not found')
-      el.scrollIntoView({block:'center'}); const r=el.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}
+      el.scrollIntoView({block:'center'}); const r=el.getBoundingClientRect(); const point={x:r.x+r.width/2,y:r.y+r.height/2}
+      const hit=document.elementFromPoint(point.x,point.y)
+      if(!hit||!el.contains(hit)) throw new Error('Control is covered by another element; no click dispatched')
+      return point
     })()`)
+    await beforeDispatch?.()
     await this.dbg.sendCommand("Input.dispatchMouseEvent", {
       type: "mouseMoved",
       x: point.x,
@@ -309,10 +325,35 @@ export class BrowserCdp {
   }
 
   /** Resolve the click point for an AX uid and dispatch a trusted CDP click. */
-  async click(uid: string) {
-    const point = await this.resolveUidCenter(uid)
+  async click(uid: string, position?: { x: number; y: number }, beforeDispatch?: () => Promise<void>) {
+    if (
+      position &&
+      (![position.x, position.y].every(Number.isFinite) ||
+        position.x < 0 ||
+        position.x > 1 ||
+        position.y < 0 ||
+        position.y > 1)
+    )
+      throw new Error("Click position must be inside the element (0..1)")
+    const point = await this.resolveUidCenter(uid, position)
     if (!point) throw new Error(`element not found for uid ${uid} (page may have navigated; take a new snapshot)`)
     await this.ensureAttached()
+    if (beforeDispatch) {
+      const backendNodeId = Number.parseInt(uid.slice(1), 10)
+      const resolved = (await this.dbg.sendCommand("DOM.resolveNode", { backendNodeId })) as {
+        object?: { objectId?: string }
+      }
+      if (!resolved.object?.objectId) throw new Error("Control disappeared before submission; no click dispatched")
+      const hit = (await this.dbg.sendCommand("Runtime.callFunctionOn", {
+        objectId: resolved.object.objectId,
+        functionDeclaration:
+          "function(point) { return this.contains(document.elementFromPoint(point.x,point.y)) && !this.closest('[disabled],[aria-disabled=\"true\"],[inert]') }",
+        arguments: [{ value: point }],
+        returnByValue: true,
+      })) as { result?: { value?: boolean } }
+      if (hit.result?.value !== true) throw new Error("Control is disabled or covered; no click dispatched")
+      await beforeDispatch()
+    }
     const dbg = this.dbg
     await dbg.sendCommand("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y, button: "none" })
     for (const type of ["mousePressed", "mouseReleased"] as const) {
@@ -366,7 +407,16 @@ export class BrowserCdp {
       await this.dbg.sendCommand("Runtime.evaluate", {
         expression: `(() => {
           const el = document.activeElement
-          if (!el || typeof el.value !== "string") return
+          if (!el) return
+          if (el.isContentEditable) {
+            const selection = window.getSelection()
+            const range = document.createRange()
+            range.selectNodeContents(el)
+            selection.removeAllRanges()
+            selection.addRange(range)
+            return
+          }
+          if (typeof el.value !== "string") return
           const setter =
             Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set ??
             Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set
@@ -376,6 +426,16 @@ export class BrowserCdp {
           el.dispatchEvent(new Event("change", { bubbles: true }))
         })()`,
       })
+      const editable = await this.evaluate<boolean>("document.activeElement?.isContentEditable === true")
+      if (editable)
+        for (const type of ["rawKeyDown", "keyUp"])
+          await this.dbg.sendCommand("Input.dispatchKeyEvent", {
+            type,
+            key: "Backspace",
+            code: "Backspace",
+            windowsVirtualKeyCode: 8,
+            nativeVirtualKeyCode: 8,
+          })
     }
     await this.dbg.sendCommand("Input.insertText", { text })
     if (opts?.submit) {
@@ -455,7 +515,10 @@ export class BrowserCdp {
     return { url: this.wc.getURL(), title: this.wc.getTitle() }
   }
 
-  private async resolveUidCenter(uid: string): Promise<{ x: number; y: number } | undefined> {
+  private async resolveUidCenter(
+    uid: string,
+    position?: { x: number; y: number },
+  ): Promise<{ x: number; y: number } | undefined> {
     await this.ensureAttached()
     if (!this.domEnabled) {
       await this.dbg.sendCommand("DOM.enable")
@@ -472,13 +535,30 @@ export class BrowserCdp {
       // content quad: [x1,y1, x2,y2, x3,y3, x4,y4] in CSS pixels
       const xs = [content[0], content[2], content[4], content[6]]
       const ys = [content[1], content[3], content[5], content[7]]
-      const x = (Math.min(...xs) + Math.max(...xs)) / 2
-      const y = (Math.min(...ys) + Math.max(...ys)) / 2
+      const x = Math.min(...xs) + (Math.max(...xs) - Math.min(...xs)) * (position?.x ?? 0.5)
+      const y = Math.min(...ys) + (Math.max(...ys) - Math.min(...ys)) * (position?.y ?? 0.5)
       return { x, y }
     } catch (error) {
       log("click", "getBoxModel failed", { uid, error: String(error) })
       return undefined
     }
+  }
+  async matches(uid: string, selector: string): Promise<boolean> {
+    await this.ensureAttached()
+    const backendNodeId = uid.startsWith("n") ? Number.parseInt(uid.slice(1), 10) : Number.NaN
+    if (!Number.isFinite(backendNodeId)) throw new Error("Invalid element uid; take a new browser_read snapshot")
+    const resolved = (await this.dbg.sendCommand("DOM.resolveNode", { backendNodeId })) as {
+      object?: { objectId?: string }
+    }
+    if (!resolved.object?.objectId) throw new Error("Element no longer exists; take a new browser_read snapshot")
+    const result = (await this.dbg.sendCommand("Runtime.callFunctionOn", {
+      objectId: resolved.object.objectId,
+      functionDeclaration: "function(selector) { return !!this.closest(selector) }",
+      arguments: [{ value: selector }],
+      returnByValue: true,
+    })) as { result?: { value?: boolean }; exceptionDetails?: unknown }
+    if (result.exceptionDetails) throw new Error("Element inspection failed")
+    return result.result?.value === true
   }
 
   close() {

@@ -25,6 +25,29 @@ const it = testEffect(
 )
 
 describe("background Pro inbox delivery", () => {
+  it.instance("recovery notifications tell the parent to reuse scoped browser tools instead of resubmitting", () =>
+    Effect.gen(function* () {
+      const text = notificationText({
+        id: "gpt_recover:notification:1",
+        consultationID: "gpt_recover",
+        owner: "/repo\nses_parent",
+        phase: "paused",
+        revision: 0,
+        at: 1,
+        url: "https://chatgpt.com/",
+        kind: "state",
+        format: "snapshot",
+        text: "",
+        truncated: false,
+        recovery: { stage: "compose", reason: "Unknown overlay" },
+      })
+      expect(text).toContain("FIXED FLOW NEEDS AGENT RECOVERY")
+      expect(text).toContain("consultation_id=gpt_recover")
+      expect(text).toContain("browser_read/browser_screenshot/browser_click")
+      expect(text).toContain("action=resume")
+      expect(text).toContain("Do not create a new consultation or resend")
+    }),
+  )
   it.instance("durably admits notifications before acknowledgement and deduplicates replay", () =>
     Effect.gen(function* () {
       const service = yield* BackgroundGptPro.Service

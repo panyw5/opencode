@@ -51,7 +51,8 @@ function fixture(
       fills++
       page.draft = prompt
     },
-    submit: async () => {
+    submit: async (beforeDispatch) => {
+      await beforeDispatch?.()
       submits++
       page.users.push({ id: `user-${submits}`, text: page.draft })
       page.draft = ""
@@ -64,6 +65,7 @@ function fixture(
       await options.stop?.()
       page.generating = false
     },
+    element: async (uid) => ({ composer: uid === "composer", send: uid === "send" }),
   }
   const logs: string[] = []
   const controller = new GptProController(
@@ -98,6 +100,69 @@ function fixture(
 }
 
 describe("gpt-pro consultation control", () => {
+  test("explicit resume recovers a submitted turn's URL and ID without resending", async () => {
+    const job: GptProJob = {
+      id: "gpt_receipt",
+      owner: "/repo\nses_parent",
+      requestID: "receipt",
+      phase: "paused",
+      prompt: "Long question\n\nSecond paragraph",
+      url: GPT_PRO_URL,
+      createdAt: 1,
+      updatedAt: 1,
+      submitted: true,
+      model: "GPT-6 Pro",
+      userCount: 0,
+      revision: 0,
+      background: true,
+    }
+    const f = fixture({ loaded: [job] })
+    try {
+      f.page.url = GPT_PRO_URL + "c/original"
+      f.page.users = [{ id: "original-user", text: job.prompt }]
+      f.finish("Full advisor answer")
+      await f.controller.command({ action: "resume", id: job.id }, job.owner)
+      await until(() => f.controller.list()[0].phase === "completed")
+      const result = await f.controller.command({ action: "read", id: job.id }, job.owner)
+      expect(result.url).toBe(GPT_PRO_URL + "c/original")
+      expect(result.userID).toBe("original-user")
+      expect(result.text).toBe("Full advisor answer")
+      expect(f.counts()).toEqual({ submits: 0, stops: 0, fills: 0 })
+      expect(f.logs.join("\n")).toContain("no question resent")
+      expect(f.controller.notifications("/repo").some((e) => e.kind === "completed")).toBe(true)
+    } finally {
+      f.controller.dispose()
+    }
+  })
+  test("resume never acknowledges a different question as the submitted turn", async () => {
+    const job: GptProJob = {
+      id: "gpt_receipt",
+      owner: "/repo\nses_parent",
+      requestID: "receipt",
+      phase: "paused",
+      prompt: "Original question",
+      url: GPT_PRO_URL,
+      createdAt: 1,
+      updatedAt: 1,
+      submitted: true,
+      model: "GPT-6 Pro",
+      userCount: 0,
+      revision: 0,
+    }
+    const f = fixture({ loaded: [job] })
+    try {
+      f.page.url = GPT_PRO_URL + "c/unrelated"
+      f.page.users = [{ id: "unrelated-user", text: "Different question" }]
+      await f.controller.command({ action: "resume", id: job.id }, job.owner)
+      await until(() => f.controller.list()[0].phase === "paused")
+      const result = await f.controller.command({ action: "read", id: job.id }, job.owner)
+      expect(result.userID).toBeUndefined()
+      expect(result.url).toBe(GPT_PRO_URL)
+      expect(f.counts()).toEqual({ submits: 0, stops: 0, fills: 0 })
+    } finally {
+      f.controller.dispose()
+    }
+  })
   test("promotion retains the original question and completion outbox survives until acknowledged", async () => {
     const f = fixture()
     try {
@@ -159,14 +224,15 @@ describe("gpt-pro consultation control", () => {
       f.controller.dispose()
     }
   })
-  test("a website rejection fails once and releases the browser instead of waiting forever", async () => {
+  test("a website rejection hands off once and reserves the original browser without resending", async () => {
     const f = fixture()
     try {
       const job = await f.controller.command({ prompt: "Question", requestID: "rejected" }, "main")
       await until(() => f.controller.list()[0].phase === "generating")
       f.page.error = { kind: "request", message: "ChatGPT rejected request (HTTP 403)" }
-      await until(() => f.controller.list()[0].phase === "failed")
-      await until(() => !f.controller.busy())
+      await until(() => !!f.controller.list()[0].recovery)
+      expect(f.controller.busy()).toBe(true)
+      expect(f.controller.list()[0].recovery?.stage).toBe("track")
       expect(f.counts().submits).toBe(1)
       expect((await f.controller.command({ prompt: "Question", requestID: "rejected" }, "main")).id).toBe(job.id)
       expect(f.counts().submits).toBe(1)
@@ -178,12 +244,13 @@ describe("gpt-pro consultation control", () => {
   test("verification failures do not fill or send a question", async () => {
     const f = fixture({
       verify: async () => {
-        throw new GptProPageError("Browser verification required")
+        throw new GptProPageError("Browser verification required", "verification")
       },
     })
     try {
       await f.controller.command({ prompt: "Question" }, "main")
-      await until(() => f.controller.list()[0].phase === "failed")
+      await until(() => !!f.controller.list()[0].recovery)
+      expect(f.controller.list()[0].recovery?.needsHuman).toBe(true)
       expect(f.counts().fills).toBe(0)
       expect(f.counts().submits).toBe(0)
     } finally {
@@ -273,7 +340,7 @@ describe("gpt-pro consultation control", () => {
       f.controller.dispose()
     }
   })
-  test("a wrong model fails without dispatching a prompt", async () => {
+  test("a wrong model hands off without dispatching a prompt", async () => {
     const f = fixture({
       verify: async () => {
         throw new Error("Wrong model")
@@ -281,8 +348,158 @@ describe("gpt-pro consultation control", () => {
     })
     try {
       await f.controller.command({ prompt: "Original" }, "main")
-      await until(() => f.controller.list()[0].phase === "failed")
+      await until(() => !!f.controller.list()[0].recovery)
       expect(f.counts().submits).toBe(0)
+    } finally {
+      f.controller.dispose()
+    }
+  })
+  test("an agent repairs a fixed-flow failure with the same browser lease and resumes one submission", async () => {
+    let repaired = false
+    const f = fixture({
+      verify: async () => {
+        if (!repaired) throw Error("Unknown model overlay")
+        return structuredClone(f.page)
+      },
+    })
+    try {
+      const owner = "/repo\nses_parent"
+      const job = await f.controller.command({ prompt: "Question", background: true }, owner)
+      await until(() => !!f.controller.list()[0].recovery)
+      expect(f.controller.notifications("/repo")[0].recovery?.stage).toBe("model")
+      const calls: string[] = []
+      const execute = async (partition: string) => {
+        calls.push(partition)
+        repaired = true
+        return { state: { url: f.page.url } }
+      }
+      await expect(
+        f.controller.browserCommand("/other\nses_parent", job.id, "click", { uid: "dismiss" }, execute),
+      ).rejects.toThrow("not found")
+      await expect(f.controller.browserCommand("/repo\nses_other", job.id, "snapshot", {}, execute)).rejects.toThrow(
+        "not found",
+      )
+      expect(calls).toHaveLength(0)
+      await f.controller.browserCommand(owner, job.id, "click", { uid: "dismiss" }, execute)
+      expect(calls).toEqual(["persist:consult-gpt-pro"])
+      await f.controller.command({ action: "resume", id: job.id }, owner)
+      await until(() => f.page.generating)
+      f.finish("Recovered answer")
+      await until(() => f.controller.list()[0].phase === "completed")
+      expect(f.counts().submits).toBe(1)
+      expect(
+        f.controller.notifications("/repo").some((e) => e.kind === "completed" && e.text === "Recovered answer"),
+      ).toBe(true)
+      await expect(f.controller.browserCommand(owner, job.id, "click", { uid: "dismiss" }, execute)).rejects.toThrow(
+        "only for the active",
+      )
+    } finally {
+      f.controller.dispose()
+    }
+  })
+  test("read-only inspection remains available after recovery is resumed while mutations stay gated", async () => {
+    let repaired = false
+    const f = fixture({
+      verify: async () => {
+        if (!repaired) throw Error("Temporary error")
+        return structuredClone(f.page)
+      },
+    })
+    try {
+      const owner = "/repo\nses_reader"
+      const job = await f.controller.command({ prompt: "Question", background: false }, owner)
+      await until(() => !!f.controller.list()[0].recovery)
+      expect(f.controller.list()[0].background).toBe(true)
+      repaired = true
+      await f.controller.command({ action: "resume", id: job.id }, owner)
+      await until(() => f.page.generating)
+      const read = async () => ({ snapshot: { title: "Chat" } })
+      expect(await f.controller.browserCommand(owner, job.id, "snapshot", {}, read)).toEqual({
+        snapshot: { title: "Chat" },
+      })
+      await expect(f.controller.browserCommand(owner, job.id, "click", { uid: "dismiss" }, read)).rejects.toThrow(
+        "only for the active",
+      )
+      f.finish("Recovered foreground answer")
+      await until(() => f.controller.list()[0].phase === "completed")
+      expect(await f.controller.browserCommand(owner, job.id, "snapshot", {}, read)).toEqual({
+        snapshot: { title: "Chat" },
+      })
+      expect(
+        f.controller
+          .notifications("/repo")
+          .some((e) => e.kind === "completed" && e.text === "Recovered foreground answer"),
+      ).toBe(true)
+      const other = await f.controller.command({ prompt: "Other" }, "/other\nses_other")
+      await until(() => f.controller.list().find((j) => j.id === other.id)?.phase === "generating")
+      await expect(f.controller.browserCommand(owner, job.id, "snapshot", {}, read)).rejects.toThrow("does not own")
+    } finally {
+      f.controller.dispose()
+    }
+  })
+  test("managed recovery send accepts an existing exact draft, tracks it, and rejects a second send", async () => {
+    const f = fixture({
+      verify: async () => {
+        throw Error("Model picker overlay")
+      },
+    })
+    try {
+      const owner = "/repo\nses_parent"
+      const job = await f.controller.command({ prompt: "Original prompt" }, owner)
+      await until(() => !!f.controller.list()[0].recovery)
+      f.page.draft = "Original prompt"
+      await expect(f.controller.command({ action: "send", id: job.id, uid: "dismiss" }, owner)).rejects.toThrow(
+        "not a send control",
+      )
+      await f.controller.command({ action: "send", id: job.id, uid: "send" }, owner)
+      await expect(f.controller.command({ action: "send", id: job.id, uid: "send" }, owner)).rejects.toThrow(
+        "already attempted",
+      )
+      await expect(
+        f.controller.browserCommand(owner, job.id, "type", { uid: "composer", text: "Replacement" }, async () => ({})),
+      ).rejects.toThrow("only the original")
+      await f.controller.command({ action: "resume", id: job.id }, owner)
+      f.finish("Original reply")
+      await until(() => f.controller.list()[0].phase === "completed")
+      expect(f.counts().submits).toBe(1)
+      expect(f.counts().fills).toBe(0)
+    } finally {
+      f.controller.dispose()
+    }
+  })
+  test("recovery blocks Enter submission, human-verification clicks and unrelated drafts", async () => {
+    const f = fixture({
+      verify: async () => {
+        throw Error("Overlay")
+      },
+    })
+    try {
+      const owner = "/repo\nses_parent"
+      const job = await f.controller.command({ prompt: "Original prompt" }, owner)
+      await until(() => !!f.controller.list()[0].recovery)
+      let dispatched = 0
+      const execute = async () => {
+        dispatched++
+        return {}
+      }
+      await expect(
+        f.controller.browserCommand(
+          owner,
+          job.id,
+          "type",
+          { uid: "composer", text: job.prompt, submit: true },
+          execute,
+        ),
+      ).rejects.toThrow("not Enter")
+      f.page.draft = "Manual draft"
+      await expect(
+        f.controller.browserCommand(owner, job.id, "type", { uid: "composer", text: job.prompt }, execute),
+      ).rejects.toThrow("unrelated drafts")
+      f.page.error = { kind: "verification", message: "Human verification" }
+      await expect(f.controller.browserCommand(owner, job.id, "click", { uid: "check" }, execute)).rejects.toThrow(
+        "Human browser verification",
+      )
+      expect(dispatched).toBe(0)
     } finally {
       f.controller.dispose()
     }

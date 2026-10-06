@@ -1,7 +1,13 @@
 import { Context, Effect, Layer, Schema } from "effect"
 import type { Duration } from "effect"
 import { BrowserBridge } from "./bridge"
-import type { GptProCommand, GptProJob, GptProNotification } from "@opencode-ai/util/gpt-pro"
+import {
+  GPT_PRO_PARTITION,
+  type GptProCommand,
+  type GptProJob,
+  type GptProNotification,
+} from "@opencode-ai/util/gpt-pro"
+import { InstanceState } from "@/effect/instance-state"
 
 export * as Browser from "./index"
 
@@ -9,7 +15,8 @@ export * as Browser from "./index"
 // bridge directly: this module owns the session -> agent partition mapping and
 // translates wire-protocol results into typed values. The desktop side defaults
 // missing partitions to the user view, so every command here passes an explicit
-// per-session agent partition (`agent-browser-<sessionID>`, ephemeral).
+// per-session agent partition (`agent-browser-<sessionID>`, ephemeral). Recovery
+// targets instead go through an owner-scoped GPT-Pro broker, never arbitrary partitions.
 
 // Canonical agent partition naming, mirrored in
 // packages/desktop/src/main/browser.ts (owner of the views) and referenced
@@ -55,7 +62,7 @@ export type Snapshot = typeof Snapshot.Type
 
 export type BrowserError = NotConnectedError | BrowserBridge.TimeoutError | BrowserBridge.CommandFailedError
 
-const mapError = (error: BrowserBridge.CommandError): BrowserError =>
+const mapError = (error: BrowserBridge.CommandError | BrowserError): BrowserError =>
   error._tag === "BrowserBridge.AbsentError" ? new NotConnectedError() : error
 
 export const Screenshot = Schema.Struct({
@@ -63,6 +70,11 @@ export const Screenshot = Schema.Struct({
   mime: Schema.String,
 })
 export type Screenshot = typeof Screenshot.Type
+export type Target = { readonly consultationID?: string }
+export const ConsultationParameter = Schema.optional(Schema.String).annotate({
+  description:
+    "GPT-Pro consultation_id. Targets only that owned consultation's browser. Read-only inspection remains available during tracking; changes require an active recovery handoff.",
+})
 
 export interface Interface {
   readonly gptPro: (owner: string, input: GptProCommand) => Effect.Effect<GptProJob, BrowserError>
@@ -71,32 +83,35 @@ export interface Interface {
   /** Ephemeral partition backing this session's browser view. */
   readonly partition: (sessionID: string) => string
   /** Current view state, or undefined when this session has no open page. */
-  readonly state: (sessionID: string) => Effect.Effect<ViewState | undefined, BrowserError>
+  readonly state: (sessionID: string, target?: Target) => Effect.Effect<ViewState | undefined, BrowserError>
   /** Current view state, failing with NotOpenError when no page is open. */
-  readonly requireState: (sessionID: string) => Effect.Effect<ViewState, BrowserError | NotOpenError>
+  readonly requireState: (sessionID: string, target?: Target) => Effect.Effect<ViewState, BrowserError | NotOpenError>
   readonly navigate: (
     sessionID: string,
     url: string,
-    options?: { readonly timeout?: Duration.Input },
+    options?: Target & { readonly timeout?: Duration.Input },
   ) => Effect.Effect<ViewState, BrowserError>
   readonly snapshot: (
     sessionID: string,
-    options?: { readonly timeout?: Duration.Input },
+    options?: Target & { readonly timeout?: Duration.Input },
   ) => Effect.Effect<Snapshot, BrowserError>
   readonly screenshot: (
     sessionID: string,
-    options?: { readonly fullPage?: boolean; readonly timeout?: Duration.Input },
+    options?: Target & { readonly fullPage?: boolean; readonly timeout?: Duration.Input },
   ) => Effect.Effect<Screenshot, BrowserError>
   readonly click: (
     sessionID: string,
     uid: string,
-    options?: { readonly timeout?: Duration.Input },
+    options?: Target & {
+      readonly timeout?: Duration.Input
+      readonly position?: { readonly x: number; readonly y: number }
+    },
   ) => Effect.Effect<ViewState | undefined, BrowserError>
   readonly type: (
     sessionID: string,
     uid: string,
     text: string,
-    options?: { readonly clear?: boolean; readonly submit?: boolean; readonly timeout?: Duration.Input },
+    options?: Target & { readonly clear?: boolean; readonly submit?: boolean; readonly timeout?: Duration.Input },
   ) => Effect.Effect<ViewState | undefined, BrowserError>
   /**
    * Scroll the agent view: with `uid`, bring that element into view; otherwise
@@ -104,7 +119,7 @@ export interface Interface {
    */
   readonly scroll: (
     sessionID: string,
-    options?: {
+    options?: Target & {
       readonly uid?: string
       readonly direction?: "up" | "down"
       readonly amount?: number
@@ -116,12 +131,15 @@ export interface Interface {
    * this is incremental per session: each call returns entries newer than the
    * previous call's and advances the cursor.
    */
-  readonly console: (sessionID: string, options?: { readonly since?: number }) => Effect.Effect<ConsoleEntry[], never>
+  readonly console: (
+    sessionID: string,
+    options?: Target & { readonly since?: number },
+  ) => Effect.Effect<ConsoleEntry[], BrowserError>
   /**
    * Close this session's embedded browser view, freeing its resources. The
    * agent partition is ephemeral — a later navigate reopens it fresh.
    */
-  readonly close: (sessionID: string) => Effect.Effect<void, BrowserError>
+  readonly close: (sessionID: string, target?: Target) => Effect.Effect<void, BrowserError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Browser") {}
@@ -166,6 +184,27 @@ export const layer = Layer.effect(
         Effect.mapError(mapError),
       )
 
+    const targetCommand = <A>(
+      sessionID: string,
+      name: string,
+      args: Record<string, unknown>,
+      decode: (result: unknown) => A,
+      timeout: Duration.Input,
+      target?: Target,
+    ): Effect.Effect<A, BrowserError> => {
+      if (!target?.consultationID)
+        return command(name, { ...args, partition: agentPartition(sessionID) }, decode, timeout)
+      return Effect.gen(function* () {
+        const { directory } = yield* InstanceState.context
+        return yield* command(
+          "gpt-pro-browser",
+          { owner: `${directory}\n${sessionID}`, id: target.consultationID, name, args },
+          decode,
+          timeout,
+        )
+      })
+    }
+
     return Service.of({
       gptProNotifications: (directory) =>
         command(
@@ -198,6 +237,13 @@ export const layer = Layer.effect(
                   text: Schema.String,
                   truncated: Schema.Boolean,
                   error: Schema.optional(Schema.String),
+                  recovery: Schema.optional(
+                    Schema.Struct({
+                      stage: Schema.Literals(["open", "ready", "model", "compose", "submit", "track"]),
+                      reason: Schema.String,
+                      needsHuman: Schema.optional(Schema.Boolean),
+                    }),
+                  ),
                 }),
               ),
             )
@@ -220,8 +266,8 @@ export const layer = Layer.effect(
         ),
       partition: (sessionID) => agentPartition(sessionID),
 
-      state: (sessionID) =>
-        bridge.command("state", { partition: agentPartition(sessionID) }, { timeout: "10 seconds" }).pipe(
+      state: (sessionID, target) =>
+        targetCommand(sessionID, "state", {}, (result) => result as { state?: unknown }, "10 seconds", target).pipe(
           Effect.flatMap((result) => {
             const state = (result as { state?: unknown }).state
             if (!state) return Effect.succeed(undefined as ViewState | undefined)
@@ -230,8 +276,8 @@ export const layer = Layer.effect(
           Effect.mapError(mapError),
         ),
 
-      requireState: (sessionID) =>
-        bridge.command("state", { partition: agentPartition(sessionID) }, { timeout: "10 seconds" }).pipe(
+      requireState: (sessionID, target) =>
+        targetCommand(sessionID, "state", {}, (result) => result as { state?: unknown }, "10 seconds", target).pipe(
           Effect.flatMap((result): Effect.Effect<ViewState, BrowserError | NotOpenError> => {
             const state = (result as { state?: unknown }).state
             if (!state) return Effect.fail(new NotOpenError())
@@ -243,100 +289,130 @@ export const layer = Layer.effect(
         ),
 
       navigate: (sessionID, url, options) =>
-        command(
+        targetCommand(
+          sessionID,
           "navigate",
-          { url, partition: agentPartition(sessionID) },
+          { url },
           (result) => decodeState((result as { state: unknown }).state),
           options?.timeout ?? "60 seconds",
+          options,
         ),
 
       snapshot: (sessionID, options) =>
-        command(
+        targetCommand(
+          sessionID,
           "snapshot",
-          { partition: agentPartition(sessionID) },
+          {},
           (result) => decodeSnapshot((result as { snapshot: unknown }).snapshot),
           options?.timeout ?? "60 seconds",
+          options,
         ),
 
       screenshot: (sessionID, options) =>
-        command(
+        targetCommand(
+          sessionID,
           "screenshot",
-          { partition: agentPartition(sessionID), fullPage: options?.fullPage === true },
+          { fullPage: options?.fullPage === true },
           (result) => decodeScreenshot(result),
           options?.timeout ?? "30 seconds",
+          options,
         ),
 
       click: (sessionID, uid, options) =>
-        bridge
-          .command(
-            "click",
-            { uid, partition: agentPartition(sessionID) },
-            { timeout: options?.timeout ?? "30 seconds" },
-          )
-          .pipe(
-            Effect.flatMap((result) => {
-              const state = (result as { state?: unknown }).state
-              if (!state) return Effect.succeed(undefined as ViewState | undefined)
-              return decodeResult("click", decodeState, state)
-            }),
-            Effect.mapError(mapError),
-          ),
+        targetCommand(
+          sessionID,
+          "click",
+          { uid, ...(options?.position ? { position: options.position } : {}) },
+          (result) => result as { state?: unknown },
+          options?.timeout ?? "30 seconds",
+          options,
+        ).pipe(
+          Effect.flatMap((result) => {
+            const state = (result as { state?: unknown }).state
+            if (!state) return Effect.succeed(undefined as ViewState | undefined)
+            return decodeResult("click", decodeState, state)
+          }),
+          Effect.mapError(mapError),
+        ),
 
       type: (sessionID, uid, text, options) =>
-        bridge
-          .command(
-            "type",
-            {
-              uid,
-              text,
-              partition: agentPartition(sessionID),
-              clear: options?.clear !== false,
-              submit: options?.submit === true,
-            },
-            { timeout: options?.timeout ?? "30 seconds" },
-          )
-          .pipe(
-            Effect.flatMap((result) => {
-              const state = (result as { state?: unknown }).state
-              if (!state) return Effect.succeed(undefined as ViewState | undefined)
-              return decodeResult("type", decodeState, state)
-            }),
-            Effect.mapError(mapError),
-          ),
+        targetCommand(
+          sessionID,
+          "type",
+          {
+            uid,
+            text,
+            clear: options?.clear !== false,
+            submit: options?.submit === true,
+          },
+          (result) => result as { state?: unknown },
+          options?.timeout ?? "30 seconds",
+          options,
+        ).pipe(
+          Effect.flatMap((result) => {
+            const state = (result as { state?: unknown }).state
+            if (!state) return Effect.succeed(undefined as ViewState | undefined)
+            return decodeResult("type", decodeState, state)
+          }),
+          Effect.mapError(mapError),
+        ),
 
       scroll: (sessionID, options) =>
-        bridge
-          .command(
-            "scroll",
-            {
-              partition: agentPartition(sessionID),
-              uid: options?.uid,
-              direction: options?.direction,
-              amount: options?.amount,
-            },
-            { timeout: options?.timeout ?? "15 seconds" },
-          )
-          .pipe(
-            Effect.flatMap((result) => {
-              const state = (result as { state?: unknown }).state
-              if (!state) return Effect.succeed(undefined as ViewState | undefined)
-              return decodeResult("scroll", decodeState, state)
-            }),
-            Effect.mapError(mapError),
-          ),
+        targetCommand(
+          sessionID,
+          "scroll",
+          {
+            uid: options?.uid,
+            direction: options?.direction,
+            amount: options?.amount,
+          },
+          (result) => result as { state?: unknown },
+          options?.timeout ?? "15 seconds",
+          options,
+        ).pipe(
+          Effect.flatMap((result) => {
+            const state = (result as { state?: unknown }).state
+            if (!state) return Effect.succeed(undefined as ViewState | undefined)
+            return decodeResult("scroll", decodeState, state)
+          }),
+          Effect.mapError(mapError),
+        ),
 
       console: (sessionID, options) => {
-        const since = options?.since ?? lastConsoleAt.get(sessionID) ?? 0
-        return Effect.map(bridge.console(agentPartition(sessionID), since), (entries) => {
-          if (options?.since === undefined) {
-            const max = entries.reduce((acc, entry) => Math.max(acc, entry.at), since)
-            lastConsoleAt.set(sessionID, max)
-          }
-          return entries
-        })
+        const cursor = `${sessionID}:${options?.consultationID ?? "ordinary"}`
+        const since = options?.since ?? lastConsoleAt.get(cursor) ?? 0
+        const authorized: Effect.Effect<number, BrowserError> = options?.consultationID
+          ? targetCommand(
+              sessionID,
+              "state",
+              {},
+              (result) => {
+                const at = (result as { consultationCreatedAt?: number }).consultationCreatedAt
+                if (typeof at !== "number") throw new Error("Missing consultation console ownership boundary")
+                return at
+              },
+              "10 seconds",
+              options,
+            )
+          : Effect.succeed(0)
+        return authorized.pipe(
+          Effect.flatMap((earliest) =>
+            bridge.console(
+              options?.consultationID ? GPT_PRO_PARTITION : agentPartition(sessionID),
+              Math.max(since, earliest),
+            ),
+          ),
+          Effect.map((entries) => {
+            if (options?.since === undefined) {
+              const max = entries.reduce((acc, entry) => Math.max(acc, entry.at), since)
+              lastConsoleAt.set(cursor, max)
+            }
+            return entries
+          }),
+        )
       },
 
-      close: (sessionID) => command("close", { partition: agentPartition(sessionID) }, () => undefined, "10 seconds"),
+      close: (sessionID, target) => targetCommand(sessionID, "close", {}, () => undefined, "10 seconds", target),
     })
   }),
 )

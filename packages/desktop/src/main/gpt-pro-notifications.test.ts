@@ -18,6 +18,23 @@ const job = (): GptProJob => ({
 })
 
 describe("background Pro notification outbox", () => {
+  test("late foreground failures notify their owning model once, without foreground progress spam", () => {
+    const j = job()
+    j.background = false
+    j.phase = "paused"
+    j.recovery = { stage: "track", reason: "Page tracking failed" }
+    expect(collectGptProNotification(j, 1, 60000)).toMatchObject({ kind: "state", recovery: { stage: "track" } })
+    expect(collectGptProNotification(j, 2, 60000)).toBeUndefined()
+    j.recovery = undefined
+    j.phase = "completed"
+    expect(collectGptProNotification(j, 3, 60000)).toBeUndefined()
+    const human = job()
+    human.background = false
+    human.owner = "human"
+    human.phase = "paused"
+    human.recovery = { stage: "model", reason: "Picker" }
+    expect(collectGptProNotification(human, 1, 60000)).toBeUndefined()
+  })
   test("foreground, unchanged and empty answers do not emit periodic inputs", () => {
     const j = job()
     j.background = false

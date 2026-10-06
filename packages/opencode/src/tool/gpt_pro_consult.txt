@@ -14,4 +14,12 @@ Consult GPT-6 Pro on complicated tasks through the embedded ChatGPT Chat browser
   - `pause` suspends automation and result tracking without stopping ChatGPT generation
   - `resume` continues tracking WITHOUT resending
   - `intervene` stops generation and sends a follow-up in the same conversation.
+  - `send` submits the exact managed prompt during agent recovery; optional `uid` is the send button observed with browser_read. Never use this after a send attempt.
 - Always retain `consultation_id`
+
+# BROWSER RECOVERY
+The fixed flow runs first. If its result or background notification contains `recovery`, do not create another consultation. Use the existing browser_read, browser_screenshot, browser_click, browser_type, browser_scroll, browser_navigate and browser_console tools with `consultation_id` to operate only this owned ChatGPT page. Inspect before acting; preserve unrelated drafts and the original conversation.
+
+After repairing an overlay, navigation, focus or model selection, call action=resume with the same consultation_id. The program will continue prompt preparation, single submission, tracking and result injection. To restore the composer yourself, use only the exact `managed_prompt` returned by action=read, without submit=true. A send button click is centrally guarded; action=send is also available for a send control observed by the model.
+
+If `send_attempted` is true, never submit again. Inspect the original question and resume tracking. Login or human-verification challenges require the user; do not automate or bypass them.

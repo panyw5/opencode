@@ -9,6 +9,7 @@ import DESCRIPTION from "./browser_screenshot.txt"
 import { Browser } from "@/browser"
 
 const Parameters = Schema.Struct({
+  consultation_id: Browser.ConsultationParameter,
   fullPage: Schema.optional(
     Schema.Boolean.annotate({
       description: "Capture the entire scrollable page instead of just the visible viewport. Defaults to false.",
@@ -49,7 +50,8 @@ export const BrowserScreenshotTool = Tool.define(
       parameters: Parameters,
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
-          const state = yield* browser.requireState(ctx.sessionID)
+          const target = params.consultation_id ? { consultationID: params.consultation_id } : undefined
+          const state = yield* browser.requireState(ctx.sessionID, target)
           yield* ctx.ask({
             permission: "browser_screenshot",
             patterns: [state.url],
@@ -57,7 +59,7 @@ export const BrowserScreenshotTool = Tool.define(
             metadata: { action: "screenshot", url: state.url, fullPage: params.fullPage === true },
           })
 
-          const shot = yield* browser.screenshot(ctx.sessionID, { fullPage: params.fullPage === true })
+          const shot = yield* browser.screenshot(ctx.sessionID, { ...target, fullPage: params.fullPage === true })
           const saved = yield* saveScreenshotFile(shot.data).pipe(Effect.option)
           const filePath = saved._tag === "Some" ? saved.value : undefined
           return {

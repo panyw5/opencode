@@ -4,6 +4,7 @@ import DESCRIPTION from "./browser_console.txt"
 import { Browser } from "@/browser"
 
 const Parameters = Schema.Struct({
+  consultation_id: Browser.ConsultationParameter,
   all: Schema.optional(
     Schema.Boolean.annotate({
       description: "Return the full console buffer instead of only new entries since the last call.",
@@ -21,7 +22,8 @@ export const BrowserConsoleTool = Tool.define(
       parameters: Parameters,
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
-          const state = yield* browser.requireState(ctx.sessionID)
+          const target = params.consultation_id ? { consultationID: params.consultation_id } : undefined
+          const state = yield* browser.requireState(ctx.sessionID, target)
           yield* ctx.ask({
             permission: "browser_console",
             patterns: [state.url],
@@ -29,7 +31,7 @@ export const BrowserConsoleTool = Tool.define(
             metadata: { action: "console", url: state.url, all: params.all === true },
           })
 
-          const entries = yield* browser.console(ctx.sessionID, params.all ? { since: 0 } : undefined)
+          const entries = yield* browser.console(ctx.sessionID, { ...target, ...(params.all ? { since: 0 } : {}) })
           const errors = entries.filter((entry) => entry.level === "error")
           const warnings = entries.filter((entry) => entry.level === "warn")
           const others = entries.filter((entry) => entry.level !== "error" && entry.level !== "warn")
