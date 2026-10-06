@@ -18,6 +18,7 @@ import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
 import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
+import { useServer } from "@/context/server"
 import { getSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
@@ -65,6 +66,7 @@ export function FileTabContent(props: { tab: string }) {
   const prompt = usePrompt()
   const platform = usePlatform()
   const sdk = useSDK()
+  const server = useServer()
   const fileComponent = useFileComponent()
   const { sessionKey, tabs, view } = useSessionLayout()
   const activeFileTab = createSessionTabs({
@@ -177,7 +179,13 @@ export function FileTabContent(props: { tab: string }) {
       return
     }
 
-    void clipboard.writeText(text).then(
+    // The sidecar's preview text is trimmed; local desktop copies must preserve the original whitespace.
+    const source = server.isLocal() && platform.readLocalFile ? platform.readLocalFile(fullPath()!) : Promise.resolve(text)
+    void source.then((value) => {
+      if (value === null) throw new Error("Unable to read original file")
+      console.debug(`[file-preview] copy content resolved path=${target} chars=${value.length}`)
+      return clipboard.writeText(value)
+    }).then(
       () => {
         console.debug(`[file-preview] copied content path=${target}`)
         markCopied("content")

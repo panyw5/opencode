@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./desktop-menu": "./src/desktop-menu.ts",
+    "./browser/types": "./src/browser/types.ts",
     "./wsl/types": "./src/wsl/types.ts",
     "./ssh/types": "./src/ssh/types.ts",
     "./vite": "./vite.js",

@@ -282,32 +282,9 @@ export type FatalRendererError = {
   os?: string
 }
 
-export type BrowserBounds = { x: number; y: number; width: number; height: number }
-
-export type BrowserViewState = {
-  partition: string
-  url: string
-  title: string
-  loading: boolean
-  shared: boolean
-  /** View generation; increments when the partition's view is (re)created. */
-  epoch: number
-}
-
-export type BrowserAPI = {
-  getPresentation: () => Promise<{ id: number; state: BrowserViewState } | undefined>
-  acknowledgePresentation: (id: number) => Promise<void>
-  onPresented: (cb: (request: { id: number; state: BrowserViewState }) => void) => () => void
-  open: (partition: string, url: string) => Promise<BrowserViewState | undefined>
-  setBounds: (partition: string, bounds: BrowserBounds | null) => Promise<void>
-  setVisible: (partition: string, visible: boolean) => Promise<void>
-  close: (partition: string) => Promise<void>
-  navigate: (partition: string, action: "back" | "forward" | "reload") => Promise<void>
-  setShared: (partition: string, shared: boolean) => Promise<void>
-  getState: () => Promise<BrowserViewState[]>
-  onUpdated: (cb: (state: BrowserViewState) => void) => () => void
-  onClosed: (cb: (partition: string, epoch: number) => void) => () => void
-}
+export type BrowserBounds = import("@opencode-ai/app/browser/types").BrowserBounds
+export type BrowserViewState = import("@opencode-ai/app/browser/types").BrowserViewState
+export type BrowserAPI = import("@opencode-ai/app/browser/types").WindowBrowserApi
 
 export type ElectronAPI = {
   gptPro: import("@opencode-ai/util/gpt-pro").GptProAPI

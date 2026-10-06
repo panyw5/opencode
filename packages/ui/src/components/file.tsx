@@ -28,6 +28,7 @@ import {
   onMount,
   Show,
   splitProps,
+  untrack,
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useI18n } from "../context/i18n"
@@ -792,36 +793,120 @@ function FileRoot(props: {
 
 function FloatingFileActions(props: { mount: () => HTMLElement | undefined; children: JSX.Element }) {
   const i18n = useI18n()
-  const [state, setState] = createStore({ hovered: false, pinned: false })
-  const open = () => state.hovered || state.pinned
+  const [state, setState] = createStore({ hovered: false, focused: false, pinned: false, menu: false })
+  let root: HTMLDivElement | undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let pointer: { x: number; y: number } | undefined
+  const open = () => state.hovered || state.focused || state.pinned || state.menu
+  const update = (key: "hovered" | "focused" | "pinned" | "menu", value: boolean) => {
+    if (state[key] === value) return
+    setState(key, value)
+    console.debug(
+      `[file-actions] ${key}=${value} hovered=${state.hovered} focused=${state.focused} pinned=${state.pinned} menu=${state.menu} expanded=${open()}`,
+    )
+  }
+  const cancelClose = () => {
+    if (timer === undefined) return
+    clearTimeout(timer)
+    timer = undefined
+    console.debug("[file-actions] close cancelled")
+  }
+  const inside = () => {
+    if (!root || !pointer) return false
+    const rect = root.getBoundingClientRect()
+    return (
+      pointer.x >= rect.left - 6 &&
+      pointer.x <= rect.right + 6 &&
+      pointer.y >= rect.top - 6 &&
+      pointer.y <= rect.bottom + 6
+    )
+  }
+  const enter = () => {
+    cancelClose()
+    update("hovered", true)
+  }
+  const leave = () => {
+    if (timer !== undefined || !state.hovered) return
+    console.debug(`[file-actions] close scheduled x=${pointer?.x} y=${pointer?.y}`)
+    timer = setTimeout(() => {
+      timer = undefined
+      const rect = root?.getBoundingClientRect()
+      console.debug(`[file-actions] close-check x=${pointer?.x} y=${pointer?.y} rect=${rect?.x},${rect?.y},${rect?.width},${rect?.height} inside=${inside()} nativeHover=${root?.matches(":hover")}`)
+      if (inside()) return
+      update("hovered", false)
+    }, 180)
+  }
+  createEffect(() => {
+    const mount = props.mount()
+    if (!mount) return
+    const document = mount.ownerDocument
+    const move = (event: PointerEvent) => {
+      pointer = { x: event.clientX, y: event.clientY }
+      if (inside()) enter()
+      else leave()
+    }
+    const exit = (event: PointerEvent) => {
+      console.debug(`[file-actions] document-exit x=${event.clientX} y=${event.clientY} target=${(event.target as Element)?.nodeName} related=${(event.relatedTarget as Element)?.nodeName}`)
+      pointer = undefined
+      leave()
+    }
+    document.addEventListener("pointermove", move, true)
+    document.addEventListener("pointerleave", exit)
+    onCleanup(() => {
+      document.removeEventListener("pointermove", move, true)
+      document.removeEventListener("pointerleave", exit)
+      cancelClose()
+    })
+  })
+  createEffect(() => {
+    if (!props.mount() || !root) return
+    // Open-with menus are portalled outside the hover/focus subtree.
+    const sync = () => update("menu", !!root?.querySelector('[aria-haspopup][aria-expanded="true"]'))
+    const observer = new MutationObserver(sync)
+    observer.observe(root, { subtree: true, attributes: true, attributeFilter: ["aria-expanded"] })
+    untrack(sync)
+    onCleanup(() => observer.disconnect())
+  })
   return (
     <Show when={props.mount()}>
       {(mount) => (
         <Portal mount={mount()}>
           <div
+            ref={root}
             data-slot="file-markdown-actions"
             class="absolute right-3 top-3 z-20"
             data-prevent-autofocus=""
             data-expanded={open() ? "true" : "false"}
             onPointerDown={(event) => event.stopPropagation()}
+            onPointerEnter={enter}
+            onPointerLeave={leave}
+            onClick={(event) => {
+              const target = event.target instanceof Element ? event.target.closest("button, label") : undefined
+              console.debug(
+                `[file-actions] click action=${target?.getAttribute("aria-label") ?? target?.textContent?.trim() ?? "unknown"}`,
+              )
+            }}
+            onFocusIn={() => update("focused", true)}
+            onFocusOut={(event) => {
+              if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
+              update("focused", false)
+            }}
           >
-            <div
-              data-slot="file-markdown-actions-inner"
-              class="flex items-center gap-2"
-              onPointerEnter={() => setState("hovered", true)}
-              onPointerLeave={() => setState("hovered", false)}
-            >
+            <div data-slot="file-markdown-actions-inner" class="flex items-center gap-2">
+              <div data-slot="file-markdown-actions-content" hidden={!open()}>
+                {props.children}
+              </div>
+              {/* Keep the hover entry anchored while the actions expand to its left. */}
               <Tooltip value={i18n.t("ui.file.actions")} placement="bottom">
                 <IconButton
                   icon="dot-grid"
                   variant="ghost"
                   class="h-8 w-8 shrink-0 rounded-md"
-                  onClick={() => setState("pinned", (pinned) => !pinned)}
+                  onClick={() => update("pinned", !state.pinned)}
                   aria-label={i18n.t("ui.file.actions")}
                   aria-expanded={open()}
                 />
               </Tooltip>
-              <Show when={open()}>{props.children}</Show>
             </div>
           </div>
         </Portal>

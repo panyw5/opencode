@@ -62,13 +62,12 @@ export function SessionSidePanel(props: {
   const filePreviewOpen = createMemo(() => isDesktop() && view().filePreview.opened())
   const browserOpen = createMemo(() => isDesktop() && view().browser.opened())
   const fileOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
-  const wideOpen = createMemo(() => reviewOpen() || filePreviewOpen() || browserOpen())
-  const open = createMemo(() => wideOpen() || fileOpen())
+  const wideOpen = createMemo(() => isDesktop() && layout.rightPanel.wide())
+  const open = createMemo(() => isDesktop() && layout.rightPanel.opened())
   const reviewTab = reviewOpen
   const panelWidth = createMemo(() => {
     if (!open()) return "0px"
-    if (wideOpen()) return `calc(100% - ${layout.session.width()}px)`
-    return `${layout.fileTree.width()}px`
+    return layout.rightPanel.width()
   })
   const treeWidth = createMemo(() => (fileOpen() ? `${layout.fileTree.width()}px` : "0px"))
 

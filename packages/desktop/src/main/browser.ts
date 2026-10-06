@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url"
 import { BrowserWindow, session, WebContentsView, type Rectangle } from "electron"
 import { write as writeLog } from "./logging"
 import { BrowserCdp } from "./browser-cdp"
+import type { BrowserDisplayFrame } from "@opencode-ai/app/browser/types"
 
 // P1-D-01: owns the embedded browser WebContentsViews. One controller per app;
 // views are keyed by session partition. The user view uses a persistent
@@ -22,6 +23,8 @@ export const agentPartition = (sessionID: string) => `agent-browser-${sessionID}
 
 const BROWSER_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+const HIDDEN_VIEW_BOUNDS = { x: -32000, y: 0, width: 1, height: 1 }
 
 // Local file support: anything with a scheme (http:, file:, about:, ...) passes
 // through untouched; bare absolute paths and ~-prefixed paths are converted to
@@ -77,6 +80,9 @@ export class BrowserController {
   // than every event emitted by the previous generation.
   private epochs = new Map<string, number>()
   private owner: BrowserWindow | undefined
+  private displaySequence = 0
+  private displayLease = 0
+  private displayRevision = -1
   private presentation?: BrowserPresentation
   private presentationSequence = 0
   private presentationListeners = new Set<(request: BrowserPresentation) => void>()
@@ -101,6 +107,11 @@ export class BrowserController {
 
   /** Bind views to the main window. Safe to call again with a recreated window. */
   attachWindow(win: BrowserWindow) {
+    const replaced = this.owner !== win
+    if (replaced) {
+      this.displayLease = 0
+      this.displayRevision = -1
+    }
     this.owner = win
     for (const [partition, entry] of this.views) {
       if (entry.view.webContents.isDestroyed()) {
@@ -111,9 +122,10 @@ export class BrowserController {
         continue
       }
       try {
+        if (replaced) entry.visible = false
         win.contentView.addChildView(entry.view)
         entry.win = win
-        if (entry.bounds) entry.view.setBounds(entry.bounds)
+        this.applyBounds(partition)
       } catch (error) {
         log("attach", "failed to re-attach view", { partition, error: String(error) })
       }
@@ -138,6 +150,7 @@ export class BrowserController {
     // throttling so CDP screenshots/AX snapshots still get fresh frames.
     view.webContents.setBackgroundThrottling(false)
     view.setVisible(false)
+    view.setBounds(HIDDEN_VIEW_BOUNDS)
     view.webContents.setWindowOpenHandler((details) => {
       // Never let pages pop real windows; report the URL back to the agent layer instead.
       log("window-open", "denied", { partition, url: details.url })
@@ -230,6 +243,10 @@ export class BrowserController {
   }
 
   setBounds(partition: string, bounds: Rectangle | null) {
+    if (this.displayLease) {
+      log("display", `ignored legacy bounds partition=${partition} lease=${this.displayLease}`)
+      return
+    }
     const entry = this.views.get(partition)
     if (!entry) return
     if (bounds && JSON.stringify(bounds) !== JSON.stringify(entry.bounds))
@@ -243,8 +260,82 @@ export class BrowserController {
     if (!entry) return
     const bounds = entry.bounds
     const shouldShow = entry.visible && Boolean(bounds)
+    // On macOS a hidden native view can still intercept mouse input at its old bounds.
+    // Keep its requested bounds separately and park the actual view offscreen while hidden.
+    const actual = shouldShow && bounds ? bounds : HIDDEN_VIEW_BOUNDS
+    entry.view.setBounds(actual)
     entry.view.setVisible(shouldShow)
-    if (bounds) entry.view.setBounds(bounds)
+    log(
+      "hit-region",
+      `partition=${partition} visible=${shouldShow} x=${actual.x} y=${actual.y} width=${actual.width} height=${actual.height}`,
+    )
+  }
+
+  acquireDisplay() {
+    this.displayLease = ++this.displaySequence
+    this.displayRevision = -1
+    for (const [partition, entry] of this.views) {
+      entry.visible = false
+      this.applyBounds(partition)
+    }
+    log("display", `acquired lease=${this.displayLease}`)
+    return this.displayLease
+  }
+
+  getDisplayState() {
+    return {
+      lease: this.displayLease,
+      revision: this.displayRevision,
+      views: [...this.views]
+        .filter(([, entry]) => !entry.view.webContents.isDestroyed())
+        .map(([partition, entry]) => ({
+          partition, visible: entry.view.getVisible(), bounds: entry.view.getBounds(),
+        })),
+    }
+  }
+
+  updateDisplay(frame: BrowserDisplayFrame) {
+    if (!frame || !Number.isSafeInteger(frame.lease) || !Number.isSafeInteger(frame.revision) || frame.revision < 1) {
+      log("display", "rejected invalid display version")
+      return false
+    }
+    if (frame.lease !== this.displayLease || !this.displayLease || frame.revision <= this.displayRevision) {
+      log(
+        "display",
+        `rejected stale lease=${frame.lease} revision=${frame.revision} current=${this.displayLease}/${this.displayRevision}`,
+      )
+      return false
+    }
+    const bounds = frame.bounds
+    if (
+      (frame.partition !== null && typeof frame.partition !== "string") ||
+      ((frame.partition === null) !== (bounds === null)) ||
+      (bounds && (![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isSafeInteger) || bounds.width < 1 || bounds.height < 1))
+    ) {
+      log("display", `rejected invalid bounds lease=${frame.lease}`)
+      return false
+    }
+    this.displayRevision = frame.revision
+    // One transaction owns every native hit region. Hidden tabs retain their requested geometry.
+    for (const [partition, entry] of this.views) {
+      const visible = partition === frame.partition && !!bounds
+      entry.visible = visible
+      if (visible) entry.bounds = bounds!
+      if (!visible) this.applyBounds(partition)
+    }
+    if (frame.partition) this.applyBounds(frame.partition)
+    log("display", `applied lease=${frame.lease} revision=${frame.revision} partition=${frame.partition ?? "none"} visible=${!!bounds}`)
+    return !frame.partition || this.views.has(frame.partition)
+  }
+
+  releaseDisplay(lease: number) {
+    if (lease !== this.displayLease) return
+    for (const [partition, entry] of this.views) {
+      entry.visible = false
+      this.applyBounds(partition)
+    }
+    this.displayLease = 0
+    log("display", `released lease=${lease}`)
   }
 
   /** Request the existing sidebar, retaining the request across route changes. */
@@ -282,6 +373,10 @@ export class BrowserController {
   }
 
   setVisible(partition: string, visible: boolean) {
+    if (this.displayLease) {
+      log("display", `ignored legacy visibility partition=${partition} visible=${visible} lease=${this.displayLease}`)
+      return
+    }
     // No ensure-create here: this is called from the renderer visibility
     // effect for every known tab, and silently creating a view nobody
     // navigates used to be the footgun behind zombie tabs. View creation is
@@ -290,6 +385,13 @@ export class BrowserController {
     if (!entry) {
       if (visible) log("visible", "ignored for unknown partition", { partition, visible })
       return
+    }
+    if (visible) {
+      for (const [other, view] of this.views) {
+        if (other === partition) continue
+        view.visible = false
+        this.applyBounds(other)
+      }
     }
     entry.visible = visible
     this.applyBounds(partition)
@@ -323,8 +425,7 @@ export class BrowserController {
       await new Promise((resolve) => setTimeout(resolve, 150))
       return await entry.cdp.screenshot(fullPage)
     } finally {
-      entry.view.setVisible(false)
-      if (entry.bounds) entry.view.setBounds(entry.bounds)
+      this.applyBounds(partition)
     }
   }
 

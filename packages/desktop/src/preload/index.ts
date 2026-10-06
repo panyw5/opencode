@@ -15,6 +15,10 @@ const api: ElectronAPI = {
   },
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
   browser: {
+    getDisplayState: () => ipcRenderer.invoke("browser-display-state"),
+    acquireDisplay: () => ipcRenderer.invoke("browser-acquire-display"),
+    updateDisplay: frame => ipcRenderer.invoke("browser-update-display", frame),
+    releaseDisplay: lease => ipcRenderer.invoke("browser-release-display", lease),
     getPresentation: () => ipcRenderer.invoke("browser-get-presentation"),
     acknowledgePresentation: (id) => ipcRenderer.invoke("browser-ack-presentation", id),
     onPresented: (cb) => {

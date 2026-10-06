@@ -301,11 +301,10 @@ export default function Page() {
   const desktopSidePanelOpen = createMemo(
     () => desktopReviewOpen() || desktopFilePreviewOpen() || desktopBrowserOpen() || desktopFileTreeOpen(),
   )
-  const desktopWidePanelOpen = createMemo(() => desktopReviewOpen() || desktopFilePreviewOpen() || desktopBrowserOpen())
+  const desktopWidePanelOpen = createMemo(() => isDesktop() && layout.rightPanel.wide())
   const sessionPanelWidth = createMemo(() => {
     if (!desktopSidePanelOpen()) return "100%"
-    if (desktopWidePanelOpen()) return `${layout.session.width()}px`
-    return `calc(100% - ${layout.fileTree.width()}px)`
+    return layout.rightPanel.sessionWidth()
   })
   const centered = createMemo(() => isDesktop() && !desktopWidePanelOpen())
 
