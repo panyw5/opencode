@@ -286,6 +286,12 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
       return desktopApi.checkUpdate()
     },
 
+    getUpdaterState: () => desktopApi.getUpdaterState(),
+    onUpdaterStateChanged: (listener) => desktopApi.onUpdaterStateChanged(listener),
+    pauseUpdate: () => desktopApi.pauseUpdate(),
+    resumeUpdate: () => desktopApi.resumeUpdate(),
+    cancelUpdate: () => desktopApi.cancelUpdate(),
+
     updateAndRestart: async () => {
       const config = await desktopApi.getWindowConfig().catch(() => ({ updaterEnabled: false }))
       if (!config.updaterEnabled) return

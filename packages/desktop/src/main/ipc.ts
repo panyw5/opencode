@@ -139,6 +139,9 @@ type Deps = {
   checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string; failed?: boolean; error?: string }>
   installUpdate: () => Promise<void> | void
   getUpdaterState: () => Promise<UpdaterState>
+  pauseUpdate: () => Promise<void>
+  resumeUpdate: () => Promise<UpdaterState>
+  cancelUpdate: () => Promise<void>
   onUpdaterStateChanged: (listener: (state: UpdaterState) => void) => () => void
   setBackgroundColor: (color: string) => void
   exportDebugLogs: () => Promise<string>
@@ -233,6 +236,9 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("check-update", () => deps.checkUpdate())
   ipcMain.handle("install-update", () => deps.installUpdate())
   ipcMain.handle("get-updater-state", () => deps.getUpdaterState())
+  ipcMain.handle("pause-update", () => deps.pauseUpdate())
+  ipcMain.handle("resume-update", () => deps.resumeUpdate())
+  ipcMain.handle("cancel-update", () => deps.cancelUpdate())
 
   const updaterSubs = createUpdaterSubscriptions()
   ipcMain.on("subscribe-updater-state", (event: IpcMainEvent, id: string) => {

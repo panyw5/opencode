@@ -235,6 +235,117 @@ describe("createUpdaterController", () => {
     })
   })
 
+  describe("download controls", () => {
+    function fixture() {
+      const transfers: Array<{
+        progress: (percent: number) => void
+        resolve: () => void
+        reject: (error: Error) => void
+      }> = []
+      let cancellations = 0
+      const persistence = createMockPersistence()
+      const ctrl = createUpdaterController({
+        enabled: true,
+        currentVersion: "1.0.0",
+        backend: createMockBackend({
+          checkForUpdates: async () => ({ isUpdateAvailable: true, updateInfo: { version: "1.1.0" } }),
+          downloadUpdate: (progress) =>
+            new Promise<void>((resolve, reject) => {
+              transfers.push({ progress: progress!, resolve, reject })
+            }),
+          cancelDownload: () => {
+            cancellations++
+          },
+        }),
+        persistence,
+        stop: async () => {},
+      })
+      const started = async (count = 1) => {
+        for (let i = 0; i < 20 && transfers.length < count; i++) await Promise.resolve()
+        expect(transfers.length).toBe(count)
+      }
+      return { ctrl, transfers, persistence, started, cancellations: () => cancellations }
+    }
+
+    test("publishes clamped progress and ignores invalid values", async () => {
+      const f = fixture()
+      const check = f.ctrl.check()
+      await f.started()
+      f.transfers[0].progress(42.5)
+      expect(f.ctrl.getState()).toEqual({ status: "downloading", version: "1.1.0", percent: 42.5 })
+      f.transfers[0].progress(NaN)
+      expect((f.ctrl.getState() as { percent: number }).percent).toBe(42.5)
+      f.transfers[0].progress(120)
+      expect((f.ctrl.getState() as { percent: number }).percent).toBe(100)
+      f.transfers[0].resolve()
+      expect((await check).status).toBe("ready")
+    })
+
+    test("pause cancels the transport and ignores late completion and progress", async () => {
+      const f = fixture()
+      const check = f.ctrl.check()
+      await f.started()
+      f.transfers[0].progress(30)
+      f.ctrl.pause()
+      expect(f.cancellations()).toBe(1)
+      f.transfers[0].progress(100)
+      f.transfers[0].resolve()
+      expect(await check).toEqual({ status: "paused", version: "1.1.0", percent: 30 })
+      expect(f.persistence._getStored()).toBeUndefined()
+      expect((await f.ctrl.check()).status).toBe("paused")
+    })
+
+    test("resume waits for cancellation and deduplicates concurrent resumes", async () => {
+      const f = fixture()
+      const check = f.ctrl.check()
+      await f.started()
+      f.ctrl.pause()
+      const a = f.ctrl.resume()
+      const b = f.ctrl.resume()
+      expect(f.transfers.length).toBe(1)
+      f.transfers[0].reject(new Error("cancelled"))
+      await check
+      await f.started(2)
+      expect(f.ctrl.getState()).toEqual({ status: "downloading", version: "1.1.0", percent: 0 })
+      f.transfers[1].progress(80)
+      f.transfers[1].resolve()
+      expect((await a).status).toBe("ready")
+      expect((await b).status).toBe("ready")
+      expect(f.persistence._getStored()).toEqual({ version: "1.1.0" })
+    })
+
+    test("cancel while paused prevents queued resume and allows a fresh check", async () => {
+      const f = fixture()
+      const check = f.ctrl.check()
+      await f.started()
+      f.ctrl.pause()
+      const resume = f.ctrl.resume()
+      const cancel = f.ctrl.cancel()
+      f.transfers[0].reject(new Error("cancelled"))
+      await Promise.all([check, resume, cancel])
+      expect(f.ctrl.getState()).toEqual({ status: "idle" })
+      expect(f.transfers.length).toBe(1)
+      expect(f.persistence._getStored()).toBeUndefined()
+      const next = f.ctrl.check()
+      await f.started(2)
+      f.transfers[1].resolve()
+      expect((await next).status).toBe("ready")
+    })
+
+    test("cancel ignores late download success and clears persistence", async () => {
+      const f = fixture()
+      await f.persistence.set({ version: "old" })
+      const check = f.ctrl.check()
+      await f.started()
+      const cancel = f.ctrl.cancel()
+      f.transfers[0].resolve()
+      await Promise.all([check, cancel])
+      expect(f.ctrl.getState()).toEqual({ status: "idle" })
+      expect(f.persistence._getStored()).toBeUndefined()
+      await expect(f.ctrl.install()).rejects.toThrow("Update is not ready")
+    })
+  })
+
   describe("install", () => {
     test("throws when update is not ready", async () => {
       const ctrl = createUpdaterController({

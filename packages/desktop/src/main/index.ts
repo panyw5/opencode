@@ -308,6 +308,9 @@ const main = Effect.gen(function* () {
       const ctrl = getUpdaterController()
       return ctrl ? ctrl.getState() : { status: "disabled" }
     },
+    pauseUpdate: async () => getUpdaterController()?.pause(),
+    resumeUpdate: async () => (await getUpdaterController()?.resume()) ?? { status: "disabled" },
+    cancelUpdate: async () => getUpdaterController()?.cancel(),
     onUpdaterStateChanged: (listener) => {
       const ctrl = getUpdaterController()
       return ctrl ? ctrl.subscribe(listener) : () => {}

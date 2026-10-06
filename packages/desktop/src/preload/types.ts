@@ -53,6 +53,7 @@ export type UpdaterState =
   | { status: "idle" }
   | { status: "checking" }
   | { status: "downloading"; version: string; percent?: number }
+  | { status: "paused"; version: string; percent?: number }
   | { status: "ready"; version: string }
   | { status: "up-to-date" }
   | { status: "installing"; version: string }
@@ -400,6 +401,9 @@ export type ElectronAPI = {
   checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string; failed?: boolean; error?: string }>
   installUpdate: () => Promise<void>
   getUpdaterState: () => Promise<UpdaterState>
+  pauseUpdate: () => Promise<void>
+  resumeUpdate: () => Promise<UpdaterState>
+  cancelUpdate: () => Promise<void>
   onUpdaterStateChanged: (cb: (state: UpdaterState) => void) => () => void
   setBackgroundColor: (color: string) => Promise<void>
   exportDebugLogs: () => Promise<string>

@@ -1,0 +1,12 @@
+diff --git a/out/httpExecutor.js b/out/httpExecutor.js
+index a2c8cbc449b1ac0f55da7ceb44786286f16e2401..00bb5d30a99fd0d76235b8c6592e9a4c7ee5d2c0 100644
+--- a/out/httpExecutor.js
++++ b/out/httpExecutor.js
+@@ -234,6 +234,7 @@ Please double check that your authentication token is correct. Due to security r
+         this.addRedirectHandlers(request, requestOptions, options.callback, redirectCount, requestOptions => {
+             this.doDownload(requestOptions, options, redirectCount++);
+         });
++        options.onCancel(() => request.abort());
+         request.end();
+     }
+     createMaxRedirectError() {

@@ -4,6 +4,7 @@ import { UPDATER_ENABLED } from "./constants"
 import { getLogger } from "./logging"
 import { createUpdaterController, type UpdaterController, type UpdaterReadyRecord } from "./updater-controller"
 import { getStore } from "./store"
+import { createUpdaterBackend } from "./updater-backend"
 
 const { autoUpdater } = pkg
 const PERSISTENCE_KEY = "ready"
@@ -31,7 +32,7 @@ export function setupAutoUpdater(stop: () => Promise<void>): UpdaterController {
   controller = createUpdaterController({
     enabled: UPDATER_ENABLED,
     currentVersion: app.getVersion(),
-    backend: autoUpdater,
+    backend: createUpdaterBackend(autoUpdater, (message) => logger.log(message)),
     persistence: {
       get() {
         const value = store.get(PERSISTENCE_KEY)
@@ -80,7 +81,8 @@ export async function installUpdate(_killSidecar: () => Promise<void>) {
   try {
     await controller.install()
   } catch (error) {
-    logger.error("install update failed", error)
+    logger.error(`install update failed message=${error instanceof Error ? error.message : String(error)}`)
+    throw error
   }
 }
 

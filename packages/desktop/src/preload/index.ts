@@ -224,6 +224,9 @@ const api: ElectronAPI = {
   checkUpdate: () => ipcRenderer.invoke("check-update"),
   installUpdate: () => ipcRenderer.invoke("install-update"),
   getUpdaterState: () => ipcRenderer.invoke("get-updater-state"),
+  pauseUpdate: () => ipcRenderer.invoke("pause-update"),
+  resumeUpdate: () => ipcRenderer.invoke("resume-update"),
+  cancelUpdate: () => ipcRenderer.invoke("cancel-update"),
   onUpdaterStateChanged: (cb) => {
     const id = crypto.randomUUID()
     const handler = (_: unknown, subscriptionId: string, state: unknown) => {

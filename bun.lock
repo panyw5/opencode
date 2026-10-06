@@ -718,6 +718,7 @@
   "patchedDependencies": {
     "@tanstack/solid-virtual@3.13.28": "patches/@tanstack%2Fsolid-virtual@3.13.28.patch",
     "solid-js@1.9.10": "patches/solid-js@1.9.10.patch",
+    "builder-util-runtime@9.5.1": "patches/builder-util-runtime@9.5.1.patch",
     "@ai-sdk/groq@3.0.31": "patches/@ai-sdk%2Fgroq@3.0.31.patch",
     "@ai-sdk/xai@3.0.102": "patches/@ai-sdk%2Fxai@3.0.102.patch",
     "@tanstack/virtual-core@3.17.0": "patches/@tanstack%2Fvirtual-core@3.17.0.patch",

@@ -19,7 +19,7 @@ import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme/context"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useLanguage } from "@/context/language"
-import { usePlatform } from "@/context/platform"
+import { usePlatform, type UpdaterState } from "@/context/platform"
 import { useSettings, monoFontFamily } from "@/context/settings"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
@@ -180,15 +180,79 @@ export const SettingsGeneral: Component = () => {
 
   let previewPending: ReturnType<typeof setTimeout> | undefined
 
+  const [updater, setUpdater] = createStore<{ state: UpdaterState; busy: boolean }>({
+    state: { status: "idle" },
+    busy: false,
+  })
+  onMount(() => {
+    if (!platform.getUpdaterState || !platform.onUpdaterStateChanged) return
+    let received = false
+    let disposed = false
+    const unsubscribe = platform.onUpdaterStateChanged((state) => {
+      received = true
+      console.debug(`[settings-updater] state status=${state.status}`)
+      setUpdater("state", state)
+      if (state.status === "downloading") setUpdater("busy", false)
+    })
+    void platform
+      .getUpdaterState()
+      .then((state) => {
+        if (!disposed && !received) setUpdater("state", state)
+      })
+      .catch((error) => console.error(`[settings-updater] state read failed message=${String(error)}`))
+    onCleanup(() => {
+      disposed = true
+      unsubscribe()
+    })
+  })
+
+  const updateAction = async (action: "pause" | "resume" | "cancel" | "install") => {
+    if (updater.busy) return
+    setUpdater("busy", true)
+    console.debug(`[settings-updater] action started action=${action}`)
+    try {
+      if (action === "pause") await platform.pauseUpdate?.()
+      if (action === "resume") await platform.resumeUpdate?.()
+      if (action === "cancel") await platform.cancelUpdate?.()
+      if (action === "install") await platform.updateAndRestart?.()
+      console.debug(`[settings-updater] action completed action=${action}`)
+    } catch (error) {
+      console.error(`[settings-updater] action failed action=${action} message=${String(error)}`)
+      showToast({ title: language.t("common.requestFailed"), description: String(error) })
+    } finally {
+      setUpdater("busy", false)
+    }
+  }
+
+  const updateTransfer = createMemo(() => {
+    const state = updater.state
+    return state.status === "downloading" || state.status === "paused" ? state : undefined
+  })
+  const updateReady = createMemo(() => {
+    const state = updater.state
+    return state.status === "ready" || state.status === "installing" ? state : undefined
+  })
+
+  const revealUpdate = (element: HTMLDivElement) => {
+    onMount(() => {
+      const container = element.closest("[data-settings-general]")
+      if (!(container instanceof HTMLElement)) return
+      const hidden = element.getBoundingClientRect().bottom - container.getBoundingClientRect().bottom
+      if (hidden > 0) container.scrollBy({ top: hidden + 16, behavior: "smooth" })
+    })
+  }
+
   const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
 
   const check = () => {
     if (!platform.checkUpdate) return
     setStore("checking", true)
+    console.debug("[settings-updater] check requested")
 
     void platform
       .checkUpdate()
       .then((result) => {
+        if (platform.getUpdaterState) return
         if (result.failed) {
           showToast({
             title: language.t("common.requestFailed"),
@@ -208,11 +272,12 @@ export const SettingsGeneral: Component = () => {
         }
 
         const actions =
-          platform.update && platform.restart
+          platform.updateAndRestart || (platform.update && platform.restart)
             ? [
                 {
                   label: language.t("toast.update.action.installRestart"),
                   onClick: async () => {
+                    if (platform.updateAndRestart) return platform.updateAndRestart()
                     await platform.update!()
                     await platform.restart!()
                   },
@@ -909,18 +974,122 @@ export const SettingsGeneral: Component = () => {
           title={language.t("settings.updates.row.check.title")}
           description={language.t("settings.updates.row.check.description")}
         >
-          <Button size="small" variant="secondary" disabled={store.checking || !platform.checkUpdate} onClick={check}>
-            {store.checking
+          <Button
+            data-action="settings-check-update"
+            size="small"
+            variant="secondary"
+            disabled={
+              store.checking ||
+              updater.busy ||
+              updater.state.status === "disabled" ||
+              !!updateTransfer() ||
+              !!updateReady() ||
+              !platform.checkUpdate
+            }
+            onClick={check}
+          >
+            {updater.state.status === "checking" || (store.checking && !platform.getUpdaterState)
               ? language.t("settings.updates.action.checking")
               : language.t("settings.updates.action.checkNow")}
           </Button>
         </SettingsRow>
+        <Show when={updateTransfer()}>
+          {(transfer) => (
+            <div
+              data-testid="settings-update-download"
+              class="flex flex-col gap-3 px-4 py-4 border-t border-border-weak-base"
+              ref={revealUpdate}
+            >
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-12-medium text-text-strong" aria-live="polite">
+                  {language.t(
+                    transfer().status === "paused"
+                      ? "settings.updates.download.paused"
+                      : "settings.updates.download.downloading",
+                    { version: transfer().version },
+                  )}
+                </span>
+                <div class="flex items-center gap-1">
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    disabled={updater.busy}
+                    data-action="settings-update-pause"
+                    aria-label={language.t(
+                      transfer().status === "paused"
+                        ? "settings.updates.action.resume"
+                        : "settings.updates.action.pause",
+                    )}
+                    title={language.t(
+                      transfer().status === "paused"
+                        ? "settings.updates.download.resumeHint"
+                        : "settings.updates.action.pause",
+                    )}
+                    onClick={() => void updateAction(transfer().status === "paused" ? "resume" : "pause")}
+                  >
+                    <Icon name={transfer().status === "paused" ? "play" : "pause"} size="small" />
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    disabled={updater.busy}
+                    data-action="settings-update-cancel"
+                    aria-label={language.t("settings.updates.action.cancel")}
+                    title={language.t("settings.updates.action.cancel")}
+                    onClick={() => void updateAction("cancel")}
+                  >
+                    <Icon name="close-small" size="small" />
+                  </Button>
+                </div>
+              </div>
+              <Progress value={transfer().percent ?? 0} maxValue={100} showValueLabel hideLabel>
+                {language.t("settings.updates.download.progress")}
+              </Progress>
+              <Show when={transfer().status === "paused"}>
+                <span class="text-12-regular text-text-weak">{language.t("settings.updates.download.resumeHint")}</span>
+              </Show>
+            </div>
+          )}
+        </Show>
+        <Show when={updateReady()}>
+          {(ready) => (
+            <div
+              data-testid="settings-update-ready"
+              class="flex flex-wrap items-center justify-between gap-3 px-4 py-4 border-t border-border-weak-base"
+              ref={revealUpdate}
+            >
+              <span class="text-12-medium text-text-strong" aria-live="polite">
+                {language.t("settings.updates.download.ready", { version: ready().version })}
+              </span>
+              <Button
+                size="small"
+                variant="primary"
+                data-action="settings-update-install"
+                disabled={updater.busy || ready().status === "installing" || !platform.updateAndRestart}
+                onClick={() => void updateAction("install")}
+              >
+                {language.t(
+                  ready().status === "installing"
+                    ? "settings.updates.action.installing"
+                    : "toast.update.action.installRestart",
+                )}
+              </Button>
+            </div>
+          )}
+        </Show>
+        <Show when={updater.state.status === "error" || updater.state.status === "up-to-date"}>
+          <div role="status" class="px-4 py-4 text-12-regular text-text-weak border-t border-border-weak-base">
+            {updater.state.status === "error"
+              ? updater.state.message
+              : language.t("settings.updates.toast.latest.title")}
+          </div>
+        </Show>
       </SettingsList>
     </div>
   )
 
   return (
-    <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
+    <div data-settings-general class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
       <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
         <div class="flex flex-col gap-1 pt-6 pb-8">
           <h2 class="text-16-medium text-text-strong">{language.t("settings.tab.general")}</h2>
