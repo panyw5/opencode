@@ -3891,6 +3891,83 @@ it.instance(
 )
 
 it.instance(
+  "Pro completion unblocks a pending waiting question while partial progress remains deferred",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const question = yield* Question.Service
+      const inbox = yield* SessionInput.Service
+      const session = yield* sessions.create({
+        title: "Pro completion while waiting",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* user(session.id, "consult the adviser and wait for its answer")
+      yield* llm.push(
+        reply().tool("question", {
+          questions: [
+            {
+              question: "Keep waiting for Pro?",
+              header: "Wait",
+              options: [{ label: "Wait", description: "continue waiting" }],
+            },
+          ],
+        }),
+        reply().text("Full Pro answer delivered automatically").stop(),
+      )
+      const run = yield* prompt.loop({ sessionID: session.id }).pipe(Effect.forkChild)
+      yield* pollWithTimeout(
+        question.list().pipe(Effect.map((items) => (items.some((i) => i.sessionID === session.id) ? true : undefined))),
+        "waiting question was not registered",
+      )
+      yield* inbox.admit({
+        id: "gpt_wait:notification:1",
+        sessionID: session.id,
+        source: "background-gpt-pro",
+        prompt: {
+          text: "Partial Pro answer",
+          agent: "build",
+          model: ref,
+          metadata: {
+            kind: "background-gpt-pro-injection",
+            phase: "generating",
+            notificationType: "progress",
+            consultationID: "gpt_wait",
+          },
+        },
+      })
+      yield* prompt.drain(session.id)
+      expect((yield* question.list()).filter((i) => i.sessionID === session.id)).toHaveLength(1)
+      expect(yield* llm.calls).toBe(1)
+      expect(yield* inbox.pending(session.id)).toHaveLength(1)
+      yield* inbox.admit({
+        id: "gpt_wait:notification:2",
+        sessionID: session.id,
+        source: "background-gpt-pro",
+        prompt: {
+          text: "Complete Pro answer, not a partial result",
+          agent: "build",
+          model: ref,
+          metadata: {
+            kind: "background-gpt-pro-injection",
+            phase: "completed",
+            notificationType: "completed",
+            consultationID: "gpt_wait",
+          },
+        },
+      })
+      yield* prompt.drain(session.id)
+      yield* awaitWithTimeout(llm.wait(2), "Pro completion did not unblock the waiting question", "5 seconds")
+      yield* awaitWithTimeout(Fiber.await(run), "question run did not settle", "5 seconds")
+      expect((yield* question.list()).filter((i) => i.sessionID === session.id)).toEqual([])
+      expect(JSON.stringify((yield* llm.inputs)[1]?.messages)).toContain("Complete Pro answer, not a partial result")
+      expect(yield* inbox.promotedUnacked(session.id)).toEqual([])
+    }),
+  30000,
+)
+
+it.instance(
   "stop-after-step latch blocks tool calls the model emits after arming",
   () =>
     Effect.gen(function* () {

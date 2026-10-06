@@ -2035,7 +2035,18 @@ export const layer = Layer.effect(
                 const hasPro = inputs.some((row) => row.prompt.metadata?.kind === gptProNotificationKind)
                 const onlyPro =
                   inputs.length > 0 && inputs.every((row) => row.prompt.metadata?.kind === gptProNotificationKind)
-                if (pendingQuestion && onlyPro) return
+                const proCompleted = inputs.some(
+                  (row) =>
+                    row.prompt.metadata?.kind === gptProNotificationKind &&
+                    row.prompt.metadata?.notificationType === "completed" &&
+                    row.prompt.metadata?.phase === "completed",
+                )
+                // Partial Pro updates must not disturb a user's question. A
+                // finished answer, however, supersedes a stale waiting question.
+                if (pendingQuestion && onlyPro && !proCompleted) {
+                  yield* elog.info("background Pro progress deferred for pending question", { sessionID })
+                  return
+                }
                 if (hasPro && !pendingQuestion) {
                   const materialized = yield* promoteInbox(sessionID)
                   yield* elog.info("background Pro progress materialized without interrupting active run", {
@@ -2052,6 +2063,7 @@ export const layer = Layer.effect(
                       source: "session-input",
                       materialized,
                       expired,
+                      proCompleted,
                     })
                     return
                   }
