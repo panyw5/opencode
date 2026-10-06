@@ -41,10 +41,15 @@ import {
   patchAgentQuestionDeny,
   prompt,
   removeQuickRequest,
+  splitInjectedSessionContext,
 } from "./helpers"
 import { QuickAssistantInput } from "./input"
 import { QuickAssistantMessages } from "./messages"
 import { QuickAssistantRequests } from "./requests"
+import { DEFAULT_PROMPT, type Prompt, type ImageAttachmentPart } from "@/context/prompt"
+import { quickPromptText } from "./editor-model"
+import { buildRequestParts } from "../prompt-input/build-request-parts"
+import { promptText } from "../prompt-input/prompt-text"
 
 function errorName(err: unknown) {
   if (!err || typeof err !== "object") return undefined
@@ -258,10 +263,11 @@ export function QuickAssistant() {
     createStore<Saved>(initial),
   )
   const [state, setState] = createStore({
-    text: "",
+    prompt: DEFAULT_PROMPT.slice() as Prompt,
+    history: [] as Prompt[],
     loading: false,
   })
-  let input!: HTMLTextAreaElement
+  let input!: HTMLDivElement
   let settleTimer: ReturnType<typeof setTimeout> | undefined
   let staleTimer: ReturnType<typeof setTimeout> | undefined
   const win = createMemo(() => platform.os === "windows")
@@ -602,7 +608,7 @@ export function QuickAssistant() {
     clearTimers()
     clearSession()
     setState("loading", false)
-    setState("text", "")
+    setState("prompt", DEFAULT_PROMPT.slice())
   }
 
   command.register("quick-assistant", () => [
@@ -692,7 +698,10 @@ export function QuickAssistant() {
       return
     }
     const current = root()
-    const text = state.text.trim()
+    const draft = state.prompt.map((part) => ({ ...part }))
+    const draftKey = JSON.stringify(draft)
+    const text = quickPromptText(draft).trim()
+    const images = draft.filter((part): part is ImageAttachmentPart => part.type === "image")
     const store = data()
     const setStore = setData()
     if (!current) {
@@ -702,7 +711,7 @@ export function QuickAssistant() {
       })
       return
     }
-    if (!text) return
+    if (!text && images.length === 0) return
     if (!store || !setStore) return
     const pick = chosen()
     if (!pick) {
@@ -715,7 +724,7 @@ export function QuickAssistant() {
     const variant = effectiveVariant()
 
     setState("loading", true)
-    let body = text
+    let body = promptText(draft).trim()
     if (saved.context) {
       const directory = activeDir()
       const sourceID = params.id
@@ -737,14 +746,19 @@ export function QuickAssistant() {
           )
           return { items, cursor }
         })
-        if (params.id !== sourceID || activeDir() !== directory || state.text.trim() !== text || !saved.context) {
+        if (
+          params.id !== sourceID ||
+          activeDir() !== directory ||
+          JSON.stringify(state.prompt) !== draftKey ||
+          !saved.context
+        ) {
           console.debug(`[quick-assistant] context load discarded source_session=${sourceID} reason=input-changed`)
           setState("loading", false)
           return
         }
         const messages = fullSessionContextMessages(snapshot.items)
         body = prompt(
-          text,
+          promptText(draft).trim(),
           context(directory, sourceID, currentSession(), snapshot.items.length, {
             messages,
             complete: snapshot.complete,
@@ -788,13 +802,31 @@ export function QuickAssistant() {
       agent: pick.agent,
       model: { ...pick.model, variant },
     }
-    const part: Part = {
-      id: Identifier.ascending("part"),
-      type: "text",
+    // Mentions resolve against the visible project, not the assistant's private workspace.
+    // Source offsets include any injected context and account for trimmed leading whitespace.
+    const offset =
+      body.length -
+      promptText(draft).trim().length -
+      (quickPromptText(draft).length - quickPromptText(draft).trimStart().length)
+    const { requestParts, optimisticParts } = buildRequestParts({
+      prompt: draft.map((part) =>
+        part.type === "image" ? part : { ...part, start: part.start + offset, end: part.end + offset },
+      ),
+      images,
+      context: [],
       text: body,
-      sessionID: id,
       messageID,
-    }
+      sessionID: id,
+      sessionDirectory: activeDir() || current,
+    })
+    const invocation = text.match(/^\/([^\s]+)(?:\s([\s\S]*))?$/)
+    const custom = invocation ? store.command.find((item) => item.name === invocation[1]) : undefined
+    const commandContext = custom ? splitInjectedSessionContext(body).context : undefined
+    console.debug("[quick-assistant] request built", {
+      sessionID: id,
+      parts: requestParts.map((part) => part.type),
+      command: custom?.name,
+    })
 
     batch(() => {
       setStore("session_status", id, { type: "busy" })
@@ -808,29 +840,38 @@ export function QuickAssistant() {
           [id]: next,
         }
       })
-      setStore("part", messageID, [part])
-      setState("text", "")
+      setStore("part", messageID, optimisticParts)
+      setState("history", (items) => [draft, ...items].slice(0, 100))
+      setState("prompt", DEFAULT_PROMPT.slice())
       setSaved("open", true)
     })
 
     clearTimers()
-    await client.session
-      .promptAsync({
-        sessionID: id,
-        agent: pick.agent,
-        model: pick.model,
-        messageID,
-        variant,
-        tools: { question: true },
-        parts: [
-          {
-            id: part.id,
-            type: "text",
-            text: body,
-          },
-        ],
-      })
+    await (
+      custom
+        ? client.session.command({
+            sessionID: id,
+            messageID,
+            command: custom.name,
+            arguments: [commandContext, invocation?.[2]].filter(Boolean).join("\n\n"),
+            agent: pick.agent,
+            model: `${pick.model.providerID}/${pick.model.modelID}`,
+            variant,
+            parts: requestParts.filter((part) => part.type === "file"),
+          })
+        : client.session.promptAsync({
+            sessionID: id,
+            agent: pick.agent,
+            model: pick.model,
+            messageID,
+            variant,
+            tools: { question: true },
+            parts: requestParts,
+          })
+    )
+      .then(() => console.debug("[quick-assistant] request accepted", { sessionID: id, messageID }))
       .catch((err: unknown) => {
+        console.error("[quick-assistant] request failed", { sessionID: id, messageID, error: err })
         const aborted = errorName(err) === "AbortError"
         batch(() => {
           markIdle(id, setStore)
@@ -928,13 +969,9 @@ export function QuickAssistant() {
                       : "var(--apple-dark-alpha-1)",
                   "border-color": "var(--amber-light-alpha-2)",
                   "backdrop-filter":
-                    platform.platform === "desktop" && platform.os === "windows"
-                      ? "none"
-                      : "blur(40px) saturate(150%)",
+                    platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",
                   "-webkit-backdrop-filter":
-                    platform.platform === "desktop" && platform.os === "windows"
-                      ? "none"
-                      : "blur(40px) saturate(150%)",
+                    platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",
                 }
           }
         >
@@ -958,10 +995,7 @@ export function QuickAssistant() {
           >
             <Icon name="close" size="small" class="text-icon-weak" />
           </button>
-          <div
-            class="flex max-h-[calc(100dvh-72px)] flex-col overflow-hidden rounded-[inherit]"
-            classList={{ "h-full": waiting() }}
-          >
+          <div class="flex max-h-[calc(100dvh-72px)] flex-col rounded-[inherit]" classList={{ "h-full": waiting() }}>
             <QuickAssistantMessages list={list()} parts={data()?.part} busy={busy()} waiting={waiting()} />
             <QuickAssistantRequests
               client={globalSDK.createClient({ directory: root(), throwOnError: true })}
@@ -975,7 +1009,11 @@ export function QuickAssistant() {
                 setRef={(next) => {
                   input = next
                 }}
-                text={state.text}
+                prompt={state.prompt}
+                history={state.history}
+                directory={activeDir() || root()}
+                agents={data()?.agent ?? []}
+                commands={data()?.command ?? []}
                 busy={interacting()}
                 loading={state.loading}
                 ready={!!root()}
@@ -983,7 +1021,7 @@ export function QuickAssistant() {
                 contextAvailable={!!currentContext()}
                 variants={variantList()}
                 variant={effectiveVariant()}
-                onText={(next) => setState("text", next)}
+                onPrompt={(next) => setState("prompt", reconcile(next))}
                 onClose={close}
                 onReset={() => void reset()}
                 onNewSession={() => void reset()}

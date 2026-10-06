@@ -8,10 +8,18 @@ import { createMemo, createUniqueId, Show } from "solid-js"
 import { ModelSelectorPopover, parseModelRef, useBoundModelState } from "@/components/dialog-select-model"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
+import type { Agent, Command } from "@opencode-ai/sdk/v2/client"
+import type { Prompt } from "@/context/prompt"
+import { QuickAssistantEditor } from "./editor"
+import { quickPromptText } from "./editor-model"
 
 type Props = {
-  setRef: (node: HTMLTextAreaElement) => void
-  text: string
+  setRef: (node: HTMLDivElement) => void
+  prompt: Prompt
+  directory: string
+  agents: Agent[]
+  commands: Command[]
+  history: Prompt[]
   busy: boolean
   loading: boolean
   ready: boolean
@@ -19,7 +27,7 @@ type Props = {
   contextAvailable: boolean
   variants: string[]
   variant: string | undefined
-  onText: (text: string) => void
+  onPrompt: (prompt: Prompt) => void
   onClose: () => void
   onReset: () => void
   onNewSession: () => void
@@ -93,28 +101,17 @@ export function QuickAssistantInput(props: Props) {
           props.onSend()
         }}
       >
-        <textarea
-          ref={props.setRef}
-          rows={3}
-          value={props.text}
-          placeholder="Ask about the current OpenCode session or a quick task..."
-          class="w-full min-h-[84px] resize-none bg-transparent px-4 pt-3.5 pb-1 text-14-regular text-text-strong outline-none placeholder:text-text-weaker"
-          style={{ "line-height": "26px" }}
-          onInput={(event) => props.onText(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault()
-              props.onClose()
-              return
-            }
-            if (event.key !== "Enter" || event.shiftKey) return
-            event.preventDefault()
-            if (props.busy) {
-              props.onReset()
-              return
-            }
-            props.onSend()
-          }}
+        <QuickAssistantEditor
+          setRef={props.setRef}
+          prompt={props.prompt}
+          directory={props.directory}
+          agents={props.agents}
+          commands={props.commands}
+          history={props.history}
+          disabled={props.loading}
+          onChange={props.onPrompt}
+          onClose={props.onClose}
+          onSend={() => (props.busy ? props.onReset() : props.onSend())}
         />
         <div class="flex items-center gap-1.5 px-2 pb-2 pt-1">
           <Tooltip placement="top" value={language.t("command.session.new")}>
@@ -210,7 +207,12 @@ export function QuickAssistantInput(props: Props) {
               variant="primary"
               iconSize={props.busy ? "normal" : "medium"}
               class="ml-0.5 size-10 shrink-0 rounded-full shadow-xs-border disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!props.busy && (props.loading || !props.ready || !props.text.trim())}
+              disabled={
+                !props.busy &&
+                (props.loading ||
+                  !props.ready ||
+                  (!quickPromptText(props.prompt).trim() && !props.prompt.some((part) => part.type === "image")))
+              }
               aria-label={props.busy ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
             />
           </Tooltip>

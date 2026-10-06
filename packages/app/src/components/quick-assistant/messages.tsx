@@ -153,6 +153,14 @@ export function QuickAssistantMessages(props: Props) {
               const display = createMemo(() =>
                 item.role === "user" ? splitInjectedSessionContext(text()) : { message: text() },
               )
+              createEffect(() => {
+                if (item.role !== "user") return
+                console.debug("[quick-assistant] user markdown render", {
+                  messageID: item.id,
+                  length: display().message.length,
+                  context: !!display().context,
+                })
+              })
               return (
                 <div data-component="quick-assistant-message" data-role={item.role} class="flex flex-col gap-2">
                   <Show when={display().context}>
@@ -190,18 +198,12 @@ export function QuickAssistantMessages(props: Props) {
                         item.role === "assistant",
                     }}
                   >
-                    <Show
-                      when={item.role === "assistant"}
-                      fallback={
-                        <div class="whitespace-pre-wrap break-words text-[15px] leading-7 text-text-strong">
-                          {display().message}
-                        </div>
-                      }
-                    >
-                      <div class="quick-assistant-markdown text-[15px] leading-7 text-text-base">
-                        <Markdown text={text() || (props.busy ? "Thinking..." : "")} math="defer" />
-                      </div>
-                    </Show>
+                    <div class="quick-assistant-markdown break-words text-[15px] leading-7 text-text-base">
+                      <Markdown
+                        text={display().message || (item.role === "assistant" && props.busy ? "Thinking..." : "")}
+                        math={item.role === "user" ? "full" : "defer"}
+                      />
+                    </div>
                     <Show when={text().length > 0}>
                       <CopyMessageButton text={text()} />
                     </Show>

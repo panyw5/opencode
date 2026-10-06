@@ -54,12 +54,11 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                  overflow-auto no-scrollbar flex flex-col p-2 rounded-[12px]
                  border border-white/10 shadow-[var(--shadow-lg-border-base)]"
         style={{
-          "background-color":
-            desktop()
-              ? desktopAtBackground()
-              : windows()
-                ? "var(--surface-raised-stronger-non-alpha)"
-                : "rgb(12 12 14 / 0.34)",
+          "background-color": desktop()
+            ? desktopAtBackground()
+            : windows()
+              ? "var(--surface-raised-stronger-non-alpha)"
+              : "rgb(12 12 14 / 0.34)",
           "backdrop-filter": windows() ? "none" : "blur(40px) saturate(150%)",
           "-webkit-backdrop-filter": windows() ? "none" : "blur(40px) saturate(150%)",
         }}
@@ -78,6 +77,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                   if (item.type === "im") {
                     return (
                       <button
+                        type="button"
                         data-prompt-popover-active={props.atActive === key ? "" : undefined}
                         class="w-full flex items-center gap-x-2 rounded-md px-2 py-0.5"
                         classList={{ "bg-surface-raised-base-active": props.atActive === key }}
@@ -93,6 +93,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                   if (item.type === "agent" || item.type === "consult") {
                     return (
                       <button
+                        type="button"
                         data-prompt-popover-active={props.atActive === key ? "" : undefined}
                         class="w-full flex items-center gap-x-2 rounded-md px-2 py-0.5"
                         classList={{ "bg-surface-raised-base-active": props.atActive === key }}
@@ -121,6 +122,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
 
                   return (
                     <button
+                      type="button"
                       data-prompt-popover-active={props.atActive === key ? "" : undefined}
                       class="w-full flex items-center gap-x-2 rounded-md px-2 py-0.5"
                       classList={{ "bg-surface-raised-base-active": props.atActive === key }}
@@ -151,6 +153,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
               <For each={props.slashFlat}>
                 {(cmd) => (
                   <button
+                    type="button"
                     data-slash-id={cmd.id}
                     data-prompt-popover-active={props.slashActive === cmd.id ? "" : undefined}
                     classList={{

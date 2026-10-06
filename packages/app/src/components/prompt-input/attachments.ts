@@ -26,6 +26,7 @@ function dataUrl(file: File, mime: string) {
 }
 
 type PromptAttachmentsInput = {
+  prompt?: Pick<ReturnType<typeof usePrompt>, "current" | "cursor" | "set">
   editor: () => HTMLDivElement | undefined
   isDialogActive: () => boolean
   setDraggingType: (type: "image" | "@mention" | null) => void
@@ -35,7 +36,7 @@ type PromptAttachmentsInput = {
 }
 
 export function createPromptAttachments(input: PromptAttachmentsInput) {
-  const prompt = usePrompt()
+  const prompt = input.prompt ?? usePrompt()
   const language = useLanguage()
   const platform = usePlatform()
 
@@ -145,6 +146,7 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
   // OS file/folder drops are handled via Tauri native events on desktop
   const handleGlobalDragOver = (event: DragEvent) => {
     if (input.isDialogActive()) return
+    if (foreignComposer(event.target)) return
 
     event.preventDefault()
     const hasFiles = event.dataTransfer?.types.includes("Files")
@@ -162,6 +164,7 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
 
   const handleGlobalDragLeave = (event: DragEvent) => {
     if (input.isDialogActive()) return
+    if (foreignComposer(event.target)) return
     if (!event.relatedTarget) {
       input.setDraggingType(null)
     }
@@ -169,6 +172,7 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
 
   const handleGlobalDrop = async (event: DragEvent) => {
     if (input.isDialogActive()) return
+    if (foreignComposer(event.target)) return
 
     event.preventDefault()
     input.setDraggingType(null)
@@ -193,6 +197,7 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
 
   // Handle file drops forwarded from layout.tsx via Tauri native drag events (desktop only)
   const handleNativeFileDrop = (event: Event) => {
+    if (input.isDialogActive() || foreignComposer(document.activeElement)) return
     const detail = (event as CustomEvent<{ paths: string[] }>).detail
     if (!detail?.paths?.length) return
 
@@ -200,6 +205,14 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     for (const filePath of detail.paths) {
       input.addPart({ type: "file", path: filePath, content: "@" + filePath, start: 0, end: 0 })
     }
+  }
+
+  // A floating composer must not send the same drop to the main session draft.
+  const foreignComposer = (target: EventTarget | null) => {
+    const quick = target instanceof Element ? target.closest('[data-component="quick-assistant-input"]') : null
+    const editor = input.editor()
+    if (quick) return !editor || !quick.contains(editor)
+    return !!editor?.closest('[data-component="quick-assistant-input"]')
   }
 
   onMount(() => {
