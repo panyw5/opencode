@@ -77,6 +77,11 @@ export function selectUserMessages(messages: Message[]) {
   return sortMessages(messages.filter((message): message is UserMessage => message.role === "user"))
 }
 
+export function selectTimelineMessages(messages: Message[], users: UserMessage[]) {
+  const visible = new Set(users.map((message) => message.id))
+  return messages.filter((message) => visible.has(message.role === "user" ? message.id : message.parentID))
+}
+
 export function selectVisibleUserMessages(messages: UserMessage[], revertMessageID?: string) {
   if (!revertMessageID) return messages
   const boundary = resolveMessage(messages, revertMessageID)

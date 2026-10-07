@@ -81,7 +81,8 @@ import {
   timelineTextMetrics,
   trimRangeToBudget,
 } from "./estimate"
-import { assistantCopySummary, createDisplayPartIndex } from "./model"
+import { assistantCopySummary, createDisplayPartIndex, selectTimelineMessages } from "./model"
+import { same } from "@/utils/same"
 import { createTimelineProjection } from "./projection"
 import { sortMessages } from "@/utils/message-order"
 import { MessageComment, type SummaryDiff, TimelineRow, TimelineRowMap } from "./rows"
@@ -373,23 +374,29 @@ export function MessageTimeline(props: {
     const id = sessionID()
     return id ? (sync.session.status.get(id) ?? idle) : idle
   })
-  const sessionMessages = createMemo(() => {
-    const id = sessionID()
-    if (!id) return emptyMessages
-    const all = sync.data.message[id] ?? emptyMessages
-    if (all.length < 2) return all
-    const ordered = sortMessages(all)
-    if (all[0] && ordered[0] && all[0].id !== ordered[0].id) {
-      const first = ordered[0]
-      const last = ordered[ordered.length - 1]
-      if (lagging()) {
-        console.debug(
-          `[timeline] message-order corrected sid=${id} n=${String(ordered.length)} first=${first.id}:${String(first.time.created)} last=${last.id}:${String(last.time.created)}`,
-        )
+  const sessionMessages = createMemo(
+    () => {
+      const id = sessionID()
+      if (!id) return emptyMessages
+      // Hidden reverted turns must not own the active row or repeatedly rebuild
+      // visible geometry as the server deletes their messages one at a time.
+      const all = selectTimelineMessages(sync.data.message[id] ?? emptyMessages, props.userMessages)
+      if (all.length < 2) return all
+      const ordered = sortMessages(all)
+      if (all[0] && ordered[0] && all[0].id !== ordered[0].id) {
+        const first = ordered[0]
+        const last = ordered[ordered.length - 1]
+        if (lagging()) {
+          console.debug(
+            `[timeline] message-order corrected sid=${id} n=${String(ordered.length)} first=${first.id}:${String(first.time.created)} last=${last.id}:${String(last.time.created)}`,
+          )
+        }
       }
-    }
-    return ordered
-  })
+      return ordered
+    },
+    emptyMessages,
+    { equals: same },
+  )
   const displayPartIndex = createDisplayPartIndex(sessionMessages, (id) => sync.data.part[id] ?? emptyParts)
   const getMessageParts = displayPartIndex.parts
   const getMessagePart = displayPartIndex.part

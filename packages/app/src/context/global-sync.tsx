@@ -882,14 +882,9 @@ function createGlobalSync() {
     })()
     if (revertTrace) {
       const current = store.session.find((item) => item.id === revertTrace.sessionID)
-      console.debug("[session-revert-sync]", {
-        stage: "event-received",
-        directory: key,
-        type: event.type,
-        ...revertTrace,
-        cachedMessages: store.message[revertTrace.sessionID]?.length ?? 0,
-        cachedRevertMessageID: current?.revert?.messageID,
-      })
+      console.debug(
+        `[session-revert-sync] stage=event-received directory=${key} type=${event.type} event=${revertTrace.eventID ?? "none"} sid=${revertTrace.sessionID} message=${revertTrace.messageID ?? "none"} revert=${revertTrace.revertMessageID ?? "none"} cachedMessages=${store.message[revertTrace.sessionID]?.length ?? 0} cachedRevert=${current?.revert?.messageID ?? "none"}`,
+      )
     }
     // Re-broadcast under the store key so SDKProvider listeners subscribed to the
     // route directory still receive events when the wire path is a realpath alias.
@@ -937,14 +932,9 @@ function createGlobalSync() {
       }
       if (revertTrace) {
         const current = store.session.find((item) => item.id === revertTrace.sessionID)
-        console.debug("[session-revert-sync]", {
-          stage: "event-applied",
-          directory: key,
-          type: event.type,
-          ...revertTrace,
-          cachedMessages: store.message[revertTrace.sessionID]?.length ?? 0,
-          cachedRevertMessageID: current?.revert?.messageID,
-        })
+        console.debug(
+          `[session-revert-sync] stage=event-applied directory=${key} type=${event.type} event=${revertTrace.eventID ?? "none"} sid=${revertTrace.sessionID} message=${revertTrace.messageID ?? "none"} revert=${revertTrace.revertMessageID ?? "none"} cachedMessages=${store.message[revertTrace.sessionID]?.length ?? 0} cachedRevert=${current?.revert?.messageID ?? "none"}`,
+        )
         if (event.type === "session.updated") {
           void reconcileSessionMessages(logical, [revertTrace.sessionID], "session-revert", {
             authoritative: true,

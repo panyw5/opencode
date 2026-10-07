@@ -5,6 +5,7 @@ import {
   displayParts,
   loadOlderTimeline,
   selectUserMessages,
+  selectTimelineMessages,
   selectVisibleUserMessages,
 } from "./model"
 
@@ -55,6 +56,17 @@ describe("timeline model", () => {
     expect(users.map((message) => message.id)).toEqual(["msg_1", "msg_3", "msg_5"])
     expect(selectVisibleUserMessages(users, "msg_5").map((message) => message.id)).toEqual(["msg_1", "msg_3"])
     expect(selectVisibleUserMessages(users)).toBe(users)
+  })
+
+  test("excludes reverted assistants so a pending send owns the active turn", () => {
+    const retained = user("msg_1")
+    const reverted = user("msg_3")
+    const hiddenAssistant = { ...assistant("msg_4"), parentID: reverted.id, time: { created: 3 } }
+    const pending = user("msg_5")
+    const answer = { ...assistant("msg_2"), parentID: retained.id }
+    expect(selectTimelineMessages([retained, answer, reverted, hiddenAssistant, pending], [retained, pending])).toEqual(
+      [retained, answer, pending],
+    )
   })
 
   test("collapses duplicate tool call parts while preserving surrounding parts", () => {

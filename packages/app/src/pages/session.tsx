@@ -40,6 +40,11 @@ import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/
 import { ensureSessionProfile, markSessionProfile, startSessionProfile } from "@/utils/session-profile"
 import { useComponentMountProfile } from "@/utils/component-mount-profile"
 import {
+  resolveSessionRevertBoundary,
+  visibleBeforeRevert,
+  type SessionRevertBoundary,
+} from "./session/session-revert-visibility"
+import {
   sessionBackgroundDelay,
   shouldFinishInitialScroll,
   shouldRefreshStaleSession,
@@ -890,20 +895,40 @@ export default function Page() {
     emptyUserMessages,
     { equals: same },
   )
+  const revertBoundary = createMemo((previous: SessionRevertBoundary | undefined) => {
+    const id = params.id
+    return resolveSessionRevertBoundary({
+      sessionKey: sessionKey(),
+      messageID: revertMessageID(),
+      messages: id ? (sync.data.message[id] ?? []) : [],
+      indexed: id ? sync.session.userMessageIndex.get(id) : undefined,
+      previous,
+    })
+  })
+  createEffect(() => {
+    const boundary = revertBoundary()
+    console.debug(
+      `[session-revert] boundary sid=${params.id ?? "none"} id=${boundary?.message.id ?? "none"} created=${boundary?.message.time?.created ?? "none"}`,
+    )
+  })
+  const isPendingSend = (messageID: string) =>
+    !!params.id && globalSync.session.messages.optimistic.has(sdk.directory, params.id, messageID)
   const visibleUserMessages = createMemo(
-    () => {
-      const revert = revertMessageID()
-      if (!revert) return userMessages()
-      const boundary = resolveMessage(messages(), revert) ?? resolveMessage(userMessages(), revert)
-      if (!boundary) return userMessages().filter((m) => m.id < revert)
-      return userMessages().filter((m) => compareMessages(m, boundary) < 0)
-    },
+    () => visibleBeforeRevert(userMessages(), revertBoundary(), isPendingSend),
     emptyUserMessages,
     {
       equals: same,
     },
   )
   const lastUserMessage = createMemo(() => visibleUserMessages().at(-1))
+  createEffect(() => {
+    const boundary = revertBoundary()
+    if (!boundary) return
+    const visible = visibleUserMessages()
+    console.debug(
+      `[session-revert] visible sid=${params.id ?? "none"} boundary=${boundary.message.id} users=${visible.length} pending=${visible.filter((message) => isPendingSend(message.id)).length} last=${visible.at(-1)?.id ?? "none"}`,
+    )
+  })
 
   createEffect(() => {
     const tab = activeFileTab()
@@ -2847,19 +2872,12 @@ export default function Page() {
   const userMessageEntries = createMemo(() => {
     const indexed = indexedUserMessages()
     if (indexed) {
-      const revert = revertMessageID()
-      const indexedMessages = indexed.map((entry) => ({ id: entry.id, time: entry.time }))
-      const boundary = revert
-        ? (resolveMessage(messages(), revert) ?? resolveMessage(indexedMessages, revert))
-        : undefined
-      const entries = indexed
-        .filter((entry) => !revert || (boundary ? compareMessages(entry, boundary) < 0 : entry.id < revert))
-        .map((entry) => ({
-          id: entry.id,
-          text: userMessageRailPreview(entry.preview),
-          created: entry.time.created,
-          meta: userMessageMeta(entry),
-        }))
+      const entries = visibleBeforeRevert(indexed, revertBoundary(), isPendingSend).map((entry) => ({
+        id: entry.id,
+        text: userMessageRailPreview(entry.preview),
+        created: entry.time.created,
+        meta: userMessageMeta(entry),
+      }))
       const known = new Set(entries.map((entry) => entry.id))
       for (const message of visibleUserMessages()) {
         if (known.has(message.id)) continue
@@ -3302,20 +3320,16 @@ export default function Page() {
   }
 
   const rolled = createMemo(() => {
-    const id = revertMessageID()
-    if (!id) return []
-    const boundary = resolveMessage(userMessages(), id) ?? resolveMessage(messages(), id)
+    const boundary = revertBoundary()
     if (!boundary) return []
     return userMessages()
       .filter((item) => {
-        if (compareMessages(item, boundary) < 0) return false
-        const pending = globalSync.session.messages.optimistic.has(sdk.directory, item.sessionID, item.id)
+        if (compareMessages(item, boundary.message) < 0) return false
+        const pending = isPendingSend(item.id)
         if (pending) {
-          console.debug("[session-revert] exclude pending send", {
-            sessionID: item.sessionID,
-            messageID: item.id,
-            boundary: id,
-          })
+          console.debug(
+            `[session-revert] exclude pending send sid=${item.sessionID} message=${item.id} boundary=${boundary.message.id}`,
+          )
         }
         return !pending
       })
