@@ -6,6 +6,7 @@ import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { dict as en } from "@/i18n/en"
 import { Persist, persisted } from "@/utils/persist"
+import { composerBoundary, isMainComposerCommand } from "@/components/prompt-input/composer-boundary"
 
 const IS_MAC = typeof navigator === "object" && /(Mac|iPod|iPhone|iPad)/.test(navigator.platform)
 
@@ -409,6 +410,11 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
       const isPalette = palette().has(sig)
       const option = keymap().get(sig)
       const id = isPalette ? PALETTE_ID : option?.id
+      if (composerBoundary(event.target)?.dataset.promptKind === "quick" && isMainComposerCommand(id)) {
+        console.debug(`[prompt-isolation] keybind blocked foreign main command=${id} signature=${sig}`)
+        event.preventDefault()
+        return false
+      }
       if (allowed) {
         console.debug(
           `[command-keybind] capture signature=${sig} resolved=${id ?? "none"} allowed=${allowed.join(",")} configured=${allowed.map((item) => `${item}:${settings.keybinds.get(item) ?? "default"}`).join(",")} suspended=false dialog=false`,

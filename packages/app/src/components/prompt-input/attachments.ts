@@ -1,12 +1,13 @@
 import { onCleanup, onMount } from "solid-js"
 import { showToast } from "@opencode-ai/ui/toast"
-import { usePrompt, type ContentPart, type ImageAttachmentPart } from "@/context/prompt"
+import type { ContentPart, ImageAttachmentPart, Prompt } from "@/context/prompt"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { uuid } from "@/utils/uuid"
 import { getCursorPosition } from "./editor-dom"
 import { attachmentMime } from "./files"
 import { normalizePaste, pasteMode } from "./paste"
+import { composerBoundary, composerOwnsTarget } from "./composer-boundary"
 
 function dataUrl(file: File, mime: string) {
   return new Promise<string>((resolve) => {
@@ -26,7 +27,8 @@ function dataUrl(file: File, mime: string) {
 }
 
 type PromptAttachmentsInput = {
-  prompt?: Pick<ReturnType<typeof usePrompt>, "current" | "cursor" | "set">
+  prompt: { current: () => Prompt; cursor: () => number | undefined; set: (prompt: Prompt, cursor?: number) => void }
+  scope: () => string
   editor: () => HTMLDivElement | undefined
   isDialogActive: () => boolean
   setDraggingType: (type: "image" | "@mention" | null) => void
@@ -36,7 +38,7 @@ type PromptAttachmentsInput = {
 }
 
 export function createPromptAttachments(input: PromptAttachmentsInput) {
-  const prompt = input.prompt ?? usePrompt()
+  const prompt = input.prompt
   const language = useLanguage()
   const platform = usePlatform()
 
@@ -48,16 +50,29 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
   }
 
   const add = async (file: File, toast = true) => {
+    const editor = input.editor()
+    const scope = input.scope()
+    const current = () => !!editor?.isConnected && editor === input.editor() && input.scope() === scope
+    console.debug(
+      `[prompt-isolation] attachment read start composer=${composerBoundary(editor)?.dataset.promptComposer} scope=${scope}`,
+    )
     const mime = await attachmentMime(file)
+    if (!current()) {
+      console.debug("[prompt-isolation] attachment ignored changed scope or detached editor")
+      return false
+    }
     if (!mime) {
       if (toast) warn()
       return false
     }
 
-    const editor = input.editor()
     if (!editor) return false
 
     const url = await dataUrl(file, mime)
+    if (!current()) {
+      console.debug("[prompt-isolation] attachment read discarded changed scope or detached editor")
+      return false
+    }
     if (!url) return false
 
     const attachment: ImageAttachmentPart = {
@@ -69,6 +84,9 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     }
     const cursor = prompt.cursor() ?? getCursorPosition(editor)
     prompt.set([...prompt.current(), attachment], cursor)
+    console.debug(
+      `[prompt-isolation] attachment added composer=${composerBoundary(editor)?.dataset.promptComposer} scope=${scope}`,
+    )
     return true
   }
 
@@ -76,8 +94,14 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
 
   const addAttachments = async (files: File[], toast = true) => {
     let found = false
+    const editor = input.editor()
+    const scope = input.scope()
 
     for (const file of files) {
+      if (!editor?.isConnected || editor !== input.editor() || input.scope() !== scope) {
+        console.debug("[prompt-isolation] attachment batch cancelled changed scope or detached editor")
+        return found
+      }
       const ok = await add(file, false)
       if (ok) found = true
     }
@@ -93,6 +117,9 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
   }
 
   const handlePaste = async (event: ClipboardEvent) => {
+    const editor = input.editor()
+    const scope = input.scope()
+    if (!composerOwnsTarget(editor, event.target)) return
     const clipboardData = event.clipboardData
     if (!clipboardData) return
 
@@ -115,6 +142,10 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     // Desktop: Browser clipboard has no images and no text, try platform's native clipboard for images
     if (input.readClipboardImage && !plainText) {
       const file = await input.readClipboardImage()
+      if (!editor?.isConnected || input.editor() !== editor || input.scope() !== scope) {
+        console.debug("[prompt-isolation] clipboard read discarded changed scope or detached editor")
+        return
+      }
       if (file) {
         await addAttachment(file)
         return
@@ -136,7 +167,10 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
       return
     }
 
-    const inserted = typeof document.execCommand === "function" && document.execCommand("insertText", false, text)
+    const selection = window.getSelection()
+    const ownsSelection = !!selection?.rangeCount && !!editor?.contains(selection.getRangeAt(0).startContainer)
+    const inserted =
+      ownsSelection && typeof document.execCommand === "function" && document.execCommand("insertText", false, text)
     if (inserted) return
 
     put()
@@ -165,7 +199,7 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
   const handleGlobalDragLeave = (event: DragEvent) => {
     if (input.isDialogActive()) return
     if (foreignComposer(event.target)) return
-    if (!event.relatedTarget) {
+    if (!composerOwnsTarget(input.editor(), event.relatedTarget)) {
       input.setDraggingType(null)
     }
   }
@@ -197,9 +231,14 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
 
   // Handle file drops forwarded from layout.tsx via Tauri native drag events (desktop only)
   const handleNativeFileDrop = (event: Event) => {
-    if (input.isDialogActive() || foreignComposer(document.activeElement)) return
-    const detail = (event as CustomEvent<{ paths: string[] }>).detail
+    if (input.isDialogActive()) return
+    const detail = (event as CustomEvent<{ paths: string[]; composerID?: string; scope?: string }>).detail
     if (!detail?.paths?.length) return
+    const own = composerBoundary(input.editor())
+    if (!own || own.dataset.promptComposer !== detail.composerID || input.scope() !== detail.scope) return
+    console.debug(
+      `[prompt-isolation] native drop accepted composer=${detail.composerID} scope=${detail.scope} files=${detail.paths.length}`,
+    )
 
     input.focusEditor()
     for (const filePath of detail.paths) {
@@ -207,12 +246,8 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     }
   }
 
-  // A floating composer must not send the same drop to the main session draft.
   const foreignComposer = (target: EventTarget | null) => {
-    const quick = target instanceof Element ? target.closest('[data-component="quick-assistant-input"]') : null
-    const editor = input.editor()
-    if (quick) return !editor || !quick.contains(editor)
-    return !!editor?.closest('[data-component="quick-assistant-input"]')
+    return !composerOwnsTarget(input.editor(), target)
   }
 
   onMount(() => {

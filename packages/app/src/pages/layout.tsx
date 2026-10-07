@@ -95,6 +95,7 @@ import { DialogSwitchProject } from "@/components/dialog-switch-project"
 import { DialogRecentSessions } from "@/components/dialog-recent-sessions"
 import { DebugBar } from "@/components/debug-bar"
 import { QuickAssistant } from "@/components/quick-assistant"
+import { resolveDropComposer } from "@/components/prompt-input/composer-boundary"
 import { Titlebar } from "@/components/titlebar"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { ServerConnection, useServer } from "@/context/server"
@@ -2027,9 +2028,7 @@ export default function Layout(props: ParentProps) {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<PresentedTaskOpenRequest>).detail
       if (!detail?.taskID) return
-      console.debug(
-        `[layout] present-task-open kind=${detail.kind} task=${detail.taskID} session=${detail.sessionID}`,
-      )
+      console.debug(`[layout] present-task-open kind=${detail.kind} task=${detail.taskID} session=${detail.sessionID}`)
       if (detail.kind === "project_task") {
         openProjectTasksPanel()
         setPresentedTaskFocus({ kind: "projectTasks", taskID: detail.taskID })
@@ -2638,7 +2637,7 @@ export default function Layout(props: ParentProps) {
         target = { type: "draft", ...sessionTabs.createDraft(directory, "button") }
       }
       console.debug(`[browser-panel] restore session request=${request.id} target=${sessionTabsTargetHref(target)}`)
-      void sessionTabs.activate(target, { replace: onConfigRoute() }).then(result => {
+      void sessionTabs.activate(target, { replace: onConfigRoute() }).then((result) => {
         console.debug(`[browser-panel] restore result=${result} request=${request.id}`)
       })
     }
@@ -2716,6 +2715,8 @@ export default function Layout(props: ParentProps) {
       }
 
       if (detail.type !== "drop") return
+      const dropComposer = resolveDropComposer(detail.position)
+      const dropScope = dropComposer?.dataset.promptScope
 
       dragSeq += 1
       setFolderDragging(false)
@@ -2748,7 +2749,18 @@ export default function Layout(props: ParentProps) {
       }
 
       if (files.length > 0) {
-        window.dispatchEvent(new CustomEvent("opencode:file-drop", { detail: { paths: files } }))
+        if (!dropComposer?.isConnected || dropComposer.dataset.promptScope !== dropScope) {
+          console.debug("[prompt-isolation] native drop skipped detached or changed composer")
+          return
+        }
+        console.debug(
+          `[prompt-isolation] native drop routed composer=${dropComposer.dataset.promptComposer} scope=${dropScope} files=${files.length}`,
+        )
+        window.dispatchEvent(
+          new CustomEvent("opencode:file-drop", {
+            detail: { paths: files, composerID: dropComposer.dataset.promptComposer, scope: dropScope },
+          }),
+        )
       }
     }
 

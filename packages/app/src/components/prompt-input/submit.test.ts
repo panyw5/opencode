@@ -844,4 +844,24 @@ describe("prompt submit intervene", () => {
     expect(sentPrompts).toEqual([])
     expect(flushedSessions).toEqual([])
   })
+
+  test("the stop button never sends or queues a nonempty draft", async () => {
+    params = { dir: "/repo/worktree-a", id: "session-9" }
+    const queued: unknown[] = []
+    const submit = createPromptSubmit(baseInput({ onQueue: (draft) => queued.push(draft) }))
+    await submit.handlePrimaryAction({ preventDefault() {} } as Event, "stop")
+    expect(abortedSessions).toEqual([{ directory: "/repo/worktree-a", sessionID: "session-9" }])
+    expect(sentPrompts).toEqual([])
+    expect(sentCommands).toEqual([])
+    expect(queued).toEqual([])
+    expect(promptValue[0]).toMatchObject({ content: "ls" })
+  })
+
+  test("a displayed stop action remains stop even if streaming just finished", async () => {
+    params = { dir: "/repo/worktree-a", id: "session-9" }
+    const submit = createPromptSubmit(baseInput({ working: () => false }))
+    await submit.handlePrimaryAction({ preventDefault() {} } as Event, "stop")
+    expect(abortedSessions).toEqual([{ directory: "/repo/worktree-a", sessionID: "session-9" }])
+    expect(sentPrompts).toEqual([])
+  })
 })

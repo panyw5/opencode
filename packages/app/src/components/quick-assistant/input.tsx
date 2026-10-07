@@ -17,6 +17,7 @@ type Props = {
   setRef: (node: HTMLDivElement) => void
   prompt: Prompt
   directory: string
+  scope: string
   agents: Agent[]
   commands: Command[]
   history: Prompt[]
@@ -104,6 +105,10 @@ export function QuickAssistantInput(props: Props) {
     <div class="px-3 pb-3 pt-2">
       <form
         id={formID}
+        data-prompt-composer={formID}
+        data-prompt-kind="quick"
+        data-prompt-scope={props.scope}
+        data-prevent-autofocus
         class="rounded-[var(--radius-4xl)] border border-[color-mix(in_srgb,var(--border-weak-base)_60%,transparent)] bg-background-base"
         onSubmit={(event) => {
           event.preventDefault()
@@ -114,6 +119,7 @@ export function QuickAssistantInput(props: Props) {
           setRef={props.setRef}
           prompt={props.prompt}
           directory={props.directory}
+          scope={props.scope}
           agents={props.agents}
           commands={props.commands}
           history={props.history}

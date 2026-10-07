@@ -28,10 +28,12 @@ import { mainDomain } from "@/pages/layout/extra-agents"
 
 import { parseQuickEditor, quickPromptText } from "./editor-model"
 import { createInputUndoEntry, createInputUndoState, recordInputUndo, stepInputUndo } from "../prompt-input/input-undo"
+import { mayFocusComposer } from "../prompt-input/composer-boundary"
 
 export function QuickAssistantEditor(props: {
   prompt: Prompt
   directory: string
+  scope: string
   agents: Agent[]
   commands: Command[]
   history: Prompt[]
@@ -277,10 +279,13 @@ export function QuickAssistantEditor(props: {
   const replace = (prompt: Prompt) => {
     setState("cursor", quickPromptText(prompt).length)
     change(prompt)
-    queueMicrotask(focus)
+    queueMicrotask(() => {
+      if (mayFocusComposer(editor)) focus()
+    })
   }
   const attachments = createPromptAttachments({
     prompt: { current: () => props.prompt, cursor: () => state.cursor, set: change },
+    scope: () => props.scope,
     editor: () => editor,
     isDialogActive: () => !!dialog.active,
     setDraggingType: () => {},
@@ -421,7 +426,9 @@ export function QuickAssistantEditor(props: {
               setState("cursor", next.entry.cursor)
               props.onChange(next.entry.prompt)
               closeMenu()
-              queueMicrotask(focus)
+              queueMicrotask(() => {
+                if (mayFocusComposer(editor)) focus()
+              })
               console.debug("[quick-assistant:input] undo/redo", { index: undo.index })
               return
             }

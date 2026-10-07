@@ -18,6 +18,7 @@ import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildRequestParts } from "./build-request-parts"
 import { promptText } from "./prompt-text"
 import { setCursorPosition } from "./editor-dom"
+import { mayFocusComposer } from "./composer-boundary"
 import { formatServerError } from "@/utils/server-errors"
 import { sessionHookControlCommand, sessionHookControlInput } from "@/pages/session/session-hook-controls"
 import { takePendingProjectTaskMount } from "@/components/session/pending-project-task-mount"
@@ -931,6 +932,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       input.setPopover(null)
       requestAnimationFrame(() => {
         const editor = input.editor()
+        if (!mayFocusComposer(editor)) {
+          console.debug("[prompt-isolation] failed-send focus skipped foreign composer")
+          return
+        }
         if (!editor) return
         editor.focus()
         setCursorPosition(editor, input.promptLength(currentPrompt))
@@ -1176,8 +1181,16 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
   }
 
+  const handlePrimaryAction = (event: Event, action: "send" | "stop") => {
+    event.preventDefault()
+    const stop = action === "stop" || input.working()
+    console.debug(`[prompt-isolation] primary action=${stop ? "stop" : "send"} session=${params.id ?? "none"}`)
+    return stop ? abort() : handleSubmit(event)
+  }
+
   return {
     abort,
     handleSubmit,
+    handlePrimaryAction,
   }
 }

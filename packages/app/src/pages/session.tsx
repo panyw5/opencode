@@ -1690,6 +1690,10 @@ export default function Page() {
     if (!input) return
     requestAnimationFrame(() => {
       if (!input.isConnected) return
+      if (document.activeElement?.closest('[data-prompt-kind="quick"]')) {
+        console.debug("[prompt-isolation] main focus command skipped quick composer")
+        return
+      }
       input.focus()
       setCursorPosition(input, promptLength(prompt.current()))
     })
@@ -3792,9 +3796,7 @@ export default function Page() {
             </DropdownMenu.Item>
             <DropdownMenu.Item
               disabled={
-                platform.platform !== "desktop" ||
-                !server.isLocal() ||
-                (!platform.openInFinder && !platform.openPath)
+                platform.platform !== "desktop" || !server.isLocal() || (!platform.openInFinder && !platform.openPath)
               }
               onSelect={revealFileLink}
             >

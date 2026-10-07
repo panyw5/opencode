@@ -1,7 +1,7 @@
 import type { Prompt } from "@/context/prompt"
 import type { SelectedLineRange } from "@/context/file"
 
-const DEFAULT_PROMPT: Prompt = [{ type: "text", content: "", start: 0, end: 0 }]
+import { createEmptyPrompt } from "@/context/prompt-default"
 
 export const MAX_HISTORY = 100
 
@@ -242,7 +242,7 @@ export function navigatePromptHistory(input: HistoryNavInput): HistoryNavResult 
       historyIndex: -1,
       savedPrompt: null,
       entry: {
-        prompt: DEFAULT_PROMPT,
+        prompt: createEmptyPrompt(),
         comments: [],
       },
       cursor: "end",

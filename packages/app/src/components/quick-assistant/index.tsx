@@ -1065,6 +1065,7 @@ export function QuickAssistant() {
                 prompt={state.prompt}
                 history={state.history}
                 directory={activeDir() || root()}
+                scope={JSON.stringify([root(), sessionID()])}
                 agents={data()?.agent ?? []}
                 commands={data()?.command ?? []}
                 busy={interacting()}

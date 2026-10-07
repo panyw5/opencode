@@ -10,6 +10,8 @@ import { Path } from "@opencode-ai/core/util/path"
 import { useServer } from "@/context/server"
 import { usePlatform } from "@/context/platform"
 import { workspacePathContext } from "@/pages/layout/helpers"
+import { createEmptyPrompt, DEFAULT_PROMPT } from "./prompt-default"
+export { createEmptyPrompt, DEFAULT_PROMPT } from "./prompt-default"
 
 interface PartBase {
   content: string
@@ -69,8 +71,6 @@ export type SessionContextItem = {
 }
 
 export type ContextItem = FileContextItem | SessionContextItem
-
-export const DEFAULT_PROMPT: Prompt = [{ type: "text", content: "", start: 0, end: 0 }]
 
 function isSelectionEqual(a?: FileSelection, b?: FileSelection) {
   if (!a && !b) return true
@@ -172,7 +172,7 @@ function createPromptSession(dir: string, id: string | undefined, context: Retur
         items: (ContextItem & { key: string })[]
       }
     }>({
-      prompt: clonePrompt(DEFAULT_PROMPT),
+      prompt: createEmptyPrompt(),
       cursor: undefined,
       context: {
         items: [],
@@ -224,7 +224,7 @@ function createPromptSession(dir: string, id: string | undefined, context: Retur
     },
     reset() {
       batch(() => {
-        setStore("prompt", clonePrompt(DEFAULT_PROMPT))
+        setStore("prompt", createEmptyPrompt())
         setStore("cursor", 0)
       })
     },

@@ -18,7 +18,7 @@ import { useLocal } from "@/context/local"
 import { selectionFromLines, type SelectedLineRange, useFile } from "@/context/file"
 import {
   ContentPart,
-  DEFAULT_PROMPT,
+  createEmptyPrompt,
   isPromptEqual,
   Prompt,
   usePrompt,
@@ -99,6 +99,7 @@ import type { AssistantMessage, Part } from "@opencode-ai/sdk/v2/client"
 import { createInputUndoEntry, createInputUndoState, recordInputUndo, stepInputUndo } from "./prompt-input/input-undo"
 import { workspaceKey } from "@/pages/layout/helpers"
 import { uiPerfTriggerDown, uiPerfOpen } from "@/utils/ui-perf"
+import { mayFocusComposer } from "./prompt-input/composer-boundary"
 
 interface PromptInputProps {
   class?: string
@@ -474,7 +475,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   let fileInputRef: HTMLInputElement | undefined
   let scrollRef!: HTMLDivElement
   let popoverRef: HTMLDivElement | undefined
-  let inputUndo = createInputUndoState(createInputUndoEntry(DEFAULT_PROMPT, 0))
+  let inputUndo = createInputUndoState(createInputUndoEntry(createEmptyPrompt(), 0))
   let inputUndoLast = 0
 
   const mirror = { input: false }
@@ -848,9 +849,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     resetInputUndo(p, length)
     prompt.set(p, length)
     requestAnimationFrame(() => {
+      setStore("applyingHistory", false)
+      if (!mayFocusComposer(editorRef)) return
       editorRef.focus()
       setCursorPosition(editorRef, length)
-      setStore("applyingHistory", false)
       queueScroll()
     })
   }
@@ -918,7 +920,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const setMode = (mode: "normal" | "shell") => {
     setStore("mode", mode)
     setStore("popover", null)
-    requestAnimationFrame(() => editorRef?.focus())
+    requestAnimationFrame(() => {
+      if (!mayFocusComposer(editorRef)) {
+        console.debug("[prompt-isolation] mode focus skipped foreign composer")
+        return
+      }
+      editorRef.focus()
+    })
   }
 
   const shellModeKey = "mod+shift+x"
@@ -992,6 +1000,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     resetHistoryNavigation(true)
     prompt.set(entry.prompt, entry.cursor)
     requestAnimationFrame(() => {
+      if (!mayFocusComposer(editorRef)) return
       editorRef.focus()
       setCursorPosition(editorRef, entry.cursor)
       queueScroll()
@@ -1009,6 +1018,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const focusEditorEnd = () => {
     requestAnimationFrame(() => {
+      if (!mayFocusComposer(editorRef)) return
       editorRef.focus()
       const range = document.createRange()
       const selection = window.getSelection()
@@ -1292,7 +1302,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }
 
     clearEditor()
-    resetInputUndo(DEFAULT_PROMPT, 0)
+    resetInputUndo(createEmptyPrompt(), 0)
     prompt.set([{ type: "text", content: "", start: 0, end: 0 }], 0)
     command.trigger(cmd.id, "slash")
   }
@@ -1580,7 +1590,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
     flushText()
 
-    if (parts.length === 0) parts.push(...DEFAULT_PROMPT)
+    if (parts.length === 0) parts.push(...createEmptyPrompt())
     return parts
   }
 
@@ -1600,9 +1610,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       closePopover()
       resetHistoryNavigation()
       if (prompt.dirty()) {
-        syncInputUndo(DEFAULT_PROMPT, 0, prev)
+        syncInputUndo(createEmptyPrompt(), 0, prev)
         mirror.input = true
-        prompt.set(DEFAULT_PROMPT, 0)
+        prompt.set(createEmptyPrompt(), 0)
       }
       queueScroll()
       return
@@ -1724,6 +1734,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (part.type === "file" || part.type === "agent" || part.type === "im") {
       const cursorPos = getCursorPosition(editorRef)
       requestAnimationFrame(() => {
+        if (!mayFocusComposer(editorRef)) return
         editorRef.blur()
         editorRef.focus()
         setCursorPosition(editorRef, cursorPos)
@@ -1776,6 +1787,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         prompt.set(edit.prompt, promptLength(edit.prompt))
         resetInputUndo(edit.prompt, promptLength(edit.prompt))
         requestAnimationFrame(() => {
+          if (!mayFocusComposer(editorRef)) return
           editorRef.focus()
           setCursorPosition(editorRef, promptLength(edit.prompt))
           queueScroll()
@@ -1845,6 +1857,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const { addAttachments, removeAttachment, handlePaste } = createPromptAttachments({
+    prompt,
+    scope: () => JSON.stringify([sdk.directory, params.id ?? params.draftID]),
     editor: () => editorRef,
     isDialogActive: () => !!dialog.active,
     setDraggingType: (type) => setStore("draggingType", type),
@@ -1885,6 +1899,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     queueScroll()
     schedulePrediction()
     setTimeout(() => {
+      if (!mayFocusComposer(editorRef)) return
       editorRef?.focus()
       setCursorPosition(editorRef, cursor)
       queueScroll()
@@ -1915,6 +1930,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     queueScroll()
     schedulePrediction()
     requestAnimationFrame(() => {
+      if (!mayFocusComposer(editorRef)) return
       editorRef?.focus()
       setCursorPosition(editorRef, newCursor)
       queueScroll()
@@ -1967,7 +1983,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
   const toggleRead = () => setPrefs("read", (v) => !v)
 
-  const { abort, handleSubmit } = createPromptSubmit({
+  const { abort, handleSubmit, handlePrimaryAction } = createPromptSubmit({
     gptProBackground: () => proMode.background,
     info,
     imageAttachments,
@@ -2373,7 +2389,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
 
   return (
-    <div class="relative size-full _max-h-[320px] flex flex-col gap-0">
+    <div
+      data-prompt-composer={formID}
+      data-prompt-kind="main"
+      data-prompt-scope={JSON.stringify([sdk.directory, params.id ?? params.draftID])}
+      class="relative size-full _max-h-[320px] flex flex-col gap-0"
+    >
       <PromptPopover
         popover={store.popover}
         setPopoverRef={(el) => (popoverRef = el)}
@@ -3035,8 +3056,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   <Tooltip {...hover} placement="top" inactive={!prompt.dirty() && !working()} value={tip()}>
                     <IconButton
                       data-action="prompt-submit"
-                      type="submit"
+                      type="button"
                       form={formID}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        void handlePrimaryAction(event, event.currentTarget.dataset.icon === "stop" ? "stop" : "send")
+                      }}
                       disabled={
                         store.mode !== "normal" ||
                         store.submitting ||
