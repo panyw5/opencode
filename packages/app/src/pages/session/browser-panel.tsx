@@ -148,7 +148,7 @@ export function BrowserPanel(props: { class?: string }) {
         }}
       >
         <div class="flex flex-col flex-1 min-h-0">
-          <div class="relative flex h-7 shrink-0 items-center gap-1 px-2 border-b border-border-weaker-base">
+          <div class="relative flex h-7 shrink-0 items-center gap-1 px-2 bg-background-base">
             {/* Agent-tab close confirmation capsule. Must live in the tab-strip
                 row: the native WebContentsView always paints ABOVE the DOM, so
                 any overlay inside the placeholder container (the region the
@@ -187,6 +187,7 @@ export function BrowserPanel(props: { class?: string }) {
               {(tab) => (
                 <button
                   type="button"
+                  aria-pressed={active() === tab().partition}
                   onClick={() => setActive(tab().partition)}
                   onAuxClick={(e) => {
                     if (e.button !== 1) return
@@ -202,7 +203,7 @@ export function BrowserPanel(props: { class?: string }) {
                   classList={{
                     "pr-2": tab().agent,
                     "pr-1": !tab().agent,
-                    "bg-surface-inset-base": active() === tab().partition && !tab().agent,
+                    "bg-surface-interactive-weak": active() === tab().partition && !tab().agent,
                     "text-text-strong": active() === tab().partition,
                     "text-text-weak hover:bg-surface-inset-base hover:text-text-strong": active() !== tab().partition,
                   }}
@@ -268,7 +269,7 @@ export function BrowserPanel(props: { class?: string }) {
               aria-label={language.t("panel.browser.newTab")}
             />
           </div>
-          <div class="h-10 shrink-0 flex items-center gap-1 px-2 border-b border-border-weaker-base bg-background-stronger">
+          <div class="h-10 shrink-0 flex items-center gap-1 px-2 border-b border-border-weaker-base bg-background-base">
             <IconButton
               icon="arrow-left"
               variant="ghost"
