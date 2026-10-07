@@ -8,11 +8,27 @@ export type GptProPageState = {
   targetModel: boolean
   composer: boolean
   draft: string
+  attachmentInput?: boolean
+  attachments?: Array<{
+    name: string
+    kind?: "document" | "image"
+    sha256?: string
+    status: "uploading" | "ready" | "failed" | "unknown"
+  }>
   generating: boolean
   sendReady?: boolean
   error?: { kind: "verification" | "request"; message: string }
   revision: number
-  users: Array<{ id: string; text: string }>
+  users: Array<{
+    id: string
+    text: string
+    attachments?: Array<{
+      name: string
+      kind?: "document" | "image"
+      sha256?: string
+      status: "uploading" | "ready" | "failed" | "unknown"
+    }>
+  }>
   answer?: {
     id: string
     userID: string
@@ -63,6 +79,20 @@ export type GptProCommand = {
   requestID?: string
   background?: boolean
   uid?: string
+  attachments?: GptProAttachment[]
+}
+export type GptProAttachment = {
+  id: string
+  name: string
+  path: string
+  mime: string
+  size: number
+  sha256: string
+}
+export type GptProJobAttachment = Omit<GptProAttachment, "path"> & { path?: string } & {
+  uploadName: string
+  status: "pending" | "uploading" | "ready" | "failed" | "unknown"
+  error?: string
 }
 export type GptProRecovery = {
   stage: "open" | "ready" | "model" | "compose" | "submit" | "track"
@@ -112,6 +142,9 @@ export type GptProJob = {
   successorID?: string
   phase: GptProPhase
   prompt: string
+  attachments?: GptProJobAttachment[]
+  /** App-owned staged copies are persisted so recovery reuses the same bytes. */
+  stagedAttachments?: Array<{ id: string; path: string; sha256: string; uploadName: string }>
   url: string
   createdAt: number
   updatedAt: number

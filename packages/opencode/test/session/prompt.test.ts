@@ -65,6 +65,7 @@ import { IMOwner } from "@/im/owner"
 import { IM } from "@/im/service"
 import { IMSubscription } from "@/im/subscription"
 import { Browser } from "../../src/browser"
+import type { GptProCommand, GptProJob } from "@opencode-ai/util/gpt-pro"
 
 void Log.init({ print: false })
 
@@ -186,7 +187,10 @@ const blockingProcessor = Layer.succeed(
   }),
 )
 
-function makePrompt(input?: { processor?: "blocking" }) {
+function makePrompt(input?: {
+  processor?: "blocking"
+  browser?: Layer.Layer<Browser.Service, never, never>
+}) {
   const deps = Layer.mergeAll(
     Session.defaultLayer,
     Snapshot.defaultLayer,
@@ -222,7 +226,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provide(Reference.defaultLayer),
     Layer.provide(Ripgrep.defaultLayer),
     Layer.provide(Format.defaultLayer),
-    Layer.provide(Browser.defaultLayer),
+    Layer.provide(input?.browser ?? Browser.defaultLayer),
     Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
     Layer.provide(ProjectTask.defaultLayer),
     Layer.provideMerge(todo),
@@ -264,15 +268,45 @@ function makePrompt(input?: { processor?: "blocking" }) {
   )
 }
 
-function makeHttp(input?: { processor?: "blocking" }) {
+function makeHttp(input?: {
+  processor?: "blocking"
+  browser?: Layer.Layer<Browser.Service, never, never>
+}) {
   return Layer.mergeAll(TestLLMServer.layer, ProjectTask.defaultLayer, makePrompt(input))
 }
 
-function makeHttpNoLLMServer(input?: { processor?: "blocking" }) {
+function makeHttpNoLLMServer(input?: {
+  processor?: "blocking"
+  browser?: Layer.Layer<Browser.Service, never, never>
+}) {
   return makePrompt(input)
 }
 
 const it = testEffect(makeHttp())
+const directGptProCalls: GptProCommand[] = []
+const directMentionBrowser = Layer.mock(Browser.Service, {
+  gptPro: (owner, input) =>
+    Effect.sync(() => {
+      directGptProCalls.push(input)
+      return {
+        id: "gpt_direct_mention",
+        owner,
+        requestID: input.requestID ?? "direct-request",
+        phase: "completed",
+        background: false,
+        prompt: input.prompt ?? "Review the provided files",
+        url: "https://chatgpt.com/c/gpt_direct_mention",
+        createdAt: 1,
+        updatedAt: 2,
+        submitted: true,
+        revision: 1,
+        model: "GPT-6 Pro",
+        text: "Direct mention answer",
+        html: "<p>Direct mention answer</p>",
+      } satisfies GptProJob
+    }),
+})
+const directMentionIt = testEffect(makeHttp({ browser: directMentionBrowser }))
 it.instance("Pro progress enters the timeline without interrupting an active request and final output wakes an idle session", () => Effect.gen(function* () {
   const { llm } = yield* useServerConfig(providerCfg)
   const prompt = yield* SessionPrompt.Service
@@ -355,6 +389,127 @@ function providerCfg(url: string) {
     },
   }
 }
+
+directMentionIt.instance(
+  "direct @gpt-pro passes local and pasted files as named, short-lived attachments",
+  () =>
+    Effect.gen(function* () {
+      directGptProCalls.length = 0
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Direct GPT-Pro attachments",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      const localFile = path.join(dir, "local-note.txt")
+      yield* writeText(localFile, "local source file")
+      yield* llm.push(reply().text("Summarize the attached review.").stop())
+      const photon = yield* Effect.promise(() => import("@silvia-odwyer/photon-node"))
+      const source = new photon.PhotonImage(new Uint8Array([255, 255, 255, 255]), 1, 1)
+      const png = Buffer.from(source.get_bytes())
+      source.free()
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        parts: [
+          { type: "text", text: "Review these files" },
+          { type: "agent", name: "gpt-pro" },
+          {
+            type: "file",
+            mime: "text/plain",
+            filename: "local-note.txt",
+            url: pathToFileURL(localFile).href,
+          },
+          {
+            type: "file",
+            mime: "image/png",
+            filename: "pasted image.png",
+            url: `data:image/png;base64,${png.toString("base64")}`,
+          },
+        ],
+      })
+      const consult = directGptProCalls.find((call) => call.action === "consult")
+      expect(consult?.attachments?.map(({ name, mime }) => ({ name, mime }))).toEqual([
+        { name: "local-note.txt", mime: "text/plain" },
+        { name: "pasted image.png", mime: "image/png" },
+      ])
+      const pastedPath = consult?.attachments?.[1]?.path
+      expect(pastedPath).toContain(path.join(dir, ".opencode"))
+      expect(yield* Effect.promise(() => Bun.file(pastedPath!).exists())).toBe(false)
+      expect(yield* Effect.promise(() => Bun.file(localFile).text())).toBe("local source file")
+    }),
+  { config: cfg },
+)
+
+directMentionIt.instance(
+  "direct @gpt-pro records malformed attachments as a tool error without calling the browser",
+  () =>
+    Effect.gen(function* () {
+      directGptProCalls.length = 0
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Malformed direct GPT-Pro attachment" })
+      yield* llm.push(reply().text("Continue without the rejected attachment.").stop())
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        parts: [
+          { type: "text", text: "Review this" },
+          { type: "agent", name: "gpt-pro" },
+          {
+            type: "file",
+            mime: "text/plain",
+            filename: "remote.txt",
+            url: "https://example.invalid/remote.txt",
+          },
+        ],
+      })
+      expect(directGptProCalls).toHaveLength(0)
+      const parts = (yield* sessions.messages({ sessionID: chat.id })).flatMap((message) => message.parts)
+      const failed = parts.find((part) => part.type === "tool" && part.tool === "gpt_pro_consult")
+      expect(failed?.type).toBe("tool")
+      if (failed?.type === "tool") {
+        expect(failed.state.status).toBe("error")
+        if (failed.state.status === "error") expect(failed.state.error).toContain("local files or pasted data")
+      }
+    }),
+  { config: cfg },
+)
+
+directMentionIt.instance(
+  "direct @gpt-pro permission denial records an error and dispatches no browser command",
+  () =>
+    Effect.gen(function* () {
+      directGptProCalls.length = 0
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Denied direct GPT-Pro attachment",
+        permission: [{ permission: "*", pattern: "*", action: "deny" }],
+      })
+      const localFile = path.join(dir, "denied.txt")
+      yield* writeText(localFile, "must not be read")
+      yield* llm.push(reply().text("Continue without the denied attachment.").stop())
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        parts: [
+          { type: "text", text: "Review this" },
+          { type: "agent", name: "gpt-pro" },
+          { type: "file", mime: "text/plain", filename: "denied.txt", url: pathToFileURL(localFile).href },
+        ],
+      })
+      expect(directGptProCalls).toHaveLength(0)
+      const parts = (yield* sessions.messages({ sessionID: chat.id })).flatMap((message) => message.parts)
+      const failed = parts.find((part) => part.type === "tool" && part.tool === "gpt_pro_consult")
+      expect(failed?.type).toBe("tool")
+      if (failed?.type === "tool") expect(failed.state.status).toBe("error")
+    }),
+  { config: cfg },
+)
 
 const writeText = Effect.fn("test.writeText")(function* (file: string, text: string) {
   const fs = yield* AppFileSystem.Service

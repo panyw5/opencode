@@ -3,23 +3,29 @@ Consult GPT-6 Pro on complicated tasks through the embedded ChatGPT Chat browser
 
 # GUIDELINES
 
-- Send a self-contained prompt with necessary source content: GPT-6 Pro does not have access to the file system
+- GPT-6 Pro cannot access the local file system. Use the `files` parameter only when the user explicitly attached or requested specific files for this consultation; do not infer attachments from paths mentioned in prompt text.
+- `files` accepts local workspace paths (absolute or relative to the workspace) for `consult` and `intervene`. Plain text paths in the prompt are not attachments.
+- Supported file types are `.md`, `.txt`, `.pdf`, `.png`, `.jpg`, `.jpeg`, and `.webp`; limits are 10 files, 20 MiB per file, and 50 MiB total.
+- The user is asked to authorize reading and sending the named files to `https://chatgpt.com`; wait for that permission before claiming files were shared. Original files are not modified.
+- The browser flow uploads attachments before submitting the prompt. Submission is gated on upload completion; if an upload fails or its state is uncertain, do not claim it was sent or retry with a new consultation.
+- Include the relevant request and file context in the prompt. Do not copy file paths into the prompt as a substitute for attaching files.
 - Use `background=true` for long independent consultations: the tool returns immediately, progress and completion arrive automatically as new session inputs
 - Available actions:
-  - `consult` starts a NEW conversation
+  - `consult` starts a NEW conversation and may include explicitly selected `files`
   - `background` promotes an existing consultation without resending
   - `status`/`read` inspect the conversation
   - `open` shows its browser without pausing
   - `stop` stops generation
   - `pause` suspends automation and result tracking without stopping ChatGPT generation
-  - `resume` continues tracking WITHOUT resending
+  - `resume` continues tracking WITHOUT resending or duplicating prior uploads
   - `intervene` stops generation and sends a follow-up in the same conversation.
+  - `intervene` may include explicitly selected `files`; it does not infer files from prompt text.
   - `send` submits the exact managed prompt during agent recovery; optional `uid` is the send button observed with browser_read. Never use this after a send attempt.
 - Always retain `consultation_id`
 
 # BROWSER RECOVERY
 The fixed flow runs first. If its result or background notification contains `recovery`, do not create another consultation. Use the existing browser_read, browser_screenshot, browser_click, browser_type, browser_scroll, browser_navigate and browser_console tools with `consultation_id` to operate only this owned ChatGPT page. Inspect before acting; preserve unrelated drafts and the original conversation.
 
-After repairing an overlay, navigation, focus or model selection, call action=resume with the same consultation_id. The program will continue prompt preparation, single submission, tracking and result injection. To restore the composer yourself, use only the exact `managed_prompt` returned by action=read, without submit=true. A send button click is centrally guarded; action=send is also available for a send control observed by the model.
+After repairing an overlay, navigation, focus or model selection, call action=resume with the same consultation_id. The program will continue prompt preparation, attachment/upload tracking, single submission, and result injection without duplicating uploads. To restore the composer yourself, use only the exact `managed_prompt` returned by action=read, without submit=true. A send button click is centrally guarded; action=send is also available for a send control observed by the model.
 
 If `send_attempted` is true, never submit again. Inspect the original question and resume tracking. Login or human-verification challenges require the user; do not automate or bypass them.

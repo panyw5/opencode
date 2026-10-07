@@ -102,6 +102,52 @@ export function inspectChatGptPage(
       '#prompt-textarea, [data-composer-markdown][role="textbox"][contenteditable="true"]',
     ),
   ].find(visible)
+  const attachmentCards = composer
+    ?.closest("[data-composer-body]")
+    ?.querySelector("[data-composer-attachments][data-visible-attachments]")
+  const attachmentNames = (container: Element | null | undefined) => {
+    if (!container) return []
+    const cards = [...container.querySelectorAll<HTMLElement>('[class~="group/composer-attachment"]')]
+    const wrapper = container.querySelector(":scope > div.flex-wrap")
+    const unknownChild =
+      wrapper && [...wrapper.children].some((child) => !child.classList.contains("group/composer-attachment"))
+    const attachments = cards.map((card) => {
+      const name =
+        card.querySelector<HTMLElement>("span.truncate")?.innerText?.trim() || card.getAttribute("aria-label")?.trim() || ""
+      const visible = (el: Element) =>
+        el.getClientRects().length > 0 && !el.closest('[inert], [hidden], [aria-hidden="true"]')
+      const uploading = [...card.querySelectorAll('[role="progressbar"]')].some(visible)
+      const failed = [...card.querySelectorAll('[role="alert"], [data-upload-error]')].some(visible)
+      const preview = [...card.querySelectorAll<HTMLButtonElement>('button[type="button"]')].some(
+        (button) =>
+          visible(button) &&
+          button.getAttribute("aria-label") === name &&
+          button.getAttribute("aria-busy") !== "true" &&
+          !button.disabled,
+      )
+      const remove = [...card.querySelectorAll<HTMLButtonElement>("button")].some(
+        (button) =>
+          visible(button) &&
+          button.getAttribute("aria-label") === `Remove ${name}` &&
+          !button.disabled &&
+          button.getAttribute("aria-disabled") !== "true",
+      )
+      return {
+        name,
+        status:
+          failed
+            ? "failed" as const
+            : uploading
+              ? "uploading" as const
+              : preview && remove
+                ? "ready" as const
+                : "unknown" as const,
+      }
+    })
+    if (unknownChild || (!cards.length && wrapper?.children.length))
+      attachments.push({ name: "", status: "unknown" as const })
+    return attachments
+  }
   const generating = [
     ...document.querySelectorAll(
       '[data-testid="stop-button"], button[aria-label="Stop generating"], button[aria-label="Stop"]',
@@ -203,10 +249,34 @@ export function inspectChatGptPage(
     const clone = bubble.cloneNode(true) as HTMLElement
     clone
       .querySelectorAll(
-        'button, [role="button"], [data-markdown-copy="exclude"], [data-thread-find-skip], [aria-hidden="true"]',
+        'button, [role="button"], [data-composer-attachments], [data-visible-attachments], [class~="group/composer-attachment"], [class~="composer-attachment-surface"], [class~="group/resource-card"], [data-markdown-copy="exclude"], [data-thread-find-skip], [aria-hidden="true"]',
       )
       .forEach((node) => node.remove())
     return normalize(readComposer(clone))
+  }
+  const userAttachments = (turn: HTMLElement) => {
+    const documents = [...turn.querySelectorAll<HTMLElement>('[class~="group/resource-card"]')]
+      .map((card) => {
+        const label = card.querySelector<HTMLElement>("span.truncate[title]")
+        const name = label?.getAttribute("title")?.trim() ?? ""
+        const ready = [...card.querySelectorAll<HTMLButtonElement>('button[type="button"]')].some(
+          (button) =>
+            visible(button) &&
+            button.getAttribute("aria-label") === name &&
+            button.getAttribute("aria-busy") === "false" &&
+            !button.disabled,
+        )
+        const uploading = [...card.querySelectorAll<HTMLButtonElement>('button[type="button"]')].some(
+          (button) => visible(button) && button.getAttribute("aria-label") === name && button.getAttribute("aria-busy") === "true",
+        )
+        return {
+          name,
+          kind: "document" as const,
+          status: ready ? "ready" as const : uploading ? "uploading" as const : "unknown" as const,
+        }
+      })
+      .filter((attachment) => attachment.name)
+    return documents
   }
   const lastUser = users.at(-1)
   const lastUserIndex = lastUser ? turns.indexOf(lastUser) : -1
@@ -229,27 +299,40 @@ export function inspectChatGptPage(
     const retry = [...root.querySelectorAll("button")].filter(visible).find(
       (el) =>
         /^(Retry|Try again|重试|再试一次|再試一次|再試)$/i.test(readText(el)) &&
-        !el.closest("[data-user-message-bubble], .markdown, [data-markdown-text-style]") &&
-        (() => {
-          let region = el.parentElement
-          for (let i = 0; region && region !== root && i < 3; i++, region = region.parentElement) {
-            if (lastUser && region.contains(lastUser)) continue
-            if (
-              /Unknown error|Something went wrong|There was an error|未知错误|未知錯誤|出现错误|發生錯誤/i.test(
-                readText(region),
-              )
-            )
-              return true
-          }
-          return false
-        })(),
+        !el.closest("[data-user-message-bubble], .markdown, [data-markdown-text-style]")
     )
-    if (retry)
-      error = {
-        kind: "request",
-        message:
-          "ChatGPT displayed a request error. The question was not retried; check browser verification, login or network access.",
+    if (retry) {
+      let requestFailure = false
+      let verificationFailure = false
+      let region = retry.parentElement
+      for (let i = 0; region && region !== root && i < 4; i++, region = region.parentElement) {
+        const clone = region.cloneNode(true) as HTMLElement
+        clone
+          .querySelectorAll(
+            '[data-user-message-bubble], [data-search-result-target], [data-message-author-role="user"], [data-message-author-role="assistant"], [data-chatgpt-search-unit-key$=":user"], [data-chatgpt-search-unit-key$=":assistant"], .markdown, [data-markdown-text-style], [class~="group/resource-card"], button, [role="button"], [aria-hidden="true"]',
+          )
+          .forEach((node) => node.remove())
+        const status = readText(clone)
+        if (/cloudflare[_ -]?challenge|cf[-_]chl|verification required|verify (?:you are|that you are) human|security check|checking your browser|browser verification/i.test(status)) {
+          verificationFailure = true
+          break
+        }
+        if (lastUser && region.contains(lastUser)) continue
+        if (/Unknown error|Something went wrong|There was an error|未知错误|未知錯誤|出现错误|發生錯誤/i.test(status))
+          requestFailure = true
       }
+      if (verificationFailure)
+        error = {
+          kind: "verification",
+          message: "ChatGPT requires human browser verification in the original conversation. No retry was attempted.",
+        }
+      else if (requestFailure)
+        error = {
+          kind: "request",
+          message:
+            "ChatGPT displayed a request error. The question was not retried; check browser verification, login or network access.",
+        }
+    }
   }
   let answer: GptProPageState["answer"]
   if (content && assistant && lastUser) {
@@ -292,16 +375,188 @@ export function inspectChatGptPage(
     targetModel: /\bGPT[\s-]*6[\s-]+Pro\b/i.test(model),
     composer: !!composer && visible(composer),
     draft: composer ? normalize(readComposer(composer)) : "",
+    attachmentInput:
+      [...document.querySelectorAll<HTMLInputElement>('input[type="file"][aria-label="Attach files"]')].filter(
+        (input) => !input.disabled && input.getAttribute("aria-disabled") !== "true" && !input.closest('[inert], [hidden], [aria-hidden="true"]'),
+      ).length === 1,
+    attachments: attachmentNames(attachmentCards),
     generating,
     sendReady: !!composer && !generating && sendControls.length === 1,
     ...(error ? { error } : {}),
     revision: tracking.revision,
-    users: users.map((el) => ({
-      id: id(el),
-      text: userText(el).slice(0, maxChars),
-    })),
+    users: users.map((el) => {
+      const attachments = userAttachments(el)
+      return {
+        id: id(el),
+        text: userText(el).slice(0, maxChars),
+        ...(attachments.length ? { attachments } : {}),
+      }
+    }),
     ...(answer ? { answer } : {}),
   }
 }
 
 export const CHATGPT_INSPECT_EXPRESSION = `(${inspectChatGptPage.toString()})(${GPT_PRO_MAX_HTML_CHARS}, ${CHATGPT_MODEL_PICKER_EXPRESSION}, (${readChatGptComposer.toString()}))`
+
+// Image previews are inspected separately so the main page snapshot stays
+// synchronous and no image bytes ever leave the page context.
+export async function inspectChatGptImageAttachments() {
+  type Evidence = {
+    name: string
+    kind: "image"
+    sha256?: string
+    status: "ready" | "unknown"
+  }
+  const visible = (el: Element) =>
+    el.getClientRects().length > 0 &&
+    !el.closest('[inert], [hidden], [aria-hidden="true"]') &&
+    getComputedStyle(el).visibility !== "hidden"
+  const cacheWindow = window as typeof window & {
+    __opencodeGptProImageDigestCache?: WeakMap<HTMLImageElement, { src: string; digest: Promise<string | undefined> }>
+  }
+  const cache = (cacheWindow.__opencodeGptProImageDigestCache ??= new WeakMap())
+  const digest = (img: HTMLImageElement) => {
+    const src = img.currentSrc || img.getAttribute("src") || ""
+    const previous = cache.get(img)
+    if (previous?.src === src && img.isConnected) return previous.digest
+    const value = (async () => {
+      const limit = 20 * 1024 * 1024
+      const isCurrent = () => img.isConnected && (img.currentSrc || img.getAttribute("src") || "") === src
+      const match = /^data:image\/(?:png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/i.exec(src)
+      try {
+        let bytes: Uint8Array
+        if (match) {
+          if (match[1].length > Math.ceil(limit / 3) * 4) return undefined
+          const binary = atob(match[1])
+          if (binary.length > limit) return undefined
+          bytes = new Uint8Array(binary.length)
+          for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index)
+        } else {
+          const url = new URL(src, location.href)
+          if (url.protocol !== "blob:" || url.origin !== location.origin) return undefined
+          const controller = new AbortController()
+          const timer = setTimeout(() => controller.abort(), 8000)
+          try {
+            const response = await fetch(url.href, {
+              signal: controller.signal,
+              credentials: "omit",
+              mode: "same-origin",
+              cache: "no-store",
+              referrerPolicy: "no-referrer",
+            })
+            if (!response.ok || (response.url && response.url !== url.href)) return undefined
+            const contentType = response.headers.get("content-type")
+            if (contentType && !/^image\/(?:png|jpeg|webp)(?:;|$)/i.test(contentType)) return undefined
+            const contentLength = Number(response.headers.get("content-length"))
+            if (Number.isFinite(contentLength) && contentLength > limit) return undefined
+            const reader = response.body?.getReader()
+            if (!reader) return undefined
+            const chunks: Uint8Array[] = []
+            let total = 0
+            while (true) {
+              const result = await reader.read()
+              if (result.done) break
+              total += result.value.byteLength
+              if (total > limit) {
+                await reader.cancel().catch(() => {})
+                return undefined
+              }
+              chunks.push(result.value)
+            }
+            if (!total) return undefined
+            bytes = new Uint8Array(total)
+            let offset = 0
+            for (const chunk of chunks) {
+              bytes.set(chunk, offset)
+              offset += chunk.byteLength
+            }
+          } finally {
+            clearTimeout(timer)
+          }
+        }
+        const digestInput = Uint8Array.from(bytes).buffer as ArrayBuffer
+        const result = await crypto.subtle.digest("SHA-256", digestInput)
+        if (!isCurrent()) return undefined
+        return [...new Uint8Array(result)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+      } catch {
+        return undefined
+      }
+    })()
+    const cached = { src, digest: value }
+    cache.set(img, cached)
+    void value.then((result) => {
+      if (!result && cache.get(img) === cached) cache.delete(img)
+    })
+    return value
+  }
+  const composer = [
+    ...document.querySelectorAll<HTMLElement>(
+      '#prompt-textarea, [data-composer-markdown][role="textbox"][contenteditable="true"]',
+    ),
+  ].find(visible)
+  const composerContainer = composer
+    ?.closest("[data-composer-body]")
+    ?.querySelector("[data-composer-attachments][data-visible-attachments]")
+  const composerCards = [...(composerContainer?.querySelectorAll<HTMLElement>('[class~="group/composer-attachment"]') ?? [])]
+  const composerImages = await Promise.all(
+    composerCards.map(async (card): Promise<Evidence | undefined> => {
+      const name = card.querySelector<HTMLElement>("span.truncate")?.innerText?.trim() || card.getAttribute("aria-label")?.trim() || ""
+      const preview =
+        card.getAttribute("role") === "button" &&
+        card.getAttribute("aria-label") === name &&
+        card.getAttribute("aria-haspopup") === "dialog" &&
+        card.getAttribute("aria-expanded") === "false" &&
+        card.getAttribute("aria-disabled") !== "true"
+      if (!name || !preview) return
+      const img = [...card.querySelectorAll<HTMLImageElement>("img")].find(
+        (candidate) => visible(candidate) && candidate.complete && candidate.naturalWidth > 0,
+      )
+      if (!img) return
+      const sha256 = await digest(img)
+      const remove = [...card.querySelectorAll<HTMLButtonElement>("button")].some(
+        (button) => visible(button) && button.getAttribute("aria-label") === `Remove ${name}` && !button.disabled,
+      )
+      const ready = !!sha256 && preview && remove
+      return { name, kind: "image", ...(sha256 ? { sha256 } : {}), status: ready ? "ready" : "unknown" }
+    }),
+  )
+  const root = [...document.querySelectorAll("main")].filter(visible).at(-1)
+  const turns = root
+    ? [...root.querySelectorAll<HTMLElement>("[data-message-author-role], [data-chatgpt-search-unit-key]")]
+    : []
+  const role = (el: HTMLElement) => el.dataset.messageAuthorRole ?? el.dataset.chatgptSearchUnitKey?.split(":").at(-1)
+  const turnID = (el: HTMLElement) => {
+    const messageIDs = [...new Set((el.dataset.chatgptSearchMessageIds ?? "").split(" ").filter(Boolean))]
+    return el.dataset.messageId ?? (messageIDs.length === 1 ? messageIDs[0] : undefined)
+  }
+  const users = await Promise.all(
+    turns
+      .filter((turn) => role(turn) === "user")
+      .map(async (turn) => ({
+        id: turnID(turn),
+        attachments: await Promise.all(
+          [...turn.querySelectorAll<HTMLElement>('div[role="button"][aria-label="User attachment"]')].map(
+            async (card): Promise<Evidence> => {
+              const img = [...card.querySelectorAll<HTMLImageElement>('img[alt="User attachment"]')].find(
+                (candidate) => visible(candidate) && candidate.complete && candidate.naturalWidth > 0,
+              )
+              const sha256 = img ? await digest(img) : undefined
+              const ready =
+                !!sha256 &&
+                img?.getAttribute("aria-expanded") === "false" &&
+                img.getAttribute("data-state") === "closed"
+              return {
+                name: "",
+                kind: "image",
+                ...(sha256 ? { sha256 } : {}),
+                status: ready ? "ready" : "unknown",
+              }
+            },
+          ),
+        ),
+      })),
+  )
+  return { url: location.href, composer: composerImages.filter((item): item is Evidence => !!item), users }
+}
+
+export const CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION = `(${inspectChatGptImageAttachments.toString()})()`

@@ -5,6 +5,7 @@ import { Browser } from "@/browser"
 import { InstanceState } from "@/effect/instance-state"
 import { gptProTerminal, type GptProJob } from "@opencode-ai/util/gpt-pro"
 import * as Log from "@opencode-ai/core/util/log"
+import { prepareGptProAttachments } from "./gpt-pro-attachments"
 
 const log = Log.create({ service: "tool.gpt_pro_consult" })
 const Parameters = Schema.Struct({
@@ -24,6 +25,10 @@ const Parameters = Schema.Struct({
   ),
   consultation_id: Schema.optional(Schema.String),
   prompt: Schema.optional(Schema.String),
+  files: Schema.optional(Schema.Array(Schema.String)).annotate({
+    description:
+      "Local files to explicitly attach to this GPT-6 Pro consultation. Relative paths resolve from the workspace.",
+  }),
   wait_ms: Schema.optional(Schema.Number),
   background: Schema.optional(Schema.Boolean).annotate({
     description:
@@ -54,14 +59,25 @@ export const GptProConsultTool = Tool.define(
         })
         return Effect.gen(function* () {
           const action = params.action ?? "consult"
-          yield* ctx.ask({
-            permission: "gpt_pro_consult",
-            patterns: ["gpt-pro"],
-            always: ["gpt-pro"],
-            metadata: { action, consultation_id: params.consultation_id, promptChars: params.prompt?.length ?? 0 },
-          })
           const directory = (yield* InstanceState.context).directory
           const owner = `${directory}\n${ctx.sessionID}`
+          if (params.files?.length && action !== "consult" && action !== "intervene") {
+            return yield* Effect.die(new Error("GPT-Pro files are only accepted for consult or intervene actions"))
+          }
+          const attachments = yield* prepareGptProAttachments(params.files, ctx, "GPT-6 Pro (ChatGPT)")
+          if (!attachments.length) {
+            yield* ctx.ask({
+              permission: "gpt_pro_consult",
+              patterns: ["gpt-pro"],
+              always: ["gpt-pro"],
+              metadata: { action, consultation_id: params.consultation_id, promptChars: params.prompt?.length ?? 0 },
+            })
+          }
+          log.info("gpt-pro request authorized", {
+            action,
+            sessionID: ctx.sessionID,
+            attachments: attachments.map(({ name, size, mime }) => ({ name, size, mime })),
+          })
           const metadata = (job: GptProJob) => ({
             consultation_id: job.id,
             phase: job.phase,
@@ -73,6 +89,7 @@ export const GptProConsultTool = Tool.define(
             text: job.text,
             background: job.background === true,
             recovery: job.recovery,
+            attachments: job.attachments ?? attachments.map((file) => ({ ...file, status: "pending" as const })),
           })
           log.info("gpt-pro command", { action, sessionID: ctx.sessionID, consultationID: params.consultation_id })
           let job = yield* browser.gptPro(owner, {
@@ -82,6 +99,7 @@ export const GptProConsultTool = Tool.define(
             requestID: ctx.callID ? `${ctx.sessionID}:${ctx.callID}` : undefined,
             background: params.background,
             uid: params.uid,
+            attachments: attachments.length ? attachments : undefined,
           })
           active = { owner, id: job.id, background: job.background === true }
           const shouldWait =
@@ -115,6 +133,7 @@ export const GptProConsultTool = Tool.define(
             error: job.error,
             background: job.background === true,
             recovery: job.recovery,
+            attachments: job.attachments ?? attachments.map((file) => ({ ...file, status: "pending" as const })),
             ...(job.recovery
               ? { managed_prompt: job.prompt, send_attempted: job.sendAttempted === true || job.submitted }
               : {}),

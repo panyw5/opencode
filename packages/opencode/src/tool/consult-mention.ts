@@ -42,7 +42,7 @@ export function consultMentionFor(name: string) {
  * Build the consult CLI prompt from the user's current turn.
  * Prefer user text + @file paths; do not rely on the main agent to rephrase.
  */
-export function buildConsultPromptFromParts(parts: readonly unknown[]): string {
+export function buildConsultPromptFromParts(parts: readonly unknown[], includeFileReferences = true): string {
   const texts: string[] = []
   const files: string[] = []
 
@@ -59,7 +59,7 @@ export function buildConsultPromptFromParts(parts: readonly unknown[]): string {
       const text = part.text?.trim()
       if (text) texts.push(text)
     }
-    if (part.type === "file") {
+    if (includeFileReferences && part.type === "file") {
       const path = part.source?.path?.trim() || part.filename?.trim()
       if (path) files.push(path)
     }
