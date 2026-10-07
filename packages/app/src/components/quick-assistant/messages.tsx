@@ -122,7 +122,7 @@ export function QuickAssistantMessages(props: Props) {
         }}
         data-component="quick-assistant-viewport"
         style={{ "overflow-anchor": "none" }}
-        class="min-h-0 overflow-y-auto bg-background-base/20 px-4 py-4"
+        class="min-h-0 overflow-y-auto rounded-t-[calc(var(--radius-4xl)+0.75rem)] bg-background-base/20 px-4 py-4"
         classList={{
           "flex-1": props.waiting,
           "max-h-[calc(100dvh-200px)] shrink": !props.waiting,

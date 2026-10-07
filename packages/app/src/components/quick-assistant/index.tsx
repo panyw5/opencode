@@ -1020,12 +1020,22 @@ export function QuickAssistant() {
 
       <Show when={saved.open}>
         <div
-          class="fixed right-5 bottom-5 z-40 pointer-events-auto max-h-[calc(100dvh-72px)] rounded-xl"
+          data-component="quick-assistant-panel"
+          class="fixed right-5 bottom-5 z-40 pointer-events-auto max-h-[calc(100dvh-72px)] rounded-[calc(var(--radius-4xl)+0.75rem+1px)]"
+          ref={(element) =>
+            requestAnimationFrame(() => {
+              if (!element.isConnected) return
+              const composer = element.querySelector('[data-prompt-kind="quick"]')
+              console.debug(
+                `[quick-assistant] panel geometry radius=${getComputedStyle(element).borderRadius} composerRadius=${composer ? getComputedStyle(composer).borderRadius : "none"} contentOverflow=${getComputedStyle(element.lastElementChild!).overflow}`,
+              )
+            })
+          }
           classList={{
             "h-[calc(100dvh-72px)]": waiting(),
             "w-[min(1040px,calc(100vw-24px))]": expanded(),
             "w-[min(520px,calc(100vw-24px))]": !expanded(),
-            "border border-border-weak-base shadow-[var(--shadow-lg-border-base)]": !bare(),
+            "border border-border-weak-base shadow-[var(--shadow-lg)]": !bare(),
           }}
           style={
             bare()
@@ -1035,7 +1045,6 @@ export function QuickAssistant() {
                     platform.platform === "desktop" && platform.os === "windows"
                       ? "var(--surface-raised-stronger-non-alpha)"
                       : "var(--apple-dark-alpha-1)",
-                  "border-color": "var(--amber-light-alpha-2)",
                   "backdrop-filter":
                     platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",
                   "-webkit-backdrop-filter":
