@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process"
 import { realpath, stat } from "node:fs/promises"
 import { basename, join } from "node:path"
-import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, session, shell } from "electron"
+import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, session, shell, webContents } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 
@@ -579,7 +579,17 @@ export function sendSqliteMigrationProgress(win: BrowserWindow, progress: Sqlite
 }
 
 export function sendMenuCommand(win: BrowserWindow, id: string) {
+  if (id === "sessionTabs.close") {
+    const focused = webContents.getFocusedWebContents()
+    const partition = browserController.focusedPartition(focused?.id, win)
+    writeLog(
+      "keyboard",
+      `close-tab route focused=${focused?.id ?? "none"} partition=${partition ?? "none"} target=${partition ? "browser" : "renderer"}`,
+    )
+    if (partition) id = "browserTabs.close"
+  }
   win.webContents.send("menu-command", id)
+  writeLog("keyboard", `menu-command sent id=${id}`)
 }
 
 export function sendDeepLinks(win: BrowserWindow, urls: string[]) {

@@ -24,6 +24,7 @@ import { createSessionTabs } from "@/pages/session/helpers"
 import { extractPromptFromParts } from "@/utils/prompt"
 import type { Message, UserMessage } from "@opencode-ai/sdk/v2"
 import { useSessionLayout } from "@/pages/session/session-layout"
+import { closeFocusedBrowserTab } from "@/browser/close-tab"
 import { decode64 } from "@/utils/base64"
 import { compareMessages, resolveMessage } from "@/utils/message-order"
 import { dict as enDict } from "@/i18n/en"
@@ -328,10 +329,14 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         title: language.t("command.tab.close"),
         keywords: kw("command.tab.close"),
         keybind: "mod+w",
-        disabled: !closableTab(),
-        onSelect: () => {
+        disabled: !closableTab() && !(view().browser.opened() && layout.browserTabs.tabs().length > 0),
+        onSelect: (source) => {
+          if (closeFocusedBrowserTab(source, command.trigger)) return
           const tab = closableTab()
-          if (!tab) return
+          if (!tab) {
+            if (source === "keybind") command.trigger("sessionTabs.close", source)
+            return
+          }
           tabs().close(tab)
         },
       }),

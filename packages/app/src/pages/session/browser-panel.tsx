@@ -7,10 +7,12 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useLayout } from "@/context/layout"
+import { useCommand } from "@/context/command"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { GPT_PRO_PARTITION } from "@opencode-ai/util/gpt-pro"
 import { OPEN_TAB_EVENT, type BrowserTab } from "@/browser/tabs"
 import { createBrowserDisplay } from "@/browser/display"
+import { CLOSE_BROWSER_TAB_COMMAND } from "@/browser/close-tab"
 
 export { browserApi } from "@/browser/types"
 export type { WindowBrowserApi, BrowserBounds, BrowserPresentation, BrowserViewState } from "@/browser/types"
@@ -25,6 +27,7 @@ export function BrowserPanel(props: { class?: string }) {
   const platform = usePlatform()
   const layout = useLayout()
   const dialog = useDialog()
+  const command = useCommand()
   const { view } = useSessionLayout()
   const service = layout.browserTabs
   const api = service.api
@@ -92,6 +95,24 @@ export function BrowserPanel(props: { class?: string }) {
   const [confirm, setConfirm] = createStore({ partition: undefined as string | undefined })
   const confirmClose = () => confirm.partition
   const setConfirmClose = (partition: string | undefined) => setConfirm("partition", partition)
+  command.register(() => [
+    {
+      id: CLOSE_BROWSER_TAB_COMMAND,
+      title: language.t("panel.browser.closeTab"),
+      category: language.t("command.browser.toggle"),
+      disabled: !opened() || tabs().length === 0,
+      onSelect: () => {
+        const tab = tabs().find((tab) => tab.partition === active())
+        if (!opened() || dialog.active || !tab) {
+          console.debug("[browser-tab-close] skipped reason=unavailable")
+          return
+        }
+        console.debug(`[browser-tab-close] requested partition=${tab.partition} agent=${tab.agent}`)
+        if (tab.agent) setConfirmClose(tab.partition)
+        else closeUserTab(tab.partition)
+      },
+    },
+  ])
   let capsuleRef: HTMLDivElement | undefined
   // Dismiss the capsule on Escape or any pointer press outside of it.
   createEffect(() => {
@@ -141,6 +162,11 @@ export function BrowserPanel(props: { class?: string }) {
         aria-label={language.t("command.browser.toggle")}
         aria-hidden={!opened()}
         inert={!opened()}
+        tabIndex={-1}
+        onPointerDown={(event) => {
+          if ((event.target as Element).closest("button, input, [role=button]")) return
+          event.currentTarget.focus({ preventScroll: true })
+        }}
         class={props.class}
         classList={{
           "relative size-full min-w-0 flex flex-col overflow-hidden bg-background-stronger": true,

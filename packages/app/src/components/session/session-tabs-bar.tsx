@@ -41,6 +41,7 @@ import { usePermission } from "@/context/permission"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useSettings } from "@/context/settings"
 import { useSessionTabs } from "@/context/session-tabs"
+import { closeFocusedBrowserTab } from "@/browser/close-tab"
 import { dict as enDict } from "@/i18n/en"
 import { decode64 } from "@/utils/base64"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
@@ -418,7 +419,11 @@ export function SessionTabsBar() {
       keywords: kw("command.sessionTabs.close"),
       category: language.t("command.category.session"),
       disabled: !activeDraft() && !tabs().some((tab) => isActive(tab)),
-      onSelect: closeActive,
+      onSelect: (source) => {
+        if (closeFocusedBrowserTab(source, command.trigger)) return
+        console.debug(`[session-tabs] close active source=${source ?? "unknown"} target=session`)
+        closeActive()
+      },
     },
     {
       id: "sessionTabs.previous",

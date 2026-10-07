@@ -282,6 +282,14 @@ export class BrowserController {
     return this.displayLease
   }
 
+  focusedPartition(webContentsID: number | undefined, win: BrowserWindow) {
+    if (webContentsID === undefined) return
+    for (const [partition, entry] of this.views) {
+      if (entry.win !== win || !entry.visible || entry.view.webContents.isDestroyed()) continue
+      if (entry.view.webContents.id === webContentsID) return partition
+    }
+  }
+
   getDisplayState() {
     return {
       lease: this.displayLease,

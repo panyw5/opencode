@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from "bun:test"
 
 let windows = 0
+let contents = 0
 class FakeWindow {
   constructor() {
     windows++
@@ -10,6 +11,7 @@ class FakeView {
   visible = false
   bounds: unknown
   webContents = {
+    id: ++contents,
     isDestroyed: () => false,
     setUserAgent: () => {},
     setBackgroundThrottling: () => {},
@@ -44,6 +46,28 @@ mock.module("./browser-cdp", () => ({
 const { BrowserController } = await import("./browser")
 
 describe("sidebar browser presentation", () => {
+  test("native close routing only recognizes a visible browser in the focused window", async () => {
+    const controller = new BrowserController()
+    const children: FakeView[] = []
+    const win = {
+      isDestroyed: () => false,
+      contentView: { addChildView: (view: FakeView) => children.push(view), removeChildView: () => {} },
+    }
+    controller.attachWindow(win as never)
+    await controller.open("user", "https://example.com/")
+    await controller.open("agent", "https://example.com/")
+    const lease = controller.acquireDisplay()
+    controller.updateDisplay({ lease, revision: 1, partition: "user", bounds: { x: 0, y: 0, width: 500, height: 500 } })
+    expect(controller.focusedPartition(children[0].webContents.id, win as never)).toBe("user")
+    expect(controller.focusedPartition(children[1].webContents.id, win as never)).toBeUndefined()
+    expect(controller.focusedPartition(children[0].webContents.id, {} as never)).toBeUndefined()
+    expect(controller.focusedPartition(undefined, win as never)).toBeUndefined()
+    expect(controller.focusedPartition(-1, win as never)).toBeUndefined()
+    controller.releaseDisplay(lease)
+    expect(controller.focusedPartition(children[0].webContents.id, win as never)).toBeUndefined()
+    controller.dispose()
+  })
+
   test("display leases atomically switch views and reject obsolete owners and frames", async () => {
     const controller = new BrowserController()
     const children: FakeView[] = []
