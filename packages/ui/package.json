@@ -1,6 +1,6 @@
 {
   "name": "@opencode-ai/ui",
-  "version": "1.18.49",
+  "version": "1.18.53",
   "type": "module",
   "license": "MIT",
   "exports": {
@@ -8,6 +8,7 @@
     "./*": "./src/components/*.tsx",
     "./session-diff": "./src/components/session-diff.ts",
     "./message-task-session": "./src/components/message-task-session.ts",
+    "./session-reference": "./src/components/session-reference.ts",
     "./injected-prompt": "./src/components/injected-prompt.tsx",
     "./injected-prompt-model": "./src/components/injected-prompt-model.ts",
     "./message-file": "./src/components/message-file.ts",
@@ -55,6 +56,7 @@
     "vite-plugin-solid": "catalog:"
   },
   "dependencies": {
+    "@opencode-ai/util": "workspace:*",
     "@kobalte/core": "catalog:",
     "@opencode-ai/core": "workspace:*",
     "@opencode-ai/sdk": "workspace:*",

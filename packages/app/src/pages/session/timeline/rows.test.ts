@@ -190,6 +190,14 @@ describe("constructMessageRows", () => {
     expect(row?._tag === "AssistantPart" && row.group.type === "part" && row.group.ref.partID).toBe("tool-present")
   })
 
+  test("keeps gpt-pro controls visible outside collapsed tool groups", () => {
+    const user = userMessage("user-gpt-pro")
+    const assistant = assistantMessage("assistant-gpt-pro", user.id)
+    const parts = [textPart(user.id, "consult"), toolPart(assistant.id, "tool-gpt", "gpt_pro_consult")]
+    const rows = construct(user, partsByID(parts), [assistant], 0, true, true, "idle", false)
+    expect(rows.map(row => row._tag)).toEqual(["UserMessage", "AssistantPart"])
+  })
+
   test("keeps present_diagram out of the collapsed tool group", () => {
     const user = userMessage("user-present-diagram")
     const assistant = assistantMessage("assistant-present-diagram", user.id)
@@ -198,6 +206,20 @@ describe("constructMessageRows", () => {
     expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "ToolGroup", "AssistantPart"])
     const row = rows.at(-1)
     expect(row?._tag === "AssistantPart" && row.group.type === "part" && row.group.ref.partID).toBe("tool-diagram")
+  })
+
+  test("keeps present_task out of the collapsed tool group", () => {
+    const user = userMessage("user-present-task")
+    const assistant = assistantMessage("assistant-present-task", user.id)
+    const parts = [
+      textPart(user.id, "work"),
+      toolPart(assistant.id, "tool-before", "read"),
+      toolPart(assistant.id, "tool-task", "present_task"),
+    ]
+    const rows = construct(user, partsByID(parts), [assistant], 0, true, true, "idle", false)
+    expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "ToolGroup", "AssistantPart"])
+    const row = rows.at(-1)
+    expect(row?._tag === "AssistantPart" && row.group.type === "part" && row.group.ref.partID).toBe("tool-task")
   })
 
   test("expands large context groups into individually virtualizable stable rows", () => {
@@ -310,6 +332,30 @@ describe("constructMessageRows", () => {
       type: "file",
       mime: "image/png",
       url: "data:image/png;base64,YQ==",
+    }
+    const rows = construct(message, partsByID([part]), [], 1, true, true, "idle", false)
+    expect(rows.map((row) => row._tag)).toEqual(["TurnGap", "UserMessage"])
+  })
+
+  test("keeps a user row for a session reference without typed text", () => {
+    const message = userMessage("reference-1")
+    const part: Part = {
+      id: "prt_reference-1",
+      sessionID: "ses_test",
+      messageID: "reference-1",
+      type: "text",
+      text: "quoted context",
+      synthetic: true,
+      metadata: {
+        sessionReference: {
+          type: "session",
+          sessionID: "ses_source",
+          directory: "/repo",
+          title: "Source",
+          summary: "Context",
+          updatedAt: 1700000000000,
+        },
+      },
     }
     const rows = construct(message, partsByID([part]), [], 1, true, true, "idle", false)
     expect(rows.map((row) => row._tag)).toEqual(["TurnGap", "UserMessage"])

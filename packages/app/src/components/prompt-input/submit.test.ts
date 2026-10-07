@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
-import type { Prompt } from "@/context/prompt"
+import type { ContextItem, Prompt } from "@/context/prompt"
 
 let createPromptSubmit: typeof import("./submit").createPromptSubmit
 let sendFollowupDraft: typeof import("./submit").sendFollowupDraft
@@ -30,6 +30,8 @@ const messagePages: Record<string, Array<{ info: { id: string } }>> = {}
 const syncEvents: string[] = []
 const sessionTabEvents: string[] = []
 const promptResetScopes: Array<{ dir: string; id?: string } | undefined> = []
+const contextItems: (ContextItem & { key: string })[] = []
+const restoredContextScopes: Array<{ dir: string; id?: string } | undefined> = []
 
 let params: { dir?: string; id?: string; draftID?: string } = {}
 let current = "/repo/worktree-a"
@@ -143,9 +145,15 @@ beforeAll(async () => {
       reset: (scope?: { dir: string; id?: string }) => promptResetScopes.push(scope),
       set: () => undefined,
       context: {
-        add: () => undefined,
-        remove: () => undefined,
-        items: () => [],
+        add: (item: ContextItem & { key: string }, scope?: { dir: string; id?: string }) => {
+          contextItems.push(item)
+          restoredContextScopes.push(scope)
+        },
+        remove: (key: string) => {
+          const index = contextItems.findIndex((item) => item.key === key)
+          if (index >= 0) contextItems.splice(index, 1)
+        },
+        items: () => contextItems,
       },
     }),
   }))
@@ -301,6 +309,8 @@ beforeEach(() => {
   syncEvents.length = 0
   sessionTabEvents.length = 0
   promptResetScopes.length = 0
+  contextItems.length = 0
+  restoredContextScopes.length = 0
   toasts.length = 0
   current = "/repo/worktree-a"
   root = "/repo/main"
@@ -745,6 +755,48 @@ describe("prompt submit intervene", () => {
     ...overrides,
   })
 
+  const reference = {
+    key: "ref",
+    type: "session" as const,
+    sessionID: "ses_source",
+    directory: "/source",
+    title: "Source",
+    summary: "Context",
+    updatedAt: 1700000000000,
+  }
+
+  test("consumes a reference on send and restores it to the original draft on failure", async () => {
+    params = { dir: "/repo/worktree-a", id: "session-9" }
+    contextItems.push(reference)
+    const gate = Promise.withResolvers<void>()
+    promptGate = gate.promise
+    const submit = createPromptSubmit(baseInput({ working: () => false, shouldQueue: () => false }))
+    try {
+      await submit.handleSubmit({ preventDefault() {} } as Event)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(contextItems).toEqual([])
+      params = { dir: "/another", id: "session-10" }
+      gate.reject(new Error("test send failure"))
+      // Failed sends check server delivery for 550 ms before restoring a draft.
+      await new Promise((resolve) => setTimeout(resolve, 650))
+      expect(contextItems).toEqual([reference])
+      expect(restoredContextScopes).toEqual([{ dir: "/repo/worktree-a", id: "session-9" }])
+    } finally {
+      gate.resolve()
+      promptGate = undefined
+    }
+  })
+
+  test("preserves references in queued drafts", async () => {
+    params = { dir: "/repo/worktree-a", id: "session-9" }
+    contextItems.push(reference)
+    const queued: { context: ContextItem[] }[] = []
+    const submit = createPromptSubmit(baseInput({ onQueue: (draft) => queued.push(draft) }))
+    await submit.handleSubmit({ preventDefault() {} } as Event)
+    expect(queued[0]?.context).toEqual([reference])
+    expect(contextItems).toEqual([])
+  })
+
   test("transforms only the submitted draft text while preserving queued prompt content", async () => {
     params = { id: "session-9", dir: "/repo/worktree-a" }
     const queued: Array<{ prompt: Prompt }> = []
@@ -791,5 +843,25 @@ describe("prompt submit intervene", () => {
     expect(queued).toHaveLength(1)
     expect(sentPrompts).toEqual([])
     expect(flushedSessions).toEqual([])
+  })
+
+  test("the stop button never sends or queues a nonempty draft", async () => {
+    params = { dir: "/repo/worktree-a", id: "session-9" }
+    const queued: unknown[] = []
+    const submit = createPromptSubmit(baseInput({ onQueue: (draft) => queued.push(draft) }))
+    await submit.handlePrimaryAction({ preventDefault() {} } as Event, "stop")
+    expect(abortedSessions).toEqual([{ directory: "/repo/worktree-a", sessionID: "session-9" }])
+    expect(sentPrompts).toEqual([])
+    expect(sentCommands).toEqual([])
+    expect(queued).toEqual([])
+    expect(promptValue[0]).toMatchObject({ content: "ls" })
+  })
+
+  test("a displayed stop action remains stop even if streaming just finished", async () => {
+    params = { dir: "/repo/worktree-a", id: "session-9" }
+    const submit = createPromptSubmit(baseInput({ working: () => false }))
+    await submit.handlePrimaryAction({ preventDefault() {} } as Event, "stop")
+    expect(abortedSessions).toEqual([{ directory: "/repo/worktree-a", sessionID: "session-9" }])
+    expect(sentPrompts).toEqual([])
   })
 })

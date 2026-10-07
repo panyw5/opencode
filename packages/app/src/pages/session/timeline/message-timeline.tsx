@@ -49,6 +49,7 @@ import type {
 import { getFilename } from "@opencode-ai/core/util/path"
 import { normalizeWheelDelta, shouldMarkBoundaryGesture } from "@/pages/session/message-gesture"
 import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useSessionKey } from "@/pages/session/session-layout"
@@ -80,7 +81,8 @@ import {
   timelineTextMetrics,
   trimRangeToBudget,
 } from "./estimate"
-import { assistantCopySummary, createDisplayPartIndex } from "./model"
+import { assistantCopySummary, createDisplayPartIndex, selectTimelineMessages } from "./model"
+import { same } from "@/utils/same"
 import { createTimelineProjection } from "./projection"
 import { sortMessages } from "@/utils/message-order"
 import { MessageComment, type SummaryDiff, TimelineRow, TimelineRowMap } from "./rows"
@@ -102,6 +104,7 @@ import type {
 } from "../message-navigation"
 import { createScrollLedger, type ScrollOrigin, type ScrollRuntime } from "./scroll-ledger"
 import type { HistoryInput } from "../history-edge"
+import { SessionSelectionToolbar } from "@/components/session-selection-toolbar"
 
 const emptyMessages: MessageType[] = []
 const emptyParts: PartType[] = []
@@ -149,17 +152,59 @@ function TimelineThinkingRow(props: {
   )
 }
 
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+// Cache stat results across row re-mounts. Keyed by absolute path so two
+// workspaces with the same relative filename don't collide.
+const localFileSizes = new Map<string, number>()
+
 function TimelineDiffSummaryRow(props: {
   diffs: SummaryDiff[]
   onReviewDiff?: (file: string) => void
   onReviewAll?: () => void
 }) {
   const language = useLanguage()
+  const sync = useSync()
+  const platform = usePlatform()
   const [columns, setColumns] = createSignal(4)
   const capacity = createMemo(() => columns() * 2)
   const overflow = createMemo(() => props.diffs.length > capacity())
   const visible = createMemo(() => props.diffs.slice(0, overflow() ? capacity() - 1 : capacity()))
+  const [statSizes, setStatSizes] = createStore<Record<string, number>>({})
   let grid: HTMLDivElement | undefined
+
+  // Diffs created before the server started recording `size` have no size
+  // stored. On desktop, stat the file directly so those cards still show one
+  // (current size on disk). Web/remote sessions have no local channel and
+  // simply omit the size.
+  createEffect(() => {
+    const root = sync.data.path.directory
+    if (!root || !platform.statLocalFile) return
+    for (const diff of visible()) {
+      if (typeof diff.size === "number" || statSizes[diff.file] !== undefined) continue
+      const key = `${root.replace(/\/+$/, "")}/${diff.file}`
+      const cached = localFileSizes.get(key)
+      if (cached !== undefined) {
+        setStatSizes(diff.file, cached)
+        continue
+      }
+      platform
+        .statLocalFile(key)
+        .then((result) => {
+          if (!result) return
+          localFileSizes.set(key, result.size)
+          setStatSizes(diff.file, result.size)
+        })
+        .catch(() => {})
+    }
+  })
+
+  const resolvedSize = (diff: SummaryDiff) =>
+    typeof diff.size === "number" ? diff.size : statSizes[diff.file]
 
   onMount(() => {
     if (!grid) return
@@ -180,7 +225,7 @@ function TimelineDiffSummaryRow(props: {
           <DiffChanges changes={props.diffs} />
         </div>
       </div>
-      <div ref={grid} data-component="session-turn-diffs-content" style={{ "--turn-diff-columns": String(columns()) }}>
+      <div ref={grid} data-component="session-turn-diffs-content">
         <For each={visible()}>
           {(diff) => (
             <button
@@ -190,7 +235,7 @@ function TimelineDiffSummaryRow(props: {
               title={diff.file}
               onClick={() => props.onReviewDiff?.(diff.file)}
             >
-              <FileIcon node={{ path: diff.file, type: "file" }} class="size-6 shrink-0" />
+              <FileIcon node={{ path: diff.file, type: "file" }} class="size-7 shrink-0" />
               <span data-slot="session-turn-diff-details">
                 <span data-slot="session-turn-diff-filename">{getFilename(diff.file)}</span>
                 <span data-slot="session-turn-diff-meta">
@@ -206,6 +251,9 @@ function TimelineDiffSummaryRow(props: {
                   </Show>
                   <Show when={diff.status !== "added" && diff.status !== "deleted"}>
                     <DiffChanges changes={diff} />
+                  </Show>
+                  <Show when={resolvedSize(diff) !== undefined}>
+                    <span data-slot="session-turn-diff-size">{formatFileSize(resolvedSize(diff)!)}</span>
                   </Show>
                 </span>
               </span>
@@ -233,6 +281,7 @@ export type MessageTimelineViewport = {
 export function MessageTimeline(props: {
   actions?: UserActions
   onSendQueued?: () => void
+  onSelectionToPrompt: (text: string) => void
   onBackgroundShell?: MessageProps["onBackgroundShell"]
   onBackgroundTask?: MessageProps["onBackgroundTask"]
   scroll: { overflow: boolean; bottom: boolean }
@@ -327,23 +376,29 @@ export function MessageTimeline(props: {
     const id = sessionID()
     return id ? (sync.session.status.get(id) ?? idle) : idle
   })
-  const sessionMessages = createMemo(() => {
-    const id = sessionID()
-    if (!id) return emptyMessages
-    const all = sync.data.message[id] ?? emptyMessages
-    if (all.length < 2) return all
-    const ordered = sortMessages(all)
-    if (all[0] && ordered[0] && all[0].id !== ordered[0].id) {
-      const first = ordered[0]
-      const last = ordered[ordered.length - 1]
-      if (lagging()) {
-        console.debug(
-          `[timeline] message-order corrected sid=${id} n=${String(ordered.length)} first=${first.id}:${String(first.time.created)} last=${last.id}:${String(last.time.created)}`,
-        )
+  const sessionMessages = createMemo(
+    () => {
+      const id = sessionID()
+      if (!id) return emptyMessages
+      // Hidden reverted turns must not own the active row or repeatedly rebuild
+      // visible geometry as the server deletes their messages one at a time.
+      const all = selectTimelineMessages(sync.data.message[id] ?? emptyMessages, props.userMessages)
+      if (all.length < 2) return all
+      const ordered = sortMessages(all)
+      if (all[0] && ordered[0] && all[0].id !== ordered[0].id) {
+        const first = ordered[0]
+        const last = ordered[ordered.length - 1]
+        if (lagging()) {
+          console.debug(
+            `[timeline] message-order corrected sid=${id} n=${String(ordered.length)} first=${first.id}:${String(first.time.created)} last=${last.id}:${String(last.time.created)}`,
+          )
+        }
       }
-    }
-    return ordered
-  })
+      return ordered
+    },
+    emptyMessages,
+    { equals: same },
+  )
   const displayPartIndex = createDisplayPartIndex(sessionMessages, (id) => sync.data.part[id] ?? emptyParts)
   const getMessageParts = displayPartIndex.parts
   const getMessagePart = displayPartIndex.part
@@ -1455,8 +1510,9 @@ export function MessageTimeline(props: {
       const part = getMessagePart(ref.messageID, ref.partID)
       return part?.type === "tool" ? part : undefined
     }
+    const groupParts = createMemo(() => refs().flatMap((ref) => toolPart(ref) ?? []))
     const current = createMemo(() => {
-      const parts = refs().flatMap((ref) => toolPart(ref) ?? [])
+      const parts = groupParts()
       return (
         parts.findLast((part) => part.state.status === "pending" || part.state.status === "running") ?? parts.at(-1)
       )
@@ -1498,14 +1554,45 @@ export function MessageTimeline(props: {
         },
       ),
     )
+    // The pending (preparation) phase carries no server timestamp, so capture a
+    // client-side start as soon as the group becomes active. The countdown then
+    // runs continuously from the group's beginning and only settles once every
+    // tool call in the group has finished.
+    const [clientStart, setClientStart] = createSignal<number>()
+    createEffect(() => {
+      if (!running()) return
+      const started = groupParts().some(
+        (part) => part.state.status !== "pending" && typeof part.state.time.start === "number",
+      )
+      if (started || clientStart() !== undefined) return
+      setClientStart(Date.now())
+    })
+    const groupStart = createMemo(() => {
+      let start: number | undefined
+      for (const part of groupParts()) {
+        const state = part.state
+        const value = state.status === "pending" ? undefined : state.time.start
+        if (typeof value === "number" && value > 0 && (start === undefined || value < start)) start = value
+      }
+      const fallback = clientStart()
+      if (typeof fallback === "number" && (start === undefined || fallback < start)) return fallback
+      return start
+    })
+    const groupEnd = createMemo(() => {
+      if (running()) return undefined
+      let end: number | undefined
+      for (const part of groupParts()) {
+        const state = part.state
+        const value = state.status === "pending" || state.status === "running" ? undefined : state.time.end
+        if (typeof value === "number" && (end === undefined || value > end)) end = value
+      }
+      return end
+    })
     const elapsedLabel = createMemo(() => {
-      const part = current()
-      if (!part || part.state.status === "pending") return ""
-      const state = part.state
-      const start = state.time.start
+      const start = groupStart()
       if (typeof start !== "number") return ""
-      const end = state.status === "running" ? now() : state.time.end
-      if (typeof end !== "number" || end < start) return ""
+      const end = running() ? now() : groupEnd()
+      if (typeof end !== "number") return ""
       const seconds = Math.max(0, (end - start) / 1000)
       if (seconds < 60) return language.t("ui.message.duration.seconds", { count: seconds.toFixed(1) })
       return language.t("ui.message.duration.minutesSeconds", {
@@ -2141,6 +2228,7 @@ export function MessageTimeline(props: {
           </Show>
         </div>
       </ScrollView>
+      <SessionSelectionToolbar root={listRoot} onPrompt={props.onSelectionToPrompt} />
       <Show when={sessionFind.open()}>
         <FileSearchBar
           pos={sessionFind.pos}

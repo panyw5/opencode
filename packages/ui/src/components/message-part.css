@@ -84,6 +84,62 @@
     }
   }
 
+  [data-slot="user-message-session-references"] {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  [data-component="sent-session-reference"] {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    width: 320px;
+    max-width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border-weak-base);
+    border-radius: 8px;
+    background: var(--surface-weak);
+    color: var(--text-base);
+    text-decoration: none;
+    font-size: 12px;
+    &:hover {
+      border-color: var(--border-base);
+    }
+    [data-slot="session-reference-title"] {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-strong);
+      font-weight: 500;
+      span {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      svg {
+        flex-shrink: 0;
+      }
+    }
+    [data-slot="session-reference-meta"] {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text-weak);
+      font-size: 11px;
+    }
+    [data-slot="session-reference-summary"] {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      white-space: pre-wrap;
+    }
+  }
+
   [data-slot="user-message-attachments"] {
     display: flex;
     flex-wrap: wrap;

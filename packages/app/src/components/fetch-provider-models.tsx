@@ -3,6 +3,7 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
 import { usePlatform } from "@/context/platform"
+import { buildTestHeaders, providerModelsUrl, resolveTestProtocol } from "./test-provider-model"
 
 type FetchedModel = { id: string; name: string }
 
@@ -22,6 +23,7 @@ function normalizeFetchedModel(raw: unknown): FetchedModel | undefined {
 type Props = {
   baseURL: string
   apiKey: string
+  npm?: string
   headers: Array<{ key: string; value: string }>
   existingModelIDs: Set<string>
   onAdd: (id: string, name: string) => void
@@ -39,6 +41,7 @@ export function FetchProviderModels(props: Props) {
   // Reset state when provider (baseURL) changes
   createEffect(() => {
     props.baseURL
+    props.npm
     setModels([])
     setError(undefined)
     setSearchQuery("")
@@ -63,19 +66,17 @@ export function FetchProviderModels(props: Props) {
     setModels([])
 
     try {
-      const base = props.baseURL.trim().replace(/\/+$/, "")
-      const reqHeaders: Record<string, string> = {
-        Authorization: `Bearer ${props.apiKey.trim()}`,
-      }
-      for (const h of props.headers) {
-        if (h.key.trim() && h.value.trim()) reqHeaders[h.key.trim()] = h.value.trim()
-      }
+      const url = providerModelsUrl(props.baseURL, props.npm)
+      const protocol = resolveTestProtocol(props.npm)
+      const reqHeaders = buildTestHeaders({ apiKey: props.apiKey, headers: props.headers, protocol })
+      console.info(`[provider-models] sending protocol=${protocol} npm=${props.npm ?? "default"}`)
 
       // Use fetchExternal to bypass Tauri's loopback routing restriction,
       // allowing requests to local AI servers (e.g. 127.0.0.1:8084) that
       // don't set CORS headers.
       const doFetch = platform.fetchExternal ?? fetch
-      const res = await doFetch(`${base}/models`, { headers: reqHeaders })
+      const res = await doFetch(url, { headers: reqHeaders })
+      console.info(`[provider-models] response protocol=${protocol} status=${res.status}`)
       if (!res.ok) {
         setError(`HTTP ${res.status}: ${res.statusText}`)
         return
@@ -93,8 +94,10 @@ export function FetchProviderModels(props: Props) {
         list = models.map(normalizeFetchedModel).filter((m): m is FetchedModel => !!m)
       }
       setModels(list)
+      console.info(`[provider-models] parsed count=${list.length}`)
       if (list.length === 0) setError("未找到模型")
     } catch (e) {
+      console.warn("[provider-models] fetch failed")
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setFetching(false)
@@ -126,12 +129,7 @@ export function FetchProviderModels(props: Props) {
       </div>
       <Show when={models().length > 0}>
         <div class="flex flex-col gap-2">
-          <TextField
-            placeholder="搜索模型..."
-            value={searchQuery()}
-            onChange={setSearchQuery}
-            icon="search"
-          />
+          <TextField placeholder="搜索模型..." value={searchQuery()} onChange={setSearchQuery} icon="search" />
           <div
             class="flex flex-wrap gap-1.5 rounded-lg border border-border-base p-2"
             style="background: var(--yuzu-dark-alpha-3);"

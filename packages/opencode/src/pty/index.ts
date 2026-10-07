@@ -9,7 +9,7 @@ import { Shell } from "@/shell/shell"
 import type { Proc } from "#pty"
 import * as Log from "@opencode-ai/core/util/log"
 import { PtyID } from "./schema"
-import { Effect, Fiber, Layer, Context, Schema, Scope, Types } from "effect"
+import { Effect, Exit, Fiber, Layer, Context, Schema, Scope, Types } from "effect"
 import { LocationLifecycle } from "@/project/location-lifecycle"
 import { NonNegativeInt, PositiveInt } from "@opencode-ai/core/schema"
 
@@ -233,14 +233,32 @@ export const layer = Layer.effect(
       }
       log.info("creating session", { id, cmd: command, args, cwd })
 
-      const { spawn } = yield* Effect.promise(() => pty())
-      const proc = yield* Effect.sync(() =>
-        spawn(command, args, {
-          name: "xterm-256color",
-          cwd,
-          env,
-        }),
+      // Take the location lease before spawning and hold it until terminal
+      // settlement: `remove` (explicit delete or process exit) interrupts the
+      // fiber, and instance teardown interrupts it via the state scope.
+      // Lease-first closes the window where idle disposal could tear the
+      // instance down between spawn and admission. A spawn failure interrupts
+      // the lease fiber below.
+      const lease = yield* LocationLifecycle.lease({ directory: s.dir, purpose: "pty" }, Effect.never).pipe(
+        Effect.forkIn(s.scope),
       )
+      const spawnAttempt = yield* Effect.gen(function* () {
+        const { spawn } = yield* Effect.promise(() => pty())
+        return yield* Effect.sync(() =>
+          spawn(command, args, {
+            name: "xterm-256color",
+            cwd,
+            env,
+          }),
+        )
+      }).pipe(Effect.exit)
+      if (Exit.isFailure(spawnAttempt)) {
+        // Nothing holds the lease yet: undo the pre-taken admission so a failed
+        // spawn cannot pin the location with a phantom pty lease.
+        yield* Fiber.interrupt(lease)
+        return yield* Effect.failCause(spawnAttempt.cause)
+      }
+      const proc = spawnAttempt.value
 
       const info = {
         id,
@@ -258,13 +276,7 @@ export const layer = Layer.effect(
         bufferCursor: 0,
         cursor: 0,
         subscribers: new Map(),
-        // Acquire the location lease only after successful creation and hold
-        // it until terminal settlement: `remove` (explicit delete or process
-        // exit) interrupts the fiber, and instance teardown interrupts it via
-        // the state scope.
-        lease: yield* LocationLifecycle.lease({ directory: s.dir, purpose: "pty" }, Effect.never).pipe(
-          Effect.forkIn(s.scope),
-        ),
+        lease,
       }
       s.sessions.set(id, session)
       proc.onData((chunk) => {

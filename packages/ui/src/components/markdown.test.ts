@@ -15,11 +15,39 @@ import {
   healPunctuationEmphasis,
   normalizeAutolink,
   normalizeCodeLanguage,
+  preserveCodeLanguage,
   prepareMarkdown,
   protectBareAutolinks,
   protectMathExpressions,
   renderMathExpressions,
 } from "../context/marked"
+
+describe("highlighted code language", () => {
+  test("keeps fenced language for Markdown selection copy", () => {
+    expect(preserveCodeLanguage('<pre class="shiki"><code>x</code></pre>', "ts title=test")).toBe(
+      '<pre class="shiki"><code class="language-ts">x</code></pre>',
+    )
+  })
+  test("does not inject invalid language attributes", () => {
+    const html = "<pre><code>x</code></pre>"
+    expect(preserveCodeLanguage(html, '\"onmouseover=alert(1)')).toBe(html)
+    expect(preserveCodeLanguage(html)).toBe(html)
+  })
+})
+
+describe("desktop formula copy source", () => {
+  test("HTML-only inline math carries the original LaTeX", () => {
+    const html = renderMathExpressions('<span data-math-style="inline">a^2</span>', "html")
+    expect(html).toContain('data-opencode-math-style="inline"')
+    expect(html).toContain('data-opencode-math-tex="a^2"')
+    expect(html).not.toContain("annotation")
+  })
+  test("display math carries unmodified equation tags for copy", () => {
+    const html = renderMathExpressions('<span data-math-style="display">a^2\\tag{1}</span>', "html")
+    expect(html).toContain('data-opencode-math-style="display"')
+    expect(html).toContain('data-opencode-math-tex="a^2&#92;tag{1}"')
+  })
+})
 
 describe("markdown fileLink", () => {
   test("parses explicit markdown file links with line and column", () => {
@@ -205,7 +233,8 @@ $$`
     const html = renderMathExpressions(protectedHtml, "html")
 
     expect(html).toContain("katex")
-    expect(html).not.toContain("data-opencode-math-tex")
+    expect(html).toContain('class="katex" data-opencode-math-style="inline" data-opencode-math-tex=')
+    expect(html).not.toContain('<span data-math-style="inline">')
     expect(html).toContain("mspace")
     expect(html).toContain("vlist")
     expect(html).not.toContain("E_0!")
@@ -324,6 +353,25 @@ $$
     expect(nativeHtml).not.toContain("<pre>")
     expect(localHtml).not.toContain("&lt;span data-opencode-math-style")
     expect(nativeHtml).not.toContain("&lt;span data-opencode-math-style")
+  })
+
+  test("keeps markdown links parseable after indented display math in a list item", async () => {
+    const markdown = `1. **Schur 态与 VOA 态。** 四维 Schur index 是对受保护态的超迹：
+   $$
+   \\mathcal I(q)=\\operatorname{Tr} q^{L_0}.
+   $$
+   态的求迹见[原文式 (1.8)](Papers/Supersymmetric%20Gauge%20Theory/x.md#L104-L112)
+
+2. 下一项。`
+
+    const protectedMarkdown = prepareMarkdown(markdown)
+    const localHtml = await new Marked().parse(protectedMarkdown)
+    const nativeHtml = await parseNativeMarkdown(protectedMarkdown)
+
+    for (const html of [localHtml, nativeHtml]) {
+      expect(html).toContain('<a href="Papers/Supersymmetric%20Gauge%20Theory/x.md#L104-L112"')
+      expect(html).not.toContain("[原文式 (1.8)](Papers/")
+    }
   })
 
   test("escapes pipes in protected math so GFM tables keep cell boundaries", async () => {

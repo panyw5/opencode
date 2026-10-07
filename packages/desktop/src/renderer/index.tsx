@@ -286,6 +286,12 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
       return desktopApi.checkUpdate()
     },
 
+    getUpdaterState: () => desktopApi.getUpdaterState(),
+    onUpdaterStateChanged: (listener) => desktopApi.onUpdaterStateChanged(listener),
+    pauseUpdate: () => desktopApi.pauseUpdate(),
+    resumeUpdate: () => desktopApi.resumeUpdate(),
+    cancelUpdate: () => desktopApi.cancelUpdate(),
+
     updateAndRestart: async () => {
       const config = await desktopApi.getWindowConfig().catch(() => ({ updaterEnabled: false }))
       if (!config.updaterEnabled) return
@@ -429,6 +435,13 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
 
     readLocalFile: (path: string) => desktopApi.readLocalFile(path),
 
+    // Guarded: HMR can hot-reload this module against an older preload bundle
+    // that predates statLocalFile (preload only refreshes on app restart).
+    statLocalFile:
+      typeof desktopApi.statLocalFile === "function"
+        ? (path: string) => desktopApi.statLocalFile(path)
+        : undefined,
+
     writeLocalFile: (path: string, content: string) => desktopApi.writeLocalFile(path, content),
 
     createLocalFile: (path: string, content: string) => desktopApi.createLocalFile(path, content),
@@ -493,6 +506,7 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
     abortHermesTest: () => desktopApi.abortHermesTest(),
 
     cliAgents: desktopApi.cliAgents,
+    gptPro: desktopApi.gptPro,
 
     getExtraAgentInfo:
       typeof desktopApi.getExtraAgentInfo === "function"

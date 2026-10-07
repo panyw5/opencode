@@ -24,6 +24,9 @@ export const FileDiff = Schema.Struct({
   patch: Schema.optional(Schema.String),
   additions: Schema.Finite,
   deletions: Schema.Finite,
+  // Byte size of the file after the change (before-side size for deletions).
+  // Optional so legacy/imported `summary_diffs` on disk without it still parse.
+  size: Schema.optional(Schema.Finite),
   status: Schema.optional(Schema.Literals(["added", "deleted", "modified"])),
 }).annotate({ identifier: "SnapshotFileDiff" })
 export type FileDiff = typeof FileDiff.Type
@@ -699,12 +702,16 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                   for (const row of run) {
                     const hit = text?.get(row.file) ?? { before: "", after: "" }
                     const [before, after] = row.binary ? ["", ""] : text ? [hit.before, hit.after] : yield* show(row)
+                    const size = row.binary
+                      ? undefined
+                      : Buffer.byteLength(row.status === "deleted" ? before : after)
                     result.push({
                       file: row.file,
                       patch: row.binary ? "" : patch(row.file, before, after),
                       additions: row.additions,
                       deletions: row.deletions,
                       status: row.status,
+                      ...(size === undefined ? {} : { size }),
                     })
                   }
                 }

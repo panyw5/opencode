@@ -483,6 +483,16 @@ function createGlobalSync() {
     return next
   }
 
+  // Subscribers notified whenever a global.config.updated event lands, regardless
+  // of which domain emitted it (file watcher, CLI write, or app's own update API).
+  const configUpdatedListeners = new Set<() => void>()
+  const onConfigUpdated = (listener: () => void) => {
+    configUpdatedListeners.add(listener)
+    return () => {
+      configUpdatedListeners.delete(listener)
+    }
+  }
+
   /** Re-pull command.list for every loaded directory store so newly written or
    * edited command files appear in the slash palette without a backend restart. */
   async function refreshCommands(reason: string) {
@@ -811,6 +821,15 @@ function createGlobalSync() {
         setGlobalConfig: (config) => updateGlobalConfig(emittingDomain, config),
       })
       if (event.type === "global.config.updated") {
+        for (const listener of configUpdatedListeners) {
+          try {
+            listener()
+          } catch (error) {
+            console.error(
+              `[global-sync] config updated listener failed error=${error instanceof Error ? error.message : String(error)}`,
+            )
+          }
+        }
         void refreshProviders(emittingDomain).catch((err) => {
           console.error(
             `[global-sync] provider refresh failed error=${err instanceof Error ? err.message : String(err)}`,
@@ -863,14 +882,9 @@ function createGlobalSync() {
     })()
     if (revertTrace) {
       const current = store.session.find((item) => item.id === revertTrace.sessionID)
-      console.debug("[session-revert-sync]", {
-        stage: "event-received",
-        directory: key,
-        type: event.type,
-        ...revertTrace,
-        cachedMessages: store.message[revertTrace.sessionID]?.length ?? 0,
-        cachedRevertMessageID: current?.revert?.messageID,
-      })
+      console.debug(
+        `[session-revert-sync] stage=event-received directory=${key} type=${event.type} event=${revertTrace.eventID ?? "none"} sid=${revertTrace.sessionID} message=${revertTrace.messageID ?? "none"} revert=${revertTrace.revertMessageID ?? "none"} cachedMessages=${store.message[revertTrace.sessionID]?.length ?? 0} cachedRevert=${current?.revert?.messageID ?? "none"}`,
+      )
     }
     // Re-broadcast under the store key so SDKProvider listeners subscribed to the
     // route directory still receive events when the wire path is a realpath alias.
@@ -918,14 +932,9 @@ function createGlobalSync() {
       }
       if (revertTrace) {
         const current = store.session.find((item) => item.id === revertTrace.sessionID)
-        console.debug("[session-revert-sync]", {
-          stage: "event-applied",
-          directory: key,
-          type: event.type,
-          ...revertTrace,
-          cachedMessages: store.message[revertTrace.sessionID]?.length ?? 0,
-          cachedRevertMessageID: current?.revert?.messageID,
-        })
+        console.debug(
+          `[session-revert-sync] stage=event-applied directory=${key} type=${event.type} event=${revertTrace.eventID ?? "none"} sid=${revertTrace.sessionID} message=${revertTrace.messageID ?? "none"} revert=${revertTrace.revertMessageID ?? "none"} cachedMessages=${store.message[revertTrace.sessionID]?.length ?? 0} cachedRevert=${current?.revert?.messageID ?? "none"}`,
+        )
         if (event.type === "session.updated") {
           void reconcileSessionMessages(logical, [revertTrace.sessionID], "session-revert", {
             authoritative: true,
@@ -1111,6 +1120,7 @@ function createGlobalSync() {
     bootstrap,
     refreshConfig,
     refreshCommands,
+    onConfigUpdated,
     updateConfig,
     provider: providerApi,
     project: projectApi,

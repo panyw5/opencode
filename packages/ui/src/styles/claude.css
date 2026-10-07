@@ -267,6 +267,15 @@ html[data-theme="claude"][data-color-scheme="dark"]
   color: #e8916f;
 }
 
+/* Claude dark: the injected-prompt card rests on --surface-inset-base (#141413),
+   identical to the session background; --surface-weaker (#262624) as hover is
+   too bright a lift. Use the subtler --surface-base-hover (#1f1e1d) instead. */
+html[data-theme="claude"][data-color-scheme="dark"]
+  [data-component="injected-prompt"]
+  [data-slot="injected-prompt-trigger"]:hover {
+  background: var(--surface-base-hover);
+}
+
 html[data-theme="claude"] [data-component="session-prompt-dock"] [data-action="prompt-attach"],
 html[data-theme="claude"] [data-component="session-prompt-dock"] [data-action="prompt-markdown-attachment"],
 html[data-theme="claude"] [data-component="session-prompt-dock"] [data-action="prompt-expand"] {

@@ -1,6 +1,27 @@
 const PROVIDER_ID = /^[a-z0-9][a-z0-9-_]*$/
 export const OPENAI_COMPATIBLE = "@ai-sdk/openai-compatible"
 
+const CUSTOM_PROVIDER_NPM_PACKAGES: readonly string[] = [
+  OPENAI_COMPATIBLE,
+  "@ai-sdk/openai",
+  "@ai-sdk/anthropic",
+  "@ai-sdk/google",
+  "@ai-sdk/groq",
+  "@ai-sdk/mistral",
+  "@ai-sdk/alibaba",
+  "@openrouter/ai-sdk-provider",
+  "@ai-sdk/xai",
+  "@ai-sdk/togetherai",
+  "@ai-sdk/cerebras",
+  "@ai-sdk/deepinfra",
+]
+
+export function customProviderNpmPackages(value?: string): string[] {
+  const current = value?.trim()
+  if (current && !CUSTOM_PROVIDER_NPM_PACKAGES.includes(current)) return [current, ...CUSTOM_PROVIDER_NPM_PACKAGES]
+  return [...CUSTOM_PROVIDER_NPM_PACKAGES]
+}
+
 type Translator = (key: string, vars?: Record<string, string | number | boolean>) => string
 
 const MODALITIES = ["text", "audio", "image", "video", "pdf"] as const

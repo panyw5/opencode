@@ -18,6 +18,15 @@ export type FileViewState = {
   scrollTop?: number
   scrollLeft?: number
   selectedLines?: SelectedLineRange | null
+  /**
+   * Bumped every time a non-null selection is stored for this file. Together
+   * with `settledSeq` it expresses "a selection jump is pending": while
+   * `selectionSeq > settledSeq`, the viewport belongs to the selection jump and
+   * scroll restores must not touch it. This replaces time-based guards — the
+   * precedence is derived from state, never from clocks.
+   */
+  selectionSeq?: number
+  settledSeq?: number
 }
 
 export type FileState = {

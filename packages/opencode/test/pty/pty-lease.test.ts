@@ -82,4 +82,27 @@ describe("pty location lease", () => {
     { git: true },
     { timeout: 30000 },
   )
+
+  it.instance(
+    "releases the pre-taken lease when spawning fails",
+    () =>
+      Effect.gen(function* () {
+        const ctx = yield* requireInstance
+        const lifecycle = yield* LocationLifecycle.Service
+        const pty = yield* Pty.Service
+
+        // The lease is taken before the spawn; a failed spawn must interrupt
+        // it again so the location does not keep a phantom pty lease.
+        const failed = yield* pty
+          .create({ command: "opencode-test-definitely-missing-shell", title: "lease-fail" })
+          .pipe(Effect.exit)
+        expect(failed._tag).toBe("Failure")
+
+        yield* expectLeases(lifecycle, ctx.location.id, 0)
+        const items = yield* pty.list()
+        expect(items.some((item) => item.title === "lease-fail")).toBe(false)
+      }),
+    { git: true },
+    { timeout: 30000 },
+  )
 })

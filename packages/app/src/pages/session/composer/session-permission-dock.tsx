@@ -19,6 +19,15 @@ export function SessionPermissionDock(props: {
     return value
   }
 
+  const browserAction = () => {
+    if (!props.request.permission.startsWith("browser_")) return ""
+    const action = props.request.metadata?.action
+    if (typeof action !== "string") return ""
+    const key = `session.permission.browser.action.${action}`
+    const value = language.t(key as Parameters<typeof language.t>[0])
+    return value === key ? "" : value
+  }
+
   return (
     <DockPrompt
       kind="permission"
@@ -57,6 +66,13 @@ export function SessionPermissionDock(props: {
         <div data-slot="permission-row">
           <span data-slot="permission-spacer" aria-hidden="true" />
           <div data-slot="permission-hint">{toolDescription()}</div>
+        </div>
+      </Show>
+
+      <Show when={browserAction()}>
+        <div data-slot="permission-row">
+          <span data-slot="permission-spacer" aria-hidden="true" />
+          <div data-slot="permission-hint">{browserAction()}</div>
         </div>
       </Show>
 

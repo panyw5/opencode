@@ -11,6 +11,12 @@ type OpenFilePickerOptions = { title?: string; multiple?: boolean; accept?: stri
 type SaveFilePickerOptions = { title?: string; defaultPath?: string }
 type UpdateInfo = { updateAvailable: boolean; version?: string; failed?: boolean; error?: string }
 
+export type UpdaterState =
+  | { status: "disabled" | "idle" | "checking" | "up-to-date" }
+  | { status: "downloading" | "paused"; version: string; percent?: number }
+  | { status: "ready" | "installing"; version: string }
+  | { status: "error"; message: string }
+
 export type PromptHistoryPlatform = {
   append(kind: "normal" | "shell", entry: string): Promise<{ added: boolean }>
   page(
@@ -296,8 +302,14 @@ export type Platform = {
   /** File-backed, paged prompt history (desktop only). */
   promptHistory?: PromptHistoryPlatform
 
-  /** Check for updates (Tauri only) */
+  /** Check for updates and download when available. */
   checkUpdate?(): Promise<UpdateInfo>
+
+  getUpdaterState?(): Promise<UpdaterState>
+  onUpdaterStateChanged?(listener: (state: UpdaterState) => void): () => void
+  pauseUpdate?(): Promise<void>
+  resumeUpdate?(): Promise<UpdaterState>
+  cancelUpdate?(): Promise<void>
 
   /** Install updates (Tauri only) */
   update?(): Promise<void>
@@ -376,6 +388,7 @@ export type Platform = {
 
   /** Local CLI-backed agents exposed by the desktop process. */
   cliAgents?: CliAgents
+  gptPro?: import("@opencode-ai/util/gpt-pro").GptProAPI
 
   /** Get the configured GenericAgent integration (desktop only) */
   getGenericagentConfig?(): Promise<GenericagentConfig>
@@ -433,6 +446,9 @@ export type Platform = {
 
   /** Read a local file inside allowed desktop roots (desktop only) */
   readLocalFile?(path: string): Promise<string | null>
+
+  /** Stat a local file inside allowed desktop roots (desktop only) */
+  statLocalFile?(path: string): Promise<{ size: number } | null>
 
   /** Write a local file inside allowed desktop roots (desktop only) */
   writeLocalFile?(path: string, content: string): Promise<void>

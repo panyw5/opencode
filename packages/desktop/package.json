@@ -1,7 +1,7 @@
 {
   "name": "@opencode-ai/desktop",
   "private": true,
-  "version": "1.18.49",
+  "version": "1.18.53",
   "type": "module",
   "license": "MIT",
   "homepage": "https://opencode.ai",
@@ -29,6 +29,7 @@
   "main": "./out/main/index.js",
   "dependencies": {
     "@opencode-ai/core": "workspace:*",
+    "@opencode-ai/util": "workspace:*",
     "@zip.js/zip.js": "2.7.62",
     "effect": "catalog:",
     "electron-context-menu": "4.1.2",

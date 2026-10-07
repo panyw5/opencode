@@ -1455,9 +1455,19 @@ export const layer = Layer.effect(
               variants: {},
               ...(referenced ? { limitSource: referenced.source } : {}),
             }
-            const merged = mergeDeep(ProviderTransform.variants(parsedModel), model.variants ?? {})
+            // When the config explicitly defines variants for a custom-provider
+            // model, that set is authoritative: transform-synthesized effort
+            // variants whose keys the config does not mention are dropped, while
+            // same-key variants still deep-merge with the generated values.
+            // Without this, synthesized keys like "medium"/"max" leak into
+            // user-defined variant sets (e.g. openai-compatible deepseek models).
+            const generated = ProviderTransform.variants(parsedModel)
+            const configured = model.variants ?? {}
+            const chosen = Object.keys(configured).length > 0
+              ? mapValues(configured, (v, key) => (generated[key] ? mergeDeep(generated[key]!, v) : v))
+              : generated
             parsedModel.variants = mapValues(
-              pickBy(merged, (v) => !v.disabled),
+              pickBy(chosen, (v) => !v.disabled),
               (v) => omit(v, ["disabled"]),
             )
             parsed.models[modelID] = parsedModel

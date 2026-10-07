@@ -17,6 +17,8 @@ import {
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
+import { GptProSettings } from "@/components/gpt-pro-settings"
+import { DEFAULT_GPT_PRO_CONFIG } from "@opencode-ai/util/gpt-pro"
 import larkIcon from "../../../ui/src/assets/icons/channel/lark.png"
 import qqIcon from "../../../ui/src/assets/icons/channel/qq.png"
 import wechatIcon from "../../../ui/src/assets/icons/channel/wechat.png"
@@ -41,6 +43,7 @@ import { DialogConnectProvider } from "@/components/dialog-connect-provider"
 import { DialogSelectDirectory } from "@/components/dialog-select-directory"
 import {
   OPENAI_COMPATIBLE,
+  customProviderNpmPackages,
   headerRow as blankHeaderRow,
   modelConfig as modelConfigRows,
   modelRow as blankModelRow,
@@ -111,8 +114,9 @@ import { CONFIG_PAGE_REFRESH_EVENT, refreshAfterConfigWrite } from "@/utils/conf
 import type { Agent, Config, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
 import { configAgentDisplayItems, configuredAgentsFromJsonc, jsoncAgentVariantOptions } from "./config-agent-display"
 import { agentFilePath, agentNameIssue, agentTemplate } from "./config-agent-create"
-import { parseAgentMarkdown, upsertAgentMarkdownModel } from "./config-agent-markdown"
+import { parseAgentMarkdown, upsertAgentMarkdownModel, upsertAgentMarkdownVariant } from "./config-agent-markdown"
 import { AgentMarkdownMeta } from "./config-agent-markdown-meta"
+import { BuiltInAgentEditor, type BuiltInAgentForm } from "./config-agent-builtin-editor"
 import {
   changedProviderEntry,
   declaredMcpEntries,
@@ -219,14 +223,6 @@ const AGENT_NEW = "agent:_new_custom"
 const SKILL_NEW = "skill:_new_custom"
 const COMMAND_NEW = "cmd:_new_custom"
 const MCP_NEW = "mcp:_new"
-
-const CUSTOM_PROVIDER_NPM_PACKAGES: readonly string[] = [OPENAI_COMPATIBLE, "@ai-sdk/openai", "@ai-sdk/anthropic"]
-
-function customProviderNpmPackages(value: string | undefined): string[] {
-  const current = value?.trim()
-  if (current && !CUSTOM_PROVIDER_NPM_PACKAGES.includes(current)) return [current, ...CUSTOM_PROVIDER_NPM_PACKAGES]
-  return [...CUSTOM_PROVIDER_NPM_PACKAGES]
-}
 
 type SkillMarketRepo = {
   id: string
@@ -2301,10 +2297,24 @@ function ExtraAgentInfoCard(props: { info?: ExtraAgentInfo; loading?: boolean })
   )
 }
 
-function InfoCell(props: { label: string; value: string }) {
+function InfoCell(props: { label: string; value: string; onCopy?: () => void; copied?: boolean }) {
+  const language = useLanguage()
   return (
     <div class="rounded-xl border border-border-weak-base bg-background-base px-3 py-2">
-      <div class="text-10-medium uppercase tracking-[0.08em] text-text-weak">{props.label}</div>
+      <div class="flex items-center gap-1">
+        <div class="min-w-0 text-10-medium uppercase tracking-[0.08em] text-text-weak">{props.label}</div>
+        <Show when={props.onCopy}>
+          <IconButton
+            icon={props.copied ? "check" : "copy"}
+            variant="ghost"
+            size="small"
+            class="shrink-0 text-text-weak hover:bg-surface-base-hover hover:text-text-base"
+            aria-label={language.t("session.header.open.copyPath")}
+            title={language.t("session.header.open.copyPath")}
+            onClick={props.onCopy}
+          />
+        </Show>
+      </div>
       <div class="mt-1 break-all font-mono text-12-regular text-text-base">{props.value}</div>
     </div>
   )
@@ -2591,10 +2601,38 @@ function GenericAgentEditor(props: {
 
 function CliAgentInfoCard(props: { descriptor: CliAgentDescriptor; info?: CliAgentInfo; loading?: boolean }) {
   const language = useLanguage()
+  const [copied, setCopied] = createSignal("")
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
   const value = (input?: string) => {
     if (input === undefined || input === null || input === "") return language.t("config.claws.info.unknown")
     return String(input)
   }
+  const pathLike = (input: string) =>
+    input.startsWith("/") || input.startsWith("~/") || /^[A-Za-z]:[\\/]/.test(input) || input.startsWith("\\\\")
+  const copy = (input?: string) => {
+    if (!input) return
+    console.debug(`[config] copy CLI parameter path=${input}`)
+    void navigator.clipboard.writeText(input).then(
+      () => {
+        console.debug(`[config] copied CLI parameter path=${input}`)
+        setCopied(input)
+        if (copiedTimer) clearTimeout(copiedTimer)
+        copiedTimer = setTimeout(() => setCopied(""), 1_200)
+      },
+      (err: unknown) => {
+        console.debug(
+          `[config] copy CLI parameter failed path=${input} err=${err instanceof Error ? err.message : String(err)}`,
+        )
+        showToast({
+          title: language.t("common.requestFailed"),
+          description: err instanceof Error ? err.message : String(err),
+        })
+      },
+    )
+  }
+  onCleanup(() => {
+    if (copiedTimer) clearTimeout(copiedTimer)
+  })
   const install = () => {
     if (props.loading && !props.info) return language.t("config.claws.info.loading")
     if (!props.info) return language.t("config.claws.info.unknown")
@@ -2604,7 +2642,7 @@ function CliAgentInfoCard(props: { descriptor: CliAgentDescriptor; info?: CliAge
   return (
     <div class="rounded-2xl border border-border-weak-base bg-surface-base p-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="text-13-medium text-text-strong">{props.descriptor.label}</div>
+        <div class="text-13-medium text-text-strong">{language.t("config.claws.info.cliTitle")}</div>
         <Show when={props.loading}>
           <div
             class="inline-flex items-center gap-1.5 text-12-regular text-text-weak"
@@ -2618,10 +2656,34 @@ function CliAgentInfoCard(props: { descriptor: CliAgentDescriptor; info?: CliAge
       <div class="mt-4 grid gap-3 md:grid-cols-2">
         <InfoCell label={language.t("config.claws.info.installStatus")} value={install()} />
         <InfoCell label={language.t("config.claws.info.version")} value={value(props.info?.version)} />
-        <InfoCell label={language.t("config.claws.info.binaryPath")} value={value(props.info?.binaryPath)} />
-        <InfoCell label={props.descriptor.configHomeLabel} value={value(props.info?.configHome)} />
-        <InfoCell label={language.t("config.claws.info.configPath")} value={value(props.info?.configPath)} />
-        <For each={props.info?.details ?? []}>{(detail) => <InfoCell label={detail.label} value={detail.value} />}</For>
+        <InfoCell
+          label={language.t("config.claws.info.binaryPath")}
+          value={value(props.info?.binaryPath)}
+          onCopy={props.info?.binaryPath ? () => copy(props.info?.binaryPath) : undefined}
+          copied={copied() === props.info?.binaryPath}
+        />
+        <InfoCell
+          label={props.descriptor.configHomeLabel}
+          value={value(props.info?.configHome)}
+          onCopy={props.info?.configHome ? () => copy(props.info?.configHome) : undefined}
+          copied={copied() === props.info?.configHome}
+        />
+        <InfoCell
+          label={language.t("config.claws.info.configPath")}
+          value={value(props.info?.configPath)}
+          onCopy={props.info?.configPath ? () => copy(props.info?.configPath) : undefined}
+          copied={copied() === props.info?.configPath}
+        />
+        <For each={props.info?.details ?? []}>
+          {(detail) => (
+            <InfoCell
+              label={detail.label}
+              value={detail.value}
+              onCopy={pathLike(detail.value) ? () => copy(detail.value) : undefined}
+              copied={copied() === detail.value}
+            />
+          )}
+        </For>
       </div>
       <Show when={props.info?.error}>
         {(error) => <div class="mt-3 text-12-regular text-text-danger-base">{error()}</div>}
@@ -3421,6 +3483,13 @@ function CustomEditor(props: {
                   variant="secondary"
                   size="large"
                   valueClass="font-mono text-13-regular"
+                  contentStyle={{
+                    "--select-list-max-height":
+                      "min(32rem, calc(var(--kb-popper-content-available-height, 100dvh) - 10px))",
+                  }}
+                  onOpenChange={(open) => {
+                    if (open) console.info(`[config] provider SDK menu opened options=${npmOptions().length} maxHeight=32rem`)
+                  }}
                   triggerStyle={{ width: "100%", "justify-content": "space-between", transform: "none" }}
                   triggerProps={{ "aria-label": language.t("config.custom.field.npm") }}
                 >
@@ -3437,7 +3506,9 @@ function CustomEditor(props: {
               />
               <TextField
                 label={language.t("config.custom.field.baseURL")}
-                placeholder="https://api.example.com/v1"
+                placeholder={
+                  props.form.npm === "@ai-sdk/deepinfra" ? "https://api.deepinfra.com/v1" : "https://api.example.com/v1"
+                }
                 value={props.form.baseURL}
                 onChange={(value) => props.onField("baseURL", value)}
                 validationState={props.form.err.baseURL ? "invalid" : undefined}
@@ -3486,6 +3557,7 @@ function CustomEditor(props: {
                   title={language.t("config.custom.models.title")}
                   baseURL={props.form.baseURL}
                   apiKey={props.form.apiKey}
+                  npm={props.form.npm}
                   headers={props.form.headers}
                   existingModelIDs={new Set(props.form.models.map((m) => m.id.trim()).filter(Boolean))}
                   onAdd={props.onAddFetchedModel}
@@ -3776,6 +3848,12 @@ export default function ConfigPage() {
 
   window.addEventListener(CONFIG_PAGE_REFRESH_EVENT, onConfigPageRefresh)
   onCleanup(() => window.removeEventListener(CONFIG_PAGE_REFRESH_EVENT, onConfigPageRefresh))
+
+  // External opencode.jsonc edits (file watcher / CLI / another instance) arrive as
+  // global.config.updated. The agents section reads its agent list + jsonc snapshot
+  // from a rev-keyed load, so bump agentRev to re-read them alongside the global
+  // config store that global-sync already updates for this event.
+  onCleanup(globalSync.onConfigUpdated(() => bump("agentRev")))
 
   function bump(
     ...list: Array<
@@ -5534,6 +5612,8 @@ export default function ConfigPage() {
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label))
   })
 
+  const [gptProConfig, setGptProConfig] = createStore({ ...DEFAULT_GPT_PRO_CONFIG })
+  createEffect(() => { if (state.section === "claws" && platform.gptPro) void platform.gptPro.getConfig().then(config => setGptProConfig(config)).catch(() => {}) })
   const claws = createMemo<ClawItem[]>(() => {
     if (platform.platform !== "desktop") return []
     const items: ClawItem[] = extraAgents.map((agent) => {
@@ -5569,6 +5649,7 @@ export default function ConfigPage() {
         enabled: cfg?.enabled ?? false,
       }
     })
+    if (platform.gptPro) items.push({ id: "claw:gpt-pro", label: "GPT-6 Pro", note: t("gptPro.description"), meta: "ChatGPT Chat · browser", sourceUrl: "https://chatgpt.com", enabled: gptProConfig.enabled })
     for (const agent of cliAgentDescriptors()) {
       const config = cliAgentConfigs[agent.id]
       const info = cliAgentInfo[agent.id]
@@ -5695,6 +5776,11 @@ export default function ConfigPage() {
     const item = currentAgent()
     if (!item?.path.startsWith("config:agent.")) return
     return item.path.slice("config:agent.".length)
+  })
+  const currentBuiltInAgent = createMemo(() => {
+    const item = currentAgent()
+    if (item?.origin !== "built-in") return
+    return item.label
   })
   const currentSkill = createMemo(() => skillDocs().find((item) => item.id === state.doc))
   const selectedProvider = createMemo(() =>
@@ -6318,7 +6404,9 @@ export default function ConfigPage() {
       console.info(`[config] agent markdown model unchanged path=${item.path} model=${next}`)
       return
     }
-    const updated = upsertAgentMarkdownModel(state.text, next || undefined)
+    const base = upsertAgentMarkdownModel(state.text, next || undefined)
+    // Variant is model-scoped: dropping the model must drop the variant too.
+    const updated = next ? base : upsertAgentMarkdownVariant(base, undefined)
     console.info(
       `[config] agent markdown model patch path=${item.path} from=${current} to=${next} changed=${String(updated !== state.text)}`,
     )
@@ -6360,14 +6448,77 @@ export default function ConfigPage() {
     }
   }
 
-  async function saveJsoncAgent(name: string, form: JsoncAgentForm) {
-    console.info("[config] jsonc agent save started", { name })
+  let agentVariantWrite = 0
+  async function applyAgentMarkdownVariant(next: string | undefined) {
+    const item = currentDoc()
+    if (!item || !file(item.path)) {
+      console.info("[config] agent markdown variant change ignored path is not a file")
+      return
+    }
+    if (!item.editable) {
+      console.info(`[config] agent markdown variant change ignored read-only path=${item.path}`)
+      return
+    }
+    const current = parseAgentMarkdown(state.text).variant
+    if ((current ?? undefined) === next) {
+      console.info(`[config] agent markdown variant unchanged path=${item.path} variant=${next ?? ""}`)
+      return
+    }
+    const updated = upsertAgentMarkdownVariant(state.text, next)
+    console.info(
+      `[config] agent markdown variant patch path=${item.path} from=${current ?? ""} to=${next ?? ""} changed=${String(updated !== state.text)}`,
+    )
+    if (updated === state.text) return
+    const run = ++agentVariantWrite
+    setState("text", updated)
+    if (!platform.writeLocalFile) {
+      console.info("[config] agent markdown variant write skipped no writeLocalFile")
+      return
+    }
+    try {
+      await platform.writeLocalFile(item.path, updated)
+      if (run !== agentVariantWrite) {
+        console.info(`[config] agent markdown variant write superseded path=${item.path} run=${String(run)}`)
+        return
+      }
+      cache.set(item.path, updated)
+      setState("saved", updated)
+      console.info(`[config] agent markdown variant written path=${item.path} bytes=${String(updated.length)}`)
+      await refreshAfterConfigWrite({
+        source: `agent-markdown-variant:${item.path}`,
+        refreshConfig: () => globalSync.refreshConfig(mainDomain),
+        refresh: () => bump("agentRev"),
+      })
+      if (run !== agentVariantWrite) return
+      showToast({
+        variant: "success",
+        title: t("config.agents.field.variant"),
+        description: next || t("config.agents.field.default"),
+      })
+    } catch (err: unknown) {
+      console.info(
+        `[config] agent markdown variant write failed path=${item.path} error=${err instanceof Error ? err.message : String(err)}`,
+      )
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
+  async function globalJsoncConfigFile() {
     const files = await platform.listConfigFiles?.(null)
     const file = files?.find(
       (item) => item.scope === "global" && item.kind === "config" && item.label === "opencode.jsonc",
     )
     if (!file?.path || !platform.readLocalFile || !platform.writeLocalFile)
       throw new Error(t("config.error.globalConfigUnavailable"))
+    return { path: file.path, read: platform.readLocalFile, write: platform.writeLocalFile }
+  }
+
+  async function saveJsoncAgent(name: string, form: JsoncAgentForm) {
+    console.info("[config] jsonc agent save started", { name })
+    const file = await globalJsoncConfigFile()
     console.info("[config] jsonc agent config file resolved", { name, path: file.path })
 
     const number = (label: string, value: string) => {
@@ -6395,10 +6546,10 @@ export default function ConfigPage() {
       permission: jsoncObjectField("Permission", form.permission),
       options: jsoncObjectField("Options", form.options),
     }
-    let text = (await platform.readLocalFile(file.path)) ?? "{}"
+    let text = (await file.read(file.path)) ?? "{}"
     console.info("[config] jsonc agent config file read", { name, path: file.path, bytes: text.length })
     for (const [key, value] of Object.entries(fields)) text = patchText(text, ["agent", name, key], value)
-    await platform.writeLocalFile(file.path, text)
+    await file.write(file.path, text)
     console.info("[config] jsonc agent config file written", { name, path: file.path, bytes: text.length })
     setConfigFileAgents(configuredAgentsFromJsonc(text))
     await refreshAfterConfigWrite({
@@ -6407,6 +6558,30 @@ export default function ConfigPage() {
       refresh: () => bump("agentRev"),
     })
     console.info("[config] jsonc agent save completed", { name })
+    showToast({ variant: "success", title: t("common.save"), description: name })
+  }
+
+  async function saveBuiltInAgent(name: string, form: BuiltInAgentForm) {
+    console.info("[config] builtin agent save started", { name, permissions: Object.keys(form.permission) })
+    const file = await globalJsoncConfigFile()
+    console.info("[config] builtin agent config file resolved", { name, path: file.path })
+
+    const fields: Record<string, unknown> = {
+      model: form.model.trim() || undefined,
+      permission: Object.keys(form.permission).length > 0 ? form.permission : undefined,
+    }
+    let text = (await file.read(file.path)) ?? "{}"
+    console.info("[config] builtin agent config file read", { name, path: file.path, bytes: text.length })
+    for (const [key, value] of Object.entries(fields)) text = patchText(text, ["agent", name, key], value)
+    await file.write(file.path, text)
+    console.info("[config] builtin agent config file written", { name, path: file.path, bytes: text.length })
+    setConfigFileAgents(configuredAgentsFromJsonc(text))
+    await refreshAfterConfigWrite({
+      source: `builtin-agent:${name}`,
+      refreshConfig: () => globalSync.refreshConfig(mainDomain),
+      refresh: () => bump("agentRev"),
+    })
+    console.info("[config] builtin agent save completed", { name })
     showToast({ variant: "success", title: t("common.save"), description: name })
   }
 
@@ -7064,6 +7239,7 @@ export default function ConfigPage() {
   }
 
   function setCustomField(key: "providerID" | "npm" | "name" | "baseURL" | "apiKey", value: string) {
+    if (key === "npm") console.info(`[config] custom provider SDK selected npm=${value}`)
     setState("custom", key, value)
     if (key === "apiKey") setState("customApiDirty", true)
     if (key === "providerID" || key === "name" || key === "baseURL") setState("custom", "err", key, undefined)
@@ -7520,8 +7696,23 @@ export default function ConfigPage() {
       console.info(`[config] agent draft model unchanged model=${current}`)
       return
     }
-    const updated = upsertAgentMarkdownModel(state.text, next || undefined)
+    const base = upsertAgentMarkdownModel(state.text, next || undefined)
+    // Variant is model-scoped: dropping the model must drop the variant too.
+    const updated = next ? base : upsertAgentMarkdownVariant(base, undefined)
     console.info(`[config] agent draft model from=${current} to=${next} changed=${String(updated !== state.text)}`)
+    if (updated === state.text) return
+    setState("text", updated)
+    setState("saved", updated)
+  }
+
+  function applyAgentDraftVariant(next: string | undefined) {
+    const current = parseAgentMarkdown(state.text).variant
+    if ((current ?? undefined) === next) {
+      console.info(`[config] agent draft variant unchanged variant=${next ?? ""}`)
+      return
+    }
+    const updated = upsertAgentMarkdownVariant(state.text, next)
+    console.info(`[config] agent draft variant from=${current ?? ""} to=${next ?? ""} changed=${String(updated !== state.text)}`)
     if (updated === state.text) return
     setState("text", updated)
     setState("saved", updated)
@@ -9051,6 +9242,7 @@ export default function ConfigPage() {
                       />
                     }
                   >
+                    <Match when={selectedClaw()?.id === "claw:gpt-pro"}><GptProSettings onConfig={config => setGptProConfig(config)}/></Match>
                     <Match when={selectedClaw()?.id === "claw:hermes"}>
                       <HermesEditor
                         item={selectedClaw()}
@@ -9482,9 +9674,20 @@ export default function ConfigPage() {
                         onTitle={setAgentTitle}
                         onInput={(value) => setState("text", value)}
                         onModelChange={applyAgentDraftModel}
+                        onVariantChange={applyAgentDraftVariant}
                         onSave={() => void saveAgent()}
                         onCancel={cancelAgentCreate}
                       />
+                    </Match>
+                    <Match when={currentBuiltInAgent()}>
+                      {(name) => (
+                        <BuiltInAgentEditor
+                          name={name()}
+                          config={configFileAgents()?.[name()]}
+                          runtime={loadedMap().get(name())}
+                          onSave={(form: BuiltInAgentForm) => saveBuiltInAgent(name(), form)}
+                        />
+                      )}
                     </Match>
                     <Match when={true}>
                       <Show
@@ -9516,6 +9719,7 @@ export default function ConfigPage() {
                                   editable={!!currentDoc()?.editable}
                                   busy={state.busy}
                                   onModelChange={(next) => void applyAgentMarkdownModel(next)}
+                                  onVariantChange={(next) => void applyAgentMarkdownVariant(next)}
                                 />
                               </Show>
                             }
@@ -9719,6 +9923,7 @@ function AgentCreator(props: {
   onTitle: (value: string) => void
   onInput: (value: string) => void
   onModelChange: (next: string) => void
+  onVariantChange: (next: string | undefined) => void
   onSave: () => void
   onCancel: () => void
 }) {
@@ -9752,7 +9957,13 @@ function AgentCreator(props: {
             </div>
           )}
         </Show>
-        <AgentMarkdownMeta text={props.text} editable={true} busy={props.busy} onModelChange={props.onModelChange} />
+        <AgentMarkdownMeta
+          text={props.text}
+          editable={true}
+          busy={props.busy}
+          onModelChange={props.onModelChange}
+          onVariantChange={props.onVariantChange}
+        />
       </div>
       <Show when={props.err}>
         <div class="border-b border-border-weak-base bg-surface-danger-base/10 px-6 py-2 text-12-regular text-text-danger">

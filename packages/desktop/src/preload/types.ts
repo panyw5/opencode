@@ -53,6 +53,7 @@ export type UpdaterState =
   | { status: "idle" }
   | { status: "checking" }
   | { status: "downloading"; version: string; percent?: number }
+  | { status: "paused"; version: string; percent?: number }
   | { status: "ready"; version: string }
   | { status: "up-to-date" }
   | { status: "installing"; version: string }
@@ -282,8 +283,14 @@ export type FatalRendererError = {
   os?: string
 }
 
+export type BrowserBounds = import("@opencode-ai/app/browser/types").BrowserBounds
+export type BrowserViewState = import("@opencode-ai/app/browser/types").BrowserViewState
+export type BrowserAPI = import("@opencode-ai/app/browser/types").WindowBrowserApi
+
 export type ElectronAPI = {
+  gptPro: import("@opencode-ai/util/gpt-pro").GptProAPI
   killSidecar: () => Promise<void>
+  browser: BrowserAPI
   installCli: () => Promise<string>
   reloadBackend: () => Promise<void>
   awaitInitialization: (onStep: (step: InitStep) => void) => Promise<ServerReadyData>
@@ -346,6 +353,7 @@ export type ElectronAPI = {
   filterDirectories: (paths: string[]) => Promise<string[]>
   listConfigFiles: (directory?: string | null) => Promise<ConfigFile[]>
   readLocalFile: (path: string) => Promise<string | null>
+  statLocalFile: (path: string) => Promise<{ size: number } | null>
   writeLocalFile: (path: string, content: string) => Promise<void>
   createLocalFile: (path: string, content: string) => Promise<void>
   deleteLocalFile: (path: string) => Promise<void>
@@ -393,6 +401,9 @@ export type ElectronAPI = {
   checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string; failed?: boolean; error?: string }>
   installUpdate: () => Promise<void>
   getUpdaterState: () => Promise<UpdaterState>
+  pauseUpdate: () => Promise<void>
+  resumeUpdate: () => Promise<UpdaterState>
+  cancelUpdate: () => Promise<void>
   onUpdaterStateChanged: (cb: (state: UpdaterState) => void) => () => void
   setBackgroundColor: (color: string) => Promise<void>
   exportDebugLogs: () => Promise<string>

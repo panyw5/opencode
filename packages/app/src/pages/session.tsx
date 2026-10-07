@@ -40,6 +40,11 @@ import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/
 import { ensureSessionProfile, markSessionProfile, startSessionProfile } from "@/utils/session-profile"
 import { useComponentMountProfile } from "@/utils/component-mount-profile"
 import {
+  resolveSessionRevertBoundary,
+  visibleBeforeRevert,
+  type SessionRevertBoundary,
+} from "./session/session-revert-visibility"
+import {
   sessionBackgroundDelay,
   shouldFinishInitialScroll,
   shouldRefreshStaleSession,
@@ -87,6 +92,7 @@ import {
   shouldFocusTerminalOnKeyDown,
 } from "@/pages/session/helpers"
 import { MessageTimeline, type MessageTimelineViewport } from "@/pages/session/timeline/message-timeline"
+import { appendSelectionToPrompt } from "@/utils/selection-prompt"
 import { PRESENTATION_SOURCE_EVENT, type PresentationSourceRequest } from "@/pages/session/presentation-source"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
@@ -296,16 +302,17 @@ export default function Page() {
   const size = createSizing()
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const desktopFilePreviewOpen = createMemo(() => isDesktop() && view().filePreview.opened())
+  const desktopBrowserOpen = createMemo(() => isDesktop() && view().browser.opened())
   const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
   const desktopSidePanelOpen = createMemo(
-    () => desktopReviewOpen() || desktopFilePreviewOpen() || desktopFileTreeOpen(),
+    () => desktopReviewOpen() || desktopFilePreviewOpen() || desktopBrowserOpen() || desktopFileTreeOpen(),
   )
+  const desktopWidePanelOpen = createMemo(() => isDesktop() && layout.rightPanel.wide())
   const sessionPanelWidth = createMemo(() => {
     if (!desktopSidePanelOpen()) return "100%"
-    if (desktopReviewOpen() || desktopFilePreviewOpen()) return `${layout.session.width()}px`
-    return `calc(100% - ${layout.fileTree.width()}px)`
+    return layout.rightPanel.sessionWidth()
   })
-  const centered = createMemo(() => isDesktop() && !desktopReviewOpen() && !desktopFilePreviewOpen())
+  const centered = createMemo(() => isDesktop() && !desktopWidePanelOpen())
 
   function normalizeTab(tab: string) {
     if (!tab.startsWith("file://")) return tab
@@ -889,20 +896,40 @@ export default function Page() {
     emptyUserMessages,
     { equals: same },
   )
+  const revertBoundary = createMemo((previous: SessionRevertBoundary | undefined) => {
+    const id = params.id
+    return resolveSessionRevertBoundary({
+      sessionKey: sessionKey(),
+      messageID: revertMessageID(),
+      messages: id ? (sync.data.message[id] ?? []) : [],
+      indexed: id ? sync.session.userMessageIndex.get(id) : undefined,
+      previous,
+    })
+  })
+  createEffect(() => {
+    const boundary = revertBoundary()
+    console.debug(
+      `[session-revert] boundary sid=${params.id ?? "none"} id=${boundary?.message.id ?? "none"} created=${boundary?.message.time?.created ?? "none"}`,
+    )
+  })
+  const isPendingSend = (messageID: string) =>
+    !!params.id && globalSync.session.messages.optimistic.has(sdk.directory, params.id, messageID)
   const visibleUserMessages = createMemo(
-    () => {
-      const revert = revertMessageID()
-      if (!revert) return userMessages()
-      const boundary = resolveMessage(messages(), revert) ?? resolveMessage(userMessages(), revert)
-      if (!boundary) return userMessages().filter((m) => m.id < revert)
-      return userMessages().filter((m) => compareMessages(m, boundary) < 0)
-    },
+    () => visibleBeforeRevert(userMessages(), revertBoundary(), isPendingSend),
     emptyUserMessages,
     {
       equals: same,
     },
   )
   const lastUserMessage = createMemo(() => visibleUserMessages().at(-1))
+  createEffect(() => {
+    const boundary = revertBoundary()
+    if (!boundary) return
+    const visible = visibleUserMessages()
+    console.debug(
+      `[session-revert] visible sid=${params.id ?? "none"} boundary=${boundary.message.id} users=${visible.length} pending=${visible.filter((message) => isPendingSend(message.id)).length} last=${visible.at(-1)?.id ?? "none"}`,
+    )
+  })
 
   createEffect(() => {
     const tab = activeFileTab()
@@ -1689,6 +1716,10 @@ export default function Page() {
     if (!input) return
     requestAnimationFrame(() => {
       if (!input.isConnected) return
+      if (document.activeElement?.closest('[data-prompt-kind="quick"]')) {
+        console.debug("[prompt-isolation] main focus command skipped quick composer")
+        return
+      }
       input.focus()
       setCursorPosition(input, promptLength(prompt.current()))
     })
@@ -1914,17 +1945,11 @@ export default function Page() {
       )
     })
     if (line && line > 0) {
+      // requestSelection bumps the file's selectionSeq even when the range is
+      // unchanged, so repeating a click re-triggers the pending selection jump
+      // in the preview (see file-tabs scroll arbitration).
       const range = { start: line, end: endLine && endLine >= line ? endLine : line }
-      const current = file.selectedLines(path) as { start?: number; end?: number } | null | undefined
-      const same = current?.start === range.start && current?.end === range.end
-      if (same) {
-        // Re-trigger the viewer: an unchanged selection would not re-run its
-        // selection effect, so the viewport would not jump back on repeated clicks.
-        file.setSelectedLines(path, null)
-        requestAnimationFrame(() => file.setSelectedLines(path, range))
-      } else {
-        file.setSelectedLines(path, range)
-      }
+      file.requestSelection(path, range)
     }
     if (!view().filePreview.opened()) view().filePreview.open()
     tabs().setActive(tab)
@@ -2848,19 +2873,12 @@ export default function Page() {
   const userMessageEntries = createMemo(() => {
     const indexed = indexedUserMessages()
     if (indexed) {
-      const revert = revertMessageID()
-      const indexedMessages = indexed.map((entry) => ({ id: entry.id, time: entry.time }))
-      const boundary = revert
-        ? (resolveMessage(messages(), revert) ?? resolveMessage(indexedMessages, revert))
-        : undefined
-      const entries = indexed
-        .filter((entry) => !revert || (boundary ? compareMessages(entry, boundary) < 0 : entry.id < revert))
-        .map((entry) => ({
-          id: entry.id,
-          text: userMessageRailPreview(entry.preview),
-          created: entry.time.created,
-          meta: userMessageMeta(entry),
-        }))
+      const entries = visibleBeforeRevert(indexed, revertBoundary(), isPendingSend).map((entry) => ({
+        id: entry.id,
+        text: userMessageRailPreview(entry.preview),
+        created: entry.time.created,
+        meta: userMessageMeta(entry),
+      }))
       const known = new Set(entries.map((entry) => entry.id))
       for (const message of visibleUserMessages()) {
         if (known.has(message.id)) continue
@@ -3303,20 +3321,16 @@ export default function Page() {
   }
 
   const rolled = createMemo(() => {
-    const id = revertMessageID()
-    if (!id) return []
-    const boundary = resolveMessage(userMessages(), id) ?? resolveMessage(messages(), id)
+    const boundary = revertBoundary()
     if (!boundary) return []
     return userMessages()
       .filter((item) => {
-        if (compareMessages(item, boundary) < 0) return false
-        const pending = globalSync.session.messages.optimistic.has(sdk.directory, item.sessionID, item.id)
+        if (compareMessages(item, boundary.message) < 0) return false
+        const pending = isPendingSend(item.id)
         if (pending) {
-          console.debug("[session-revert] exclude pending send", {
-            sessionID: item.sessionID,
-            messageID: item.id,
-            boundary: id,
-          })
+          console.debug(
+            `[session-revert] exclude pending send sid=${item.sessionID} message=${item.id} boundary=${boundary.message.id}`,
+          )
         }
         return !pending
       })
@@ -3482,6 +3496,16 @@ export default function Page() {
                     >
                       <MessageTimeline
                         actions={actions}
+                        onSelectionToPrompt={(text) => {
+                          const next = appendSelectionToPrompt(prompt.current(), text)
+                          prompt.set(next.prompt, next.cursor)
+                          console.debug(`[session-selection] main draft appended length=${text.length} cursor=${next.cursor}`)
+                          requestAnimationFrame(() => {
+                            if (!inputRef?.isConnected) return
+                            inputRef.focus()
+                            setCursorPosition(inputRef, next.cursor)
+                          })
+                        }}
                         onSendQueued={composer.blocked() ? undefined : flushQueued}
                         onBackgroundShell={backgroundShell}
                         onBackgroundTask={backgroundTask}
@@ -3728,7 +3752,7 @@ export default function Page() {
             </div>
           </Show>
 
-          <Show when={desktopReviewOpen() || desktopFilePreviewOpen()}>
+          <Show when={desktopWidePanelOpen()}>
             <div onPointerDown={() => size.start()}>
               <ResizeHandle
                 direction="horizontal"
@@ -3797,9 +3821,7 @@ export default function Page() {
             </DropdownMenu.Item>
             <DropdownMenu.Item
               disabled={
-                platform.platform !== "desktop" ||
-                !server.isLocal() ||
-                (!platform.openInFinder && !platform.openPath)
+                platform.platform !== "desktop" || !server.isLocal() || (!platform.openInFinder && !platform.openPath)
               }
               onSelect={revealFileLink}
             >

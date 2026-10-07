@@ -1,13 +1,31 @@
 [data-slot="file-markdown-actions"] {
-  pointer-events: none;
+  pointer-events: auto;
   border: 1px solid var(--border-weak-base);
   border-radius: 8px;
   background-color: var(--background-base);
   box-shadow: var(--shadow-xs);
   padding: 4px;
 
+  /* A small continuous hit area bridges rounded corners and imprecise movement. */
+  &::before {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    z-index: -1;
+  }
+
   [data-slot="file-markdown-actions-inner"] {
     pointer-events: auto;
+  }
+
+  [data-slot="file-markdown-actions-content"] {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    &[hidden] {
+      display: none;
+    }
   }
 }
 

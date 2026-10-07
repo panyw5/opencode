@@ -228,6 +228,7 @@ export const layer = Layer.effect(
                 claude_consult: "allow",
                 grok_consult: "allow",
                 dsh_consult: "allow",
+                gpt_pro_consult: "allow",
                 read: "allow",
                 external_directory: readonlyExternalDirectory,
               }),

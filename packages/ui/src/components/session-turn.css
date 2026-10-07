@@ -292,19 +292,20 @@
   }
 
   [data-component="session-turn-diffs-content"] {
-    display: grid;
-    grid-template-columns: repeat(var(--turn-diff-columns, 4), minmax(0, 1fr));
+    display: flex;
+    flex-wrap: wrap;
     gap: 6px;
   }
 
   [data-slot="session-turn-diff-card"] {
     display: flex;
     align-items: center;
-    width: 100%;
-    min-width: 0;
-    height: 52px;
-    gap: 8px;
-    padding: 6px 9px;
+    /* Width follows the filename, capped at 2x the previous fixed column (~180px). */
+    min-width: 150px;
+    max-width: 360px;
+    min-height: 52px;
+    gap: 10px;
+    padding: 10px 13px;
     overflow: hidden;
     border: 1px solid var(--border-weak-base);
     border-radius: var(--radius-xl);
@@ -330,7 +331,7 @@
     flex-direction: column;
     justify-content: center;
     min-width: 0;
-    gap: 1px;
+    gap: 4px;
   }
 
   [data-slot="session-turn-diff-filename"] {
@@ -369,11 +370,21 @@
     }
   }
 
+  [data-slot="session-turn-diff-size"] {
+    font-variant-numeric: tabular-nums;
+
+    &::before {
+      content: "·";
+      margin-right: 5px;
+      opacity: 0.7;
+    }
+  }
+
   [data-slot="session-turn-diffs-more"] {
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 52px;
+    align-self: stretch;
     gap: 4px;
     padding: 6px 8px;
     border: 1px dashed var(--border-base);

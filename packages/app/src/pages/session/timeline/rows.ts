@@ -1,4 +1,5 @@
 import { parseCommentNote, readCommentMetadata } from "@/utils/comment-note"
+import { readSessionReference } from "@opencode-ai/ui/session-reference"
 import { AssistantMessage, Part, SessionStatus, SnapshotFileDiff, UserMessage } from "@opencode-ai/sdk/v2"
 import { isInjectionTextPart } from "@opencode-ai/ui/injected-prompt-model"
 import { attached } from "@opencode-ai/ui/message-file"
@@ -173,7 +174,7 @@ export namespace Timeline {
     const syntheticRenderable = (p: Part): boolean => {
       if (p.type !== "text" || !p.synthetic) return false
       const kind = p.metadata?.kind
-      return isInjectionTextPart(p) || kind === "skill-template"
+      return !!readSessionReference(p.metadata) || isInjectionTextPart(p) || kind === "skill-template"
     }
     const userMessageRenderable =
       (firstUserText !== undefined && firstUserText.text.length > 0) ||
@@ -242,7 +243,13 @@ export namespace Timeline {
       return refs.every((ref) => {
         const part = assistantPartByRef.get(`${ref.messageID}\n${ref.partID}`)
         // Presented artifacts are timeline content, not collapsible tool activity.
-        return part?.type === "tool" && part.tool !== "present_file" && part.tool !== "present_diagram"
+        return (
+          part?.type === "tool" &&
+          part.tool !== "present_file" &&
+          part.tool !== "present_diagram" &&
+          part.tool !== "present_task" &&
+          part.tool !== "gpt_pro_consult"
+        )
       })
     }
     const flushToolGroups = () => {

@@ -10,7 +10,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
 import { Binary } from "@opencode-ai/core/util/binary"
 import { useParams } from "@solidjs/router"
-import { batch, createEffect, createMemo, onCleanup, Show } from "solid-js"
+import { batch, createEffect, createMemo, onCleanup, onMount, Show } from "solid-js"
 import { createStore, reconcile, type SetStoreFunction } from "solid-js/store"
 import { useCommand } from "@/context/command"
 import { useGlobalSDK } from "@/context/global-sdk"
@@ -41,10 +41,17 @@ import {
   patchAgentQuestionDeny,
   prompt,
   removeQuickRequest,
+  splitInjectedSessionContext,
 } from "./helpers"
 import { QuickAssistantInput } from "./input"
 import { QuickAssistantMessages } from "./messages"
 import { QuickAssistantRequests } from "./requests"
+import { type Prompt, type ImageAttachmentPart } from "@/context/prompt"
+import { emptyQuickPrompt, quickPromptText, recoverQuickPrompt } from "./editor-model"
+import { buildRequestParts } from "../prompt-input/build-request-parts"
+import { promptText } from "../prompt-input/prompt-text"
+import { clonePromptParts } from "../prompt-input/history"
+import { appendSelectionToPrompt, QUICK_ASSISTANT_SELECTION_EVENT } from "@/utils/selection-prompt"
 
 function errorName(err: unknown) {
   if (!err || typeof err !== "object") return undefined
@@ -70,6 +77,7 @@ type Saved = {
   open: boolean
   session: Record<string, string | undefined>
   context: boolean
+  maximized?: boolean
   variant?: string
 }
 
@@ -77,6 +85,7 @@ const initial = {
   open: false,
   session: {},
   context: false,
+  maximized: false,
 } satisfies Saved
 
 function quickAssistantConfig() {
@@ -256,10 +265,12 @@ export function QuickAssistant() {
     createStore<Saved>(initial),
   )
   const [state, setState] = createStore({
-    text: "",
+    prompt: emptyQuickPrompt(),
+    history: [] as Prompt[],
     loading: false,
   })
-  let input!: HTMLTextAreaElement
+  let input!: HTMLDivElement
+  let sendSequence = 0
   let settleTimer: ReturnType<typeof setTimeout> | undefined
   let staleTimer: ReturnType<typeof setTimeout> | undefined
   const win = createMemo(() => platform.os === "windows")
@@ -479,7 +490,6 @@ export function QuickAssistant() {
     const current = data()
     if (working(current?.session_status[id], current?.message[id]) || waiting()) return
     clearTimers()
-    setState("loading", false)
   }
 
   const scheduleRecovery = (
@@ -498,7 +508,6 @@ export function QuickAssistant() {
         .catch((err: unknown) => {
           if (isSessionNotFoundError(err)) {
             clearSession()
-            setState("loading", false)
           }
         })
     }, QUICK_ASSISTANT_SETTLE_MS)
@@ -513,12 +522,10 @@ export function QuickAssistant() {
           if (sessionID() !== id) return
           const current = data()
           if (!working(current?.session_status[id], current?.message[id]) || waiting()) {
-            setState("loading", false)
             return
           }
           console.debug(`[quick-assistant] stale busy state cleared session=${id}`)
           markIdle(id, setStore)
-          setState("loading", false)
         })
     }, QUICK_ASSISTANT_STALE_MS)
   }
@@ -556,9 +563,29 @@ export function QuickAssistant() {
     setSaved("open", true)
   }
 
+  onMount(() => {
+    const receive = (event: Event) => {
+      const text = (event as CustomEvent<unknown>).detail
+      if (!enabled() || typeof text !== "string" || !text.trim()) return
+      const next = appendSelectionToPrompt(state.prompt, text)
+      setState("prompt", next.prompt)
+      console.debug(`[session-selection] assistant draft appended length=${text.length} cursor=${next.cursor}`)
+      open()
+      requestAnimationFrame(() => input?.focus())
+    }
+    window.addEventListener(QUICK_ASSISTANT_SELECTION_EVENT, receive)
+    onCleanup(() => window.removeEventListener(QUICK_ASSISTANT_SELECTION_EVENT, receive))
+  })
+
   const close = () => {
     console.debug("[quick-assistant] panel closed")
     setSaved("open", false)
+  }
+
+  const toggleMaximize = () => {
+    const next = !saved.maximized
+    console.debug(`[quick-assistant] maximize ${next ? "enabled" : "disabled"} messages=${list().length}`)
+    setSaved("maximized", next)
   }
 
   const toggle = () => {
@@ -569,32 +596,45 @@ export function QuickAssistant() {
     open()
   }
 
-  const reset = async () => {
+  const stop = async () => {
+    sendSequence += 1
     const current = root()
     const id = sessionID()
     const setStore = setData()
     console.debug(
-      `[quick-assistant] reset busy=${busy() ? 1 : 0} session=${id ?? ""} messages=${list().length} context=${saved.context ? 1 : 0}`,
+      `[quick-assistant] stop start busy=${busy() ? 1 : 0} session=${id ?? ""} draft=${quickPromptText(state.prompt).length}`,
     )
     if (current && id && interacting()) {
       const aborted = await globalSDK
         .createClient({ directory: current, throwOnError: true })
         .session.abort({ sessionID: id })
-        .then(() => true)
+        .then(() => {
+          console.debug(`[quick-assistant] stop acknowledged session=${id}`)
+          return true
+        })
         .catch((err: unknown) => {
+          console.error(`[quick-assistant] stop failed session=${id}`, err)
           showToast({
             title: "Quick Assistant",
             description: formatServerError(err, language.t, language.t("common.requestFailed")),
           })
           return false
         })
-      if (!aborted) return
+      if (!aborted) return false
       if (setStore) markIdle(id, setStore)
     }
     clearTimers()
-    clearSession()
     setState("loading", false)
-    setState("text", "")
+    console.debug(`[quick-assistant] stop complete session=${id ?? ""} draft=${quickPromptText(state.prompt).length}`)
+    return true
+  }
+
+  const reset = async () => {
+    console.debug(`[quick-assistant] reset start session=${sessionID() ?? ""} messages=${list().length}`)
+    if (!(await stop())) return
+    clearSession()
+    setState("prompt", emptyQuickPrompt())
+    console.debug("[quick-assistant] reset complete draft=0")
   }
 
   command.register("quick-assistant", () => [
@@ -644,10 +684,12 @@ export function QuickAssistant() {
       if (event.type === "session.status") {
         if (event.properties.sessionID !== id) return
         setStore("session_status", id, event.properties.status)
+        console.debug(
+          `[quick-assistant] stream status session=${id} status=${event.properties.status.type} sending=${state.loading ? 1 : 0}`,
+        )
         if (event.properties.status.type === "idle" && !waiting()) {
           completePendingAssistant(id, setStore)
           clearTimers()
-          setState("loading", false)
         }
         return
       }
@@ -656,7 +698,7 @@ export function QuickAssistant() {
         if (event.properties.sessionID !== id) return
         if (!waiting()) markIdle(id, setStore)
         clearTimers()
-        if (!waiting()) setState("loading", false)
+        console.debug(`[quick-assistant] stream idle session=${id} draft=${quickPromptText(state.prompt).length}`)
         return
       }
 
@@ -664,7 +706,7 @@ export function QuickAssistant() {
       if (event.properties.sessionID !== id) return
       markIdle(id, setStore)
       clearTimers()
-      setState("loading", false)
+      console.error(`[quick-assistant] stream error session=${id}`, event.properties.error)
       showToast({
         title: "Quick Assistant",
         description: formatServerError(event.properties.error, language.t, language.t("common.requestFailed")),
@@ -683,8 +725,16 @@ export function QuickAssistant() {
       console.debug(`[quick-assistant] prompt blocked waiting-request session=${sessionID() ?? ""}`)
       return
     }
+    if (busy()) {
+      console.debug(
+        `[quick-assistant] prompt blocked reason=streaming session=${sessionID() ?? ""} draft=${quickPromptText(state.prompt).length}`,
+      )
+      return
+    }
     const current = root()
-    const text = state.text.trim()
+    const draft = clonePromptParts(state.prompt)
+    const text = quickPromptText(draft).trim()
+    const images = draft.filter((part): part is ImageAttachmentPart => part.type === "image")
     const store = data()
     const setStore = setData()
     if (!current) {
@@ -694,7 +744,7 @@ export function QuickAssistant() {
       })
       return
     }
-    if (!text) return
+    if (!text && images.length === 0) return
     if (!store || !setStore) return
     const pick = chosen()
     if (!pick) {
@@ -705,15 +755,33 @@ export function QuickAssistant() {
       return
     }
     const variant = effectiveVariant()
+    const sequence = ++sendSequence
+    const activeSend = () => sequence === sendSequence
+    const attachmentDirectory = activeDir() || current
+    const restoreDraft = (stage: string) => {
+      if (!activeSend()) return
+      const recovered = recoverQuickPrompt(state.prompt, draft)
+      if (recovered) setState("prompt", recovered)
+      console.debug(
+        `[quick-assistant] send draft recovery stage=${stage} restored=${recovered ? 1 : 0} draft=${quickPromptText(state.prompt).length}`,
+      )
+    }
 
-    setState("loading", true)
-    let body = text
+    batch(() => {
+      setState("loading", true)
+      setState("history", (items) => [draft, ...items].slice(0, 100))
+      setState("prompt", emptyQuickPrompt())
+    })
+    console.debug(`[quick-assistant] submitted draft cleared text=${quickPromptText(state.prompt).length} images=0`)
+    console.debug(`[quick-assistant] send preparation start text=${text.length} images=${images.length}`)
+    let body = promptText(draft).trim()
     if (saved.context) {
       const directory = activeDir()
       const sourceID = params.id
       if (!directory || !sourceID) {
         console.error("[quick-assistant] context load blocked reason=no-current-session")
         setState("loading", false)
+        restoreDraft("context-unavailable")
         showToast({ title: "Quick Assistant", description: language.t("quickAssistant.context.loadFailed") })
         return
       }
@@ -729,14 +797,16 @@ export function QuickAssistant() {
           )
           return { items, cursor }
         })
-        if (params.id !== sourceID || activeDir() !== directory || state.text.trim() !== text || !saved.context) {
+        if (!activeSend()) return
+        if (params.id !== sourceID || activeDir() !== directory || !saved.context) {
           console.debug(`[quick-assistant] context load discarded source_session=${sourceID} reason=input-changed`)
           setState("loading", false)
+          restoreDraft("context-changed")
           return
         }
         const messages = fullSessionContextMessages(snapshot.items)
         body = prompt(
-          text,
+          promptText(draft).trim(),
           context(directory, sourceID, currentSession(), snapshot.items.length, {
             messages,
             complete: snapshot.complete,
@@ -747,8 +817,10 @@ export function QuickAssistant() {
           `[quick-assistant] context load complete source_session=${sourceID} pages=${snapshot.pages} fetched=${snapshot.items.length} included=${messages.length} complete=${snapshot.complete ? 1 : 0} chars=${body.length}`,
         )
       } catch (error) {
+        if (!activeSend()) return
         console.error(`[quick-assistant] context load failed source_session=${sourceID}`, error)
         setState("loading", false)
+        restoreDraft("context-failed")
         showToast({ title: "Quick Assistant", description: language.t("quickAssistant.context.loadFailed") })
         return
       }
@@ -758,15 +830,19 @@ export function QuickAssistant() {
     )
     const client = globalSDK.createClient({ directory: current, throwOnError: true })
     const id = await ensureSession(client, setStore).catch((err: unknown) => {
+      if (!activeSend()) return undefined
+      console.error("[quick-assistant] session setup failed", err)
       showToast({
         title: "Quick Assistant",
         description: formatServerError(err, language.t, language.t("common.requestFailed")),
       })
       return undefined
     })
+    if (!activeSend()) return
 
     if (!id) {
       setState("loading", false)
+      restoreDraft("session-failed")
       return
     }
 
@@ -780,13 +856,31 @@ export function QuickAssistant() {
       agent: pick.agent,
       model: { ...pick.model, variant },
     }
-    const part: Part = {
-      id: Identifier.ascending("part"),
-      type: "text",
+    // Mentions resolve against the visible project, not the assistant's private workspace.
+    // Source offsets include any injected context and account for trimmed leading whitespace.
+    const offset =
+      body.length -
+      promptText(draft).trim().length -
+      (quickPromptText(draft).length - quickPromptText(draft).trimStart().length)
+    const { requestParts, optimisticParts } = buildRequestParts({
+      prompt: draft.map((part) =>
+        part.type === "image" ? part : { ...part, start: part.start + offset, end: part.end + offset },
+      ),
+      images,
+      context: [],
       text: body,
-      sessionID: id,
       messageID,
-    }
+      sessionID: id,
+      sessionDirectory: attachmentDirectory,
+    })
+    const invocation = text.match(/^\/([^\s]+)(?:\s([\s\S]*))?$/)
+    const custom = invocation ? store.command.find((item) => item.name === invocation[1]) : undefined
+    const commandContext = custom ? splitInjectedSessionContext(body).context : undefined
+    console.debug("[quick-assistant] request built", {
+      sessionID: id,
+      parts: requestParts.map((part) => part.type),
+      command: custom?.name,
+    })
 
     batch(() => {
       setStore("session_status", id, { type: "busy" })
@@ -800,30 +894,45 @@ export function QuickAssistant() {
           [id]: next,
         }
       })
-      setStore("part", messageID, [part])
-      setState("text", "")
+      setStore("part", messageID, optimisticParts)
       setSaved("open", true)
     })
+    console.debug(
+      `[quick-assistant] send dispatched session=${id} message=${messageID} next_draft=${quickPromptText(state.prompt).length}`,
+    )
 
     clearTimers()
-    await client.session
-      .promptAsync({
-        sessionID: id,
-        agent: pick.agent,
-        model: pick.model,
-        messageID,
-        variant,
-        tools: { question: true },
-        parts: [
-          {
-            id: part.id,
-            type: "text",
-            text: body,
-          },
-        ],
-      })
+    await (
+      custom
+        ? client.session.command({
+            sessionID: id,
+            messageID,
+            command: custom.name,
+            arguments: [commandContext, invocation?.[2]].filter(Boolean).join("\n\n"),
+            agent: pick.agent,
+            model: `${pick.model.providerID}/${pick.model.modelID}`,
+            variant,
+            parts: requestParts.filter((part) => part.type === "file"),
+          })
+        : client.session.promptAsync({
+            sessionID: id,
+            agent: pick.agent,
+            model: pick.model,
+            messageID,
+            variant,
+            tools: { question: true },
+            parts: requestParts,
+          })
+    )
+      .then(() => console.debug("[quick-assistant] request accepted", { sessionID: id, messageID }))
       .catch((err: unknown) => {
+        if (!activeSend()) {
+          console.debug(`[quick-assistant] stale send failure ignored session=${id} message=${messageID}`)
+          return
+        }
+        console.error("[quick-assistant] request failed", { sessionID: id, messageID, error: err })
         const aborted = errorName(err) === "AbortError"
+        if (!aborted) restoreDraft("request-failed")
         batch(() => {
           markIdle(id, setStore)
           if (aborted) {
@@ -851,12 +960,22 @@ export function QuickAssistant() {
           description: formatServerError(err, language.t, language.t("common.requestFailed")),
         })
       })
+      .finally(() => {
+        if (!activeSend()) return
+        setState("loading", false)
+        console.debug(
+          `[quick-assistant] send transport settled session=${id} busy=${busy() ? 1 : 0} draft=${quickPromptText(state.prompt).length}`,
+        )
+      })
 
+    if (!activeSend()) return
     scheduleRecovery(client, id, setStore)
     finishIfSettled(id)
   }
 
   const dock = createMemo(() => enabled() && !!activeDir())
+  const bare = createMemo(() => !waiting() && list().length === 0)
+  const expanded = createMemo(() => list().length > 0 && !!saved.maximized)
 
   const removePermission = (request: PermissionRequest) => {
     const setStore = setData()
@@ -901,20 +1020,49 @@ export function QuickAssistant() {
 
       <Show when={saved.open}>
         <div
-          class="fixed right-5 bottom-5 z-40 pointer-events-auto max-h-[calc(100dvh-72px)] w-[min(520px,calc(100vw-24px))] rounded-xl border border-border-weak-base shadow-[var(--shadow-lg-border-base)]"
-          classList={{ "h-[calc(100dvh-72px)]": waiting() }}
-          style={{
-            "background-color":
-              platform.platform === "desktop" && platform.os === "windows"
-                ? "var(--surface-raised-stronger-non-alpha)"
-                : "var(--apple-dark-alpha-1)",
-            "border-color": "var(--amber-light-alpha-2)",
-            "backdrop-filter":
-              platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",
-            "-webkit-backdrop-filter":
-              platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",
+          data-component="quick-assistant-panel"
+          class="fixed right-5 bottom-5 z-40 pointer-events-auto max-h-[calc(100dvh-72px)] rounded-[calc(var(--radius-4xl)+0.75rem+1px)]"
+          ref={(element) =>
+            requestAnimationFrame(() => {
+              if (!element.isConnected) return
+              const composer = element.querySelector('[data-prompt-kind="quick"]')
+              console.debug(
+                `[quick-assistant] panel geometry radius=${getComputedStyle(element).borderRadius} composerRadius=${composer ? getComputedStyle(composer).borderRadius : "none"} contentOverflow=${getComputedStyle(element.lastElementChild!).overflow}`,
+              )
+            })
+          }
+          classList={{
+            "h-[calc(100dvh-72px)]": waiting(),
+            "w-[min(1040px,calc(100vw-24px))]": expanded(),
+            "w-[min(520px,calc(100vw-24px))]": !expanded(),
+            "border border-border-weak-base shadow-[var(--shadow-lg)]": !bare(),
           }}
+          style={
+            bare()
+              ? undefined
+              : {
+                  "background-color":
+                    platform.platform === "desktop" && platform.os === "windows"
+                      ? "var(--surface-raised-stronger-non-alpha)"
+                      : "var(--apple-dark-alpha-1)",
+                  "backdrop-filter":
+                    platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",
+                  "-webkit-backdrop-filter":
+                    platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",
+                }
+          }
         >
+          <Show when={list().length > 0}>
+            <button
+              type="button"
+              class="absolute -top-3.5 right-5 z-10 flex size-7 items-center justify-center rounded-full border border-border-weak-base bg-background-base/90 text-icon-weak shadow-xs-border transition hover:border-border-strong-base hover:bg-surface-base-hover hover:text-icon-base"
+              aria-label={language.t(expanded() ? "common.restore" : "common.maximize")}
+              title={language.t(expanded() ? "common.restore" : "common.maximize")}
+              onClick={toggleMaximize}
+            >
+              <Icon name={expanded() ? "collapse" : "expand"} size="small" class="text-icon-weak" />
+            </button>
+          </Show>
           <button
             type="button"
             class="absolute -right-3.5 -top-3.5 z-10 flex size-7 items-center justify-center rounded-full border border-border-weak-base bg-background-base/90 text-icon-weak shadow-xs-border transition hover:border-border-strong-base hover:bg-surface-base-hover hover:text-icon-base"
@@ -924,10 +1072,7 @@ export function QuickAssistant() {
           >
             <Icon name="close" size="small" class="text-icon-weak" />
           </button>
-          <div
-            class="flex max-h-[calc(100dvh-72px)] flex-col overflow-hidden rounded-[inherit]"
-            classList={{ "h-full": waiting() }}
-          >
+          <div class="flex max-h-[calc(100dvh-72px)] flex-col rounded-[inherit]" classList={{ "h-full": waiting() }}>
             <QuickAssistantMessages list={list()} parts={data()?.part} busy={busy()} waiting={waiting()} />
             <QuickAssistantRequests
               client={globalSDK.createClient({ directory: root(), throwOnError: true })}
@@ -941,7 +1086,12 @@ export function QuickAssistant() {
                 setRef={(next) => {
                   input = next
                 }}
-                text={state.text}
+                prompt={state.prompt}
+                history={state.history}
+                directory={activeDir() || root()}
+                scope={JSON.stringify([root(), sessionID()])}
+                agents={data()?.agent ?? []}
+                commands={data()?.command ?? []}
                 busy={interacting()}
                 loading={state.loading}
                 ready={!!root()}
@@ -949,9 +1099,9 @@ export function QuickAssistant() {
                 contextAvailable={!!currentContext()}
                 variants={variantList()}
                 variant={effectiveVariant()}
-                onText={(next) => setState("text", next)}
+                onPrompt={(next) => setState("prompt", reconcile(next))}
                 onClose={close}
-                onReset={() => void reset()}
+                onStop={() => void stop()}
                 onNewSession={() => void reset()}
                 onContext={toggleContext}
                 onVariant={setVariant}

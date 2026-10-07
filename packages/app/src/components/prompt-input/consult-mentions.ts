@@ -1,7 +1,10 @@
 import type { CliAgentID, CliAgents, Platform } from "@/context/platform"
 
 /** Reserved @-mention names for desktop CLI consult advisors (must match backend). */
-export const CONSULT_MENTION_IDS = ["codex", "claude", "grok", "dsh"] as const satisfies readonly CliAgentID[]
+export const CONSULT_MENTION_IDS = ["codex", "claude", "grok", "dsh", "gpt-pro"] as const satisfies readonly (
+  | CliAgentID
+  | "gpt-pro"
+)[]
 
 export type ConsultMentionID = (typeof CONSULT_MENTION_IDS)[number]
 
@@ -26,17 +29,28 @@ export function filterAgentsForConsultMentions<T extends { name: string }>(agent
  * Probe desktop CLI advisors that are enabled and installed.
  * Returns [] when `cliAgents` is unavailable (non-desktop).
  */
-export async function loadReadyConsultMentions(cliAgents: CliAgents | undefined): Promise<ReadyConsultMention[]> {
-  if (!cliAgents) return []
+export async function loadReadyConsultMentions(
+  cliAgents: CliAgents | undefined,
+  gptPro?: Pick<NonNullable<Platform["gptPro"]>, "getConfig">,
+): Promise<ReadyConsultMention[]> {
+  const ready: ReadyConsultMention[] = []
+  if (gptPro) {
+    try {
+      if ((await gptPro.getConfig()).enabled)
+        ready.push({ id: "gpt-pro", name: "gpt-pro", display: "GPT-6 Pro (Chat)" })
+    } catch {
+      /* older desktop version */
+    }
+  }
+  if (!cliAgents) return ready
 
   let descriptors: Awaited<ReturnType<CliAgents["list"]>>
   try {
     descriptors = await cliAgents.list()
   } catch {
-    return []
+    return ready
   }
 
-  const ready: ReadyConsultMention[] = []
   for (const descriptor of descriptors) {
     if (!isConsultMentionID(descriptor.id)) continue
     try {
@@ -56,6 +70,6 @@ export async function loadReadyConsultMentions(cliAgents: CliAgents | undefined)
   return ready
 }
 
-export function consultMentionsFromPlatform(platform: Pick<Platform, "cliAgents">) {
-  return loadReadyConsultMentions(platform.cliAgents)
+export function consultMentionsFromPlatform(platform: Pick<Platform, "cliAgents" | "gptPro">) {
+  return loadReadyConsultMentions(platform.cliAgents, platform.gptPro)
 }

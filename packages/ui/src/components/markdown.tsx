@@ -476,8 +476,19 @@ function touch(key: string, value: Entry) {
   cache.delete(first)
 }
 
-export function markdownCacheMode(input: { highlight?: "full" | "defer"; chunked?: boolean; math: "full" | "defer" }) {
-  return ["math-protect-v8", input.highlight ?? "full", input.math ?? "full", input.chunked ? "chunked" : "plain"].join(
+export function markdownCacheMode(input: {
+  highlight?: "full" | "defer"
+  chunked?: boolean
+  math: "full" | "defer"
+  annotated?: boolean
+}) {
+  return [
+    "math-protect-v8",
+    input.highlight ?? "full",
+    input.math ?? "full",
+    input.chunked ? "chunked" : "plain",
+    input.annotated ? "lines" : "nolines",
+  ].join(
     ":",
   )
 }
@@ -711,6 +722,24 @@ const HIGHLIGHT_DEBOUNCE_MS = 600
 const HIGHLIGHT_IDLE_TIMEOUT_MS = 4_000
 const DOM_WARN_MS = 50
 
+// Converts the `data-ml` marker spans emitted by `parseAnnotated` into
+// `data-source-line` attributes on the rendered top-level elements, removing
+// the markers. Runs on the detached staging node before it enters the DOM.
+function applyLineAnnotations(root: HTMLElement) {
+  let line: number | undefined
+  for (const node of Array.from(root.childNodes)) {
+    if (node instanceof HTMLElement && node.dataset.ml) {
+      const value = Number(node.dataset.ml)
+      node.remove()
+      if (Number.isFinite(value) && value > 0) line = value
+      continue
+    }
+    if (node instanceof HTMLElement && line !== undefined) {
+      node.dataset.sourceLine = String(line)
+    }
+  }
+}
+
 export function Markdown(
   props: ComponentProps<"div"> & {
     text: string
@@ -728,6 +757,7 @@ export function Markdown(
     chunked?: boolean
     math?: "full" | "defer"
     fileLinks?: boolean
+    annotateLines?: boolean
   },
 ) {
   const [local, others] = splitProps(props, [
@@ -746,6 +776,7 @@ export function Markdown(
     "chunked",
     "math",
     "fileLinks",
+    "annotateLines",
   ])
   const marked = useMarked()
   const i18n = useI18n()
@@ -788,7 +819,8 @@ export function Markdown(
     const hash = checksum(normalized)
     const current = mode()
     const math: "full" | "defer" = mathReady() ? "full" : "defer"
-    const cache = markdownCacheMode({ highlight: local.highlight, chunked: local.chunked, math })
+    const annotated = !!local.annotateLines && !local.streaming
+    const cache = markdownCacheMode({ highlight: local.highlight, chunked: local.chunked, math, annotated })
     const key = hash ? `${cache}:${current}:${hash}` : undefined
     return {
       markdown,
@@ -801,6 +833,7 @@ export function Markdown(
       highlight: local.highlight,
       chunked: local.chunked,
       math,
+      annotated,
     }
   })
 
@@ -839,21 +872,28 @@ export function Markdown(
 
       const PARSE_TIMEOUT_MS = 8_000
       const time = performance.now()
+      // Line-annotated rendering requires the local full pipeline (KaTeX-aware
+      // tokenization); anything else silently falls back to plain rendering.
+      const { parseAnnotated } = marked
+      const useAnnotated =
+        input.annotated === true && input.mode === "full" && input.math === "full" && typeof parseAnnotated === "function"
       let renderPromise =
-        input.mode === "plain"
-          ? fallback(input.normalized)
-          : await (
-              input.mode === "lite"
-                ? marked.parseLite
-                : input.mode === "fast"
-                  ? marked.parseFast
-                  : input.math === "defer" && marked.parseNoMath
-                    ? marked.parseNoMath
-                    : marked.parse
-            )(input.normalized).catch((err) => {
-              console.error("markdown render failed", err)
-              return fallback(input.normalized)
-            })
+        useAnnotated && parseAnnotated
+          ? await parseAnnotated(input.normalized)
+          : input.mode === "plain"
+            ? fallback(input.normalized)
+            : await (
+                input.mode === "lite"
+                  ? marked.parseLite
+                  : input.mode === "fast"
+                    ? marked.parseFast
+                    : input.math === "defer" && marked.parseNoMath
+                      ? marked.parseNoMath
+                      : marked.parse
+              )(input.normalized).catch((err) => {
+                console.error("markdown render failed", err)
+                return fallback(input.normalized)
+              })
 
       renderPromise = upgradeStreamingMath(renderPromise, input, marked.renderMath)
 
@@ -1179,6 +1219,7 @@ export function Markdown(
     // Chunked path prefers a simple replace on first mount to avoid expensive diffing.
     const temp = document.createElement("div")
     temp.innerHTML = content
+    if (local.annotateLines) applyLineAnnotations(temp)
     prepareMarkdownDom(temp, { fileLinks })
 
     if (chunked && !prevHtml) {

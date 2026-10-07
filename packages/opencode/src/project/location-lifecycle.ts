@@ -198,10 +198,18 @@ interface Entry {
   readonly executionDirectories: Set<string>
 }
 
+type DeleteFenceResult =
+  | { readonly ok: true; readonly previous: EntryState }
+  | { readonly ok: false; readonly reason: "busy"; readonly leases: number }
+  | { readonly ok: false; readonly reason: "already-deleted" }
+
 const stopped: RuntimeState = { tag: "stopped" }
 
 export const config = {
   idleDisposalMs: 120_000,
+  // Test seam: awaited right before the delete fence is persisted to the DB.
+  // Never set in production.
+  deleteFenceHook: undefined as (() => Promise<void>) | undefined,
 }
 
 export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileSystem.Service> = Layer.effect(
@@ -245,47 +253,104 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
         yield* log(`[location-lifecycle] idle-cancelled location=${directory} reason=new-lease`)
       })
 
+    // Returns the directories whose disposers rejected. Failed directories stay
+    // registered so a later disposal can retry them.
     const disposeExecutionDirectories = (entry: Entry, reason: string) =>
       Effect.gen(function* () {
         const directories = [...entry.executionDirectories]
-        entry.executionDirectories.clear()
+        const failures: { directory: string; count: number }[] = []
         for (const directory of directories) {
-          yield* Effect.promise(() => runDisposers(directory)).pipe(Effect.ignore)
+          const result = yield* Effect.promise(() => runDisposers(directory))
+          if (result.ok) {
+            entry.executionDirectories.delete(directory)
+          } else {
+            failures.push({ directory, count: result.failures.length })
+          }
           yield* log(
-            `[location-lifecycle] execution-disposed location=${entry.directory} execution=${directory} reason=${reason}`,
+            `[location-lifecycle] execution-disposed location=${entry.directory} execution=${directory} reason=${reason} failures=${result.failures.length}`,
           )
         }
+        return failures
       })
 
     const scheduleIdleDisposal = (entry: Entry, generation: number) =>
       Effect.gen(function* () {
         yield* cancelIdleTimer(entry.directory)
+        yield* armIdleTimer(entry, generation)
+      })
+
+    // Arms a fresh timer fiber. Callers that already own the current fiber must
+    // use this instead of scheduleIdleDisposal — cancelling from inside the
+    // timer fiber would interrupt itself.
+    const armIdleTimer = (entry: Entry, generation: number, isRetry = false) =>
+      Effect.gen(function* () {
         const timer = Effect.gen(function* () {
           yield* Effect.sleep(Duration.millis(config.idleDisposalMs))
-          const state = yield* SynchronizedRef.get(entry.ref)
-          if (state.generation !== generation) return
-          if (state.lifecycle !== "available") return
-          if (state.runtime.tag !== "running") return
-          if (state.runtime.leases !== 0) return
-          yield* SynchronizedRef.modify(entry.ref, (s): readonly [void, EntryState] => [
-            undefined,
-            { ...s, runtime: { tag: "stopping" } },
-          ])
-          yield* disposeExecutionDirectories(entry, "idle")
-          yield* SynchronizedRef.modify(entry.ref, (s): readonly [void, EntryState] => [
-            undefined,
-            { ...s, runtime: stopped },
-          ])
-          idleTimers.delete(entry.directory)
-          yield* log(
-            `[location-lifecycle] runtime-disposed location=${entry.directory} generation=${generation} reason=idle`,
-          )
+          const reArmed = yield* runIdleDisposal(entry, generation, isRetry)
+          if (!reArmed) idleTimers.delete(entry.directory)
         })
         const fiber = yield* timer.pipe(Effect.forkIn(scope))
         idleTimers.set(entry.directory, fiber)
         yield* log(
-          `[location-lifecycle] idle-scheduled location=${entry.directory} generation=${generation} delayMs=${config.idleDisposalMs}`,
+          `[location-lifecycle] idle-scheduled location=${entry.directory} generation=${generation} delayMs=${config.idleDisposalMs} retry=${isRetry}`,
         )
+      })
+
+    // Single atomic modify: re-checking eligibility and setting `stopping`
+    // happen under the same lock `provide()` uses for admission, so a lease
+    // admitted after the timer wakes can never be torn down mid-work.
+    const claimIdleDisposal = (entry: Entry, generation: number) =>
+      SynchronizedRef.modify(entry.ref, (s): readonly [boolean, EntryState] => {
+        const eligible =
+          s.generation === generation && s.lifecycle === "available" && s.runtime.tag === "running" && s.runtime.leases === 0
+        return eligible ? [true, { ...s, runtime: { tag: "stopping" } }] : [false, s]
+      })
+
+    // Returns true when a retry timer was armed in place of settling.
+    const runIdleDisposal = (entry: Entry, generation: number, isRetry: boolean): Effect.Effect<boolean> =>
+      Effect.gen(function* () {
+        const won = yield* claimIdleDisposal(entry, generation)
+        if (!won) {
+          yield* log(`[location-lifecycle] idle-disposal-skipped location=${entry.directory} generation=${generation}`)
+          return false
+        }
+        const failures = yield* disposeExecutionDirectories(entry, isRetry ? "idle-retry" : "idle")
+        if (failures.length > 0 && !isRetry) {
+          // Availability first: a failed cleanup must not pin the location in
+          // `stopping` (every later admission would die). Revert to running
+          // with zero leases — the release path already scheduled this retry —
+          // and keep only the failed directories registered for another pass.
+          const reverted = yield* SynchronizedRef.modify(entry.ref, (s): readonly [boolean, EntryState] => {
+            if (s.runtime.tag !== "stopping" || s.generation !== generation) return [false, s]
+            return [true, { ...s, runtime: { tag: "running", leases: 0 } }]
+          })
+          if (reverted) {
+            for (const failure of failures) {
+              yield* log(
+                `[location-lifecycle] execution-dispose-failed location=${entry.directory} execution=${failure.directory} reason=idle failures=${failure.count} action=retry-scheduled generation=${generation}`,
+              )
+            }
+            yield* armIdleTimer(entry, generation, true)
+            return true
+          }
+          // The slot moved on (delete or new lease won); the revert lost the
+          // race. Treat the state as settled and leave failures to the log.
+        }
+        if (failures.length > 0) {
+          for (const failure of failures) {
+            yield* log(
+              `[location-lifecycle] execution-dispose-failed location=${entry.directory} execution=${failure.directory} reason=idle-retry failures=${failure.count} action=give-up generation=${generation}`,
+            )
+          }
+        }
+        yield* SynchronizedRef.modify(entry.ref, (s): readonly [void, EntryState] => [
+          undefined,
+          { ...s, runtime: stopped },
+        ])
+        yield* log(
+          `[location-lifecycle] runtime-disposed location=${entry.directory} generation=${generation} reason=idle`,
+        )
+        return false
       })
 
     const provide = <A, E, R>(
@@ -309,11 +374,17 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
 
           // Sync lifecycle state with DB: the DB might have been modified
           // externally (e.g. a crashed delete, markDeleting, or markAvailable
-          // recovery). Always check and update if they differ.
+          // recovery). Always check and update if they differ, but never
+          // downgrade a live in-memory fence: an in-flight delete fences in
+          // memory before persisting, and the idle timer's `stopping` slot has
+          // no DB representation.
           const dbRow = ProjectLocation.getByDirectory(directory)
           if (dbRow) {
             yield* SynchronizedRef.modify(entry.ref, (state): readonly [void, EntryState] => {
               if (state.lifecycle === dbRow.lifecycle.state && state.generation === dbRow.lifecycle.generation) {
+                return [undefined, state]
+              }
+              if (state.lifecycle === "deleting" || state.runtime.tag === "stopping") {
                 return [undefined, state]
               }
               return [
@@ -453,6 +524,26 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
       ).pipe(Effect.withSpan("LocationLifecycle.provide"))
     }
 
+    // One atomic modify: fail-if-busy and the `deleting` + `stopping` fence
+    // cannot be separated, so an admission racing the delete either lands
+    // before the fence (delete sees its lease and backs off) or is rejected
+    // by the fence. `unavailable` locations are deletable and carry no live
+    // runtime by definition; only an already `deleted` slot is refused.
+    const claimDeleteFence = (entry: Entry) =>
+      SynchronizedRef.modify(entry.ref, (state): readonly [DeleteFenceResult, EntryState] => {
+        if (state.lifecycle === "deleted") return [{ ok: false, reason: "already-deleted" }, state]
+        const runtime = state.runtime
+        if ((runtime.tag === "running" || runtime.tag === "starting") && runtime.leases > 0) {
+          return [{ ok: false, reason: "busy", leases: runtime.leases }, state]
+        }
+        const next: EntryState = {
+          ...state,
+          lifecycle: "deleting",
+          runtime: runtime.tag === "running" || runtime.tag === "starting" ? { tag: "stopping" } : runtime,
+        }
+        return [{ ok: true, previous: state }, next]
+      })
+
     const deleteLocation = (input: DeleteLocationInput): Effect.Effect<DeleteLocationResult, DeleteLocationError> => {
       const directory = AppFileSystem.resolve(input.directory)
       const operationID = input.operationID ?? Identifier.create("delop", "ascending")
@@ -466,13 +557,19 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
           )
 
           // Sync in-memory state with DB (the DB might have been modified
-          // externally, e.g. a crashed delete from a previous process).
+          // externally, e.g. a crashed delete from a previous process). Keep
+          // the current runtime slot — only lifecycle fields are synced.
           const row = ProjectLocation.getByDirectory(directory)
-          if (row && row.lifecycle.state !== current.lifecycle) {
-            yield* SynchronizedRef.modify(entry.ref, (state): readonly [void, EntryState] => [
-              undefined,
-              { ...state, lifecycle: row.lifecycle.state, generation: row.lifecycle.generation, locationID: row.id },
-            ])
+          if (row) {
+            yield* SynchronizedRef.modify(entry.ref, (state): readonly [void, EntryState] => {
+              if (state.lifecycle === row.lifecycle.state && state.generation === row.lifecycle.generation) {
+                return [undefined, state]
+              }
+              return [
+                undefined,
+                { ...state, lifecycle: row.lifecycle.state, generation: row.lifecycle.generation, locationID: row.id },
+              ]
+            })
           }
           const synced = yield* SynchronizedRef.get(entry.ref)
 
@@ -501,49 +598,80 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
             // Same operation ID → fall through to retry the deletion work
           }
 
-          // Fail-if-busy: active leases block deletion
-          if (synced.runtime.tag === "running" && synced.runtime.leases > 0) {
-            return yield* new LocationBusy({ directory, leases: synced.runtime.leases })
+          // Atomic fence: leases check + `deleting` + `stopping` in a single
+          // modify, serialized against admission (provide uses the same lock),
+          // so no lease can slip in between the check and the fence.
+          const fence = yield* claimDeleteFence(entry)
+          if (!fence.ok && fence.reason === "busy") {
+            return yield* new LocationBusy({ directory, leases: fence.leases })
           }
-          if (synced.runtime.tag === "starting" && synced.runtime.leases > 0) {
-            return yield* new LocationBusy({ directory, leases: synced.runtime.leases })
+          if (!fence.ok) {
+            // A concurrent delete settled while this request was in flight;
+            // report the same idempotent success the pre-check returns.
+            const state = yield* SynchronizedRef.get(entry.ref)
+            yield* log(
+              `[location-lifecycle] delete-idempotent location=${directory} generation=${state.generation} operation=${operationID} result=already-deleted`,
+            )
+            return { locationID: state.locationID, operationID, generation: state.generation }
           }
+          const previous = fence.previous
 
           // Cancel any pending idle disposal timer
           yield* cancelIdleTimer(directory)
 
-          // Persist lifecycle_state=deleting + increment generation
-          let locationID = synced.locationID
-          let generation = synced.generation
+          // Persist lifecycle_state=deleting + increment generation; the
+          // in-memory fence is already up. On DB failure roll the fence back
+          // and report instead of faking a delete.
+          let locationID = previous.locationID
+          let generation = previous.generation
           if (row) {
-            const updated = ProjectLocation.markDeleting({ directory, operationID })
+            if (config.deleteFenceHook) yield* Effect.promise(config.deleteFenceHook)
+            const updated = yield* Effect.try({
+              try: () => ProjectLocation.markDeleting({ directory, operationID }),
+              catch: (error) => new LocationDeleteFailed({ directory, operation: "delete", message: errorMessage(error) }),
+            }).pipe(
+              Effect.catchTag("LocationLifecycle.LocationDeleteFailed", (error) =>
+                // Fence is already up; undo it (only if nobody else moved the
+                // slot) so a transient DB failure doesn't brick the location.
+                SynchronizedRef.modify(entry.ref, (s): readonly [void, EntryState] => {
+                  if (s.runtime.tag === "stopping" && s.lifecycle === "deleting") {
+                    return [undefined, { ...s, lifecycle: previous.lifecycle, runtime: previous.runtime }]
+                  }
+                  return [undefined, s]
+                }).pipe(Effect.andThen(Effect.fail(error))),
+              ),
+            )
             if (updated) {
               locationID = updated.id
               generation = updated.lifecycle.generation
+              yield* SynchronizedRef.modify(entry.ref, (state): readonly [void, EntryState] => [
+                undefined,
+                { ...state, locationID, generation },
+              ])
             }
           }
 
-          // Update in-memory state to deleting (blocks new admissions)
-          yield* SynchronizedRef.modify(entry.ref, (state): readonly [void, EntryState] => [
-            undefined,
-            { ...state, lifecycle: "deleting", generation, locationID },
-          ])
+          const fenced = yield* SynchronizedRef.get(entry.ref)
+          const disposeRuntime = fenced.runtime.tag === "stopping"
 
           yield* log(
             `[location-lifecycle] delete-fenced location=${directory} generation=${generation} operation=${operationID}`,
           )
 
-          // Dispose runtime if running or starting
-          if (synced.runtime.tag === "running" || synced.runtime.tag === "starting") {
-            yield* SynchronizedRef.modify(entry.ref, (state): readonly [void, EntryState] => [
-              undefined,
-              { ...state, runtime: { tag: "stopping" } },
-            ])
-            yield* disposeExecutionDirectories(entry, `delete:${operationID}`)
+          // Dispose the runtime under the fence. On the delete path failures are
+          // logged but not retried — the location is going away and must settle
+          // to `stopped` rather than pin in `stopping`.
+          if (disposeRuntime) {
+            const failures = yield* disposeExecutionDirectories(entry, `delete:${operationID}`)
             yield* SynchronizedRef.modify(entry.ref, (state): readonly [void, EntryState] => [
               undefined,
               { ...state, runtime: stopped },
             ])
+            for (const failure of failures) {
+              yield* log(
+                `[location-lifecycle] execution-dispose-failed location=${directory} execution=${failure.directory} reason=delete failures=${failure.count} action=dropped`,
+              )
+            }
             yield* log(
               `[location-lifecycle] runtime-disposed location=${directory} generation=${generation} reason=delete`,
             )

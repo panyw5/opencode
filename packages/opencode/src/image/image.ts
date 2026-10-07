@@ -3,6 +3,7 @@ import type { MessageV2 } from "@/session/message-v2"
 import * as Log from "@opencode-ai/core/util/log"
 import photonWasm from "@silvia-odwyer/photon-node/photon_rs_bg.wasm" with { type: "file" }
 import { Context, Effect, Layer, Schema } from "effect"
+import { readFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -81,10 +82,25 @@ export const layer = Layer.effect(
         maxHeight: image?.max_height ?? MAX_HEIGHT,
         maxBase64Bytes: image?.max_base64_bytes ?? MAX_BASE64_BYTES,
       }
-      if (!input.url.startsWith("data:") || !input.url.includes(";base64,"))
-        return yield* new InvalidDataUrlError({ url: input.url })
-
-      const base64 = input.url.slice(input.url.indexOf(";base64,") + ";base64,".length)
+      // File-backed images (e.g. browser screenshots stored as file://
+      // attachments) are read from disk here. When the image already fits the
+      // limits the input is returned unchanged so the session keeps storing
+      // only the path; the resize fallback below still produces an inline
+      // data URL because it must replace the bytes.
+      let base64: string
+      let fileBacked = false
+      if (input.url.startsWith("file:")) {
+        fileBacked = true
+        const bytes = yield* Effect.tryPromise({
+          try: () => readFile(fileURLToPath(input.url)),
+          catch: () => new InvalidDataUrlError({ url: input.url }),
+        })
+        base64 = bytes.toString("base64")
+      } else {
+        if (!input.url.startsWith("data:") || !input.url.includes(";base64,"))
+          return yield* new InvalidDataUrlError({ url: input.url })
+        base64 = input.url.slice(input.url.indexOf(";base64,") + ";base64,".length)
+      }
       const bytes = Buffer.byteLength(base64, "utf8")
 
       const photon = yield* loadPhoton

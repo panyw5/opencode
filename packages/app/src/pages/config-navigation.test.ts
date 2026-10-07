@@ -1,10 +1,49 @@
 import { describe, expect, test } from "bun:test"
 import type { SessionBarTab } from "@/context/layout"
-import { createConfigReturnTarget, resolveConfigReturnHref, resolveConfigReturnTarget } from "./config-navigation"
+import {
+  createConfigReturnTarget,
+  resolveConfigReturnHref,
+  resolveConfigReturnTarget,
+  resolveBrowserSessionTarget,
+} from "./config-navigation"
 
 const tabs: SessionBarTab[] = [{ directory: "/repo", id: "ses_original" }]
 
 describe("config return navigation", () => {
+  test("browser restores the originating session, not another open tab", () => {
+    expect(
+      resolveBrowserSessionTarget({
+        origin: { type: "session", directory: "/repo", id: "ses_original", href: "/repo/session/ses_original" },
+        tabs: [...tabs, { directory: "/other", id: "ses_other" }],
+        drafts: [],
+      }),
+    ).toMatchObject({ type: "session", id: "ses_original" })
+  })
+
+  test("browser replaces a home/scheduled origin with a session that can host the panel", () => {
+    expect(resolveBrowserSessionTarget({ origin: { type: "route", href: "/" }, tabs, drafts: [] })).toMatchObject({
+      type: "session",
+      id: "ses_original",
+    })
+    expect(
+      resolveBrowserSessionTarget({
+        origin: { type: "route", href: "/scheduled" },
+        tabs: [],
+        drafts: [{ directory: "/repo", id: "draft-1" }],
+      }),
+    ).toMatchObject({ type: "draft", id: "draft-1" })
+    expect(resolveBrowserSessionTarget({ tabs: [], drafts: [] })).toEqual({ type: "home" })
+  })
+
+  test("browser falls back when its original tab was closed", () => {
+    expect(
+      resolveBrowserSessionTarget({
+        origin: { type: "session", directory: "/repo", id: "closed", href: "/repo/session/closed" },
+        tabs,
+        drafts: [],
+      }),
+    ).toMatchObject({ type: "session", id: "ses_original" })
+  })
   test("restores the exact originating session while its tab exists", () => {
     const target = createConfigReturnTarget({
       pathname: "/L3JlcG8=/session/ses_original",

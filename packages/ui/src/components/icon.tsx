@@ -40,6 +40,8 @@ const baseIcons = {
   terminal: `<path d="M6.5 8L8.64286 10L6.5 12M10.9286 12H13.5M2 18H18V2H2V18Z" stroke="currentColor" stroke-linecap="square"/>`,
   "terminal-active": `<path d="M2 18H18V2H2V18Z" fill="currentColor" fill-opacity="0.1"/>
 <path d="M6.5 8L8.64286 10L6.5 12M10.9286 12H13.5M2 18H18V2H2V18Z" stroke="currentColor" stroke-linecap="square"/>`,
+  globe: `<circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.25"/><path d="M10 2.5C12.75 4.9 13.75 7.4 13.75 10C13.75 12.6 12.75 15.1 10 17.5C7.25 15.1 6.25 12.6 6.25 10C6.25 7.4 7.25 4.9 10 2.5ZM2.5 10H17.5" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/>`,
+  "globe-active": `<circle cx="10" cy="10" r="7.5" fill="currentColor" fill-opacity="0.1"/><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.25"/><path d="M10 2.5C12.75 4.9 13.75 7.4 13.75 10C13.75 12.6 12.75 15.1 10 17.5C7.25 15.1 6.25 12.6 6.25 10C6.25 7.4 7.25 4.9 10 2.5ZM2.5 10H17.5" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/>`,
   review: `<path d="M7 14.5H13M7 7.99512H10.0049M10.0049 7.99512H13M10.0049 7.99512V5M10.0049 7.99512V11M18 18V2L2 2L2 18H18Z" stroke="currentColor"/>`,
   read: `<path d="M6.25 2.91699H12.9167C14.2974 2.91699 15.4167 4.03628 15.4167 5.41699V14.5837C15.4167 15.9644 14.2974 17.0837 12.9167 17.0837H7.08333C5.70262 17.0837 4.58333 15.9644 4.58333 14.5837V4.58366C4.58333 3.66218 5.32886 2.91699 6.25 2.91699Z" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M11.667 2.91699V5.41699H14.167" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M7.5 7.91699H12.0833M7.5 10.417H12.0833M7.5 12.917H10.417" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>`,
   "review-active": `<path d="M18 18V2L2 2L2 18H18Z" fill="currentColor" fill-opacity="0.1"/>
@@ -160,9 +162,11 @@ const baseIcons = {
   "panel-stash": `<path d="M5.83301 4.58301H17.083V13.7497M2.91634 6.24967H14.1663V17.083H2.91634V6.24967Z" stroke="currentColor" stroke-linecap="square"/>`,
 }
 
-// Pack-independent outline icon for tiny thinking-status rows.
+// Pack-independent icons with intentional shapes across all icon themes.
 const icons = {
   ...baseIcons,
+  "alarm-clock-check": `<g transform="scale(0.833333)" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8.75"/><path d="M6 4 3 7m18 0-3-3"/><path d="M6.1 19.45 4 21m13.9-1.55L20 21"/><path d="m9 13 2 2 4-4"/></g>`,
+  "quote-open": `<path d="M8.5 3v2.1C5.8 6 4.5 7.6 4.3 9.8C4.8 9.3 5.4 9 6.1 9C8 9 9 10.4 9 12.4C9 14.6 7.6 16 5.5 16C3.1 16 1.5 14.2 1.5 11.4C1.5 7.1 4.2 3.9 8.5 3ZM18 3v2.1C15.3 6 14 7.6 13.8 9.8C14.3 9.3 14.9 9 15.6 9C17.5 9 18.5 10.4 18.5 12.4C18.5 14.6 17.1 16 15 16C12.6 16 11 14.2 11 11.4C11 7.1 13.7 3.9 18 3Z" fill="currentColor"/>`,
   lightbulb: `<path d="M10 2.083A5.417 5.417 0 0 0 6.667 11.77C7.187 12.176 7.5 12.775 7.5 13.434V13.75H12.5V13.434C12.5 12.775 12.813 12.176 13.333 11.77A5.417 5.417 0 0 0 10 2.083Z" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/><path d="M7.917 16.25H12.083M8.75 18.333H11.25" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>`,
 }
 

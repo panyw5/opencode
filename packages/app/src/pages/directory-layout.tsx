@@ -20,6 +20,7 @@ import { sessionTabsTargetHref, useSessionTabs } from "@/context/session-tabs"
 import { SyncProvider, useSync } from "@/context/sync"
 import { domainFromDirectory, extraAgentByDirectory } from "@/pages/layout/extra-agents"
 import { openPresentationSource } from "@/pages/session/presentation-source"
+import { openPresentedTask } from "@/pages/layout/open-task"
 import { authTokenFromCredentials } from "@/utils/server"
 import {
   directoryProviderKey,
@@ -156,6 +157,7 @@ function DirectoryDataProvider(
         }
       }}
       openPresentationSource={openPresentationSource}
+      onOpenTask={openPresentedTask}
       onAdvisorIntervention={(input) => {
         const callID = input.callID
         if (input.action === "start") {

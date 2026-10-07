@@ -14,11 +14,15 @@ import { sameWorkspacePath, workspaceKey, workspacePathContext } from "@/pages/l
 import { createScrollPersistence, type SessionScroll } from "./layout-scroll"
 import { createPathHelpers } from "./file/path"
 import { removeSessionTabSubtree } from "@/components/session/session-bar-parent"
+import { restoreRightPanel, toggleRightPanel, rightPanelGeometry, type RightPanel } from "./right-panel"
+import { browserApi } from "@/browser/types"
+import { createBrowserTabs, OPEN_TAB_EVENT } from "@/browser/tabs"
 
 const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] as const
 const DEFAULT_PANEL_WIDTH = 344
 const DEFAULT_SESSION_WIDTH = 600
 const DEFAULT_TERMINAL_HEIGHT = 280
+const DEFAULT_BROWSER_HEIGHT = 420
 export type AvatarColorKey = (typeof AVATAR_COLOR_KEYS)[number]
 
 export function getAvatarColors(key?: string) {
@@ -380,9 +384,25 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         return { ...sessionBar, all, drafts: uniqueDrafts }
       })()
 
+      const rightPanel = value.rightPanel
+      const activePanel = restoreRightPanel({ ...value, review: migratedReview })
+      const migratedRightPanel =
+        isRecord(rightPanel) && rightPanel.active === activePanel ? rightPanel : { active: activePanel }
+      if (migratedRightPanel !== rightPanel) console.debug(`[right-panel] migrated active=${activePanel}`)
+      const cleanPanel = (panel: unknown, key: string) => {
+        if (!isRecord(panel) || !(key in panel)) return panel
+        const { [key]: _, ...rest } = panel
+        return rest
+      }
+      const cleanReview = cleanPanel(migratedReview, "panelOpened")
+      const cleanBrowser = cleanPanel(value.browser, "opened")
+
       if (
         migratedSidebar === sidebar &&
-        migratedReview === review &&
+        cleanReview === review &&
+        cleanBrowser === value.browser &&
+        migratedRightPanel === rightPanel &&
+        !("filePreview" in value) &&
         migratedFileTree === fileTree &&
         migratedSessionTabs === sessionTabs &&
         migratedSessionBar === sessionBar
@@ -390,10 +410,13 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         return value
       }
 
+      const { filePreview: _, ...rest } = value
       return {
-        ...value,
+        ...rest,
         sidebar: migratedSidebar,
-        review: migratedReview,
+        rightPanel: migratedRightPanel,
+        browser: cleanBrowser,
+        review: cleanReview,
         fileTree: migratedFileTree,
         sessionTabs: migratedSessionTabs,
         sessionBar: migratedSessionBar,
@@ -414,12 +437,14 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           height: DEFAULT_TERMINAL_HEIGHT,
           opened: false,
         },
+        browser: {
+          height: DEFAULT_BROWSER_HEIGHT,
+        },
         review: {
           diffStyle: "split" as ReviewDiffStyle,
-          panelOpened: true,
         },
-        filePreview: {
-          opened: false,
+        rightPanel: {
+          active: "review" as RightPanel,
         },
         fileTree: {
           opened: true,
@@ -446,6 +471,37 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
 
     const MAX_SESSION_KEYS = 50
     const PENDING_MESSAGE_TTL_MS = 2 * 60 * 1000
+    const setRightPanel = (active: RightPanel) => {
+      const previous = store.rightPanel.active
+      if (previous === active) return
+      setStore("rightPanel", "active", active)
+      console.debug(`[right-panel] switch from=${previous} to=${active}`)
+    }
+    const browserTabs = createBrowserTabs({
+      api: browserApi(),
+      reveal: () => setRightPanel("browser"),
+      onEmpty: () => {
+        console.debug(`[right-panel] browser tabs empty active=${store.rightPanel.active}`)
+        if (store.rightPanel.active === "browser") setRightPanel("none")
+      },
+    })
+    const rightPanelSize = createMemo(() => rightPanelGeometry(
+      store.rightPanel.active, store.fileTree?.opened ?? true,
+      store.session?.width ?? DEFAULT_SESSION_WIDTH, store.fileTree?.width ?? DEFAULT_PANEL_WIDTH,
+    ))
+    onMount(() => {
+      browserTabs.start()
+      const openTab = (event: Event) => {
+        const url = (event as CustomEvent<unknown>).detail
+        if (typeof url !== "string") return
+        setRightPanel("browser")
+        browserTabs.addUserTab(url)
+      }
+      window.addEventListener(OPEN_TAB_EVENT, openTab)
+      onCleanup(() => window.removeEventListener(OPEN_TAB_EVENT, openTab))
+    })
+    onCleanup(browserTabs.dispose)
+
     // Transient sidebar selection may differ from the project owning the current route.
     const [sidebarProject, setSidebarProject] = createSignal<string | undefined>()
     const usage = {
@@ -1033,11 +1089,33 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           setStore("terminal", "height", height)
         },
       },
+      browser: {
+        height: createMemo(() => store.browser?.height ?? DEFAULT_BROWSER_HEIGHT),
+        resize(height: number) {
+          if (!store.browser) {
+            setStore("browser", { height })
+            return
+          }
+          setStore("browser", "height", height)
+        },
+      },
+      browserTabs,
+      rightPanel: {
+        active: createMemo(() => store.rightPanel.active),
+        wide: () => rightPanelSize().wide,
+        opened: () => rightPanelSize().opened,
+        width: () => rightPanelSize().width,
+        sessionWidth: () => rightPanelSize().sessionWidth,
+        select: setRightPanel,
+        toggle(panel: Exclude<RightPanel, "none">) {
+          setRightPanel(toggleRightPanel(store.rightPanel.active, panel))
+        },
+      },
       review: {
         diffStyle: createMemo(() => store.review?.diffStyle ?? "split"),
         setDiffStyle(diffStyle: ReviewDiffStyle) {
           if (!store.review) {
-            setStore("review", { diffStyle, panelOpened: true })
+            setStore("review", { diffStyle })
             return
           }
           setStore("review", "diffStyle", diffStyle)
@@ -1152,8 +1230,9 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         const key = createSessionKeyReader(sessionKey, ensureKey)
         const s = createMemo(() => store.sessionView[key()] ?? { scroll: {} })
         const terminalOpened = createMemo(() => store.terminal?.opened ?? false)
-        const reviewPanelOpened = createMemo(() => store.review?.panelOpened ?? true)
-        const filePreviewOpened = createMemo(() => store.filePreview?.opened ?? false)
+        const browserOpened = createMemo(() => store.rightPanel.active === "browser")
+        const reviewPanelOpened = createMemo(() => store.rightPanel.active === "review")
+        const filePreviewOpened = createMemo(() => store.rightPanel.active === "filePreview")
 
         function setTerminalOpened(next: boolean) {
           const current = store.terminal
@@ -1167,29 +1246,13 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           setStore("terminal", "opened", next)
         }
 
-        function setReviewPanelOpened(next: boolean) {
-          if (next) setFilePreviewOpened(false)
-          const current = store.review
-          if (!current) {
-            setStore("review", { diffStyle: "split" as ReviewDiffStyle, panelOpened: next })
-            return
-          }
-
-          const value = current.panelOpened ?? true
-          if (value === next) return
-          setStore("review", "panelOpened", next)
+        const setPanelOpened = (panel: Exclude<RightPanel, "none">, next: boolean) => {
+          if (next) setRightPanel(panel)
+          else if (store.rightPanel.active === panel) setRightPanel("none")
         }
-
-        function setFilePreviewOpened(next: boolean) {
-          if (next) setReviewPanelOpened(false)
-          if (!store.filePreview) {
-            setStore("filePreview", { opened: next })
-            return
-          }
-
-          if (store.filePreview.opened === next) return
-          setStore("filePreview", "opened", next)
-        }
+        const setBrowserOpened = (next: boolean) => setPanelOpened("browser", next)
+        const setReviewPanelOpened = (next: boolean) => setPanelOpened("review", next)
+        const setFilePreviewOpened = (next: boolean) => setPanelOpened("filePreview", next)
 
         return {
           scroll(tab: string) {
@@ -1208,6 +1271,18 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             },
             toggle() {
               setTerminalOpened(!terminalOpened())
+            },
+          },
+          browser: {
+            opened: browserOpened,
+            open() {
+              setBrowserOpened(true)
+            },
+            close() {
+              setBrowserOpened(false)
+            },
+            toggle() {
+              setBrowserOpened(!browserOpened())
             },
           },
           reviewPanel: {
@@ -1367,17 +1442,13 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
               )
               return
             }
-            if (!(store.filePreview?.opened ?? false)) {
+            if (store.rightPanel.active !== "filePreview") {
               console.debug(`[file-preview] close skip collapse session=${session} tab=${tab} reason=already-closed`)
               return
             }
 
             console.debug(`[file-preview] auto-collapse session=${session} reason=last-file-closed tab=${tab}`)
-            if (!store.filePreview) {
-              setStore("filePreview", { opened: false })
-              return
-            }
-            setStore("filePreview", "opened", false)
+            setRightPanel("none")
           },
           move(tab: string, to: number) {
             const session = key()

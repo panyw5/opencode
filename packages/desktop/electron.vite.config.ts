@@ -78,7 +78,11 @@ const require = __cjs_mod__.createRequire(import.meta.url);
 `,
         },
       },
-      externalizeDeps: { include: [nodePtyPkg] },
+      // `@opencode-ai/util` is a private, source-only workspace package whose
+      // exports map points at `.ts` files. If it is externalized (it is a
+      // declared dependency), the packaged main process crashes on startup
+      // trying to `import`/`require` TypeScript, so force-bundle it instead.
+      externalizeDeps: { include: [nodePtyPkg], exclude: ["@opencode-ai/util"] },
     },
     plugins: [
       {

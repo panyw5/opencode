@@ -16,10 +16,12 @@ import {
 
 type DiagramMetadata = {
   id: string
-  syntax: DiagramSyntax
+  syntax: DiagramSyntax | "flowchart"
   title: string
   caption?: string
   bytes: number
+  /** Compiled Mermaid source, present when syntax is "flowchart". */
+  mermaid?: string
 }
 
 export type DiagramCardProps = {
@@ -35,21 +37,74 @@ export function readDiagramMetadata(input: DiagramCardProps["input"], metadata: 
   const value = metadata.diagram
   if (!value || typeof value !== "object") return
   const item = value as Partial<DiagramMetadata>
-  if (typeof item.id !== "string" || (item.syntax !== "svg" && item.syntax !== "mermaid")) return
+  if (typeof item.id !== "string") return
+  if (item.syntax !== "svg" && item.syntax !== "mermaid" && item.syntax !== "flowchart") return
   if (typeof input.source !== "string" || !input.source.trim()) return
+  // Flowchart tool input is the structured JSON spec; the backend compiles it to
+  // Mermaid and ships the result in metadata, so render from there.
+  const source =
+    item.syntax === "flowchart"
+      ? typeof item.mermaid === "string" && item.mermaid.trim()
+        ? item.mermaid
+        : undefined
+      : input.source.trim()
+  if (!source) return
   return {
     id: item.id,
     syntax: item.syntax,
-    source: input.source.trim(),
+    source,
     title: typeof item.title === "string" ? item.title : "Diagram",
     caption: typeof item.caption === "string" ? item.caption : undefined,
   }
 }
 
 function DiagramLightbox(props: { svg: string; title: string; tall: boolean }): JSX.Element {
+  const [zoom, setZoom] = createSignal(1)
   const url = URL.createObjectURL(new Blob([props.svg], { type: "image/svg+xml" }))
   onCleanup(() => URL.revokeObjectURL(url))
-  return <ImagePreview src={url} alt={props.title} fit={props.tall ? "width" : "contain"} />
+  const scale = (direction: "in" | "out") => {
+    const previous = zoom()
+    const next = nextDiagramZoom(previous, direction)
+    setZoom(next)
+    console.debug(`[diagram] lightbox scale title=${props.title} direction=${direction} from=${previous} to=${next}`)
+  }
+  return (
+    <ImagePreview
+      src={url}
+      alt={props.title}
+      fit={props.tall ? "width" : "contain"}
+      zoom={zoom()}
+      toolbar={<DiagramZoomControls zoom={zoom()} onZoom={scale} />}
+    />
+  )
+}
+
+export function nextDiagramZoom(current: number, direction: "in" | "out") {
+  return Math.min(3, Math.max(0.25, current + (direction === "in" ? 0.25 : -0.25)))
+}
+
+function DiagramZoomControls(props: { zoom: number; onZoom: (direction: "in" | "out") => void }) {
+  const i18n = useI18n()
+  return (
+    <>
+      <IconButton
+        icon="minus"
+        variant="secondary"
+        aria-label={i18n.t("ui.diagram.zoomOut")}
+        title={i18n.t("ui.diagram.zoomOut")}
+        disabled={props.zoom <= 0.25}
+        onClick={() => props.onZoom("out")}
+      />
+      <IconButton
+        icon="plus"
+        variant="secondary"
+        aria-label={i18n.t("ui.diagram.zoomIn")}
+        title={i18n.t("ui.diagram.zoomIn")}
+        disabled={props.zoom >= 3}
+        onClick={() => props.onZoom("in")}
+      />
+    </>
+  )
 }
 
 export function DiagramCard(props: DiagramCardProps): JSX.Element {
@@ -60,6 +115,7 @@ export function DiagramCard(props: DiagramCardProps): JSX.Element {
   const [renderError, setRenderError] = createSignal<string>()
   const [rendering, setRendering] = createSignal(false)
   const [tall, setTall] = createSignal(false)
+  const [zoom, setZoom] = createSignal(1)
   const [palette, setPalette] = createSignal(currentDiagramPalette())
   const diagram = () => readDiagramMetadata(props.input, props.metadata)
   let element: HTMLElement | undefined
@@ -84,7 +140,11 @@ export function DiagramCard(props: DiagramCardProps): JSX.Element {
     console.debug(`[diagram] render start session=${props.sessionID} part=${props.partID} syntax=${value.syntax}`)
     try {
       const colors = palette()
-      const source = await renderDiagramSvg({ ...value, palette: colors })
+      const source = await renderDiagramSvg({
+        ...value,
+        syntax: value.syntax === "flowchart" ? "mermaid" : value.syntax,
+        palette: colors,
+      })
       const rendered = value.syntax === "svg" ? themeSvgSource(source, colors) : source
       if (run !== generation) return
       const next = URL.createObjectURL(new Blob([rendered], { type: "image/svg+xml" }))
@@ -115,6 +175,7 @@ export function DiagramCard(props: DiagramCardProps): JSX.Element {
       setRenderError(undefined)
       setRendering(false)
       setTall(false)
+      setZoom(1)
       activeID = id
     }
     if (!id || !element || props.status !== "completed") return
@@ -149,6 +210,15 @@ export function DiagramCard(props: DiagramCardProps): JSX.Element {
     ))
   }
 
+  const scale = (direction: "in" | "out") => {
+    const previous = zoom()
+    const next = nextDiagramZoom(previous, direction)
+    setZoom(next)
+    console.debug(
+      `[diagram] scale session=${props.sessionID} part=${props.partID} direction=${direction} from=${previous} to=${next}`,
+    )
+  }
+
   const imageError = (event: Event & { currentTarget: HTMLImageElement }) => {
     const current = url()
     if (!current || event.currentTarget.src !== current) return
@@ -172,13 +242,14 @@ export function DiagramCard(props: DiagramCardProps): JSX.Element {
       data-diagram-state={state()}
       data-diagram-syntax={diagram()?.syntax}
       data-diagram-layout={tall() ? "tall" : "normal"}
+      data-diagram-zoom={zoom()}
     >
       <div
         class="diagram-card__preview"
         data-scrollable
         role="region"
         aria-label={title()}
-        tabIndex={tall() ? 0 : undefined}
+        tabIndex={tall() || zoom() > 1 ? 0 : undefined}
       >
         <Show
           when={url()}
@@ -191,36 +262,46 @@ export function DiagramCard(props: DiagramCardProps): JSX.Element {
           }
         >
           {(src) => (
-            <img
-              src={src()}
-              alt={title()}
-              loading="lazy"
-              decoding="async"
-              onLoad={(event) =>
-                console.debug(
-                  `[diagram] image loaded session=${props.sessionID} part=${props.partID} width=${event.currentTarget.naturalWidth} height=${event.currentTarget.naturalHeight}`,
-                )
-              }
-              onError={imageError}
-            />
+            <div
+              class="diagram-card__canvas"
+              style={{ width: `${zoom() * 100}%`, height: tall() ? "auto" : `${zoom() * 100}%` }}
+            >
+              <img
+                src={src()}
+                alt={title()}
+                loading="lazy"
+                decoding="async"
+                onLoad={(event) =>
+                  console.debug(
+                    `[diagram] image loaded session=${props.sessionID} part=${props.partID} width=${event.currentTarget.naturalWidth} height=${event.currentTarget.naturalHeight}`,
+                  )
+                }
+                onError={imageError}
+              />
+            </div>
           )}
         </Show>
       </div>
       <Show when={svg()}>
-        <IconButton
-          icon="expand"
-          class="diagram-card__zoom"
-          variant="secondary"
-          aria-label={`${i18n.t("ui.presentation.zoom")} ${title()}`}
-          onClick={open}
-        />
+        <div class="diagram-card__tools">
+          <DiagramZoomControls zoom={zoom()} onZoom={scale} />
+          <IconButton
+            icon="expand"
+            class="diagram-card__zoom"
+            variant="secondary"
+            aria-label={`${i18n.t("ui.presentation.zoom")} ${title()}`}
+            onClick={open}
+          />
+        </div>
       </Show>
       <div class="diagram-card__body">
         <div class="diagram-card__heading">
           <div class="diagram-card__title-row">
             <strong title={title()}>{title()}</strong>
             <Show when={diagram()?.syntax}>
-              <span>{diagram()?.syntax === "svg" ? "SVG" : "Mermaid"}</span>
+              <span>
+                {diagram()?.syntax === "svg" ? "SVG" : diagram()?.syntax === "flowchart" ? "Flowchart" : "Mermaid"}
+              </span>
             </Show>
           </div>
           <Show when={diagram()?.caption}>

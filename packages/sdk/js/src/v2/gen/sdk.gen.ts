@@ -23,6 +23,10 @@ import type {
   BackgroundShellListResponses,
   BackgroundShellStopErrors,
   BackgroundShellStopResponses,
+  BrowserConnectErrors,
+  BrowserConnectResponses,
+  BrowserConnectTokenErrors,
+  BrowserConnectTokenResponses,
   CommandListErrors,
   CommandListResponses,
   Config as Config3,
@@ -988,6 +992,70 @@ export class BackgroundShell extends HeyApiClient {
       ThrowOnError
     >({
       url: "/background-shell/{id}",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Browser extends HeyApiClient {
+  /**
+   * Create browser bridge WebSocket token
+   *
+   * Create a short-lived ticket for opening the browser bridge WebSocket connection.
+   */
+  public connectToken<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<BrowserConnectTokenResponses, BrowserConnectTokenErrors, ThrowOnError>(
+      {
+        url: "/browser/bridge/ticket",
+        ...options,
+        ...params,
+      },
+    )
+  }
+
+  /**
+   * Connect to the browser bridge
+   *
+   * Establish a WebSocket connection between the opencode server and the desktop browser controller.
+   */
+  public connect<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<BrowserConnectResponses, BrowserConnectErrors, ThrowOnError>({
+      url: "/browser/bridge",
       ...options,
       ...params,
     })
@@ -6841,6 +6909,11 @@ export class OpencodeClient extends HeyApiClient {
   private _backgroundShell?: BackgroundShell
   get backgroundShell(): BackgroundShell {
     return (this._backgroundShell ??= new BackgroundShell({ client: this.client }))
+  }
+
+  private _browser?: Browser
+  get browser(): Browser {
+    return (this._browser ??= new Browser({ client: this.client }))
   }
 
   private _config?: Config2

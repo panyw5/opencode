@@ -49,6 +49,7 @@ const getBase = (appId: string): Configuration => ({
   },
   files: ["out/**/*", "!**/*.map", "!out/renderer/assets/JetBrainsMonoNerdFontMono-Regular.woff2", "package.json"],
   extraResources: [
+    { from: "resources/gpt-pro-login", to: "gpt-pro-login", filter: ["**/*"] },
     {
       from: "resources/icons",
       to: "icons",

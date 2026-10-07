@@ -38,6 +38,21 @@ const t = (key: string, params?: Record<string, string | number | boolean>) => {
 }
 
 describe("injected-prompt-model", () => {
+  test("renders Pro progress and completion as distinct injection panels", () => {
+    const progress = text({
+      text: "Partial answer",
+      synthetic: true,
+      metadata: { kind: "background-gpt-pro-injection", phase: "generating" },
+    })
+    const final = text({
+      text: "Final answer",
+      synthetic: true,
+      metadata: { kind: "background-gpt-pro-injection", phase: "completed" },
+    })
+    expect(isInjectionTextPart(progress)).toBe(true)
+    expect(injectionTitleFromParts([progress], t)).toBe("ui.message.injection.gptProProgress")
+    expect(injectionTitleFromParts([final], t)).toBe("ui.message.injection.gptProCompleted")
+  })
   test("summarizes injected text without joining prompt bodies", () => {
     const parts = [
       text({ text: "first", synthetic: true, metadata: { kind: "scheduled-injection" } }),
@@ -119,8 +134,9 @@ describe("injected-prompt-model", () => {
       injection:
         "Use the math-initialize skill to initialize or reconnect this Math Mode project.\n\nMath problem ID: algebra\n\nInitialization contract:\n- Start workers.",
     })
-    expect(isMathInitializationPrompt("Use the math-initialize skill to initialize or reconnect this Math Mode project."))
-      .toBe(false)
+    expect(
+      isMathInitializationPrompt("Use the math-initialize skill to initialize or reconnect this Math Mode project."),
+    ).toBe(false)
     expect(isInjectionTextPart(part)).toBe(true)
     expect(selectInjectionParts([part])).toEqual([part])
     expect(injectionTitleFromParts([part], t)).toBe("ui.message.injection.mathInitializationPrompt")

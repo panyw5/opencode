@@ -14,7 +14,7 @@ import {
   type JSX,
 } from "solid-js"
 import { createStore } from "solid-js/store"
-import { useLocation } from "@solidjs/router"
+import { A, useLocation } from "@solidjs/router"
 import stripAnsi from "strip-ansi"
 import { Dynamic } from "solid-js/web"
 import {
@@ -37,6 +37,7 @@ import { useDialog } from "../context/dialog"
 import { type UiI18n, useI18n } from "../context/i18n"
 import { Dialog } from "./dialog"
 import { BasicTool, GenericTool } from "./basic-tool"
+import { GptProTool } from "./gpt-pro-tool"
 import { Accordion } from "./accordion"
 import { StickyAccordionHeader } from "./sticky-accordion-header"
 import { Card } from "./card"
@@ -46,13 +47,15 @@ import { Icon } from "./icon"
 import { ToolErrorCard } from "./tool-error-card"
 import { PresentationCard } from "./presentation-card"
 import { DiagramCard } from "./diagram-card"
+import { PresentedTaskCard, readPresentedTask } from "./task-card"
 import { Checkbox } from "./checkbox"
 import { DiffChanges } from "./diff-changes"
 import { Markdown } from "./markdown"
 import type { MarkdownStage } from "./markdown"
 import { ImagePreview } from "./image-preview"
 import { getDirectory as _getDirectory, getFilename } from "@opencode-ai/core/util/path"
-import { checksum } from "@opencode-ai/core/util/encode"
+import { base64Encode, checksum } from "@opencode-ai/core/util/encode"
+import { readSessionReference } from "./session-reference"
 import { Tooltip } from "./tooltip"
 import { IconButton } from "./icon-button"
 import { Button } from "./button"
@@ -524,6 +527,8 @@ export function getToolInfo(tool: string, input: any = {}, metadata: any = {}): 
         subtitle: input.description,
       }
     }
+    case "gpt_pro_consult":
+      return { icon: "brain", title: "GPT-6 Pro (Chat)", subtitle: text(metadata.preview) ?? text(input.prompt) }
     case "codex_consult":
       return {
         icon: "brain",
@@ -582,6 +587,12 @@ export function getToolInfo(tool: string, input: any = {}, metadata: any = {}): 
       return {
         icon: "checklist",
         title: i18n.t("ui.tool.todos"),
+      }
+    case "present_task":
+      return {
+        icon: "checklist",
+        title: i18n.t("ui.tool.presentTask"),
+        subtitle: text(input.taskID),
       }
     case "question":
       return {
@@ -1301,6 +1312,9 @@ export function UserMessageDisplay(props: {
   })
 
   const skillTemplatePart = createMemo(() => skillText(props.parts))
+  const sessionReferences = createMemo(() =>
+    props.parts.flatMap((part) => (part.type === "text" ? (readSessionReference(part.metadata) ?? []) : [])),
+  )
 
   const files = createMemo(() => (props.parts?.filter((p) => p.type === "file") as FilePart[]) ?? [])
 
@@ -1377,6 +1391,34 @@ export function UserMessageDisplay(props: {
 
   return (
     <div data-component="user-message" data-queued={props.queued ? "" : undefined} aria-busy={props.queued}>
+      <Show when={sessionReferences().length}>
+        <div data-slot="user-message-session-references">
+          <For each={sessionReferences()}>
+            {(item) => (
+              <A
+                data-component="sent-session-reference"
+                href={`/${base64Encode(item.directory)}/session/${item.sessionID}`}
+                title={`${item.directory}\n${item.sessionID}`}
+              >
+                <div data-slot="session-reference-title">
+                  <Icon name="speech-bubble" size="small" />
+                  <span>{item.title || item.sessionID}</span>
+                  <Icon name="arrow-right" size="small" />
+                </div>
+                <div data-slot="session-reference-meta">
+                  {getFilename(item.directory)} · {item.sessionID}
+                </div>
+                <Show when={item.summary}>
+                  <div data-slot="session-reference-summary" title={item.summary}>
+                    {item.summary}
+                  </div>
+                </Show>
+                <div data-slot="session-reference-meta">{timefmt().format(item.updatedAt)}</div>
+              </A>
+            )}
+          </For>
+        </div>
+      </Show>
       <Show when={attachments().length > 0}>
         <div data-slot="user-message-attachments">
           <For each={attachments()}>
@@ -3440,6 +3482,37 @@ ToolRegistry.register({
 })
 
 ToolRegistry.register({
+  name: "present_task",
+  render(props) {
+    // Old messages and deleted tasks can carry a payload the card cannot read;
+    // those fall back to the plain tool row rather than rendering an empty card.
+    const task = createMemo(() => readPresentedTask(props.metadata))
+    return (
+      <Show
+        when={task()}
+        fallback={
+          <GenericTool
+            tool={props.tool}
+            part={props.part}
+            input={props.input}
+            output={props.output}
+            status={props.status}
+            hideDetails={props.hideDetails}
+          />
+        }
+      >
+        <PresentedTaskCard
+          sessionID={props.part?.sessionID ?? ""}
+          status={props.status}
+          input={props.input}
+          metadata={props.metadata}
+        />
+      </Show>
+    )
+  },
+})
+
+ToolRegistry.register({
   name: "question",
   render(props) {
     const i18n = useI18n()
@@ -4148,6 +4221,8 @@ function CodexSessionDialog(props: {
     </Dialog>
   )
 }
+
+ToolRegistry.register({ name: "gpt_pro_consult", render(props) { return <GptProTool {...props}/> } })
 
 ToolRegistry.register({
   name: "codex_consult",

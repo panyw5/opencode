@@ -1,11 +1,23 @@
 import type { SessionBarDraft, SessionBarTab } from "@/context/layout"
-import type { SessionTabsTarget } from "@/context/session-tabs"
+import { pickSessionTabsTarget, type SessionTabsTarget } from "@/context/session-tabs"
 import { workspaceKey } from "@/pages/layout/helpers"
 
 export type ConfigReturnTarget =
   | { type: "session"; href: string; directory: string; id: string }
   | { type: "draft"; href: string; directory: string; id: string }
   | { type: "route"; href: string }
+
+/** Browser panels require a session route; home/scheduled origins cannot host them. */
+export function resolveBrowserSessionTarget(input: {
+  origin?: Readonly<Partial<ConfigReturnTarget>> | null
+  tabs: SessionBarTab[]
+  drafts: SessionBarDraft[]
+  directory?: string
+}): SessionTabsTarget {
+  const previous = resolveConfigReturnTarget(input.origin, input.tabs, input.drafts)
+  if (previous && previous.type !== "route") return previous
+  return pickSessionTabsTarget(input)
+}
 
 export function createConfigReturnTarget(input: {
   pathname: string

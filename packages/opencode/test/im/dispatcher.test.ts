@@ -6,6 +6,7 @@ import { Agent } from "../../src/agent/agent"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { BackgroundJob } from "../../src/background/job"
 import { BackgroundShell } from "../../src/background/shell"
+import { BackgroundGptPro } from "../../src/background/gpt-pro"
 import { Bus } from "../../src/bus"
 import { Command } from "../../src/command"
 import { Config } from "../../src/config/config"
@@ -46,6 +47,7 @@ import { SystemPrompt } from "../../src/session/system"
 import { Todo } from "../../src/session/todo"
 import { ToolRegistry } from "../../src/tool/registry"
 import { Truncate } from "../../src/tool/truncate"
+import { Browser } from "../../src/browser"
 import { Question } from "../../src/question"
 import { Discovery } from "../../src/skill/discovery"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
@@ -148,11 +150,13 @@ const registry = ToolRegistry.layer.pipe(
   Layer.provide(Discovery.defaultLayer), Layer.provide(FetchHttpClient.layer), Layer.provide(CrossSpawnSpawner.defaultLayer),
   Layer.provide(RepositoryCache.defaultLayer), Layer.provide(Git.defaultLayer), Layer.provide(Reference.defaultLayer), Layer.provide(Ripgrep.defaultLayer), Layer.provide(Format.defaultLayer),
   Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })), Layer.provide(ProjectTask.defaultLayer), Layer.provide(SystemPrompt.defaultLayer), Layer.provideMerge(todo), Layer.provideMerge(question), Layer.provideMerge(dependencies),
+  Layer.provide(Browser.defaultLayer),
 )
 const truncate = Truncate.layer.pipe(Layer.provideMerge(dependencies))
 const processor = SessionProcessor.layer.pipe(Layer.provide(summary), Layer.provide(Image.defaultLayer), Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })), Layer.provideMerge(dependencies))
 const compaction = SessionCompaction.layer.pipe(Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })), Layer.provideMerge(processor), Layer.provideMerge(dependencies))
 const prompt = SessionPrompt.layer.pipe(
+  Layer.provide(BackgroundGptPro.defaultLayer),
   Layer.provideMerge(SessionRevert.defaultLayer), Layer.provide(Image.defaultLayer), Layer.provide(Reference.defaultLayer), Layer.provide(summary),
   Layer.provideMerge(runState), Layer.provideMerge(compaction), Layer.provideMerge(processor), Layer.provideMerge(registry), Layer.provideMerge(truncate),
   Layer.provide(Instruction.defaultLayer), Layer.provide(SystemPrompt.defaultLayer), Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })), Layer.provide(ProjectTask.defaultLayer), Layer.provideMerge(dependencies), Layer.provide(summary),

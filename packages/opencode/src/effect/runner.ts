@@ -265,10 +265,17 @@ export const make = <A, E = never>(
         }
         revision += 1
         const done = Deferred.makeUnsafe<void>()
+        // Captured at cancel time: by the time `finish` runs, the state has
+        // already moved to "Stopping". An already-idle runner must stay
+        // silent (instance teardown must not emit a ghost `session.idle`);
+        // live states publish exactly once — the work's own exit handler
+        // (finishRun/finishShell) publishes first, so `finish` skips when
+        // the state has already reached Idle.
+        const publishIdle = st._tag !== "Idle"
         const finish = SynchronizedRef.modifyEffect(
           ref,
           Effect.fnUntraced(function* (current) {
-            yield* idle
+            if (publishIdle && current._tag !== "Idle") yield* idle
             Deferred.doneUnsafe(done, Exit.void)
             return [undefined, { _tag: "Idle" } as const] as const
           }),

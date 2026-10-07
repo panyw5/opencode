@@ -1,0 +1,7 @@
+Present a project task or a scheduled task in the chat UI as a durable summary card. Use this tool when the user should see the current state of a task: after creating, mounting, updating, or reporting on one.
+
+`taskID` (required, string): exact ID returned by `project_task_create` / `project_task_list` / `project_task_get` / `project_task_mount` (starts with `ptask_`) or by `scheduled_task_create` / `scheduled_task_list` / `scheduled_task_get` (starts with `task_`). The task kind is detected from the ID prefix; never invent or edit an ID. There are no other parameters.
+
+Every field on the card is read from the task record, not from you: title, status, todo progress and session count for a project task; schedule, next/last run and enabled state for a scheduled task, plus the beginning of `prd.md` or of the scheduled prompt. Say anything else you want the user to know in your own message.
+
+This tool is read-only: it never creates, updates, mounts, or runs a task. Use `project_task_update` / `scheduled_task_update` to change state, then present the task again.

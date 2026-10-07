@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process"
 import { realpath, stat } from "node:fs/promises"
-import { basename } from "node:path"
-import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, shell } from "electron"
+import { basename, join } from "node:path"
+import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, session, shell, webContents } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 
@@ -15,6 +15,14 @@ import type {
   WindowConfig,
   WslConfig,
 } from "../preload/types"
+import type { BrowserBounds } from "../preload/types"
+import { browserController } from "./browser"
+import { GptProProbe } from "./gpt-pro-probe"
+import { GptProLoginServer } from "./gpt-pro-login-server"
+import { importSessionCookies } from "./gpt-pro-session-cookies"
+import { GPT_PRO_PARTITION, GPT_PRO_URL } from "@opencode-ai/util/gpt-pro"
+import type { GptProCommand, GptProConfig } from "@opencode-ai/util/gpt-pro"
+import { getGptProController } from "./gpt-pro-runtime"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { getAppLaunchPlan, getPowerShellLauncherArgs } from "./apps"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
@@ -52,6 +60,7 @@ import {
   openInEditor,
   openInFinder,
   readLocalFile,
+  statLocalFile,
   setCustomEditorPath,
   setDefaultEditor,
   setGenericagentConfig,
@@ -79,6 +88,35 @@ const pickerFilters = (ext?: string[]) => {
 }
 
 const pickedFiles = createPickedFileAuthorizations()
+const gptProProbe = new GptProProbe(browserController, (message) => writeLog("gpt-pro", message))
+let gptProLogin: GptProLoginServer | undefined
+
+function loginConnection() {
+  if (gptProLogin) return gptProLogin
+  gptProLogin = new GptProLoginServer({
+    extensionDirectory: app.isPackaged ? join(process.resourcesPath, "gpt-pro-login") : join(app.getAppPath(), "resources", "gpt-pro-login"),
+    log: (message) => writeLog("gpt-pro", message),
+    importCookies: (cookies) => {
+      if (getGptProController().busy()) throw new Error("Stop the active consultation before replacing its login session.")
+      return importSessionCookies(session.fromPartition(GPT_PRO_PARTITION).cookies, cookies, (message) => writeLog("gpt-pro", message))
+    },
+    imported: async () => {
+      await browserController.open(GPT_PRO_PARTITION, GPT_PRO_URL)
+      browserController.cdp(GPT_PRO_PARTITION)?.reload()
+      browserController.present(GPT_PRO_PARTITION)
+    },
+  })
+  app.on("before-quit", () => gptProLogin?.cancel())
+  return gptProLogin
+}
+
+async function openGptProLogin() {
+  if (getGptProController().busy()) throw new Error("Stop active gpt-pro consultations before opening a new login connection.")
+  const login = loginConnection()
+  const url = await login.start()
+  try { await shell.openExternal(url) } catch { login.cancel(); throw new Error("Could not open the default browser for login.") }
+  return login.status()
+}
 
 type Deps = {
   killSidecar: () => Promise<void> | void
@@ -101,6 +139,9 @@ type Deps = {
   checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string; failed?: boolean; error?: string }>
   installUpdate: () => Promise<void> | void
   getUpdaterState: () => Promise<UpdaterState>
+  pauseUpdate: () => Promise<void>
+  resumeUpdate: () => Promise<UpdaterState>
+  cancelUpdate: () => Promise<void>
   onUpdaterStateChanged: (listener: (state: UpdaterState) => void) => () => void
   setBackgroundColor: (color: string) => void
   exportDebugLogs: () => Promise<string>
@@ -108,7 +149,64 @@ type Deps = {
 }
 
 export function registerIpcHandlers(deps: Deps) {
+  getGptProController()
+  ipcMain.handle("gpt-pro-config", () => getGptProController().config())
+  ipcMain.handle("gpt-pro-set-config", (_event, config: GptProConfig) => getGptProController().setConfig(config))
+  ipcMain.handle("gpt-pro-command", (_event, command: GptProCommand) => getGptProController().command(command))
+  ipcMain.handle("gpt-pro-list", () => getGptProController().list())
+  ipcMain.handle("gpt-pro-open", () => gptProProbe.open())
+  ipcMain.handle("gpt-pro-status", () => gptProProbe.status())
+  ipcMain.handle("gpt-pro-login", () => openGptProLogin())
+  ipcMain.handle("gpt-pro-login-status", () => loginConnection().status())
+  ipcMain.handle("gpt-pro-login-cancel", () => loginConnection().cancel())
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
+  ipcMain.handle("browser-open", (_event: IpcMainInvokeEvent, partition: string, url: string) =>
+    browserController.open(partition, url),
+  )
+  ipcMain.handle("browser-acquire-display", () => browserController.acquireDisplay())
+  ipcMain.handle("browser-display-state", () => browserController.getDisplayState())
+  ipcMain.handle("browser-update-display", (_event, frame) => browserController.updateDisplay(frame))
+  ipcMain.handle("browser-release-display", (_event, lease: number) => browserController.releaseDisplay(lease))
+  ipcMain.handle("browser-set-bounds", (_event: IpcMainInvokeEvent, partition: string, bounds: BrowserBounds | null) =>
+    browserController.setBounds(partition, bounds),
+  )
+  ipcMain.handle("browser-set-visible", (_event: IpcMainInvokeEvent, partition: string, visible: boolean) =>
+    browserController.setVisible(partition, visible),
+  )
+  ipcMain.handle("browser-close", (_event: IpcMainInvokeEvent, partition: string) => browserController.close(partition))
+  ipcMain.handle(
+    "browser-navigate",
+    (_event: IpcMainInvokeEvent, partition: string, action: "back" | "forward" | "reload") => {
+      // No ensure-create: navigating a missing view (tab closed, render crash)
+      // must be a no-op, not a silently created blank view nobody drives.
+      const cdp = browserController.cdp(partition)
+      if (!cdp) return
+      if (action === "back") cdp.back()
+      else if (action === "forward") cdp.forward()
+      else cdp.reload()
+    },
+  )
+  ipcMain.handle("browser-set-shared", (_event: IpcMainInvokeEvent, partition: string, shared: boolean) =>
+    browserController.setShared(partition, shared),
+  )
+  ipcMain.handle("browser-get-state", () => browserController.getState())
+  ipcMain.handle("browser-get-presentation", () => browserController.getPresentation())
+  ipcMain.handle("browser-ack-presentation", (_event, id: number) => browserController.acknowledgePresentation(id))
+  browserController.onPresented((request) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send("browser-presented", request)
+    }
+  })
+  browserController.onViewState((state) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send("browser-updated", state)
+    }
+  })
+  browserController.onViewClosed((partition, epoch) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send("browser-closed", partition, epoch)
+    }
+  })
   ipcMain.handle("install-cli", () => installCli())
   ipcMain.handle("reload-backend", () => deps.reloadBackend())
   ipcMain.handle("await-initialization", (event: IpcMainInvokeEvent) => {
@@ -138,6 +236,9 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("check-update", () => deps.checkUpdate())
   ipcMain.handle("install-update", () => deps.installUpdate())
   ipcMain.handle("get-updater-state", () => deps.getUpdaterState())
+  ipcMain.handle("pause-update", () => deps.pauseUpdate())
+  ipcMain.handle("resume-update", () => deps.resumeUpdate())
+  ipcMain.handle("cancel-update", () => deps.cancelUpdate())
 
   const updaterSubs = createUpdaterSubscriptions()
   ipcMain.on("subscribe-updater-state", (event: IpcMainEvent, id: string) => {
@@ -320,6 +421,7 @@ export function registerIpcHandlers(deps: Deps) {
     listConfigFiles(directory),
   )
   ipcMain.handle("read-local-file", (_event: IpcMainInvokeEvent, path: string) => readLocalFile(path))
+  ipcMain.handle("stat-local-file", (_event: IpcMainInvokeEvent, path: string) => statLocalFile(path))
   ipcMain.handle("write-local-file", (_event: IpcMainInvokeEvent, path: string, content: string) =>
     writeLocalFile(path, content),
   )
@@ -477,7 +579,17 @@ export function sendSqliteMigrationProgress(win: BrowserWindow, progress: Sqlite
 }
 
 export function sendMenuCommand(win: BrowserWindow, id: string) {
+  if (id === "sessionTabs.close") {
+    const focused = webContents.getFocusedWebContents()
+    const partition = browserController.focusedPartition(focused?.id, win)
+    writeLog(
+      "keyboard",
+      `close-tab route focused=${focused?.id ?? "none"} partition=${partition ?? "none"} target=${partition ? "browser" : "renderer"}`,
+    )
+    if (partition) id = "browserTabs.close"
+  }
   win.webContents.send("menu-command", id)
+  writeLog("keyboard", `menu-command sent id=${id}`)
 }
 
 export function sendDeepLinks(win: BrowserWindow, urls: string[]) {

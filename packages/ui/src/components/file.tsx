@@ -28,7 +28,9 @@ import {
   onMount,
   Show,
   splitProps,
+  untrack,
 } from "solid-js"
+import { createStore } from "solid-js/store"
 import { useI18n } from "../context/i18n"
 import { createDefaultOptions, styleVariables } from "../pierre"
 import { markCommentedDiffLines, markCommentedFileLines } from "../pierre/commented-lines"
@@ -89,6 +91,7 @@ type SharedProps<T> = {
   classList?: ComponentProps<"div">["classList"]
   media?: FileMediaOptions
   search?: FileSearchControl
+  scrollControl?: FileScrollControl
   openFolder?: () => void
   openWith?: JSX.Element
   copyPath?: () => void
@@ -105,6 +108,22 @@ export type FileSearchHandle = {
 
 export type FileSearchControl = {
   register: (handle: FileSearchHandle | null) => void
+}
+
+export type FileScrollHandle = {
+  /**
+   * Scroll the active selection into view (top edge at the vertical middle of
+   * the nearest scrolling ancestor). Idempotent one-shot: retries until the
+   * target lines are rendered, then reports completion via `done` — including
+   * when the range is already fully visible (no scroll issued) or is given up
+   * on. Selection highlighting itself never scrolls; only an explicit call
+   * through this handle moves the viewport.
+   */
+  scrollToSelection: (done?: () => void) => void
+}
+
+export type FileScrollControl = {
+  register: (handle: FileScrollHandle | null) => void
 }
 
 export type TextFileProps<T = {}> = FileOptions<T> &
@@ -135,6 +154,7 @@ const sharedKeys = [
   "selectedLines",
   "commentedLines",
   "search",
+  "scrollControl",
   "openFolder",
   "openWith",
   "copyPath",
@@ -184,6 +204,39 @@ function sourceFile(file: FileContents, contents: string): FileContents {
 function fileLines(text: string) {
   const total = text.split("\n").length - (text.endsWith("\n") ? 1 : 0)
   return Math.max(1, total)
+}
+
+function composedParent(el: Element): Element | null {
+  if (el.parentElement) return el.parentElement
+  const owner = el.getRootNode()
+  return owner instanceof ShadowRoot ? owner.host : null
+}
+
+// Scroll the nearest scrolling ancestor (crossing shadow boundaries) so the
+// range's top edge sits at the vertical middle of the viewport. A range that
+// is already fully visible never moves the viewport, so user-driven
+// selections stay undisturbed. Returns false when no scroller was found.
+function scrollRangeToViewportCenter(startEl: Element, endEl: Element): boolean {
+  let scroller: HTMLElement | null = null
+  for (let node = composedParent(startEl); node; node = composedParent(node)) {
+    if (!(node instanceof HTMLElement)) continue
+    const style = getComputedStyle(node)
+    if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 1) {
+      scroller = node
+      break
+    }
+  }
+  if (!scroller) return false
+
+  const outer = scroller.getBoundingClientRect()
+  const first = startEl.getBoundingClientRect()
+  const last = endEl.getBoundingClientRect()
+  const top = Math.min(first.top, last.top)
+  const bottom = Math.max(first.bottom, last.bottom)
+  if (top >= outer.top && bottom <= outer.bottom) return true
+  // Place the top edge of the range at the vertical middle of the viewport.
+  scroller.scrollTop += top - (outer.top + outer.height / 2)
+  return true
 }
 
 function previewText(text: string) {
@@ -739,17 +792,122 @@ function FileRoot(props: {
 }
 
 function FloatingFileActions(props: { mount: () => HTMLElement | undefined; children: JSX.Element }) {
+  const i18n = useI18n()
+  const [state, setState] = createStore({ hovered: false, focused: false, pinned: false, menu: false })
+  let root: HTMLDivElement | undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let pointer: { x: number; y: number } | undefined
+  const open = () => state.hovered || state.focused || state.pinned || state.menu
+  const update = (key: "hovered" | "focused" | "pinned" | "menu", value: boolean) => {
+    if (state[key] === value) return
+    setState(key, value)
+    console.debug(
+      `[file-actions] ${key}=${value} hovered=${state.hovered} focused=${state.focused} pinned=${state.pinned} menu=${state.menu} expanded=${open()}`,
+    )
+  }
+  const cancelClose = () => {
+    if (timer === undefined) return
+    clearTimeout(timer)
+    timer = undefined
+    console.debug("[file-actions] close cancelled")
+  }
+  const inside = () => {
+    if (!root || !pointer) return false
+    const rect = root.getBoundingClientRect()
+    return (
+      pointer.x >= rect.left - 6 &&
+      pointer.x <= rect.right + 6 &&
+      pointer.y >= rect.top - 6 &&
+      pointer.y <= rect.bottom + 6
+    )
+  }
+  const enter = () => {
+    cancelClose()
+    update("hovered", true)
+  }
+  const leave = () => {
+    if (timer !== undefined || !state.hovered) return
+    console.debug(`[file-actions] close scheduled x=${pointer?.x} y=${pointer?.y}`)
+    timer = setTimeout(() => {
+      timer = undefined
+      const rect = root?.getBoundingClientRect()
+      console.debug(`[file-actions] close-check x=${pointer?.x} y=${pointer?.y} rect=${rect?.x},${rect?.y},${rect?.width},${rect?.height} inside=${inside()} nativeHover=${root?.matches(":hover")}`)
+      if (inside()) return
+      update("hovered", false)
+    }, 180)
+  }
+  createEffect(() => {
+    const mount = props.mount()
+    if (!mount) return
+    const document = mount.ownerDocument
+    const move = (event: PointerEvent) => {
+      pointer = { x: event.clientX, y: event.clientY }
+      if (inside()) enter()
+      else leave()
+    }
+    const exit = (event: PointerEvent) => {
+      console.debug(`[file-actions] document-exit x=${event.clientX} y=${event.clientY} target=${(event.target as Element)?.nodeName} related=${(event.relatedTarget as Element)?.nodeName}`)
+      pointer = undefined
+      leave()
+    }
+    document.addEventListener("pointermove", move, true)
+    document.addEventListener("pointerleave", exit)
+    onCleanup(() => {
+      document.removeEventListener("pointermove", move, true)
+      document.removeEventListener("pointerleave", exit)
+      cancelClose()
+    })
+  })
+  createEffect(() => {
+    if (!props.mount() || !root) return
+    // Open-with menus are portalled outside the hover/focus subtree.
+    const sync = () => update("menu", !!root?.querySelector('[aria-haspopup][aria-expanded="true"]'))
+    const observer = new MutationObserver(sync)
+    observer.observe(root, { subtree: true, attributes: true, attributeFilter: ["aria-expanded"] })
+    untrack(sync)
+    onCleanup(() => observer.disconnect())
+  })
   return (
     <Show when={props.mount()}>
       {(mount) => (
         <Portal mount={mount()}>
           <div
+            ref={root}
             data-slot="file-markdown-actions"
             class="absolute right-3 top-3 z-20"
             data-prevent-autofocus=""
+            data-expanded={open() ? "true" : "false"}
             onPointerDown={(event) => event.stopPropagation()}
+            onPointerEnter={enter}
+            onPointerLeave={leave}
+            onClick={(event) => {
+              const target = event.target instanceof Element ? event.target.closest("button, label") : undefined
+              console.debug(
+                `[file-actions] click action=${target?.getAttribute("aria-label") ?? target?.textContent?.trim() ?? "unknown"}`,
+              )
+            }}
+            onFocusIn={() => update("focused", true)}
+            onFocusOut={(event) => {
+              if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
+              update("focused", false)
+            }}
           >
-            {props.children}
+            <div data-slot="file-markdown-actions-inner" class="flex items-center gap-2">
+              <div data-slot="file-markdown-actions-content" hidden={!open()}>
+                {props.children}
+              </div>
+              {/* Keep the hover entry anchored while the actions expand to its left. */}
+              <Tooltip value={i18n.t("ui.file.actions")} placement="bottom">
+                <IconButton
+                  icon="dot-grid"
+                  variant="ghost"
+                  class="h-8 w-8 shrink-0 rounded-md"
+                  onClick={() => update("pinned", !state.pinned)}
+                  aria-label={i18n.t("ui.file.actions")}
+                  aria-expanded={open()}
+                />
+              </Tooltip>
+            </div>
           </div>
         </Portal>
       )}
@@ -876,54 +1034,52 @@ function SourceViewer<T>(props: SourceProps<T>) {
 
   const setSelectedLines = (range: SelectedLineRange | null) => {
     viewer.lastSelection = range
-    if (applySelection(range)) scrollSelectionIntoView()
+    applySelection(range)
   }
 
-  // Scroll the selection so its midpoint sits at the center of the nearest
-  // scrolling ancestor. A range that is already fully visible never moves the
-  // viewport, so user-driven selections stay undisturbed. Retries until the
-  // viewer finishes rendering the target lines.
-  const scrollSelectionIntoView = (attempt = 0) => {
+  // Scroll the selection so its top edge sits at the vertical middle of the
+  // nearest scrolling ancestor. Retries until the viewer finishes rendering
+  // the target lines, then reports completion through `done` at every
+  // terminal point.
+  const scrollSelectionIntoView = (done: (() => void) | undefined, attempt = 0): void => {
+    const finish = () => done?.()
     const range = viewer.lastSelection
-    if (!range) return
+    if (!range) {
+      finish()
+      return
+    }
     const root = viewer.getRoot()
     const start = Math.min(range.start, range.end)
     const end = Math.max(range.start, range.end)
     const startEl = root?.querySelector(`[data-line="${start}"]`)
     if (!(startEl instanceof HTMLElement)) {
-      if (attempt >= 120) return
-      requestAnimationFrame(() => scrollSelectionIntoView(attempt + 1))
+      if (attempt >= 120) {
+        finish()
+        return
+      }
+      requestAnimationFrame(() => scrollSelectionIntoView(done, attempt + 1))
       return
     }
     const endEl = root?.querySelector(`[data-line="${end}"]`) ?? startEl
-    if (!(endEl instanceof HTMLElement)) return
-
-    const composedParent = (el: Element): Element | null => {
-      if (el.parentElement) return el.parentElement
-      const owner = el.getRootNode()
-      return owner instanceof ShadowRoot ? owner.host : null
+    if (!(endEl instanceof HTMLElement)) {
+      finish()
+      return
     }
-
-    let scroller: HTMLElement | null = null
-    for (let node = composedParent(startEl); node; node = composedParent(node)) {
-      if (!(node instanceof HTMLElement)) continue
-      const style = getComputedStyle(node)
-      if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 1) {
-        scroller = node
-        break
-      }
+    if (!scrollRangeToViewportCenter(startEl, endEl)) {
+      finish()
+      return
     }
-    if (!scroller) return
-
-    const outer = scroller.getBoundingClientRect()
-    const first = startEl.getBoundingClientRect()
-    const last = endEl.getBoundingClientRect()
-    const top = Math.min(first.top, last.top)
-    const bottom = Math.max(first.bottom, last.bottom)
-    if (top >= outer.top && bottom <= outer.bottom) return
-    // Place the top edge of the selection at the vertical middle of the viewport.
-    scroller.scrollTop += top - (outer.top + outer.height / 2)
+    finish()
   }
+
+  createEffect(() => {
+    const control = local.scrollControl
+    if (!control) return
+    control.register({
+      scrollToSelection: (done) => scrollSelectionIntoView(done),
+    })
+    onCleanup(() => control.register(null))
+  })
 
   const adapter: ModeAdapter = {
     lineFromMouseEvent,
@@ -990,7 +1146,6 @@ function SourceViewer<T>(props: SourceProps<T>) {
       },
       onReady: () => {
         applySelection(viewer.lastSelection)
-        scrollSelectionIntoView()
         viewer.find.refresh({ reset: true })
         local.onRendered?.()
       },
@@ -1064,7 +1219,6 @@ function TextViewer<T>(props: TextFileProps<T>) {
     () => `${Intl.NumberFormat().format(lines())} lines, ${Intl.NumberFormat().format(bytes())} chars`,
   )
   const preview = createMemo(() => (large() ? previewText(text()) : ""))
-  const linked = () => md() && props.selectedLines?.start != null && props.selectedLines?.end != null
   const svgSrc = createMemo(() => {
     if (!svg()) return
     return dataUrlFromMediaValue(props.media?.current ?? props.file.contents, "svg")
@@ -1082,7 +1236,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
   if (!md() && !svg()) {
     const sourceBar = props.toolbar === false || !props.actionsMount ? undefined : (
       <FloatingFileActions mount={props.actionsMount}>
-        <div data-slot="file-markdown-actions-inner" class="flex items-center gap-2">
+        <>
           {props.openWith}
           <Tooltip value={i18n.t("ui.file.maximize")} placement="bottom">
             <IconButton
@@ -1132,17 +1286,78 @@ function TextViewer<T>(props: TextFileProps<T>) {
               </Tooltip>
             )}
           </Show>
-        </div>
+        </>
       </FloatingFileActions>
     )
     return SourceViewer<T>({ ...props, head: sourceBar })
   }
 
-  const [mode, setMode] = createSignal<"preview" | "source">(linked() ? "source" : "preview")
+  const [mode, setMode] = createSignal<"preview" | "source">("preview")
   const [full, setFull] = createSignal(false)
+
+  // -- selection scroll arbitration --
+  //
+  // One handle is registered with the app for the whole file view; it
+  // dispatches to whichever view is active. The handle is re-registered when
+  // the mode flips or the source viewer (un)mounts, so a pending selection
+  // jump re-fires in the new view reactively.
+  let previewScroller: HTMLDivElement | undefined
+  const [sourceHandle, setSourceHandle] = createSignal<FileScrollHandle | null>(null)
+  const sourceControl: FileScrollControl = {
+    register: setSourceHandle,
+  }
+
+  const scrollToPreviewSelection = (done: (() => void) | undefined, attempt = 0): void => {
+    const finish = () => done?.()
+    const selection = props.selectedLines
+    if (!selection || !md()) {
+      finish()
+      return
+    }
+    // The truncated large-file preview does not contain the target block;
+    // request the full render and keep retrying until it is annotated.
+    if (large() && !full()) setFull(true)
+    const scroller = previewScroller
+    const blocks = scroller ? Array.from(scroller.querySelectorAll<HTMLElement>("[data-source-line]")) : []
+    if (blocks.length === 0) {
+      if (attempt >= 120) {
+        finish()
+        return
+      }
+      requestAnimationFrame(() => scrollToPreviewSelection(done, attempt + 1))
+      return
+    }
+    const target = Math.min(selection.start, selection.end)
+    let candidate: HTMLElement | undefined
+    for (const block of blocks) {
+      const value = Number(block.dataset.sourceLine)
+      if (value <= target) candidate = block
+      else break
+    }
+    const el = candidate ?? blocks[0]
+    scrollRangeToViewportCenter(el, el)
+    finish()
+  }
+
+  createEffect(() => {
+    const control = props.scrollControl
+    if (!control) return
+    const view = mode()
+    const source = sourceHandle()
+    control.register({
+      scrollToSelection: (done) => {
+        if (view === "source") {
+          source?.scrollToSelection(done)
+          return
+        }
+        scrollToPreviewSelection(done)
+      },
+    })
+    onCleanup(() => control.register(null))
+  })
   const bar = props.toolbar === false || !props.actionsMount ? undefined : (
     <FloatingFileActions mount={props.actionsMount}>
-      <div data-slot="file-markdown-actions-inner" class="flex items-center gap-2">
+      <>
         {props.openWith}
         <Tooltip value={i18n.t("ui.file.maximize")} placement="bottom">
           <IconButton
@@ -1200,7 +1415,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
           label={(value) => i18n.t(value === "preview" ? "ui.file.preview" : "ui.file.source")}
           onSelect={(value) => value && setMode(value)}
         />
-      </div>
+      </>
     </FloatingFileActions>
   )
 
@@ -1209,19 +1424,10 @@ function TextViewer<T>(props: TextFileProps<T>) {
       () => props.file.cacheKey ?? props.file.name,
       () => {
         setFull(false)
-        if (md()) setMode(linked() ? "source" : "preview")
-      },
-      { defer: true },
-    ),
-  )
-
-  createEffect(
-    on(
-      () => [props.file.cacheKey ?? props.file.name, props.selectedLines?.start, props.selectedLines?.end],
-      ([, start, end]) => {
-        if (!md()) return
-        if (start == null || end == null) return
-        setMode("source")
+        // Files with a rendered preview (markdown) open in preview mode; the
+        // stored selection stays available for when the user switches to the
+        // source view manually (see file-tabs scroll arbitration).
+        if (md()) setMode("preview")
       },
       { defer: true },
     ),
@@ -1245,7 +1451,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
         <FileRoot mode="markdown" class={props.class} classList={props.classList}>
           <div class="relative flex min-h-0 flex-col overflow-hidden">
             {bar}
-            <div data-slot="file-markdown-preview" class="overflow-auto px-4 py-4">
+            <div data-slot="file-markdown-preview" ref={previewScroller} class="overflow-auto px-4 py-4">
               <Show
                 when={md()}
                 fallback={
@@ -1296,6 +1502,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
                     cacheKey={props.file.cacheKey ?? props.file.name}
                     highlight="defer"
                     chunked={large()}
+                    annotateLines={md()}
                   />
                 </Show>
               </Show>
@@ -1304,7 +1511,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
         </FileRoot>
       }
     >
-      <Source {...props} head={bar} />
+      <Source {...props} scrollControl={sourceControl} head={bar} />
     </Show>
   )
 }

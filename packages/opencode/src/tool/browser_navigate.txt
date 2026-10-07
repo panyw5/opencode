@@ -1,0 +1,16 @@
+# PURPOSE
+Navigate the embedded desktop browser to a URL. PREFER using this for simple web operations and inspection; delegate to other skills for complicated web operators involving persisted authentication.
+
+Use this when you need the following:
+- a real, JavaScript-rendered, or interactive page: local
+dev servers, apps behind logins, SPAs, or anything you must click or type into.
+- local html files VISUAL preview — use absolute path (or `file:// URL`).
+
+For static content that you do not need to interact with or VISUAL examination, use `webfetch`.
+
+# GUIDELINES
+- `url` accepts an absolute http:// or https:// URL, a file:// URL, or an
+  absolute local file path (~/ works).
+- Relative paths are NOT supported — resolve them to absolute paths first
+- Ask the user for navigation permission, ans explain your reason
+- After navigating, use `browser_read` to inspect the page structure

@@ -17,25 +17,35 @@ const log = Log.create({ service: "plugin.commandcode" })
 const FALLBACK_MODELS: Array<[string, string, number]> = [
   ["claude-sonnet-5", "Claude Sonnet 5", 1_000_000],
   ["claude-sonnet-4-6", "Claude Sonnet 4.6", 1_000_000],
+  ["claude-fable-5-1", "Claude Fable 5.1", 1_000_000],
   ["claude-fable-5", "Claude Fable 5", 1_000_000],
+  ["claude-opus-5-5", "Claude Opus 5.5", 1_000_000],
   ["claude-opus-5", "Claude Opus 5", 1_000_000],
   ["claude-opus-4-8", "Claude Opus 4.8", 1_000_000],
   ["claude-opus-4-7", "Claude Opus 4.7", 1_000_000],
   ["claude-haiku-4-5-20251001", "Claude Haiku 4.5", 200_000],
+  ["gpt-6-astra", "GPT-6 Astra", 1_050_000],
+  ["gpt-6-sol", "GPT-6 Sol", 1_050_000],
+  ["gpt-6-luna", "GPT-6 Luna", 1_050_000],
   ["gpt-5.6-sol", "GPT-5.6 Sol", 1_050_000],
   ["gpt-5.6-terra", "GPT-5.6 Terra", 1_050_000],
   ["gpt-5.6-luna", "GPT-5.6 Luna", 1_050_000],
-  ["gpt-5.5", "GPT-5.5", 200_000],
+  ["gpt-5.5", "GPT-5.5", 400_000],
   ["gpt-5.4", "GPT-5.4", 400_000],
   ["gpt-5.3-codex", "GPT-5.3 Codex", 400_000],
   ["gpt-5.4-mini", "GPT-5.4 Mini", 400_000],
-  ["deepseek/deepseek-v4-pro", "DeepSeek V4 Pro", 1_000_000],
-  ["deepseek/deepseek-v4-flash", "DeepSeek V4 Flash", 1_000_000],
+  ["deepseek/deepseek-v4-pro", "DeepSeek V4 Pro (latest)", 1_000_000],
+  ["deepseek/deepseek-v4-flash", "DeepSeek V4 Flash (latest)", 1_000_000],
+  ["deepseek/deepseek-v4-flash-vision-exp", "DeepSeek V4 Flash Vision (exp)", 1_000_000],
+  ["deepseek/deepseek-v4-flash-fast", "DeepSeek V4 Flash Fast", 1_000_000],
+  ["deepseek/deepseek-v4.1-flash", "DeepSeek V4.1 Flash", 1_000_000],
   ["moonshotai/Kimi-K3", "Kimi K3", 1_000_000],
   ["moonshotai/Kimi-K2.7-Code", "Kimi K2.7 Code", 256_000],
   ["moonshotai/Kimi-K2.7-Code-Highspeed", "Kimi K2.7 Code HighSpeed", 262_000],
   ["moonshotai/Kimi-K2.6", "Kimi K2.6", 256_000],
   ["moonshotai/Kimi-K2.5", "Kimi K2.5", 256_000],
+  ["z-ai/glm-5.3-flash", "GLM-5.3 Flash", 1_048_576],
+  ["z-ai/glm-5.3-flashx", "GLM-5.3 FlashX", 1_000_000],
   ["zai-org/GLM-5.3", "GLM-5.3", 1_000_000],
   ["zai-org/GLM-5.2", "GLM-5.2", 1_000_000],
   ["zai-org/GLM-5.2-Fast", "GLM-5.2 Fast", 1_000_000],
@@ -44,17 +54,28 @@ const FALLBACK_MODELS: Array<[string, string, number]> = [
   ["MiniMaxAI/MiniMax-M3", "MiniMax M3", 1_000_000],
   ["MiniMaxAI/MiniMax-M2.7", "MiniMax M2.7", 200_000],
   ["MiniMaxAI/MiniMax-M2.5", "MiniMax M2.5", 200_000],
+  ["xiaomi/mimo-v2.6-pro", "MiMo V2.6 Pro", 1_048_576],
+  ["xiaomi/mimo-v2.6-pro-ultraspeed", "MiMo V2.6 Pro UltraSpeed", 1_048_576],
+  ["xiaomi/mimo-v2.6-flash", "MiMo V2.6 Flash", 1_048_576],
   ["xiaomi/mimo-v2.5-pro", "MiMo V2.5 Pro", 1_000_000],
   ["xiaomi/mimo-v2.5", "MiMo V2.5", 1_000_000],
+  ["Qwen/Qwen3.8-Omni-Flash", "Qwen 3.8 Omni Flash", 1_000_000],
+  ["Qwen/Qwen3.8-Max-0902", "Qwen 3.8 Max 0902", 1_000_000],
   ["Qwen/Qwen3.8-Max", "Qwen 3.8 Max", 1_000_000],
+  ["Qwen/Qwen3.8-27B", "Qwen 3.8 27B", 262_144],
+  ["Qwen/Qwen3.8-Flash", "Qwen 3.8 Flash", 1_000_000],
   ["Qwen/Qwen3.7-Max", "Qwen 3.7 Max", 1_000_000],
   ["Qwen/Qwen3.7-Plus", "Qwen 3.7 Plus", 1_000_000],
   ["Qwen/Qwen3.7-Flash", "Qwen 3.7 Flash", 1_000_000],
   ["Qwen/Qwen3.6-Max-Preview", "Qwen 3.6 Max Preview", 200_000],
   ["Qwen/Qwen3.6-Plus", "Qwen 3.6 Plus", 200_000],
+  ["meituan/LongCat-2.0", "LongCat 2.0", 1_048_576],
+  ["stepfun/Step-5-Preview", "Step 5 Preview", 1_000_000],
   ["stepfun/Step-3.7-Flash", "Step 3.7 Flash", 256_000],
-  ["stepfun/Step-3.5-Flash", "Step 3.5 Flash", 1_000_000],
+  ["stepfun/Step-3.5-Flash", "Step 3.5 Flash", 262_144],
   ["tencent/hy3-paid", "Tencent Hy3", 262_144],
+  ["tencent/hy4-preview", "Tencent Hy4 Preview", 1_048_576],
+  ["google/gemini-3.8-flash", "Gemini 3.8 Flash", 1_000_000],
   ["google/gemini-3.7-flash", "Gemini 3.7 Flash", 1_048_576],
   ["google/gemini-3.6-flash", "Gemini 3.6 Flash", 1_000_000],
   ["google/gemini-3.5-flash", "Gemini 3.5 Flash", 1_000_000],
@@ -64,21 +85,32 @@ const FALLBACK_MODELS: Array<[string, string, number]> = [
   ["nvidia/nemotron-3-ultra-550b-a55b", "Nemotron 3 Ultra", 1_000_000],
   ["thinkingmachines/inkling", "Inkling", 256_000],
   ["thinkingmachines/inkling-small", "Inkling Small", 1_000_000],
+  ["stealth/space-bunny-alpha", "Space Bunny Alpha", 1_000_000],
+  ["stealth/pixel-canary", "Pixel Canary", 262_144],
   ["poolside/laguna-s-2.1-free", "Laguna S 2.1", 256_000],
+  ["inclusionai/ling-3.0-flash-sante:free", "Ling 3.0 Flash Sante", 262_144],
   ["meta/muse-spark-1.1", "Muse Spark 1.1", 1_048_576],
   ["meta/muse-spark-1.2", "Muse Spark 1.2", 1_048_576],
   ["meta/muse-spark-1.2-contributor", "Muse Spark 1.2 Contributor", 1_048_576],
+  ["meta/muse-spark-1.3", "Muse Spark 1.3", 1_048_576],
+  ["meta/muse-spark-1.3-contributor", "Muse Spark 1.3 Contributor", 1_048_576],
   ["xai/grok-4.5", "Grok 4.5", 500_000],
   ["xai/grok-4.6", "Grok 4.6", 500_000],
+  ["xai/grok-4.7", "Grok 4.7", 500_000],
 ]
 
 const REASONING_MODELS = new Set([
   "claude-sonnet-5",
   "claude-sonnet-4-6",
+  "claude-fable-5-1",
   "claude-fable-5",
+  "claude-opus-5-5",
   "claude-opus-5",
   "claude-opus-4-8",
   "claude-opus-4-7",
+  "gpt-6-astra",
+  "gpt-6-sol",
+  "gpt-6-luna",
   "gpt-5.6-sol",
   "gpt-5.6-terra",
   "gpt-5.6-luna",
@@ -88,7 +120,13 @@ const REASONING_MODELS = new Set([
   "gpt-5.4-mini",
   "deepseek/deepseek-v4-pro",
   "deepseek/deepseek-v4-flash",
+  "deepseek/deepseek-v4-flash-vision-exp",
+  "deepseek/deepseek-v4-flash-fast",
+  "deepseek/deepseek-v4.1-flash",
   "Qwen/Qwen3.8-Max",
+  "Qwen/Qwen3.8-Max-0902",
+  "Qwen/Qwen3.7-Max",
+  "google/gemini-3.8-flash",
   "google/gemini-3.7-flash",
   "google/gemini-3.6-flash",
   "google/gemini-3.5-flash",
@@ -96,6 +134,7 @@ const REASONING_MODELS = new Set([
   "google/gemini-3.1-flash-lite",
   "xai/grok-4.5",
   "xai/grok-4.6",
+  "xai/grok-4.7",
 ])
 
 function fallbackCatalog(): CommandCodeModelEntry[] {
@@ -172,10 +211,10 @@ export function readCommandCodeAuthFile(): string | undefined {
   }
 }
 
-export function resolveCommandCodeRuntimeAuth(input: {
-  stored?: { type?: string; key?: string }
-  envKey?: string
-}): { key?: string; source?: "auth" | "env" } {
+export function resolveCommandCodeRuntimeAuth(input: { stored?: { type?: string; key?: string }; envKey?: string }): {
+  key?: string
+  source?: "auth" | "env"
+} {
   if (input.stored?.type === "api" && input.stored.key?.trim()) {
     return { key: input.stored.key, source: "auth" }
   }

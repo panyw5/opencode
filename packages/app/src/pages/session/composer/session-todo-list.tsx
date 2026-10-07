@@ -7,11 +7,13 @@ import { TextStrikethrough } from "@opencode-ai/ui/text-strikethrough"
 
 function dot(status: Todo["status"]) {
   if (status !== "in_progress") return undefined
+  // 16px box (viewBox 12 scaled) keeps the visible dot column width identical
+  // to the checkbox / circle-check glyphs.
   return (
     <svg
       viewBox="0 0 12 12"
-      width="12"
-      height="12"
+      width="16"
+      height="16"
       fill="currentColor"
       xmlns="http://www.w3.org/2000/svg"
       class="block"
@@ -98,25 +100,39 @@ export function TodoList(props: { todos: Todo[]; open: boolean; maxHeight?: stri
       >
         <Index each={props.todos}>
           {(todo) => (
-            <div class="flex items-center gap-3">
-              {props.completedAsCircle && todo().status === "completed" ? (
-                <Icon name="circle-check" size="normal" class="shrink-0 text-icon-weak" />
-              ) : (
-                <Checkbox
-                  readOnly
-                  checked={todo().status === "completed"}
-                  indeterminate={todo().status === "in_progress"}
-                  data-in-progress={todo().status === "in_progress" ? "" : undefined}
-                  data-state={todo().status}
-                  icon={dot(todo().status)}
-                  style={{
-                    "--checkbox-align": "center",
-                    "--checkbox-offset": "1px",
-                    transition: "opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
-                    opacity: todo().status === "pending" ? "0.94" : "1",
-                  }}
-                />
-              )}
+            <div
+              class="flex items-center gap-3 rounded-md px-2 py-1 -mx-2 -my-1 transition-colors duration-200"
+              classList={{
+                // Subtle brand-tinted pill so the running task reads at a glance.
+                "bg-[color-mix(in_srgb,var(--surface-brand-base)_9%,transparent)]":
+                  todo().status === "in_progress",
+              }}
+            >
+              {/* Fixed-width icon column keeps the icon→text gap identical across statuses. */}
+              <div
+                class="flex w-4 shrink-0 items-center justify-center"
+                classList={{ "text-icon-brand-base": todo().status === "in_progress" }}
+                data-in-progress={todo().status === "in_progress" ? "" : undefined}
+                data-state={todo().status}
+              >
+                {props.completedAsCircle && todo().status === "completed" ? (
+                  <Icon name="circle-check" size="normal" class="size-4 text-icon-weak" />
+                ) : todo().status === "in_progress" ? (
+                  // In-progress: breathing dot only, no checkbox frame.
+                  dot(todo().status)
+                ) : (
+                  <Checkbox
+                    readOnly
+                    checked={todo().status === "completed"}
+                    style={{
+                      "--checkbox-align": "center",
+                      "--checkbox-offset": "1px",
+                      transition: "opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
+                      opacity: todo().status === "pending" ? "0.94" : "1",
+                    }}
+                  />
+                )}
+              </div>
               <TextStrikethrough
                 active={todo().status === "completed" || todo().status === "cancelled"}
                 text={todo().content}

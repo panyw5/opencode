@@ -242,6 +242,12 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
     const setScrollLeft = (input: string, left: number) => withPath(input, (file) => view().setScrollLeft(file, left))
     const setSelectedLines = (input: string, range: SelectedLineRange | null) =>
       withPath(input, (file) => view().setSelectedLines(file, range))
+    const requestSelection = (input: string, range: SelectedLineRange) =>
+      withPath(input, (file) => view().requestSelection(file, range))
+    const selectionSeq = (input: string): number => withPath(input, (file) => view().selectionSeq(file)) as number
+    const selectionPending = (input: string): boolean =>
+      withPath(input, (file) => view().selectionPending(file)) as boolean
+    const settleSelection = (input: string, seq: number) => withPath(input, (file) => view().settleSelection(file, seq))
 
     onCleanup(() => {
       stop()
@@ -277,6 +283,10 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       setScrollLeft,
       selectedLines,
       setSelectedLines,
+      requestSelection,
+      selectionSeq,
+      selectionPending,
+      settleSelection,
       searchFiles: (query: string) => search(query, "false"),
       searchFilesAndDirectories: (query: string) => search(query, "true"),
     }

@@ -1,14 +1,15 @@
-- Search the web using the session's web search provider - performs real-time web searches and can scrape content from specific URLs
-- Provides up-to-date information for current events and recent data
-- Supports configurable result counts and returns the content from the most relevant websites
-- Use this tool for accessing information beyond knowledge cutoff
-- Searches are performed automatically within a single API call
+# PURPOSE
+Search the web using web search provider.
 
-Usage notes:
-  - Supports live crawling modes when available: 'fallback' (backup if cached unavailable) or 'preferred' (prioritize live crawling)
-  - Search types when available: 'auto' (balanced), 'fast' (quick results), 'deep' (comprehensive search)
-  - Configurable context length for optimal LLM integration
-  - Domain filtering and advanced search options available
+Use this for the following.
+- Obtain up-to-date or real time information: use {{year}} for recent info
+- Access information beyond knowledge cutoff
+- Refine and improve your knowledge on current topics
 
-The current year is {{year}}. You MUST use this year when searching for recent information or current events
-- Example: If the current year is 2026 and the user asks for "latest AI news", search for "AI news 2026", NOT "AI news 2025"
+# GUIDELINES
+Use the following parameters; only `query` is REQUIRED.
+- `query`: the search query (required).
+- `numResults`: number of results to return (default: 8).
+- `livecrawl`: how page content is fetched. 'fallback' = use cached content, crawl the live page only when the cache misses (default); 'preferred' = always crawl the live page.
+- `type`: how thorough the search is. 'auto' (default), 'fast' = fewer but quicker results, 'deep' = more thorough results.
+- `contextMaxCharacters`: max characters of retrieved page content to include in the result (default: 10000).

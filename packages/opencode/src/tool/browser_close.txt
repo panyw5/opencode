@@ -1,0 +1,8 @@
+# PURPOSE
+Close the embedded desktop browser tab for this session.
+
+Use it when you are done browsing. It destroys this session's browser view and frees up memory and network resources.
+
+# GUIDELINES
+- Only this session's own tab is closed. It does not affect user's own tabs
+- Any page state (cookies aside) is lost on close.

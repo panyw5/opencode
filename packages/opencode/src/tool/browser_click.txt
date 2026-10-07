@@ -1,0 +1,11 @@
+# PURPOSE
+Click an element on the page currently open in the embedded desktop browser.
+
+Use this to press buttons, follow links, open menus, or otherwise interact
+with JavaScript-rendered pages.
+
+# GUIDELINES
+- `uid` comes from the most recent `browser_read` snapshot of this session.
+- `uid`s are invalid after navigation: take a new
+  snapshot with `browser_read` to locate an element
+- After the click, re-read the page if you need the updated element list.

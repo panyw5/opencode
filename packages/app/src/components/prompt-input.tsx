@@ -18,7 +18,7 @@ import { useLocal } from "@/context/local"
 import { selectionFromLines, type SelectedLineRange, useFile } from "@/context/file"
 import {
   ContentPart,
-  DEFAULT_PROMPT,
+  createEmptyPrompt,
   isPromptEqual,
   Prompt,
   usePrompt,
@@ -92,12 +92,14 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { getFilename } from "@opencode-ai/core/util/path"
 import { merge, value } from "./prompt-input/expand"
 import { SessionPickerPopover } from "./prompt-input/session-picker"
+import { sessionExcerpt } from "./prompt-input/session-reference"
 import { type SessionHistoryEntry } from "@/context/session-history"
 import { active as sessionActiveMessage, working as sessionWorking } from "@/pages/session/session-working"
 import type { AssistantMessage, Part } from "@opencode-ai/sdk/v2/client"
 import { createInputUndoEntry, createInputUndoState, recordInputUndo, stepInputUndo } from "./prompt-input/input-undo"
 import { workspaceKey } from "@/pages/layout/helpers"
 import { uiPerfTriggerDown, uiPerfOpen } from "@/utils/ui-perf"
+import { mayFocusComposer } from "./prompt-input/composer-boundary"
 
 interface PromptInputProps {
   class?: string
@@ -473,7 +475,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   let fileInputRef: HTMLInputElement | undefined
   let scrollRef!: HTMLDivElement
   let popoverRef: HTMLDivElement | undefined
-  let inputUndo = createInputUndoState(createInputUndoEntry(DEFAULT_PROMPT, 0))
+  let inputUndo = createInputUndoState(createInputUndoEntry(createEmptyPrompt(), 0))
   let inputUndoLast = 0
 
   const mirror = { input: false }
@@ -663,13 +665,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }))
   const commentCount = createMemo(() => {
     if (store.mode === "shell") return 0
-    return prompt.context.items().filter((item) => !!item.comment?.trim()).length
+    return prompt.context.items().filter((item) => item.type === "file" && !!item.comment?.trim()).length
   })
+  const sessionReferenceCount = createMemo(() =>
+    store.mode === "normal" ? prompt.context.items().filter((item) => item.type === "session").length : 0,
+  )
 
   const contextItems = createMemo(() => {
     const items = prompt.context.items()
     if (store.mode !== "shell") return items
-    return items.filter((item) => !item.comment?.trim())
+    return items.filter((item) => item.type === "file" && !item.comment?.trim())
   })
 
   const hasUserPrompt = createMemo(() => {
@@ -844,9 +849,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     resetInputUndo(p, length)
     prompt.set(p, length)
     requestAnimationFrame(() => {
+      setStore("applyingHistory", false)
+      if (!mayFocusComposer(editorRef)) return
       editorRef.focus()
       setCursorPosition(editorRef, length)
-      setStore("applyingHistory", false)
       queueScroll()
     })
   }
@@ -914,7 +920,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const setMode = (mode: "normal" | "shell") => {
     setStore("mode", mode)
     setStore("popover", null)
-    requestAnimationFrame(() => editorRef?.focus())
+    requestAnimationFrame(() => {
+      if (!mayFocusComposer(editorRef)) {
+        console.debug("[prompt-isolation] mode focus skipped foreign composer")
+        return
+      }
+      editorRef.focus()
+    })
   }
 
   const shellModeKey = "mod+shift+x"
@@ -988,6 +1000,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     resetHistoryNavigation(true)
     prompt.set(entry.prompt, entry.cursor)
     requestAnimationFrame(() => {
+      if (!mayFocusComposer(editorRef)) return
       editorRef.focus()
       setCursorPosition(editorRef, entry.cursor)
       queueScroll()
@@ -1005,6 +1018,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const focusEditorEnd = () => {
     requestAnimationFrame(() => {
+      if (!mayFocusComposer(editorRef)) return
       editorRef.focus()
       const range = document.createRange()
       const selection = window.getSelection()
@@ -1069,18 +1083,25 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     ),
   )
   const [readyConsults, setReadyConsults] = createSignal<ReadyConsultMention[]>([])
+  const [proMode, setProMode] = createStore({ background: false })
   createEffect(() => {
     const api = platform.cliAgents
     let cancelled = false
-    if (!api) {
+    if (!api && !platform.gptPro) {
       setReadyConsults([])
       return
     }
-    void loadReadyConsultMentions(api).then((items) => {
-      if (!cancelled) setReadyConsults(items)
-    })
+    const refresh = () =>
+      void loadReadyConsultMentions(api, platform.gptPro).then((items) => {
+        if (!cancelled) setReadyConsults(items)
+      })
+    refresh()
+    window.addEventListener("gpt-pro:changed", refresh)
+    window.addEventListener("focus", refresh)
     onCleanup(() => {
       cancelled = true
+      window.removeEventListener("gpt-pro:changed", refresh)
+      window.removeEventListener("focus", refresh)
     })
   })
   const consultList = createMemo((): AtOption[] =>
@@ -1281,7 +1302,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }
 
     clearEditor()
-    resetInputUndo(DEFAULT_PROMPT, 0)
+    resetInputUndo(createEmptyPrompt(), 0)
     prompt.set([{ type: "text", content: "", start: 0, end: 0 }], 0)
     command.trigger(cmd.id, "slash")
   }
@@ -1322,9 +1343,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       shape.setAttribute("stroke-linejoin", "round")
       icon.append(shape)
       const label = document.createElement("span")
-      label.textContent = part.channelName
-        ? `${part.channelName}${part.botName ? ` · ${part.botName}` : ""}`
-        : "IM"
+      label.textContent = part.channelName ? `${part.channelName}${part.botName ? ` · ${part.botName}` : ""}` : "IM"
       pill.append(icon, label)
     } else {
       pill.textContent = part.content
@@ -1571,7 +1590,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
     flushText()
 
-    if (parts.length === 0) parts.push(...DEFAULT_PROMPT)
+    if (parts.length === 0) parts.push(...createEmptyPrompt())
     return parts
   }
 
@@ -1591,9 +1610,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       closePopover()
       resetHistoryNavigation()
       if (prompt.dirty()) {
-        syncInputUndo(DEFAULT_PROMPT, 0, prev)
+        syncInputUndo(createEmptyPrompt(), 0, prev)
         mirror.input = true
-        prompt.set(DEFAULT_PROMPT, 0)
+        prompt.set(createEmptyPrompt(), 0)
       }
       queueScroll()
       return
@@ -1715,6 +1734,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (part.type === "file" || part.type === "agent" || part.type === "im") {
       const cursorPos = getCursorPosition(editorRef)
       requestAnimationFrame(() => {
+        if (!mayFocusComposer(editorRef)) return
         editorRef.blur()
         editorRef.focus()
         setCursorPosition(editorRef, cursorPos)
@@ -1757,15 +1777,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         }
 
         for (const item of edit.context) {
-          prompt.context.add({
-            type: item.type,
-            path: item.path,
-            selection: item.selection,
-            comment: item.comment,
-            commentID: item.commentID,
-            commentOrigin: item.commentOrigin,
-            preview: item.preview,
-          })
+          prompt.context.add(item)
         }
 
         setStore("mode", "normal")
@@ -1775,6 +1787,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         prompt.set(edit.prompt, promptLength(edit.prompt))
         resetInputUndo(edit.prompt, promptLength(edit.prompt))
         requestAnimationFrame(() => {
+          if (!mayFocusComposer(editorRef)) return
           editorRef.focus()
           setCursorPosition(editorRef, promptLength(edit.prompt))
           queueScroll()
@@ -1844,6 +1857,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const { addAttachments, removeAttachment, handlePaste } = createPromptAttachments({
+    prompt,
+    scope: () => JSON.stringify([sdk.directory, params.id ?? params.draftID]),
     editor: () => editorRef,
     isDialogActive: () => !!dialog.active,
     setDraggingType: (type) => setStore("draggingType", type),
@@ -1884,6 +1899,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     queueScroll()
     schedulePrediction()
     setTimeout(() => {
+      if (!mayFocusComposer(editorRef)) return
       editorRef?.focus()
       setCursorPosition(editorRef, cursor)
       queueScroll()
@@ -1914,27 +1930,32 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     queueScroll()
     schedulePrediction()
     requestAnimationFrame(() => {
+      if (!mayFocusComposer(editorRef)) return
       editorRef?.focus()
       setCursorPosition(editorRef, newCursor)
       queueScroll()
     })
   }
 
-  const buildSessionRefXml = (entry: SessionHistoryEntry) => {
-    const xmlEscape = (s: string) => s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
-    const project = (getFilename(entry.directory) || entry.directory || "").trim()
-    const title = (entry.title ?? "").trim()
-    return [
-      "<opencode-session>",
-      `  <project>${xmlEscape(project)}</project>`,
-      `  <id>${xmlEscape(entry.id)}</id>`,
-      `  <title>${xmlEscape(title)}</title>`,
-      "</opencode-session>",
-    ].join("\n")
-  }
-
-  const insertSessionRef = (entry: SessionHistoryEntry) => {
-    insertTextAtCursor(buildSessionRefXml(entry))
+  const insertSessionRef = async (entry: SessionHistoryEntry) => {
+    const scope = { dir: params.dir!, id: params.id ?? params.draftID }
+    console.debug(`[session-reference] load session=${entry.id}`)
+    const client = globalSDK.forDomain(mainDomain).createClient({ directory: entry.directory, throwOnError: true })
+    const session = await client.session.get({ sessionID: entry.id })
+    const messages = await client.session.messages({ sessionID: entry.id, limit: 10 })
+    if (!session.data) throw new Error(language.t("prompt.session.unavailable"))
+    prompt.context.add(
+      {
+        type: "session",
+        sessionID: entry.id,
+        directory: entry.directory,
+        title: session.data.title,
+        updatedAt: session.data.time.updated,
+        summary: sessionExcerpt(messages.data ?? []),
+      },
+      scope,
+    )
+    console.debug(`[session-reference] attached session=${entry.id} messages=${messages.data?.length ?? 0}`)
   }
 
   const expand = () => {
@@ -1962,7 +1983,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
   const toggleRead = () => setPrefs("read", (v) => !v)
 
-  const { abort, handleSubmit } = createPromptSubmit({
+  const { abort, handleSubmit, handlePrimaryAction } = createPromptSubmit({
+    gptProBackground: () => proMode.background,
     info,
     imageAttachments,
     commentCount,
@@ -2037,7 +2059,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   // stop-after-tool reveal: same 32px circle + 10px gap, revealed on hover to
   // the left of the send button.
   const canSendKeepView = createMemo(
-    () => store.mode === "normal" && !store.submitting && (prompt.dirty() || commentCount() > 0),
+    () =>
+      store.mode === "normal" &&
+      !store.submitting &&
+      (prompt.dirty() || commentCount() > 0 || sessionReferenceCount() > 0),
   )
   const sendKeepViewRevealed = createMemo(() => !working() && canSendKeepView() && actionsHovered())
   const SEND_KEEP_VIEW_REVEAL_WIDTH = 42
@@ -2364,7 +2389,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
 
   return (
-    <div class="relative size-full _max-h-[320px] flex flex-col gap-0">
+    <div
+      data-prompt-composer={formID}
+      data-prompt-kind="main"
+      data-prompt-scope={JSON.stringify([sdk.directory, params.id ?? params.draftID])}
+      class="relative size-full _max-h-[320px] flex flex-col gap-0"
+    >
       <PromptPopover
         popover={store.popover}
         setPopoverRef={(el) => (popoverRef = el)}
@@ -2407,7 +2437,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             }}
             openComment={openComment}
             remove={(item) => {
-              if (item.commentID) comments.remove(item.path, item.commentID)
+              if (item.type === "file" && item.commentID) comments.remove(item.path, item.commentID)
               prompt.context.remove(item.key)
             }}
             t={(key) => language.t(key as Parameters<typeof language.t>[0])}
@@ -2556,6 +2586,34 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         aria-label={language.t("prompt.action.markdownAttachment")}
                       />
                     </Tooltip>
+                  </Show>
+                  <Tooltip {...hover} placement="top" value={language.t("prompt.action.insertSession")}>
+                    <SessionPickerPopover
+                      onSelect={insertSessionRef}
+                      currentSessionID={params.id}
+                      ariaLabel={language.t("prompt.action.insertSession")}
+                      headerText={language.t("prompt.session.menuTitle")}
+                      emptyText={language.t("prompt.session.empty")}
+                      triggerStyle={{ ...buttons(), width: "32px", height: "32px", "border-radius": "50%" }}
+                      placement="top-start"
+                    />
+                  </Tooltip>
+                  <Show when={prompt.current().some((part) => part.type === "agent" && part.name === "gpt-pro")}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="small"
+                      data-testid="gpt-pro-background-toggle"
+                      aria-pressed={proMode.background}
+                      title={language.t("gptPro.backgroundHint")}
+                      onClick={() => {
+                        const background = !proMode.background
+                        setProMode("background", background)
+                        console.debug(`[gpt-pro-composer] background=${background}`)
+                      }}
+                    >
+                      {language.t(proMode.background ? "gptPro.background" : "gptPro.foreground")}
+                    </Button>
                   </Show>
                   <Show when={platform.platform === "desktop"}>
                     <Tooltip {...hover} placement="top" value={language.t("prompt.action.expand")}>
@@ -2891,18 +2949,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     </Show>
                   </Button>
                 </TooltipKeybind>
-                <Show when={!!extraAgentIntegration()}>
-                  <Tooltip {...hover} placement="top" value={language.t("prompt.action.insertSession")}>
-                    <SessionPickerPopover
-                      onSelect={insertSessionRef}
-                      ariaLabel={language.t("prompt.action.insertSession")}
-                      headerText={language.t("prompt.session.menuTitle")}
-                      emptyText={language.t("prompt.session.empty")}
-                      triggerStyle={control()}
-                      placement="top-end"
-                    />
-                  </Tooltip>
-                </Show>
               </div>
             </div>
             <div class="flex items-center gap-2.5 shrink-0">
@@ -3010,12 +3056,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   <Tooltip {...hover} placement="top" inactive={!prompt.dirty() && !working()} value={tip()}>
                     <IconButton
                       data-action="prompt-submit"
-                      type="submit"
+                      type="button"
                       form={formID}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        void handlePrimaryAction(event, event.currentTarget.dataset.icon === "stop" ? "stop" : "send")
+                      }}
                       disabled={
                         store.mode !== "normal" ||
                         store.submitting ||
-                        (!prompt.dirty() && !working() && commentCount() === 0)
+                        (!prompt.dirty() && !working() && commentCount() === 0 && sessionReferenceCount() === 0)
                       }
                       tabIndex={store.mode === "normal" ? undefined : -1}
                       icon={

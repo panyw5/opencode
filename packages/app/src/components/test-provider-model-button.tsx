@@ -116,7 +116,7 @@ export function TestProviderModelButton(props: Props) {
   })
 
   // Preview the exact probe URL from current baseURL + npm (available before first click).
-  const probeUrl = () => testEndpointUrl(props.baseURL, resolveTestProtocol(props.npm))
+  const probeUrl = () => testEndpointUrl(props.baseURL, resolveTestProtocol(props.npm), props.modelId, props.npm)
   const canStart = () => !!props.baseURL.trim() && !!props.modelId.trim()
   const isTesting = () => phase() === "testing"
   const hasPath = () => !!probeUrl()

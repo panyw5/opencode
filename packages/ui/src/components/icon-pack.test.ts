@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { iconUsesLucide, iconUsesPhosphor, iconUsesTabler } from "./icon"
+import { iconUsesLucide, iconUsesPhosphor, iconUsesTabler, resolveIcon } from "./icon"
 import { lucideIcons } from "./lucide-icons"
 import { phosphorIcons } from "./phosphor-icons"
 import { tablerIcons } from "./tabler-icons"
@@ -18,6 +18,26 @@ const configNames = [
   "magnifying-glass",
   "trash",
 ]
+
+test("keeps the filled editorial opening quote consistent across icon packs", () => {
+  const quote = resolveIcon("quote-open", "legacy")
+  expect(quote.viewBox).toBe("0 0 20 20")
+  expect(quote.body).toContain('fill="currentColor"')
+  for (const pack of ["phosphor", "tabler", "lucide"] as const) {
+    expect(resolveIcon("quote-open", pack)).toEqual(quote)
+  }
+})
+
+test("keeps the scheduled task alarm check visible across icon packs", () => {
+  const alarm = resolveIcon("alarm-clock-check", "legacy")
+  expect(alarm.viewBox).toBe("0 0 20 20")
+  expect(alarm.body).toContain('<circle cx="12" cy="13" r="8.75"')
+  expect(alarm.body).toContain('d="M6 4 3 7m18 0-3-3"')
+  expect(alarm.body).toContain('stroke="currentColor"')
+  for (const pack of ["phosphor", "tabler", "lucide"] as const) {
+    expect(resolveIcon("alarm-clock-check", pack)).toEqual(alarm)
+  }
+})
 
 describe("phosphor icon pack", () => {
   test("maps config and marketplace names to phosphor glyphs", () => {

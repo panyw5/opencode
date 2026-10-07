@@ -35,6 +35,7 @@ import { CodexConsultTool } from "./codex_consult"
 import { ClaudeConsultTool } from "./claude_consult"
 import { GrokConsultTool } from "./grok_consult"
 import { DshConsultTool } from "./dsh_consult"
+import { GptProConsultTool } from "./gpt_pro_consult"
 import { RepoCloneTool } from "./repo_clone"
 import { RepoOverviewTool } from "./repo_overview"
 import { RepositoryCache } from "@/reference/repository-cache"
@@ -44,6 +45,7 @@ import * as Truncate from "./truncate"
 import { ApplyPatchTool } from "./apply_patch"
 import { PresentFileTool } from "./present_file"
 import { PresentDiagramTool } from "./present_diagram"
+import { PresentTaskTool } from "./present_task"
 import { Glob } from "@opencode-ai/core/util/glob"
 import path from "path"
 import { pathToFileURL } from "url"
@@ -93,8 +95,91 @@ import {
   MathWorkerTaskUpdateTool,
 } from "./math-worker"
 import { MathFactGetTool, MathFactRevokeTool, MathFactSearchTool, MathGmAddTool, MathGmSearchTool } from "./math-truth"
+import { BrowserNavigateTool } from "./browser_navigate"
+import { BrowserReadTool } from "./browser_read"
+import { BrowserClickTool } from "./browser_click"
+import { BrowserTypeTool } from "./browser_type"
+import { BrowserScreenshotTool } from "./browser_screenshot"
+import { BrowserConsoleTool } from "./browser_console"
+import { BrowserCloseTool } from "./browser_close"
+import { BrowserScrollTool } from "./browser_scroll"
+import { Browser } from "@/browser"
 
 const log = Log.create({ service: "tool.registry" })
+
+// Definitions are built inside the instance scope: a tool's definition function may
+// resolve instance-scoped services, so `Tool.init` cannot run once per layer.
+const initTools = <T extends Record<string, Tool.Info<any, any>>>(infos: T) =>
+  Object.fromEntries(Object.entries(infos).map(([id, info]) => [id, Tool.init(info)])) as {
+    [K in keyof T]: Effect.Effect<Tool.Def<any, any>>
+  }
+
+// Every builtin tool is declared once, keyed by the id the model calls. Registration,
+// initialisation and exposure all derive from this map.
+const BUILTINS = {
+  invalid: InvalidTool,
+  question: QuestionTool,
+  bash: ShellTool,
+  read: ReadTool,
+  glob: GlobTool,
+  grep: GrepTool,
+  edit: EditTool,
+  write: WriteTool,
+  task: TaskTool,
+  task_list: TaskListTool,
+  task_transcript: TaskTranscriptTool,
+  im_list: IMListTool,
+  im_read: IMReadTool,
+  im_send: IMSendTool,
+  im_watch: IMWatchTool,
+  webfetch: WebFetchTool,
+  todowrite: TodoWriteTool,
+  project_task_create: ProjectTaskCreateTool,
+  project_task_list: ProjectTaskListTool,
+  project_task_get: ProjectTaskGetTool,
+  project_task_mount: ProjectTaskMountTool,
+  project_task_update: ProjectTaskUpdateTool,
+  scheduled_task_create: ScheduledTaskCreateTool,
+  scheduled_task_list: ScheduledTaskListTool,
+  scheduled_task_get: ScheduledTaskGetTool,
+  scheduled_task_update: ScheduledTaskUpdateTool,
+  scheduled_task_delete: ScheduledTaskDeleteTool,
+  scheduled_task_run_now: ScheduledTaskRunNowTool,
+  scheduled_task_runs: ScheduledTaskRunsTool,
+  math_worker_start: MathWorkerStartTool,
+  math_worker_ensure: MathWorkerEnsureTool,
+  math_worker_status: MathWorkerStatusTool,
+  math_worker_stop: MathWorkerStopTool,
+  math_worker_task_update: MathWorkerTaskUpdateTool,
+  math_gm_add: MathGmAddTool,
+  math_gm_search: MathGmSearchTool,
+  math_fact_search: MathFactSearchTool,
+  math_fact_get: MathFactGetTool,
+  math_fact_revoke: MathFactRevokeTool,
+  websearch: WebSearchTool,
+  repo_clone: RepoCloneTool,
+  repo_overview: RepoOverviewTool,
+  codex_consult: CodexConsultTool,
+  claude_consult: ClaudeConsultTool,
+  grok_consult: GrokConsultTool,
+  dsh_consult: DshConsultTool,
+  gpt_pro_consult: GptProConsultTool,
+  skill: SkillTool,
+  apply_patch: ApplyPatchTool,
+  lsp: LspTool,
+  plan_exit: PlanExitTool,
+  present_file: PresentFileTool,
+  present_diagram: PresentDiagramTool,
+  present_task: PresentTaskTool,
+  browser_navigate: BrowserNavigateTool,
+  browser_read: BrowserReadTool,
+  browser_click: BrowserClickTool,
+  browser_type: BrowserTypeTool,
+  browser_screenshot: BrowserScreenshotTool,
+  browser_console: BrowserConsoleTool,
+  browser_close: BrowserCloseTool,
+  browser_scroll: BrowserScrollTool,
+} as const
 
 export function webSearchEnabled(providerID: ProviderID, flags = { exa: false, parallel: false }) {
   return providerID === ProviderID.opencode || flags.exa || flags.parallel
@@ -151,6 +236,7 @@ export const layer: Layer.Layer<
   | IM.Service
   | IMOwner.Service
   | IMSubscription.Service
+  | Browser.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -161,59 +247,7 @@ export const layer: Layer.Layer<
     const truncate = yield* Truncate.Service
     const flags = yield* RuntimeFlags.Service
 
-    const invalid = yield* InvalidTool
-    const task = yield* TaskTool
-    const taskList = yield* TaskListTool
-    const taskTranscript = yield* TaskTranscriptTool
-    const imList = yield* IMListTool
-    const imRead = yield* IMReadTool
-    const imSend = yield* IMSendTool
-    const imWatch = yield* IMWatchTool
-    const read = yield* ReadTool
-    const question = yield* QuestionTool
-    const todo = yield* TodoWriteTool
-    const projectTaskCreate = yield* ProjectTaskCreateTool
-    const projectTaskList = yield* ProjectTaskListTool
-    const projectTaskGet = yield* ProjectTaskGetTool
-    const projectTaskMount = yield* ProjectTaskMountTool
-    const projectTaskUpdate = yield* ProjectTaskUpdateTool
-    const scheduledTaskCreate = yield* ScheduledTaskCreateTool
-    const scheduledTaskList = yield* ScheduledTaskListTool
-    const scheduledTaskGet = yield* ScheduledTaskGetTool
-    const scheduledTaskUpdate = yield* ScheduledTaskUpdateTool
-    const scheduledTaskDelete = yield* ScheduledTaskDeleteTool
-    const scheduledTaskRunNow = yield* ScheduledTaskRunNowTool
-    const scheduledTaskRuns = yield* ScheduledTaskRunsTool
-    const mathWorkerStart = yield* MathWorkerStartTool
-    const mathWorkerEnsure = yield* MathWorkerEnsureTool
-    const mathWorkerStatus = yield* MathWorkerStatusTool
-    const mathWorkerStop = yield* MathWorkerStopTool
-    const mathWorkerTaskUpdate = yield* MathWorkerTaskUpdateTool
-    const mathGmAdd = yield* MathGmAddTool
-    const mathGmSearch = yield* MathGmSearchTool
-    const mathFactSearch = yield* MathFactSearchTool
-    const mathFactGet = yield* MathFactGetTool
-    const mathFactRevoke = yield* MathFactRevokeTool
-    const lsptool = yield* LspTool
-    const plan = yield* PlanExitTool
-    const webfetch = yield* WebFetchTool
-    const websearch = yield* WebSearchTool
-    const repoClone = yield* RepoCloneTool
-    const repoOverview = yield* RepoOverviewTool
-    const codexConsult = yield* CodexConsultTool
-    const claudeConsult = yield* ClaudeConsultTool
-    const grokConsult = yield* GrokConsultTool
-    const dshConsult = yield* DshConsultTool
-    const shell = yield* ShellTool
-    const globtool = yield* GlobTool
-    const writetool = yield* WriteTool
-    const edit = yield* EditTool
-    const greptool = yield* GrepTool
-    const patchtool = yield* ApplyPatchTool
-    const skilltool = yield* SkillTool
-    const agent = yield* Agent.Service
-    const presentFile = yield* PresentFileTool
-    const presentDiagram = yield* PresentDiagramTool
+    const infos = yield* Effect.all(BUILTINS)
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("ToolRegistry.state")(function* (ctx) {
@@ -252,7 +286,7 @@ export const layer: Layer.Layer<
                 const output = typeof result === "string" ? result : result.output
                 const metadata = typeof result === "string" ? {} : (result.metadata ?? {})
                 const attachments = typeof result === "string" ? undefined : result.attachments
-                const info = yield* agent.get(toolCtx.agent)
+                const info = yield* agents.get(toolCtx.agent)
                 const out = yield* truncate.output(output, {}, info)
                 return {
                   title: typeof result === "string" ? "" : (result.title ?? ""),
@@ -300,124 +334,28 @@ export const layer: Layer.Layer<
           }
         }
 
-        yield* config.get()
+        const configInfo = yield* config.get()
         const questionEnabled = ["app", "cli", "desktop"].includes(flags.client) || flags.enableQuestionTool
+        const browserEnabled = flags.pure !== true && configInfo.browser?.enabled !== false
 
-        const tool = yield* Effect.all({
-          invalid: Tool.init(invalid),
-          shell: Tool.init(shell),
-          read: Tool.init(read),
-          glob: Tool.init(globtool),
-          grep: Tool.init(greptool),
-          edit: Tool.init(edit),
-          write: Tool.init(writetool),
-          task: Tool.init(task),
-          task_list: Tool.init(taskList),
-          task_transcript: Tool.init(taskTranscript),
-          im_list: Tool.init(imList),
-          im_read: Tool.init(imRead),
-          im_send: Tool.init(imSend),
-          im_watch: Tool.init(imWatch),
-          fetch: Tool.init(webfetch),
-          todo: Tool.init(todo),
-          project_task_create: Tool.init(projectTaskCreate),
-          project_task_list: Tool.init(projectTaskList),
-          project_task_get: Tool.init(projectTaskGet),
-          project_task_mount: Tool.init(projectTaskMount),
-          project_task_update: Tool.init(projectTaskUpdate),
-          scheduled_task_create: Tool.init(scheduledTaskCreate),
-          scheduled_task_list: Tool.init(scheduledTaskList),
-          scheduled_task_get: Tool.init(scheduledTaskGet),
-          scheduled_task_update: Tool.init(scheduledTaskUpdate),
-          scheduled_task_delete: Tool.init(scheduledTaskDelete),
-          scheduled_task_run_now: Tool.init(scheduledTaskRunNow),
-          scheduled_task_runs: Tool.init(scheduledTaskRuns),
-          math_worker_start: Tool.init(mathWorkerStart),
-          math_worker_ensure: Tool.init(mathWorkerEnsure),
-          math_worker_status: Tool.init(mathWorkerStatus),
-          math_worker_stop: Tool.init(mathWorkerStop),
-          math_worker_task_update: Tool.init(mathWorkerTaskUpdate),
-          math_gm_add: Tool.init(mathGmAdd),
-          math_gm_search: Tool.init(mathGmSearch),
-          math_fact_search: Tool.init(mathFactSearch),
-          math_fact_get: Tool.init(mathFactGet),
-          math_fact_revoke: Tool.init(mathFactRevoke),
-          search: Tool.init(websearch),
-          repo_clone: Tool.init(repoClone),
-          repo_overview: Tool.init(repoOverview),
-          codex_consult: Tool.init(codexConsult),
-          claude_consult: Tool.init(claudeConsult),
-          grok_consult: Tool.init(grokConsult),
-          dsh_consult: Tool.init(dshConsult),
-          skill: Tool.init(skilltool),
-          patch: Tool.init(patchtool),
-          question: Tool.init(question),
-          lsp: Tool.init(lsptool),
-          plan: Tool.init(plan),
-          present_file: Tool.init(presentFile),
-          present_diagram: Tool.init(presentDiagram),
-        })
+        const defs = yield* Effect.all(initTools(infos))
 
-        const builtin = [
-          tool.invalid,
-          ...(questionEnabled ? [tool.question] : []),
-          tool.shell,
-          tool.read,
-          tool.glob,
-          tool.grep,
-          tool.edit,
-          tool.write,
-          tool.task,
-          tool.task_list,
-          tool.task_transcript,
-          tool.im_list,
-          tool.im_read,
-          tool.im_send,
-          tool.im_watch,
-          tool.fetch,
-          tool.todo,
-          tool.project_task_create,
-          tool.project_task_list,
-          tool.project_task_get,
-          tool.project_task_mount,
-          tool.project_task_update,
-          tool.scheduled_task_create,
-          tool.scheduled_task_list,
-          tool.scheduled_task_get,
-          tool.scheduled_task_update,
-          tool.scheduled_task_delete,
-          tool.scheduled_task_run_now,
-          tool.scheduled_task_runs,
-          tool.math_worker_start,
-          tool.math_worker_ensure,
-          tool.math_worker_status,
-          tool.math_worker_stop,
-          tool.math_worker_task_update,
-          tool.math_gm_add,
-          tool.math_gm_search,
-          tool.math_fact_search,
-          tool.math_fact_get,
-          tool.math_fact_revoke,
-          tool.search,
-          ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
-          tool.codex_consult,
-          tool.claude_consult,
-          tool.grok_consult,
-          tool.dsh_consult,
-          tool.skill,
-          tool.patch,
-          ...(flags.experimentalLspTool ? [tool.lsp] : []),
-          ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
-          tool.present_file,
-          tool.present_diagram,
+        // Gating is the only thing that keeps a declared tool away from the model.
+        const hidden: Tool.Def[] = [
+          ...(questionEnabled ? [] : [defs.question]),
+          ...(flags.experimentalScout ? [] : [defs.repo_clone, defs.repo_overview]),
+          ...(flags.experimentalLspTool ? [] : [defs.lsp]),
+          ...(flags.experimentalPlanMode && flags.client === "cli" ? [] : [defs.plan_exit]),
+          ...(browserEnabled ? [] : Object.values(defs).filter((item) => item.id.startsWith("browser_") || item.id === "gpt_pro_consult")),
         ]
+        const builtin = Object.values(defs).filter((item) => !hidden.includes(item))
         log.info("builtin tools initialized", { ids: builtin.map((item) => item.id) })
 
         return {
           custom,
           builtin,
-          task: tool.task,
-          read: tool.read,
+          task: defs.task,
+          read: defs.read,
         }
       }),
     )
@@ -553,7 +491,7 @@ export const defaultLayer = Layer.suspend(() =>
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(Format.defaultLayer),
       Layer.provide(CrossSpawnSpawner.defaultLayer),
-      Layer.provide(Layer.mergeAll(Ripgrep.defaultLayer, Truncate.defaultLayer)),
+      Layer.provide(Layer.mergeAll(Ripgrep.defaultLayer, Truncate.defaultLayer, Browser.defaultLayer)),
     )
     .pipe(Layer.provide(RuntimeFlags.defaultLayer)),
 )

@@ -91,10 +91,12 @@ export const layer = Layer.effect(
     const set = Effect.fn("SessionStatus.set")(function* (sessionID: SessionID, status: Info) {
       if (status.type === "idle") {
         const { directory, data } = yield* readState()
-        if (data) {
-          data.delete(sessionID)
-          if (data.size === 0) globalState.delete(directory)
-        }
+        // An untracked session is already idle. Publishing again would emit a
+        // ghost `session.idle` (e.g. runner cleanup during idle disposal), so
+        // redundant idle transitions are silent no-ops.
+        const wasTracked = data?.delete(sessionID) ?? false
+        if (data && data.size === 0) globalState.delete(directory)
+        if (!wasTracked) return
         yield* bus.publish(Event.Status, { sessionID, status })
         yield* bus.publish(Event.Idle, { sessionID })
         return

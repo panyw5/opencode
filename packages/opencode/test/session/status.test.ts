@@ -58,3 +58,52 @@ it.instance(
     expect(yield* healthy.get(sessionID)).toEqual({ type: "idle" })
   }),
 )
+
+const makeFreshStatusWithBus = Effect.gen(function* () {
+  // provideMerge keeps Bus.Service in the built context so the subscription
+  // observes publishes from the very same Bus instance the service uses.
+  const context = yield* Layer.build(Layer.fresh(SessionStatus.layer.pipe(Layer.provideMerge(Bus.layer))))
+  return {
+    status: Context.get(context, SessionStatus.Service),
+    bus: Context.get(context, Bus.Service),
+  }
+})
+
+it.instance(
+  "does not publish events for an untracked session going idle",
+  Effect.gen(function* () {
+    const { status, bus } = yield* makeFreshStatusWithBus
+    const events: string[] = []
+    yield* bus.subscribeAllCallback((event) => events.push(event.type))
+    const sessionID = SessionID.make("ses_status_ghost_idle")
+
+    // The session was never tracked (never busy): publishing would emit a
+    // ghost `session.idle`, e.g. runner cleanup during idle disposal.
+    yield* status.set(sessionID, { type: "idle" })
+    // Subscriptions deliver on a forked fiber — let it drain.
+    yield* Effect.sleep("20 millis")
+
+    expect(events).toEqual([])
+  }),
+)
+
+it.instance(
+  "publishes idle exactly once across redundant idle transitions",
+  Effect.gen(function* () {
+    const { status, bus } = yield* makeFreshStatusWithBus
+    const events: string[] = []
+    yield* bus.subscribeAllCallback((event) => events.push(event.type))
+    const sessionID = SessionID.make("ses_status_redundant_idle")
+
+    yield* status.set(sessionID, { type: "busy" })
+    yield* status.set(sessionID, { type: "idle" })
+    yield* status.set(sessionID, { type: "idle" })
+    yield* status.set(sessionID, { type: "idle" })
+    // Subscriptions deliver on a forked fiber — let it drain.
+    yield* Effect.sleep("20 millis")
+
+    expect(events.filter((type) => type === "session.idle")).toHaveLength(1)
+    // One status event for busy, one for the first (real) idle transition.
+    expect(events.filter((type) => type === "session.status")).toHaveLength(2)
+  }),
+)

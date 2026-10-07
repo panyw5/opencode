@@ -8,10 +8,19 @@ import { createMemo, createUniqueId, Show } from "solid-js"
 import { ModelSelectorPopover, parseModelRef, useBoundModelState } from "@/components/dialog-select-model"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
+import type { Agent, Command } from "@opencode-ai/sdk/v2/client"
+import type { Prompt } from "@/context/prompt"
+import { QuickAssistantEditor } from "./editor"
+import { quickPromptCanSend, quickPromptText } from "./editor-model"
 
 type Props = {
-  setRef: (node: HTMLTextAreaElement) => void
-  text: string
+  setRef: (node: HTMLDivElement) => void
+  prompt: Prompt
+  directory: string
+  scope: string
+  agents: Agent[]
+  commands: Command[]
+  history: Prompt[]
   busy: boolean
   loading: boolean
   ready: boolean
@@ -19,9 +28,9 @@ type Props = {
   contextAvailable: boolean
   variants: string[]
   variant: string | undefined
-  onText: (text: string) => void
+  onPrompt: (prompt: Prompt) => void
   onClose: () => void
-  onReset: () => void
+  onStop: () => void
   onNewSession: () => void
   onContext: () => void
   onVariant: (variant: string | undefined) => void
@@ -78,43 +87,45 @@ export function QuickAssistantInput(props: Props) {
   })
 
   const variantOptions = createMemo(() => ["default", ...props.variants])
+  const canSend = () => quickPromptCanSend(props)
+  const send = () => {
+    if (!canSend()) {
+      console.debug("[quick-assistant:input] send blocked", {
+        busy: props.busy,
+        loading: props.loading,
+        ready: props.ready,
+        draft: quickPromptText(props.prompt).length,
+      })
+      return
+    }
+    props.onSend()
+  }
 
   return (
     <div class="px-3 pb-3 pt-2">
       <form
         id={formID}
+        data-prompt-composer={formID}
+        data-prompt-kind="quick"
+        data-prompt-scope={props.scope}
+        data-prevent-autofocus
         class="rounded-[var(--radius-4xl)] border border-[color-mix(in_srgb,var(--border-weak-base)_60%,transparent)] bg-background-base"
         onSubmit={(event) => {
           event.preventDefault()
-          if (props.busy) {
-            props.onReset()
-            return
-          }
-          props.onSend()
+          send()
         }}
       >
-        <textarea
-          ref={props.setRef}
-          rows={3}
-          value={props.text}
-          placeholder="Ask about the current OpenCode session or a quick task..."
-          class="w-full min-h-[84px] resize-none bg-transparent px-4 pt-3.5 pb-1 text-14-regular text-text-strong outline-none placeholder:text-text-weaker"
-          style={{ "line-height": "26px" }}
-          onInput={(event) => props.onText(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault()
-              props.onClose()
-              return
-            }
-            if (event.key !== "Enter" || event.shiftKey) return
-            event.preventDefault()
-            if (props.busy) {
-              props.onReset()
-              return
-            }
-            props.onSend()
-          }}
+        <QuickAssistantEditor
+          setRef={props.setRef}
+          prompt={props.prompt}
+          directory={props.directory}
+          scope={props.scope}
+          agents={props.agents}
+          commands={props.commands}
+          history={props.history}
+          onChange={props.onPrompt}
+          onClose={props.onClose}
+          onSend={send}
         />
         <div class="flex items-center gap-1.5 px-2 pb-2 pt-1">
           <Tooltip placement="top" value={language.t("command.session.new")}>
@@ -203,14 +214,14 @@ export function QuickAssistantInput(props: Props) {
             value={props.busy ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
           >
             <IconButton
-              type="submit"
-              form={formID}
+              type="button"
+              onClick={() => (props.busy ? props.onStop() : send())}
               data-action="quick-assistant-submit"
               icon={props.busy ? "stop" : claudeTheme() ? "arrow-up" : "arrow-up-bold"}
               variant="primary"
               iconSize={props.busy ? "normal" : "medium"}
               class="ml-0.5 size-10 shrink-0 rounded-full shadow-xs-border disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!props.busy && (props.loading || !props.ready || !props.text.trim())}
+              disabled={!props.busy && !canSend()}
               aria-label={props.busy ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
             />
           </Tooltip>

@@ -1,8 +1,53 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
-import type { ElectronAPI, InitStep, SqliteMigrationProgress } from "./types"
+import type { BrowserViewState, ElectronAPI, InitStep, SqliteMigrationProgress } from "./types"
 
 const api: ElectronAPI = {
+  gptPro: {
+    getConfig: () => ipcRenderer.invoke("gpt-pro-config"),
+    setConfig: config => ipcRenderer.invoke("gpt-pro-set-config", config),
+    command: input => ipcRenderer.invoke("gpt-pro-command", input),
+    list: () => ipcRenderer.invoke("gpt-pro-list"),
+    open: () => ipcRenderer.invoke("gpt-pro-open"),
+    status: () => ipcRenderer.invoke("gpt-pro-status"),
+    loginInBrowser: () => ipcRenderer.invoke("gpt-pro-login"),
+    loginStatus: () => ipcRenderer.invoke("gpt-pro-login-status"),
+    cancelLogin: () => ipcRenderer.invoke("gpt-pro-login-cancel"),
+  },
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
+  browser: {
+    getDisplayState: () => ipcRenderer.invoke("browser-display-state"),
+    acquireDisplay: () => ipcRenderer.invoke("browser-acquire-display"),
+    updateDisplay: frame => ipcRenderer.invoke("browser-update-display", frame),
+    releaseDisplay: lease => ipcRenderer.invoke("browser-release-display", lease),
+    getPresentation: () => ipcRenderer.invoke("browser-get-presentation"),
+    acknowledgePresentation: (id) => ipcRenderer.invoke("browser-ack-presentation", id),
+    onPresented: (cb) => {
+      const handler = (_: unknown, request: { id: number; state: BrowserViewState }) => cb(request)
+      ipcRenderer.on("browser-presented", handler)
+      return () => ipcRenderer.removeListener("browser-presented", handler)
+    },
+    open: (partition, url) => ipcRenderer.invoke("browser-open", partition, url),
+    setBounds: (partition, bounds) => ipcRenderer.invoke("browser-set-bounds", partition, bounds),
+    setVisible: (partition, visible) => ipcRenderer.invoke("browser-set-visible", partition, visible),
+    close: (partition) => ipcRenderer.invoke("browser-close", partition),
+    navigate: (partition, action) => ipcRenderer.invoke("browser-navigate", partition, action),
+    setShared: (partition, shared) => ipcRenderer.invoke("browser-set-shared", partition, shared),
+    getState: () => ipcRenderer.invoke("browser-get-state"),
+    onUpdated: (cb) => {
+      const handler = (_: unknown, state: BrowserViewState) => cb(state)
+      ipcRenderer.on("browser-updated", handler)
+      return () => {
+        ipcRenderer.removeListener("browser-updated", handler)
+      }
+    },
+    onClosed: (cb) => {
+      const handler = (_: unknown, partition: string, epoch: number) => cb(partition, epoch)
+      ipcRenderer.on("browser-closed", handler)
+      return () => {
+        ipcRenderer.removeListener("browser-closed", handler)
+      }
+    },
+  },
   installCli: () => ipcRenderer.invoke("install-cli"),
   reloadBackend: () => ipcRenderer.invoke("reload-backend"),
   awaitInitialization: (onStep) => {
@@ -114,6 +159,7 @@ const api: ElectronAPI = {
   filterDirectories: (paths) => ipcRenderer.invoke("filter-directories", paths),
   listConfigFiles: (directory) => ipcRenderer.invoke("list-config-files", directory),
   readLocalFile: (path) => ipcRenderer.invoke("read-local-file", path),
+  statLocalFile: (path) => ipcRenderer.invoke("stat-local-file", path),
   writeLocalFile: (path, content) => ipcRenderer.invoke("write-local-file", path, content),
   createLocalFile: (path, content) => ipcRenderer.invoke("create-local-file", path, content),
   deleteLocalFile: (path) => ipcRenderer.invoke("delete-local-file", path),
@@ -178,6 +224,9 @@ const api: ElectronAPI = {
   checkUpdate: () => ipcRenderer.invoke("check-update"),
   installUpdate: () => ipcRenderer.invoke("install-update"),
   getUpdaterState: () => ipcRenderer.invoke("get-updater-state"),
+  pauseUpdate: () => ipcRenderer.invoke("pause-update"),
+  resumeUpdate: () => ipcRenderer.invoke("resume-update"),
+  cancelUpdate: () => ipcRenderer.invoke("cancel-update"),
   onUpdaterStateChanged: (cb) => {
     const id = crypto.randomUUID()
     const handler = (_: unknown, subscriptionId: string, state: unknown) => {

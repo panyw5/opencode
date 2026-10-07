@@ -74,6 +74,18 @@ function createViewSession(dir: string, id: string | undefined, context: PathCon
   const scrollTop = (path: string) => view.file[path]?.scrollTop
   const scrollLeft = (path: string) => view.file[path]?.scrollLeft
   const selectedLines = (path: string) => view.file[path]?.selectedLines
+  const selectionSeq = (path: string) => view.file[path]?.selectionSeq ?? 0
+  const selectionPending = (path: string) => selectionSeq(path) > (view.file[path]?.settledSeq ?? 0)
+
+  const settleSelection = (path: string, seq: number) => {
+    setView(
+      produce((draft) => {
+        const file = draft.file[path] ?? (draft.file[path] = {})
+        if ((file.settledSeq ?? 0) >= seq) return
+        file.settledSeq = seq
+      }),
+    )
+  }
 
   const setScrollTop = (path: string, top: number) => {
     setView(
@@ -104,6 +116,25 @@ function createViewSession(dir: string, id: string | undefined, context: PathCon
         const file = draft.file[path] ?? (draft.file[path] = {})
         if (equalSelectedLines(file.selectedLines, next)) return
         file.selectedLines = next
+        // A changed selection is a fresh viewport intent: it outranks any
+        // persisted scroll position until the resulting jump settles.
+        if (next) file.selectionSeq = (file.selectionSeq ?? 0) + 1
+      }),
+    )
+    pruneView(path)
+  }
+
+  // Explicit user intent to look at `range` (e.g. a file link click). Unlike
+  // `setSelectedLines` — which dedupes no-op syncs from the viewer — this
+  // always records and bumps the sequence, so repeating the same request
+  // re-triggers the pending selection jump.
+  const requestSelection = (path: string, range: SelectedLineRange) => {
+    const next = normalizeSelectedLines(range)
+    setView(
+      produce((draft) => {
+        const file = draft.file[path] ?? (draft.file[path] = {})
+        file.selectedLines = next
+        file.selectionSeq = (file.selectionSeq ?? 0) + 1
       }),
     )
     pruneView(path)
@@ -114,9 +145,13 @@ function createViewSession(dir: string, id: string | undefined, context: PathCon
     scrollTop,
     scrollLeft,
     selectedLines,
+    selectionSeq,
+    selectionPending,
+    settleSelection,
     setScrollTop,
     setScrollLeft,
     setSelectedLines,
+    requestSelection,
   }
 }
 

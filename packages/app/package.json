@@ -1,11 +1,12 @@
 {
   "name": "@opencode-ai/app",
-  "version": "1.18.49",
+  "version": "1.18.53",
   "description": "",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
     "./desktop-menu": "./src/desktop-menu.ts",
+    "./browser/types": "./src/browser/types.ts",
     "./wsl/types": "./src/wsl/types.ts",
     "./ssh/types": "./src/ssh/types.ts",
     "./vite": "./vite.js",
@@ -37,6 +38,7 @@
     "@types/bun": "catalog:",
     "@types/luxon": "catalog:",
     "@types/node": "catalog:",
+    "@types/turndown": "5.0.5",
     "@typescript/native-preview": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
@@ -44,6 +46,7 @@
     "vite-plugin-solid": "catalog:"
   },
   "dependencies": {
+    "@opencode-ai/util": "workspace:*",
     "@kobalte/core": "catalog:",
     "@opencode-ai/core": "workspace:*",
     "@opencode-ai/sdk": "workspace:*",
@@ -79,6 +82,7 @@
     "solid-js": "catalog:",
     "solid-list": "catalog:",
     "tailwindcss": "catalog:",
+    "turndown": "7.2.0",
     "virtua": "catalog:",
     "zod": "catalog:"
   }

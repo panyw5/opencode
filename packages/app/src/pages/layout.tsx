@@ -22,7 +22,12 @@ import {
   type SessionTabsRoute,
   type SessionTabsTarget,
 } from "@/context/session-tabs"
-import { createConfigReturnTarget, resolveConfigReturnTarget, type ConfigReturnTarget } from "@/pages/config-navigation"
+import {
+  createConfigReturnTarget,
+  resolveConfigReturnTarget,
+  resolveBrowserSessionTarget,
+  type ConfigReturnTarget,
+} from "@/pages/config-navigation"
 import { collectMissingAncestorTabs } from "@/components/session/session-bar-parent"
 import { useGlobalSync } from "@/context/global-sync"
 import { onSessionLifecycle } from "@/context/global-sync/session-lifecycle"
@@ -90,6 +95,7 @@ import { DialogSwitchProject } from "@/components/dialog-switch-project"
 import { DialogRecentSessions } from "@/components/dialog-recent-sessions"
 import { DebugBar } from "@/components/debug-bar"
 import { QuickAssistant } from "@/components/quick-assistant"
+import { resolveDropComposer } from "@/components/prompt-input/composer-boundary"
 import { Titlebar } from "@/components/titlebar"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { ServerConnection, useServer } from "@/context/server"
@@ -139,6 +145,7 @@ import {
   drainPendingDeepLinks,
 } from "./layout/deep-links"
 import { createInlineEditorController } from "./layout/inline-editor"
+import { PRESENT_TASK_OPEN_EVENT, type PresentedTaskOpenRequest } from "./layout/open-task"
 import {
   ImChannelSidebar,
   LocalWorkspace,
@@ -1523,7 +1530,13 @@ export default function Layout(props: ParentProps) {
         disabled: layout.projects.list().length === 0 && enabledExtraAgents(server.list).length === 0,
         onSelect: () => {
           dialog.show(
-            () => <DialogSwitchProject onSelect={switchProjectFromDialog} current={() => currentProject()?.entry} />,
+            () => (
+              <DialogSwitchProject
+                onSelect={switchProjectFromDialog}
+                onSelectNewSession={openNewSessionFromDialog}
+                current={() => currentProject()?.entry}
+              />
+            ),
             undefined,
             {
               modal: false,
@@ -2004,6 +2017,29 @@ export default function Layout(props: ParentProps) {
     setStore("sidebarPanel", "scheduled")
     layout.sidebar.open()
   }
+
+  /**
+   * One-shot jump requested by a chat task card. The panel owning the task opens
+   * its detail dialog for the ID and then clears the request.
+   */
+  const [presentedTaskFocus, setPresentedTaskFocus] = createSignal<{ kind: SidebarPanelKind; taskID: string }>()
+
+  onMount(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<PresentedTaskOpenRequest>).detail
+      if (!detail?.taskID) return
+      console.debug(`[layout] present-task-open kind=${detail.kind} task=${detail.taskID} session=${detail.sessionID}`)
+      if (detail.kind === "project_task") {
+        openProjectTasksPanel()
+        setPresentedTaskFocus({ kind: "projectTasks", taskID: detail.taskID })
+        return
+      }
+      openScheduledPanel()
+      setPresentedTaskFocus({ kind: "scheduled", taskID: detail.taskID })
+    }
+    window.addEventListener(PRESENT_TASK_OPEN_EVENT, handler as EventListener)
+    onCleanup(() => window.removeEventListener(PRESENT_TASK_OPEN_EVENT, handler as EventListener))
+  })
 
   /**
    * Minimize the panel sitting in the sidebar slot: it moves onto the rail
@@ -2578,6 +2614,44 @@ export default function Layout(props: ParentProps) {
   }
 
   onMount(() => {
+    const api = window.api?.browser
+    if (platform.platform !== "desktop" || !api) return
+    let disposed = false
+    let lastRequest = 0
+    const present = (request: { id: number }) => {
+      if (disposed || request.id <= lastRequest) return
+      lastRequest = request.id
+      if (onSessionRoute()) return
+      let target = resolveBrowserSessionTarget({
+        origin: location.state,
+        tabs: layout.sessionBar.all(),
+        drafts: layout.sessionBar.drafts(),
+        directory: routeDir(),
+      })
+      if (target.type === "home") {
+        const directory = routeDir() || layout.projects.list()[0]?.worktree || globalSync.data.path.directory
+        if (!directory) {
+          console.warn(`[browser-panel] no workspace available request=${request.id}`)
+          return
+        }
+        target = { type: "draft", ...sessionTabs.createDraft(directory, "button") }
+      }
+      console.debug(`[browser-panel] restore session request=${request.id} target=${sessionTabsTargetHref(target)}`)
+      void sessionTabs.activate(target, { replace: onConfigRoute() }).then((result) => {
+        console.debug(`[browser-panel] restore result=${result} request=${request.id}`)
+      })
+    }
+    const stop = api.onPresented(present)
+    void api.getPresentation().then((request) => {
+      if (request) present(request)
+    })
+    onCleanup(() => {
+      disposed = true
+      stop()
+    })
+  })
+
+  onMount(() => {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<{ urls: string[] }>).detail
       const urls = detail?.urls ?? []
@@ -2641,6 +2715,8 @@ export default function Layout(props: ParentProps) {
       }
 
       if (detail.type !== "drop") return
+      const dropComposer = resolveDropComposer(detail.position)
+      const dropScope = dropComposer?.dataset.promptScope
 
       dragSeq += 1
       setFolderDragging(false)
@@ -2673,7 +2749,18 @@ export default function Layout(props: ParentProps) {
       }
 
       if (files.length > 0) {
-        window.dispatchEvent(new CustomEvent("opencode:file-drop", { detail: { paths: files } }))
+        if (!dropComposer?.isConnected || dropComposer.dataset.promptScope !== dropScope) {
+          console.debug("[prompt-isolation] native drop skipped detached or changed composer")
+          return
+        }
+        console.debug(
+          `[prompt-isolation] native drop routed composer=${dropComposer.dataset.promptComposer} scope=${dropScope} files=${files.length}`,
+        )
+        window.dispatchEvent(
+          new CustomEvent("opencode:file-drop", {
+            detail: { paths: files, composerID: dropComposer.dataset.promptComposer, scope: dropScope },
+          }),
+        )
       }
     }
 
@@ -3493,6 +3580,16 @@ export default function Layout(props: ParentProps) {
   const side = createMemo(() => Math.max(state.previewSidebarWidth ?? layout.sidebar.width(), 244))
   const dragSide = createMemo(() => Math.max(state.previewSidebarWidth ?? layout.sidebar.width(), 244))
   const panel = createMemo(() => Math.max(side() - 64, 0))
+  const dismissSidebarOnMainClick = (event: MouseEvent) => {
+    if (!desktopSidebar() || !layout.sidebar.opened() || state.sizing) return
+    if (state.nav?.contains(event.target as Node)) return
+    if (event.clientX < side() + 8) return
+    const target = event.target instanceof HTMLElement ? event.target : undefined
+    console.debug(
+      `[sidebar-dismiss] pass-through click x=${Math.round(event.clientX)} target=${target?.getAttribute("data-slot") ?? target?.tagName.toLowerCase() ?? "unknown"}`,
+    )
+    layout.sidebar.close()
+  }
   // Keep the floating list above main while width collapses (300ms). Dropping
   // z-index immediately on close hides the transition under the main pane.
   const SIDEBAR_WIDTH_MS = 300
@@ -3767,6 +3864,20 @@ export default function Layout(props: ParentProps) {
     layout.sidebar.open()
   }
 
+  function openNewSessionFromDialog(directory: string) {
+    const project = layout.projects.list().find((item) => workspaceKey(item.worktree) === workspaceKey(directory))
+    if (project) {
+      console.debug(`[project-switch] dialog new-session root=${project.worktree} directory=${directory}`)
+      setSidebarProjectRoot(project.worktree)
+      warmProjectSessions(project.worktree)
+    } else {
+      console.debug(`[project-switch] dialog new-session directory=${directory} reason=non-project`)
+    }
+    const draft = sessionTabs.createDraft(directory, "menu")
+    navigateWithSidebarReset(sessionTabsTargetHref({ type: "draft", ...draft }))
+    layout.sidebar.close()
+  }
+
   function switchProjectFromDialog(directory: string) {
     const project = layout.projects.list().find((item) => workspaceKey(item.worktree) === workspaceKey(directory))
     if (!project) {
@@ -3928,6 +4039,7 @@ export default function Layout(props: ParentProps) {
     project: Accessor<LocalProject | undefined>
     mobile?: boolean
     merged?: boolean
+    headerOnly?: boolean
   }) => {
     const project = panelProps.project
     const merged = createMemo(() => panelProps.mobile || (panelProps.merged ?? layout.sidebar.opened()))
@@ -3968,6 +4080,10 @@ export default function Layout(props: ParentProps) {
       return item.vcs === "git" || layout.sidebar.workspaces(item.worktree)()
     })
     const homedir = createMemo(() => globalSync.data.path.home)
+    createEffect(() => {
+      if (!panelProps.headerOnly) return
+      console.debug(`[sidebar-project] task-panel header name=${projectName()} directory=${worktree()}`)
+    })
     const [copyState, setCopyState] = createStore({ copied: false })
     let copiedTimer: ReturnType<typeof setTimeout> | undefined
     const copyProjectPath = () => {
@@ -4022,28 +4138,32 @@ export default function Layout(props: ParentProps) {
 
     return (
       <div
-        data-component="sidebar-panel"
-        classList={{
-          // Scoop join (merged desktop): top-left radius reveals ScoopJoin
-          // chrome, forming a continuous arc into the rail/titlebar. Right
-          // radii float against the main pane.
-          "relative z-[1] flex flex-col min-h-0 min-w-0 box-border overflow-hidden px-3": true,
-          "rounded-tl-[12px]": !panelProps.mobile,
-          "rounded-tr-[12px] rounded-br-[12px]": merged() && !panelProps.mobile,
-          "border border-b-0 border-border-weak-base": !merged(),
-          // Left/top stay weaker (flush to rail); right rim is stronger so the
-          // floating face reads against main. Arc overrides border via CSS.
-          "border-l border-t border-border-weaker-base border-r border-border-weak-base": merged(),
-          "bg-background-base": merged(),
-          "bg-background-stronger": !merged(),
-          // Desktop: fill the shell slot; open/close is driven by the nav
-          // width so we never paint a 0→N width underlayer behind content.
-          "flex-1 min-w-0": true,
-          "max-w-full": panelProps.mobile,
-        }}
+        data-component={panelProps.headerOnly ? "sidebar-project-header" : "sidebar-panel"}
+        classList={
+          panelProps.headerOnly
+            ? { contents: true }
+            : {
+                // Scoop join (merged desktop): top-left radius reveals ScoopJoin
+                // chrome, forming a continuous arc into the rail/titlebar. Right
+                // radii float against the main pane.
+                "relative z-[1] flex flex-col min-h-0 min-w-0 box-border overflow-hidden px-3": true,
+                "rounded-tl-[12px]": !panelProps.mobile,
+                "rounded-tr-[12px] rounded-br-[12px]": merged() && !panelProps.mobile,
+                "border border-b-0 border-border-weak-base": !merged(),
+                // Left/top stay weaker (flush to rail); right rim is stronger so the
+                // floating face reads against main. Arc overrides border via CSS.
+                "border-l border-t border-border-weaker-base border-r border-border-weak-base": merged(),
+                "bg-background-base": merged(),
+                "bg-background-stronger": !merged(),
+                // Desktop: fill the shell slot; open/close is driven by the nav
+                // width so we never paint a 0→N width underlayer behind content.
+                "flex-1 min-w-0": true,
+                "max-w-full": panelProps.mobile,
+              }
+        }
       >
         <Show
-          when={sidebarImChannel()}
+          when={!panelProps.headerOnly && sidebarImChannel()}
           fallback={
             <Show
               when={project()}
@@ -4069,23 +4189,25 @@ export default function Layout(props: ParentProps) {
               }
             >
               <>
-                <div class="shrink-0 pl-1 py-1">
-                  <div class="group/project flex items-start justify-between gap-2 py-2 pl-2 pr-0">
-                    <div class="flex flex-col min-w-0">
-                      <InlineEditor
-                        id={`project:${projectId()}`}
-                        value={projectName}
-                        onSave={(next) => {
-                          const item = project()
-                          if (!item) return
-                          renameProject(item, next)
-                        }}
-                        class="text-14-medium text-text-strong truncate"
-                        displayClass="text-14-medium text-text-strong truncate"
-                        stopPropagation
-                      />
+                <div data-slot="sidebar-project-heading" class="shrink-0 pl-1 py-1">
+                  <div class="group/project flex items-center justify-between gap-2 py-2 pl-2 pr-0">
+                    <div class="flex min-w-0 flex-1 items-center gap-2">
+                      <div data-slot="sidebar-project-name" class="min-w-0 max-w-[45%] shrink-0">
+                        <InlineEditor
+                          id={`project:${projectId()}`}
+                          value={projectName}
+                          onSave={(next) => {
+                            const item = project()
+                            if (!item) return
+                            renameProject(item, next)
+                          }}
+                          class="min-w-0 w-full text-14-medium text-text-strong truncate"
+                          displayClass="block text-14-medium text-text-strong truncate"
+                          stopPropagation
+                        />
+                      </div>
 
-                      <div class="flex min-w-0 items-center gap-1">
+                      <div data-slot="sidebar-project-path" class="flex min-w-0 flex-1 items-center gap-1">
                         <Tooltip
                           placement="bottom"
                           gutter={2}
@@ -4096,11 +4218,11 @@ export default function Layout(props: ParentProps) {
                             transform: "translate3d(52px, 0, 0)",
                           }}
                         >
-                          <span class="block min-w-0 truncate select-text text-12-mono text-text-weak">
+                          <span class="block min-w-0 truncate select-text text-12-mono text-text-weaker opacity-70">
                             {worktree().replace(homedir(), "~")}
                           </span>
                         </Tooltip>
-                        <Tooltip placement="bottom" value={language.t("session.header.open.copyPath")}>
+                        <Tooltip placement="bottom" value={language.t("session.header.open.copyPath")} class="shrink-0">
                           <IconButton
                             icon={copyState.copied ? "check" : "copy"}
                             variant="ghost"
@@ -4186,23 +4308,76 @@ export default function Layout(props: ParentProps) {
                   </div>
                 </div>
 
-                <div class="flex-1 min-h-0 flex flex-col">
-                  <Show
-                    when={workspacesEnabled()}
-                    fallback={
+                <Show when={!panelProps.headerOnly}>
+                  <div class="flex-1 min-h-0 flex flex-col">
+                    <Show
+                      when={workspacesEnabled()}
+                      fallback={
+                        <>
+                          <div class="shrink-0 py-4 px-3">
+                            <SidebarQuickActions
+                              primary={{
+                                icon: "new-session",
+                                label: language.t("command.session.new"),
+                                onSelect: () => {
+                                  const dir = worktree()
+                                  if (!dir) return
+                                  console.debug(`[sidebar-project] new-session root=${dir} source=sidebar-button`)
+                                  const draft = sessionTabs.createDraft(dir, "button")
+                                  navigateWithSidebarReset(sessionTabsTargetHref({ type: "draft", ...draft }))
+                                  layout.sidebar.close()
+                                },
+                              }}
+                              moreLabel={language.t("common.moreOptions")}
+                              actions={[
+                                { icon: "file", label: language.t("sidebar.project.agentsMd"), onSelect: openAgentsMd },
+                                {
+                                  icon: "checklist",
+                                  label: language.t("projectTask.title"),
+                                  onSelect: openProjectTasksPanel,
+                                },
+                                { icon: "clock", label: language.t("scheduled.title"), onSelect: openScheduledPanel },
+                                {
+                                  icon: "bell-off",
+                                  label: language.t("sidebar.project.clearNotifications"),
+                                  disabled: unseenCount() === 0,
+                                  onSelect: clearNotifications,
+                                },
+                                {
+                                  icon: "archive",
+                                  label: language.t("sidebar.project.viewArchivedSessions"),
+                                  onSelect: () => {
+                                    const item = project()
+                                    if (!item) return
+                                    dialog.show(() => <DialogArchivedSessions project={item} />)
+                                  },
+                                },
+                              ]}
+                            />
+                          </div>
+                          <div class="flex-1 min-h-0">
+                            <LocalWorkspace
+                              ctx={workspaceSidebarCtx}
+                              project={project()!}
+                              directories={sidebarProjectDirs}
+                              sessions={sidebarSessions}
+                              sortNow={sortNow}
+                              mobile={panelProps.mobile}
+                            />
+                          </div>
+                        </>
+                      }
+                    >
                       <>
                         <div class="shrink-0 py-4 px-3">
                           <SidebarQuickActions
                             primary={{
-                              icon: "new-session",
-                              label: language.t("command.session.new"),
+                              icon: "plus-small",
+                              label: language.t("workspace.new"),
                               onSelect: () => {
-                                const dir = worktree()
-                                if (!dir) return
-                                console.debug(`[sidebar-project] new-session root=${dir} source=sidebar-button`)
-                                const draft = sessionTabs.createDraft(dir, "button")
-                                navigateWithSidebarReset(sessionTabsTargetHref({ type: "draft", ...draft }))
-                                layout.sidebar.close()
+                                const item = project()
+                                if (!item) return
+                                createWorkspace(item)
                               },
                             }}
                             moreLabel={language.t("common.moreOptions")}
@@ -4232,99 +4407,48 @@ export default function Layout(props: ParentProps) {
                             ]}
                           />
                         </div>
-                        <div class="flex-1 min-h-0">
-                          <LocalWorkspace
-                            ctx={workspaceSidebarCtx}
-                            project={project()!}
-                            directories={sidebarProjectDirs}
-                            sessions={sidebarSessions}
-                            sortNow={sortNow}
-                            mobile={panelProps.mobile}
-                          />
+                        <div class="relative flex-1 min-h-0">
+                          <DragDropProvider
+                            onDragStart={handleWorkspaceDragStart}
+                            onDragEnd={handleWorkspaceDragEnd}
+                            onDragOver={handleWorkspaceDragOver}
+                            collisionDetector={closestCenter}
+                          >
+                            <DragDropSensors />
+                            <ConstrainDragXAxis />
+                            <div
+                              ref={(el) => {
+                                if (!panelProps.mobile) scrollContainerRef = el
+                              }}
+                              class="size-full flex flex-col py-2 gap-4 overflow-y-auto no-scrollbar [overflow-anchor:none]"
+                            >
+                              <SortableProvider ids={workspaces()}>
+                                <For each={workspaces()}>
+                                  {(directory) => (
+                                    <SortableWorkspace
+                                      ctx={workspaceSidebarCtx}
+                                      directory={directory}
+                                      project={project()!}
+                                      sortNow={sortNow}
+                                      mobile={panelProps.mobile}
+                                    />
+                                  )}
+                                </For>
+                              </SortableProvider>
+                            </div>
+                            <DragOverlay>
+                              <WorkspaceDragOverlay
+                                sidebarProject={sidebarProject}
+                                activeWorkspace={() => store.activeWorkspace}
+                                workspaceLabel={workspaceLabel}
+                              />
+                            </DragOverlay>
+                          </DragDropProvider>
                         </div>
                       </>
-                    }
-                  >
-                    <>
-                      <div class="shrink-0 py-4 px-3">
-                        <SidebarQuickActions
-                          primary={{
-                            icon: "plus-small",
-                            label: language.t("workspace.new"),
-                            onSelect: () => {
-                              const item = project()
-                              if (!item) return
-                              createWorkspace(item)
-                            },
-                          }}
-                          moreLabel={language.t("common.moreOptions")}
-                          actions={[
-                            { icon: "file", label: language.t("sidebar.project.agentsMd"), onSelect: openAgentsMd },
-                            {
-                              icon: "checklist",
-                              label: language.t("projectTask.title"),
-                              onSelect: openProjectTasksPanel,
-                            },
-                            { icon: "clock", label: language.t("scheduled.title"), onSelect: openScheduledPanel },
-                            {
-                              icon: "bell-off",
-                              label: language.t("sidebar.project.clearNotifications"),
-                              disabled: unseenCount() === 0,
-                              onSelect: clearNotifications,
-                            },
-                            {
-                              icon: "archive",
-                              label: language.t("sidebar.project.viewArchivedSessions"),
-                              onSelect: () => {
-                                const item = project()
-                                if (!item) return
-                                dialog.show(() => <DialogArchivedSessions project={item} />)
-                              },
-                            },
-                          ]}
-                        />
-                      </div>
-                      <div class="relative flex-1 min-h-0">
-                        <DragDropProvider
-                          onDragStart={handleWorkspaceDragStart}
-                          onDragEnd={handleWorkspaceDragEnd}
-                          onDragOver={handleWorkspaceDragOver}
-                          collisionDetector={closestCenter}
-                        >
-                          <DragDropSensors />
-                          <ConstrainDragXAxis />
-                          <div
-                            ref={(el) => {
-                              if (!panelProps.mobile) scrollContainerRef = el
-                            }}
-                            class="size-full flex flex-col py-2 gap-4 overflow-y-auto no-scrollbar [overflow-anchor:none]"
-                          >
-                            <SortableProvider ids={workspaces()}>
-                              <For each={workspaces()}>
-                                {(directory) => (
-                                  <SortableWorkspace
-                                    ctx={workspaceSidebarCtx}
-                                    directory={directory}
-                                    project={project()!}
-                                    sortNow={sortNow}
-                                    mobile={panelProps.mobile}
-                                  />
-                                )}
-                              </For>
-                            </SortableProvider>
-                          </div>
-                          <DragOverlay>
-                            <WorkspaceDragOverlay
-                              sidebarProject={sidebarProject}
-                              activeWorkspace={() => store.activeWorkspace}
-                              workspaceLabel={workspaceLabel}
-                            />
-                          </DragOverlay>
-                        </DragDropProvider>
-                      </div>
-                    </>
-                  </Show>
-                </div>
+                    </Show>
+                  </div>
+                </Show>
               </>
             </Show>
           }
@@ -4352,6 +4476,7 @@ export default function Layout(props: ParentProps) {
           class="shrink-0 px-3 py-3"
           classList={{
             hidden:
+              panelProps.headerOnly ||
               !!sidebarImChannel() ||
               store.gettingStartedDismissed ||
               !(providers.all().length > 0 && providers.paid().length === 0),
@@ -4485,12 +4610,15 @@ export default function Layout(props: ParentProps) {
       renderPanel={() =>
         scheduledPanelActive() && (!mobile || layout.mobileSidebar.opened()) ? (
           <ScheduledTasksPanel
+            projectHeader={<SidebarPanel project={sidebarProject} mobile={mobile} merged headerOnly />}
             projectID={() => sidebarProject()?.id ?? ""}
             projectName={() => sidebarProject()?.name || getFilename(sidebarProject()?.root ?? routeDir())}
             directory={() => sidebarProject()?.root ?? routeDir()}
             width={panel}
             mobile={mobile}
             onBack={() => setStore("sidebarPanel", "project")}
+            focusTaskID={() => (presentedTaskFocus()?.kind === "scheduled" ? presentedTaskFocus()!.taskID : undefined)}
+            onFocusHandled={() => setPresentedTaskFocus(undefined)}
             editorMinimizeLabel={language.t("sidebar.panels.minimize")}
             onStashEditor={stashScheduledTaskEditor}
             onDismissEditorStash={(taskID) => {
@@ -4500,6 +4628,7 @@ export default function Layout(props: ParentProps) {
           />
         ) : projectTasksPanelActive() && (!mobile || layout.mobileSidebar.opened()) ? (
           <ProjectTasksPanel
+            projectHeader={<SidebarPanel project={sidebarProject} mobile={mobile} merged headerOnly />}
             projectID={() => sidebarProject()?.id ?? ""}
             projectName={() => sidebarProject()?.name || getFilename(sidebarProject()?.root ?? routeDir())}
             directory={() => sidebarProject()?.root ?? routeDir()}
@@ -4515,6 +4644,10 @@ export default function Layout(props: ParentProps) {
             width={panel}
             mobile={mobile}
             onBack={() => setStore("sidebarPanel", "project")}
+            focusTaskID={() =>
+              presentedTaskFocus()?.kind === "projectTasks" ? presentedTaskFocus()!.taskID : undefined
+            }
+            onFocusHandled={() => setPresentedTaskFocus(undefined)}
             editorMinimizeLabel={language.t("sidebar.panels.minimize")}
             onStashEditor={stashProjectTaskEditor}
             onDismissEditorStash={(taskID) => {
@@ -4568,7 +4701,13 @@ export default function Layout(props: ParentProps) {
         <Titlebar />
         <div class="flex-1 min-h-0 min-w-0 flex">
           <div class="flex-1 min-h-0 relative">
-            <div class="size-full relative overflow-x-hidden">
+            <div
+              ref={(el) => {
+                el.addEventListener("click", dismissSidebarOnMainClick, true)
+                onCleanup(() => el.removeEventListener("click", dismissSidebarOnMainClick, true))
+              }}
+              class="size-full relative overflow-x-hidden"
+            >
               <Show when={desktopSidebar()}>
                 <nav
                   aria-label={language.t("sidebar.nav.projectsAndSessions")}
@@ -4629,7 +4768,7 @@ export default function Layout(props: ParentProps) {
                   <div
                     data-component="sidebar-dismiss-overlay"
                     aria-hidden="true"
-                    class="absolute inset-0 z-[25]"
+                    class="pointer-events-none absolute inset-0 z-[25]"
                     style={{ left: `${side()}px` }}
                     onClick={() => layout.sidebar.close()}
                   />

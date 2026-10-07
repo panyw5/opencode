@@ -5,9 +5,12 @@ import {
   buildTestHeaders,
   chatCompletionsTestBody,
   chatCompletionsUrl,
+  googleGenerateContentUrl,
+  providerModelsUrl,
   resolveTestProtocol,
   testEndpointUrl,
   testProviderModel,
+  testRequestBody,
 } from "./test-provider-model"
 
 describe("resolveTestProtocol", () => {
@@ -21,19 +24,41 @@ describe("resolveTestProtocol", () => {
     expect(resolveTestProtocol("@ai-sdk/anthropic")).toBe("anthropic-messages")
     expect(resolveTestProtocol("@ai-sdk/google-vertex/anthropic")).toBe("anthropic-messages")
   })
+
+  test("selects Google generateContent for Google npm", () => {
+    expect(resolveTestProtocol(" @AI-SDK/GOOGLE ")).toBe("google-generate-content")
+  })
+})
+
+describe("googleGenerateContentUrl", () => {
+  test("uses the model in the URL and preserves SDK model paths", () => {
+    expect(googleGenerateContentUrl(" https://gateway.example.com/v1beta/ ", " gemini-2.5-flash ")).toBe(
+      "https://gateway.example.com/v1beta/models/gemini-2.5-flash:generateContent",
+    )
+    expect(googleGenerateContentUrl("https://gateway.example.com/v1beta", "models/gemini-2.5-flash")).toBe(
+      "https://gateway.example.com/v1beta/models/gemini-2.5-flash:generateContent",
+    )
+    expect(googleGenerateContentUrl("https://gateway.example.com/v1beta", "tunedModels/custom")).toBe(
+      "https://gateway.example.com/v1beta/tunedModels/custom:generateContent",
+    )
+    expect(googleGenerateContentUrl("", "gemini")).toBe("")
+    expect(googleGenerateContentUrl("https://gateway.example.com/v1beta", " ")).toBe("")
+  })
+
+  test("encodes model path segments without treating them as URL parameters", () => {
+    expect(googleGenerateContentUrl("https://gateway.example.com/v1beta", "gemini?key=test#fragment")).toBe(
+      "https://gateway.example.com/v1beta/models/gemini%3Fkey%3Dtest%23fragment:generateContent",
+    )
+  })
 })
 
 describe("chatCompletionsUrl", () => {
   test("appends chat/completions to base", () => {
-    expect(chatCompletionsUrl("https://api.example.com/v1")).toBe(
-      "https://api.example.com/v1/chat/completions",
-    )
+    expect(chatCompletionsUrl("https://api.example.com/v1")).toBe("https://api.example.com/v1/chat/completions")
   })
 
   test("strips trailing slashes", () => {
-    expect(chatCompletionsUrl("https://api.example.com/v1/")).toBe(
-      "https://api.example.com/v1/chat/completions",
-    )
+    expect(chatCompletionsUrl("https://api.example.com/v1/")).toBe("https://api.example.com/v1/chat/completions")
   })
 
   test("does not double append when already complete", () => {
@@ -49,24 +74,18 @@ describe("chatCompletionsUrl", () => {
 
 describe("anthropicMessagesUrl", () => {
   test("appends messages to base", () => {
-    expect(anthropicMessagesUrl("https://api.anthropic.com/v1")).toBe(
-      "https://api.anthropic.com/v1/messages",
-    )
+    expect(anthropicMessagesUrl("https://api.anthropic.com/v1")).toBe("https://api.anthropic.com/v1/messages")
     expect(anthropicMessagesUrl("https://gateway.example.com/anthropic/v1")).toBe(
       "https://gateway.example.com/anthropic/v1/messages",
     )
   })
 
   test("strips trailing slashes", () => {
-    expect(anthropicMessagesUrl("https://api.anthropic.com/v1/")).toBe(
-      "https://api.anthropic.com/v1/messages",
-    )
+    expect(anthropicMessagesUrl("https://api.anthropic.com/v1/")).toBe("https://api.anthropic.com/v1/messages")
   })
 
   test("does not double append when already complete", () => {
-    expect(anthropicMessagesUrl("https://api.anthropic.com/v1/messages")).toBe(
-      "https://api.anthropic.com/v1/messages",
-    )
+    expect(anthropicMessagesUrl("https://api.anthropic.com/v1/messages")).toBe("https://api.anthropic.com/v1/messages")
   })
 
   test("rewrites mistaken chat/completions suffix", () => {
@@ -78,6 +97,9 @@ describe("anthropicMessagesUrl", () => {
 
 describe("testEndpointUrl", () => {
   test("routes by protocol", () => {
+    expect(testEndpointUrl("https://gateway.example.com/v1beta", "google-generate-content", "gemini")).toBe(
+      "https://gateway.example.com/v1beta/models/gemini:generateContent",
+    )
     expect(testEndpointUrl("https://api.example.com/v1", "openai-chat")).toBe(
       "https://api.example.com/v1/chat/completions",
     )
@@ -109,6 +131,25 @@ describe("anthropicMessagesTestBody", () => {
 })
 
 describe("buildTestHeaders", () => {
+  test("uses Google API key authentication and allows custom headers", () => {
+    expect(buildTestHeaders({ apiKey: " google-key ", protocol: "google-generate-content" })).toEqual({
+      "Content-Type": "application/json",
+      "x-goog-api-key": "google-key",
+    })
+    expect(buildTestHeaders({ apiKey: "{env:GOOGLE_KEY}", protocol: "google-generate-content" })).toEqual({
+      "Content-Type": "application/json",
+    })
+    expect(
+      buildTestHeaders({
+        apiKey: "",
+        protocol: "google-generate-content",
+        headers: [{ key: "x-goog-api-key", value: "custom" }],
+      }),
+    ).toEqual({
+      "Content-Type": "application/json",
+      "x-goog-api-key": "custom",
+    })
+  })
   test("adds bearer auth for bare keys (openai)", () => {
     expect(buildTestHeaders({ apiKey: " sk-test " })).toEqual({
       "Content-Type": "application/json",
@@ -155,6 +196,74 @@ describe("buildTestHeaders", () => {
 })
 
 describe("testProviderModel", () => {
+  test.each([
+    ["@ai-sdk/groq", "/chat/completions"],
+    ["@ai-sdk/mistral", "/chat/completions"],
+    ["@ai-sdk/alibaba", "/chat/completions"],
+    ["@openrouter/ai-sdk-provider", "/chat/completions"],
+    ["@ai-sdk/xai", "/chat/completions"],
+    ["@ai-sdk/togetherai", "/chat/completions"],
+    ["@ai-sdk/cerebras", "/chat/completions"],
+    ["@ai-sdk/deepinfra", "/openai/chat/completions"],
+  ])("probes %s using its SDK URL and bearer authentication", async (npm, suffix) => {
+    const base = "https://gateway.example.com/v1"
+    expect(resolveTestProtocol(npm)).toBe("openai-chat")
+    expect(testEndpointUrl(base, resolveTestProtocol(npm), "smoke", npm)).toBe(base + suffix)
+    expect(providerModelsUrl(` ${base}/ `, npm)).toBe(base + suffix.replace("/chat/completions", "/models"))
+    const result = await testProviderModel({
+      baseURL: base,
+      apiKey: "test-key",
+      npm,
+      modelId: "smoke",
+      fetchImpl: async (url, init) => {
+        expect(String(url)).toBe(base + suffix)
+        expect(init?.headers).toEqual({ "Content-Type": "application/json", Authorization: "Bearer test-key" })
+        expect(JSON.parse(String(init?.body))).toEqual(chatCompletionsTestBody("smoke"))
+        return Response.json({ choices: [{ message: { content: "pong" } }] })
+      },
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  test("keeps DeepInfra URL construction identical to its SDK", () => {
+    expect(providerModelsUrl("", "@ai-sdk/deepinfra")).toBe("")
+    expect(providerModelsUrl("https://gateway.example.com/v1/openai", "@ai-sdk/deepinfra")).toBe(
+      "https://gateway.example.com/v1/openai/openai/models",
+    )
+    expect(providerModelsUrl("https://gateway.example.com/v1/openai", "@ai-sdk/openai-compatible")).toBe(
+      "https://gateway.example.com/v1/openai/models",
+    )
+  })
+  test("sends Google contents and receives the generated response", async () => {
+    const body = { contents: [{ role: "user", parts: [{ text: "ping" }] }], generationConfig: { maxOutputTokens: 1 } }
+    expect(testRequestBody("gemini", "google-generate-content")).toEqual(body)
+    const result = await testProviderModel({
+      baseURL: "https://gateway.example.com/v1beta",
+      apiKey: "google-test-key",
+      modelId: "gemini-2.5-flash",
+      npm: "@ai-sdk/google",
+      fetchImpl: async (input, init) => {
+        expect(String(input)).toBe("https://gateway.example.com/v1beta/models/gemini-2.5-flash:generateContent")
+        expect(init?.method).toBe("POST")
+        expect(init?.headers).toEqual({ "Content-Type": "application/json", "x-goog-api-key": "google-test-key" })
+        expect(JSON.parse(String(init?.body))).toEqual(body)
+        return Response.json({ candidates: [{ content: { role: "model", parts: [{ text: "pong" }] } }] })
+      },
+    })
+    expect(result.ok).toBe(true)
+    expect(result.preview).toContain("pong")
+  })
+
+  test("Google validates a missing model before fetching", async () => {
+    const result = await testProviderModel({
+      baseURL: "https://gateway.example.com/v1beta",
+      apiKey: "",
+      modelId: "",
+      npm: "@ai-sdk/google",
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toBe("missing model id")
+  })
   test("fails fast without baseURL or model id", async () => {
     const missingBase = await testProviderModel({ baseURL: "", apiKey: "k", modelId: "m" })
     expect(missingBase.ok).toBe(false)
@@ -276,11 +385,7 @@ describe("testProviderModel", () => {
             reject(new DOMException("Aborted", "AbortError"))
             return
           }
-          signal.addEventListener(
-            "abort",
-            () => reject(new DOMException("Aborted", "AbortError")),
-            { once: true },
-          )
+          signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true })
         })
       },
     })

@@ -1,0 +1,12 @@
+# PURPOSE
+Capture a screenshot of the page currently open in the embedded desktop browser.
+
+Use this for VISUAL verification of your code edits or page interactions.
+
+Returns a PNG image you can view directly (the bytes are read from disk when
+the conversation is assembled).
+
+# GUIDELINES
+- Use `fullPage: true` to capture the entire scrollable page instead of the visible viewport.
+- Each screenshot is saved to `.opencode/tmp/attachments/screenshot-<timestamp>.png` in the project.
+- Present the screenshot using `present_file` when the user should see it, or reference the path in prompts and other tools.

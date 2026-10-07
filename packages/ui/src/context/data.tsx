@@ -63,6 +63,12 @@ export type LoadPresentationFn = (input: {
 
 export type OpenPresentationSourceFn = (input: { sessionID: string; path: string }) => void
 
+export type OpenTaskFn = (input: {
+  sessionID: string
+  kind: "project_task" | "scheduled_task"
+  taskID: string
+}) => void
+
 export const { use: useData, provider: DataProvider } = createSimpleContext({
   name: "Data",
   init: (props: {
@@ -74,6 +80,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
     onAdvisorIntervention?: AdvisorInterventionFn
     loadPresentation?: LoadPresentationFn
     openPresentationSource?: OpenPresentationSourceFn
+    onOpenTask?: OpenTaskFn
   }) => {
     // One shared lookup per sessions snapshot: task tool cards resolve their
     // child session through it instead of scanning the full session list.
@@ -94,6 +101,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
       advisorIntervention: props.onAdvisorIntervention,
       loadPresentation: props.loadPresentation,
       openPresentationSource: props.openPresentationSource,
+      openTask: props.onOpenTask,
     }
   },
 })

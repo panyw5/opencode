@@ -57,7 +57,18 @@ export function Tooltip(props: TooltipProps) {
   ])
 
   const close = () => setState("open", false)
-  const mount = () => setState("mounted", true)
+  const mount = (reason: "pointer" | "focus", event?: PointerEvent) => {
+    if (state.mounted) return
+    setState("mounted", true)
+    if (!local.lazyMount) return
+    requestAnimationFrame(() => {
+      const hit = event && document.elementFromPoint(event.clientX, event.clientY)
+      const active =
+        reason === "pointer" ? ref?.matches(":hover") || (!!hit && !!ref?.contains(hit)) : ref?.matches(":focus-within")
+      console.debug(`[tooltip-lazy-mount] reason=${reason} active=${String(!!active)}`)
+      if (active) setState("open", true)
+    })
+  }
 
   const inside = () => {
     const active = document.activeElement
@@ -119,12 +130,12 @@ export function Tooltip(props: TooltipProps) {
           data-component="tooltip-trigger"
           data-lazy-mount
           class={local.class}
-          onPointerEnter={mount}
-          onFocusIn={mount}
+          onPointerEnter={(event) => mount("pointer", event)}
+          onFocusIn={() => mount("focus")}
           onPointerDown={arm}
           onKeyDown={(event: KeyboardEvent) => {
             if (event.key !== "Enter" && event.key !== " ") return
-            mount()
+            mount("focus")
             arm()
           }}
         >
@@ -150,8 +161,8 @@ export function Tooltip(props: TooltipProps) {
             as={"div"}
             data-component="tooltip-trigger"
             class={local.class}
-            onPointerEnter={mount}
-            onFocusIn={mount}
+            onPointerEnter={(event) => mount("pointer", event)}
+            onFocusIn={() => mount("focus")}
             onPointerDownCapture={arm}
             onKeyDownCapture={(event: KeyboardEvent) => {
               if (event.key !== "Enter" && event.key !== " ") return

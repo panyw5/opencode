@@ -1,8 +1,21 @@
 import { describe, expect, test } from "bun:test"
-import { readDiagramMetadata } from "./diagram-card"
+import { nextDiagramZoom, readDiagramMetadata } from "./diagram-card"
 import { mixDiagramColor, renderDiagramSvg, svgAspectRatio } from "./diagram-render"
 
 describe("diagram card", () => {
+  test("zooms in and out in reversible quarter-size steps", () => {
+    expect(nextDiagramZoom(1, "in")).toBe(1.25)
+    expect(nextDiagramZoom(1, "out")).toBe(0.75)
+    expect(nextDiagramZoom(nextDiagramZoom(1, "in"), "out")).toBe(1)
+  })
+
+  test("clamps diagram zoom to a usable range", () => {
+    expect(nextDiagramZoom(0.25, "out")).toBe(0.25)
+    expect(nextDiagramZoom(3, "in")).toBe(3)
+    expect(nextDiagramZoom(0.25, "in")).toBe(0.5)
+    expect(nextDiagramZoom(3, "out")).toBe(2.75)
+  })
+
   test("reads Mermaid source from the tool input", () => {
     expect(
       readDiagramMetadata(
@@ -10,6 +23,29 @@ describe("diagram card", () => {
         { diagram: { id: "dg_1", syntax: "mermaid", title: "Flow", caption: "Overview", bytes: 21 } },
       ),
     ).toEqual({ id: "dg_1", syntax: "mermaid", source: "flowchart LR\n  A --> B", title: "Flow", caption: "Overview" })
+  })
+
+  test("reads flowchart diagrams from the compiled Mermaid metadata", () => {
+    const metadata = {
+      diagram: {
+        id: "dg_2",
+        syntax: "flowchart",
+        title: "Pipeline",
+        bytes: 64,
+        mermaid: 'flowchart TD\n  a["A"] --> b',
+      },
+    }
+    expect(readDiagramMetadata({ source: '{"edges":[{"from":"a","to":"b"}]}' }, metadata)).toEqual({
+      id: "dg_2",
+      syntax: "flowchart",
+      source: 'flowchart TD\n  a["A"] --> b',
+      title: "Pipeline",
+      caption: undefined,
+    })
+    // Without compiled Mermaid metadata there is nothing renderable.
+    expect(
+      readDiagramMetadata({ source: "{}" }, { diagram: { id: "dg_3", syntax: "flowchart", title: "Broken" } }),
+    ).toBeUndefined()
   })
 
   test("rejects incomplete metadata and source", () => {

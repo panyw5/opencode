@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   parseAgentMarkdown,
   upsertAgentMarkdownModel,
+  upsertAgentMarkdownVariant,
 } from "./config-agent-markdown"
 
 const coder = `---
@@ -184,5 +185,82 @@ body
     const next = upsertAgentMarkdownModel(input, "new/model")
     expect(next).toContain("  model: keep-me")
     expect(parseAgentMarkdown(next).model).toBe("new/model")
+  })
+})
+
+describe("upsertAgentMarkdownVariant", () => {
+  test("parses variant from frontmatter", () => {
+    const input = `---
+model: axonhub/glm-5.3-flash
+variant: max
+---
+body
+`
+    const parsed = parseAgentMarkdown(input)
+    expect(parsed.model).toBe("axonhub/glm-5.3-flash")
+    expect(parsed.variant).toBe("max")
+  })
+
+  test("replaces an existing variant", () => {
+    const input = `---
+model: axonhub/glm-5.3-flash
+variant: max
+---
+body
+`
+    const next = upsertAgentMarkdownVariant(input, "flash")
+    expect(parseAgentMarkdown(next).variant).toBe("flash")
+    expect(next).toContain("model: axonhub/glm-5.3-flash")
+    expect(next).toContain("body\n")
+  })
+
+  test("inserts variant next to the model line", () => {
+    const input = `---
+model: axonhub/glm-5.3-flash
+mode: subagent
+---
+body
+`
+    const next = upsertAgentMarkdownVariant(input, "max")
+    expect(next).toBe(`---
+model: axonhub/glm-5.3-flash
+variant: max
+mode: subagent
+---
+body
+`)
+  })
+
+  test("creates frontmatter when the file has none", () => {
+    const next = upsertAgentMarkdownVariant("Just a prompt.\n", "max")
+    expect(next).toBe(`---
+variant: max
+---
+
+Just a prompt.
+`)
+    expect(parseAgentMarkdown(next).variant).toBe("max")
+  })
+
+  test("clears variant and leaves the rest of the frontmatter", () => {
+    const next = upsertAgentMarkdownVariant(coder, "")
+    const parsed = parseAgentMarkdown(next)
+    expect(parsed.model).toBe("axonhub/glm-5.3-flash")
+    expect(parsed.variant).toBeUndefined()
+    expect(next).toContain("mode: subagent")
+    expect(next).not.toMatch(/^variant:/m)
+  })
+
+  test("does not rewrite nested keys named variant", () => {
+    const input = `---
+options:
+  variant: keep-me
+variant: old
+---
+body
+`
+    const next = upsertAgentMarkdownVariant(input, "new")
+    expect(next).toContain("  variant: keep-me")
+    expect(parseAgentMarkdown(next).variant).toBe("new")
   })
 })
