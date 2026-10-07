@@ -1,5 +1,5 @@
 import path from "path"
-import { lstat, realpath } from "fs/promises"
+import { lstat, readFile, realpath } from "fs/promises"
 import semver from "semver"
 import { Schema } from "effect"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
@@ -24,10 +24,13 @@ export type Loaded = {
   contributes: Contributes
   dir: string
   webRoot: string
-  entry: string
+  entry?: string
   styles: string[]
   icon?: string
+  serverEntry?: string
   versionSegment: string
+  webFingerprint: string
+  serverFingerprint?: string
 }
 
 async function ordinaryFile(file: string, label: string) {
@@ -45,29 +48,80 @@ async function inside(root: string, file: string, label: string) {
   return canonicalFile
 }
 
-function packageWebExport(json: Record<string, unknown>) {
+function packageExport(json: Record<string, unknown>, key: string) {
   const exports = json.exports
   if (!exports || typeof exports !== "object" || Array.isArray(exports)) return
-  return extractExportValue((exports as Record<string, unknown>)["./web"])
+  return extractExportValue((exports as Record<string, unknown>)[key])
 }
 
 function unique(values: string[]) {
   return Array.from(new Set(values))
 }
 
+async function contentFingerprint(root: string, files: string[]) {
+  const parts = await Promise.all(
+    files.map(async (file) => {
+      const content = await readFile(file)
+      return Buffer.concat([Buffer.from(`${path.relative(root, file)}\0`), content, Buffer.from("\0")])
+    }),
+  )
+  return Hash.fast(Buffer.concat(parts))
+}
+
 function validateContributions(manifest: Manifest) {
-  const viewers = manifest.contributes?.fileViewers ?? []
+  const contributes = manifest.contributes ?? {}
+  const viewers = new Set<string>()
+  const commands = new Set<string>()
+  const panels = new Set<string>()
   const ids = new Set<string>()
-  for (const viewer of viewers) {
+  for (const viewer of contributes.fileViewers ?? []) {
     if (ids.has(viewer.id)) throw new Error(`Extension has duplicate file viewer id: ${viewer.id}`)
     ids.add(viewer.id)
+    viewers.add(viewer.id)
     const matchers = [viewer.extensions?.length, viewer.filenames?.length, viewer.mime?.length]
     if (!matchers.some(Boolean)) throw new Error(`Extension file viewer ${viewer.id} has no matchers`)
   }
+  const tools = new Set<string>()
+  for (const renderer of contributes.toolRenderers ?? []) {
+    if (tools.has(renderer.tool)) throw new Error(`Extension has duplicate tool renderer: ${renderer.tool}`)
+    tools.add(renderer.tool)
+  }
+  for (const command of contributes.commands ?? []) {
+    if (ids.has(command.id)) throw new Error(`Extension has duplicate command id: ${command.id}`)
+    ids.add(command.id)
+    commands.add(command.id)
+  }
+  for (const panel of contributes.panels ?? []) {
+    if (ids.has(panel.id)) throw new Error(`Extension has duplicate panel id: ${panel.id}`)
+    ids.add(panel.id)
+    panels.add(panel.id)
+  }
   for (const activation of manifest.activation ?? ["onStartup"]) {
-    if (!activation.startsWith("onFileViewer:")) continue
-    const id = activation.slice("onFileViewer:".length)
-    if (!ids.has(id)) throw new Error(`Extension activation references unknown file viewer: ${id}`)
+    if (activation === "onStartup") continue
+    const separator = activation.indexOf(":")
+    const kind = activation.slice(0, separator)
+    const reference = activation.slice(separator + 1)
+    if (kind === "onFileViewer" && !viewers.has(reference))
+      throw new Error(`Extension activation references unknown file viewer: ${reference}`)
+    if (kind === "onCommand" && !commands.has(reference))
+      throw new Error(`Extension activation references unknown command: ${reference}`)
+    if (kind === "onPanel" && !panels.has(reference))
+      throw new Error(`Extension activation references unknown panel: ${reference}`)
+    if (kind === "onTool" && !tools.has(reference))
+      throw new Error(`Extension activation references unknown tool: ${reference}`)
+  }
+  for (const [key, setting] of Object.entries(contributes.settings ?? {})) {
+    if (setting.enum) {
+      if (setting.type === "boolean")
+        throw new Error(`Extension setting ${key} must not declare enum values for boolean type`)
+      if (setting.enum.some((value) => typeof value !== setting.type))
+        throw new Error(`Extension setting ${key} has enum values that do not match its type`)
+    }
+    if (setting.default === undefined) continue
+    if (typeof setting.default !== setting.type)
+      throw new Error(`Extension setting ${key} has a default that does not match its type`)
+    if (setting.enum && !setting.enum.some((value) => value === setting.default))
+      throw new Error(`Extension setting ${key} has a default that is not one of its enum values`)
   }
 }
 
@@ -96,31 +150,62 @@ export async function load(directory: string, options: { opencodeVersion?: strin
     throw new CompatibilityError(error instanceof Error ? error.message.replace(/^Plugin/, "Extension") : String(error))
   }
 
-  const exported = packageWebExport(pkg.json)
-  if (!exported) throw new Error('Extension package does not expose exports["./web"]')
-  const entry = resolvePackageFile(manifest.id, exported, "web", pkg)
-  await ordinaryFile(entry, "web entry")
-  const webRoot = path.dirname(await realpath(entry))
+  const webExported = packageExport(pkg.json, "./web")
+  const serverExported = packageExport(pkg.json, "./server")
+  if (!webExported && !serverExported)
+    throw new Error('Extension package must expose exports["./web"] or exports["./server"]')
+  if (webExported && !manifest.web)
+    throw new Error('Extension manifest requires opencode.web when exports["./web"] is present')
+  if (!webExported && manifest.web)
+    throw new Error('Extension manifest declares opencode.web but the package does not expose exports["./web"]')
 
-  const styles = await Promise.all(
-    unique(manifest.web.styles ?? []).map(async (raw) => {
-      const file = resolvePackageFile(manifest.id, raw, "web style", pkg)
-      return inside(webRoot, file, "web style")
-    }),
-  )
-  const icon = manifest.icon
-    ? await inside(webRoot, resolvePackageFile(manifest.id, manifest.icon, "web icon", pkg), "web icon")
-    : undefined
+  let entry: string | undefined
+  let entryAbsolute: string | undefined
+  let webRoot = dir
+  let icon: string | undefined
+  let iconAbsolute: string | undefined
+  let styleAbsolute: string[] = []
+  if (webExported && manifest.web) {
+    const webEntry = resolvePackageFile(manifest.id, webExported, "web", pkg)
+    await ordinaryFile(webEntry, "web entry")
+    webRoot = path.dirname(await realpath(webEntry))
+    entry = path.relative(webRoot, webEntry).replaceAll("\\", "/")
+    entryAbsolute = webEntry
+
+    styleAbsolute = await Promise.all(
+      unique(manifest.web.styles ?? []).map(async (raw) => {
+        const file = resolvePackageFile(manifest.id, raw, "web style", pkg)
+        return inside(webRoot, file, "web style")
+      }),
+    )
+    if (manifest.icon) {
+      iconAbsolute = await inside(webRoot, resolvePackageFile(manifest.id, manifest.icon, "web icon", pkg), "web icon")
+      icon = path.relative(webRoot, iconAbsolute).replaceAll("\\", "/")
+    }
+  } else if (manifest.icon) {
+    iconAbsolute = await inside(dir, resolvePackageFile(manifest.id, manifest.icon, "web icon", pkg), "web icon")
+    icon = path.relative(dir, iconAbsolute).replaceAll("\\", "/")
+  }
+
+  let serverEntry: string | undefined
+  let serverEntryAbsolute: string | undefined
+  if (serverExported) {
+    serverEntryAbsolute = resolvePackageFile(manifest.id, serverExported, "server", pkg)
+    await ordinaryFile(serverEntryAbsolute, "server entry")
+    serverEntry = path.relative(dir, serverEntryAbsolute).replaceAll("\\", "/")
+  }
 
   const packageFile = path.join(dir, "package.json")
-  const fingerprintFiles = [packageFile, entry, ...styles, ...(icon ? [icon] : [])]
-  const fingerprint = await Promise.all(
-    fingerprintFiles.map(async (file) => {
-      const stat = await lstat(file)
-      return `${path.relative(dir, file)}:${stat.size}:${Math.floor(stat.mtimeMs)}`
-    }),
-  )
-  const versionSegment = `${version}-${Hash.fast(fingerprint.join("\0")).slice(0, 12)}`
+  const webFingerprint = await contentFingerprint(dir, [
+    packageFile,
+    ...(entryAbsolute ? [entryAbsolute] : []),
+    ...styleAbsolute,
+    ...(iconAbsolute ? [iconAbsolute] : []),
+  ])
+  const versionSegment = `${version}-${webFingerprint.slice(0, 12)}`
+  const serverFingerprint = serverEntryAbsolute
+    ? await contentFingerprint(dir, [packageFile, serverEntryAbsolute])
+    : undefined
 
   return {
     id: manifest.id,
@@ -133,10 +218,13 @@ export async function load(directory: string, options: { opencodeVersion?: strin
     contributes: manifest.contributes ?? {},
     dir,
     webRoot,
-    entry: path.relative(webRoot, entry).replaceAll("\\", "/"),
-    styles: styles.map((file) => path.relative(webRoot, file).replaceAll("\\", "/")),
-    icon: icon ? path.relative(webRoot, icon).replaceAll("\\", "/") : undefined,
+    entry,
+    styles: styleAbsolute.map((file) => path.relative(webRoot, file).replaceAll("\\", "/")),
+    icon,
+    serverEntry,
     versionSegment,
+    webFingerprint,
+    serverFingerprint,
   }
 }
 

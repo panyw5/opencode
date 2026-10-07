@@ -1,8 +1,41 @@
-import { createMemo, createSignal, Show } from "solid-js"
+import { createMemo, createSignal, For, Show } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Spinner } from "@opencode-ai/ui/spinner"
-import { defineWebExtension, type FileViewerProps } from "@opencode-ai/extension-kit/web"
+import { defineWebExtension, type ExtensionContext, type FileViewerProps } from "@opencode-ai/extension-kit/web"
 import "./web.css"
+
+const EXTENSION_ID = "example.hello-viewer"
+const GREETING_EVENT = `${EXTENSION_ID}/greeting`
+
+type HelloRpc = ExtensionContext["rpc"]
+type HelloEvents = ExtensionContext["events"]
+type Bridge = { rpc?: HelloRpc; events?: HelloEvents }
+
+const [bridge, setBridge] = createSignal<Bridge>({})
+const [log, setLog] = createSignal<string[]>([])
+const [busy, setBusy] = createSignal<"echo" | "child" | "greet" | undefined>(undefined)
+
+const stamp = () => new Date().toLocaleTimeString()
+
+function appendLog(entry: string) {
+  setLog((prev) => [...prev.slice(-19), `[${stamp()}] ${entry}`])
+}
+
+async function runRpc(label: string, run: (rpc: HelloRpc) => Promise<string>) {
+  const rpc = bridge().rpc
+  if (!rpc) {
+    appendLog(`${label}: RPC bridge not available in this host`)
+    return
+  }
+  setBusy(label === "echo" ? "echo" : label === "greet" ? "greet" : "child")
+  try {
+    appendLog(`${label}: ${await run(rpc)}`)
+  } catch (error) {
+    appendLog(`${label} failed: ${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    setBusy(undefined)
+  }
+}
 
 type ViewerState =
   | { status: "idle" }
@@ -13,6 +46,7 @@ type ViewerState =
 function HelloViewer(props: FileViewerProps) {
   const [state, setState] = createSignal<ViewerState>({ status: "idle" })
   const lines = createMemo(() => (props.text() ?? "").split("\n"))
+  const rpcAvailable = createMemo(() => bridge().rpc !== undefined)
 
   const inspect = async () => {
     setState({ status: "loading" })
@@ -23,6 +57,31 @@ function HelloViewer(props: FileViewerProps) {
       setState({ status: "error", message: error instanceof Error ? error.message : String(error) })
     }
   }
+
+  const echo = () =>
+    void runRpc("echo", async (rpc) => {
+      const result = await rpc.call<{ echo: string; at: string }>("echo", {
+        message: `hello from web (${props.file.path})`,
+      })
+      return JSON.stringify(result)
+    })
+
+  const childPing = () =>
+    void runRpc("child", async (rpc) => {
+      await rpc.call("child.start")
+      try {
+        const ping = await rpc.call<{ echoed: string }>("child.ping", { text: `ping (${props.file.name})` })
+        return JSON.stringify(ping)
+      } finally {
+        await rpc.call("child.stop")
+      }
+    })
+
+  const greet = () =>
+    void runRpc("greet", async (rpc) => {
+      const result = await rpc.call<{ message: string }>("greet", { message: `greet me (${props.file.name})` })
+      return `server emitted event: ${JSON.stringify(result)}`
+    })
 
   return (
     <section class="oc-hello-viewer-root">
@@ -52,9 +111,41 @@ function HelloViewer(props: FileViewerProps) {
 
       <ol class="oc-hello-viewer-lines">
         {lines().map((line) => (
-          <li>{line || " "}</li>
+          <li>{line || " "}</li>
         ))}
       </ol>
+
+      <footer class="oc-hello-viewer-console">
+        <div class="oc-hello-viewer-console-head">
+          <span class="oc-hello-viewer-title">Server bridge</span>
+          <span
+            class="oc-hello-viewer-bridge-state"
+            classList={{ "is-on": rpcAvailable() }}
+            title={rpcAvailable() ? "ctx.rpc / ctx.events available" : "host did not provide the RPC bridge yet"}
+          >
+            {rpcAvailable() ? "rpc: on" : "rpc: off"}
+          </span>
+        </div>
+        <div class="oc-hello-viewer-console-actions">
+          <Button size="small" variant="secondary" disabled={!rpcAvailable() || busy() !== undefined} onClick={echo}>
+            Echo RPC
+          </Button>
+          <Button size="small" variant="secondary" disabled={!rpcAvailable() || busy() !== undefined} onClick={childPing}>
+            Child ping
+          </Button>
+          <Button size="small" variant="secondary" disabled={!rpcAvailable() || busy() !== undefined} onClick={greet}>
+            Greet (event)
+          </Button>
+        </div>
+        <Show
+          when={rpcAvailable()}
+          fallback={<div class="oc-hello-viewer-log">Server bridge not provided by this host; viewer-only mode.</div>}
+        >
+          <ul class="oc-hello-viewer-log">
+            <For each={log()}>{(entry) => <li>{entry}</li>}</For>
+          </ul>
+        </Show>
+      </footer>
     </section>
   )
 }
@@ -66,11 +157,22 @@ function statusText(value: ViewerState) {
 }
 
 export default defineWebExtension({
-  id: "example.hello-viewer",
+  id: EXTENSION_ID,
   apiVersion: 1,
-  activate(context) {
+  activate(context: ExtensionContext) {
     context.log.info("activating hello viewer")
+    const offGreeting = context.events.on(GREETING_EVENT, (data) => {
+      const payload = data && typeof data === "object" ? (data as { message?: unknown }) : undefined
+      appendLog(`event ${GREETING_EVENT}: ${typeof payload?.message === "string" ? payload.message : JSON.stringify(data)}`)
+    })
+    setBridge({ rpc: context.rpc, events: context.events })
+
     const registration = context.fileViewers.register({ id: "hello", component: HelloViewer })
-    return () => registration.dispose()
+    return () => {
+      registration.dispose()
+      offGreeting.dispose()
+      setBridge({})
+      setLog([])
+    }
   },
 })

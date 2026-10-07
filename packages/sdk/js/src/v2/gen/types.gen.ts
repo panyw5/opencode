@@ -20,6 +20,8 @@ export type Event =
   | EventTodoUpdated
   | EventSessionDiff
   | EventSessionError
+  | EventExtensionStatus
+  | EventExtensionEvent
   | EventSessionStatus
   | EventSessionIdle
   | EventQuestionAsked
@@ -49,7 +51,6 @@ export type Event =
   | EventWorktreeFailed
   | EventInstallationUpdated
   | EventInstallationUpdateAvailable
-  | EventExtensionStatus
   | EventMessageUpdated
   | EventMessageRemoved
   | EventMessagePartUpdated
@@ -140,17 +141,55 @@ export type ExtensionFileViewerContribution = {
   extensions?: Array<string>
   filenames?: Array<string>
   mime?: Array<string>
-  priority?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  priority?: number
   mode?: "replace" | "preview"
+}
+
+export type ExtensionToolRendererContribution = {
+  tool: string
+}
+
+export type ExtensionCommandContribution = {
+  id: string
+  title: string
+  category?: string
+  keybind?: string
+  slash?: string
+}
+
+export type ExtensionPanelContribution = {
+  id: string
+  title: string
+  icon?: string
+}
+
+export type ExtensionSettingDefinition = {
+  type: "string" | "number" | "boolean"
+  title: string
+  description?: string
+  default?: string | number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | boolean
+  enum?: Array<string | number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN">
+  secret?: boolean
 }
 
 export type ExtensionContributes = {
   fileViewers?: Array<ExtensionFileViewerContribution>
+  toolRenderers?: Array<ExtensionToolRendererContribution>
+  commands?: Array<ExtensionCommandContribution>
+  panels?: Array<ExtensionPanelContribution>
+  settings?: {
+    [key: string]: unknown | ExtensionSettingDefinition
+  }
+}
+
+export type ExtensionServerInfo = {
+  hasService: boolean
+  hasInstanceHooks: boolean
 }
 
 export type ExtensionWebInfo = {
   base: string
-  entry: string
+  entry?: string
   styles: Array<string>
   apiVersion: 1
 }
@@ -169,7 +208,43 @@ export type ExtensionInfo = {
   activation: Array<string>
   contributes: ExtensionContributes
   permissions: Array<string>
+  settings?: {
+    [key: string]: unknown
+  }
+  server?: ExtensionServerInfo
   web?: ExtensionWebInfo
+}
+
+export type ExtensionSettingsPatch = {
+  [key: string]: unknown
+}
+
+export type ExtensionRpcResult = {
+  result: unknown
+}
+
+export type ExtensionRpcError = {
+  _tag: "ExtensionRpcError"
+  code: string
+  message: string
+}
+
+export type TimeoutError = {
+  _tag: "TimeoutError"
+  message: string
+  operation?: string
+}
+
+export type UnknownError = {
+  _tag: "UnknownError"
+  message: string
+  ref?: string
+}
+
+export type ServiceUnavailableError = {
+  _tag: "ServiceUnavailableError"
+  message: string
+  service?: string
 }
 
 export type PermissionRequest = {
@@ -245,7 +320,7 @@ export type ProviderAuthError = {
   }
 }
 
-export type UnknownError = {
+export type UnknownError1 = {
   name: "UnknownError"
   data: {
     message: string
@@ -297,6 +372,19 @@ export type ApiError = {
       [key: string]: string
     }
   }
+}
+
+export type ExtensionStatusProperties = {
+  id: string
+  version: string
+  state: "installed" | "enabled" | "disabled" | "error" | "changed"
+  error?: string
+}
+
+export type ExtensionEventProperties = {
+  id: string
+  name: string
+  data: unknown
 }
 
 export type SessionStatus =
@@ -498,13 +586,6 @@ export type ScheduledTaskRun = {
   }
 }
 
-export type ExtensionStatusProperties = {
-  id: string
-  version: string
-  state: "installed" | "enabled" | "disabled" | "error" | "changed"
-  error?: string
-}
-
 export type OutputFormatText = {
   type: "text"
 }
@@ -556,7 +637,7 @@ export type AssistantMessage = {
   }
   error?:
     | ProviderAuthError
-    | UnknownError
+    | UnknownError1
     | MessageOutputLengthError
     | MessageAbortedError
     | StructuredOutputError
@@ -1451,6 +1532,8 @@ export type GlobalEvent = {
     | EventTodoUpdated
     | EventSessionDiff
     | EventSessionError
+    | EventExtensionStatus
+    | EventExtensionEvent
     | EventSessionStatus
     | EventSessionIdle
     | EventQuestionAsked
@@ -1480,7 +1563,6 @@ export type GlobalEvent = {
     | EventWorktreeFailed
     | EventInstallationUpdated
     | EventInstallationUpdateAvailable
-    | EventExtensionStatus
     | EventMessageUpdated
     | EventMessageRemoved
     | EventMessagePartUpdated
@@ -2262,18 +2344,6 @@ export type SessionNotFoundError = {
   message: string
 }
 
-export type ServiceUnavailableError = {
-  _tag: "ServiceUnavailableError"
-  message: string
-  service?: string
-}
-
-export type UnknownError1 = {
-  _tag: "UnknownError"
-  message: string
-  ref?: string
-}
-
 export type V2SessionMessagesResponse = {
   items: Array<SessionMessage>
   cursor: {
@@ -2303,6 +2373,14 @@ export type WorkspaceWarpError = {
   name: "WorkspaceWarpError"
   data: {
     message: string
+  }
+}
+
+export type UnknownError2 = {
+  name: "UnknownError"
+  data: {
+    message: string
+    ref?: string
   }
 }
 
@@ -3137,13 +3215,25 @@ export type EventSessionError = {
     sessionID?: string
     error?:
       | ProviderAuthError
-      | UnknownError
+      | UnknownError1
       | MessageOutputLengthError
       | MessageAbortedError
       | StructuredOutputError
       | ContextOverflowError
       | ApiError
   }
+}
+
+export type EventExtensionStatus = {
+  id: string
+  type: "extension.status"
+  properties: ExtensionStatusProperties
+}
+
+export type EventExtensionEvent = {
+  id: string
+  type: "extension.event"
+  properties: ExtensionEventProperties
 }
 
 export type EventSessionStatus = {
@@ -3372,12 +3462,6 @@ export type EventInstallationUpdateAvailable = {
   properties: {
     version: string
   }
-}
-
-export type EventExtensionStatus = {
-  id: string
-  type: "extension.status"
-  properties: ExtensionStatusProperties
 }
 
 export type EventMessageUpdated = {
@@ -4662,6 +4746,86 @@ export type ExtensionDisableResponses = {
 }
 
 export type ExtensionDisableResponse = ExtensionDisableResponses[keyof ExtensionDisableResponses]
+
+export type ExtensionSettingsUpdateData = {
+  body?: ExtensionSettingsPatch
+  path: {
+    id: string
+  }
+  query?: never
+  url: "/global/extension/{id}/settings"
+}
+
+export type ExtensionSettingsUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type ExtensionSettingsUpdateError = ExtensionSettingsUpdateErrors[keyof ExtensionSettingsUpdateErrors]
+
+export type ExtensionSettingsUpdateResponses = {
+  /**
+   * Updated extension settings
+   */
+  200: ExtensionInfo
+}
+
+export type ExtensionSettingsUpdateResponse = ExtensionSettingsUpdateResponses[keyof ExtensionSettingsUpdateResponses]
+
+export type ExtensionRpcData = {
+  body?: {
+    input?: unknown
+  }
+  path: {
+    id: string
+    method: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/extension/{id}/rpc/{method}"
+}
+
+export type ExtensionRpcErrors = {
+  /**
+   * ExtensionRpcError | InvalidRequestError
+   */
+  400: ExtensionRpcError | InvalidRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+  /**
+   * UnknownError
+   */
+  500: UnknownError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+  /**
+   * TimeoutError
+   */
+  504: TimeoutError
+}
+
+export type ExtensionRpcError2 = ExtensionRpcErrors[keyof ExtensionRpcErrors]
+
+export type ExtensionRpcResponses = {
+  /**
+   * Extension RPC result
+   */
+  200: ExtensionRpcResult
+}
+
+export type ExtensionRpcResponse = ExtensionRpcResponses[keyof ExtensionRpcResponses]
 
 export type GlobalHealthData = {
   body?: never
@@ -10556,7 +10720,7 @@ export type V2SessionContextErrors = {
   /**
    * UnknownError
    */
-  500: UnknownError1
+  500: UnknownError
 }
 
 export type V2SessionContextError = V2SessionContextErrors[keyof V2SessionContextErrors]
@@ -10604,7 +10768,7 @@ export type V2SessionMessagesErrors = {
   /**
    * UnknownError
    */
-  500: UnknownError1
+  500: UnknownError
 }
 
 export type V2SessionMessagesError = V2SessionMessagesErrors[keyof V2SessionMessagesErrors]

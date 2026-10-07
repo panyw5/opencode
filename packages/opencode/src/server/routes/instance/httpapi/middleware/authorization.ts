@@ -1,5 +1,5 @@
 import { ServerAuth } from "@/server/auth"
-import { Effect, Encoding, Layer, Redacted } from "effect"
+import { Effect, Encoding, Layer, Redacted, Result } from "effect"
 import { HttpEffect, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiError, HttpApiMiddleware } from "effect/unstable/httpapi"
 import { hasExtensionAssetTokenURL, isExtensionAssetPath } from "@/server/shared/extension-asset"
@@ -53,35 +53,37 @@ function validateCredential<A, E, R>(
   })
 }
 
+function parseCredential(header: string) {
+  const colon = header.indexOf(":")
+  if (colon < 0) return emptyCredential()
+  return { username: header.slice(0, colon), password: Redacted.make(header.slice(colon + 1)) }
+}
+
 function decodeCredential(input: string) {
   return Effect.fromResult(Encoding.decodeBase64String(input)).pipe(
-    Effect.match({
-      onFailure: emptyCredential,
-      onSuccess: (header) => {
-        const parts = header.split(":")
-        if (parts.length !== 2) return emptyCredential()
-        return {
-          username: parts[0],
-          password: Redacted.make(parts[1]),
-        }
-      },
-    }),
+    Effect.match({ onFailure: emptyCredential, onSuccess: parseCredential }),
   )
+}
+
+function decodeQueryCredential(input: string) {
+  const strict = Encoding.decodeBase64String(input)
+  const decoded = Result.isSuccess(strict) ? strict : Encoding.decodeBase64UrlString(input)
+  return Effect.fromResult(decoded).pipe(Effect.match({ onFailure: emptyCredential, onSuccess: parseCredential }))
 }
 
 function credentialFromRequest(request: HttpServerRequest.HttpServerRequest) {
   return credentialFromURL(new URL(request.url, "http://localhost"), request)
 }
 
-function credentialFromURL(url: URL, request: HttpServerRequest.HttpServerRequest) {
+export function credentialFromURL(url: URL, request: HttpServerRequest.HttpServerRequest) {
   const token = url.searchParams.get(AUTH_TOKEN_QUERY)
-  if (token) return decodeCredential(token)
+  if (token) return decodeQueryCredential(token)
   const match = /^Basic\s+(.+)$/i.exec(request.headers.authorization ?? "")
   if (match) return decodeCredential(match[1])
   return Effect.succeed(emptyCredential())
 }
 
-function validateRawCredential<A, E, R>(
+export function validateRawCredential<A, E, R>(
   effect: Effect.Effect<A, E, R>,
   credential: ServerAuth.DecodedCredentials,
   config: ServerAuth.Info,

@@ -6,6 +6,7 @@
   "license": "MIT",
   "exports": {
     "./web": "./src/web.ts",
+    "./server": "./src/server.ts",
     "./vite": "./vite.js"
   },
   "scripts": {
@@ -18,6 +19,7 @@
     "vite-plugin-solid": "^2.11.0"
   },
   "devDependencies": {
+    "@opencode-ai/plugin": "workspace:*",
     "@opencode-ai/ui": "workspace:*",
     "@tsconfig/node22": "catalog:",
     "@types/bun": "catalog:",

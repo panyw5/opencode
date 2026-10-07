@@ -99,12 +99,30 @@ describe("injectionPreviewFromParts", () => {
     expect(injectionPreviewFromParts(parts)).toBe("搜索最新的新闻。")
   })
 
+  test.each(["Background shell completed", "Background shell failed"])(
+    "previews legacy background shell notifications without metadata: %s",
+    (text) => {
+      const parts = [
+        {
+          id: "text_1",
+          type: "text",
+          text,
+          synthetic: true,
+          sessionID: "ses_1",
+          messageID: "msg_1",
+        },
+      ] satisfies Part[]
+
+      expect(injectionPreviewFromParts(parts)).toBe(text)
+    },
+  )
+
   test("ignores non-injection synthetic text", () => {
     const parts = [
       {
         id: "text_1",
         type: "text",
-        text: "Background shell completed",
+        text: "Session state restored",
         synthetic: true,
         sessionID: "ses_1",
         messageID: "msg_1",

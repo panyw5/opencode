@@ -24,7 +24,9 @@ export const DialogSettings: Component<{ returnTarget?: ConfigReturnTarget }> = 
     console.debug(`[settings-nav] dialog-config pathname=${window.location.pathname} dir=${params.dir ?? "none"}`)
     dialog.close()
     const target = params.dir ? `/${params.dir}/config` : "/config"
-    console.debug(`[settings-nav] dialog-config navigate target=${target} return=${props.returnTarget?.href ?? "fallback"}`)
+    console.debug(
+      `[settings-nav] dialog-config navigate target=${target} return=${props.returnTarget?.href ?? "fallback"}`,
+    )
     navigate(target, { state: props.returnTarget })
   }
 

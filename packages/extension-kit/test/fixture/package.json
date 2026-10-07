@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@opencode-ai/extension-kit-scope-fixture",
+  "version": "1.18.49",
+  "private": true,
+  "type": "module",
+  "opencode": {
+    "manifestVersion": 1,
+    "id": "example.scope-fixture",
+    "displayName": "Scope Fixture",
+    "web": {
+      "apiVersion": 1
+    }
+  }
+}

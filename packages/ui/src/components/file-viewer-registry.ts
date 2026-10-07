@@ -23,8 +23,21 @@ export type FileViewerFile = FileViewerTarget & {
 export type FileViewerProps = {
   file: FileViewerFile
   text: Accessor<string | undefined>
+  // Changes together with `text`: the host bumps it every time it reloads the
+  // file text from disk while the tab is mounted (0 until the first observed
+  // refresh). Viewers compare it against the revision they last rendered to
+  // react to external changes. Wired for replace-mode tab viewers (file tabs);
+  // preview-mode hosts may omit it.
+  revision?: Accessor<number>
   readBytes(): Promise<Uint8Array>
   readText(): Promise<string>
+  // Marks the tab's unsaved state. The host blocks closing a dirty tab until
+  // it is saved. Wired for replace-mode tab viewers; preview hosts may omit it.
+  setDirty?(dirty: boolean): void
+  // Registers the tab's save action. The host runs it when the user saves the
+  // active tab (Cmd+S) and clears the dirty flag after it completes. The
+  // disposer removes exactly that handler; earlier handlers stay.
+  onSave?(handler: () => Promise<void>): () => void
   showSource(): void
 }
 
@@ -100,4 +113,81 @@ export const FileViewerRegistry = {
   register: registerFileViewer,
   resolve: resolveFileViewers,
   entries,
+}
+
+// --- Per-tab save state ------------------------------------------------------
+// A viewer that lets the user edit the file in place needs a dirty flag and a
+// save action that outlive the tab content component: switching tabs unmounts
+// the active FileTabContent while the tab itself (and its unsaved edits) stays
+// open. State is keyed by an opaque key the host composes from its session key
+// and the tab value; the host disposes it when the tab closes.
+
+export type FileViewerTabState = {
+  dirty: Accessor<boolean>
+  setDirty(value: boolean): void
+  hasSave(): boolean
+  // Runs the registered save handlers in registration order (a failing handler
+  // aborts the run so later ones never see a half-saved file). Resolves true
+  // when at least one handler ran, false when the tab has none.
+  save(): Promise<boolean>
+  onSave(handler: () => Promise<void>): () => void
+}
+
+const tabStates = new Map<string, FileViewerTabState>()
+const dirtyVersions = new WeakMap<FileViewerTabState, number>()
+
+export function fileViewerTabKey(sessionKey: string, tab: string) {
+  return `${sessionKey}\n${tab}`
+}
+
+export function fileViewerTabState(key: string): FileViewerTabState {
+  const existing = tabStates.get(key)
+  if (existing) return existing
+
+  const [dirty, setDirtySignal] = createSignal(false)
+  const handlers: Array<() => Promise<void>> = []
+  const state: FileViewerTabState = {
+    dirty,
+    setDirty(value) {
+      dirtyVersions.set(state, (dirtyVersions.get(state) ?? 0) + 1)
+      setDirtySignal(value)
+    },
+    hasSave() {
+      return handlers.length > 0
+    },
+    async save() {
+      if (handlers.length === 0) return false
+      // Snapshot before running: a handler may register or dispose others.
+      for (const handler of [...handlers]) await handler()
+      return true
+    },
+    onSave(handler) {
+      handlers.push(handler)
+      return () => {
+        const index = handlers.indexOf(handler)
+        if (index !== -1) handlers.splice(index, 1)
+      }
+    },
+  }
+  tabStates.set(key, state)
+  return state
+}
+
+export function fileViewerTabDirty(key: string): boolean {
+  return tabStates.get(key)?.dirty() ?? false
+}
+
+// Clear the dirty flag only if no new edit was reported during the async save.
+export function saveFileViewerTab(key: string): Promise<boolean> {
+  const state = tabStates.get(key)
+  if (!state) return Promise.resolve(false)
+  const version = dirtyVersions.get(state) ?? 0
+  return state.save().then((handled) => {
+    if (handled && (dirtyVersions.get(state) ?? 0) === version) state.setDirty(false)
+    return handled
+  })
+}
+
+export function disposeFileViewerTabState(key: string) {
+  tabStates.delete(key)
 }

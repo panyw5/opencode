@@ -8,6 +8,33 @@ export type FileViewerContribution = {
   mode?: "replace" | "preview"
 }
 
+export type ToolRendererDeclaration = {
+  tool: string
+}
+
+export type CommandDeclaration = {
+  id: string
+  title: string
+  category?: string
+  keybind?: string
+  slash?: string
+}
+
+export type PanelDeclaration = {
+  id: string
+  title: string
+  icon?: string
+}
+
+export type SettingDefinition = {
+  type: "string" | "number" | "boolean"
+  title: string
+  description?: string
+  default?: string | number | boolean
+  enum?: Array<string | number>
+  secret?: boolean
+}
+
 export type ExtensionInfo = {
   id: string
   version: string
@@ -16,8 +43,17 @@ export type ExtensionInfo = {
   state: "ready" | "disabled" | "error" | "incompatible"
   error?: string
   activation: string[]
-  contributes: { fileViewers?: FileViewerContribution[] }
-  web?: { base: string; entry: string; styles: string[]; apiVersion: 1 }
+  // User-facing settings snapshot from the server. Secret values arrive as
+  // `SECRET_MASK`; the plaintext never crosses the API boundary.
+  settings?: Record<string, unknown>
+  contributes: {
+    fileViewers?: FileViewerContribution[]
+    toolRenderers?: ToolRendererDeclaration[]
+    commands?: CommandDeclaration[]
+    panels?: PanelDeclaration[]
+    settings?: Record<string, SettingDefinition>
+  }
+  web?: { base: string; entry?: string; styles: string[]; apiVersion: 1 }
 }
 
 export type ExtensionStatusEvent = {

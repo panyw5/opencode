@@ -66,7 +66,8 @@ import { Vcs } from "@/project/vcs"
 import { Worktree } from "@/worktree"
 import { Workspace } from "@/control-plane/workspace"
 import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@/server/cors"
-import { serveUIEffect } from "@/server/shared/ui"
+import { EmbeddedWebUI, embeddedWebUILayer, serveUIEffect } from "@/server/shared/ui"
+import { uiAuthorizationRouterMiddleware } from "./middleware/ui-authorization"
 import { ServerAuth } from "@/server/auth"
 import { InstanceHttpApi, RootHttpApi } from "./api"
 import { PublicApi } from "./public"
@@ -79,6 +80,7 @@ import { configHandlers } from "./handlers/config"
 import { controlHandlers } from "./handlers/control"
 import { extensionAssetRoute } from "./handlers/extension-asset"
 import { extensionHandlers } from "./handlers/extension"
+import { extensionRpcHandlers } from "./handlers/extension-rpc"
 import { experimentalHandlers } from "./handlers/experimental"
 import { fileHandlers } from "./handlers/file"
 import { globalHandlers } from "./handlers/global"
@@ -127,9 +129,10 @@ const authOnlyRouterLayer = authorizationRouterMiddleware.layer.pipe(Layer.provi
 const httpApiAuthLayer = authorizationLayer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
 const v2HttpApiAuthLayer = v2AuthorizationLayer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
 const rootApiRoutes = HttpApiBuilder.layer(RootHttpApi).pipe(
-  Layer.provide([controlHandlers, extensionHandlers, globalHandlers]),
+  Layer.provide([controlHandlers, extensionHandlers, extensionRpcHandlers, globalHandlers]),
   Layer.provide(schemaErrorLayer),
   Layer.provide(httpApiAuthLayer),
+  Layer.provide(workspaceRoutingLayer.pipe(Layer.provide(Socket.layerWebSocketConstructorGlobal))),
 )
 const instanceRouterLayer = authorizationRouterMiddleware
   .combine(instanceRouterMiddleware)
@@ -198,11 +201,12 @@ const uiRoute = HttpRouter.use((router) =>
     const fs = yield* AppFileSystem.Service
     const client = yield* HttpClient.HttpClient
     const flags = yield* RuntimeFlags.Service
+    const embedded = yield* EmbeddedWebUI
     yield* router.add("*", "/*", (request) =>
-      serveUIEffect(request, { fs, client, disableEmbeddedWebUi: flags.disableEmbeddedWebUi }),
+      serveUIEffect(request, { fs, client, disableEmbeddedWebUi: flags.disableEmbeddedWebUi, embedded }),
     )
   }),
-).pipe(Layer.provide(authOnlyRouterLayer))
+).pipe(Layer.provide(uiAuthorizationRouterMiddleware.layer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))))
 
 type RouteRequirements =
   | HttpRouter.HttpRouter
@@ -213,8 +217,10 @@ type RouteRequirements =
 
 export function createRoutes(
   corsOptions?: CorsOptions,
+  embeddedLayer: Layer.Layer<EmbeddedWebUI, never, RuntimeFlags.Service> = embeddedWebUILayer,
 ): Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements> {
   return Layer.mergeAll(rootApiRoutes, eventApiRoutes, instanceRoutes, docRoute, extensionAssetRoutes, uiRoute).pipe(
+    Layer.provide(embeddedLayer),
     Layer.provide(ScheduledTask.layer),
     Layer.provide(ProjectTask.layer),
     Layer.provide([

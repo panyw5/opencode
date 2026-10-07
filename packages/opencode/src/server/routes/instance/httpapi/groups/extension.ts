@@ -9,7 +9,19 @@ export const ExtensionPaths = {
   get: "/global/extension/:id",
   enable: "/global/extension/:id/enable",
   disable: "/global/extension/:id/disable",
+  settings: "/global/extension/:id/settings",
 } as const
+
+/**
+ * Partial settings patch for an extension. Keys and value types are validated
+ * against the extension manifest's `contributes.settings` declarations by the
+ * registry, so the transport stays open (`Record<string, unknown>`); an
+ * explicit `null` value resets a setting back to its manifest default.
+ */
+export const ExtensionSettingsPatch = Schema.Record(Schema.String, Schema.Unknown).annotate({
+  identifier: "ExtensionSettingsPatch",
+  description: "Partial extension settings patch; `null` resets a key to its manifest default",
+})
 
 export const ExtensionApi = HttpApi.make("extension").add(
   HttpApiGroup.make("extension")
@@ -38,6 +50,19 @@ export const ExtensionApi = HttpApi.make("extension").add(
         success: described(Info, "Disabled extension"),
         error: HttpApiError.NotFound,
       }).annotateMerge(OpenApi.annotations({ identifier: "extension.disable", summary: "Disable extension" })),
+      HttpApiEndpoint.patch("updateSettings", ExtensionPaths.settings, {
+        params: { id: ExtensionID },
+        payload: ExtensionSettingsPatch,
+        success: described(Info, "Updated extension settings"),
+        error: [HttpApiError.NotFound, HttpApiError.BadRequest],
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "extension.settings.update",
+          summary: "Update extension settings",
+          description:
+            "Apply a partial settings patch to a linked extension. Unknown keys, wrong value types and enum violations are rejected; secret values are returned masked.",
+        }),
+      ),
     )
     .annotateMerge(
       OpenApi.annotations({ title: "extension", description: "Linked OpenCode web extension management." }),

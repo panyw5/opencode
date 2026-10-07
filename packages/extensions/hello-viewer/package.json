@@ -6,13 +6,14 @@
   "type": "module",
   "license": "MIT",
   "exports": {
-    "./web": "./dist/web/index.js"
+    "./web": "./dist/web/index.js",
+    "./server": "./dist/server.js"
   },
   "opencode": {
     "manifestVersion": 1,
     "id": "example.hello-viewer",
     "displayName": "Hello Viewer",
-    "description": "Example lazy-loaded file viewer for .hello files.",
+    "description": "Example extension: lazy-loaded .hello viewer with a server part (RPC, events, one LLM tool).",
     "web": {
       "apiVersion": 1,
       "styles": ["./dist/web/index.css"]
@@ -29,15 +30,18 @@
         }
       ]
     },
-    "permissions": ["fs:read"]
+    "permissions": ["fs:read", "process:spawn", "tools"]
   },
   "scripts": {
     "dev": "vite build --watch",
-    "build": "vite build",
-    "typecheck": "tsgo --noEmit"
+    "build": "vite build && bun run build:server",
+    "build:server": "bun build src/server.ts --outfile dist/server.js --target=node --format=esm",
+    "typecheck": "tsgo --noEmit",
+    "test": "bun test test"
   },
   "dependencies": {
-    "@opencode-ai/extension-kit": "workspace:*"
+    "@opencode-ai/extension-kit": "workspace:*",
+    "@opencode-ai/plugin": "workspace:*"
   },
   "devDependencies": {
     "@opencode-ai/ui": "workspace:*",

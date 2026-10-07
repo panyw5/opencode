@@ -1,8 +1,10 @@
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
-import { Effect, Stream } from "effect"
+import { Context, Effect, Layer, Stream } from "effect"
+import { RuntimeFlags } from "@/effect/runtime-flags"
 import { HttpBody, HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { createHash } from "node:crypto"
 import { ProxyUtil } from "../proxy-util"
+import { PUBLIC_UI_PATHS } from "./public-ui"
 
 let embeddedUIPromise: Promise<Record<string, string> | null> | undefined
 
@@ -48,6 +50,18 @@ export function embeddedUI(disableEmbeddedWebUi: boolean) {
     import("opencode-web-ui.gen.ts").then((module) => module.default as Record<string, string>).catch(() => null))
 }
 
+export class EmbeddedWebUI extends Context.Service<EmbeddedWebUI, {
+  readonly manifest: Effect.Effect<Record<string, string> | null>
+}>()("@opencode/EmbeddedWebUI") {}
+
+export const embeddedWebUILayer = Layer.effect(
+  EmbeddedWebUI,
+  Effect.gen(function* () {
+    const flags = yield* RuntimeFlags.Service
+    return EmbeddedWebUI.of({ manifest: Effect.promise(() => embeddedUI(flags.disableEmbeddedWebUi)) })
+  }),
+)
+
 function notFound() {
   return HttpServerResponse.jsonUnsafe({ error: "Not Found" }, { status: 404 })
 }
@@ -66,7 +80,11 @@ export function serveEmbeddedUIEffect(
   fs: AppFileSystem.Interface,
   embeddedWebUI: Record<string, string>,
 ) {
-  const file = embeddedWebUI[requestPath.replace(/^\//, "")] ?? embeddedWebUI["index.html"] ?? null
+  const key = requestPath.replace(/^\//, "")
+  const exact = Object.hasOwn(embeddedWebUI, key) ? embeddedWebUI[key] : undefined
+  // Public manifest/icon requests must never receive an authenticated SPA shell.
+  if (PUBLIC_UI_PATHS.has(requestPath) && !exact) return Effect.succeed(notFound())
+  const file = exact ?? embeddedWebUI["index.html"] ?? null
   if (!file) return Effect.succeed(notFound())
 
   return fs.readFile(file).pipe(
@@ -77,17 +95,27 @@ export function serveEmbeddedUIEffect(
 
 export function serveUIEffect(
   request: HttpServerRequest.HttpServerRequest,
-  services: { fs: AppFileSystem.Interface; client: HttpClient.HttpClient; disableEmbeddedWebUi: boolean },
+  services: {
+    fs: AppFileSystem.Interface
+    client: HttpClient.HttpClient
+    disableEmbeddedWebUi: boolean
+    embedded?: { readonly manifest: Effect.Effect<Record<string, string> | null> }
+  },
 ) {
   return Effect.gen(function* () {
-    const embeddedWebUI = yield* Effect.promise(() => embeddedUI(services.disableEmbeddedWebUi))
+    const embeddedWebUI = services.disableEmbeddedWebUi
+      ? null
+      : yield* (services.embedded?.manifest ?? Effect.promise(() => embeddedUI(false)))
     const path = new URL(request.url, "http://localhost").pathname
 
     if (embeddedWebUI) return yield* serveEmbeddedUIEffect(path, services.fs, embeddedWebUI)
 
+    const upstreamHeaders = ProxyUtil.headers(request.headers, { host: UI_UPSTREAM.host })
+    // These credentials authorize this server, not the remote UI distributor.
+    for (const name of ["authorization", "cookie", "referer"]) upstreamHeaders.delete(name)
     const response = yield* services.client.execute(
       HttpClientRequest.make(request.method)(upstreamURL(path), {
-        headers: ProxyUtil.headers(request.headers, { host: UI_UPSTREAM.host }),
+        headers: upstreamHeaders,
         body: requestBody(request),
       }),
     )

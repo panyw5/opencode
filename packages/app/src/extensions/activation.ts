@@ -1,6 +1,13 @@
 import { createRoot, getOwner, runWithOwner, type Owner } from "solid-js"
 import type { FileViewerProps } from "@opencode-ai/ui/file-viewer-registry"
-import { makeExtensionContext, type FileViewerContribution, type WebExtensionContext } from "./context"
+import {
+  makeExtensionContext,
+  type CommandContribution,
+  type FileViewerContribution,
+  type PanelContribution,
+  type ToolRendererContribution,
+  type WebExtensionContext,
+} from "./context"
 import type { Disposable, ExtensionInfo } from "./types"
 
 export type WebExtensionModule = {
@@ -16,6 +23,22 @@ export type ActivationDeps = {
   importModule(url: string): Promise<WebExtensionModule>
   addStyle(url: string, extensionID: string): Promise<() => void>
   registerViewer(manifest: ExtensionInfo, contribution: FileViewerContribution): () => void
+  registerToolRenderer(manifest: ExtensionInfo, contribution: ToolRendererContribution): () => void
+  registerPanel(manifest: ExtensionInfo, contribution: PanelContribution): () => void
+  registerCommand(manifest: ExtensionInfo, contribution: CommandContribution): () => void
+  // Server bridge. The host owns transport/auth/events; the manager only
+  // forwards per-extension calls keyed by the activated manifest.
+  callRpc(
+    manifest: ExtensionInfo,
+    input: { method: string; input?: unknown; directory?: string; signal?: AbortSignal; timeoutMs?: number },
+  ): Promise<unknown>
+  listenEvents(
+    manifest: ExtensionInfo,
+    name: string,
+    listener: (data: unknown, meta: { directory?: string }) => void,
+  ): () => void
+  readSetting(manifest: ExtensionInfo, key: string): unknown
+  updateSettings(manifest: ExtensionInfo, patch: Record<string, unknown>): Promise<void>
   timeoutMs?: number
 }
 
@@ -79,7 +102,7 @@ export class ExtensionActivationManager {
 
   private async activateOne(runtime: Runtime) {
     const web = runtime.manifest.web
-    if (!web) throw new Error(`Extension has no web entry: ${runtime.manifest.id}`)
+    if (!web?.entry) throw new Error(`Extension has no web entry: ${runtime.manifest.id}`)
     const valid = () => this.runtimes.get(runtime.manifest.id)?.generation === runtime.generation
     const base = new URL(web.base)
     if (base.origin === "null") throw new Error(`Extension has an invalid web origin: ${runtime.manifest.id}`)
@@ -119,6 +142,13 @@ export class ExtensionActivationManager {
             valid,
             subscriptions: runtime.subscriptions,
             registerViewer: (contribution) => this.deps.registerViewer(runtime.manifest, contribution),
+            registerToolRenderer: (contribution) => this.deps.registerToolRenderer(runtime.manifest, contribution),
+            registerPanel: (contribution) => this.deps.registerPanel(runtime.manifest, contribution),
+            registerCommand: (contribution) => this.deps.registerCommand(runtime.manifest, contribution),
+            callRpc: (input) => this.deps.callRpc(runtime.manifest, input),
+            listenEvents: (name, listener) => this.deps.listenEvents(runtime.manifest, name, listener),
+            readSetting: (key) => this.deps.readSetting(runtime.manifest, key),
+            updateSettings: (patch) => this.deps.updateSettings(runtime.manifest, patch),
           })
           Promise.resolve()
             .then(() => {

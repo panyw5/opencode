@@ -139,6 +139,9 @@ import {
   useChannelMiddleItems,
 } from "./config-channels"
 import { ConfigIM } from "./config-im"
+import { useExtensionHost } from "@/extensions/host"
+import { ConfigExtensionDetail } from "./config-extension-detail"
+import { extensionPick, extensionSelection, extensionSelectionKey, parseExtensionPick } from "./config-extensions"
 
 const CORE_SECTIONS = [
   "providers",
@@ -146,6 +149,7 @@ const CORE_SECTIONS = [
   "agents",
   "skills",
   "plugins",
+  "extensions",
   "mcp",
   "commands",
   "channels",
@@ -1302,6 +1306,7 @@ function sectionIcon(section: Section): IconProps["name"] {
   if (section === "agents") return "robot"
   if (section === "skills") return "book"
   if (section === "plugins") return "code"
+  if (section === "extensions") return "dot-grid"
   if (section === "mcp") return "mcp"
   if (section === "commands") return "terminal"
   if (section === "channels") return "speech-bubble"
@@ -1526,8 +1531,19 @@ function ConfigPaneTitle(props: { title: string; description?: string; icon: Ico
 }
 
 function ChannelBrandIcon(props: { platform: "feishu" | "qq" | "wechat" | "discord" }) {
-  const src = props.platform === "feishu" ? larkIcon : props.platform === "qq" ? qqIcon : props.platform === "wechat" ? wechatIcon : undefined
-  return src ? <img src={src} width="38" height="38" alt="" aria-hidden="true" class="object-contain" /> : <Icon name="code" size="medium" />
+  const src =
+    props.platform === "feishu"
+      ? larkIcon
+      : props.platform === "qq"
+        ? qqIcon
+        : props.platform === "wechat"
+          ? wechatIcon
+          : undefined
+  return src ? (
+    <img src={src} width="38" height="38" alt="" aria-hidden="true" class="object-contain" />
+  ) : (
+    <Icon name="code" size="medium" />
+  )
 }
 
 function PluginListButton(props: {
@@ -3718,6 +3734,7 @@ export default function ConfigPage() {
   console.info(`[config-perf] page construct start sinceClick=${configPerfSinceClick()}`)
   const dialog = useDialog()
   const language = useLanguage()
+  const extensionHost = useExtensionHost()
   // Bound early: resource fetchers below (e.g. project config records) run while
   // the component is still constructing and must not hit this binding's TDZ.
   const t = language.t
@@ -3824,6 +3841,10 @@ export default function ConfigPage() {
     mcpGlobalDeleting: {} as Record<string, boolean>,
     copied: "" as "dsh-api-key" | "custom-api-key" | "config-path" | "",
   })
+  const selectedExtensionID = createMemo(() => parseExtensionPick(state.pick))
+  const selectedExtension = createMemo(() =>
+    extensionHost.extensions().find((item) => item.id === selectedExtensionID()),
+  )
   let copiedTimer: ReturnType<typeof setTimeout> | undefined
 
   const markCopied = (value: typeof state.copied) => {
@@ -5424,7 +5445,9 @@ export default function ConfigPage() {
   const diskProjectPlugins = createConfigLocalLoader(
     () => {
       const roots = allowedProjectRootsKey()
-      return state.section === "plugins" && roots !== undefined ? ([state.pluginRev, openedKey(), roots] as const) : false
+      return state.section === "plugins" && roots !== undefined
+        ? ([state.pluginRev, openedKey(), roots] as const)
+        : false
     },
     async () => {
       console.info("[config-perf] fetch diskProjectPlugins start")
@@ -6071,6 +6094,7 @@ export default function ConfigPage() {
     if (section === "channels") {
       return CHANNEL_PLATFORMS.map((p) => channelPick(p))
     }
+    if (section === "extensions") return extensionHost.extensions().map((item) => extensionPick(item.id))
     if (section === "im") return []
     return (plugins() ?? []).map((item) => item.id)
   }
@@ -6081,6 +6105,14 @@ export default function ConfigPage() {
       batch(() => {
         setState("section", section)
         setState("pick", "")
+        setState({ doc: "", text: "", saved: "", busy: false })
+      })
+      return
+    }
+    if (section === "extensions") {
+      batch(() => {
+        setState("section", section)
+        setState("pick", extensionSelection(extensionHost.extensions(), state.pick))
         setState({ doc: "", text: "", saved: "", busy: false })
       })
       return
@@ -6130,6 +6162,10 @@ export default function ConfigPage() {
 
   function selectMiddlePick(id: string) {
     if (!id) return
+    if (state.section === "extensions") {
+      setState("pick", id)
+      return
+    }
     if (state.section === "claws") {
       selectClaw(id)
       return
@@ -6296,9 +6332,15 @@ export default function ConfigPage() {
         skillDocs().length,
         commandDocs().length,
         plugins()?.length ?? 0,
+        extensionSelectionKey(extensionHost.extensions()),
       ],
       () => {
         if (!state.section) return
+        if (state.section === "extensions") {
+          setState("pick", extensionSelection(extensionHost.extensions(), state.pick))
+          setState({ doc: "", text: "", saved: "", busy: false })
+          return
+        }
         if (state.section === "skills" && state.skillPanel === "market") return
         if (state.section === "claws") return
         const list = picks(state.section)
@@ -8209,6 +8251,13 @@ export default function ConfigPage() {
                   onClick={() => void jump("plugins")}
                 />
                 <SectionButton
+                  current={state.section === "extensions"}
+                  title={t("config.extensions.title")}
+                  description={t("config.nav.extensionsDescription")}
+                  icon={sectionIcon("extensions")}
+                  onClick={() => void jump("extensions")}
+                />
+                <SectionButton
                   current={state.section === "mcp"}
                   title={t("config.mcp.title")}
                   description={t("config.nav.mcpDescription")}
@@ -8403,6 +8452,13 @@ export default function ConfigPage() {
                         {t("config.skills.create.action")}
                       </Button>
                     </div>
+                  </Match>
+                  <Match when={state.section === "extensions"}>
+                    <ConfigPaneTitle
+                      title={t("config.extensions.title")}
+                      description={t("config.extensions.header")}
+                      icon={sectionIcon("extensions")}
+                    />
                   </Match>
                   <Match when={state.section === "plugins"}>
                     <ConfigPaneTitle
@@ -9064,6 +9120,34 @@ export default function ConfigPage() {
                       </Show>
                     </Match>
 
+                    <Match when={state.section === "extensions"}>
+                      <Show
+                        when={extensionHost.enabled()}
+                        fallback={
+                          <div class="px-3 py-4 text-12-regular text-text-weak">
+                            {t("settings.extensions.disabled")}
+                          </div>
+                        }
+                      >
+                        <For
+                          each={extensionHost.extensions()}
+                          fallback={
+                            <div class="px-3 py-4 text-12-regular text-text-weak">{t("config.extensions.empty")}</div>
+                          }
+                        >
+                          {(item) => (
+                            <ListButton
+                              active={state.pick === extensionPick(item.id)}
+                              title={item.displayName}
+                              meta={`${item.id} · v${item.version}`}
+                              note={t(`config.extensions.state.${item.state}`)}
+                              warn={item.state === "error" || item.state === "incompatible"}
+                              onClick={() => selectMiddlePick(extensionPick(item.id))}
+                            />
+                          )}
+                        </For>
+                      </Show>
+                    </Match>
                     <Match when={state.section === "plugins"}>
                       <div class="flex flex-col gap-3">
                         <ConfigSearchBox
@@ -9527,6 +9611,26 @@ export default function ConfigPage() {
                 </Show>
               </Match>
 
+              <Match when={state.section === "extensions"}>
+                <div class="config-scrollbar h-full min-h-0 overflow-y-auto px-5 py-6 sm:px-8">
+                  <Show
+                    when={extensionHost.enabled()}
+                    fallback={<p class="text-13-regular text-text-weak">{t("settings.extensions.disabled")}</p>}
+                  >
+                    <Show
+                      when={selectedExtension() ? selectedExtensionID() : undefined}
+                      keyed
+                      fallback={<p class="text-13-regular text-text-weak">{t("config.extensions.select")}</p>}
+                    >
+                      {(id) => (
+                        <Show when={extensionHost.extensions().find((item) => item.id === id)}>
+                          {(item) => <ConfigExtensionDetail item={item()} />}
+                        </Show>
+                      )}
+                    </Show>
+                  </Show>
+                </div>
+              </Match>
               <Match when={state.section === "channels"}>
                 <Switch
                   fallback={

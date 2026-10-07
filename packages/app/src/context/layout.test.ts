@@ -1,11 +1,18 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
 import {
+  disposeFileViewerTabState,
+  fileViewerTabDirty,
+  fileViewerTabKey,
+  fileViewerTabState,
+} from "@opencode-ai/ui/file-viewer-registry"
+import {
   addSessionBarDraft,
   createSessionKeyReader,
   cycleSessionBarIndex,
   dedupePersistedSessionBarTabs,
   ensureSessionKey,
+  fileViewerTabCloseGuard,
   isSessionFileTab,
   openSessionBarTab,
   pruneSessionKeys,
@@ -249,5 +256,34 @@ describe("file preview auto-collapse", () => {
   test("keeps preview open while any file tab remains", () => {
     expect(shouldAutoCollapseFilePreview(["file://src/a.ts"])).toBe(false)
     expect(shouldAutoCollapseFilePreview(["context", "file://src/a.ts"])).toBe(false)
+  })
+})
+
+describe("file viewer tab close guard", () => {
+  test("allows closing a file tab without viewer save state", () => {
+    expect(fileViewerTabCloseGuard("file://src/a.ts", "dir/session")).toBe("dispose")
+  })
+
+  test("allows closing non-file tabs without touching viewer state", () => {
+    expect(fileViewerTabCloseGuard("context", "dir/session")).toBe("allow")
+    expect(fileViewerTabCloseGuard("review", "dir/session")).toBe("allow")
+  })
+
+  test("blocks a dirty file tab and keeps its save state", () => {
+    const key = fileViewerTabKey("dir/session", "file://src/dirty.ts")
+    const state = fileViewerTabState(key)
+    state.setDirty(true)
+    expect(fileViewerTabCloseGuard("file://src/dirty.ts", "dir/session")).toBe("block")
+    expect(fileViewerTabState(key)).toBe(state)
+    disposeFileViewerTabState(key)
+  })
+
+  test("disposing a clean file tab on close drops its save state", () => {
+    const key = fileViewerTabKey("dir/session", "file://src/clean.ts")
+    const state = fileViewerTabState(key)
+    state.onSave(async () => {})
+    expect(fileViewerTabCloseGuard("file://src/clean.ts", "dir/session")).toBe("dispose")
+    expect(fileViewerTabDirty(key)).toBe(false)
+    disposeFileViewerTabState(key)
   })
 })

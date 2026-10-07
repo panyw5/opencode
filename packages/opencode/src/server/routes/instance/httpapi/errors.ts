@@ -68,6 +68,17 @@ export class TimeoutError extends Schema.TaggedErrorClass<TimeoutError>()(
   { httpApiStatus: 504 },
 ) {}
 
+// Typed failure raised by an extension RPC handler. `code` is the extension's
+// own stable error code and is returned to the caller verbatim with 400.
+export class ExtensionRpcError extends Schema.TaggedErrorClass<ExtensionRpcError>()(
+  "ExtensionRpcError",
+  {
+    code: Schema.String,
+    message: Schema.String,
+  },
+  { httpApiStatus: 400 },
+) {}
+
 export class UnknownError extends Schema.TaggedErrorClass<UnknownError>()(
   "UnknownError",
   {

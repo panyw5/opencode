@@ -78,6 +78,16 @@ beforeAll(async () => {
   rowKey = mod.TimelineRow.key
 })
 
+// Guards against a process-wide narrow mock of @opencode-ai/ui/context (for
+// example from a sibling test file sharing this bun process): rows.ts
+// transitively relies on the real exports, so they must stay functions.
+test("keeps the real @opencode-ai/ui/context exports intact", async () => {
+  const context = await import("@opencode-ai/ui/context")
+  expect(typeof context.useData).toBe("function")
+  expect(typeof context.DataProvider).toBe("function")
+  expect(typeof context.createSimpleContext).toBe("function")
+})
+
 const userMessage = (id: string): UserMessage => ({
   id,
   sessionID: "ses_test",
@@ -183,7 +193,11 @@ describe("constructMessageRows", () => {
   test("keeps present_file as an independent assistant row", () => {
     const user = userMessage("user-present-file")
     const assistant = assistantMessage("assistant-present-file", user.id)
-    const parts = [textPart(user.id, "work"), toolPart(assistant.id, "tool-before", "read"), presentFilePart(assistant.id)]
+    const parts = [
+      textPart(user.id, "work"),
+      toolPart(assistant.id, "tool-before", "read"),
+      presentFilePart(assistant.id),
+    ]
     const rows = construct(user, partsByID(parts), [assistant], 0, true, true, "idle", false)
     expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "ToolGroup", "AssistantPart"])
     const row = rows.at(-1)
@@ -201,7 +215,11 @@ describe("constructMessageRows", () => {
   test("keeps present_diagram out of the collapsed tool group", () => {
     const user = userMessage("user-present-diagram")
     const assistant = assistantMessage("assistant-present-diagram", user.id)
-    const parts = [textPart(user.id, "work"), toolPart(assistant.id, "tool-before", "read"), toolPart(assistant.id, "tool-diagram", "present_diagram")]
+    const parts = [
+      textPart(user.id, "work"),
+      toolPart(assistant.id, "tool-before", "read"),
+      toolPart(assistant.id, "tool-diagram", "present_diagram"),
+    ]
     const rows = construct(user, partsByID(parts), [assistant], 0, true, true, "idle", false)
     expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "ToolGroup", "AssistantPart"])
     const row = rows.at(-1)

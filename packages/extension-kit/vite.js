@@ -1,11 +1,12 @@
 import path from "node:path"
 import solid from "vite-plugin-solid"
 import { SHARED_EXPORTS, sharedShim } from "./shims.js"
+import { extensionScopePostcssPlugin, scopeExtensionID } from "./scope.js"
 
 const virtualPrefix = "\0opencode:extension-host:"
 
 /**
- * @typedef {{ entry?: string; outDir?: string }} ExtensionKitOptions
+ * @typedef {{ entry?: string; outDir?: string; scope?: string }} ExtensionKitOptions
  */
 
 /**
@@ -17,6 +18,7 @@ const virtualPrefix = "\0opencode:extension-host:"
 export default function extensionKit(options = {}) {
   const entry = path.resolve(process.cwd(), options.entry ?? "src/web.tsx")
   const outDir = path.resolve(process.cwd(), options.outDir ?? "dist/web")
+  const scopeID = scopeExtensionID(options)
 
   /** @type {import("vite").Plugin} */
   const hostModules = {
@@ -24,6 +26,13 @@ export default function extensionKit(options = {}) {
     enforce: "pre",
     config() {
       return {
+        css: {
+          // Inline PostCSS config: rewrites every selector in the extension
+          // bundle to only match inside the host's `<div data-extension="...">`
+          // mount (see scope.js). Keyframes, font-face and custom properties
+          // are preserved.
+          postcss: { plugins: [extensionScopePostcssPlugin(scopeID)] },
+        },
         build: {
           target: "esnext",
           outDir,

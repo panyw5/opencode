@@ -58,7 +58,7 @@ import Layout from "@/pages/layout"
 import { ErrorPage } from "./pages/error"
 import { useCheckServerHealth } from "./utils/server-health"
 import { decode64 } from "@/utils/base64"
-import { workspaceKey } from "@/pages/layout/helpers"
+import { sameWorkspacePath } from "@/pages/layout/helpers"
 import { pickSessionTabsTarget, useSessionTabs } from "@/context/session-tabs"
 import { ConfigTitlebarActions } from "@/components/config-titlebar-actions"
 
@@ -114,6 +114,12 @@ const CONFIG_FALLBACK_SECTIONS = [
   { id: "agents", key: "config.agents.title", descriptionKey: "config.nav.agentsDescription", icon: "robot" },
   { id: "skills", key: "config.skills.title", descriptionKey: "config.nav.skillsDescription", icon: "book" },
   { id: "plugins", key: "config.plugins.title", descriptionKey: "config.nav.pluginsDescription", icon: "code" },
+  {
+    id: "extensions",
+    key: "config.extensions.title",
+    descriptionKey: "config.nav.extensionsDescription",
+    icon: "dot-grid",
+  },
   { id: "mcp", key: "config.mcp.title", descriptionKey: "config.nav.mcpDescription", icon: "mcp" },
   {
     id: "commands",
@@ -197,7 +203,7 @@ function ConfigLoadingShell() {
             </div>
             <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
               <div class="flex flex-col gap-1">
-                <For each={CONFIG_FALLBACK_SECTIONS.slice(0, 7)}>
+                <For each={CONFIG_FALLBACK_SECTIONS.slice(0, 8)}>
                   {(section) => (
                     <SectionButton
                       current={false}
@@ -210,7 +216,7 @@ function ConfigLoadingShell() {
               </div>
               <div class="mx-2 my-3 h-px bg-[linear-gradient(90deg,var(--border-weak-base),transparent)]" />
               <div class="flex flex-col gap-1">
-                <For each={CONFIG_FALLBACK_SECTIONS.slice(7)}>
+                <For each={CONFIG_FALLBACK_SECTIONS.slice(8)}>
                   {(section) => (
                     <Show when={section.id !== "claws" || showClawsSection()}>
                       <SectionButton
@@ -254,9 +260,15 @@ const SessionRoute = () => {
   const allowed = () => {
     if (params.id) return true
     const directory = decode64(params.dir ?? "") ?? ""
-    return layout.sessionBar
-      .drafts()
-      .some((draft) => draft.id === params.draftID && workspaceKey(draft.directory) === workspaceKey(directory))
+    const drafts = layout.sessionBar.drafts()
+    const match = drafts.some((draft) => draft.id === params.draftID && sameWorkspacePath(draft.directory, directory))
+    if (!match) {
+      const draft = drafts.find((item) => item.id === params.draftID)
+      console.debug(
+        `[session-route] draft rejected id=${params.draftID ?? "none"} routeDir=${directory || "none"} draftDir=${draft?.directory ?? "none"} count=${drafts.length}`,
+      )
+    }
+    return match
   }
   // While a submitted draft promotes into a session, the router transition
   // keeps params.id stale for a while. Keep rendering the draft page (composer

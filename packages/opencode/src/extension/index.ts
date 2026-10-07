@@ -4,6 +4,8 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import type { Loaded } from "./manifest"
 import { ExtensionRegistry } from "./registry"
 import { ExtensionID, type Info } from "./schema"
+import { ExtensionRuntime } from "./runtime"
+import type { ExtensionWatcher as Watcher } from "./watch"
 
 const token = randomBytes(18).toString("base64url")
 
@@ -36,28 +38,87 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Extension") {}
 
+// The extension runtime and watcher are process-wide singletons shared by
+// every independent Effect layer built on this module. Ownership is
+// reference-counted: each enabled layer acquires a lease at build time, and
+// the shutdown cleanup (dispose the runtime, stop the watcher) only runs when
+// the LAST lease is released — an earlier scope exiting must not tear down
+// shared state the remaining scopes still use. Layers built in pure/disabled
+// mode never touch the runtime and therefore never clean up state they do
+// not own.
+let leases = 0
+
+function acquireLease(watcher: Watcher) {
+  leases++
+  let released = false
+  return async () => {
+    if (released) return
+    released = true
+    leases--
+    if (leases > 0) return
+    // Last scope out performs the shutdown cleanup.
+    await ExtensionRuntime.disposeAll()
+    await watcher.stop()
+  }
+}
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const flags = yield* RuntimeFlags.Service
     const disabled = () => flags.pure || flags.disableExtensions
-    const list = () => (disabled() ? Effect.succeed([]) : attempt(() => ExtensionRegistry.list(base)))
+    const watcher: Watcher | undefined = disabled()
+      ? undefined
+      : (yield* Effect.promise(async () => (await import("./watch")).ExtensionWatcher.start({
+          invalidateInstances: ExtensionRuntime.invalidateHooks,
+          reloadExtension: (id) => ExtensionRuntime.reload(id),
+        })))
+    if (watcher) {
+      const release = acquireLease(watcher)
+      yield* Effect.addFinalizer(() => Effect.promise(() => release()))
+    }
+    const refreshWatcher = () => watcher?.refresh().catch(() => undefined)
+    const list = () =>
+      disabled()
+        ? Effect.succeed([])
+        : attempt(async () => {
+            const items = await ExtensionRegistry.list(base)
+            return items.map((item) => ({
+              ...item,
+              server: item.state === "ready" ? ExtensionRuntime.describe(item.id) : undefined,
+            }))
+          })
     const get = (id: ExtensionID) =>
       disabled()
         ? Effect.fail(new Error(`Extensions are disabled: ${id}`))
-        : attempt(() => ExtensionRegistry.get(id, base))
+        : attempt(async () => {
+            const item = await ExtensionRegistry.get(id, base)
+            return { ...item, server: item.state === "ready" ? ExtensionRuntime.describe(id) : undefined }
+          })
     const link = (directory: string) =>
-      disabled() ? Effect.fail(new Error("Extensions are disabled")) : attempt(() => ExtensionRegistry.link(directory, base))
+      disabled()
+        ? Effect.fail(new Error("Extensions are disabled"))
+        : attempt(async () => {
+            const info = await ExtensionRegistry.link(directory, base)
+            await refreshWatcher()
+            return info
+          })
     const setEnabled = (id: ExtensionID, enabled: boolean) =>
       disabled()
         ? Effect.fail(new Error(`Extensions are disabled: ${id}`))
-        : attempt(() => ExtensionRegistry.setEnabled(id, enabled, base))
+        : attempt(async () => {
+            const info = await ExtensionRegistry.setEnabled(id, enabled, base)
+            await ExtensionRuntime.invalidateHooks()
+            if (!enabled) await ExtensionRuntime.disable(id)
+            await refreshWatcher()
+            return info
+          })
     const asset = (id: ExtensionID, version: string) =>
       disabled()
         ? Effect.succeed(undefined)
         : attempt(async () => {
             const linked = await ExtensionRegistry.linked(id)
-            if (!linked?.row.enabled) return
+            if (!linked?.row.enabled || !linked.manifest.entry) return
             if (linked.manifest.versionSegment !== version) return
             return {
               id,

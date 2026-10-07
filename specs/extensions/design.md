@@ -1167,7 +1167,7 @@ bridge 的实现要点（都需要实测）：
 | --- | --- | --- |
 | P0 宿主改造 | FileViewerRegistry 与“打开方式”菜单；CSV/TSV 迁移为内置条目；`registerTool` 和 `registerPartComponent` 返回注销函数；工具高度估算注册表；侧栏 `ext://` 标签的分发骨架 | 现有测试和 typecheck 通过；md、pdf、图片、csv 的预览行为不变 |
 | P1 web 扩展链路 | **仅支持本地 path link**：注册表与 `opencode extension link/list/enable/disable`；只含 web/file-viewer 部分的 `Extension.Service`；`/global/extension`、能力令牌资源路由、`extension.status`；`/file/raw`；CSP 调整；ExtensionHost、共享 Solid 模块桥、懒激活、显式安全模式；`extension-kit` 的 web 类型与 Vite 插件；hello-viewer 示例。P1 不做 npm/归档安装、watcher/HMR、server hooks、RPC、设置或市场；这些留给 P2/P3 | Desktop（鉴权开启）、内嵌 Web、Vite 开发三种形态下，`link` hello-viewer 后都能用它打开 `.hello` 文件；停用后预览器消失且不需要刷新；`?extensions=off`、`OPENCODE_DISABLE_EXTENSIONS=1`、路径穿越/HTML/错误令牌测试通过 |
-| P2 server 部分 | `defineServerExtension`（`activate` + `server`）；接入 `Plugin.state`；RPC 端点；`extension.event`；设置；开发链接的热重载 | 示例扩展包含 RPC 回显、事件流和一个 LLM 工具；停用时子进程全部退出；热重载后 server 与 web 部分都更新 |
+| P2 server 与 Web 桥 | `defineServerExtension`（进程级 `activate` + 实例级 `server`）；接入 `Plugin.state`；固定 RPC/`extension.event`；设置 schema、掩码与 PATCH；本地 path-link watcher、Web/Server 独立指纹；开放 tool renderer、panel、command 的声明与懒激活，Web 上下文提供 RPC/事件/设置桥。P2 不包括 npm/归档分发、市场、自定义设置页、运行时 i18n 或项目级安装 | 示例扩展能 RPC 回显、推送事件、提供一个 LLM 工具；Web/Server 变更各自热重载；停用与停机回收实例 Hooks、UI 注册和子进程，且纯模式关闭扩展；三种形态完成验证后才标记通过 |
 | P3 分发与管理 | npm 与归档安装、卸载、升级；扩展管理页与设置表单；市场索引；安装确认 | 从 npm 和带 sha256 的归档都能安装成功；校验失败、版本不兼容、ID 冲突各有明确的错误信息 |
 | P4 首批扩展 | WolframScript Notebook；新的文件预览扩展 | 按 §11.1 逐条验证体验；Agent 与用户共享 kernel 状态 |
 
@@ -1181,7 +1181,7 @@ bridge 的实现要点（都需要实测）：
 
 - Extension registry 与 capability token 是**模块级进程单例**；Effect `Extension.Service` 只是薄封装。原因是 listener、内部 `webHandler()` 与 CLI 使用不同 memo map，单独依赖 `Layer.effect` 无法保证 token 和状态一致。
 - P1 的 `styles` 与 `icon` 都由 server 返回完整的 tokenized asset URL；UI 绝不从 renderer origin 拼接资源，也不把 Basic Auth 凭据放入 URL。
-- 本地 link 的 version segment 由 manifest/entry/style/icon 的 mtime 与 size 指纹构成，但 P1 不监听目录变化；开发热重载属于 P2。
+- P1 本地 link 的 version segment 原由 manifest/entry/style/icon 的 mtime 与 size 指纹构成；P2 改为 Web 内容指纹，并独立计算 Server 入口内容指纹，使 Server-only 变更不使 Web URL 失效。
 - P1 ExtensionContext 只开放 file viewer、assets 和字符串日志。P0 的 panel/tool/command 注册表保留，待相应懒激活链路完整后再纳入稳定 API。
 - P1 不做 CSS selector 自动 scope、运行时 i18n、viewer 偏好持久化或 crash-strike 自动安全模式；扩展应自行使用带 extension ID 前缀的类名，并可通过 `?extensions=off` 或环境变量逃生。
 - `/file/raw` 只提供整文件 GET，限制 50 MB；不支持 range/HEAD，HTML/XHTML 强制按 `application/octet-stream` 返回。

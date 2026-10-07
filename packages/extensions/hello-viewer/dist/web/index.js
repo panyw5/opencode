@@ -27,11 +27,11 @@ e.assign;
 e.classList;
 e.className;
 e.clearDelegatedEvents;
-const i = e.createComponent;
+const a = e.createComponent;
 e.createDynamic;
 e.delegateEvents;
 e.dynamicProperty;
-e.effect;
+const q = e.effect;
 e.escape;
 e.generateHydrationScript;
 e.getAssets;
@@ -55,7 +55,7 @@ e.renderToString;
 e.renderToStringAsync;
 e.resolveSSRNode;
 e.runHydrationEvents;
-e.setAttribute;
+const F = e.setAttribute;
 e.setAttributeNS;
 e.setBoolAttribute;
 e.setProperty;
@@ -69,7 +69,7 @@ e.ssrHydrationKey;
 e.ssrSpread;
 e.ssrStyle;
 e.style;
-const c = e.template;
+const p = e.template;
 e.untrack;
 e.use;
 e.useAssets;
@@ -80,10 +80,10 @@ t.$PROXY;
 t.$TRACK;
 t.DEV;
 t.ErrorBoundary;
-t.For;
+const J = t.For;
 t.Index;
 t.Match;
-const m = t.Show;
+const w = t.Show;
 t.Suspense;
 t.SuspenseList;
 t.Switch;
@@ -96,13 +96,13 @@ t.createComputed;
 t.createContext;
 t.createDeferred;
 t.createEffect;
-const f = t.createMemo;
+const T = t.createMemo;
 t.createReaction;
 t.createRenderEffect;
 t.createResource;
 t.createRoot;
 t.createSelector;
-const C = t.createSignal;
+const y = t.createSignal;
 t.createUniqueId;
 t.enableExternalSource;
 t.enableHydration;
@@ -129,88 +129,186 @@ t.startTransition;
 t.untrack;
 t.useContext;
 t.useTransition;
-const E = globalThis.__OPENCODE_EXTENSION_HOST__?.modules?.["@opencode-ai/ui/button"];
-if (!E) throw new Error("OpenCode host module is unavailable: @opencode-ai/ui/button");
-const S = E.Button, v = globalThis.__OPENCODE_EXTENSION_HOST__?.modules?.["@opencode-ai/ui/spinner"];
-if (!v) throw new Error("OpenCode host module is unavailable: @opencode-ai/ui/spinner");
-const O = v.Spinner;
-var N = /* @__PURE__ */ c("<div class=oc-hello-viewer-status>"), T = /* @__PURE__ */ c("<section class=oc-hello-viewer-root><header class=oc-hello-viewer-header><div><div class=oc-hello-viewer-title>Hello Viewer</div><div class=oc-hello-viewer-path></div></div><div class=oc-hello-viewer-actions></div></header><ol class=oc-hello-viewer-lines>"), $ = /* @__PURE__ */ c("<li>");
-function x(r) {
-  const [o, l] = C({
+const H = globalThis.__OPENCODE_EXTENSION_HOST__?.modules?.["@opencode-ai/ui/button"];
+if (!H) throw new Error("OpenCode host module is unavailable: @opencode-ai/ui/button");
+const v = H.Button, R = globalThis.__OPENCODE_EXTENSION_HOST__?.modules?.["@opencode-ai/ui/spinner"];
+if (!R) throw new Error("OpenCode host module is unavailable: @opencode-ai/ui/spinner");
+const K = R.Spinner;
+var W = /* @__PURE__ */ p("<div class=oc-hello-viewer-status>"), U = /* @__PURE__ */ p("<ul class=oc-hello-viewer-log>"), Y = /* @__PURE__ */ p("<section class=oc-hello-viewer-root><header class=oc-hello-viewer-header><div><div class=oc-hello-viewer-title>Hello Viewer</div><div class=oc-hello-viewer-path></div></div><div class=oc-hello-viewer-actions></div></header><ol class=oc-hello-viewer-lines></ol><footer class=oc-hello-viewer-console><div class=oc-hello-viewer-console-head><span class=oc-hello-viewer-title>Server bridge</span><span class=oc-hello-viewer-bridge-state></span></div><div class=oc-hello-viewer-console-actions>"), x = /* @__PURE__ */ p("<li>"), Q = /* @__PURE__ */ p("<div class=oc-hello-viewer-log>Server bridge not provided by this host; viewer-only mode.");
+const k = "example.hello-viewer", P = `${k}/greeting`, [L, A] = y({}), [Z, I] = y([]), [E, D] = y(void 0), ee = () => (/* @__PURE__ */ new Date()).toLocaleTimeString();
+function m(r) {
+  I((c) => [...c.slice(-19), `[${ee()}] ${r}`]);
+}
+async function _(r, c) {
+  const d = L().rpc;
+  if (!d) {
+    m(`${r}: RPC bridge not available in this host`);
+    return;
+  }
+  D(r === "echo" ? "echo" : r === "greet" ? "greet" : "child");
+  try {
+    m(`${r}: ${await c(d)}`);
+  } catch (o) {
+    m(`${r} failed: ${o instanceof Error ? o.message : String(o)}`);
+  } finally {
+    D(void 0);
+  }
+}
+function te(r) {
+  const [c, d] = y({
     status: "idle"
-  }), y = f(() => (r.text() ?? "").split(`
-`)), b = async () => {
-    l({
+  }), o = T(() => (r.text() ?? "").split(`
+`)), l = T(() => L().rpc !== void 0), M = async () => {
+    d({
       status: "loading"
     });
     try {
       const s = await r.readBytes();
-      l({
+      d({
         status: "ready",
         bytes: s.byteLength
       });
     } catch (s) {
-      l({
+      d({
         status: "error",
         message: s instanceof Error ? s.message : String(s)
       });
     }
-  };
+  }, B = () => void _("echo", async (s) => {
+    const u = await s.call("echo", {
+      message: `hello from web (${r.file.path})`
+    });
+    return JSON.stringify(u);
+  }), V = () => void _("child", async (s) => {
+    await s.call("child.start");
+    try {
+      const u = await s.call("child.ping", {
+        text: `ping (${r.file.name})`
+      });
+      return JSON.stringify(u);
+    } finally {
+      await s.call("child.stop");
+    }
+  }), z = () => void _("greet", async (s) => {
+    const u = await s.call("greet", {
+      message: `greet me (${r.file.name})`
+    });
+    return `server emitted event: ${JSON.stringify(u)}`;
+  });
   return (() => {
-    var s = T(), d = s.firstChild, u = d.firstChild, w = u.firstChild, _ = w.nextSibling, h = u.nextSibling, g = d.nextSibling;
-    return n(_, () => r.file.path), n(h, i(S, {
+    var s = Y(), u = s.firstChild, $ = u.firstChild, G = $.firstChild, X = G.nextSibling, C = $.nextSibling, S = u.nextSibling, O = S.nextSibling, N = O.firstChild, j = N.firstChild, f = j.nextSibling, b = N.nextSibling;
+    return n(X, () => r.file.path), n(C, a(v, {
       size: "small",
       variant: "secondary",
-      onClick: () => void b(),
+      onClick: () => void M(),
       children: "Inspect bytes"
-    }), null), n(h, i(S, {
+    }), null), n(C, a(v, {
       size: "small",
       variant: "ghost",
       get onClick() {
         return r.showSource;
       },
       children: "Source"
-    }), null), n(s, i(m, {
+    }), null), n(s, a(w, {
       get when() {
-        return o().status !== "idle";
+        return c().status !== "idle";
       },
       get children() {
-        var a = N();
-        return n(a, i(m, {
+        var i = W();
+        return n(i, a(w, {
           get when() {
-            return o().status === "loading";
+            return c().status === "loading";
           },
           get fallback() {
-            return P(o());
+            return re(c());
           },
           get children() {
-            return [i(O, {
+            return [a(K, {
               class: "oc-hello-viewer-spinner"
             }), "Reading exact bytes…"];
           }
-        })), a;
+        })), i;
       }
-    }), g), n(g, () => y().map((a) => (() => {
-      var p = $();
-      return n(p, a || " "), p;
-    })())), s;
+    }), S), n(S, () => o().map((i) => (() => {
+      var g = x();
+      return n(g, i || " "), g;
+    })())), n(f, () => l() ? "rpc: on" : "rpc: off"), n(b, a(v, {
+      size: "small",
+      variant: "secondary",
+      get disabled() {
+        return !l() || E() !== void 0;
+      },
+      onClick: B,
+      children: "Echo RPC"
+    }), null), n(b, a(v, {
+      size: "small",
+      variant: "secondary",
+      get disabled() {
+        return !l() || E() !== void 0;
+      },
+      onClick: V,
+      children: "Child ping"
+    }), null), n(b, a(v, {
+      size: "small",
+      variant: "secondary",
+      get disabled() {
+        return !l() || E() !== void 0;
+      },
+      onClick: z,
+      children: "Greet (event)"
+    }), null), n(O, a(w, {
+      get when() {
+        return l();
+      },
+      get fallback() {
+        return Q();
+      },
+      get children() {
+        var i = U();
+        return n(i, a(J, {
+          get each() {
+            return Z();
+          },
+          children: (g) => (() => {
+            var h = x();
+            return n(h, g), h;
+          })()
+        })), i;
+      }
+    }), null), q((i) => {
+      var g = !!l(), h = l() ? "ctx.rpc / ctx.events available" : "host did not provide the RPC bridge yet";
+      return g !== i.e && f.classList.toggle("is-on", i.e = g), h !== i.t && F(f, "title", i.t = h), i;
+    }, {
+      e: void 0,
+      t: void 0
+    }), s;
   })();
 }
-function P(r) {
+function re(r) {
   return r.status === "ready" ? `${r.bytes} bytes` : r.status === "error" ? r.message : "";
 }
-const H = {
-  id: "example.hello-viewer",
+const se = {
+  id: k,
   apiVersion: 1,
   activate(r) {
     r.log.info("activating hello viewer");
-    const o = r.fileViewers.register({
-      id: "hello",
-      component: x
+    const c = r.events.on(P, (o) => {
+      const l = o && typeof o == "object" ? o : void 0;
+      m(`event ${P}: ${typeof l?.message == "string" ? l.message : JSON.stringify(o)}`);
     });
-    return () => o.dispose();
+    A({
+      rpc: r.rpc,
+      events: r.events
+    });
+    const d = r.fileViewers.register({
+      id: "hello",
+      component: te
+    });
+    return () => {
+      d.dispose(), c.dispose(), A({}), I([]);
+    };
   }
 };
 export {
-  H as default
+  se as default
 };

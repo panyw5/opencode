@@ -1,6 +1,13 @@
 import { createStore, produce } from "solid-js/store"
 import { batch, createEffect, createMemo, createSignal, onCleanup, onMount, untrack, type Accessor } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
+import {
+  disposeFileViewerTabState,
+  fileViewerTabDirty,
+  fileViewerTabKey,
+  saveFileViewerTab,
+} from "@opencode-ai/ui/file-viewer-registry"
+import { showToast } from "@opencode-ai/ui/toast"
 import { useGlobalSync } from "./global-sync"
 import { useGlobalSDK } from "./global-sdk"
 import { useServer } from "./server"
@@ -12,6 +19,7 @@ import { same } from "@/utils/same"
 import { isExtraAgentDirectory, mainDomain } from "@/pages/layout/extra-agents"
 import { sameWorkspacePath, workspaceKey, workspacePathContext } from "@/pages/layout/helpers"
 import { createScrollPersistence, type SessionScroll } from "./layout-scroll"
+import { useLanguage } from "@/context/language"
 import { createPathHelpers } from "./file/path"
 import { removeSessionTabSubtree } from "@/components/session/session-bar-parent"
 import { restoreRightPanel, toggleRightPanel, rightPanelGeometry, type RightPanel } from "./right-panel"
@@ -235,6 +243,18 @@ function nextSessionTabsForOpen(current: SessionTabs | undefined, tab: string): 
 /** File preview tabs exclude panel-only tabs like context/review. */
 export const isSessionFileTab = (tab: string) => tab !== "context" && tab !== "review"
 
+// File viewer save bridge (P2). Returns the action for closing a session tab:
+// "block" when the tab's extension viewer holds unsaved edits, otherwise
+// "dispose" (a clean file tab drops its viewer save state) or "allow" (not a
+// file tab).
+export function fileViewerTabCloseGuard(tab: string, session: string): "block" | "dispose" | "allow" {
+  if (!isSessionFileTab(tab)) return "allow"
+  const viewerKey = fileViewerTabKey(session, tab)
+  if (fileViewerTabDirty(viewerKey)) return "block"
+  disposeFileViewerTabState(viewerKey)
+  return "dispose"
+}
+
 /** Collapse file preview after close when no file tabs remain. */
 export const shouldAutoCollapseFilePreview = (remainingTabs: readonly string[]) => !remainingTabs.some(isSessionFileTab)
 
@@ -277,6 +297,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
     const globalSync = useGlobalSync()
     const server = useServer()
     const platform = usePlatform()
+    const language = useLanguage()
     const isRecord = (value: unknown): value is Record<string, unknown> =>
       typeof value === "object" && value !== null && !Array.isArray(value)
 
@@ -1412,6 +1433,32 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             const session = key()
             const current = store.sessionTabs[session]
             if (!current) return
+
+            // File viewer save bridge (P2): a file tab whose extension viewer
+            // holds unsaved edits is not closed until they are saved; closing
+            // a clean tab disposes its viewer save state.
+            // The save handlers live in the registry even while the tab
+            // content is unmounted, so the toast action can run them.
+            if (fileViewerTabCloseGuard(tab, session) === "block") {
+              console.debug(`[file-preview] close blocked session=${session} tab=${tab} reason=unsaved`)
+              showToast({
+                variant: "default",
+                title: language.t("common.unsavedChanges"),
+                actions: [
+                  {
+                    label: language.t("common.save"),
+                    onClick: () => {
+                      void saveFileViewerTab(fileViewerTabKey(session, tab)).catch((error: unknown) => {
+                        const message = error instanceof Error ? error.message : String(error)
+                        console.warn(`[file-preview] save failed session=${session} tab=${tab} error=${message}`)
+                        showToast({ variant: "error", title: language.t("common.requestFailed"), description: message })
+                      })
+                    },
+                  },
+                ],
+              })
+              return
+            }
 
             if (tab === "review") {
               if (current.active !== tab) return

@@ -46,7 +46,7 @@ import { dict as enDict } from "@/i18n/en"
 import { decode64 } from "@/utils/base64"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { domainFromDirectory } from "@/pages/layout/extra-agents"
-import { projectOwner, workspaceKey } from "@/pages/layout/helpers"
+import { projectOwner, sameWorkspacePath, workspaceKey } from "@/pages/layout/helpers"
 import { visiblyWorking } from "@/pages/session/session-working"
 import { sessionPermissionRequest } from "@/pages/session/composer/session-request-tree"
 import { permissionRequestNotFound } from "@/pages/session/composer/session-question-dock-helpers"
@@ -178,7 +178,7 @@ export function SessionTabsBar() {
     if (params.id || !params.draftID) return undefined
     const directory = routeDir()
     return drafts().find(
-      (draft) => draft.id === params.draftID && workspaceKey(draft.directory) === workspaceKey(directory),
+      (draft) => draft.id === params.draftID && sameWorkspacePath(draft.directory, directory),
     )
   })
   const visibleDrafts = createMemo(() => {

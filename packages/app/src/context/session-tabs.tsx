@@ -30,16 +30,15 @@ export function pickSessionTabsTarget(input: {
   fallback?: "global" | "home"
 }): SessionTabsTarget {
   if (input.directory) {
-    const preferred = workspaceKey(input.directory)
     for (let i = input.tabs.length - 1; i >= 0; i--) {
       const tab = input.tabs[i]
-      if (workspaceKey(tab.directory) === preferred) {
+      if (sameWorkspacePath(tab.directory, input.directory)) {
         return { type: "session", directory: tab.directory, id: tab.id }
       }
     }
     for (let i = input.drafts.length - 1; i >= 0; i--) {
       const draft = input.drafts[i]
-      if (workspaceKey(draft.directory) === preferred)
+      if (sameWorkspacePath(draft.directory, input.directory))
         return { type: "draft", directory: draft.directory, id: draft.id }
     }
     if (input.fallback === "home") return { type: "home" }

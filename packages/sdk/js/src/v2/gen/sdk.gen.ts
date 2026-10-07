@@ -76,6 +76,11 @@ import type {
   ExtensionGetResponses,
   ExtensionListErrors,
   ExtensionListResponses,
+  ExtensionRpcErrors,
+  ExtensionRpcResponses,
+  ExtensionSettingsPatch,
+  ExtensionSettingsUpdateErrors,
+  ExtensionSettingsUpdateResponses,
   FileListErrors,
   FileListResponses,
   FilePartInput,
@@ -599,6 +604,47 @@ export class App extends HeyApiClient {
   }
 }
 
+export class Settings extends HeyApiClient {
+  /**
+   * Update extension settings
+   *
+   * Apply a partial settings patch to a linked extension. Unknown keys, wrong value types and enum violations are rejected; secret values are returned masked.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+      extensionSettingsPatch?: ExtensionSettingsPatch
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "id" },
+            { key: "extensionSettingsPatch", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<
+      ExtensionSettingsUpdateResponses,
+      ExtensionSettingsUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/global/extension/{id}/settings",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Extension extends HeyApiClient {
   /**
    * List extensions
@@ -661,6 +707,52 @@ export class Extension extends HeyApiClient {
       ...options,
       ...params,
     })
+  }
+
+  /**
+   * Call an extension RPC method
+   *
+   * Invoke a server-side extension RPC handler. The optional JSON body is `{ input?: unknown }`. With ?directory the instance-level handler for that directory is preferred and the process-level handler is the fallback; without it only the process-level handler is consulted.
+   */
+  public rpc<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+      method: string
+      directory?: string
+      workspace?: string
+      input?: unknown
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "id" },
+            { in: "path", key: "method" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "input" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<ExtensionRpcResponses, ExtensionRpcErrors, ThrowOnError>({
+      url: "/extension/{id}/rpc/{method}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  private _settings?: Settings
+  get settings(): Settings {
+    return (this._settings ??= new Settings({ client: this.client }))
   }
 }
 

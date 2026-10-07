@@ -81,6 +81,16 @@ const scenarios: Scenario[] = [
     .at(() => ({ path: route("/global/extension/{id}/disable", { id: "test.missing" }) }))
     .status(404),
   http.protected
+    .patch("/global/extension/{id}/settings", "extension.updateSettings")
+    .global()
+    .at(() => ({ path: route("/global/extension/{id}/settings", { id: "test.missing" }), body: {} }))
+    .status(404),
+  http.protected
+    .post("/extension/{id}/rpc/{method}", "extension.rpc")
+    .global()
+    .at(() => ({ path: route("/extension/{id}/rpc/{method}", { id: "test.missing", method: "ping" }), body: {} }))
+    .status(404),
+  http.protected
     .patch("/global/config", "global.config.update")
     .global()
     .seeded(() =>
