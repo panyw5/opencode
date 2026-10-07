@@ -50,10 +50,20 @@ describe("consult-mention", () => {
   })
 
   test("buildConsultPromptFromParts falls back to files only", () => {
-    const prompt = buildConsultPromptFromParts([
-      { type: "file", filename: "a.ts", source: { path: "/a.ts" } },
-    ])
+    const prompt = buildConsultPromptFromParts([{ type: "file", filename: "a.ts", source: { path: "/a.ts" } }])
     expect(prompt).toBe("Referenced files:\n- /a.ts")
+  })
+
+  test("direct Pro prompts can omit path references because files are passed separately", () => {
+    expect(
+      buildConsultPromptFromParts(
+        [
+          { type: "text", text: "Review this" },
+          { type: "file", filename: "auth.ts", source: { path: "/repo/src/auth.ts" } },
+        ],
+        false,
+      ),
+    ).toBe("Review this")
   })
 
   test("follow-up synthetic mentions advisors and forbids re-invoke", () => {

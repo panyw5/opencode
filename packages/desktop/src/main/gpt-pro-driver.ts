@@ -1,5 +1,6 @@
 import {
   CHATGPT_INSPECT_EXPRESSION,
+  CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION,
   CHATGPT_MODEL_PICKER_EXPRESSION,
   CHATGPT_ONBOARDING_DISMISS_EXPRESSION,
 } from "@opencode-ai/util/chatgpt-page"
@@ -11,6 +12,7 @@ const sendSelector =
   '[data-testid="send-button"],button[aria-label="Send prompt"],button[aria-label="Send message"],button[aria-label="Send"],button[aria-label="发送消息"],button[aria-label="发送提示"]'
 
 const editorSelector = '#prompt-textarea, [data-composer-markdown][role="textbox"][contenteditable="true"]'
+const attachmentInputSelector = 'input[type="file"][aria-label="Attach files"]'
 const triggerExpression = `${CHATGPT_MODEL_PICKER_EXPRESSION}.trigger`
 
 export class GptProDriver {
@@ -38,8 +40,8 @@ export class GptProDriver {
     const current = this.browser.getState().find((view) => view.partition === GPT_PRO_PARTITION)
     if (fresh && current && isGptProOrigin(current.url)) {
       const page = await this.page()
-      if (page.draft.trim())
-        throw new Error("A manual draft is present. It will not be erased to start a consultation.")
+      if (page.draft.trim() || page.attachments?.length)
+        throw new Error("A manual draft or attachment is present. It will not be erased to start a consultation.")
       if (page.generating)
         throw new Error(
           "A reply is being generated in the browser. It will not be interrupted to start another consultation.",
@@ -58,7 +60,13 @@ export class GptProDriver {
       if (routed) {
         for (let i = 0; i < 40; i++) {
           const page = await this.page()
-          if (new URL(page.url).pathname === "/" && page.composer && !page.users.length && !page.draft.trim()) {
+          if (
+            new URL(page.url).pathname === "/" &&
+            page.composer &&
+            !page.users.length &&
+            !page.draft.trim() &&
+            !page.attachments?.length
+          ) {
             await this.show()
             return
           }
@@ -82,7 +90,34 @@ export class GptProDriver {
   async page(): Promise<GptProPageState> {
     const state = this.browser.getState().find((v) => v.partition === GPT_PRO_PARTITION)
     if (!state || !isGptProOrigin(state.url)) throw new Error("Login to ChatGPT in the gpt-pro browser first.")
-    const page = await this.cdp().evaluate<GptProPageState>(CHATGPT_INSPECT_EXPRESSION)
+    const cdp = this.cdp()
+    const page = await cdp.evaluate<GptProPageState>(CHATGPT_INSPECT_EXPRESSION)
+    const imageEvidence = await cdp.evaluate<{
+      url: string
+      composer: Array<{ name: string; kind: "image"; sha256?: string; status: "ready" | "unknown" }>
+      users: Array<{
+        id?: string
+        attachments: Array<{ name: string; kind: "image"; sha256?: string; status: "ready" | "unknown" }>
+      }>
+    }>(CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION)
+    const hasImageEvidence = imageEvidence.composer.length > 0 || imageEvidence.users.some((user) => user.attachments.length > 0)
+    if (
+      hasImageEvidence &&
+      (imageEvidence.url !== page.url || imageEvidence.users.length !== page.users.length ||
+        imageEvidence.users.some((user, index) => user.id !== page.users[index]?.id))
+    )
+      throw new Error("ChatGPT page changed during image attachment inspection; evidence was discarded")
+    const used = new Set<number>()
+    page.attachments = (page.attachments ?? []).map((attachment) => {
+      const match = imageEvidence.composer.findIndex((image, index) => !used.has(index) && image.name === attachment.name)
+      if (match < 0) return attachment
+      used.add(match)
+      return { ...attachment, ...imageEvidence.composer[match] }
+    })
+    page.users = page.users.map((user, index) => {
+      const images = imageEvidence.users[index]?.attachments ?? []
+      return images.length ? { ...user, attachments: [...(user.attachments ?? []), ...images] } : user
+    })
     if (this.rejected && /\/(?:prepare|init)$/.test(this.rejected.path)) {
       if (page.users.length && (page.generating || page.answer)) {
         this.log(
@@ -272,10 +307,96 @@ export class GptProDriver {
     }
     throw new Error("Chat composer verification failed. Submission was not attempted.")
   }
+  async uploadAttachments(
+    files: Array<{ path: string; name: string; mime?: string; sha256?: string }>,
+    mayDispatch: boolean,
+    shouldContinue?: () => Promise<boolean>,
+  ) {
+    if (!files.length) return
+    const key = (attachment: { name: string; kind?: "document" | "image"; sha256?: string }) =>
+      attachment.kind === "image" ? `image:${attachment.sha256 ?? "unknown"}` : `document:${attachment.name}`
+    const expected = files
+      .map((file) => (file.mime?.startsWith("image/") ? `image:${file.sha256 ?? "unknown"}` : `document:${file.name}`))
+      .sort()
+    const expectedNames = new Set(files.map((file) => file.name))
+    const matches = (page: GptProPageState) => {
+      const current = (page.attachments ?? []).map(key).sort()
+      return current.length === expected.length && current.every((name, index) => name === expected[index])
+    }
+    const incompatible = (cards: NonNullable<GptProPageState["attachments"]>) =>
+      cards.length > files.length ||
+      cards.some((attachment) => attachment.name && !expectedNames.has(attachment.name)) ||
+      cards.some((attachment) => attachment.status === "ready" && !expected.includes(key(attachment)))
+    let page = await this.page()
+    if (!page.targetModel) throw new Error("Model evidence changed before attachment upload")
+    if (mayDispatch && page.attachments?.length)
+      throw new Error("Composer attachments predate this consultation; no matching manual file was accepted")
+    if (matches(page) && page.attachments?.every((attachment) => attachment.status === "ready")) {
+      this.log(`driver attachments reconciled ready count=${files.length}; no duplicate upload dispatched`)
+      return
+    }
+    if ((page.attachments?.length ?? 0) > 0) {
+      const cards = page.attachments ?? []
+      const transient = cards.some(
+        (attachment) =>
+          attachment.status === "uploading" ||
+          (attachment.status === "unknown" && (!attachment.name || expectedNames.has(attachment.name))),
+      )
+      if (
+        mayDispatch ||
+        incompatible(cards) ||
+        cards.some((attachment) => attachment.status === "failed") ||
+        (!matches(page) && !transient)
+      )
+        throw new Error("Existing composer attachments are partial or ambiguous. No duplicate upload was attempted.")
+      this.log(`driver waiting for existing attachment upload count=${files.length}`)
+    } else {
+      if (!mayDispatch) throw new Error("Attachment upload state is ambiguous after recovery; no duplicate upload was attempted")
+      if (!page.attachmentInput) throw new Error("ChatGPT's verified attachment input is unavailable")
+      this.log(`driver dispatching attachment upload count=${files.length}`)
+      await this.cdp().setInputFiles(attachmentInputSelector, files.map((file) => file.path))
+    }
+    let last = ""
+    for (let attempt = 0; attempt < 240; attempt++) {
+      if (shouldContinue && !(await shouldContinue())) throw new Error("Attachment workflow was cancelled")
+      page = await this.page()
+      if (page.error) throw new GptProPageError(page.error.message, page.error.kind)
+      if (!page.targetModel) throw new Error("Model evidence changed during attachment upload")
+      const cards = page.attachments ?? []
+      const state = cards.map((item) => `${item.name || "unknown"}:${item.status}`).join(",") || "none"
+      if (state !== last) {
+        this.log(`driver attachment evidence attempt=${attempt + 1} count=${cards.length} cards=${state}`)
+        last = state
+      }
+      if (matches(page) && cards.every((attachment) => attachment.status === "ready")) {
+        this.log(`driver attachments verified ready count=${files.length}`)
+        return
+      }
+      if (cards.some((attachment) => attachment.status === "failed"))
+        throw new Error("ChatGPT reported an attachment upload error")
+      if (incompatible(cards))
+        throw new Error("Composer attachments do not match this consultation; no second upload was attempted")
+      const transient = cards.some(
+        (attachment) =>
+          attachment.status === "uploading" ||
+          (attachment.status === "unknown" && (!attachment.name || expectedNames.has(attachment.name))),
+      )
+      if (cards.length && !matches(page) && !transient)
+        throw new Error("Composer attachments are incomplete. No question was submitted.")
+      await new Promise((resolve) => setTimeout(resolve, 250))
+    }
+    throw new Error("Attachment readiness was not confirmed. No question was submitted.")
+  }
   async element(uid: string) {
+    const cdp = this.cdp()
     return {
-      composer: await this.cdp().matches(uid, editorSelector),
-      send: await this.cdp().matches(uid, `${sendSelector},button[type="submit"]`),
+      composer: await cdp.matches(uid, editorSelector),
+      send: await cdp.matches(uid, `${sendSelector},button[type="submit"]`),
+      retry:
+        (await cdp.matches(
+          uid,
+          '[data-testid*="retry" i],[data-testid*="regenerate" i],button[aria-label*="Retry" i],button[aria-label*="Regenerate" i]',
+        )) || (await cdp.matchesText(uid, "^(?:retry|try again|regenerate(?: response)?)$")),
     }
   }
   recover() {

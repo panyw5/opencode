@@ -1,4 +1,4 @@
-import { createEffect, createMemo, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, For, onCleanup, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { ToolPart } from "@opencode-ai/sdk/v2"
 import { gptProTerminal, type GptProAPI, type GptProJob } from "@opencode-ai/util/gpt-pro"
@@ -14,7 +14,38 @@ type Props = {
   output?: string
   part?: ToolPart
 }
+type AttachmentStatus = "pending" | "uploading" | "ready" | "failed" | "unknown"
+type AttachmentView = { id: string; name: string; status: AttachmentStatus; error?: string }
 const api = () => (window as unknown as { api?: { gptPro?: GptProAPI } }).api?.gptPro
+
+export function attachmentViews(value: unknown): AttachmentView[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item, index) => {
+    if (!item || typeof item !== "object") return []
+    const attachment = item as Record<string, unknown>
+    const rawName = typeof attachment.name === "string" ? attachment.name : ""
+    // Names are display-only. Never expose the separately stored authorized path.
+    const name = rawName.split(/[\\/]/).filter(Boolean).at(-1) || `Attachment ${index + 1}`
+    const rawStatus = attachment.status
+    const status: AttachmentStatus =
+      rawStatus === "pending" || rawStatus === "uploading" || rawStatus === "ready" || rawStatus === "failed"
+        ? rawStatus
+        : "unknown"
+    let error = typeof attachment.error === "string" ? attachment.error.trim() : ""
+    if (typeof attachment.path === "string" && attachment.path) error = error.split(attachment.path).join("")
+    // Backend errors may contain local path details; strip them before display.
+    error = error
+      .replace(/(?:[A-Za-z]:\\|\\\\)[^\s"'<>]+/g, "")
+      .replace(/\/(?:[^\s"'<>]+\/)*[^\s"'<>]+/g, "")
+      .slice(0, 240)
+    return [{
+      id: typeof attachment.id === "string" ? attachment.id : `${index}:${name}`,
+      name,
+      status,
+      error: error || undefined,
+    }]
+  })
+}
 
 export function GptProTool(props: Props) {
   const t = useI18n().t
@@ -34,6 +65,13 @@ export function GptProTool(props: Props) {
     return props.status
   }
   const error = () => String(state.error || (localStatus() ? (state.job?.error ?? "") : (props.metadata.error ?? "")))
+  const attachments = createMemo(() => {
+    const jobAttachments = state.job?.attachments
+    if (Array.isArray(jobAttachments)) return attachmentViews(jobAttachments)
+    const metadataAttachments = props.metadata.attachments
+    if (Array.isArray(metadataAttachments)) return attachmentViews(metadataAttachments)
+    return attachmentViews(props.input.attachments)
+  })
   createEffect(() => {
     const jobID = id()
     const client = api()
@@ -125,6 +163,7 @@ export function GptProTool(props: Props) {
         part={props.part}
         hideDetails
         showPendingMeta
+        showPendingDetails
         trigger={
           <div data-slot="basic-tool-tool-info-structured">
             <div data-slot="basic-tool-tool-info-main">
@@ -231,6 +270,25 @@ export function GptProTool(props: Props) {
         <p class="p-2 text-12-regular text-text-critical-base" role="alert">
           {error()}
         </p>
+      </Show>
+      <Show when={attachments().length > 0}>
+        <ul class="flex flex-col gap-1 px-2 pb-2" data-testid="gpt-pro-attachments" aria-label={t("ui.tool.gptPro.attachments")}>
+          <For each={attachments()}>
+            {(attachment) => (
+              <li class="flex min-w-0 flex-col gap-1 text-12-regular" data-testid="gpt-pro-attachment">
+                <div class="flex min-w-0 items-center gap-2">
+                  <span class="min-w-0 flex-1 truncate" title={attachment.name}>{attachment.name}</span>
+                  <span class="shrink-0 text-text-weak" data-attachment-status={attachment.status}>
+                    {t(`ui.tool.gptPro.attachment.${attachment.status}`)}
+                  </span>
+                </div>
+                <Show when={attachment.status === "failed" && attachment.error}>
+                  <span class="text-text-critical-base" role="status">{attachment.error}</span>
+                </Show>
+              </li>
+            )}
+          </For>
+        </ul>
       </Show>
     </div>
   )

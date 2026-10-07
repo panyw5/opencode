@@ -1,4 +1,5 @@
 import type { WebContents } from "electron"
+import path from "node:path"
 import { write as writeLog } from "./logging"
 
 // CDP automation executor for one WebContentsView, built on webContents.debugger.
@@ -181,6 +182,53 @@ export class BrowserCdp {
   async insertText(text: string) {
     await this.ensureAttached()
     await this.dbg.sendCommand("Input.insertText", { text })
+  }
+  /** Attach already-validated local files to a rendered file input via CDP. */
+  async setInputFiles(selector: string, files: string[]) {
+    if (!files.length) throw new Error("At least one file is required")
+    if (files.some((file) => !path.isAbsolute(file))) throw new Error("File paths must be absolute")
+    await this.ensureAttached()
+    await this.dbg.sendCommand("DOM.enable")
+    const document = (await this.dbg.sendCommand("DOM.getDocument", { depth: -1 })) as {
+      root?: { nodeId?: number }
+    }
+    if (!document.root?.nodeId) throw new Error("Page document is unavailable")
+    const query = JSON.stringify(selector)
+    const eligibleCount = await this.evaluate<number>(`[...document.querySelectorAll(${query})].filter(input =>
+      input instanceof HTMLInputElement && input.type === 'file' && !input.disabled &&
+      input.getAttribute('aria-disabled') !== 'true' && !input.closest('[inert],[hidden],[aria-hidden="true"]')
+    ).length`)
+    if (!eligibleCount) throw new Error("Enabled file input was not found")
+    if (eligibleCount !== 1) throw new Error("Enabled file input is ambiguous")
+    const evaluated = (await this.dbg.sendCommand("Runtime.evaluate", {
+      expression: `[...document.querySelectorAll(${query})].find(input => input instanceof HTMLInputElement && input.type === 'file' && !input.disabled && input.getAttribute('aria-disabled') !== 'true' && !input.closest('[inert],[hidden],[aria-hidden="true"]'))`,
+    })) as { result?: { objectId?: string } }
+    if (!evaluated.result?.objectId) throw new Error("Enabled file input was not found")
+    const active = (await this.dbg.sendCommand("Runtime.callFunctionOn", {
+      objectId: evaluated.result.objectId,
+      functionDeclaration:
+        "function() { return this instanceof HTMLInputElement && this.type === 'file' && !this.disabled && this.getAttribute('aria-disabled') !== 'true' && !this.closest('[inert],[hidden],[aria-hidden=\\\"true\\\"]') }",
+      returnByValue: true,
+    })) as { result?: { value?: boolean } }
+    if (active.result?.value !== true) throw new Error("File input is no longer enabled in the active composer")
+    const requested = (await this.dbg.sendCommand("DOM.requestNode", { objectId: evaluated.result.objectId })) as {
+      nodeId?: number
+    }
+    const nodeId = requested.nodeId
+    if (!nodeId) throw new Error("Enabled file input disappeared")
+    const input = (await this.dbg.sendCommand("DOM.describeNode", { nodeId })) as {
+      node?: { nodeName?: string; attributes?: string[] }
+    }
+    const attrs = new Map<string, string>()
+    for (let i = 0; i < (input.node?.attributes?.length ?? 0); i += 2)
+      attrs.set(input.node!.attributes![i], input.node!.attributes![i + 1])
+    if (input.node?.nodeName !== "INPUT" || attrs.get("type") !== "file")
+      throw new Error("Selected control is not a file input")
+    if (attrs.has("disabled") || attrs.get("aria-disabled") === "true")
+      throw new Error("Selected file input is disabled")
+    if (files.length > 1 && !attrs.has("multiple")) throw new Error("File input does not allow multiple files")
+    await this.dbg.sendCommand("DOM.setFileInputFiles", { nodeId, files })
+    log("file-input", `files assigned count=${files.length}`)
   }
   async focus() {
     this.wc.focus()
@@ -558,6 +606,24 @@ export class BrowserCdp {
       returnByValue: true,
     })) as { result?: { value?: boolean }; exceptionDetails?: unknown }
     if (result.exceptionDetails) throw new Error("Element inspection failed")
+    return result.result?.value === true
+  }
+  async matchesText(uid: string, pattern: string): Promise<boolean> {
+    await this.ensureAttached()
+    const backendNodeId = uid.startsWith("n") ? Number.parseInt(uid.slice(1), 10) : Number.NaN
+    if (!Number.isFinite(backendNodeId)) throw new Error("Invalid element uid; take a new browser_read snapshot")
+    const resolved = (await this.dbg.sendCommand("DOM.resolveNode", { backendNodeId })) as {
+      object?: { objectId?: string }
+    }
+    if (!resolved.object?.objectId) throw new Error("Element no longer exists; take a new browser_read snapshot")
+    const result = (await this.dbg.sendCommand("Runtime.callFunctionOn", {
+      objectId: resolved.object.objectId,
+      functionDeclaration:
+        "function(pattern) { const el=this.closest('button,[role=button]')||this; const label=el.getAttribute('aria-label')||el.innerText||el.textContent||''; return new RegExp(pattern,'i').test(label.trim()) }",
+      arguments: [{ value: pattern }],
+      returnByValue: true,
+    })) as { result?: { value?: boolean }; exceptionDetails?: unknown }
+    if (result.exceptionDetails) throw new Error("Element text inspection failed")
     return result.result?.value === true
   }
 

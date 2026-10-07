@@ -2,9 +2,23 @@ import { describe, expect, test } from "bun:test"
 import { GptProDriver } from "./gpt-pro-driver"
 import { GptProPageError } from "./gpt-pro-page-error"
 import { GPT_PRO_PARTITION, GPT_PRO_URL, type GptProPageState } from "@opencode-ai/util/gpt-pro"
-import { CHATGPT_INSPECT_EXPRESSION, CHATGPT_ONBOARDING_DISMISS_EXPRESSION } from "@opencode-ai/util/chatgpt-page"
+import {
+  CHATGPT_INSPECT_EXPRESSION,
+  CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION,
+  CHATGPT_ONBOARDING_DISMISS_EXPRESSION,
+} from "@opencode-ai/util/chatgpt-page"
 
-function fixture() {
+function fixture(options: {
+  imageEvidence?: {
+    url: string
+    composer: Array<{ name: string; kind: "image"; sha256?: string; status: "ready" | "unknown" }>
+    users: Array<{
+      id?: string
+      attachments: Array<{ name: string; kind: "image"; sha256?: string; status: "ready" | "unknown" }>
+    }>
+  }
+  pendingUpload?: boolean
+} = {}) {
   const page: GptProPageState = {
     url: GPT_PRO_URL,
     model: "GPT-6 Pro",
@@ -14,6 +28,7 @@ function fixture() {
     generating: false,
     revision: 0,
     users: [],
+    attachmentInput: true,
     sendReady: true,
   }
   const clicks: string[] = [],
@@ -29,6 +44,7 @@ function fixture() {
   let overlay: { heading: string; selector: string } | null = null
   let covered = false
   const inserted: string[] = []
+  const uploads: string[][] = []
   let insert = (text: string) => {
     page.draft = text
   }
@@ -36,6 +52,14 @@ function fixture() {
     evaluate: async (expression: string) => {
       reads++
       if (expression === CHATGPT_INSPECT_EXPRESSION) return structuredClone(page)
+      if (expression === CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION)
+        return (
+          options.imageEvidence ?? {
+            url: page.url,
+            composer: [],
+            users: page.users.map((user) => ({ id: user.id, attachments: [] })),
+          }
+        )
       if (expression === CHATGPT_ONBOARDING_DISMISS_EXPRESSION) return overlay
       if (expression.includes("max - now")) return selectSteps
       if (expression.includes("return trigger?.getAttribute")) return pickerOpen
@@ -51,6 +75,16 @@ function fixture() {
     insertText: async (text: string) => {
       inserted.push(text)
       insert(text)
+    },
+    setInputFiles: async (_selector: string, files: string[]) => {
+      uploads.push(files)
+      page.attachments = files.map(() => ({ name: "", status: "unknown" as const }))
+      if (!options.pendingUpload)
+        page.attachments = files.map((file) => ({ name: file.split(/[\\/]/).at(-1)!, status: "ready" as const }))
+      else
+        setTimeout(() => {
+          page.attachments = files.map((file) => ({ name: file.split(/[\\/]/).at(-1)!, status: "ready" as const }))
+        }, 20)
     },
     pressEnter: async () => {
       throw Error("Blind Enter submission is forbidden")
@@ -92,6 +126,7 @@ function fixture() {
     logs,
     opened,
     inserted,
+    uploads,
     cover: () => {
       covered = true
     },
@@ -143,6 +178,92 @@ describe("gpt-pro trusted submission", () => {
     expect(f.clicks).toHaveLength(0)
     await f.driver.submit()
     expect(f.clicks).toHaveLength(1)
+  })
+  test("uploads files once and requires ready card, preview, and remove evidence", async () => {
+    const f = fixture()
+    await f.driver.uploadAttachments([{ path: "/private/stage/a.md", name: "a.md" }], true)
+    expect(f.uploads).toEqual([["/private/stage/a.md"]])
+    expect(f.page.attachments).toEqual([{ name: "a.md", status: "ready" }])
+    expect(f.logs.join("\n")).toContain("attachments verified ready")
+  })
+  test("waits through nameless pending cards before reconciling renamed ready cards", async () => {
+    const f = fixture({ pendingUpload: true })
+    await f.driver.uploadAttachments(
+      [{ path: "/private/stage/job-prefix-report.pdf", name: "job-prefix-report.pdf" }],
+      true,
+    )
+    expect(f.uploads).toEqual([["/private/stage/job-prefix-report.pdf"]])
+    expect(f.logs.join("\n")).toContain("unknown:unknown")
+    expect(f.logs.join("\n")).toContain("job-prefix-report.pdf:ready")
+  })
+  test("reconciles ready attachments after restart without uploading again", async () => {
+    const f = fixture()
+    f.page.attachments = [{ name: "a.md", status: "ready" }]
+    await f.driver.uploadAttachments([{ path: "/private/stage/a.md", name: "a.md" }], false)
+    expect(f.uploads).toHaveLength(0)
+    expect(f.logs.join("\n")).toContain("no duplicate upload dispatched")
+  })
+  test("does not adopt a same-name manual attachment on the initial upload path", async () => {
+    const f = fixture()
+    f.page.attachments = [{ name: "a.md", status: "ready" }]
+    await expect(f.driver.uploadAttachments([{ path: "/private/stage/a.md", name: "a.md" }], true)).rejects.toThrow(
+      "predate this consultation",
+    )
+    expect(f.uploads).toHaveLength(0)
+  })
+  test("discards image evidence if the page changes between snapshots", async () => {
+    const f = fixture({
+      imageEvidence: {
+        url: `${GPT_PRO_URL}c/other`,
+        composer: [{ name: "chart.png", kind: "image", sha256: "a".repeat(64), status: "ready" }],
+        users: [],
+      },
+    })
+    await expect(f.driver.page()).rejects.toThrow("page changed during image attachment inspection")
+  })
+  test("does not reinterpret a PDF preview thumbnail as image attachment evidence", async () => {
+    const f = fixture({
+      imageEvidence: {
+        url: GPT_PRO_URL,
+        composer: [{ name: "job-prefix-chart.png", kind: "image", sha256: "b".repeat(64), status: "ready" }],
+        users: [],
+      },
+    })
+    f.page.attachments = [
+      { name: "job-prefix-report.pdf", status: "ready" },
+      { name: "job-prefix-chart.png", status: "unknown" },
+    ]
+    const page = await f.driver.page()
+    expect(page.attachments).toEqual([
+      { name: "job-prefix-report.pdf", status: "ready" },
+      { name: "job-prefix-chart.png", kind: "image", sha256: "b".repeat(64), status: "ready" },
+    ])
+  })
+  test("refuses partial, stale, or failed attachment state without duplicate upload", async () => {
+    const partial = fixture()
+    partial.page.attachments = [{ name: "a.md", status: "ready" }]
+    await expect(
+      partial.driver.uploadAttachments(
+        [
+          { path: "/private/stage/a.md", name: "a.md" },
+          { path: "/private/stage/b.md", name: "b.md" },
+        ],
+        false,
+      ),
+    ).rejects.toThrow("partial or ambiguous")
+    const stale = fixture()
+    stale.page.attachments = [{ name: "other.md", status: "ready" }]
+    await expect(stale.driver.uploadAttachments([{ path: "/private/stage/a.md", name: "a.md" }], false)).rejects.toThrow(
+      "partial or ambiguous",
+    )
+    const failed = fixture()
+    failed.page.attachments = [{ name: "a.md", status: "failed" }]
+    await expect(failed.driver.uploadAttachments([{ path: "/private/stage/a.md", name: "a.md" }], false)).rejects.toThrow(
+      "partial or ambiguous",
+    )
+    expect(partial.uploads).toHaveLength(0)
+    expect(stale.uploads).toHaveLength(0)
+    expect(failed.uploads).toHaveLength(0)
   })
   test("waits for asynchronous editor reconciliation without typing a second copy", async () => {
     const f = fixture()

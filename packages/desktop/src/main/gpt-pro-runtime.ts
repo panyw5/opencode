@@ -25,6 +25,7 @@ export function getGptProController() {
       save: (jobs) => store.set("jobs", jobs),
       config: () => (store.get("config") as GptProConfig | undefined) ?? DEFAULT_GPT_PRO_CONFIG,
       setConfig: (config) => store.set("config", config),
+      stagingRoot: () => `${app.getPath("userData")}/gpt-pro/attachments`,
     },
     (message) => writeLog("gpt-pro", message),
   )

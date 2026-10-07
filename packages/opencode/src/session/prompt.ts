@@ -62,6 +62,7 @@ import {
   consultMentionFor,
   isConsultMention,
 } from "@/tool/consult-mention"
+import { materializeGptProDirectFiles } from "@/tool/gpt-pro-direct-files"
 import { SessionRunState } from "./run-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -830,10 +831,6 @@ export const layer = Layer.effect(
       const allTools = yield* registry.all()
       const toolByID = new Map(allTools.map((tool) => [tool.id, tool] as const))
 
-      const promptText =
-        buildConsultPromptFromParts(lastUserParts).trim() ||
-        "The user requested an external consultation. Review the project context and provide structured analysis."
-
       const assistantMessage: MessageV2.Assistant = yield* sessions.updateMessage({
         id: MessageID.ascending(),
         role: "assistant",
@@ -861,95 +858,130 @@ export const layer = Layer.effect(
         const backgroundChoice = lastUserParts.find(
           (part) => part.type === "text" && typeof part.metadata?.gptProBackground === "boolean",
         )
+        const promptText =
+          buildConsultPromptFromParts(lastUserParts, name !== "gpt-pro").trim() ||
+          "The user requested an external consultation. Review the project context and provide structured analysis."
+        const directFiles: string[] = []
+        let cleanupDirectFiles: Effect.Effect<void> = Effect.void
+        let attachmentPreparationError: Error | undefined
+        if (name === "gpt-pro") {
+          const prepared = yield* materializeGptProDirectFiles(lastUserParts, ctx.directory).pipe(
+            Effect.match({
+              onFailure: (error) => ({ type: "error" as const, error }),
+              onSuccess: (value) => ({ type: "success" as const, value }),
+            }),
+          )
+          if (prepared.type === "error") attachmentPreparationError = prepared.error
+          else {
+            directFiles.push(...prepared.value.files)
+            cleanupDirectFiles = prepared.value.cleanup()
+          }
+        }
         const toolArgs = {
           prompt: promptText,
+          ...(directFiles.length ? { files: directFiles } : {}),
           ...(name === "gpt-pro" && backgroundChoice?.type === "text"
             ? { background: backgroundChoice.metadata!.gptProBackground as boolean }
             : {}),
         }
 
-        let part: MessageV2.ToolPart = yield* sessions.updatePart({
-          id: PartID.ascending(),
-          messageID: assistantMessage.id,
-          sessionID: assistantMessage.sessionID,
-          type: "tool",
-          callID: ulid(),
-          tool: mention.tool,
-          state: {
-            status: "running",
-            input: toolArgs,
-            time: { start: Date.now() },
-          },
-        })
-
-        yield* plugin.trigger(
-          "tool.execute.before",
-          { tool: mention.tool, sessionID, callID: part.id },
-          { args: toolArgs },
-        )
-
-        let error: Error | undefined
-        const consultAbort = new AbortController()
-        const result = yield* consultTool
-          .execute(toolArgs, {
-            agent: lastUser.agent,
+        let part: MessageV2.ToolPart = yield* sessions
+          .updatePart({
+            id: PartID.ascending(),
             messageID: assistantMessage.id,
-            sessionID,
-            abort: consultAbort.signal,
-            callID: part.callID,
-            messages: msgs,
-            metadata: (val: { title?: string; metadata?: Record<string, unknown> }) =>
-              Effect.gen(function* () {
-                if (part.state.status !== "running") return
-                part = yield* sessions.updatePart({
-                  ...part,
-                  type: "tool",
-                  state: {
-                    ...part.state,
-                    ...(val.title === undefined ? {} : { title: val.title }),
-                    ...(val.metadata === undefined ? {} : { metadata: { ...part.state.metadata, ...val.metadata } }),
-                  },
-                } satisfies MessageV2.ToolPart)
-              }),
-            ask: (req: any) =>
-              permission
-                .ask({
-                  ...req,
-                  sessionID,
-                  ruleset: Permission.merge(agent.permission, session.permission ?? []),
-                })
-                .pipe(Effect.orDie),
+            sessionID: assistantMessage.sessionID,
+            type: "tool",
+            callID: ulid(),
+            tool: mention.tool,
+            state: {
+              status: "running",
+              input: toolArgs,
+              time: { start: Date.now() },
+            },
           })
           .pipe(
-            Effect.catchCause((cause) => {
-              const defect = Cause.squash(cause)
-              error = defect instanceof Error ? defect : new Error(String(defect))
-              log.error("consult mention execution failed", {
-                error,
-                advisor: name,
-                tool: mention.tool,
-                sessionID,
-              })
-              return Effect.void
-            }),
-            Effect.onInterrupt(() =>
-              Effect.uninterruptible(
-                Effect.gen(function* () {
-                  consultAbort.abort()
-                  if (part.state.status === "running") {
-                    yield* sessions.abortToolPart({
-                      sessionID,
-                      messageID: assistantMessage.id,
-                      partID: part.id,
-                      source: "tool-specific-interrupt",
-                      error: "Cancelled",
-                      ownerMessageID: assistantMessage.id,
-                    })
-                  }
-                }),
-              ),
-            ),
+            Effect.onError(() => cleanupDirectFiles),
+            Effect.onInterrupt(() => cleanupDirectFiles),
           )
+
+        yield* plugin
+          .trigger("tool.execute.before", { tool: mention.tool, sessionID, callID: part.id }, { args: toolArgs })
+          .pipe(
+            Effect.onError(() => cleanupDirectFiles),
+            Effect.onInterrupt(() => cleanupDirectFiles),
+          )
+
+        let error: Error | undefined = attachmentPreparationError
+        const consultAbort = new AbortController()
+        let result: Tool.ExecuteResult | void = undefined
+        if (attachmentPreparationError) {
+          log.error("direct GPT-Pro attachment rejected before tool dispatch", {
+            sessionID,
+            error: attachmentPreparationError,
+          })
+        } else {
+          result = yield* consultTool
+            .execute(toolArgs, {
+              agent: lastUser.agent,
+              messageID: assistantMessage.id,
+              sessionID,
+              abort: consultAbort.signal,
+              callID: part.callID,
+              messages: msgs,
+              metadata: (val: { title?: string; metadata?: Record<string, unknown> }) =>
+                Effect.gen(function* () {
+                  if (part.state.status !== "running") return
+                  part = yield* sessions.updatePart({
+                    ...part,
+                    type: "tool",
+                    state: {
+                      ...part.state,
+                      ...(val.title === undefined ? {} : { title: val.title }),
+                      ...(val.metadata === undefined ? {} : { metadata: { ...part.state.metadata, ...val.metadata } }),
+                    },
+                  } satisfies MessageV2.ToolPart)
+                }),
+              ask: (req: any) =>
+                permission
+                  .ask({
+                    ...req,
+                    sessionID,
+                    ruleset: Permission.merge(agent.permission, session.permission ?? []),
+                  })
+                  .pipe(Effect.orDie),
+            })
+            .pipe(
+              Effect.catchCause((cause) => {
+                const defect = Cause.squash(cause)
+                error = defect instanceof Error ? defect : new Error(String(defect))
+                log.error("consult mention execution failed", {
+                  error,
+                  advisor: name,
+                  tool: mention.tool,
+                  sessionID,
+                })
+                return Effect.void
+              }),
+              Effect.ensuring(cleanupDirectFiles),
+              Effect.onInterrupt(() =>
+                Effect.uninterruptible(
+                  Effect.gen(function* () {
+                    consultAbort.abort()
+                    if (part.state.status === "running") {
+                      yield* sessions.abortToolPart({
+                        sessionID,
+                        messageID: assistantMessage.id,
+                        partID: part.id,
+                        source: "tool-specific-interrupt",
+                        error: "Cancelled",
+                        ownerMessageID: assistantMessage.id,
+                      })
+                    }
+                  }),
+                ),
+              ),
+            )
+        }
 
         const attachments = result?.attachments?.map((attachment) => ({
           ...attachment,
