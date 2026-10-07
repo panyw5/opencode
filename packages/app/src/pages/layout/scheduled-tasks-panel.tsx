@@ -72,38 +72,61 @@ function ScheduledTaskCard(props: {
   t: (key: string, vars?: Record<string, string | number>) => string
   onOpen: () => void
 }): JSX.Element {
+  let card!: HTMLButtonElement
+  const runLabel = createMemo(() =>
+    props.task.lastRunAt
+      ? `${props.lastRunLabel} ${formatDate(props.task.lastRunAt)}`
+      : props.task.enabled
+        ? `${props.nextRunLabel} ${formatDate(props.task.nextRunAt)}`
+        : "-",
+  )
+  onMount(() => {
+    const frame = requestAnimationFrame(() => {
+      const style = getComputedStyle(card)
+      const prompt = card.querySelector('[data-slot="scheduled-task-prompt"]')
+      console.debug(
+        `[scheduled-panel] card mounted task=${props.task.id} border=${style.borderTopWidth} radius=${style.borderTopLeftRadius} promptLines=${prompt ? getComputedStyle(prompt).webkitLineClamp : "missing"} scheduleInFooter=${Boolean(card.querySelector('[data-slot="scheduled-task-footer"] [data-slot="scheduled-task-schedule"]'))} statusInHeader=${Boolean(card.querySelector('[data-slot="scheduled-task-header"] [data-slot="scheduled-task-status"]'))}`,
+      )
+    })
+    onCleanup(() => cancelAnimationFrame(frame))
+  })
   return (
     <button
+      ref={card}
       type="button"
-      class="flex min-h-24 w-full flex-col gap-2 rounded-lg border border-border-weak-base bg-surface-raised-base px-3 py-3 text-left shadow-xs-border-base transition-colors hover:bg-surface-raised-base-hover"
+      data-component="scheduled-task-card"
+      class="flex min-h-24 w-full flex-col gap-2 rounded-xl border border-border-weak-base bg-surface-raised-base px-3 py-3 text-left transition-colors hover:bg-surface-raised-base-hover"
       onClick={props.onOpen}
     >
-      <div class="flex w-full items-stretch gap-2.5">
-        <div class="flex w-9 shrink-0 items-center justify-center self-stretch rounded-lg bg-surface-base">
+      <div data-slot="scheduled-task-header" class="flex w-full items-center gap-2">
+        <div class="flex shrink-0 items-center">
           <Icon name="clock" size="normal" class="text-icon-base" />
         </div>
         <div class="min-w-0 flex-1">
-          <div class="truncate text-13-medium text-text-strong">{props.task.name}</div>
-          <div class="mt-0.5 truncate text-11-regular text-text-weak">
-            {scheduleLabel(props.task.schedule, props.t)}
-          </div>
+          <div class="truncate text-16-medium !leading-5 text-text-strong">{props.task.name}</div>
         </div>
+        <span data-slot="scheduled-task-status" class="shrink-0 text-11-regular text-text-weaker">
+          {props.task.enabled ? props.enabledLabel : props.disabledLabel}
+        </span>
       </div>
-      <div class="line-clamp-3 text-12-mono text-text-base">
+      <div data-slot="scheduled-task-prompt" class="line-clamp-2 text-12-mono text-text-weak">
         {props.task.prompt.length > 200 ? props.task.prompt.slice(0, 200) + "…" : props.task.prompt}
       </div>
       <Show when={props.task.lastError}>
         <div class="line-clamp-2 text-11-regular text-text-danger">{props.task.lastError}</div>
       </Show>
-      <div class="flex w-full items-center justify-between gap-2 text-11-regular text-text-weaker">
-        <span class="min-w-0 truncate">
-          {props.task.lastRunAt
-            ? `${props.lastRunLabel} ${formatDate(props.task.lastRunAt)}`
-            : props.task.enabled
-              ? `${props.nextRunLabel} ${formatDate(props.task.nextRunAt)}`
-              : "-"}
+      <div data-slot="scheduled-task-footer" class="flex w-full items-center gap-2 text-11-regular text-text-weaker">
+        <span
+          data-slot="scheduled-task-schedule"
+          class="flex min-w-0 max-w-[45%] shrink-0 items-center gap-1"
+          title={scheduleLabel(props.task.schedule, props.t)}
+        >
+          <Icon name="alarm-clock-check" size="small" />
+          <span class="truncate">{scheduleLabel(props.task.schedule, props.t)}</span>
         </span>
-        <span class="shrink-0">{props.task.enabled ? props.enabledLabel : props.disabledLabel}</span>
+        <span class="min-w-0 flex-1 truncate text-right" title={runLabel()}>
+          {runLabel()}
+        </span>
       </div>
     </button>
   )
@@ -888,6 +911,7 @@ function FieldLabel(props: { label: string; children: JSX.Element }): JSX.Elemen
 }
 
 export function ScheduledTasksPanel(props: {
+  projectHeader?: JSX.Element
   projectID: Accessor<string>
   projectName: Accessor<string>
   directory: Accessor<string>
@@ -1034,10 +1058,12 @@ export function ScheduledTasksPanel(props: {
   return (
     <div
       data-component="sidebar-panel"
+      data-panel="scheduled-tasks"
       class="flex h-full min-h-0 min-w-0 flex-col rounded-tl-[12px] border-l border-t border-border-weaker-base bg-background-base px-3"
       style={{ width: props.mobile ? undefined : `${props.width()}px` }}
     >
-      <div class="shrink-0 px-1 py-3">
+      {props.projectHeader}
+      <div data-slot="task-panel-toolbar" class="shrink-0 px-1 py-3">
         <div class="flex items-center justify-between gap-2 py-1 pl-2">
           <div class="flex min-w-0 items-center gap-2">
             <Tooltip placement="bottom" value={language.t("scheduled.back")}>
@@ -1078,7 +1104,7 @@ export function ScheduledTasksPanel(props: {
         </div>
       </div>
 
-      <div class="min-h-0 flex-1 overflow-y-auto no-scrollbar px-1 pb-4">
+      <div data-slot="scheduled-task-list" class="min-h-0 flex-1 overflow-y-auto no-scrollbar px-1 pt-1 pb-4">
         <Show
           when={!state.loading}
           fallback={

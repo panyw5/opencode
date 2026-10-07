@@ -871,6 +871,7 @@ function ProjectTaskCards(props: {
 }
 
 export function ProjectTasksPanel(props: {
+  projectHeader?: JSX.Element
   projectID: Accessor<string>
   projectName: Accessor<string>
   directory: Accessor<string>
@@ -1078,6 +1079,7 @@ export function ProjectTasksPanel(props: {
 
   return (
     <TaskPanelShell
+      projectHeader={props.projectHeader}
       data-panel="project-tasks"
       mobile={props.mobile}
       width={props.width}

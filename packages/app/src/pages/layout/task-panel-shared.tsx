@@ -52,6 +52,7 @@ export function ErrorCard(props: { err: string }): JSX.Element {
 
 /** Shared sidebar panel chrome used by Trellis + project task managers. */
 export function TaskPanelShell(props: {
+  projectHeader?: JSX.Element
   mobile?: boolean
   width: Accessor<number>
   title: string
@@ -73,7 +74,8 @@ export function TaskPanelShell(props: {
       class="flex h-full min-h-0 min-w-0 flex-col rounded-tl-[12px] border-l border-t border-border-weaker-base bg-background-base px-3"
       style={{ width: props.mobile ? undefined : `${props.width()}px` }}
     >
-      <div class="shrink-0 px-1 py-3">
+      {props.projectHeader}
+      <div data-slot="task-panel-toolbar" class="shrink-0 px-1 py-3">
         <div class="flex items-start justify-between gap-2 py-1 pl-2">
           <div class="min-w-0">
             <div class="flex items-center gap-2">
