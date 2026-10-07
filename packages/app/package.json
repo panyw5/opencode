@@ -38,6 +38,7 @@
     "@types/bun": "catalog:",
     "@types/luxon": "catalog:",
     "@types/node": "catalog:",
+    "@types/turndown": "5.0.5",
     "@typescript/native-preview": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
@@ -81,6 +82,7 @@
     "solid-js": "catalog:",
     "solid-list": "catalog:",
     "tailwindcss": "catalog:",
+    "turndown": "7.2.0",
     "virtua": "catalog:",
     "zod": "catalog:"
   }

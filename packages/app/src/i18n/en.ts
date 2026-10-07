@@ -1608,6 +1608,11 @@ export const dict = {
   "settings.models.title": "Models",
   "settings.models.description": "Model settings will be configurable here.",
   "settings.assistant.title": "Assistant",
+  "session.selection.toolbar": "Selection actions",
+  "session.selection.copyMarkdown": "Copy Markdown",
+  "session.selection.copied": "Copied",
+  "session.selection.toPrompt": "Send to prompt",
+  "session.selection.toAssistant": "Send to quick assistant",
   "settings.assistant.description": "Configure the floating quick assistant.",
   "settings.assistant.model.title": "Assistant model",
   "settings.assistant.model.description":

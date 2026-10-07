@@ -15,11 +15,39 @@ import {
   healPunctuationEmphasis,
   normalizeAutolink,
   normalizeCodeLanguage,
+  preserveCodeLanguage,
   prepareMarkdown,
   protectBareAutolinks,
   protectMathExpressions,
   renderMathExpressions,
 } from "../context/marked"
+
+describe("highlighted code language", () => {
+  test("keeps fenced language for Markdown selection copy", () => {
+    expect(preserveCodeLanguage('<pre class="shiki"><code>x</code></pre>', "ts title=test")).toBe(
+      '<pre class="shiki"><code class="language-ts">x</code></pre>',
+    )
+  })
+  test("does not inject invalid language attributes", () => {
+    const html = "<pre><code>x</code></pre>"
+    expect(preserveCodeLanguage(html, '\"onmouseover=alert(1)')).toBe(html)
+    expect(preserveCodeLanguage(html)).toBe(html)
+  })
+})
+
+describe("desktop formula copy source", () => {
+  test("HTML-only inline math carries the original LaTeX", () => {
+    const html = renderMathExpressions('<span data-math-style="inline">a^2</span>', "html")
+    expect(html).toContain('data-opencode-math-style="inline"')
+    expect(html).toContain('data-opencode-math-tex="a^2"')
+    expect(html).not.toContain("annotation")
+  })
+  test("display math carries unmodified equation tags for copy", () => {
+    const html = renderMathExpressions('<span data-math-style="display">a^2\\tag{1}</span>', "html")
+    expect(html).toContain('data-opencode-math-style="display"')
+    expect(html).toContain('data-opencode-math-tex="a^2&#92;tag{1}"')
+  })
+})
 
 describe("markdown fileLink", () => {
   test("parses explicit markdown file links with line and column", () => {
@@ -205,7 +233,8 @@ $$`
     const html = renderMathExpressions(protectedHtml, "html")
 
     expect(html).toContain("katex")
-    expect(html).not.toContain("data-opencode-math-tex")
+    expect(html).toContain('class="katex" data-opencode-math-style="inline" data-opencode-math-tex=')
+    expect(html).not.toContain('<span data-math-style="inline">')
     expect(html).toContain("mspace")
     expect(html).toContain("vlist")
     expect(html).not.toContain("E_0!")

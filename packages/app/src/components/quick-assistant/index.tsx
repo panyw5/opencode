@@ -10,7 +10,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
 import { Binary } from "@opencode-ai/core/util/binary"
 import { useParams } from "@solidjs/router"
-import { batch, createEffect, createMemo, onCleanup, Show } from "solid-js"
+import { batch, createEffect, createMemo, onCleanup, onMount, Show } from "solid-js"
 import { createStore, reconcile, type SetStoreFunction } from "solid-js/store"
 import { useCommand } from "@/context/command"
 import { useGlobalSDK } from "@/context/global-sdk"
@@ -51,6 +51,7 @@ import { emptyQuickPrompt, quickPromptText, recoverQuickPrompt } from "./editor-
 import { buildRequestParts } from "../prompt-input/build-request-parts"
 import { promptText } from "../prompt-input/prompt-text"
 import { clonePromptParts } from "../prompt-input/history"
+import { appendSelectionToPrompt, QUICK_ASSISTANT_SELECTION_EVENT } from "@/utils/selection-prompt"
 
 function errorName(err: unknown) {
   if (!err || typeof err !== "object") return undefined
@@ -561,6 +562,20 @@ export function QuickAssistant() {
     console.debug("[quick-assistant] panel opened")
     setSaved("open", true)
   }
+
+  onMount(() => {
+    const receive = (event: Event) => {
+      const text = (event as CustomEvent<unknown>).detail
+      if (!enabled() || typeof text !== "string" || !text.trim()) return
+      const next = appendSelectionToPrompt(state.prompt, text)
+      setState("prompt", next.prompt)
+      console.debug(`[session-selection] assistant draft appended length=${text.length} cursor=${next.cursor}`)
+      open()
+      requestAnimationFrame(() => input?.focus())
+    }
+    window.addEventListener(QUICK_ASSISTANT_SELECTION_EVENT, receive)
+    onCleanup(() => window.removeEventListener(QUICK_ASSISTANT_SELECTION_EVENT, receive))
+  })
 
   const close = () => {
     console.debug("[quick-assistant] panel closed")

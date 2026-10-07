@@ -995,10 +995,11 @@ function protectBareAutolinksInText(text: string) {
 }
 
 function renderMathInText(text: string, output: MathOutput): string {
-  const addDisplayMathTex = (html: string, latex: string) => {
+  const addMathTex = (html: string, latex: string, displayMode: boolean) => {
     return html.replace(
-      /^<span class="([^"]*\bkatex-display\b[^"]*)"/,
-      `<span class="$1" data-opencode-math-tex="${escapeMathHtml(latex)}"`,
+      /^<span class="([^"]*)"/,
+      (_match, classes: string) =>
+        `<span class="${classes}" data-opencode-math-style="${displayMode ? "display" : "inline"}" data-opencode-math-tex="${escapeMathHtml(latex)}"`,
     )
   }
 
@@ -1012,7 +1013,7 @@ function renderMathInText(text: string, output: MathOutput): string {
           output,
         }),
       )
-      return displayMode ? addDisplayMathTex(rendered, latex) : rendered
+      return addMathTex(rendered, latex, displayMode)
     } catch {
       return fallback
     }
@@ -1087,6 +1088,12 @@ export function normalizeCodeLanguage(lang?: string): string {
   return normalized in bundledLanguages ? normalized : "text"
 }
 
+export function preserveCodeLanguage(html: string, lang?: string): string {
+  const language = lang?.trim().split(/\s+/)[0]
+  if (!language || !/^[\w+-]+$/.test(language)) return html
+  return html.replace("<code>", `<code class="language-${language}">`)
+}
+
 async function highlightCodeBlocks(html: string): Promise<string> {
   const codeBlockRegex = /<pre><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g
   const matches = [...html.matchAll(codeBlockRegex)]
@@ -1117,7 +1124,7 @@ async function highlightCodeBlocks(html: string): Promise<string> {
             theme: "OpenCode",
             tabindex: false,
           })
-          output = output.replace(fullMatch, () => highlighted)
+          output = output.replace(fullMatch, () => preserveCodeLanguage(highlighted, lang))
         }
         return output
       })(),
@@ -1158,11 +1165,14 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
             if (!highlighter.getLoadedLanguages().includes(value)) {
               await highlighter.loadLanguage(value as BundledLanguage)
             }
-            return highlighter.codeToHtml(code, {
-              lang: value,
-              theme: "OpenCode",
-              tabindex: false,
-            })
+            return preserveCodeLanguage(
+              highlighter.codeToHtml(code, {
+                lang: value,
+                theme: "OpenCode",
+                tabindex: false,
+              }),
+              lang,
+            )
           })(),
           new Promise<string>((resolve) =>
             setTimeout(() => resolve(plainCode(code, lang)), highlightTimeoutMs),

@@ -92,6 +92,7 @@ import {
   shouldFocusTerminalOnKeyDown,
 } from "@/pages/session/helpers"
 import { MessageTimeline, type MessageTimelineViewport } from "@/pages/session/timeline/message-timeline"
+import { appendSelectionToPrompt } from "@/utils/selection-prompt"
 import { PRESENTATION_SOURCE_EVENT, type PresentationSourceRequest } from "@/pages/session/presentation-source"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
@@ -3495,6 +3496,16 @@ export default function Page() {
                     >
                       <MessageTimeline
                         actions={actions}
+                        onSelectionToPrompt={(text) => {
+                          const next = appendSelectionToPrompt(prompt.current(), text)
+                          prompt.set(next.prompt, next.cursor)
+                          console.debug(`[session-selection] main draft appended length=${text.length} cursor=${next.cursor}`)
+                          requestAnimationFrame(() => {
+                            if (!inputRef?.isConnected) return
+                            inputRef.focus()
+                            setCursorPosition(inputRef, next.cursor)
+                          })
+                        }}
                         onSendQueued={composer.blocked() ? undefined : flushQueued}
                         onBackgroundShell={backgroundShell}
                         onBackgroundTask={backgroundTask}
