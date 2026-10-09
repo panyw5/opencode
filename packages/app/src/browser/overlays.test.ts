@@ -22,6 +22,15 @@ function overlay(kind: string, x = 200, y = 50) {
 }
 
 describe("browser overlay detection", () => {
+  test("ignores the enlarged browser itself but detects overlays inside it", () => {
+    const surface = overlay("browser")
+    surface.setAttribute("role", "dialog")
+    surface.setAttribute("data-browser-maximized", "")
+    expect(browserOverlay(bounds)).toBeUndefined()
+    const menu = overlay("popover-content")
+    surface.append(menu)
+    expect(browserOverlay(bounds)).toBe("popover-content")
+  })
   test("recognizes project menus, status popovers, tooltips and nested menus", () => {
     for (const kind of ["dropdown-menu-content", "popover-content", "tooltip", "dropdown-menu-sub-content"]) {
       const element = overlay(kind)

@@ -1,5 +1,6 @@
 import { Index, Show, createEffect, createMemo, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
+import { Portal } from "solid-js/web"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
@@ -36,20 +37,40 @@ export function BrowserPanel(props: { class?: string }) {
   const setActive = service.activate
   const tabs = createMemo(service.tabs)
   const opened = createMemo(() => view().browser.opened())
-  const closeUserTab = service.close
+  const closeUserTab = (partition: string) => {
+    console.debug(`[browser-panel] tab close requested partition=${partition}`)
+    service.close(partition)
+    console.debug(`[browser-panel] tab close removed partition=${partition}`)
+  }
   const closeAgentTab = (partition: string) => {
     service.close(partition)
     setConfirmClose(undefined)
   }
   let placeholder: HTMLDivElement | undefined
+  let floatingPlaceholder: HTMLDivElement | undefined
+  let maximizeButton: HTMLButtonElement | undefined
+  const [floating, setFloating] = createStore({ partition: "" })
+  const maximized = () => !!floating.partition
+  const restore = () => {
+    console.debug(`[browser-panel] restore partition=${floating.partition}`)
+    setFloating("partition", "")
+    requestAnimationFrame(() => maximizeButton?.focus({ preventScroll: true }))
+  }
+  const maximize = () => {
+    if (!tabs().some((tab) => tab.partition === active())) return
+    console.debug(`[browser-panel] maximize partition=${active()}`)
+    setFloating("partition", active())
+    setConfirmClose(undefined)
+  }
   const [preview, setPreview] = createStore({ partition: "", image: "" })
 
   const display = createBrowserDisplay({
     api,
     read: () => {
       const tab = tabs().find((tab) => tab.partition === active())
-      if (!opened() || !placeholder?.isConnected || !tab?.state?.epoch) return { partition: null, bounds: null }
-      const rect = placeholder.getBoundingClientRect()
+      const surface = maximized() ? floatingPlaceholder : placeholder
+      if (!opened() || !surface?.isConnected || !tab?.state?.epoch) return { partition: null, bounds: null }
+      const rect = surface.getBoundingClientRect()
       const x = Math.max(0, Math.ceil(rect.left))
       const y = Math.max(0, Math.ceil(rect.top))
       const width = Math.floor(Math.min(window.innerWidth, rect.right)) - x
@@ -80,9 +101,32 @@ export function BrowserPanel(props: { class?: string }) {
     opened()
     active()
     tabs()
+    maximized()
     dialog.active
     service.presentation()
     display.sync()
+  })
+  createEffect(() => {
+    if (!maximized()) return
+    // A presentation for another tab returns to the dock rather than replacing
+    // the single page the user enlarged.
+    if (!opened() || active() !== floating.partition || !tabs().some((tab) => tab.partition === floating.partition)) {
+      restore()
+      return
+    }
+    schedule()
+    const observer = new ResizeObserver(schedule)
+    if (floatingPlaceholder) observer.observe(floatingPlaceholder)
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || dialog.active || event.defaultPrevented) return
+      event.preventDefault()
+      restore()
+    }
+    window.addEventListener("keydown", onKey)
+    onCleanup(() => {
+      observer.disconnect()
+      window.removeEventListener("keydown", onKey)
+    })
   })
   onMount(() => {
     display.start()
@@ -126,8 +170,10 @@ export function BrowserPanel(props: { class?: string }) {
           return
         }
         console.debug(`[browser-tab-close] requested partition=${tab.partition} agent=${tab.agent}`)
-        if (tab.agent) setConfirmClose(tab.partition)
-        else closeUserTab(tab.partition)
+        if (tab.agent) {
+          if (maximized()) restore()
+          setConfirmClose(tab.partition)
+        } else closeUserTab(tab.partition)
       },
     },
   ])
@@ -172,14 +218,98 @@ export function BrowserPanel(props: { class?: string }) {
     return tab.agent ? language.t("panel.browser.agentTab") : language.t("panel.browser.tab")
   }
 
+  const Toolbar = (props: { floating?: boolean }) => (
+    <div class="h-10 shrink-0 flex items-center gap-1 px-2 border-b border-border-weaker-base bg-background-base">
+      <IconButton
+        icon="arrow-left"
+        variant="ghost"
+        disabled={!activeUserTab()}
+        onClick={() => activeUserTab() && void api!.navigate(active(), "back")}
+        aria-label={language.t("panel.browser.back")}
+      />
+      <IconButton
+        icon="arrow-right"
+        variant="ghost"
+        disabled={!activeUserTab()}
+        onClick={() => activeUserTab() && void api!.navigate(active(), "forward")}
+        aria-label={language.t("panel.browser.forward")}
+      />
+      <IconButton
+        icon="refresh-small"
+        variant="ghost"
+        disabled={!activeUserTab()}
+        onClick={() => activeUserTab() && void api!.navigate(active(), "reload")}
+        aria-label={language.t("panel.browser.reload")}
+      />
+      <IconButton
+        ref={(element) => {
+          if (!props.floating) maximizeButton = element
+        }}
+        icon={props.floating ? "collapse" : "browser-maximize"}
+        variant="ghost"
+        disabled={!tabs().some((tab) => tab.partition === active())}
+        onClick={() => (props.floating ? restore() : maximize())}
+        aria-label={language.t(props.floating ? "common.restore" : "common.maximize")}
+        title={language.t(props.floating ? "common.restore" : "common.maximize")}
+        data-action={props.floating ? "browser-restore" : "browser-maximize"}
+      />
+      <input
+        type="text"
+        value={address()}
+        readonly={activeAgent()}
+        onInput={(e) => setAddress(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") go(e.currentTarget.value)
+        }}
+        placeholder={language.t("panel.browser.addressPlaceholder")}
+        spellcheck={false}
+        autocomplete="off"
+        class="flex-1 min-w-0 h-7 px-2 rounded-md bg-surface-base text-13-regular text-text-strong placeholder:text-text-weak outline-none focus:ring-1 focus:ring-border-strong-base"
+        classList={{ "text-text-weak": activeAgent() }}
+      />
+      <Show when={active() === GPT_PRO_PARTITION && platform.gptPro}>
+        <IconButton
+          icon="globe"
+          variant="ghost"
+          aria-label={language.t("gptPro.login")}
+          title={language.t("gptPro.login")}
+          onClick={() => {
+            console.debug("[browser-panel] gpt-pro default-browser login requested")
+            void platform
+              .gptPro!.loginInBrowser()
+              .catch(() => console.warn("[browser-panel] login could not be opened"))
+          }}
+        />
+      </Show>
+      <IconButton
+        icon="close-small"
+        variant="ghost"
+        onClick={() => (props.floating ? restore() : view().browser.close())}
+        aria-label={language.t("common.close")}
+      />
+    </div>
+  )
+  const Preview = () => (
+    <Show when={preview.partition === active() && preview.image}>
+      <img
+        data-browser-preview={preview.partition}
+        src={preview.image}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        class="size-full pointer-events-none select-none"
+      />
+    </Show>
+  )
+
   return (
     <Show when={api}>
       <div
         id="browser-panel"
         role="region"
         aria-label={language.t("command.browser.toggle")}
-        aria-hidden={!opened()}
-        inert={!opened()}
+        aria-hidden={!opened() || maximized()}
+        inert={!opened() || maximized()}
         tabIndex={-1}
         onPointerDown={(event) => {
           if ((event.target as Element).closest("button, input, [role=button]")) return
@@ -188,7 +318,7 @@ export function BrowserPanel(props: { class?: string }) {
         class={props.class}
         classList={{
           "relative size-full min-w-0 flex flex-col overflow-hidden bg-background-stronger": true,
-          "pointer-events-none": !opened(),
+          "pointer-events-none": !opened() || maximized(),
         }}
       >
         <div class="flex flex-col flex-1 min-h-0">
@@ -232,7 +362,10 @@ export function BrowserPanel(props: { class?: string }) {
                 <button
                   type="button"
                   aria-pressed={active() === tab().partition}
-                  onClick={() => setActive(tab().partition)}
+                  onClick={() => {
+                    console.debug(`[browser-panel] tab selected partition=${tab().partition}`)
+                    setActive(tab().partition)
+                  }}
                   onAuxClick={(e) => {
                     if (e.button !== 1) return
                     if (tab().agent) setConfirmClose(tab().partition)
@@ -243,7 +376,7 @@ export function BrowserPanel(props: { class?: string }) {
                       ? `${language.t("panel.browser.agentTab")} · ${tab().state?.url ?? ""}`
                       : tab().state?.url
                   }
-                  class="group/tab flex h-6 min-w-0 max-w-56 cursor-pointer select-none items-center gap-1.5 rounded-md pl-2 text-12-regular outline-none transition-[background-color,color,transform] duration-150 active:scale-[0.97] focus-visible:ring-1 focus-visible:ring-border-strong-base"
+                  class="group/tab flex h-6 min-w-0 max-w-56 cursor-pointer select-none items-center gap-1.5 rounded-md pl-2 text-12-regular outline-none transition-[background-color,color] duration-150 focus-visible:ring-1 focus-visible:ring-border-strong-base"
                   classList={{
                     "pr-2": tab().agent,
                     "pr-1": !tab().agent,
@@ -288,14 +421,28 @@ export function BrowserPanel(props: { class?: string }) {
                   <span class="truncate">{tabLabel(tab())}</span>
                   <span
                     role="button"
+                    data-action="browser-tab-close"
                     aria-label={language.t("panel.browser.closeTab")}
                     title={language.t("panel.browser.closeTab")}
+                    onPointerDown={(event) => {
+                      console.debug(
+                        `[browser-panel] tab close pointerdown partition=${tab().partition} button=${event.button}`,
+                      )
+                    }}
+                    onPointerUp={(event) => {
+                      console.debug(
+                        `[browser-panel] tab close pointerup partition=${tab().partition} button=${event.button}`,
+                      )
+                    }}
                     onClick={(e) => {
                       e.stopPropagation()
+                      console.debug(`[browser-panel] tab close click partition=${tab().partition} agent=${tab().agent}`)
                       if (tab().agent) setConfirmClose(tab().partition)
                       else closeUserTab(tab().partition)
                     }}
-                    class="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-sm text-text-weak transition-[opacity,background-color,color,transform] duration-100 hover:bg-background-base hover:text-text-strong active:scale-90"
+                    // Keep both this hit target and its tab stationary between
+                    // pointerdown and pointerup; scaling turns edge clicks into tab selection.
+                    class="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-sm text-text-weak transition-[opacity,background-color,color] duration-100 hover:bg-background-base hover:text-text-strong active:bg-surface-inset-base"
                     classList={{
                       "opacity-0 group-hover/tab:opacity-100": active() !== tab().partition,
                     }}
@@ -313,75 +460,10 @@ export function BrowserPanel(props: { class?: string }) {
               aria-label={language.t("panel.browser.newTab")}
             />
           </div>
-          <div class="h-10 shrink-0 flex items-center gap-1 px-2 border-b border-border-weaker-base bg-background-base">
-            <IconButton
-              icon="arrow-left"
-              variant="ghost"
-              disabled={!activeUserTab()}
-              onClick={() => activeUserTab() && void api!.navigate(active(), "back")}
-              aria-label={language.t("panel.browser.back")}
-            />
-            <IconButton
-              icon="arrow-right"
-              variant="ghost"
-              disabled={!activeUserTab()}
-              onClick={() => activeUserTab() && void api!.navigate(active(), "forward")}
-              aria-label={language.t("panel.browser.forward")}
-            />
-            <IconButton
-              icon="refresh-small"
-              variant="ghost"
-              disabled={!activeUserTab()}
-              onClick={() => activeUserTab() && void api!.navigate(active(), "reload")}
-              aria-label={language.t("panel.browser.reload")}
-            />
-            <input
-              type="text"
-              value={address()}
-              readonly={activeAgent()}
-              onInput={(e) => setAddress(e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") go(e.currentTarget.value)
-              }}
-              placeholder={language.t("panel.browser.addressPlaceholder")}
-              spellcheck={false}
-              autocomplete="off"
-              class="flex-1 min-w-0 h-7 px-2 rounded-md bg-surface-base text-13-regular text-text-strong placeholder:text-text-weak outline-none focus:ring-1 focus:ring-border-strong-base"
-              classList={{ "text-text-weak": activeAgent() }}
-            />
-            <Show when={active() === GPT_PRO_PARTITION && platform.gptPro}>
-              <IconButton
-                icon="globe"
-                variant="ghost"
-                aria-label={language.t("gptPro.login")}
-                title={language.t("gptPro.login")}
-                onClick={() => {
-                  console.debug("[browser-panel] gpt-pro default-browser login requested")
-                  void platform
-                    .gptPro!.loginInBrowser()
-                    .catch(() => console.warn("[browser-panel] login could not be opened"))
-                }}
-              />
-            </Show>
-            <IconButton
-              icon="close-small"
-              variant="ghost"
-              onClick={() => view().browser.close()}
-              aria-label={language.t("common.close")}
-            />
-          </div>
+          <Toolbar />
           <div class="flex-1 min-h-0 relative">
             <div ref={placeholder} class="absolute inset-0" data-browser-placeholder={active()}>
-              <Show when={preview.partition === active() && preview.image}>
-                <img
-                  data-browser-preview={preview.partition}
-                  src={preview.image}
-                  alt=""
-                  aria-hidden="true"
-                  draggable={false}
-                  class="size-full pointer-events-none select-none"
-                />
-              </Show>
+              <Preview />
             </div>
             <Show when={tabs().length === 0}>
               <div class="absolute inset-0 flex items-center justify-center text-13-regular text-text-weak pointer-events-none">
@@ -391,6 +473,33 @@ export function BrowserPanel(props: { class?: string }) {
           </div>
         </div>
       </div>
+      <Portal>
+        <Show when={maximized()}>
+          <div class="fixed inset-0 z-40 bg-black/40" onClick={restore}>
+            <div
+              role="dialog"
+              aria-label={language.t("command.browser.toggle")}
+              data-browser-maximized
+              tabIndex={-1}
+              ref={(element) => requestAnimationFrame(() => element.focus({ preventScroll: true }))}
+              onClick={(event) => event.stopPropagation()}
+              class="absolute inset-x-4 top-12 bottom-4 flex flex-col overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger shadow-2xl outline-none"
+            >
+              <Toolbar floating />
+              <div
+                ref={(element) => {
+                  floatingPlaceholder = element
+                  schedule()
+                }}
+                class="relative flex-1 min-h-0"
+                data-browser-floating-placeholder={floating.partition}
+              >
+                <Preview />
+              </div>
+            </div>
+          </div>
+        </Show>
+      </Portal>
     </Show>
   )
 }

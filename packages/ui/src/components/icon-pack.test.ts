@@ -19,6 +19,17 @@ const configNames = [
   "trash",
 ]
 
+test("keeps browser maximize on four diagonal outward arrows across icon packs", () => {
+  const icon = resolveIcon("browser-maximize", "legacy")
+  expect(icon.viewBox).toBe("0 0 20 20")
+  for (const arrow of ["M3 3L7.5 7.5", "M17 3L12.5 7.5", "M17 17L12.5 12.5", "M3 17L7.5 12.5"]) {
+    expect(icon.body).toContain(arrow)
+  }
+  for (const pack of ["phosphor", "tabler", "lucide"] as const) {
+    expect(resolveIcon("browser-maximize", pack)).toEqual(icon)
+  }
+})
+
 test("keeps the filled editorial opening quote consistent across icon packs", () => {
   const quote = resolveIcon("quote-open", "legacy")
   expect(quote.viewBox).toBe("0 0 20 20")

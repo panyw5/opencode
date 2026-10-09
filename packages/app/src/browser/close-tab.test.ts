@@ -16,6 +16,22 @@ function fixture() {
 }
 
 describe("focused browser tab close", () => {
+  test("routes commands from the floating browser without targeting the hidden dock", () => {
+    const { panel } = fixture()
+    panel.setAttribute("inert", "")
+    panel.setAttribute("aria-hidden", "true")
+    const floating = document.createElement("div")
+    floating.setAttribute("data-browser-maximized", "")
+    const address = document.createElement("input")
+    floating.append(address)
+    document.body.append(floating)
+    address.focus()
+    const trigger = mock(() => {})
+    expect(closeFocusedBrowserTab("keybind", trigger)).toBe(true)
+    expect(trigger).toHaveBeenCalledWith(CLOSE_BROWSER_TAB_COMMAND, "keybind")
+    floating.setAttribute("inert", "")
+    expect(browserPanelHasFocus()).toBe(false)
+  })
   test("routes menu and configurable keybind commands from browser chrome", () => {
     const { panel, address, tab } = fixture()
     const trigger = mock(() => {})
