@@ -475,7 +475,7 @@ export function BrowserPanel(props: { class?: string }) {
       </div>
       <Portal>
         <Show when={maximized()}>
-          <div class="fixed inset-0 z-40 bg-black/40" onClick={restore}>
+          <div data-component="browser-floating-overlay" class="fixed inset-0 z-40" onClick={restore}>
             <div
               role="dialog"
               aria-label={language.t("command.browser.toggle")}
@@ -483,7 +483,8 @@ export function BrowserPanel(props: { class?: string }) {
               tabIndex={-1}
               ref={(element) => requestAnimationFrame(() => element.focus({ preventScroll: true }))}
               onClick={(event) => event.stopPropagation()}
-              class="absolute inset-x-4 top-12 bottom-4 flex flex-col overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger shadow-2xl outline-none"
+              // The native webpage is rectangular and cannot be clipped by this DOM container.
+              class="absolute inset-x-6 top-14 bottom-6 flex flex-col overflow-hidden rounded-t-xl bg-background-stronger outline-none"
             >
               <Toolbar floating />
               <div

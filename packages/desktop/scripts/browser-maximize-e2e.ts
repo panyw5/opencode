@@ -76,6 +76,32 @@ try {
       && document.querySelector('#browser-panel').hasAttribute('inert')
   })()`)
   if (!single) throw new Error("Floating browser is not nearly maximized with a single page")
+  const appearance = await client.evaluate<{
+    shadow: string
+    backdrop: string
+    blur: string
+    border: string
+    bottomLeft: string
+    bottomRight: string
+  }>(`(() => {
+    const dialog = getComputedStyle(document.querySelector('[data-browser-maximized]'))
+    const overlay = getComputedStyle(document.querySelector('[data-component="browser-floating-overlay"]'))
+    return {shadow:dialog.boxShadow,backdrop:overlay.backgroundColor,blur:overlay.backdropFilter,
+      border:dialog.borderBottomWidth,bottomLeft:dialog.borderBottomLeftRadius,bottomRight:dialog.borderBottomRightRadius}
+  })()`)
+  if (appearance.shadow === "none" || appearance.backdrop === "rgba(0, 0, 0, 0)" || appearance.blur === "none")
+    throw new Error("Floating browser lacks visible elevation cues")
+  log(`PASS floating elevation shadow=${appearance.shadow} backdrop=${appearance.backdrop} blur=${appearance.blur}`)
+  if (
+    appearance.shadow.split(/,(?![^()]*\))/).length !== 1 ||
+    appearance.border !== "0px" ||
+    appearance.bottomLeft !== "0px" ||
+    appearance.bottomRight !== "0px"
+  )
+    throw new Error(
+      "Floating browser must have one shadow, no border, and square bottom corners matching the native page",
+    )
+  log("PASS one simple shadow, no border and consistent square bottom corners")
   const point = await page.evaluate<{ x: number; y: number }>(`(() => {
     const rect = document.querySelector('#counter').getBoundingClientRect()
     return {x:rect.x+rect.width/2,y:rect.y+rect.height/2}
@@ -117,6 +143,8 @@ try {
     await client.call("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape" })
     await displayed(true)
     log("PASS nested command palette remains above floating browser and restores its page")
+    const previewShot = await client.call<{ data: string }>("Page.captureScreenshot", { format: "png" })
+    await Bun.write("/tmp/browser-maximize-elevation.png", Buffer.from(previewShot.data, "base64"))
   }
 
   await click('[data-action="browser-restore"]')
