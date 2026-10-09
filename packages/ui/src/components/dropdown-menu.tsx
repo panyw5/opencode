@@ -1,4 +1,5 @@
 import { DropdownMenu as Kobalte } from "@kobalte/core/dropdown-menu"
+import { keepDialogFocus } from "./dropdown-menu-focus"
 import { splitProps } from "solid-js"
 import type { ComponentProps, ParentProps } from "solid-js"
 
@@ -63,11 +64,15 @@ function DropdownMenuPortal(props: DropdownMenuPortalProps) {
 }
 
 function DropdownMenuContent(props: ParentProps<DropdownMenuContentProps>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  const [local, rest] = splitProps(props, ["class", "classList", "children", "onCloseAutoFocus"])
   return (
     <Kobalte.Content
       {...rest}
       data-component="dropdown-menu-content"
+      onCloseAutoFocus={(event) => {
+        local.onCloseAutoFocus?.(event)
+        keepDialogFocus(event)
+      }}
       classList={{
         ...(local.classList ?? {}),
         [local.class ?? ""]: !!local.class,
