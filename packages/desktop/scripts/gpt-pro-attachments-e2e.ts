@@ -22,13 +22,18 @@ const consultationID = args.includes("--consultation") ? arg("--consultation") :
 const requestedNonce = args.includes("--nonce") ? arg("--nonce") : undefined
 const requestedDirectory = args.includes("--directory") ? resolve(arg("--directory") ?? "") : undefined
 if (args.includes("--watch-run") && !arg("--watch-run")) throw new Error("--watch-run requires a run.json path")
-if (args.includes("--watch") && !watchSession) throw new Error("--watch requires an existing session ID; no request was sent")
-if (watchRunPath && (watchSession || probeOnly || fixtureOnly)) throw new Error("--watch-run cannot be combined with other modes")
-if (watchSession && !requestedDirectory) throw new Error("--watch requires --directory; use --watch-run <run.json> to reuse a saved run")
-if (consultationID && !watchSession && !watchRunPath) throw new Error("--consultation is only valid in watch mode; no request was sent")
+if (args.includes("--watch") && !watchSession)
+  throw new Error("--watch requires an existing session ID; no request was sent")
+if (watchRunPath && (watchSession || probeOnly || fixtureOnly))
+  throw new Error("--watch-run cannot be combined with other modes")
+if (watchSession && !requestedDirectory)
+  throw new Error("--watch requires --directory; use --watch-run <run.json> to reuse a saved run")
+if (consultationID && !watchSession && !watchRunPath)
+  throw new Error("--consultation is only valid in watch mode; no request was sent")
 if (probeOnly && fixtureOnly) throw new Error("Choose one harmless probe mode")
 if (args.includes("--directory") && !arg("--directory")) throw new Error("--directory requires a path")
-if (args.includes("--show-session-only") && !showOnlySession) throw new Error("--show-session-only requires an existing session ID")
+if (args.includes("--show-session-only") && !showOnlySession)
+  throw new Error("--show-session-only requires an existing session ID")
 if (showOnlySession && !requestedDirectory) throw new Error("--show-session-only requires --directory")
 if (showOnlySession && (watchRunPath || watchSession || probeOnly || fixtureOnly || showSession))
   throw new Error("--show-session-only cannot be combined with other modes")
@@ -36,16 +41,19 @@ if (args.includes("--nonce") && !requestedNonce) throw new Error("--nonce requir
 if (requestedNonce && !/^[A-Za-z0-9_-]{1,16}$/.test(requestedNonce))
   throw new Error("--nonce must be a 1-16 character ASCII alphanumeric token")
 const endpoint = Bun.env.OPENCODE_CDP_ENDPOINT || "http://127.0.0.1:9222"
-const savedRun = watchRunPath ? JSON.parse(await readFile(watchRunPath, "utf8")) as {
-  sessionID: string
-  directory: string
-  background?: boolean
-  nonce?: string
-  prompt?: string
-  markers?: Record<string, string>
-  fixtures?: Record<string, string>
-} : undefined
-if (watchRunPath && (!savedRun?.sessionID || !savedRun.directory)) throw new Error("Run manifest is missing sessionID or directory")
+const savedRun = watchRunPath
+  ? (JSON.parse(await readFile(watchRunPath, "utf8")) as {
+      sessionID: string
+      directory: string
+      background?: boolean
+      nonce?: string
+      prompt?: string
+      markers?: Record<string, string>
+      fixtures?: Record<string, string>
+    })
+  : undefined
+if (watchRunPath && (!savedRun?.sessionID || !savedRun.directory))
+  throw new Error("Run manifest is missing sessionID or directory")
 if (savedRun?.nonce && requestedNonce && savedRun.nonce !== requestedNonce)
   throw new Error("--nonce does not match the saved run; watch mode will not change its request")
 if (savedRun && backgroundRequested && savedRun.background !== true)
@@ -73,12 +81,16 @@ const generatedFixtures = {
   pasted: join(directory, "pasted-image.png"),
 }
 const markers = (savedRun?.markers ?? generatedMarkers) as typeof generatedMarkers
-const basePrompt = "Read all five attached files/images and report the exact unique marker found in each, labeling which marker came from which attachment. The markers are present only in the attachments; do not guess or infer them."
+const basePrompt =
+  "Read all five attached files/images and report the exact unique marker found in each, labeling which marker came from which attachment. The markers are present only in the attachments; do not guess or infer them."
 const prompt = savedRun?.prompt ?? `${basePrompt}${nonce ? ` Case ID: ${nonce}.` : ""}`
 const fixtures = savedRun?.fixtures
-  ? Object.fromEntries(
-      Object.entries(generatedFixtures).map(([key, path]) => [key, join(directory, basename(savedRun.fixtures?.[key] ?? path))]),
-    ) as typeof generatedFixtures
+  ? (Object.fromEntries(
+      Object.entries(generatedFixtures).map(([key, path]) => [
+        key,
+        join(directory, basename(savedRun.fixtures?.[key] ?? path)),
+      ]),
+    ) as typeof generatedFixtures)
   : generatedFixtures
 
 function pdf(marker: string) {
@@ -143,7 +155,9 @@ async function inspectLiveTarget(job: GptProJob) {
     })
     page.users = page.users.map((user, index) => {
       const imageAttachments = images.users[index]?.attachments ?? []
-      return imageAttachments.length ? { ...user, attachments: [...(user.attachments ?? []), ...imageAttachments] } : user
+      return imageAttachments.length
+        ? { ...user, attachments: [...(user.attachments ?? []), ...imageAttachments] }
+        : user
     })
     return page
   } finally {
@@ -155,12 +169,19 @@ async function showSessionInRenderer(sessionID: string) {
   const encodedDirectory = Buffer.from(directory, "utf8").toString("base64url")
   const sessionPath = `/${encodedDirectory}/session/${sessionID}`
   const deepLink = `opencode://open-project?directory=${encodeURIComponent(directory)}`
-  await client.evaluate(`window.dispatchEvent(new CustomEvent('opencode:deep-link',{detail:{urls:[${JSON.stringify(deepLink)}]}}))`)
+  await client.evaluate(
+    `window.dispatchEvent(new CustomEvent('opencode:deep-link',{detail:{urls:[${JSON.stringify(deepLink)}]}}))`,
+  )
   const deadline = Date.now() + 30_000
   let selected = false
   while (Date.now() < deadline) {
     try {
-      const state = await client.evaluate<{ selected: boolean; sessionPage: boolean; statusRows: number; tableRows: number }>(`(() => {
+      const state = await client.evaluate<{
+        selected: boolean
+        sessionPage: boolean
+        statusRows: number
+        tableRows: number
+      }>(`(() => {
         const path=${JSON.stringify(sessionPath)}
         const anchor=[...document.querySelectorAll('a[href]')].find(link=>{
           try { return new URL(link.href,location.href).pathname===path && !!link.getClientRects().length }
@@ -179,7 +200,9 @@ async function showSessionInRenderer(sessionID: string) {
       })()`)
       selected ||= state.selected
       if (state.sessionPage) {
-        log(`opened owned session via exact sidebar link selected=${selected} gptProStatusRows=${state.statusRows} renderedTableRows=${state.tableRows}`)
+        log(
+          `opened owned session via exact sidebar link selected=${selected} gptProStatusRows=${state.statusRows} renderedTableRows=${state.tableRows}`,
+        )
         return
       }
     } catch {}
@@ -217,7 +240,9 @@ async function verifyFileInputTransport() {
     const deadline = Date.now() + 10_000
     let target: Awaited<ReturnType<typeof listTargets>>[number] | undefined
     while (Date.now() < deadline) {
-      target = (await listTargets(endpoint)).find((item) => item.type === "page" && item.title === "GPT-Pro file input transport fixture")
+      target = (await listTargets(endpoint)).find(
+        (item) => item.type === "page" && item.title === "GPT-Pro file input transport fixture",
+      )
       if (target) break
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
@@ -225,10 +250,16 @@ async function verifyFileInputTransport() {
     fixture = await CdpClient.connect(target.webSocketDebuggerUrl)
     await fixture.call("DOM.enable")
     const { root } = await fixture.call<{ root: { nodeId: number } }>("DOM.getDocument")
-    const { nodeId } = await fixture.call<{ nodeId: number }>("DOM.querySelector", { nodeId: root.nodeId, selector: "#files" })
+    const { nodeId } = await fixture.call<{ nodeId: number }>("DOM.querySelector", {
+      nodeId: root.nodeId,
+      selector: "#files",
+    })
     await fixture.call("DOM.setFileInputFiles", { nodeId, files: Object.values(fixtures) })
     await fixture.evaluate("new Promise((resolve) => setTimeout(resolve, 0))")
-    const result = await fixture.evaluate<{ files: Array<{ name: string; bytesBase64: string }>; changeObserved: boolean }>(`(async() => ({
+    const result = await fixture.evaluate<{
+      files: Array<{ name: string; bytesBase64: string }>
+      changeObserved: boolean
+    }>(`(async() => ({
       files:await Promise.all([...document.querySelector('#files').files].map(async file=>{
         const bytes=new Uint8Array(await file.arrayBuffer())
         let binary=''
@@ -237,18 +268,25 @@ async function verifyFileInputTransport() {
       })),
       changeObserved:document.querySelector('#state').textContent!=='empty'
     }))()`)
-    const expectedHashes = await Promise.all(Object.values(fixtures).map(async (path) => {
-      const bytes = await readFile(path)
-      return createHash("sha256").update(bytes).digest("hex")
-    }))
+    const expectedHashes = await Promise.all(
+      Object.values(fixtures).map(async (path) => {
+        const bytes = await readFile(path)
+        return createHash("sha256").update(bytes).digest("hex")
+      }),
+    )
     const names = result.files.map((file) => file.name)
     const expected = Object.values(fixtures).map((path) => path.split("/").at(-1)!)
     if (!result.changeObserved) throw new Error("CDP file input did not dispatch its native change event")
-    if (JSON.stringify(names) !== JSON.stringify(expected)) throw new Error("CDP file input did not preserve fixture names/extensions")
-    const transportedHashes = result.files.map((file) => createHash("sha256").update(Buffer.from(file.bytesBase64, "base64")).digest("hex"))
+    if (JSON.stringify(names) !== JSON.stringify(expected))
+      throw new Error("CDP file input did not preserve fixture names/extensions")
+    const transportedHashes = result.files.map((file) =>
+      createHash("sha256").update(Buffer.from(file.bytesBase64, "base64")).digest("hex"),
+    )
     if (JSON.stringify(transportedHashes) !== JSON.stringify(expectedHashes))
       throw new Error("CDP file-input transport changed one or more fixture byte streams")
-    log(`CDP file-input transport PASS files=${names.length} extensions=${names.map((name) => name.split(".").at(-1)).join(",")} byteDigests=match`)
+    log(
+      `CDP file-input transport PASS files=${names.length} extensions=${names.map((name) => name.split(".").at(-1)).join(",")} byteDigests=match`,
+    )
   } finally {
     fixture?.close()
     if (opened) await client.evaluate(`window.api.browser.close(${JSON.stringify(partition)})`).catch(() => undefined)
@@ -290,14 +328,21 @@ try {
     process.exit(0)
   }
   const status = await client.evaluate<GptProProbeStatus>("window.api.gptPro.status()")
-  const chatTargets = (await listTargets(endpoint)).filter((item) => item.type === "page" && item.url.startsWith("https://chatgpt.com/"))
+  const chatTargets = (await listTargets(endpoint)).filter(
+    (item) => item.type === "page" && item.url.startsWith("https://chatgpt.com/"),
+  )
   const jobs = await client.evaluate<GptProJob[]>("window.api.gptPro.list()")
   const active = jobs.filter((job) => activePhases.includes(job.phase))
   const cloudflare = status.phase === "blocked" || /cloudflare|challenge|verification/i.test(status.detail ?? "")
-  log(`probe phase=${status.phase} model=${status.page?.model ?? "unknown"} targetModel=${status.page?.targetModel ?? false} chatTargets=${chatTargets.length} activeJobs=${active.length} draftChars=${status.page?.draft.trim().length ?? 0} existingQuestions=${status.page?.users.length ?? 0}`)
+  log(
+    `probe phase=${status.phase} model=${status.page?.model ?? "unknown"} targetModel=${status.page?.targetModel ?? false} chatTargets=${chatTargets.length} activeJobs=${active.length} draftChars=${status.page?.draft.trim().length ?? 0} existingQuestions=${status.page?.users.length ?? 0}`,
+  )
   if (cloudflare) {
-    log("BLOCKED: ChatGPT reports a verification/challenge state; no browser challenge was simulated and no consultation was sent")
-    if (!probeOnly && !existingSession) throw new Error("Real consultation blocked by ChatGPT validation; no question was submitted")
+    log(
+      "BLOCKED: ChatGPT reports a verification/challenge state; no browser challenge was simulated and no consultation was sent",
+    )
+    if (!probeOnly && !existingSession)
+      throw new Error("Real consultation blocked by ChatGPT validation; no question was submitted")
   }
 
   if (probeOnly) {
@@ -309,7 +354,7 @@ try {
     if (cloudflare) throw new Error("ChatGPT validation is active; refusing to submit")
     if (active.length) throw new Error("Another GPT-Pro consultation is active; refusing to submit")
     if (chatTargets.length !== 1) throw new Error("Expected one ChatGPT target; refusing an ambiguous browser")
-    if (!status.page?.composer || !status.page.targetModel || status.page.generating)
+    if (!status.page?.composer || status.page.generating)
       throw new Error("An idle GPT-6 Pro composer is required; no question was sent")
     if (status.page.draft.trim() || status.page.users.length)
       throw new Error("Existing draft or conversation detected; refusing to alter it")
@@ -318,7 +363,13 @@ try {
   const markerList = Object.values(markers)
   const fileParts = [fixtures.markdown, fixtures.text, fixtures.pdf, fixtures.png].map((path) => ({
     type: "file",
-    mime: path.endsWith(".md") ? "text/markdown" : path.endsWith(".txt") ? "text/plain" : path.endsWith(".pdf") ? "application/pdf" : "image/png",
+    mime: path.endsWith(".md")
+      ? "text/markdown"
+      : path.endsWith(".txt")
+        ? "text/plain"
+        : path.endsWith(".pdf")
+          ? "application/pdf"
+          : "image/png",
     filename: path.split("/").at(-1),
     url: pathToFileURL(path).href,
   }))
@@ -339,13 +390,15 @@ try {
     }
     return true
   })()`)
-  const sessionID = existingSession ?? await client.evaluate<string>(`(async()=>{
+  const sessionID =
+    existingSession ??
+    (await client.evaluate<string>(`(async()=>{
     const session=await window.__gptProAttachmentRequest('/session',{title:'GPT-Pro attachment integration test',permission:[
       {permission:'gpt_pro_consult',pattern:'*',action:'allow'},
       {permission:'read',pattern:'*',action:'allow'}
     ]})
     return session.id
-  })()`)
+  })()`))
   const runManifest = { sessionID, directory, background: backgroundMode, nonce, prompt, markers, fixtures }
   if (!existingSession) await writeFile(join(output, "run.json"), JSON.stringify(runManifest, null, 2), { mode: 0o600 })
   if (!existingSession) {
@@ -362,7 +415,9 @@ try {
   } else {
     await client.evaluate(`(async()=>{window.__gptProAttachmentPrevious=[];return true})()`)
   }
-  log(`${existingSession ? "watching original session" : "submitted once to real sidecar"} session=${sessionID} attachmentParts=5 promptChars=${prompt.length}; no retry will be issued`)
+  log(
+    `${existingSession ? "watching original session" : "submitted once to real sidecar"} session=${sessionID} attachmentParts=5 promptChars=${prompt.length}; no retry will be issued`,
+  )
 
   const deadline = Date.now() + 30 * 60_000
   let previous = ""
@@ -418,10 +473,12 @@ try {
       const distinctNames = expectedNames.filter((name) => names.includes(name)).length
       const uniqueAttachmentIDs = new Set(attachments.map((item) => item.id)).size === 5
       const exactJobAttachments = attachments.length === 5 && JSON.stringify(names) === JSON.stringify(expectedNames)
-      const exactInputAttachments = state.inputFileCount === 5 &&
+      const exactInputAttachments =
+        state.inputFileCount === 5 &&
         JSON.stringify(state.inputDocumentNames) === JSON.stringify(expectedDocumentNames) &&
         state.inputImageCount === 2 &&
-        state.inputFileIDs.length === 5 && new Set(state.inputFileIDs.filter(Boolean)).size === 5
+        state.inputFileIDs.length === 5 &&
+        new Set(state.inputFileIDs.filter(Boolean)).size === 5
       const lastQuestion = livePage.users.at(-1)
       const turnAttachments = lastQuestion?.attachments ?? []
       const turnDocuments = turnAttachments.filter((item) => item.kind === "document")
@@ -429,17 +486,26 @@ try {
       const expectedSentDocumentNames = attachments
         .filter((item) => !item.mime.startsWith("image/"))
         .map((item) => item.uploadName ?? item.name)
-      const jobImageDigests = attachments.filter((item) => item.mime.startsWith("image/")).map((item) => item.sha256).sort()
+      const jobImageDigests = attachments
+        .filter((item) => item.mime.startsWith("image/"))
+        .map((item) => item.sha256)
+        .sort()
       const turnImageDigests = turnImages.map((item) => item.sha256 ?? "").sort()
-      const exactTurnDocuments = turnDocuments.length === 3 &&
+      const exactTurnDocuments =
+        turnDocuments.length === 3 &&
         JSON.stringify(turnDocuments.map((item) => item.name)) === JSON.stringify(expectedSentDocumentNames) &&
         turnDocuments.every((item) => item.status === "ready")
-      const imageDigestsMatch = turnImages.length === 2 && turnImages.every((item) => item.status === "ready" && item.sha256) &&
+      const imageDigestsMatch =
+        turnImages.length === 2 &&
+        turnImages.every((item) => item.status === "ready" && item.sha256) &&
         JSON.stringify(turnImageDigests) === JSON.stringify(jobImageDigests)
-      const pageMatches = livePage.url === state.job.url &&
+      const pageMatches =
+        livePage.url === state.job.url &&
         lastQuestion?.id === state.job.userID &&
         lastQuestion?.text === state.job.prompt &&
-        livePage.answer?.userID === state.job.userID && exactTurnDocuments && imageDigestsMatch
+        livePage.answer?.userID === state.job.userID &&
+        exactTurnDocuments &&
+        imageDigestsMatch
       const backgroundRun = state.job.background === true
       const modeMatches = backgroundRun === backgroundMode
       let toolOutput: Record<string, unknown> | undefined
@@ -447,7 +513,8 @@ try {
         const parsed = typeof state.tool?.output === "string" ? JSON.parse(state.tool.output) : state.tool?.output
         if (parsed && typeof parsed === "object") toolOutput = parsed as Record<string, unknown>
       } catch {}
-      const foregroundToolResult = !backgroundMode &&
+      const foregroundToolResult =
+        !backgroundMode &&
         state.tool?.status === "completed" &&
         state.tool.metadata?.consultation_id === state.job.id &&
         state.tool.metadata?.text === state.job.text &&
@@ -460,11 +527,23 @@ try {
       const backgroundInjection = backgroundMode && state.completionInjected
       const deliveredToParent = modeMatches && (backgroundMode ? backgroundInjection : foregroundToolResult)
       const pageMarkers = markerList.every((marker) => livePage.answer?.text.includes(marker))
-      const contentVerified = state.job.model === "GPT-6 Pro" && state.job.submitted && !!state.job.userID && modeMatches &&
-        allReady && uniqueAttachmentIDs && exactJobAttachments && distinctNames === 5 && exactInputAttachments && pageMatches &&
-        allMarkers && pageMarkers
+      const contentVerified =
+        state.job.model === "GPT-6 Pro" &&
+        state.job.submitted &&
+        !!state.job.userID &&
+        modeMatches &&
+        allReady &&
+        uniqueAttachmentIDs &&
+        exactJobAttachments &&
+        distinctNames === 5 &&
+        exactInputAttachments &&
+        pageMatches &&
+        allMarkers &&
+        pageMarkers
       const deliveryMode = backgroundMode ? "background" : "foreground"
-      log(`completion evidence mode=${deliveryMode} model=${state.job.model ?? "unknown"} submitted=${state.job.submitted} userID=${!!state.job.userID} exactTarget=${livePage.url === state.job.url} exactJobFiles=${exactJobAttachments} exactInputFiles=${exactInputAttachments} namedDocs=${exactTurnDocuments} imageDigests=${imageDigestsMatch} pageMatches=${pageMatches} modeMatches=${modeMatches} foregroundToolResult=${foregroundToolResult} backgroundInjection=${backgroundInjection} jobMarkers=${allMarkers} pageMarkers=${pageMarkers}`)
+      log(
+        `completion evidence mode=${deliveryMode} model=${state.job.model ?? "unknown"} submitted=${state.job.submitted} userID=${!!state.job.userID} exactTarget=${livePage.url === state.job.url} exactJobFiles=${exactJobAttachments} exactInputFiles=${exactInputAttachments} namedDocs=${exactTurnDocuments} imageDigests=${imageDigestsMatch} pageMatches=${pageMatches} modeMatches=${modeMatches} foregroundToolResult=${foregroundToolResult} backgroundInjection=${backgroundInjection} jobMarkers=${allMarkers} pageMarkers=${pageMarkers}`,
+      )
       await writeFile(join(output, "answer.txt"), state.job.text ?? "", { mode: 0o600 })
       const evidence = {
         sessionID,
@@ -493,43 +572,69 @@ try {
         contentVerified,
       }
       if (!contentVerified) {
-        await writeFile(join(output, "result.json"), JSON.stringify({ ...evidence, verified: false }, null, 2), { mode: 0o600 })
+        await writeFile(join(output, "result.json"), JSON.stringify({ ...evidence, verified: false }, null, 2), {
+          mode: 0o600,
+        })
         throw new Error(`Completed consultation did not verify every fixture; artifacts=${output}`)
       }
       if (!deliveredToParent) {
         const waitedMs = Date.now() - completionObservedAt
         if (Date.now() - lastInjectionLogAt >= 10_000) {
-          log(`all job and live-page evidence passed; waiting for actual ${deliveryMode} delivery evidence elapsedSeconds=${Math.floor(waitedMs / 1000)} limitSeconds=60`)
+          log(
+            `all job and live-page evidence passed; waiting for actual ${deliveryMode} delivery evidence elapsedSeconds=${Math.floor(waitedMs / 1000)} limitSeconds=60`,
+          )
           lastInjectionLogAt = Date.now()
         }
-        await writeFile(join(output, "result.json"), JSON.stringify({
-          ...evidence,
-          deliveryPending: true,
-          waitedForInjectionMs: waitedMs,
-          verified: false,
-        }, null, 2), { mode: 0o600 })
-        if (waitedMs >= 60_000) throw new Error(`Parent completion injection did not arrive within 60 seconds; artifacts=${output}`)
+        await writeFile(
+          join(output, "result.json"),
+          JSON.stringify(
+            {
+              ...evidence,
+              deliveryPending: true,
+              waitedForInjectionMs: waitedMs,
+              verified: false,
+            },
+            null,
+            2,
+          ),
+          { mode: 0o600 },
+        )
+        if (waitedMs >= 60_000)
+          throw new Error(`Parent completion injection did not arrive within 60 seconds; artifacts=${output}`)
         await new Promise((resolve) => setTimeout(resolve, 1000))
         continue
       }
-      await writeFile(join(output, "result.json"), JSON.stringify({ ...evidence, verified: deliveredToParent }, null, 2), { mode: 0o600 })
+      await writeFile(
+        join(output, "result.json"),
+        JSON.stringify({ ...evidence, verified: deliveredToParent }, null, 2),
+        { mode: 0o600 },
+      )
       if (showSession) await showSessionInRenderer(sessionID)
-      log(`PASS five ready attachment states, exact input parts, matching answer, and foreground/background delivery verified; artifacts=${output}`)
+      log(
+        `PASS five ready attachment states, exact input parts, matching answer, and foreground/background delivery verified; artifacts=${output}`,
+      )
       break
     }
     if (state.job?.phase === "paused") {
       const recovery = state.job.recovery?.stage ?? "none"
-      const safeError = (state.job.error ?? "no error detail").replace(/(?:[A-Za-z]:\\|\\\\)[^\s"'<>]+|\/(?:[^\s"'<>]+\/)*[^\s"'<>]+/g, "[local path]").slice(0, 240)
+      const safeError = (state.job.error ?? "no error detail")
+        .replace(/(?:[A-Za-z]:\\|\\\\)[^\s"'<>]+|\/(?:[^\s"'<>]+\/)*[^\s"'<>]+/g, "[local path]")
+        .slice(0, 240)
       log(`consultation paused recovery=${recovery} error=${safeError}; no automated resume or send was attempted`)
       if (showSession) await showSessionInRenderer(sessionID)
-      throw new Error("Consultation is paused for explicit recovery; use --watch-run after recovery to continue observation")
+      throw new Error(
+        "Consultation is paused for explicit recovery; use --watch-run after recovery to continue observation",
+      )
     }
     if (state.job && ["failed", "cancelled", "interrupted", "send_uncertain"].includes(state.job.phase)) {
-      const safeError = (state.job.error ?? "unknown error").replace(/(?:[A-Za-z]:\\|\\\\)[^\s"'<>]+|\/(?:[^\s"'<>]+\/)*[^\s"'<>]+/g, "[local path]").slice(0, 240)
+      const safeError = (state.job.error ?? "unknown error")
+        .replace(/(?:[A-Za-z]:\\|\\\\)[^\s"'<>]+|\/(?:[^\s"'<>]+\/)*[^\s"'<>]+/g, "[local path]")
+        .slice(0, 240)
       if (showSession) await showSessionInRenderer(sessionID)
       throw new Error(`Consultation stopped phase=${state.job.phase}: ${safeError}; never resent`)
     }
-    if (Date.now() + 2000 >= deadline) throw new Error(`Timed out while preserving the original consultation; artifacts=${output}`)
+    if (Date.now() + 2000 >= deadline)
+      throw new Error(`Timed out while preserving the original consultation; artifacts=${output}`)
     await new Promise((resolve) => setTimeout(resolve, 2000))
   }
 } finally {

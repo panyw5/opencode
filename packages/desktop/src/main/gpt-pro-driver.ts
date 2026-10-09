@@ -1,24 +1,21 @@
 import {
   CHATGPT_INSPECT_EXPRESSION,
+  CHATGPT_COMPOSER_ATTACHMENT_TARGET_EXPRESSION,
   CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION,
-  CHATGPT_MODEL_PICKER_EXPRESSION,
   CHATGPT_ONBOARDING_DISMISS_EXPRESSION,
+  CHATGPT_SEND_TARGET_EXPRESSION,
 } from "@opencode-ai/util/chatgpt-page"
 import { GPT_PRO_PARTITION, GPT_PRO_URL, isGptProOrigin, type GptProPageState } from "@opencode-ai/util/gpt-pro"
 import type { BrowserController } from "./browser"
+import type { BeforeTrustedClick } from "./browser-cdp"
 import { GptProPageError } from "./gpt-pro-page-error"
-
-const sendSelector =
-  '[data-testid="send-button"],button[aria-label="Send prompt"],button[aria-label="Send message"],button[aria-label="Send"],button[aria-label="发送消息"],button[aria-label="发送提示"]'
 
 const editorSelector = '#prompt-textarea, [data-composer-markdown][role="textbox"][contenteditable="true"]'
 const attachmentInputSelector = 'input[type="file"][aria-label="Attach files"]'
-const triggerExpression = `${CHATGPT_MODEL_PICKER_EXPRESSION}.trigger`
 
 export class GptProDriver {
   private observedCdp?: ReturnType<BrowserController["cdp"]>
   private stopObserving?: () => void
-  private rejected?: { path: string; status: number; at: number }
   constructor(
     private readonly browser: BrowserController,
     private readonly log: (message: string) => void = () => {},
@@ -29,9 +26,18 @@ export class GptProDriver {
       throw new Error("The gpt-pro browser was closed. Reopen the consultation; no automatic resend is allowed.")
     return cdp
   }
+  private blockingPageError(page: GptProPageState) {
+    const error = page.error
+    if (!error) return
+    if (error.kind === "verification") return error
+    if (error.kind === "request") {
+      this.log(`driver passing request diagnostic scope=${error.scope ?? "legacy"} to consultation owner; no driver-wide gate`)
+      return
+    }
+    return error
+  }
   async open(url = GPT_PRO_URL, fresh = false) {
     this.log(`driver open fresh=${fresh}`)
-    this.rejected = undefined
     if (
       !isGptProOrigin(url) ||
       !/^\/(?:c\/(?:[a-zA-Z0-9-]+|local-chatgpt:[a-zA-Z0-9-]+))?$/.test(decodeURIComponent(new URL(url).pathname))
@@ -89,52 +95,50 @@ export class GptProDriver {
   }
   async page(): Promise<GptProPageState> {
     const state = this.browser.getState().find((v) => v.partition === GPT_PRO_PARTITION)
-    if (!state || !isGptProOrigin(state.url)) throw new Error("Login to ChatGPT in the gpt-pro browser first.")
+    if (!state) throw new Error("The gpt-pro browser view is unavailable. Reopen the dedicated browser view.")
+    if (!isGptProOrigin(state.url))
+      throw new Error("The gpt-pro browser is on an unexpected origin. Navigate it to ChatGPT before continuing.")
     const cdp = this.cdp()
-    const page = await cdp.evaluate<GptProPageState>(CHATGPT_INSPECT_EXPRESSION)
-    const imageEvidence = await cdp.evaluate<{
-      url: string
-      composer: Array<{ name: string; kind: "image"; sha256?: string; status: "ready" | "unknown" }>
-      users: Array<{
-        id?: string
-        attachments: Array<{ name: string; kind: "image"; sha256?: string; status: "ready" | "unknown" }>
-      }>
-    }>(CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION)
-    const hasImageEvidence = imageEvidence.composer.length > 0 || imageEvidence.users.some((user) => user.attachments.length > 0)
-    if (
-      hasImageEvidence &&
-      (imageEvidence.url !== page.url || imageEvidence.users.length !== page.users.length ||
-        imageEvidence.users.some((user, index) => user.id !== page.users[index]?.id))
-    )
-      throw new Error("ChatGPT page changed during image attachment inspection; evidence was discarded")
-    const used = new Set<number>()
-    page.attachments = (page.attachments ?? []).map((attachment) => {
-      const match = imageEvidence.composer.findIndex((image, index) => !used.has(index) && image.name === attachment.name)
-      if (match < 0) return attachment
-      used.add(match)
-      return { ...attachment, ...imageEvidence.composer[match] }
-    })
-    page.users = page.users.map((user, index) => {
-      const images = imageEvidence.users[index]?.attachments ?? []
-      return images.length ? { ...user, attachments: [...(user.attachments ?? []), ...images] } : user
-    })
-    if (this.rejected && /\/(?:prepare|init)$/.test(this.rejected.path)) {
-      if (page.users.length && (page.generating || page.answer)) {
-        this.log(
-          `driver preparation rejection superseded by rendered question/reply path=${this.rejected.path} status=${this.rejected.status}; no question resent`,
-        )
-        this.rejected = undefined
-      } else if (Date.now() - this.rejected.at < 5000) {
-        this.log(`driver waiting for website preparation recovery status=${this.rejected.status}; no input dispatched`)
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const page = await cdp.evaluate<GptProPageState>(CHATGPT_INSPECT_EXPRESSION)
+        const imageEvidence = await cdp.evaluate<{
+          url: string
+          composer: Array<{ name: string; kind: "image"; sha256?: string; status: "ready" | "unknown" }>
+          users: Array<{
+            id?: string
+            attachments: Array<{ name: string; kind: "image"; sha256?: string; status: "ready" | "unknown" }>
+          }>
+        }>(CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION)
+        const consistent =
+          imageEvidence.url === page.url &&
+          imageEvidence.users.length === page.users.length &&
+          imageEvidence.users.every((user, index) => user.id === page.users[index]?.id)
+        if (!consistent) {
+          this.log(`driver page snapshot mismatch attempt=${attempt}/3; attachment evidence discarded`)
+          continue
+        }
+        const used = new Set<number>()
+        page.attachments = (page.attachments ?? []).map((attachment) => {
+          const match = imageEvidence.composer.findIndex(
+            (image, index) => !used.has(index) && image.name === attachment.name,
+          )
+          if (match < 0) return attachment
+          used.add(match)
+          return { ...attachment, ...imageEvidence.composer[match] }
+        })
+        page.users = page.users.map((user, index) => {
+          const images = imageEvidence.users[index]?.attachments ?? []
+          return images.length ? { ...user, attachments: [...(user.attachments ?? []), ...images] } : user
+        })
+        if (attempt > 1) this.log(`driver page snapshot consistency restored attempt=${attempt}/3`)
         return page
+      } catch {
+        this.log(`driver page snapshot inspection unavailable attempt=${attempt}/3; retrying without dispatch`)
       }
     }
-    if (this.rejected && !page.error)
-      page.error = {
-        kind: "request",
-        message: `ChatGPT rejected the browser request (HTTP ${this.rejected.status}). Check browser verification, login or network access. No automatic retry was performed.`,
-      }
-    return page
+    this.log("driver page snapshot consistency unconfirmed; no page action may be dispatched")
+    throw new Error("ChatGPT page snapshot could not be confirmed consistently. No page action was dispatched.")
   }
   async focus() {
     this.log("driver handing browser focus to the user; no input dispatched")
@@ -148,16 +152,31 @@ export class GptProDriver {
   }
   async dismissOnboarding() {
     for (let i = 0; i < 3; i++) {
-      const overlay = await this.cdp().evaluate<{ heading: string; selector: string } | null>(
-        CHATGPT_ONBOARDING_DISMISS_EXPRESSION,
-      )
+      let overlay: { heading: string; selector: string } | null
+      try {
+        overlay = await this.cdp().evaluate<{ heading: string; selector: string } | null>(
+          CHATGPT_ONBOARDING_DISMISS_EXPRESSION,
+        )
+      } catch {
+        this.log(`driver promo dismissal inspection unavailable step=${i + 1}; continuing to control checks`)
+        return
+      }
       if (!overlay) return
-      this.log(`driver dismissing promotional overlay heading=${overlay.heading} step=${i + 1}`)
-      await this.cdp().clickSelector(overlay.selector)
-      await new Promise((resolve) => setTimeout(resolve, 125))
+      this.log(`driver best-effort promo dismissal step=${i + 1}`)
+      try {
+        await this.cdp().clickSelector(overlay.selector)
+        await new Promise((resolve) => setTimeout(resolve, 125))
+      } catch {
+        this.log(`driver promo dismissal not dispatched step=${i + 1}; continuing to control checks`)
+        return
+      }
     }
-    if (await this.cdp().evaluate(CHATGPT_ONBOARDING_DISMISS_EXPRESSION))
-      throw new GptProPageError("A feature overlay could not be dismissed. No question was sent.")
+    try {
+      if (await this.cdp().evaluate(CHATGPT_ONBOARDING_DISMISS_EXPRESSION))
+        this.log("driver promo remains after best-effort dismissal; editor focus and send hit tests decide readiness")
+    } catch {
+      this.log("driver promo state unavailable after best-effort dismissal; editor focus and send hit tests decide readiness")
+    }
   }
   async ready() {
     this.log("driver waiting for rendered Chat composer")
@@ -173,8 +192,9 @@ export class GptProDriver {
           )
         )
           return
-        this.rejected = { path: response.path, status: response.status, at: Date.now() }
-        this.log(`driver request rejected path=${response.path} status=${response.status}; no headers or body recorded`)
+        this.log(
+          `driver diagnostic response path=${response.path} status=${response.status}; no headers or body recorded; webpage state remains authoritative`,
+        )
       })
     }
     let readiness = ""
@@ -186,14 +206,15 @@ export class GptProDriver {
           this.log(`driver readiness ${observed}`)
           readiness = observed
         }
-        if (page.error?.kind === "verification" && i < 120) {
+        const blockingError = this.blockingPageError(page)
+        if (blockingError?.kind === "verification" && i < 120) {
           if (i === 0) this.log("driver waiting for the website's automatic browser verification; no input dispatched")
           await new Promise((resolve) => setTimeout(resolve, 250))
           continue
         }
-        if (page.error) throw new GptProPageError(page.error.message, page.error.kind)
+        if (blockingError) throw new GptProPageError(blockingError.message, blockingError.kind)
         await this.dismissOnboarding()
-        if (page.composer && page.model) {
+        if (page.composer) {
           this.log("driver composer ready")
           return page
         }
@@ -203,76 +224,18 @@ export class GptProDriver {
       }
       await new Promise((r) => setTimeout(r, 250))
     }
-    throw new Error("Chat page is not ready. Complete login or verification in the dedicated browser.")
+    throw new Error("The ChatGPT composer did not become available. The page may still be loading or its interface may have changed. No message was sent.")
   }
-  async verify() {
-    this.log("driver verifying visible model-picker evidence")
+  async observeModel() {
+    this.log("driver observing current model without opening or changing the picker")
     await this.dismissOnboarding()
-    const previous = await this.page()
-    if (previous.error) throw new GptProPageError(previous.error.message, previous.error.kind)
-    this.log(`driver initial model=${previous.model} verified=${previous.targetModel}`)
-    if (previous.targetModel) return previous
-    const cdp = this.cdp()
-    try {
-      this.log("driver opening associated model picker")
-      await cdp.evaluate(`(async () => {
-        for (let i=0; i<40; i++) {
-          const picker = ${CHATGPT_MODEL_PICKER_EXPRESSION}
-          if (picker.row) return true
-          if(picker.trigger && picker.trigger.getAttribute('aria-expanded')!=='true') picker.trigger.click()
-          await new Promise(r=>setTimeout(r,125))
-        }
-        throw new Error('Cannot read the visible Chat model row')
-      })()`)
-      let page = await this.page()
-      this.log(`driver picker model=${page.model} verified=${page.targetModel}`)
-      if (page.error) throw new GptProPageError(page.error.message, page.error.kind)
-      if (!page.targetModel) {
-        // Non-Pro Power rows may omit the version entirely (e.g. "High").
-        // Adjust only this slider, then require explicit 6 Pro evidence before sending.
-        const steps = await cdp.evaluate<number>(`(() => {
-          const { menu, row } = ${CHATGPT_MODEL_PICKER_EXPRESSION}
-          if (!row || !/^(?:(?:GPT[\\s-]*)?6\\s+)?(?:Instant|Light|Standard|Medium|High|Extended|Heavy|Pro)$/i.test(row.innerText.trim())) return 0
-          const control = menu.querySelector('[data-reasoning-slider]')
-          const slider = control?.querySelector('[role="slider"]')
-          if (!control || control.closest('[inert],[hidden],[aria-hidden="true"]') || !control.getClientRects().length || !slider) return 0
-          const max = Number(slider.getAttribute('aria-valuemax'))
-          const now = Number(slider.getAttribute('aria-valuenow'))
-          if (!Number.isInteger(max) || !Number.isInteger(now) || now < 0 || max <= now || max > 10) return 0
-          control.focus()
-          return document.activeElement === control ? max - now : 0
-        })()`)
-        this.log(`driver selecting Pro power steps=${steps}`)
-        for (let i = 0; i < steps; i++) await cdp.pressArrowRight()
-        for (let i = 0; steps > 0 && !page.targetModel && i < 20; i++) {
-          await new Promise((r) => setTimeout(r, 125))
-          page = await this.page()
-          if (page.error) throw new GptProPageError(page.error.message, page.error.kind)
-        }
-        this.log(`driver selected model=${page.model} verified=${page.targetModel}`)
-      }
-      if (!page.targetModel)
-        throw new Error(
-          "Could not select and verify GPT-6 Pro in the Chat model picker. No API, Codex, Work, or fallback model will be used.",
-        )
-    } finally {
-      try {
-        const opened = await cdp.evaluate<boolean>(
-          `(() => {const trigger=${triggerExpression}; return trigger?.getAttribute('aria-expanded')==='true' })()`,
-        )
-        if (opened) {
-          this.log("driver closing model picker without sending")
-          await cdp.pressEscape()
-        }
-      } catch (error) {
-        this.log(`driver model picker cleanup failed error=${String(error)}`)
-      }
-    }
-    const verified = await this.page()
-    this.log(`driver final model=${verified.model} verified=${verified.targetModel}`)
-    if (verified.error) throw new GptProPageError(verified.error.message, verified.error.kind)
-    if (!verified.targetModel) throw new Error("Model evidence changed after closing the picker. Nothing was sent.")
-    return verified
+    const page = await this.page()
+    const blockingError = this.blockingPageError(page)
+    if (blockingError) throw new GptProPageError(blockingError.message, blockingError.kind)
+    this.log(
+      `driver model observation label=${JSON.stringify(page.model || "unknown")} proLabel=${page.targetModel} policy=user-selected nonblocking=true`,
+    )
+    return page
   }
   async fill(prompt: string) {
     this.log(`driver filling composer promptChars=${prompt.length}`)
@@ -286,8 +249,8 @@ export class GptProDriver {
     const expected = prompt.replace(/\r\n/g, "\n").trim()
     for (let i = 0; i < 20; i++) {
       const page = await this.page()
-      if (page.error) throw new GptProPageError(page.error.message, page.error.kind)
-      if (!page.targetModel) throw new Error("Model evidence changed before submission. Nothing was sent.")
+      const blockingError = this.blockingPageError(page)
+      if (blockingError) throw new GptProPageError(blockingError.message, blockingError.kind)
       const actual = page.draft.replace(/\r\n/g, "\n").trim()
       if (actual === expected) {
         this.log(
@@ -311,24 +274,41 @@ export class GptProDriver {
     files: Array<{ path: string; name: string; mime?: string; sha256?: string }>,
     mayDispatch: boolean,
     shouldContinue?: () => Promise<boolean>,
+    beforeDispatch?: () => Promise<void>,
   ) {
     if (!files.length) return
-    const key = (attachment: { name: string; kind?: "document" | "image"; sha256?: string }) =>
-      attachment.kind === "image" ? `image:${attachment.sha256 ?? "unknown"}` : `document:${attachment.name}`
-    const expected = files
-      .map((file) => (file.mime?.startsWith("image/") ? `image:${file.sha256 ?? "unknown"}` : `document:${file.name}`))
-      .sort()
+    const expected = files.map((file) => ({
+      name: file.name,
+      kind: file.mime?.startsWith("image/") ? ("image" as const) : ("document" as const),
+    }))
+    const expectedByName = new Map(expected.map((item) => [item.name, item.kind]))
     const expectedNames = new Set(files.map((file) => file.name))
     const matches = (page: GptProPageState) => {
-      const current = (page.attachments ?? []).map(key).sort()
-      return current.length === expected.length && current.every((name, index) => name === expected[index])
+      const current = page.attachments ?? []
+      return (
+        current.length === expected.length &&
+        expected.every((item) => {
+          const attachment = current.find((candidate) => candidate.name === item.name)
+          if (!attachment || attachment.status !== "ready") return false
+          if (item.kind === "document") return attachment.kind !== "image"
+          return attachment.kind === "image" && /^[a-f0-9]{64}$/i.test(attachment.sha256 ?? "")
+        })
+      )
     }
     const incompatible = (cards: NonNullable<GptProPageState["attachments"]>) =>
       cards.length > files.length ||
-      cards.some((attachment) => attachment.name && !expectedNames.has(attachment.name)) ||
-      cards.some((attachment) => attachment.status === "ready" && !expected.includes(key(attachment)))
+      cards.some((attachment) => {
+        if (attachment.name && !expectedNames.has(attachment.name)) return true
+        if (!attachment.name) return attachment.status === "ready"
+        const kind = expectedByName.get(attachment.name)
+        if (!kind) return true
+        if (attachment.kind && attachment.kind !== kind) return true
+        if (attachment.status !== "ready") return false
+        return kind === "image"
+          ? attachment.kind !== "image" || !/^[a-f0-9]{64}$/i.test(attachment.sha256 ?? "")
+          : attachment.kind === "image"
+      })
     let page = await this.page()
-    if (!page.targetModel) throw new Error("Model evidence changed before attachment upload")
     if (mayDispatch && page.attachments?.length)
       throw new Error("Composer attachments predate this consultation; no matching manual file was accepted")
     if (matches(page) && page.attachments?.every((attachment) => attachment.status === "ready")) {
@@ -351,17 +331,41 @@ export class GptProDriver {
         throw new Error("Existing composer attachments are partial or ambiguous. No duplicate upload was attempted.")
       this.log(`driver waiting for existing attachment upload count=${files.length}`)
     } else {
-      if (!mayDispatch) throw new Error("Attachment upload state is ambiguous after recovery; no duplicate upload was attempted")
+      if (!mayDispatch)
+        throw new Error("Attachment upload state is ambiguous after recovery; no duplicate upload was attempted")
+      let readiness = ""
+      for (let attempt = 0; attempt < 40 && !page.attachmentInput; attempt++) {
+        if (shouldContinue && !(await shouldContinue())) throw new Error("Attachment workflow was cancelled")
+        const blockingError = this.blockingPageError(page)
+        if (blockingError) throw new GptProPageError(blockingError.message, blockingError.kind)
+        const details = page.attachmentInputDiagnostics
+        const state = `editors=${details?.editorCount ?? -1} globalInputs=${details?.globalInputCount ?? -1} eligibleGlobal=${details?.eligibleGlobalInputCount ?? -1} scoped=${details?.scopedInputCount ?? -1} reason=${details?.reason ?? "missing"}`
+        if (state !== readiness) {
+          this.log(`driver waiting for active composer file input attempt=${attempt + 1} ${state}`)
+          readiness = state
+        }
+        if (page.attachments?.length)
+          throw new Error("Composer attachments appeared before this consultation uploaded files; no matching manual file was accepted")
+        await new Promise((resolve) => setTimeout(resolve, 250))
+        page = await this.page()
+        const nextBlockingError = this.blockingPageError(page)
+        if (nextBlockingError) throw new GptProPageError(nextBlockingError.message, nextBlockingError.kind)
+      }
       if (!page.attachmentInput) throw new Error("ChatGPT's verified attachment input is unavailable")
       this.log(`driver dispatching attachment upload count=${files.length}`)
-      await this.cdp().setInputFiles(attachmentInputSelector, files.map((file) => file.path))
+      await this.cdp().setInputFiles(
+        attachmentInputSelector,
+        files.map((file) => file.path),
+        CHATGPT_COMPOSER_ATTACHMENT_TARGET_EXPRESSION,
+        beforeDispatch,
+      )
     }
     let last = ""
     for (let attempt = 0; attempt < 240; attempt++) {
       if (shouldContinue && !(await shouldContinue())) throw new Error("Attachment workflow was cancelled")
       page = await this.page()
-      if (page.error) throw new GptProPageError(page.error.message, page.error.kind)
-      if (!page.targetModel) throw new Error("Model evidence changed during attachment upload")
+      const blockingError = this.blockingPageError(page)
+      if (blockingError) throw new GptProPageError(blockingError.message, blockingError.kind)
       const cards = page.attachments ?? []
       const state = cards.map((item) => `${item.name || "unknown"}:${item.status}`).join(",") || "none"
       if (state !== last) {
@@ -389,9 +393,10 @@ export class GptProDriver {
   }
   async element(uid: string) {
     const cdp = this.cdp()
+    const page = await this.page()
     return {
       composer: await cdp.matches(uid, editorSelector),
-      send: await cdp.matches(uid, `${sendSelector},button[type="submit"]`),
+      send: Boolean(page.sendReady && (await cdp.matchesResolved(uid, CHATGPT_SEND_TARGET_EXPRESSION))),
       retry:
         (await cdp.matches(
           uid,
@@ -400,29 +405,33 @@ export class GptProDriver {
     }
   }
   recover() {
-    this.rejected = undefined
-    this.log(
-      "driver agent recovery cleared historical request rejection; rendered errors and verification remain enforced",
-    )
+    this.log("driver recovery acknowledged; rendered webpage state remains authoritative")
   }
-  async submit(beforeDispatch?: () => Promise<void>, uid?: string) {
+  async submit(beforeDispatch?: BeforeTrustedClick, uid?: string) {
     this.log("driver waiting for enabled Chat send control")
+    let lastTargetState = ""
     for (let i = 0; i < 20; i++) {
       const page = await this.page()
-      if (page.error) throw new GptProPageError(page.error.message, page.error.kind)
+      const blockingError = this.blockingPageError(page)
+      if (blockingError) throw new GptProPageError(blockingError.message, blockingError.kind)
+      const diagnostics = page.sendControlDiagnostics
+      const targetState = `reason=${diagnostics?.reason ?? "missing"} editors=${diagnostics?.editorCount ?? -1} scopedControls=${diagnostics?.scopedControlCount ?? -1}`
+      if (targetState !== lastTargetState) {
+        this.log(`driver send target ${targetState}`)
+        lastTargetState = targetState
+      }
       if (page.sendReady) {
-        if (!page.targetModel)
-          throw new GptProPageError("The selected model changed before sending. Nothing was dispatched.")
+        this.log(
+          `driver send model label=${JSON.stringify(page.model || "unknown")} policy=user-selected nonblocking=true`,
+        )
         this.log("driver dispatching one trusted send-button click")
-        if (uid) await this.cdp().click(uid, undefined, beforeDispatch)
-        else
-          await this.cdp().clickSelector(
-            sendSelector
-              .split(",")
-              .map((selector) => selector + ':not(:disabled):not([aria-disabled="true"])')
-              .join(","),
-            beforeDispatch,
-          )
+        if (uid) {
+          if (!(await this.cdp().matchesResolved(uid, CHATGPT_SEND_TARGET_EXPRESSION)))
+            throw new Error("Observed UID is not the exact current send target; no click dispatched")
+          await this.cdp().click(uid, undefined, beforeDispatch)
+        } else {
+          await this.cdp().clickResolved(CHATGPT_SEND_TARGET_EXPRESSION, beforeDispatch)
+        }
         this.log("driver send click dispatched; waiting for website acknowledgment")
         return
       }

@@ -1,6 +1,7 @@
 import { GPT_PRO_MAX_HTML_CHARS, type GptProPageState } from "./gpt-pro"
 
-// Shared by inspection and automation; serialize this helper with its callers.
+// Passive, best-effort label observation. Never open menus or infer a model
+// from available options, reasoning effort, slider position, or cached rows.
 export function chatGptModelPicker() {
   const visible = (el: Element) =>
     el.getClientRects().length > 0 &&
@@ -13,20 +14,7 @@ export function chatGptModelPicker() {
   ]
     .filter(visible)
     .at(-1)
-  const menuID = trigger?.getAttribute("aria-controls")
-  const associated = menuID ? document.getElementById(menuID) : null
-  const menus = [...document.querySelectorAll('[role="menu"]')]
-    .filter(visible)
-    .filter((el) => el.querySelector("[data-model-picker-view-toggle]"))
-  const menu =
-    associated && visible(associated)
-      ? associated
-      : trigger?.getAttribute("aria-expanded") === "true" && menus.length === 1
-        ? menus[0]
-        : null
-  // aria-hidden belongs to the view track, not the selected-model row.
-  const rows = menu ? [...menu.querySelectorAll("[data-model-picker-view-toggle]")].filter(visible) : []
-  return { trigger, menu, row: rows.length === 1 ? rows[0] : undefined }
+  return { trigger }
 }
 
 export const CHATGPT_MODEL_PICKER_EXPRESSION = `(${chatGptModelPicker.toString()})()`
@@ -81,27 +69,184 @@ export function readChatGptComposer(editor: HTMLElement) {
   return read(editor)
 }
 
+export function chatGptComposerAttachmentTarget() {
+  const editorSelector = '#prompt-textarea, [data-composer-markdown][role="textbox"][contenteditable="true"]'
+  const inputSelector = 'input[type="file"][aria-label="Attach files"]'
+  const hiddenByStyle = (el: Element) => {
+    for (let current: Element | null = el; current; current = current.parentElement) {
+      const style = getComputedStyle(current)
+      const inline = (current.getAttribute("style") ?? "").toLowerCase().replace(/\s/g, "")
+      if (
+        style.display === "none" ||
+        style.visibility === "hidden" ||
+        style.contentVisibility === "hidden" ||
+        /(?:^|;)display:none(?:;|$)/.test(inline) ||
+        /(?:^|;)visibility:hidden(?:;|$)/.test(inline) ||
+        /(?:^|;)content-visibility:hidden(?:;|$)/.test(inline)
+      )
+        return true
+    }
+    return false
+  }
+  const visible = (el: Element) =>
+    el.getClientRects().length > 0 && !hiddenByStyle(el) && !el.closest('[inert], [hidden], [aria-hidden="true"]')
+  const eligible = (input: HTMLInputElement) =>
+    input.type === "file" &&
+    !input.disabled &&
+    input.getAttribute("aria-disabled") !== "true" &&
+    !input.parentElement?.closest('[inert], [hidden], [aria-hidden="true"]')
+  const editors = [...document.querySelectorAll<HTMLElement>(editorSelector)].filter(visible)
+  const globalInputs = [...document.querySelectorAll<HTMLInputElement>(inputSelector)]
+  const result = {
+    editor: null as HTMLElement | null,
+    input: null as HTMLInputElement | null,
+    editorCount: editors.length,
+    globalInputCount: globalInputs.length,
+    eligibleGlobalInputCount: globalInputs.filter(eligible).length,
+    scopedInputCount: 0,
+    reason: "ok" as "ok" | "no-editor" | "ambiguous-editor" | "no-scoped-input" | "ambiguous-scoped-input",
+  }
+  if (!editors.length) {
+    result.reason = "no-editor"
+    return result
+  }
+  if (editors.length !== 1) {
+    result.reason = "ambiguous-editor"
+    return result
+  }
+  result.editor = editors[0]
+  let wrapper: HTMLElement | null = editors[0].parentElement
+  while (wrapper && wrapper !== document.body) {
+    const scoped = [...wrapper.querySelectorAll<HTMLInputElement>(inputSelector)].filter(eligible)
+    if (scoped.length) {
+      result.scopedInputCount = scoped.length
+      if (scoped.length !== 1) {
+        result.reason = "ambiguous-scoped-input"
+        return result
+      }
+      result.input = scoped[0]
+      return result
+    }
+    wrapper = wrapper.parentElement
+  }
+  result.reason = "no-scoped-input"
+  return result
+}
+
+export const CHATGPT_COMPOSER_ATTACHMENT_TARGET_EXPRESSION =
+  `(${chatGptComposerAttachmentTarget.toString()})()`
+
+export function chatGptSendTarget(attachmentTarget = chatGptComposerAttachmentTarget()) {
+  type Reason = NonNullable<GptProPageState["sendControlDiagnostics"]>["reason"]
+  const result = {
+    editor: attachmentTarget.editor,
+    send: null as HTMLButtonElement | null,
+    reason: "ok" as Reason,
+    editorCount: attachmentTarget.editorCount,
+    scopedControlCount: 0,
+  }
+  if (!attachmentTarget.editor) {
+    result.reason = attachmentTarget.reason === "ambiguous-editor" ? "ambiguous-editor" : "no-editor"
+    return result
+  }
+
+  const visible = (el: Element) => {
+    if (el.getClientRects().length === 0 || el.closest('[inert], [hidden], [aria-hidden="true"]')) return false
+    for (let current: Element | null = el; current; current = current.parentElement) {
+      const style = getComputedStyle(current)
+      if (style.display === "none" || style.visibility === "hidden" || style.contentVisibility === "hidden")
+        return false
+    }
+    return true
+  }
+  const selector =
+    'button[data-testid="send-button"], button[aria-label="Send prompt"], button[aria-label="Send message"], button[aria-label="Send"], button[aria-label="发送消息"], button[aria-label="发送提示"]'
+  const usable = (button: HTMLButtonElement) =>
+    visible(button) && !button.disabled && button.getAttribute("aria-disabled") !== "true"
+  const resolve = (scope: Element) => [...scope.querySelectorAll<HTMLButtonElement>(selector)].filter(visible)
+  let scope: HTMLElement | null = attachmentTarget.editor.parentElement
+  while (scope && scope !== document.body) {
+    const controls = resolve(scope)
+    if (controls.length) {
+      result.scopedControlCount = controls.length
+      if (controls.length !== 1) {
+        result.reason = "ambiguous-scoped-control"
+        return result
+      }
+      const button = controls[0]!
+      if (!usable(button)) {
+        result.reason = "disabled-control"
+        return result
+      }
+      const rect = button.getBoundingClientRect()
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+      if (!hit || (hit !== button && !button.contains(hit))) {
+        result.reason = "obscured-control"
+        return result
+      }
+      result.send = button
+      return result
+    }
+    scope = scope.parentElement
+  }
+
+  // Minimal DOM fixtures may put the sole editor and send control directly on body.
+  if (attachmentTarget.editor.parentElement === document.body) {
+    const controls = resolve(document.body)
+    result.scopedControlCount = controls.length
+    if (controls.length > 1) {
+      result.reason = "ambiguous-scoped-control"
+      return result
+    }
+    if (controls.length === 1) {
+      const button = controls[0]!
+      if (!usable(button)) {
+        result.reason = "disabled-control"
+        return result
+      }
+      const rect = button.getBoundingClientRect()
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+      if (!hit || (hit !== button && !button.contains(hit))) {
+        result.reason = "obscured-control"
+        return result
+      }
+      result.send = button
+      return result
+    }
+  }
+  result.reason = "no-scoped-control"
+  return result
+}
+
+export const CHATGPT_SEND_TARGET_EXPRESSION =
+  `(${chatGptSendTarget.toString()})((${chatGptComposerAttachmentTarget.toString()})()).send`
+
 // Serialized into the page: all browser helpers must remain inside this function.
 // It reads only rendered conversation data, never credentials or private APIs.
 export function inspectChatGptPage(
   maxChars: number,
   picker = chatGptModelPicker(),
   readComposer = readChatGptComposer,
+  attachmentTarget = chatGptComposerAttachmentTarget(),
+  sendTarget = chatGptSendTarget(attachmentTarget),
 ): GptProPageState {
   const visible = (el: Element) =>
     el.getClientRects().length > 0 &&
     !el.closest('[inert], [hidden], [aria-hidden="true"]') &&
-    getComputedStyle(el).visibility !== "hidden"
+    (() => {
+      for (let current: Element | null = el; current; current = current.parentElement) {
+        const style = getComputedStyle(current)
+        if (style.display === "none" || style.visibility === "hidden" || style.contentVisibility === "hidden")
+          return false
+      }
+      return true
+    })()
   const normalize = (value: string) => value.replace(/\r\n/g, "\n").trim()
   const readText = (el: Element) => normalize((el as HTMLElement).innerText || el.textContent || "")
   const modelButton = picker.trigger
   const modelLabel = modelButton ? readText(modelButton) : ""
-  let model = modelLabel
-  const composer = [
-    ...document.querySelectorAll<HTMLElement>(
-      '#prompt-textarea, [data-composer-markdown][role="textbox"][contenteditable="true"]',
-    ),
-  ].find(visible)
+  const model = modelLabel
+  const composer = attachmentTarget.editor
   const attachmentCards = composer
     ?.closest("[data-composer-body]")
     ?.querySelector("[data-composer-attachments][data-visible-attachments]")
@@ -113,9 +258,9 @@ export function inspectChatGptPage(
       wrapper && [...wrapper.children].some((child) => !child.classList.contains("group/composer-attachment"))
     const attachments = cards.map((card) => {
       const name =
-        card.querySelector<HTMLElement>("span.truncate")?.innerText?.trim() || card.getAttribute("aria-label")?.trim() || ""
-      const visible = (el: Element) =>
-        el.getClientRects().length > 0 && !el.closest('[inert], [hidden], [aria-hidden="true"]')
+        card.querySelector<HTMLElement>("span.truncate")?.innerText?.trim() ||
+        card.getAttribute("aria-label")?.trim() ||
+        ""
       const uploading = [...card.querySelectorAll('[role="progressbar"]')].some(visible)
       const failed = [...card.querySelectorAll('[role="alert"], [data-upload-error]')].some(visible)
       const preview = [...card.querySelectorAll<HTMLButtonElement>('button[type="button"]')].some(
@@ -134,38 +279,30 @@ export function inspectChatGptPage(
       )
       return {
         name,
-        status:
-          failed
-            ? "failed" as const
-            : uploading
-              ? "uploading" as const
-              : preview && remove
-                ? "ready" as const
-                : "unknown" as const,
+        status: failed
+          ? ("failed" as const)
+          : uploading
+            ? ("uploading" as const)
+            : preview && remove
+              ? ("ready" as const)
+              : ("unknown" as const),
       }
     })
     if (unknownChild || (!cards.length && wrapper?.children.length))
       attachments.push({ name: "", status: "unknown" as const })
     return attachments
   }
-  const generating = [
+  let generating = [
     ...document.querySelectorAll(
       '[data-testid="stop-button"], button[aria-label="Stop generating"], button[aria-label="Stop"]',
     ),
   ].some(visible)
-  const sendControls = [
-    ...document.querySelectorAll<HTMLButtonElement>(
-      '[data-testid="send-button"], button[aria-label="Send prompt"], button[aria-label="Send message"], button[aria-label="Send"], button[aria-label="发送消息"], button[aria-label="发送提示"]',
-    ),
-  ].filter((el) => visible(el) && !el.disabled && el.getAttribute("aria-disabled") !== "true")
-
   type Tracking = {
     documentID: string
     nextID: number
     revision: number
     observer: MutationObserver
     ids: WeakMap<Element, string>
-    modelEvidence?: { trigger: Element; effort: string | null }
     stop: () => void
   }
   const trackingWindow = window as typeof window & { __opencodeGptProTracking?: Tracking }
@@ -187,41 +324,10 @@ export function inspectChatGptPage(
       attributeFilter: ["data-message-id", "data-message-author-role", "disabled"],
     })
     trackingWindow.__opencodeGptProTracking = record
-    const invalidate = (event: Event) => {
-      if (event instanceof KeyboardEvent && event.key === "Escape") return
-      const target = event.target
-      if (
-        event.isTrusted &&
-        target instanceof Element &&
-        target.closest('button[aria-label="Select ChatGPT model"], [role="menu"]')
-      )
-        record.modelEvidence = undefined
-    }
-    document.addEventListener("pointerdown", invalidate, true)
-    document.addEventListener("keydown", invalidate, true)
     record.stop = () => {
       record.observer.disconnect()
-      document.removeEventListener("pointerdown", invalidate, true)
-      document.removeEventListener("keydown", invalidate, true)
     }
     tracking = record
-  }
-  // The current Chat UI labels the closed trigger only "Pro". Require an
-  // observed associated picker row "6 / Pro", not that bare trigger label.
-  const { menu, row } = picker
-  const effort = modelButton?.getAttribute("data-selected-reasoning-effort") ?? null
-  if (modelButton && row && visible(menu!) && visible(row) && /^(?:GPT[\s-]*)?6\s*Pro$/i.test(readText(row))) {
-    tracking.modelEvidence = { trigger: modelButton, effort }
-    model = "GPT-6 Pro"
-  } else if (
-    modelButton &&
-    tracking.modelEvidence?.trigger === modelButton &&
-    tracking.modelEvidence.effort === effort &&
-    /\bPro\b/i.test(modelLabel)
-  ) {
-    model = "GPT-6 Pro"
-  } else if (!/\bGPT[\s-]*6[\s-]+Pro\b/i.test(modelLabel)) {
-    tracking.modelEvidence = undefined
   }
   const id = (el: HTMLElement) => {
     const messageIDs = [...new Set((el.dataset.chatgptSearchMessageIds ?? "").split(" ").filter(Boolean))]
@@ -267,12 +373,15 @@ export function inspectChatGptPage(
             !button.disabled,
         )
         const uploading = [...card.querySelectorAll<HTMLButtonElement>('button[type="button"]')].some(
-          (button) => visible(button) && button.getAttribute("aria-label") === name && button.getAttribute("aria-busy") === "true",
+          (button) =>
+            visible(button) &&
+            button.getAttribute("aria-label") === name &&
+            button.getAttribute("aria-busy") === "true",
         )
         return {
           name,
           kind: "document" as const,
-          status: ready ? "ready" as const : uploading ? "uploading" as const : "unknown" as const,
+          status: ready ? ("ready" as const) : uploading ? ("uploading" as const) : ("unknown" as const),
         }
       })
       .filter((attachment) => attachment.name)
@@ -280,62 +389,20 @@ export function inspectChatGptPage(
   }
   const lastUser = users.at(-1)
   const lastUserIndex = lastUser ? turns.indexOf(lastUser) : -1
-  const replies = lastUserIndex < 0 ? [] : turns.slice(lastUserIndex + 1).filter((el) => role(el) === "assistant")
-  const assistant = replies.at(-1)
-  const contents = assistant?.querySelectorAll<HTMLElement>('.markdown, [data-markdown-text-style="assistant-message"]')
-  // Multiple regions can include reasoning and a final answer. Until the
-  // live adapter proves how to distinguish them, refuse an ambiguous reply.
-  const content = contents?.length === 1 ? contents[0] : undefined
-  const turn = assistant?.closest('article, [data-testid^="conversation-turn-"], .group.flex.flex-col')
-  const copy = turn?.querySelector('[data-testid="copy-turn-action-button"], button[aria-label="Regenerate response"]')
-  let error: GptProPageState["error"]
-  if (!composer && /^(?:Just a moment|Attention Required)/i.test(document.title)) {
-    error = {
-      kind: "verification",
-      message:
-        "ChatGPT requires browser verification. Open gpt-pro and complete the page check before consulting again.",
-    }
-  } else if (root) {
-    const retry = [...root.querySelectorAll("button")].filter(visible).find(
-      (el) =>
-        /^(Retry|Try again|重试|再试一次|再試一次|再試)$/i.test(readText(el)) &&
-        !el.closest("[data-user-message-bubble], .markdown, [data-markdown-text-style]")
-    )
-    if (retry) {
-      let requestFailure = false
-      let verificationFailure = false
-      let region = retry.parentElement
-      for (let i = 0; region && region !== root && i < 4; i++, region = region.parentElement) {
-        const clone = region.cloneNode(true) as HTMLElement
-        clone
-          .querySelectorAll(
-            '[data-user-message-bubble], [data-search-result-target], [data-message-author-role="user"], [data-message-author-role="assistant"], [data-chatgpt-search-unit-key$=":user"], [data-chatgpt-search-unit-key$=":assistant"], .markdown, [data-markdown-text-style], [class~="group/resource-card"], button, [role="button"], [aria-hidden="true"]',
-          )
-          .forEach((node) => node.remove())
-        const status = readText(clone)
-        if (/cloudflare[_ -]?challenge|cf[-_]chl|verification required|verify (?:you are|that you are) human|security check|checking your browser|browser verification/i.test(status)) {
-          verificationFailure = true
-          break
-        }
-        if (lastUser && region.contains(lastUser)) continue
-        if (/Unknown error|Something went wrong|There was an error|未知错误|未知錯誤|出现错误|發生錯誤/i.test(status))
-          requestFailure = true
-      }
-      if (verificationFailure)
-        error = {
-          kind: "verification",
-          message: "ChatGPT requires human browser verification in the original conversation. No retry was attempted.",
-        }
-      else if (requestFailure)
-        error = {
-          kind: "request",
-          message:
-            "ChatGPT displayed a request error. The question was not retried; check browser verification, login or network access.",
-        }
-    }
+  const assistantForUser = (userIndex: number) => {
+    const nextUser = turns.findIndex((turn, index) => index > userIndex && role(turn) === "user")
+    const end = nextUser < 0 ? turns.length : nextUser
+    return turns.slice(userIndex + 1, end).filter((turn) => role(turn) === "assistant").at(-1)
   }
-  let answer: GptProPageState["answer"]
-  if (content && assistant && lastUser) {
+  const assistantTurn = (assistant: HTMLElement) =>
+    assistant.closest<HTMLElement>('article, [data-testid^="conversation-turn-"], .group.flex.flex-col') ?? assistant
+  const stopSelector = '[data-testid="stop-button"], button[aria-label="Stop generating"], button[aria-label="Stop"]'
+  const answerFor = (user: HTMLElement, assistant: HTMLElement, isLatest: boolean) => {
+    const contents = assistant.querySelectorAll<HTMLElement>('.markdown, [data-markdown-text-style="assistant-message"]')
+    // Multiple regions can include reasoning and a final answer. Never guess which one is the answer.
+    if (contents.length !== 1) return
+    const content = contents[0]!
+    const turn = assistantTurn(assistant)
     const clone = content.cloneNode(true) as HTMLElement
     clone
       .querySelectorAll(
@@ -349,10 +416,10 @@ export function inspectChatGptPage(
         if (["href", "src", "xlink:href", "action", "formaction"].includes(name)) {
           try {
             const target = new URL(attr.value, location.href)
-            if (!["http:", "https:"].includes(target.protocol)) el.removeAttribute(attr.name)
-            else el.setAttribute(attr.name, target.href)
+            if (!["http:", "https:"].includes(target.protocol)) el.removeAttribute(name)
+            else el.setAttribute(name, target.href)
           } catch {
-            el.removeAttribute(attr.name)
+            el.removeAttribute(name)
           }
         }
       }
@@ -360,28 +427,161 @@ export function inspectChatGptPage(
     const html = clone.innerHTML
     const text = readText(content)
     const truncated = html.length > maxChars || text.length > maxChars
-    answer = {
+    const responseActions = [...turn.querySelectorAll<HTMLButtonElement>("button")]
+      .filter(
+        (button) =>
+          visible(button) &&
+          !button.closest(
+            '[data-user-message-bubble], .markdown, [data-markdown-text-style], [data-testid*="code"], [data-code-copy], [data-copy-code]',
+          ),
+      )
+      .filter((button) => {
+        const testID = button.getAttribute("data-testid") ?? ""
+        const label = button.getAttribute("aria-label") ?? button.textContent?.trim() ?? ""
+        return (
+          testID === "copy-turn-action-button" ||
+          /(?:response|turn)[-_ ]?(?:action|feedback|vote)/i.test(testID) ||
+          /^(?:Copy|Regenerate response|Good response|Bad response|Share)$/i.test(label)
+        )
+      })
+    const actionGroup = responseActions.length >= 2
+    const settledMarker = [assistant, turn].some(
+      (el) =>
+        el.getAttribute("aria-busy") === "false" ||
+        el.getAttribute("data-is-streaming") === "false" ||
+        el.getAttribute("data-streaming") === "false",
+    )
+    const activeMarker = [assistant, turn].some(
+      (el) =>
+        el.getAttribute("aria-busy") === "true" ||
+        el.getAttribute("data-is-streaming") === "true" ||
+        el.getAttribute("data-streaming") === "true",
+    )
+    const turnGenerating =
+      activeMarker || [...turn.querySelectorAll<HTMLButtonElement>(stopSelector)].some(visible) || (isLatest && generating)
+    const completionEvidence = settledMarker
+      ? ("settled-marker" as const)
+      : actionGroup
+        ? ("response-actions" as const)
+        : ("unknown" as const)
+    return {
       id: id(assistant),
-      userID: id(lastUser),
+      userID: id(user),
       text: text.slice(0, maxChars),
       html: html.slice(0, maxChars),
-      complete: !!copy && !generating && !truncated && !!text,
+      complete: !turnGenerating && !truncated && !!text && completionEvidence !== "unknown",
       truncated,
+      generating: turnGenerating,
+      completionEvidence,
+    }
+  }
+  const answers = users.flatMap((user) => {
+    const assistant = assistantForUser(turns.indexOf(user))
+    if (!assistant) return []
+    const value = answerFor(user, assistant, user === lastUser)
+    return value ? [value] : []
+  })
+  const answer = lastUser ? answers.findLast((item) => item.userID === id(lastUser)) : undefined
+  generating ||= answers.some((item) => item.generating)
+  const challengePattern =
+    /cloudflare[_ -]?challenge|cf[-_]chl|verification required|verify (?:you are|that you are) human|security check|checking your browser|browser verification/i
+  let error: GptProPageState["error"]
+  if (!composer && /^(?:Just a moment|Attention Required)/i.test(document.title)) {
+    error = {
+      kind: "verification",
+      scope: "page",
+      message:
+        "ChatGPT requires browser verification. Open gpt-pro and complete the page check before consulting again.",
+    }
+  } else if (root) {
+    const pageChallenge = [
+      ...root.querySelectorAll<HTMLElement>(
+        '#challenge-form, #cf-challenge-running, #cf-challenge-stage, form[action*="/challenge"], [data-testid="challenge-form"], [data-testid="cf-challenge"], iframe[src*="challenges.cloudflare.com"], iframe[src*="challenge-platform"]',
+      ),
+    ].some(
+      (element) =>
+        visible(element) &&
+        !element.closest(
+          '[data-message-author-role], [data-chatgpt-search-unit-key], [data-user-message-bubble], .markdown, [data-markdown-text-style]',
+        ),
+    )
+    if (pageChallenge) {
+      error = {
+        kind: "verification",
+        scope: "page",
+        message: "ChatGPT requires human browser verification. No retry was attempted.",
+      }
+    } else if (lastUserIndex >= 0) {
+      const assistant = assistantForUser(lastUserIndex)
+      const currentTurn = assistant && assistantTurn(assistant)
+      const retry = currentTurn
+        ? [...currentTurn.querySelectorAll<HTMLButtonElement>("button")]
+            .filter(visible)
+            .find(
+              (button) =>
+                /^(Retry|Try again|重试|再试一次|再試一次|再試)$/i.test(readText(button)) &&
+                !button.closest("[data-user-message-bubble], .markdown, [data-markdown-text-style]"),
+            )
+        : undefined
+      if (retry && currentTurn) {
+        let requestFailure = false
+        let verificationFailure = false
+        let region: Element | null = retry.parentElement
+        for (let depth = 0; region && currentTurn.contains(region) && depth < 4; depth++, region = region.parentElement) {
+          const clone = region.cloneNode(true) as HTMLElement
+          clone
+            .querySelectorAll(
+              '[data-user-message-bubble], [data-search-result-target], [data-message-author-role="user"], [data-message-author-role="assistant"], [data-chatgpt-search-unit-key$=":user"], [data-chatgpt-search-unit-key$=":assistant"], .markdown, [data-markdown-text-style], [class~="group/resource-card"], button, [role="button"], [aria-hidden="true"]',
+            )
+            .forEach((node) => node.remove())
+          const status = readText(clone)
+          if (challengePattern.test(status)) {
+            verificationFailure = true
+            break
+          }
+          if (/Unknown error|Something went wrong|There was an error|未知错误|未知錯誤|出现错误|發生錯誤/i.test(status))
+            requestFailure = true
+        }
+        if (verificationFailure)
+          error = {
+            kind: "verification",
+            scope: "turn",
+            userID: id(lastUser!),
+            message: "ChatGPT requires human browser verification in the current conversation. No retry was attempted.",
+          }
+        else if (requestFailure)
+          error = {
+            kind: "request",
+            scope: "turn",
+            userID: id(lastUser!),
+            message:
+              "ChatGPT displayed a request error for the current turn. The question was not retried; check browser verification, login or network access.",
+          }
+      }
     }
   }
   return {
     url: location.href,
     model,
-    targetModel: /\bGPT[\s-]*6[\s-]+Pro\b/i.test(model),
+    targetModel: /^(?:Pro|GPT[\s-]*6[\s-]+Pro)$/i.test(model),
     composer: !!composer && visible(composer),
     draft: composer ? normalize(readComposer(composer)) : "",
-    attachmentInput:
-      [...document.querySelectorAll<HTMLInputElement>('input[type="file"][aria-label="Attach files"]')].filter(
-        (input) => !input.disabled && input.getAttribute("aria-disabled") !== "true" && !input.closest('[inert], [hidden], [aria-hidden="true"]'),
-      ).length === 1,
+    attachmentInput: attachmentTarget.reason === "ok" && attachmentTarget.input !== null,
+    attachmentInputDiagnostics: {
+      editorCount: attachmentTarget.editorCount,
+      globalInputCount: attachmentTarget.globalInputCount,
+      eligibleGlobalInputCount: attachmentTarget.eligibleGlobalInputCount,
+      scopedInputCount: attachmentTarget.scopedInputCount,
+      reason: attachmentTarget.reason,
+    },
     attachments: attachmentNames(attachmentCards),
     generating,
-    sendReady: !!composer && !generating && sendControls.length === 1,
+    sendReady: !!sendTarget.send && !generating,
+    sendControlDiagnostics: {
+      reason: sendTarget.reason,
+      editorCount: sendTarget.editorCount,
+      scopedControlCount: sendTarget.scopedControlCount,
+    },
     ...(error ? { error } : {}),
     revision: tracking.revision,
     users: users.map((el) => {
@@ -392,15 +592,15 @@ export function inspectChatGptPage(
         ...(attachments.length ? { attachments } : {}),
       }
     }),
-    ...(answer ? { answer } : {}),
+    ...(answer ? { answer, answers } : { answers }),
   }
 }
 
-export const CHATGPT_INSPECT_EXPRESSION = `(${inspectChatGptPage.toString()})(${GPT_PRO_MAX_HTML_CHARS}, ${CHATGPT_MODEL_PICKER_EXPRESSION}, (${readChatGptComposer.toString()}))`
+export const CHATGPT_INSPECT_EXPRESSION = `(()=>{const attachmentTarget=(${chatGptComposerAttachmentTarget.toString()})();const sendTarget=(${chatGptSendTarget.toString()})(attachmentTarget);return (${inspectChatGptPage.toString()})(${GPT_PRO_MAX_HTML_CHARS},${CHATGPT_MODEL_PICKER_EXPRESSION},(${readChatGptComposer.toString()}),attachmentTarget,sendTarget)})()`
 
 // Image previews are inspected separately so the main page snapshot stays
 // synchronous and no image bytes ever leave the page context.
-export async function inspectChatGptImageAttachments() {
+export async function inspectChatGptImageAttachments(attachmentTarget = chatGptComposerAttachmentTarget()) {
   type Evidence = {
     name: string
     kind: "image"
@@ -489,18 +689,19 @@ export async function inspectChatGptImageAttachments() {
     })
     return value
   }
-  const composer = [
-    ...document.querySelectorAll<HTMLElement>(
-      '#prompt-textarea, [data-composer-markdown][role="textbox"][contenteditable="true"]',
-    ),
-  ].find(visible)
+  const composer = attachmentTarget.editor
   const composerContainer = composer
     ?.closest("[data-composer-body]")
     ?.querySelector("[data-composer-attachments][data-visible-attachments]")
-  const composerCards = [...(composerContainer?.querySelectorAll<HTMLElement>('[class~="group/composer-attachment"]') ?? [])]
+  const composerCards = [
+    ...(composerContainer?.querySelectorAll<HTMLElement>('[class~="group/composer-attachment"]') ?? []),
+  ]
   const composerImages = await Promise.all(
     composerCards.map(async (card): Promise<Evidence | undefined> => {
-      const name = card.querySelector<HTMLElement>("span.truncate")?.innerText?.trim() || card.getAttribute("aria-label")?.trim() || ""
+      const name =
+        card.querySelector<HTMLElement>("span.truncate")?.innerText?.trim() ||
+        card.getAttribute("aria-label")?.trim() ||
+        ""
       const preview =
         card.getAttribute("role") === "button" &&
         card.getAttribute("aria-label") === name &&
@@ -559,4 +760,4 @@ export async function inspectChatGptImageAttachments() {
   return { url: location.href, composer: composerImages.filter((item): item is Evidence => !!item), users }
 }
 
-export const CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION = `(${inspectChatGptImageAttachments.toString()})()`
+export const CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION = `(${inspectChatGptImageAttachments.toString()})((${chatGptComposerAttachmentTarget.toString()})())`

@@ -2,19 +2,33 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import {
   inspectChatGptPage,
   CHATGPT_INSPECT_EXPRESSION,
+  CHATGPT_SEND_TARGET_EXPRESSION,
+  CHATGPT_COMPOSER_ATTACHMENT_TARGET_EXPRESSION,
   CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION,
   CHATGPT_ONBOARDING_DISMISS_EXPRESSION,
 } from "@opencode-ai/util/chatgpt-page"
 import { createHash } from "node:crypto"
 
 const originalRects = Element.prototype.getClientRects
+const originalWindowRects = window.Element.prototype.getClientRects
+const originalElementFromPoint = document.elementFromPoint
 let originalUrl = ""
 let originalFetch: typeof window.fetch
 
 beforeEach(() => {
   originalUrl = window.location.href
   originalFetch = window.fetch
-  Element.prototype.getClientRects = () => [{ width: 10, height: 10 }] as unknown as DOMRectList
+  Element.prototype.getClientRects = function () {
+    const style = getComputedStyle(this)
+    if (style.display === "none" || style.visibility === "hidden" || style.contentVisibility === "hidden")
+      return [] as unknown as DOMRectList
+    return [{ width: 10, height: 10 }] as unknown as DOMRectList
+  }
+  window.Element.prototype.getClientRects = Element.prototype.getClientRects
+  document.elementFromPoint = () =>
+    document.querySelector<HTMLButtonElement>('[data-testid="send-button"]') ??
+    document.querySelector<HTMLButtonElement>('[aria-label="Send prompt"]') ??
+    null
   ;(window as any).happyDOM.setURL("https://chatgpt.com/")
   document.body.innerHTML =
     '<button data-testid="model-switcher-dropdown-button">GPT-6 Pro</button><div id="prompt-textarea" contenteditable="true"></div><main></main>'
@@ -28,13 +42,15 @@ afterEach(() => {
   delete (window as any).__opencodeGptProImageDigestCache
   window.fetch = originalFetch
   Element.prototype.getClientRects = originalRects
+  window.Element.prototype.getClientRects = originalWindowRects
+  document.elementFromPoint = originalElementFromPoint
   document.body.innerHTML = ""
   ;(window as any).happyDOM.setURL(originalUrl)
 })
 
 function conversation(html: string, complete = true) {
   document.querySelector("main")!.innerHTML =
-    `<article><div data-message-author-role="user" data-message-id="u1">Question</div></article><article><div data-message-author-role="assistant" data-message-id="a1"><div class="markdown">${html}</div></div>${complete ? '<button data-testid="copy-turn-action-button">Copy</button>' : ""}</article>`
+    `<article><div data-message-author-role="user" data-message-id="u1">Question</div></article><article><div data-message-author-role="assistant" data-message-id="a1"><div class="markdown">${html}</div></div>${complete ? '<div role="group"><button data-testid="copy-turn-action-button">Copy</button><button aria-label="Good response"></button></div>' : ""}</article>`
 }
 
 function composerBlobImage(url: string) {
@@ -85,6 +101,52 @@ function blobResponse(url: string, chunks: Uint8Array[], contentLength?: number)
 }
 
 describe("ChatGPT reply HTML extraction", () => {
+  test("scopes duplicate enabled file inputs to the sole visible composer", () => {
+    document.body.innerHTML = `
+      <style>.inactive-composer { display: none; }</style>
+      <div class="relative w-full flex-col gap-2 inactive-composer">
+        <input type="file" aria-label="Attach files" multiple>
+        <div id="prompt-textarea" contenteditable="true"></div>
+      </div>
+      <div class="relative w-full flex-col gap-2">
+        <input type="file" aria-label="Attach files" multiple>
+        <div id="prompt-textarea" contenteditable="true"></div>
+      </div>`
+    const target = window.eval(CHATGPT_COMPOSER_ATTACHMENT_TARGET_EXPRESSION)
+    expect(target.reason).toBe("ok")
+    expect(target.editorCount).toBe(1)
+    expect(target.globalInputCount).toBe(2)
+    expect(target.eligibleGlobalInputCount).toBe(2)
+    expect(target.scopedInputCount).toBe(1)
+    expect(target.input).toBe(document.querySelectorAll('input[type="file"]')[1])
+    expect(inspectChatGptPage(10000).attachmentInput).toBe(true)
+  })
+  test("ignores an editor hidden by content visibility and rejects an active scoped ambiguity", () => {
+    document.body.innerHTML = `
+      <style>.inactive-composer { content-visibility: hidden; }</style>
+      <div class="relative w-full flex-col gap-2 inactive-composer">
+        <input type="file" aria-label="Attach files" multiple>
+        <div id="prompt-textarea" contenteditable="true"></div>
+      </div>
+      <div class="relative w-full flex-col gap-2">
+        <input type="file" aria-label="Attach files" multiple>
+        <input type="file" aria-label="Attach files" multiple>
+        <div id="prompt-textarea" contenteditable="true"></div>
+      </div>`
+    const target = window.eval(CHATGPT_COMPOSER_ATTACHMENT_TARGET_EXPRESSION)
+    expect(target.editorCount).toBe(1)
+    expect(target.scopedInputCount).toBe(2)
+    expect(target.reason).toBe("ambiguous-scoped-input")
+    expect(target.input).toBeNull()
+    expect(inspectChatGptPage(10000).attachmentInput).toBe(false)
+  })
+  test("rejects file inputs when no composer editor is visible", () => {
+    document.body.innerHTML = '<style>.inactive-composer { display: none; }</style><div class="inactive-composer"><div id="prompt-textarea" contenteditable="true"></div><input type="file" aria-label="Attach files"></div>'
+    const target = window.eval(CHATGPT_COMPOSER_ATTACHMENT_TARGET_EXPRESSION)
+    expect(target.editorCount).toBe(0)
+    expect(target.globalInputCount).toBe(1)
+    expect(target.reason).toBe("no-editor")
+  })
   test("inspects image attachment hashes without returning image bytes or contaminating prompt text", async () => {
     const bytes = Buffer.from("private image fixture")
     const base64 = bytes.toString("base64")
@@ -108,7 +170,9 @@ describe("ChatGPT reply HTML extraction", () => {
     const evidence = await window.eval(CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION)
     expect(evidence.users[0]).toEqual({
       id: "u1",
-      attachments: [{ name: "", kind: "image", sha256: createHash("sha256").update(bytes).digest("hex"), status: "ready" }],
+      attachments: [
+        { name: "", kind: "image", sha256: createHash("sha256").update(bytes).digest("hex"), status: "ready" },
+      ],
     })
     expect(JSON.stringify(evidence)).not.toContain(base64)
   })
@@ -166,6 +230,21 @@ describe("ChatGPT reply HTML extraction", () => {
     const evidence = await window.eval(CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION)
     expect(evidence.composer).toEqual([{ name: "chart.png", kind: "image", status: "unknown" }])
   })
+  test("does not let hidden nested upload alerts or controls decide attachment readiness", () => {
+    document.body.innerHTML = `
+      <div data-composer-body>
+        <div id="prompt-textarea" contenteditable="true"></div>
+        <div data-composer-attachments data-visible-attachments>
+          <div class="flex-wrap">
+            <div class="group/composer-attachment">
+              <span class="truncate">report.pdf</span>
+              <div style="visibility:hidden"><div role="alert">Upload failed</div><button aria-label="report.pdf"></button><button aria-label="Remove report.pdf"></button></div>
+            </div>
+          </div>
+        </div>
+      </div>`
+    expect(inspectChatGptPage(10000).attachments).toEqual([{ name: "report.pdf", status: "unknown" }])
+  })
   test("hashes only observed same-origin blob previews with credentials omitted", async () => {
     const bytes = Buffer.from("original blob image bytes")
     const url = "blob:https://chatgpt.com/upload-1"
@@ -202,12 +281,20 @@ describe("ChatGPT reply HTML extraction", () => {
     const url = "blob:https://chatgpt.com/oversized"
     composerBlobImage(url)
     let reads = 0
-    ;(window as any).fetch = async () => ({
-      ok: true,
-      url,
-      headers: { get: (name: string) => name.toLowerCase() === "content-length" ? String(20 * 1024 * 1024 + 1) : "image/png" },
-      body: { getReader: () => { reads++; throw new Error("oversized body should not be read") } },
-    }) as unknown as Response
+    ;(window as any).fetch = async () =>
+      ({
+        ok: true,
+        url,
+        headers: {
+          get: (name: string) => (name.toLowerCase() === "content-length" ? String(20 * 1024 * 1024 + 1) : "image/png"),
+        },
+        body: {
+          getReader: () => {
+            reads++
+            throw new Error("oversized body should not be read")
+          },
+        },
+      }) as unknown as Response
     let evidence = await window.eval(CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION)
     expect(evidence.composer[0].status).toBe("unknown")
     expect(reads).toBe(0)
@@ -320,30 +407,146 @@ describe("ChatGPT reply HTML extraction", () => {
     document.body.insertAdjacentHTML("beforeend", '<button data-testid="send-button"></button>')
     expect(inspectChatGptPage(10000).sendReady).toBe(false)
   })
+  test("scopes the send target to the active composer and ignores other Send buttons", () => {
+    document.body.innerHTML = `
+      <div data-composer-body>
+        <div id="prompt-textarea" contenteditable="true"></div>
+        <button data-testid="send-button"></button>
+      </div>
+      <button aria-label="Send prompt"></button>`
+    const target = window.eval(CHATGPT_SEND_TARGET_EXPRESSION)
+    expect(target).toBe(document.querySelector('[data-testid="send-button"]'))
+    expect(inspectChatGptPage(10000).sendReady).toBe(true)
+    expect(inspectChatGptPage(10000).sendControlDiagnostics).toMatchObject({
+      reason: "ok",
+      editorCount: 1,
+      scopedControlCount: 1,
+    })
+  })
+  test("does not infer settled completion from idle-looking static text without end evidence", () => {
+    conversation("<p>Stable-looking answer</p>", false)
+    const answer = inspectChatGptPage(10000).answer
+    expect(answer?.text).toBe("Stable-looking answer")
+    expect(answer?.generating).toBe(false)
+    expect(answer?.complete).toBe(false)
+    expect(answer?.completionEvidence).toBe("unknown")
+  })
+  test("accepts a settled marker as completion without a copy or regenerate button", () => {
+    conversation("<p>Settled answer</p>", false)
+    document.querySelectorAll("article")[1]!.setAttribute("aria-busy", "false")
+    const answer = inspectChatGptPage(10000).answer
+    expect(answer?.text).toBe("Settled answer")
+    expect(answer?.completionEvidence).toBe("settled-marker")
+    expect(answer?.complete).toBe(true)
+  })
+  test("uses an explicit streaming marker to preserve per-turn generating state", () => {
+    conversation("<p>Partial output</p>", false)
+    document.querySelectorAll("article")[1]!.setAttribute("data-is-streaming", "true")
+    const page = inspectChatGptPage(10000)
+    expect(page.generating).toBe(true)
+    expect(page.answer?.generating).toBe(true)
+    expect(page.answer?.complete).toBe(false)
+  })
+  test("does not treat a lone copy button as completion evidence", () => {
+    conversation("<p>Static response</p>", false)
+    document.querySelectorAll("article")[1]!.insertAdjacentHTML(
+      "beforeend",
+      '<button data-testid="copy-turn-action-button">Copy</button>',
+    )
+    const answer = inspectChatGptPage(10000).answer
+    expect(answer?.completionEvidence).toBe("unknown")
+    expect(answer?.complete).toBe(false)
+  })
+  test("accepts a response action group without a Copy or Regenerate control", () => {
+    conversation("<p>Settled through response actions</p>", false)
+    document.querySelectorAll("article")[1]!.insertAdjacentHTML(
+      "beforeend",
+      '<div role="group"><button aria-label="Good response"></button><button aria-label="Bad response"></button><button aria-label="Share"></button></div>',
+    )
+    const answer = inspectChatGptPage(10000).answer
+    expect(answer?.completionEvidence).toBe("response-actions")
+    expect(answer?.complete).toBe(true)
+  })
+  test("does not count Copy or Share widgets inside answer markdown as response actions", () => {
+    conversation('<p>Answer <button aria-label="Copy">code</button><button aria-label="Share">link</button></p>', false)
+    const answer = inspectChatGptPage(10000).answer
+    expect(answer?.completionEvidence).toBe("unknown")
+    expect(answer?.complete).toBe(false)
+  })
   test("detects request errors beside Retry without accepting them as replies", () => {
     conversation("<p>Old partial answer</p>", false)
     document
-      .querySelector("main")!
+      .querySelectorAll("article")[1]!
       .insertAdjacentHTML("beforeend", "<div><div>Unknown error</div><div><button>Retry</button></div></div>")
     expect(inspectChatGptPage(10000).error?.kind).toBe("request")
+    expect(inspectChatGptPage(10000).error?.scope).toBe("turn")
+    expect(inspectChatGptPage(10000).error?.userID).toBe("u1")
     expect(inspectChatGptPage(10000).answer?.complete).toBe(false)
+  })
+  test("ignores an old turn Retry error after a newer user has a valid answer", () => {
+    document.querySelector("main")!.innerHTML = `
+      <article><div data-message-author-role="user" data-message-id="u1">First question</div></article>
+      <article>
+        <div data-message-author-role="assistant" data-message-id="a1"><div class="markdown">Old failure</div></div>
+        <div>Unknown error</div><button>Retry</button>
+      </article>
+      <article><div data-message-author-role="user" data-message-id="u2">Second question</div></article>
+      <article><div data-message-author-role="assistant" data-message-id="a2"><div class="markdown">Current answer</div></div><div role="group"><button data-testid="copy-turn-action-button">Copy</button><button aria-label="Good response"></button></div></article>`
+    const page = inspectChatGptPage(10000)
+    expect(page.error).toBeUndefined()
+    expect(page.answer).toMatchObject({ userID: "u2", text: "Current answer", complete: true })
+    expect(page.answers?.map((answer) => answer.userID)).toEqual(["u1", "u2"])
+  })
+  test("keeps an answer associated with its user when a later turn has no reply yet", () => {
+    document.querySelector("main")!.innerHTML = `
+      <article><div data-message-author-role="user" data-message-id="u1">Owned question</div></article>
+      <article><div data-message-author-role="assistant" data-message-id="a1"><div class="markdown">Owned answer</div></div><button data-testid="copy-turn-action-button">Copy</button></article>
+      <article><div data-message-author-role="user" data-message-id="u2">Unsent draft</div></article>`
+    const page = inspectChatGptPage(10000)
+    expect(page.answer).toBeUndefined()
+    expect(page.answers?.find((answer) => answer.userID === "u1")?.text).toBe("Owned answer")
   })
   test("classifies an inline Cloudflare challenge as human verification", () => {
     document.querySelector("main")!.innerHTML = `
       <div data-message-author-role="user" data-message-id="u1">
         <div data-user-message-bubble>Read my attachment</div>
       </div>
-      <div class="flex min-w-0 grow flex-col">
+      <div id="challenge-form" class="flex min-w-0 grow flex-col">
         <div class="flex min-w-0 flex-1 flex-col"><div class="min-w-0 flex-1">cloudflare_challenge</div></div>
         <div class="flex gap-2"><button type="button">Retry</button></div>
       </div>`
     expect(inspectChatGptPage(10000).error?.kind).toBe("verification")
+    expect(inspectChatGptPage(10000).error?.scope).toBe("page")
+  })
+  test("does not treat challenge wording in a visible homepage suggestion as a page error", () => {
+    document.querySelector("main")!.innerHTML = `
+      <div class="suggestion">Explain cloudflare_challenge and browser verification in general.</div>
+      <div data-message-author-role="user" data-message-id="u1">Question</div>
+      <div data-message-author-role="assistant" data-message-id="a1"><div class="markdown">Answer</div></div>`
+    expect(inspectChatGptPage(10000).error).toBeUndefined()
+  })
+  test("scopes a later verification rejection to that turn and retains the earlier owner's answer", () => {
+    document.querySelector("main")!.innerHTML = `
+      <article><div data-message-author-role="user" data-message-id="u1">Owned question</div></article>
+      <article><div data-message-author-role="assistant" data-message-id="a1"><div class="markdown">Owned answer</div></div><div role="group"><button aria-label="Good response"></button><button aria-label="Bad response"></button></div></article>
+      <article><div data-message-author-role="user" data-message-id="u2">Later question</div></article>
+      <article><div data-message-author-role="assistant" data-message-id="a2"><div class="markdown">Partial response</div></div><div>Verification required</div><button>Retry</button></article>`
+    const page = inspectChatGptPage(10000)
+    expect(page.error).toMatchObject({ kind: "verification", scope: "turn", userID: "u2" })
+    expect(page.answers?.find((answer) => answer.userID === "u1")?.text).toBe("Owned answer")
+  })
+  test("does not classify challenge wording in message content or an unrelated iframe as page verification", () => {
+    document.querySelector("main")!.innerHTML = `
+      <iframe src="https://example.com/challenge-game"></iframe>
+      <div data-message-author-role="user" data-message-id="u1"><div data-user-message-bubble>cloudflare_challenge</div></div>
+      <div data-message-author-role="assistant" data-message-id="a1"><div class="markdown">browser verification</div></div>`
+    expect(inspectChatGptPage(10000).error).toBeUndefined()
   })
   test("does not treat challenge text quoted in a prompt or answer as browser verification", () => {
     document.querySelector("main")!.innerHTML =
       '<div data-message-author-role="user" data-message-id="u1"><div data-user-message-bubble>cloudflare_challenge<button>Retry</button></div></div>'
     expect(inspectChatGptPage(10000).error).toBeUndefined()
-    conversation('<p>cloudflare_challenge</p><button>Retry</button>')
+    conversation("<p>cloudflare_challenge</p><button>Retry</button>")
     expect(inspectChatGptPage(10000).error).toBeUndefined()
   })
   test("does not treat quoted errors or hidden failures as a website rejection", () => {
@@ -358,14 +561,14 @@ describe("ChatGPT reply HTML extraction", () => {
   })
   test("ignores the retained hidden homepage and extracts current search-unit messages", () => {
     document.body.innerHTML =
-      '<button data-testid="model-switcher-dropdown-button">GPT-6 Pro</button><main inert><div data-message-author-role="user">Old hidden question</div></main><main><div class="group flex flex-col"><div data-chatgpt-search-unit-key="turn:0:user" data-chatgpt-search-message-ids="u1"><div data-user-message-bubble>Question</div></div><div data-chatgpt-search-unit-key="turn:1:reasoning">Thinking</div><div data-chatgpt-search-unit-key="turn:2:assistant" data-chatgpt-search-message-ids="a1 a1"><div data-markdown-text-style="assistant-message"><p>Answer</p></div></div><button aria-label="Regenerate response"></button></div></main>'
+      '<button data-testid="model-switcher-dropdown-button">GPT-6 Pro</button><main inert><div data-message-author-role="user">Old hidden question</div></main><main><div class="group flex flex-col"><div data-chatgpt-search-unit-key="turn:0:user" data-chatgpt-search-message-ids="u1"><div data-user-message-bubble>Question</div></div><div data-chatgpt-search-unit-key="turn:1:reasoning">Thinking</div><div data-chatgpt-search-unit-key="turn:2:assistant" data-chatgpt-search-message-ids="a1 a1"><div data-markdown-text-style="assistant-message"><p>Answer</p></div></div><div role="group"><button aria-label="Regenerate response"></button><button aria-label="Good response"></button></div></div></main>'
     const page = inspectChatGptPage(10000)
     expect(page.users).toEqual([{ id: "u1", text: "Question" }])
     expect(page.answer?.id).toBe("a1")
     expect(page.answer?.html).toBe("<p>Answer</p>")
     expect(page.answer?.complete).toBe(true)
   })
-  test("current Chat UI recognizes the actual composer and verified 6 / Pro row", () => {
+  test("observes the current Pro label and composer without requiring an open menu", () => {
     document.body.innerHTML =
       '<button aria-label="Select ChatGPT model" aria-controls="model-menu" data-selected-reasoning-effort="medium">Pro</button><div role="textbox" contenteditable="true" data-composer-markdown></div><main></main><div role="menu" id="model-menu"><div data-model-picker-view-toggle aria-hidden="false">6 Pro</div></div>'
     expect(inspectChatGptPage(10000).targetModel).toBe(true)
@@ -373,15 +576,16 @@ describe("ChatGPT reply HTML extraction", () => {
     document.getElementById("model-menu")!.remove()
     expect(inspectChatGptPage(10000).targetModel).toBe(true)
   })
-  test("a bare Pro trigger is not proof of GPT-6", () => {
+  test("a bare Pro trigger stays Pro without inventing version evidence", () => {
     document.body.innerHTML = '<button aria-label="Select ChatGPT model">Pro</button><main></main>'
-    expect(inspectChatGptPage(10000).targetModel).toBe(false)
+    expect(inspectChatGptPage(10000).targetModel).toBe(true)
+    expect(inspectChatGptPage(10000).model).toBe("Pro")
   })
-  test("recognizes the live view-track structure while the trigger says Thinking effort", () => {
+  test("does not infer selection from model options when the trigger says Thinking effort", () => {
     document.body.innerHTML =
       '<button aria-label="Select ChatGPT model" aria-controls="model-menu" data-selected-reasoning-effort="medium">Thinking effort</button><main></main><div role="menu" id="model-menu"><div aria-hidden="true" inert><div data-model-picker-view-toggle>5.5 Pro</div></div><div aria-hidden="false"><div data-model-picker-view-toggle>6\nPro</div></div></div>'
-    expect(inspectChatGptPage(10000).model).toBe("GPT-6 Pro")
-    expect(window.eval(CHATGPT_INSPECT_EXPRESSION).targetModel).toBe(true)
+    expect(inspectChatGptPage(10000).model).toBe("Thinking effort")
+    expect(window.eval(CHATGPT_INSPECT_EXPRESSION).targetModel).toBe(false)
     document.getElementById("model-menu")!.remove()
     document.querySelector("button")!.textContent = "Pro"
     expect(inspectChatGptPage(10000).targetModel).toBe(true)
@@ -395,18 +599,28 @@ describe("ChatGPT reply HTML extraction", () => {
       .insertAdjacentHTML("beforeend", "<div data-model-picker-view-toggle>6 Pro</div>")
     expect(inspectChatGptPage(10000).targetModel).toBe(false)
   })
-  test("re-associates the sole visible model picker while aria-controls is being replaced", () => {
+  test("a Pro trigger does not require menu association", () => {
     document.body.innerHTML =
       '<button aria-label="Select ChatGPT model" aria-expanded="true">Pro</button><main></main><div role="menu"><div data-model-picker-view-toggle aria-hidden="false">6 Pro</div></div>'
     expect(inspectChatGptPage(10000).targetModel).toBe(true)
   })
-  test("model evidence is invalidated if the trigger identity or effort changes", () => {
+  test("reasoning effort is not model identity", () => {
     document.body.innerHTML =
       '<button aria-label="Select ChatGPT model" aria-controls="model-menu" data-selected-reasoning-effort="medium">Pro</button><main></main><div id="model-menu"><div data-model-picker-view-toggle aria-hidden="false">6 Pro</div></div>'
     expect(inspectChatGptPage(10000).targetModel).toBe(true)
     document.getElementById("model-menu")!.remove()
     document.querySelector("button")!.setAttribute("data-selected-reasoning-effort", "low")
-    expect(inspectChatGptPage(10000).targetModel).toBe(false)
+    expect(inspectChatGptPage(10000).targetModel).toBe(true)
+    expect(inspectChatGptPage(10000).model).toBe("Pro")
+  })
+  test("missing model UI does not affect the rest of the page snapshot", () => {
+    conversation("<p>Answer</p>")
+    document.querySelector('[data-testid="model-switcher-dropdown-button"]')!.remove()
+    const page = window.eval(CHATGPT_INSPECT_EXPRESSION)
+    expect(page.model).toBe("")
+    expect(page.targetModel).toBe(false)
+    expect(page.composer).toBe(true)
+    expect(page.answer.text).toBe("Answer")
   })
   test("serialized browser code is self-contained", () => {
     conversation("<p>Answer</p>")
@@ -461,7 +675,7 @@ describe("ChatGPT reply HTML extraction", () => {
     expect(result.answer?.complete).toBe(false)
   })
 
-  test("requires a completion control, not merely stable HTML", () => {
+  test("does not complete output without explicit settlement or response-action evidence", () => {
     conversation("<p>Partial answer</p>", false)
     expect(inspectChatGptPage(10000).answer?.complete).toBe(false)
   })

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { createHash } from "node:crypto"
 import { constants } from "node:fs"
-import { lstat, mkdir, open, readFile, rm, writeFile } from "node:fs/promises"
+import { lstat, mkdir, open, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import {
   GPT_PRO_URL,
@@ -9,6 +9,7 @@ import {
   gptProTerminal,
   type GptProCommand,
   type GptProAttachment,
+  type GptProAttachmentPreview,
   type GptProConfig,
   type GptProJob,
   type GptProPageState,
@@ -24,14 +25,15 @@ export type GptProDriverAPI = {
   open(url?: string, fresh?: boolean): Promise<void>
   ready(): Promise<GptProPageState>
   page(): Promise<GptProPageState>
-  verify(): Promise<GptProPageState>
+  observeModel(): Promise<GptProPageState>
   fill(prompt: string): Promise<void>
   uploadAttachments?(
     files: Array<{ path: string; name: string; mime?: string; sha256?: string }>,
     mayDispatch: boolean,
     shouldContinue?: () => Promise<boolean>,
+    beforeDispatch?: () => Promise<void>,
   ): Promise<void>
-  submit(beforeDispatch?: () => Promise<void>, uid?: string): Promise<void>
+  submit(beforeDispatch?: () => Promise<void | (() => void)>, uid?: string): Promise<void>
   element?(uid: string): Promise<{ composer: boolean; send: boolean; retry?: boolean }>
   recover?(): void
   stop(): Promise<void>
@@ -67,9 +69,10 @@ const attachmentIdentity = (attachment: {
   kind?: "document" | "image"
   mime?: string
   sha256?: string
+  previewSha256?: string
 }) =>
   attachment.kind === "image" || attachment.mime?.startsWith("image/")
-    ? `image:${attachment.sha256 ?? "unknown"}`
+    ? `image:${attachment.previewSha256 ?? attachment.sha256 ?? "unknown"}`
     : `document:${attachment.uploadName ?? attachment.name}`
 const truncateUtf8 = (value: string, maxBytes: number) => {
   let result = ""
@@ -151,9 +154,139 @@ export class GptProController {
   }
   list() {
     return this.jobs.map((job) => {
-      const { html: _html, text: _text, notifications: _notifications, notificationText: _notificationText, ...visible } = job
+      const {
+        html: _html,
+        text: _text,
+        notifications: _notifications,
+        notificationText: _notificationText,
+        ...visible
+      } = job
       return this.publicJob({ ...visible, prompt: visible.prompt.slice(0, 160) })
     })
+  }
+  async attachmentPreview(input: { id: string; attachmentID: string }): Promise<GptProAttachmentPreview> {
+    if (
+      !input ||
+      typeof input.id !== "string" ||
+      typeof input.attachmentID !== "string" ||
+      !/^gpt_[a-f0-9-]+$/i.test(input.id) ||
+      !/^[a-zA-Z0-9_-]{1,128}$/.test(input.attachmentID)
+    ) {
+      throw new Error("Stored attachment preview is not available")
+    }
+    const job = this.jobs.find((item) => item.id === input.id)
+    const attachment = job?.attachments?.find((item) => item.id === input.attachmentID)
+    const staged = job?.stagedAttachments?.find((item) => item.id === input.attachmentID)
+    if (!job || !attachment || !staged) throw new Error("Stored attachment preview is not available")
+
+    const stagingRoot = this.persistence.stagingRoot?.()
+    if (!stagingRoot) throw new Error("Owned attachment storage is unavailable")
+    const filename = attachment.uploadName
+    if (
+      !filename ||
+      filename.includes("/") ||
+      filename.includes("\\") ||
+      path.basename(filename) !== filename ||
+      staged.uploadName !== filename ||
+      !path.isAbsolute(staged.path)
+    ) {
+      throw new Error("Stored attachment identity is invalid")
+    }
+
+    const root = await realpath(stagingRoot).catch(() => undefined)
+    if (!root) throw new Error("Owned attachment storage is unavailable")
+    const jobRoot = path.join(root, job.id)
+    const attachmentRoot = path.join(jobRoot, attachment.id)
+    const expectedPath = path.join(attachmentRoot, filename)
+    const canonicalStagedPath = await realpath(staged.path).catch(() => undefined)
+    if (!canonicalStagedPath) throw new Error("Stored attachment preview is unavailable or changed")
+    if (canonicalStagedPath !== expectedPath) {
+      throw new Error("Stored attachment is outside its owned job directory")
+    }
+
+    try {
+      const [resolvedJobRoot, resolvedAttachmentRoot] = await Promise.all([realpath(jobRoot), realpath(attachmentRoot)])
+      if (resolvedJobRoot !== jobRoot || resolvedAttachmentRoot !== attachmentRoot) {
+        throw new Error("Stored attachment copy is outside its owned directory")
+      }
+      const [jobInfo, attachmentInfo, fileInfo] = await Promise.all([
+        lstat(jobRoot),
+        lstat(attachmentRoot),
+        lstat(expectedPath),
+      ])
+      if (
+        jobInfo.isSymbolicLink() ||
+        !jobInfo.isDirectory() ||
+        attachmentInfo.isSymbolicLink() ||
+        !attachmentInfo.isDirectory() ||
+        fileInfo.isSymbolicLink() ||
+        !fileInfo.isFile() ||
+        !Number.isSafeInteger(attachment.size) ||
+        attachment.size < 0 ||
+        attachment.size > ATTACHMENT_FILE_LIMIT ||
+        fileInfo.size !== attachment.size ||
+        staged.sha256 !== attachment.sha256 ||
+        !/^[a-f0-9]{64}$/i.test(staged.sha256)
+      ) {
+        throw new Error("Stored attachment copy is missing or changed")
+      }
+
+      const handle = await open(expectedPath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
+      let bytes: Buffer
+      try {
+        const opened = await handle.stat()
+        if (
+          !opened.isFile() ||
+          opened.size !== attachment.size ||
+          opened.size > ATTACHMENT_FILE_LIMIT ||
+          Number(opened.dev) !== Number(fileInfo.dev) ||
+          Number(opened.ino) !== Number(fileInfo.ino)
+        ) {
+          throw new Error("Stored attachment copy is missing or changed")
+        }
+        const chunks: Buffer[] = []
+        const chunk = Buffer.alloc(64 * 1024)
+        let size = 0
+        while (true) {
+          const length = Math.min(chunk.byteLength, Math.max(1, attachment.size - size + 1))
+          const result = await handle.read(chunk, 0, length, null)
+          if (!result.bytesRead) break
+          size += result.bytesRead
+          if (size > attachment.size || size > ATTACHMENT_FILE_LIMIT) {
+            throw new Error("Stored attachment copy is missing or changed")
+          }
+          chunks.push(Buffer.from(chunk.subarray(0, result.bytesRead)))
+        }
+        const after = await handle.stat()
+        const resolvedFilePath = await realpath(expectedPath)
+        if (
+          size !== attachment.size ||
+          after.size !== attachment.size ||
+          Number(after.dev) !== Number(opened.dev) ||
+          Number(after.ino) !== Number(opened.ino) ||
+          resolvedFilePath !== expectedPath
+        ) {
+          throw new Error("Stored attachment copy is missing or changed")
+        }
+        bytes = Buffer.concat(chunks, size)
+      } finally {
+        await handle.close()
+      }
+
+      if (digest(bytes) !== staged.sha256.toLowerCase()) {
+        throw new Error("Stored attachment copy is missing or changed")
+      }
+      const mime = attachmentTypes.get(path.extname(attachment.name).toLowerCase())
+      if (!mime || mime !== attachment.mime) throw new Error("Stored attachment type is invalid")
+      this.log(
+        `consult attachment preview ready job=${job.id} attachment=${attachment.id} bytes=${bytes.byteLength} mime=${mime}`,
+      )
+      return { name: attachment.name, mime, base64: bytes.toString("base64") }
+    } catch (error) {
+      this.log(`consult attachment preview refused job=${job.id} attachment=${attachment.id}`)
+      if (error instanceof Error && error.message === "Stored attachment type is invalid") throw error
+      throw new Error("Stored attachment preview is unavailable or changed")
+    }
   }
   notifications(directory?: string) {
     for (const job of this.jobs) this.notify(job)
@@ -216,7 +349,9 @@ export class GptProController {
         owned &&
         job.stagedAttachments.every((file) => {
           const relative = path.relative(owned, file.path)
-          return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+          return (
+            relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+          )
         })
       ) {
         void rm(owned, { recursive: true, force: true }).then(
@@ -278,19 +413,24 @@ export class GptProController {
           path.basename(attachment.name) !== attachment.name
         )
           throw new Error("Attachment names must be plain filenames")
-        if (attachmentTypes.get(extension) !== attachment.mime)
-          throw new Error("Attachment type is not supported")
+        if (attachmentTypes.get(extension) !== attachment.mime) throw new Error("Attachment type is not supported")
         if (!Number.isSafeInteger(attachment.size) || attachment.size < 0 || attachment.size > ATTACHMENT_FILE_LIMIT)
           throw new Error("Each attachment must be at most 20 MiB")
         if (!/^[a-f0-9]{64}$/i.test(attachment.sha256)) throw new Error("Attachment digest is invalid")
         const info = await lstat(attachment.path)
-        if (!path.isAbsolute(attachment.path) || !info.isFile() || info.isSymbolicLink() || info.size !== attachment.size)
+        if (
+          !path.isAbsolute(attachment.path) ||
+          !info.isFile() ||
+          info.isSymbolicLink() ||
+          info.size !== attachment.size
+        )
           throw new Error("Attachment source changed or is not a regular file")
         const handle = await open(attachment.path, constants.O_RDONLY | constants.O_NOFOLLOW)
         let bytes: Buffer
         try {
           const opened = await handle.stat()
-          if (!opened.isFile() || opened.size !== attachment.size) throw new Error("Attachment source changed during validation")
+          if (!opened.isFile() || opened.size !== attachment.size)
+            throw new Error("Attachment source changed during validation")
           const chunks: Buffer[] = []
           let size = 0
           const chunk = Buffer.alloc(64 * 1024)
@@ -323,7 +463,9 @@ export class GptProController {
         const stagedDigest = digest(await readFile(target))
         if (stagedDigest !== sourceDigest) throw new Error("Staged attachment integrity check failed")
         staged.push({ id: attachment.id, path: target, sha256: stagedDigest, uploadName })
-        this.log(`consult attachment staged job=${jobID} index=${index + 1} bytes=${bytes.byteLength} digestVerified=true`)
+        this.log(
+          `consult attachment staged job=${jobID} index=${index + 1} bytes=${bytes.byteLength} digestVerified=true`,
+        )
       }
       return staged
     } catch (error) {
@@ -355,7 +497,12 @@ export class GptProController {
         ...(input.attachments?.length
           ? {
               attachments: input.attachments.map((attachment, index) => ({
-                ...attachment,
+                id: attachment.id,
+                name: attachment.name,
+                path: attachment.path,
+                mime: attachment.mime,
+                size: attachment.size,
+                sha256: attachment.sha256,
                 uploadName: stagedAttachments[index].uploadName,
                 status: "pending" as const,
               })),
@@ -366,12 +513,15 @@ export class GptProController {
         createdAt: Date.now(),
         updatedAt: Date.now(),
         submitted: false,
+        ...(input.attachments?.length ? { uploadAttempted: false } : {}),
         revision: 0,
         background: input.background ?? parent?.background ?? false,
       }
       this.jobs.push(job)
       this.save()
-      this.log(`consult created id=${job.id} promptChars=${job.prompt.length} attachments=${job.attachments?.length ?? 0}`)
+      this.log(
+        `consult created id=${job.id} promptChars=${job.prompt.length} attachments=${job.attachments?.length ?? 0}`,
+      )
       if (parent) this.update(parent, { successorID: job.id })
       void this.pump()
       return job
@@ -393,46 +543,137 @@ export class GptProController {
     const files: Array<{ path: string; name: string; mime: string; sha256: string }> = []
     for (const attachment of job.attachments) {
       const copy = staged.find((item) => item.id === attachment.id)
-      if (
-        !copy ||
-        copy.uploadName !== attachment.uploadName ||
-        path.basename(copy.path) !== attachment.uploadName
-      )
+      if (!copy || copy.uploadName !== attachment.uploadName || path.basename(copy.path) !== attachment.uploadName)
         throw new Error("Staged attachment metadata is incomplete")
       const relative = path.relative(path.join(root, job.id), copy.path)
-      if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Staged attachment path is outside its owned job directory")
+      if (relative.startsWith("..") || path.isAbsolute(relative))
+        throw new Error("Staged attachment path is outside its owned job directory")
       const info = await lstat(copy.path)
       if (!info.isFile() || info.isSymbolicLink() || info.size !== attachment.size)
         throw new Error("Staged attachment changed before upload")
       const bytes = await readFile(copy.path)
       if (digest(bytes) !== copy.sha256 || copy.sha256 !== attachment.sha256.toLowerCase())
         throw new Error("Staged attachment digest changed before upload")
-      this.log(`consult attachment pre-upload integrity job=${job.id} id=${attachment.id} bytes=${bytes.byteLength} verified=true`)
+      this.log(
+        `consult attachment pre-upload integrity job=${job.id} id=${attachment.id} bytes=${bytes.byteLength} verified=true`,
+      )
       files.push({ path: copy.path, name: attachment.uploadName, mime: attachment.mime, sha256: copy.sha256 })
     }
-    const mayDispatch = job.attachments.every((attachment) => attachment.status === "pending")
+    const mayDispatch =
+      job.uploadAttempted === false &&
+      job.attachments.every((attachment) => attachment.status === "pending" || attachment.status === "unknown")
     if (mayDispatch)
-      this.update(job, { attachments: job.attachments.map((attachment) => ({ ...attachment, status: "uploading", error: undefined })) })
+      this.update(job, {
+        attachments: job.attachments.map((attachment) => ({ ...attachment, status: "uploading", error: undefined })),
+      })
     try {
-      await this.driver.uploadAttachments(files, mayDispatch, () => this.checkpoint(job))
+      await this.driver.uploadAttachments(
+        files,
+        mayDispatch,
+        () => this.checkpoint(job),
+        async () => {
+          const managedRecovery = this.controlling.has(job.id) && job.phase === "paused" && !!job.recovery
+          const automaticRun = !this.controlling.has(job.id) && job.phase === "sending"
+          if (this.disposed || this.active !== job.id || (!managedRecovery && !automaticRun))
+            throw new Error("Attachment dispatch cancelled before file input; no upload was attempted")
+          this.update(job, { uploadAttempted: true })
+          this.log(`consult attachment dispatch boundary job=${job.id} count=${files.length} persisted=true`)
+        },
+      )
       const page = await this.driver.page()
+      if (!this.bindPreviewEvidence(job, page))
+        throw new Error("Composer attachment preview identity did not match this consultation")
       if (!this.hasExactAttachmentEvidence(job, page))
         throw new Error("Attachment upload returned without exact ready-card evidence")
-      this.update(job, { attachments: job.attachments.map((attachment) => ({ ...attachment, status: "ready", error: undefined })) })
+      this.update(job, {
+        attachments: job.attachments.map((attachment) => ({ ...attachment, status: "ready", error: undefined })),
+      })
       this.log(`consult attachments verified job=${job.id} count=${files.length}`)
     } catch (error) {
       if (job.phase === "cancelled" || this.disposed) throw error
-      const failed = error instanceof Error && error.message.includes("reported an attachment upload error")
+      const page = await this.driver.page().catch(() => undefined)
+      if (page && job.uploadAttempted === true) this.bindPreviewEvidence(job, page)
+      const observed = page && job.uploadAttempted === true ? this.observedAttachmentStatuses(job, page) : undefined
       this.update(job, {
-        attachments: job.attachments.map((attachment) => ({
-          ...attachment,
-          status: failed ? "failed" : "unknown",
-          error: failed ? "ChatGPT reported an upload error." : "Attachment upload state could not be confirmed.",
-        })),
+        attachments:
+          observed ??
+          job.attachments.map((attachment) => ({
+            ...attachment,
+            status: job.uploadAttempted === true ? "unknown" : "pending",
+            error: job.uploadAttempted === true ? "Attachment upload state could not be confirmed." : undefined,
+          })),
       })
-      this.log(`consult attachment upload paused job=${job.id} count=${files.length} state=${failed ? "failed" : "unknown"}`)
+      const states = (observed ?? job.attachments).map((attachment) => attachment.status)
+      this.log(`consult attachment upload paused job=${job.id} count=${files.length} states=${states.join(",")}`)
       throw error
     }
+  }
+  private observedAttachmentStatuses(job: GptProJob, page: GptProPageState) {
+    const remaining = [...(page.attachments ?? [])]
+    return (job.attachments ?? []).map((attachment) => {
+      const key = attachmentIdentity(attachment)
+      let index = remaining.findIndex((candidate) => attachmentIdentity(candidate) === key)
+      if (index < 0) {
+        const byName = remaining
+          .map((candidate, candidateIndex) => ({ candidate, candidateIndex }))
+          .filter(
+            ({ candidate }) =>
+              candidate.status === "failed" &&
+              !!candidate.name &&
+              (candidate.name === attachment.uploadName || candidate.name === attachment.name),
+          )
+        const expectedByName = (job.attachments ?? []).filter(
+          (item) => item.uploadName === attachment.uploadName || item.name === attachment.name,
+        )
+        if (byName.length === 1 && expectedByName.length === 1) index = byName[0]!.candidateIndex
+      }
+      if (index < 0) {
+        return { ...attachment, status: "unknown" as const, error: "Attachment state could not be confirmed." }
+      }
+      const [evidence] = remaining.splice(index, 1)
+      if (evidence!.status === "ready") return { ...attachment, status: "ready" as const, error: undefined }
+      if (evidence!.status === "failed") {
+        return { ...attachment, status: "failed" as const, error: "ChatGPT reported an attachment upload error." }
+      }
+      return { ...attachment, status: "unknown" as const, error: "Attachment state could not be confirmed." }
+    })
+  }
+  private bindPreviewEvidence(job: GptProJob, page: GptProPageState) {
+    const expected = job.attachments ?? []
+    const current = page.attachments ?? []
+    if (current.length !== expected.length) return false
+    const names = expected.map((attachment) => attachment.uploadName ?? attachment.name)
+    if (new Set(names).size !== names.length) return false
+    const used = new Set<number>()
+    const bindings = new Map<string, string>()
+    for (const attachment of expected) {
+      const name = attachment.uploadName ?? attachment.name
+      const matches = current
+        .map((card, index) => ({ card, index }))
+        .filter(({ card, index }) => !used.has(index) && card.name === name)
+      if (matches.length !== 1) return false
+      const { card, index } = matches[0]!
+      used.add(index)
+      if (card.status !== "ready") return false
+      if (attachment.mime.startsWith("image/")) {
+        if (card.kind !== "image" || !/^[a-f0-9]{64}$/i.test(card.sha256 ?? "")) return false
+        if (attachment.previewSha256 && attachment.previewSha256.toLowerCase() !== card.sha256!.toLowerCase())
+          return false
+        bindings.set(attachment.id, card.sha256!.toLowerCase())
+      } else if (card.kind === "image") {
+        return false
+      }
+    }
+    if (used.size !== current.length) return false
+    const next = expected.map((attachment) => {
+      const previewSha256 = bindings.get(attachment.id)
+      return previewSha256 && !attachment.previewSha256 ? { ...attachment, previewSha256 } : attachment
+    })
+    if (next.some((attachment, index) => attachment !== expected[index])) {
+      this.update(job, { attachments: next })
+      this.log(`consult attachment preview identity bound id=${job.id} images=${bindings.size}`)
+    }
+    return true
   }
   private hasExactAttachmentEvidence(job: GptProJob, page: GptProPageState) {
     const expected = (job.attachments ?? []).map(attachmentIdentity).sort()
@@ -630,8 +871,10 @@ export class GptProController {
     await this.driver.ready()
     if (!(await this.checkpoint(job))) return
     this.stage(job, "model")
-    let page =
-      job.submitted && job.userID && job.model === "GPT-6 Pro" ? await this.driver.page() : await this.driver.verify()
+    let page = job.submitted ? await this.driver.page() : await this.driver.observeModel()
+    this.log(
+      `consult model observation id=${job.id} label=${JSON.stringify(page.model || "unknown")} policy=user-selected nonblocking=true`,
+    )
     if (!(await this.checkpoint(job))) return
     if (!job.submitted) {
       const parent = job.parentID ? this.jobs.find((item) => item.id === job.parentID) : undefined
@@ -657,18 +900,15 @@ export class GptProController {
         await this.ensureAttachments(job)
         if (!(await this.checkpoint(job))) return
         page = await this.driver.page()
-        if (page.error) throw new GptProPageError(page.error.message, page.error.kind)
-        if (!page.targetModel || page.generating || (page.draft.trim() && (!current || page.draft.trim() !== job.prompt)))
+        const blockingError = this.blockingOwnedTurnError(page, undefined)
+        if (blockingError) throw new GptProPageError(blockingError.message, blockingError.kind)
+        if (page.generating || (page.draft.trim() && (!current || page.draft.trim() !== job.prompt)))
           throw new Error("Composer changed during attachment upload. No prompt was submitted.")
       }
       if (!current || page.draft.trim() !== job.prompt) await this.driver.fill(job.prompt)
       if (!(await this.checkpoint(job))) return
       page = await this.driver.page()
-      if (
-        page.draft.trim() !== job.prompt ||
-        !page.targetModel ||
-        !this.hasExactAttachmentEvidence(job, page)
-      )
+      if (page.draft.trim() !== job.prompt || !this.hasExactAttachmentEvidence(job, page))
         throw new Error("Exact prompt and attachment evidence must be present immediately before sending")
       this.stage(job, "submit")
       const sendURL = page.url
@@ -676,17 +916,21 @@ export class GptProController {
         if (this.disposed || this.active !== job.id || job.phase !== "sending" || this.controlling.has(job.id))
           throw new Error("Consultation was paused or cancelled before the send boundary. Nothing was dispatched.")
         const current = await this.driver.page()
+        const blockingError = this.blockingOwnedTurnError(current, undefined)
         if (
-          current.error ||
+          blockingError ||
           current.url !== sendURL ||
-          !current.targetModel ||
           current.generating ||
           current.draft.trim() !== job.prompt ||
           current.users.length !== (job.userCount ?? 0) ||
           !this.hasExactAttachmentEvidence(job, current)
         )
           throw new Error("Composer or attachment evidence changed at the send boundary. Nothing was dispatched.")
-        this.update(job, { submitted: true, sendAttempted: true })
+        return () => {
+          if (this.disposed || this.active !== job.id || job.phase !== "sending" || this.controlling.has(job.id))
+            throw new Error("Consultation was paused or cancelled before the send boundary. Nothing was dispatched.")
+          this.update(job, { submitted: true, sendAttempted: true })
+        }
       })
     }
     this.stage(job, "track")
@@ -710,57 +954,100 @@ export class GptProController {
       }
       page = await this.driver.page()
       this.capturePendingURL(job, page)
-      if (page.error) throw new GptProPageError(page.error.message, page.error.kind)
-      if (job.userID && page.users.at(-1)?.id === job.userID && page.url !== job.url)
-        this.update(job, { url: page.url })
-      // Once acknowledged, model evidence belongs to this submitted turn.
-      // A remounted composer selects the NEXT question's model, not this reply's.
-      if (!page.targetModel && (!job.userID || job.model !== "GPT-6 Pro")) page = await this.driver.verify()
-      if (this.controlling.has(job.id) || ["paused", "cancelled"].includes(job.phase)) continue
-      const user = page.users.at(-1)
+      const errorUser = job.userID ? page.users.find((user) => user.id === job.userID) : page.users[job.userCount ?? 0]
+      const blockingError = this.blockingOwnedTurnError(page, errorUser)
+      if (blockingError) throw new GptProPageError(blockingError.message, blockingError.kind)
+
       const expectedCount = (job.userCount ?? 0) + 1
-      if (
-        page.users.length > expectedCount ||
-        (page.users.length >= expectedCount && job.userID && user?.id !== job.userID) ||
-        (page.users.length === expectedCount && user?.text.trim() !== job.prompt) ||
-        (user ? this.hasUnexpectedUserAttachments(job, user) : false)
-      ) {
+      if (!job.userID) {
+        const candidate = page.users[job.userCount ?? 0]
+        if (candidate && candidate.text.trim() !== job.prompt) {
+          this.update(job, {
+            phase: "paused",
+            error: "The submitted user turn does not match the managed prompt; no reply was accepted.",
+          })
+          continue
+        }
+        if (candidate && this.hasUnexpectedUserAttachments(job, candidate)) {
+          this.update(job, {
+            phase: "paused",
+            error: "The submitted user turn has different attachments from the managed request.",
+          })
+          continue
+        }
+        if (candidate && !this.hasExactUserAttachmentEvidence(job, candidate)) {
+          if (page.users.length > expectedCount || Date.now() - submittedAt > 30000) {
+            this.update(job, {
+              phase: "paused",
+              error: "Submitted turn attachment evidence did not match. No reply was accepted.",
+            })
+            continue
+          }
+          await sleep(this.pollMs)
+          continue
+        }
+        if (candidate) {
+          this.update(job, { userID: candidate.id, url: page.url, model: job.model ?? page.model })
+        } else {
+          if (Date.now() - submittedAt > 30000)
+            throw new Error("Submission could not be confirmed. Do not automatically resend.")
+          await sleep(this.pollMs)
+          continue
+        }
+      }
+
+      const ownedIndex = page.users.findIndex((user) => user.id === job.userID)
+      const user = ownedIndex < 0 ? undefined : page.users[ownedIndex]
+      if (!user) {
         this.update(job, {
           phase: "paused",
-          error: "The page was changed manually. Stop or intervene explicitly; no unrelated reply was returned.",
+          error: "The owned user turn is no longer present in the page history; no other reply was accepted.",
         })
         continue
       }
-      if (page.draft.trim() && page.draft.trim() !== job.prompt) {
-        this.update(job, { phase: "paused", error: "A manual draft was detected; automation paused." })
-        continue
-      }
-      if (page.users.length !== expectedCount || !user) {
-        if (Date.now() - submittedAt > 30000)
-          throw new Error("Submission could not be confirmed. Do not automatically resend.")
-        await sleep(this.pollMs)
+      if (user.text.trim() !== job.prompt || this.hasUnexpectedUserAttachments(job, user)) {
+        this.update(job, {
+          phase: "paused",
+          error: "The owned user turn changed from the managed prompt or attachments; no reply was accepted.",
+        })
         continue
       }
       if (!this.hasExactUserAttachmentEvidence(job, user)) {
-        if (Date.now() - submittedAt > 30000)
-          throw new Error("Submitted turn attachment evidence did not match. No reply was accepted.")
+        if (Date.now() - submittedAt > 30000) {
+          this.update(job, {
+            phase: "paused",
+            error: "Submitted turn attachment evidence did not match. No reply was accepted.",
+          })
+          continue
+        }
         await sleep(this.pollMs)
         continue
       }
-      if (!job.userID)
-        this.update(job, { userID: user.id, phase: "generating", url: page.url, model: job.model ?? page.model })
+      if (page.url !== job.url) this.update(job, { url: page.url })
+
+      const laterUserExists = page.users.slice(ownedIndex + 1).length > 0
+      const historyAnswer = page.answers?.find((item) => item.userID === user.id)
+      const answer =
+        historyAnswer ??
+        (page.answer?.userID === user.id && !laterUserExists
+          ? { ...page.answer, generating: page.generating }
+          : undefined)
+      const answerComplete = !!answer && answer.complete && !answer.truncated && answer.generating !== true
+
+      // Once accepted, track only this userID. Later drafts or turns cannot
+      // change its answer, and their global generation state is irrelevant.
+      if (!job.userID) this.update(job, { userID: user.id, phase: "generating" })
       else if (job.phase === "preparing" || job.phase === "sending")
         this.update(job, { phase: "generating", error: undefined })
-      const answer = page.answer
-      if (answer?.userID === user.id) {
+      if (answer) {
         if (answer.truncated) throw new Error("Reply exceeds HTML capture limit; incomplete output is not success.")
         if (html !== answer.html) {
           html = answer.html
           stableAt = Date.now()
           this.update(job, { text: answer.text, html, revision: job.revision + 1, url: page.url })
         }
-        if (!answer.complete || page.generating) stableAt = Date.now()
-        if (answer.complete && !page.generating && Date.now() - stableAt >= this.stableMs) {
+        if (!answerComplete) stableAt = Date.now()
+        if (answerComplete && Date.now() - stableAt >= this.stableMs) {
           this.update(job, { phase: "completed", error: undefined })
           return
         }
@@ -772,6 +1059,19 @@ export class GptProController {
   private async checkpoint(job: GptProJob) {
     while (!this.disposed && (job.phase === "paused" || this.controlling.has(job.id))) await sleep(this.pollMs)
     return !this.disposed && job.phase !== "cancelled"
+  }
+  private blockingOwnedTurnError(page: GptProPageState, user: GptProPageState["users"][number] | undefined) {
+    const error = page.error as
+      | (NonNullable<GptProPageState["error"]> & { scope?: "turn" | "page"; userID?: string })
+      | undefined
+    if (!error) return undefined
+    if (error.kind === "verification") return error
+    if (error.scope === "page") return undefined
+    if (error.scope === "turn") return user && error.userID === user.id ? error : undefined
+    if (error.userID) return user && error.userID === user.id ? error : undefined
+    // Older page states lack scope; only associate the error with the visible
+    // latest user, never with an owned turn hidden by a later message.
+    return !user || page.users.at(-1)?.id === user.id ? error : undefined
   }
   private stage(job: GptProJob, stage: GptProRecovery["stage"]) {
     this.stages.set(job.id, stage)
@@ -798,43 +1098,56 @@ export class GptProController {
     if (page.error) throw new GptProPageError(page.error.message, page.error.kind)
     if (
       page.url !== job.url ||
-      !page.targetModel ||
       page.generating ||
       page.draft.trim() !== job.prompt ||
       page.users.length !== (job.userCount ?? 0)
     )
-      throw new Error("Managed send requires the exact original prompt, verified GPT-6 Pro, and unchanged conversation")
+      throw new Error("Managed send requires the exact original prompt and unchanged conversation")
     await this.ensureAttachments(job)
     page = await this.driver.page()
     if (
       page.error ||
       page.url !== job.url ||
-      !page.targetModel ||
       page.generating ||
       page.draft.trim() !== job.prompt ||
       !this.hasExactAttachmentEvidence(job, page) ||
       page.users.length !== (job.userCount ?? 0)
     )
-      throw new Error("Managed send requires the exact original prompt, verified GPT-6 Pro, and unchanged conversation")
+      throw new Error("Managed send requires the exact original prompt, attachments, and unchanged conversation")
     if (uid && !(await this.driver.element?.(uid))?.send)
       throw new Error("The observed element is not a send control; no question dispatched")
     this.update(job, { model: page.model, userCount: page.users.length })
     this.log(`consult managed recovery send id=${job.id} uid=${uid ?? "website-send-control"}`)
     await this.driver.submit(async () => {
-      if (this.disposed || this.active !== job.id || job.phase !== "paused" || !job.recovery || !this.controlling.has(job.id))
+      if (
+        this.disposed ||
+        this.active !== job.id ||
+        job.phase !== "paused" ||
+        !job.recovery ||
+        !this.controlling.has(job.id)
+      )
         throw new Error("Managed recovery was paused or cancelled before the send boundary. Nothing was dispatched.")
       const current = await this.driver.page()
       if (
         current.error ||
         current.url !== job.url ||
-        !current.targetModel ||
         current.generating ||
         current.draft.trim() !== job.prompt ||
         current.users.length !== (job.userCount ?? 0) ||
         !this.hasExactAttachmentEvidence(job, current)
       )
         throw new Error("Composer or attachment evidence changed at the send boundary. Nothing was dispatched.")
-      this.update(job, { submitted: true, sendAttempted: true })
+      return () => {
+        if (
+          this.disposed ||
+          this.active !== job.id ||
+          job.phase !== "paused" ||
+          !job.recovery ||
+          !this.controlling.has(job.id)
+        )
+          throw new Error("Managed recovery was paused or cancelled before the send boundary. Nothing was dispatched.")
+        this.update(job, { submitted: true, sendAttempted: true })
+      }
     }, uid)
     await this.syncURL(job)
   }
@@ -883,7 +1196,9 @@ export class GptProController {
         const element = await this.driver.element?.(uid)
         if (!element) throw new Error("Browser element inspection is unavailable")
         if (name === "click" && element.retry && (job.sendAttempted === true || job.submitted))
-          throw new Error("Retry/regenerate controls are blocked after a send attempt; the original question will not be repeated")
+          throw new Error(
+            "Retry/regenerate controls are blocked after a send attempt; the original question will not be repeated",
+          )
         if (name === "type" && args.submit === true)
           throw new Error("Use managed gpt_pro_consult action=send, not Enter, for consultation submission")
         if (name === "type" && element.composer) {
@@ -920,7 +1235,6 @@ export class GptProController {
       if (
         !job.userID &&
         job.submitted &&
-        job.model === "GPT-6 Pro" &&
         page.users.length === (job.userCount ?? 0) + 1 &&
         user?.text.trim() === job.prompt &&
         !!user &&
@@ -938,8 +1252,7 @@ export class GptProController {
   }
   private capturePendingURL(job: GptProJob, page: GptProPageState) {
     const user = page.users.at(-1)
-    const submittedPromptVisible =
-      page.users.length === (job.userCount ?? 0) + 1 && user?.text.trim() === job.prompt
+    const submittedPromptVisible = page.users.length === (job.userCount ?? 0) + 1 && user?.text.trim() === job.prompt
     if (
       job.submitted &&
       !job.userID &&

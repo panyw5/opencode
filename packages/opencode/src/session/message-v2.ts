@@ -820,6 +820,16 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
     if (msg.parts.length === 0) continue
 
     if (msg.info.role === "user") {
+      const directGptProTurn = msg.parts.some((part) => part.type === "agent" && part.name === "gpt-pro")
+      if (directGptProTurn) {
+        const files = msg.parts.filter((part): part is FilePart => part.type === "file")
+        yield* log.info("direct GPT-Pro files summarized for primary model history", {
+          phase: "history-serialize",
+          messageID: msg.info.id,
+          count: files.length,
+          partIDs: files.map((part) => part.id),
+        })
+      }
       const userMessage: UIMessage = {
         id: msg.info.id,
         role: "user",
@@ -827,11 +837,18 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
       }
       for (const part of msg.parts) {
         // User message parts should never be empty
-        if (part.type === "text" && !part.ignored && part.text !== "")
+        if (part.type === "text" && !part.ignored && part.text !== "" && (!directGptProTurn || !part.synthetic))
           userMessage.parts.push({
             type: "text",
             text: part.text,
           })
+        if (directGptProTurn && part.type === "file") {
+          userMessage.parts.push({
+            type: "text",
+            text: `[GPT-Pro attachment: ${part.filename ?? "file"} (${part.mime})]`,
+          })
+          continue
+        }
         // text/plain and directory files are converted into text parts, ignore them
         if (part.type === "file" && part.mime !== "text/plain" && part.mime !== "application/x-directory") {
           if (options?.stripMedia && isMedia(part.mime)) {

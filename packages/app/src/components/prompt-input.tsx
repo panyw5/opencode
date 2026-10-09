@@ -100,6 +100,7 @@ import { createInputUndoEntry, createInputUndoState, recordInputUndo, stepInputU
 import { workspaceKey } from "@/pages/layout/helpers"
 import { uiPerfTriggerDown, uiPerfOpen } from "@/utils/ui-perf"
 import { mayFocusComposer } from "./prompt-input/composer-boundary"
+import { filterAtFileSources } from "./prompt-input/gpt-pro-private-files"
 
 interface PromptInputProps {
   class?: string
@@ -1201,9 +1202,25 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       const consults = consultList()
       const agents = agentList()
       const open = recent()
-      const seen = new Set(open)
-      const pinned: AtOption[] = open.map((path) => ({ type: "file", path, display: path, recent: true }))
       const atDirectory = genericAgentAtDirectory()
+      let paths: string[] = []
+      if (query.trim()) {
+        paths = atDirectory
+          ? await sdk
+              .createClient({ directory: atDirectory, throwOnError: true })
+              .find.files({ query, dirs: "true" })
+              .then((x) => x.data ?? [])
+              .catch(() => [])
+          : await files.searchFilesAndDirectories(query)
+      }
+      const sources = filterAtFileSources(open, paths)
+      if (sources.excluded > 0) {
+        console.debug(`[gpt-pro-attachments] filtered legacy private autocomplete paths excluded=${sources.excluded}`)
+      }
+      const safeRecent = sources.recent
+      const safePaths = sources.search
+      const seen = new Set(safeRecent)
+      const pinned: AtOption[] = safeRecent.map((path) => ({ type: "file", path, display: path, recent: true }))
       const toFileOptions = (paths: string[]): AtOption[] =>
         paths
           .filter((path) => !seen.has(path))
@@ -1219,14 +1236,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       if (!query.trim()) {
         return [...imOptions(), ...consults, ...agents, ...pinned]
       }
-      const paths = atDirectory
-        ? await sdk
-            .createClient({ directory: atDirectory, throwOnError: true })
-            .find.files({ query, dirs: "true" })
-            .then((x) => x.data ?? [])
-            .catch(() => [])
-        : await files.searchFilesAndDirectories(query)
-      return [...imOptions(), ...consults, ...agents, ...pinned, ...toFileOptions(paths)]
+      return [...imOptions(), ...consults, ...agents, ...pinned, ...toFileOptions(safePaths)]
     },
     key: atKey,
     filterKeys: ["display", "name"],

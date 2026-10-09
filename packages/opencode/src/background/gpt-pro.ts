@@ -56,7 +56,7 @@ export function notificationText(event: GptProNotification) {
     `url: ${event.url}`,
     event.error ? `error: ${event.error}` : "",
     event.recovery
-      ? `FIXED FLOW NEEDS AGENT RECOVERY at stage=${event.recovery.stage}. Keep consultation_id=${event.consultationID}. Use browser_read/browser_screenshot/browser_click/browser_type/browser_scroll/browser_navigate with consultation_id=${event.consultationID} to inspect and repair the owned ChatGPT page. Read the existing consultation for its managed prompt. Do not create a new consultation or resend. After repair use gpt_pro_consult action=resume with the same consultation_id. The program retains ownership, validates the prompt/model and controls any send.`
+      ? `FIXED FLOW NEEDS AGENT RECOVERY at stage=${event.recovery.stage}. Keep consultation_id=${event.consultationID}. Use browser_read/browser_screenshot/browser_click/browser_type/browser_scroll/browser_navigate with consultation_id=${event.consultationID} to inspect and repair the owned ChatGPT page. Read the existing consultation for its managed prompt. Do not create a new consultation or resend. After repair use gpt_pro_consult action=resume with the same consultation_id. The program retains ownership, validates the prompt/attachments and controls any send. Model recognition is informational only; preserve the user's current selection.`
       : "",
     event.recovery?.needsHuman
       ? "The website requires human verification. Ask the user to complete it; do not automate or bypass the challenge."

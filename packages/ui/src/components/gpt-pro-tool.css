@@ -1,0 +1,146 @@
+[data-component="gpt-pro-tool"] {
+  .gpt-pro-preview-loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    color: var(--text-weak);
+    font-size: 11px;
+  }
+
+  .gpt-pro-tool__attachments {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .gpt-pro-attachment-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: min(24rem, 100%);
+    height: 24px;
+    padding: 0 8px;
+    overflow: hidden;
+    border: 1px solid var(--border-weak-base);
+    border-radius: 999px;
+    background: var(--surface-raised-stronger-non-alpha);
+    color: var(--text-weak);
+    font-family: var(--font-family-sans);
+    font-size: 11px;
+    line-height: 1;
+    text-align: left;
+    cursor: default;
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease,
+      color 120ms ease;
+
+    &[data-attachment-status="ready"] {
+      border-color: color-mix(in srgb, var(--icon-success-base) 42%, var(--border-weak-base));
+      background: color-mix(in srgb, var(--surface-success-weak) 78%, var(--surface-base));
+    }
+
+    &[data-attachment-status="failed"] {
+      border-color: color-mix(in srgb, var(--icon-critical-base) 46%, var(--border-weak-base));
+      background: color-mix(in srgb, var(--surface-critical-weak) 82%, var(--surface-base));
+      color: var(--text-critical-base);
+    }
+
+    &[data-attachment-status="pending"],
+    &[data-attachment-status="uploading"],
+    &[data-attachment-status="unknown"] {
+      background: color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 78%, var(--background-base));
+    }
+
+    &:disabled {
+      opacity: 1;
+    }
+
+    &.gpt-pro-attachment-chip--previewable {
+      cursor: pointer;
+
+      &:hover {
+        border-color: var(--border-strong-base);
+        color: var(--text-base);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--border-focus);
+        outline-offset: 1px;
+      }
+    }
+  }
+
+  .gpt-pro-attachment-chip__icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .gpt-pro-attachment-chip__name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .gpt-pro-attachment-chip__status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 auto;
+    color: var(--text-weak);
+
+    &::before {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--icon-base);
+      content: "";
+    }
+  }
+
+  .gpt-pro-attachment-chip[data-attachment-status="ready"] .gpt-pro-attachment-chip__status::before {
+    background: var(--icon-success-base);
+  }
+
+  .gpt-pro-attachment-chip[data-attachment-status="failed"] .gpt-pro-attachment-chip__status::before {
+    background: var(--icon-critical-base);
+  }
+
+}
+
+.gpt-pro-attachment-preview {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+  background: var(--background-base);
+}
+
+.gpt-pro-attachment-preview__text {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.gpt-pro-attachment-preview__plain {
+  min-width: 0;
+  overflow: auto;
+  padding: 16px;
+  color: var(--text-base);
+  font-family: var(--font-family-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

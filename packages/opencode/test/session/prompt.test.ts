@@ -409,6 +409,8 @@ directMentionIt.instance(
       const source = new photon.PhotonImage(new Uint8Array([255, 255, 255, 255]), 1, 1)
       const png = Buffer.from(source.get_bytes())
       source.free()
+      const markdown = Buffer.from("# pasted markdown\n")
+      const pdf = Buffer.from("%PDF-1.4\nminimal fixture\n")
       yield* prompt.prompt({
         sessionID: chat.id,
         agent: "build",
@@ -427,17 +429,159 @@ directMentionIt.instance(
             filename: "pasted image.png",
             url: `data:image/png;base64,${png.toString("base64")}`,
           },
+          {
+            type: "file",
+            mime: "text/markdown",
+            filename: "pasted.md",
+            url: `data:text/markdown;base64,${markdown.toString("base64")}`,
+          },
+          {
+            type: "file",
+            mime: "application/pdf",
+            filename: "pasted.pdf",
+            url: `data:application/pdf;base64,${pdf.toString("base64")}`,
+          },
         ],
       })
       const consult = directGptProCalls.find((call) => call.action === "consult")
       expect(consult?.attachments?.map(({ name, mime }) => ({ name, mime }))).toEqual([
         { name: "local-note.txt", mime: "text/plain" },
         { name: "pasted image.png", mime: "image/png" },
+        { name: "pasted.md", mime: "text/markdown" },
+        { name: "pasted.pdf", mime: "application/pdf" },
       ])
       const pastedPath = consult?.attachments?.[1]?.path
-      expect(pastedPath).toContain(path.join(dir, ".opencode"))
       expect(yield* Effect.promise(() => Bun.file(pastedPath!).exists())).toBe(false)
       expect(yield* Effect.promise(() => Bun.file(localFile).text())).toBe("local source file")
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const user = messages.find(
+        (message) =>
+          message.info.role === "user" &&
+          message.parts.some((part) => part.type === "agent" && part.name === "gpt-pro"),
+      )
+      const fileParts = user?.parts.filter((part): part is MessageV2.FilePart => part.type === "file") ?? []
+      expect(fileParts.map((part) => ({ filename: part.filename, mime: part.mime, url: part.url }))).toEqual([
+        { filename: "local-note.txt", mime: "text/plain", url: pathToFileURL(localFile).href },
+        { filename: "pasted image.png", mime: "image/png", url: `data:image/png;base64,${png.toString("base64")}` },
+        { filename: "pasted.md", mime: "text/markdown", url: `data:text/markdown;base64,${markdown.toString("base64")}` },
+        { filename: "pasted.pdf", mime: "application/pdf", url: `data:application/pdf;base64,${pdf.toString("base64")}` },
+      ])
+      expect(user?.parts.some((part) => part.type === "text" && part.text.startsWith("Called the Read tool"))).toBe(false)
+      const consultPart = messages
+        .flatMap((message) => message.parts)
+        .find((part) => part.type === "tool" && part.tool === "gpt_pro_consult")
+      expect(consultPart?.type).toBe("tool")
+      if (consultPart?.type === "tool") {
+        expect(consultPart.state.input).not.toHaveProperty("files")
+        expect(JSON.stringify(consultPart.state.input)).not.toContain(localFile)
+      }
+    }),
+  { config: cfg },
+)
+
+directMentionIt.instance(
+  "direct @gpt-pro does not dispatch when an explicitly attached file disappears before resolution",
+  () =>
+    Effect.gen(function* () {
+      directGptProCalls.length = 0
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Missing direct GPT-Pro attachment" })
+      const existing = path.join(dir, "available-file.txt")
+      const missing = path.join(dir, "vanishing-file.txt")
+      yield* writeText(existing, "available content")
+      yield* llm.push(reply().text("Continue without the rejected attachment.").stop())
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        parts: [
+          { type: "text", text: "Review this file" },
+          { type: "agent", name: "gpt-pro" },
+          {
+            type: "file",
+            mime: "text/plain",
+            filename: "available-file.txt",
+            url: pathToFileURL(existing).href,
+          },
+          {
+            type: "file",
+            mime: "text/plain",
+            filename: "vanishing-file.txt",
+            url: pathToFileURL(missing).href,
+          },
+        ],
+      })
+      expect(directGptProCalls).toHaveLength(0)
+      const parts = (yield* sessions.messages({ sessionID: chat.id })).flatMap((message) => message.parts)
+      const failed = parts.find((part) => part.type === "tool" && part.tool === "gpt_pro_consult")
+      const followup = parts.find(
+        (part) => part.type === "text" && part.synthetic && part.text.includes("GPT-Pro consultation failed"),
+      )
+      expect(failed?.type).toBe("tool")
+      expect(followup?.type).toBe("text")
+      if (failed?.type === "tool") {
+        expect(failed.state.status).toBe("error")
+        if (failed.state.status === "error") {
+          expect(failed.state.error).toContain("GPT-Pro attachment not found: vanishing-file.txt")
+        }
+      }
+      if (followup?.type === "text") {
+        expect(followup.text).toContain("No advisor answer was returned")
+        expect(followup.text).not.toContain("tool result is already in this conversation")
+        expect(followup.text).toContain("Do not automatically retry or resend the request")
+        expect(followup.text).toContain("do not upload only the remaining files")
+        expect(followup.text).toContain("do not replace the consultation with a local Read")
+      }
+    }),
+  { config: cfg },
+)
+
+directMentionIt.instance(
+  "direct @gpt-pro allows attachment text that mentions the read-failure message",
+  () =>
+    Effect.gen(function* () {
+      directGptProCalls.length = 0
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Read-failure phrase in attachment" })
+      const localFile = path.join(dir, "quoted-error.txt")
+      yield* writeText(localFile, "Read tool failed to read is just quoted text.")
+      yield* llm.push(reply().text("The file is readable.").stop())
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        parts: [
+          { type: "text", text: "Review this file" },
+          { type: "agent", name: "gpt-pro" },
+          { type: "file", mime: "text/plain", filename: "quoted-error.txt", url: pathToFileURL(localFile).href },
+        ],
+      })
+      const consult = directGptProCalls.find((call) => call.action === "consult")
+      expect(consult?.attachments?.map((attachment) => attachment.name)).toEqual(["quoted-error.txt"])
+    }),
+  { config: cfg },
+)
+
+directMentionIt.instance(
+  "direct @gpt-pro allows a question without attachments",
+  () =>
+    Effect.gen(function* () {
+      directGptProCalls.length = 0
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Direct GPT-Pro without attachments" })
+      yield* llm.push(reply().text("No file attachments were provided.").stop())
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        parts: [{ type: "text", text: "What is the main risk here?" }, { type: "agent", name: "gpt-pro" }],
+      })
+      const consult = directGptProCalls.find((call) => call.action === "consult")
+      expect(consult).toBeDefined()
+      expect(consult?.attachments ?? []).toEqual([])
     }),
   { config: cfg },
 )
@@ -472,7 +616,7 @@ directMentionIt.instance(
       expect(failed?.type).toBe("tool")
       if (failed?.type === "tool") {
         expect(failed.state.status).toBe("error")
-        if (failed.state.status === "error") expect(failed.state.error).toContain("local files or pasted data")
+        if (failed.state.status === "error") expect(failed.state.error).toContain("GPT-Pro attachment source is unsupported: remote.txt")
       }
     }),
   { config: cfg },

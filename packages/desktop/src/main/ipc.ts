@@ -153,6 +153,9 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("gpt-pro-config", () => getGptProController().config())
   ipcMain.handle("gpt-pro-set-config", (_event, config: GptProConfig) => getGptProController().setConfig(config))
   ipcMain.handle("gpt-pro-command", (_event, command: GptProCommand) => getGptProController().command(command))
+  ipcMain.handle("gpt-pro-attachment-preview", (_event, input: { id: string; attachmentID: string }) =>
+    getGptProController().attachmentPreview(input),
+  )
   ipcMain.handle("gpt-pro-list", () => getGptProController().list())
   ipcMain.handle("gpt-pro-open", () => gptProProbe.open())
   ipcMain.handle("gpt-pro-status", () => gptProProbe.status())

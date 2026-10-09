@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { GptProController, type GptProDriverAPI } from "./gpt-pro-controller"
-import { GPT_PRO_URL, type GptProConfig, type GptProJob, type GptProPageState } from "@opencode-ai/util/gpt-pro"
+import {
+  GPT_PRO_URL,
+  type GptProAttachment,
+  type GptProConfig,
+  type GptProJob,
+  type GptProPageState,
+} from "@opencode-ai/util/gpt-pro"
 import { GptProPageError } from "./gpt-pro-page-error"
 import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
@@ -33,10 +39,13 @@ function fixture(
     sentAttachments?: string[]
     sentAttachmentStatus?: "ready" | "unknown"
     submitGate?: () => Promise<void>
+    preDispatchFailures?: number
+    uploadDispatchGate?: () => Promise<void>
   } = {},
 ) {
   let config: GptProConfig = { enabled: options.enabled ?? true, timeoutMinutes: 30 }
   let saved: GptProJob[] = options.loaded ?? []
+  let preDispatchFailures = options.preDispatchFailures ?? 0
   let submits = 0,
     stops = 0,
     fills = 0
@@ -59,19 +68,21 @@ function fixture(
       if (fresh) {
         page.users = []
         page.answer = undefined
+        page.answers = []
         page.draft = ""
       }
     },
     ready: async () => structuredClone(page),
     page: async () => structuredClone(page),
-    verify: options.verify ?? (async () => structuredClone(page)),
+    observeModel: options.verify ?? (async () => structuredClone(page)),
     fill: async (prompt) => {
       fills++
       page.draft = prompt
     },
     submit: async (beforeDispatch) => {
       await options.submitGate?.()
-      await beforeDispatch?.()
+      const commit = await beforeDispatch?.()
+      commit?.()
       submits++
       const attachments = options.sentAttachments ?? (page.attachments ?? []).map(({ name }) => name)
       page.users.push({
@@ -101,10 +112,24 @@ function fixture(
     element: async (uid) => ({ composer: uid === "composer", send: uid === "send", retry: uid === "retry" }),
     ...(options.upload
       ? {
-          uploadAttachments: (files: Array<{ path: string; name: string }>, mayDispatch: boolean, shouldContinue?: () => Promise<boolean>) =>
-            options.upload!(files, mayDispatch, shouldContinue, (attachments) => {
-              page.attachments = attachments
-            }),
+          uploadAttachments: (
+            files: Array<{ path: string; name: string; mime?: string; sha256?: string }>,
+            mayDispatch: boolean,
+            shouldContinue?: () => Promise<boolean>,
+            beforeDispatch?: () => Promise<void>,
+          ) => {
+            if (preDispatchFailures > 0) {
+              preDispatchFailures--
+              throw new Error("ChatGPT's verified attachment input is unavailable")
+            }
+            return (async () => {
+              await options.uploadDispatchGate?.()
+              await beforeDispatch?.()
+              return options.upload!(files, mayDispatch, shouldContinue, (attachments) => {
+                page.attachments = attachments
+              })
+            })()
+          },
         }
       : {}),
   }
@@ -137,8 +162,59 @@ function fixture(
       complete: true,
       truncated: false,
     }
+    page.answers = [
+      ...(page.answers ?? []).filter((answer) => answer.userID !== user.id),
+      {
+        ...page.answer,
+        generating: false,
+        completionEvidence: "settled-marker",
+      },
+    ]
   }
   return { controller, page, finish, logs, counts: () => ({ submits, stops, fills }), saved: () => saved }
+}
+
+async function previewJob(
+  root: string,
+  options: { id?: string; attachmentID?: string; phase?: GptProJob["phase"] } = {},
+) {
+  const id = options.id ?? "gpt_00000000-0000-0000-0000-000000000099"
+  const attachmentID = options.attachmentID ?? "preview-file"
+  const name = "preview.txt"
+  const uploadName = `${id.slice(4)}-1-${name}`
+  const source = path.join(root, `source-${id}.txt`)
+  const stagingRoot = path.join(root, "owned")
+  const stagedPath = path.join(stagingRoot, id, attachmentID, uploadName)
+  const bytes = Buffer.from(`preview payload for ${id}`)
+  const sha256 = createHash("sha256").update(bytes).digest("hex")
+  await mkdir(path.dirname(stagedPath), { recursive: true })
+  await Promise.all([writeFile(source, bytes), writeFile(stagedPath, bytes)])
+  const job: GptProJob = {
+    id,
+    owner: "owner",
+    requestID: `preview-${id}`,
+    phase: options.phase ?? "completed",
+    prompt: "Review this attachment",
+    attachments: [
+      {
+        id: attachmentID,
+        name,
+        uploadName,
+        path: source,
+        mime: "text/plain",
+        size: bytes.byteLength,
+        sha256,
+        status: "ready",
+      },
+    ],
+    stagedAttachments: [{ id: attachmentID, path: stagedPath, sha256, uploadName }],
+    url: GPT_PRO_URL,
+    createdAt: 1,
+    updatedAt: 1,
+    submitted: true,
+    revision: 1,
+  }
+  return { job, bytes, stagingRoot, source, stagedPath, attachmentID }
 }
 
 describe("gpt-pro consultation control", () => {
@@ -244,7 +320,7 @@ describe("gpt-pro consultation control", () => {
       f.controller.dispose()
     }
   })
-  test("retains the verified submitted model when the next composer remounts", async () => {
+  test("retains the observed submitted label when the next composer remounts", async () => {
     let verifies = 0
     const f = fixture({
       verify: async () => {
@@ -422,14 +498,16 @@ describe("gpt-pro consultation control", () => {
         f.controller.command({
           requestID: "invalid-pdf",
           prompt: "Review this",
-          attachments: [{
-            id: "pdf1",
-            name: "invalid.pdf",
-            path: invalidPdf,
-            mime: "application/pdf",
-            size: bytes.byteLength,
-            sha256: createHash("sha256").update(bytes).digest("hex"),
-          }],
+          attachments: [
+            {
+              id: "pdf1",
+              name: "invalid.pdf",
+              path: invalidPdf,
+              mime: "application/pdf",
+              size: bytes.byteLength,
+              sha256: createHash("sha256").update(bytes).digest("hex"),
+            },
+          ],
         }),
       ).rejects.toThrow("does not match PDF")
       expect(f.controller.list()).toHaveLength(0)
@@ -472,21 +550,25 @@ describe("gpt-pro consultation control", () => {
       const job = await f.controller.command({
         requestID: "upload-ready",
         prompt: "Review the attachment",
-        attachments: [{
-          id: "review-file",
-          name: "review.md",
-          path: original,
-          mime: "text/markdown",
-          size: bytes.byteLength,
-          sha256: createHash("sha256").update(bytes).digest("hex"),
-        }],
+        attachments: [
+          {
+            id: "review-file",
+            name: "review.md",
+            path: original,
+            mime: "text/markdown",
+            size: bytes.byteLength,
+            sha256: createHash("sha256").update(bytes).digest("hex"),
+          },
+        ],
       })
       await until(() => f.counts().submits === 1)
       expect(f.counts().fills).toBe(1)
-      expect(f.page.users[0].attachments).toEqual([{
-        name: job.attachments?.[0].uploadName,
-        status: "ready",
-      }])
+      expect(f.page.users[0].attachments).toEqual([
+        {
+          name: job.attachments?.[0].uploadName,
+          status: "ready",
+        },
+      ])
       expect(f.saved()[0].attachments?.[0].status).toBe("ready")
       expect(job.stagedAttachments).toBeUndefined()
       f.finish("Read the exact file")
@@ -511,20 +593,72 @@ describe("gpt-pro consultation control", () => {
       const job = await f.controller.command({
         requestID: "upload-partial",
         prompt: "Review the attachment",
-        attachments: [{
-          id: "partial-file",
-          name: "partial.md",
-          path: original,
-          mime: "text/markdown",
-          size: bytes.byteLength,
-          sha256: createHash("sha256").update(bytes).digest("hex"),
-        }],
+        attachments: [
+          {
+            id: "partial-file",
+            name: "partial.md",
+            path: original,
+            mime: "text/markdown",
+            size: bytes.byteLength,
+            sha256: createHash("sha256").update(bytes).digest("hex"),
+          },
+        ],
       })
       await until(() => f.saved()[0]?.phase === "paused")
       expect(f.counts().fills).toBe(0)
       expect(f.counts().submits).toBe(0)
       expect(f.saved()[0].attachments?.[0].status).toBe("unknown")
       expect(job.id).toBe(f.saved()[0].id)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+  test("preserves per-file ready and failed status from fresh upload evidence", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "gpt-pro-partial-status-"))
+    try {
+      const first = path.join(root, "first.md")
+      const second = path.join(root, "second.md")
+      const firstBytes = Buffer.from("# first\n")
+      const secondBytes = Buffer.from("# second\n")
+      await Promise.all([writeFile(first, firstBytes), writeFile(second, secondBytes)])
+      const f = fixture({
+        stagingRoot: path.join(root, "owned"),
+        upload: async (files, _mayDispatch, _shouldContinue, setAttachments) => {
+          setAttachments([
+            { name: files[0]!.name, status: "ready" },
+            { name: files[1]!.name, status: "failed" },
+          ])
+          throw new Error("Upload snapshot could not be reconciled")
+        },
+      })
+      const job = await f.controller.command({
+        requestID: "per-file-upload-status",
+        prompt: "Review both files",
+        attachments: [
+          {
+            id: "first-file",
+            name: "first.md",
+            path: first,
+            mime: "text/markdown",
+            size: firstBytes.byteLength,
+            sha256: createHash("sha256").update(firstBytes).digest("hex"),
+          },
+          {
+            id: "second-file",
+            name: "second.md",
+            path: second,
+            mime: "text/markdown",
+            size: secondBytes.byteLength,
+            sha256: createHash("sha256").update(secondBytes).digest("hex"),
+          },
+        ],
+      })
+      await until(() => f.saved()[0]?.phase === "paused")
+      expect(f.saved()[0].attachments?.map((attachment) => attachment.status)).toEqual(["ready", "failed"])
+      expect(f.counts().fills).toBe(0)
+      expect(f.counts().submits).toBe(0)
+      await f.controller.command({ action: "stop", id: job.id })
+      f.controller.dispose()
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -550,19 +684,69 @@ describe("gpt-pro consultation control", () => {
       const job = await f.controller.command({
         requestID: "upload-cancel",
         prompt: "Review the attachment",
-        attachments: [{
-          id: "cancel-file",
-          name: "cancel.md",
-          path: original,
-          mime: "text/markdown",
-          size: bytes.byteLength,
-          sha256: createHash("sha256").update(bytes).digest("hex"),
-        }],
+        attachments: [
+          {
+            id: "cancel-file",
+            name: "cancel.md",
+            path: original,
+            mime: "text/markdown",
+            size: bytes.byteLength,
+            sha256: createHash("sha256").update(bytes).digest("hex"),
+          },
+        ],
       })
       await uploadStarted
       await f.controller.command({ action: "stop", id: job.id })
       release()
       await until(() => f.saved()[0]?.phase === "cancelled")
+      expect(f.counts().fills).toBe(0)
+      expect(f.counts().submits).toBe(0)
+    } finally {
+      release?.()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+  test("cancellation during active-input re-resolution prevents the upload boundary", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "gpt-pro-input-cancel-"))
+    let started!: () => void
+    const resolverStarted = new Promise<void>((resolve) => (started = resolve))
+    let release!: () => void
+    const resolverGate = new Promise<void>((resolve) => (release = resolve))
+    let uploads = 0
+    try {
+      const original = path.join(root, "cancel-before-dispatch.md")
+      const bytes = Buffer.from("# cancel before file input\n")
+      await writeFile(original, bytes)
+      const f = fixture({
+        stagingRoot: path.join(root, "owned"),
+        uploadDispatchGate: async () => {
+          started()
+          await resolverGate
+        },
+        upload: async () => {
+          uploads++
+        },
+      })
+      const job = await f.controller.command({
+        requestID: "cancel-input-resolution",
+        prompt: "Review this file",
+        attachments: [
+          {
+            id: "cancel-file",
+            name: "cancel-before-dispatch.md",
+            path: original,
+            mime: "text/markdown",
+            size: bytes.byteLength,
+            sha256: createHash("sha256").update(bytes).digest("hex"),
+          },
+        ],
+      })
+      await resolverStarted
+      await f.controller.command({ action: "stop", id: job.id })
+      release()
+      await until(() => f.saved()[0]?.phase === "cancelled")
+      expect(uploads).toBe(0)
+      expect(f.saved()[0].uploadAttempted).toBe(false)
       expect(f.counts().fills).toBe(0)
       expect(f.counts().submits).toBe(0)
     } finally {
@@ -610,20 +794,22 @@ describe("gpt-pro consultation control", () => {
       const job = await f.controller.command({
         requestID: "upload-turn-mismatch",
         prompt: "Review the attachment",
-        attachments: [{
-          id: "expected-file",
-          name: "expected.md",
-          path: original,
-          mime: "text/markdown",
-          size: bytes.byteLength,
-          sha256: createHash("sha256").update(bytes).digest("hex"),
-        }],
+        attachments: [
+          {
+            id: "expected-file",
+            name: "expected.md",
+            path: original,
+            mime: "text/markdown",
+            size: bytes.byteLength,
+            sha256: createHash("sha256").update(bytes).digest("hex"),
+          },
+        ],
       })
       await until(() => f.saved()[0]?.phase === "paused")
       expect(f.counts().submits).toBe(1)
       expect(f.saved()[0].userID).toBeUndefined()
       expect(f.saved()[0].phase).not.toBe("completed")
-      expect(f.saved()[0].error).toContain("changed manually")
+      expect(f.saved()[0].error).toContain("different attachments")
       await f.controller.command({ action: "stop", id: job.id })
     } finally {
       await rm(root, { recursive: true, force: true })
@@ -640,25 +826,29 @@ describe("gpt-pro consultation control", () => {
         stagingRoot: path.join(root, "owned"),
         sentAttachmentStatus: "unknown",
         upload: async (files, _mayDispatch, _shouldContinue, setAttachments) => {
-          setAttachments(files.map(({ name, mime, sha256 }) => ({
-            name,
-            kind: mime?.startsWith("image/") ? "image" : "document",
-            sha256,
-            status: "ready",
-          })))
+          setAttachments(
+            files.map(({ name, mime, sha256 }) => ({
+              name,
+              kind: mime?.startsWith("image/") ? "image" : "document",
+              sha256,
+              status: "ready",
+            })),
+          )
         },
       })
       const job = await f.controller.command({
         requestID: "image-digest-waits",
         prompt: "Review this chart",
-        attachments: [{
-          id: "chart-image",
-          name: "chart.png",
-          path: original,
-          mime: "image/png",
-          size: bytes.byteLength,
-          sha256,
-        }],
+        attachments: [
+          {
+            id: "chart-image",
+            name: "chart.png",
+            path: original,
+            mime: "image/png",
+            size: bytes.byteLength,
+            sha256,
+          },
+        ],
       })
       await until(() => f.page.generating)
       expect(["sending", "generating"]).toContain(f.controller.list()[0].phase)
@@ -669,6 +859,134 @@ describe("gpt-pro consultation control", () => {
       expect(f.saved()[0].userID).toBe("user-1")
       expect(f.counts().submits).toBe(1)
       expect(job.id).toBe(f.saved()[0].id)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+  test("binds a transformed website preview separately from the source-image digest", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "gpt-pro-preview-bind-"))
+    try {
+      const original = path.join(root, "chart.png")
+      const sourceBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
+      const previewBytes = Buffer.from("resized website thumbnail")
+      const sourceSha256 = createHash("sha256").update(sourceBytes).digest("hex")
+      const previewSha256 = createHash("sha256").update(previewBytes).digest("hex")
+      await writeFile(original, sourceBytes)
+      const f = fixture({
+        stagingRoot: path.join(root, "owned"),
+        upload: async (files, _mayDispatch, _shouldContinue, setAttachments) => {
+          setAttachments(files.map(({ name }) => ({ name, kind: "image", sha256: previewSha256, status: "ready" })))
+        },
+      })
+      const job = await f.controller.command(
+        {
+          requestID: "preview-bind",
+          prompt: "Review the chart",
+          attachments: [
+            {
+              id: "chart-image",
+              name: "chart.png",
+              path: original,
+              mime: "image/png",
+              size: sourceBytes.byteLength,
+              sha256: sourceSha256,
+              previewSha256: "a".repeat(64),
+            } as GptProAttachment,
+          ],
+        },
+        "main",
+      )
+      await until(() => f.controller.list()[0]?.phase === "generating")
+      const stored = f.controller.list()[0].attachments?.[0]
+      expect(stored?.sha256).toBe(sourceSha256)
+      expect(stored?.previewSha256).toBe(previewSha256)
+      expect(stored?.previewSha256).not.toBe(stored?.sha256)
+      f.finish("Chart received")
+      await until(() => f.controller.list()[0]?.phase === "completed")
+      expect((await f.controller.command({ action: "read", id: job.id }, "main")).text).toBe("Chart received")
+      expect(f.counts().submits).toBe(1)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+  test("rejects a changed preview at the send boundary without dispatching", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "gpt-pro-preview-change-"))
+    try {
+      const original = path.join(root, "chart.png")
+      const sourceBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
+      const previewSha256 = createHash("sha256").update("bound preview").digest("hex")
+      const changedSha256 = createHash("sha256").update("replacement preview").digest("hex")
+      await writeFile(original, sourceBytes)
+      let f: ReturnType<typeof fixture>
+      f = fixture({
+        stagingRoot: path.join(root, "owned"),
+        upload: async (files, _mayDispatch, _shouldContinue, setAttachments) => {
+          setAttachments(files.map(({ name }) => ({ name, kind: "image", sha256: previewSha256, status: "ready" })))
+        },
+        submitGate: async () => {
+          f.page.attachments![0]!.sha256 = changedSha256
+        },
+      })
+      const job = await f.controller.command({
+        requestID: "preview-change",
+        prompt: "Review the chart",
+        attachments: [
+          {
+            id: "chart-image",
+            name: "chart.png",
+            path: original,
+            mime: "image/png",
+            size: sourceBytes.byteLength,
+            sha256: createHash("sha256").update(sourceBytes).digest("hex"),
+          },
+        ],
+      })
+      await until(() => f.saved()[0]?.phase === "paused")
+      expect(f.saved()[0].attachments?.[0].previewSha256).toBe(previewSha256)
+      expect(f.saved()[0].sendAttempted).toBeUndefined()
+      expect(f.counts().submits).toBe(0)
+      await f.controller.command({ action: "stop", id: job.id })
+      f.controller.dispose()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+  test("rejects a changed sent-image preview instead of returning its answer", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "gpt-pro-sent-preview-change-"))
+    try {
+      const original = path.join(root, "chart.png")
+      const sourceBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
+      const previewSha256 = createHash("sha256").update("bound preview").digest("hex")
+      const changedSha256 = createHash("sha256").update("replacement image").digest("hex")
+      await writeFile(original, sourceBytes)
+      const f = fixture({
+        stagingRoot: path.join(root, "owned"),
+        upload: async (files, _mayDispatch, _shouldContinue, setAttachments) => {
+          setAttachments(files.map(({ name }) => ({ name, kind: "image", sha256: previewSha256, status: "ready" })))
+        },
+      })
+      const job = await f.controller.command({
+        requestID: "sent-preview-change",
+        prompt: "Review the chart",
+        attachments: [
+          {
+            id: "chart-image",
+            name: "chart.png",
+            path: original,
+            mime: "image/png",
+            size: sourceBytes.byteLength,
+            sha256: createHash("sha256").update(sourceBytes).digest("hex"),
+          },
+        ],
+      })
+      await until(() => f.controller.list()[0]?.phase === "generating")
+      f.page.users[0]!.attachments = [{ name: "", kind: "image", sha256: changedSha256, status: "ready" }]
+      f.finish("Wrong image answer")
+      await until(() => f.controller.list()[0]?.phase === "paused")
+      expect(f.controller.list()[0].text).toBeUndefined()
+      expect(f.counts().submits).toBe(1)
+      await f.controller.command({ action: "stop", id: job.id })
+      f.controller.dispose()
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -737,33 +1055,282 @@ describe("gpt-pro consultation control", () => {
       f.controller.dispose()
     }
   })
-  test("a manual follow-up pauses rather than returning an unrelated answer", async () => {
+  test("a manual follow-up does not supply an unrelated answer to the owned turn", async () => {
     const f = fixture()
     try {
-      await f.controller.command({ prompt: "Original" }, "main")
+      const job = await f.controller.command({ prompt: "Original" }, "main")
       await until(() => f.controller.list()[0].phase === "generating")
       f.page.users.push({ id: "manual", text: "Another question" })
       f.finish("Unrelated")
-      await until(() => f.controller.list()[0].phase === "paused")
-      expect(f.controller.list()[0].text).toBeUndefined()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(f.controller.list()[0].phase).toBe("generating")
+      expect((await f.controller.command({ action: "read", id: job.id }, "main")).text).toBeUndefined()
     } finally {
       f.controller.dispose()
     }
   })
-  test("a wrong model hands off without dispatching a prompt", async () => {
+  test("continues read-only tracking of an unfinished owned turn while a later turn generates", async () => {
+    const f = fixture()
+    try {
+      const job = await f.controller.command({ prompt: "Original" }, "main")
+      await until(() => f.controller.list()[0].phase === "generating")
+      const owned = f.page.users[0]!
+      f.page.users.push({ id: "manual-followup", text: "Follow-up" })
+      f.page.generating = true
+      f.page.answer = {
+        id: "answer-followup",
+        userID: "manual-followup",
+        text: "Partial later response",
+        html: "<p>Partial later response</p>",
+        complete: false,
+        truncated: false,
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(f.controller.list()[0].phase).toBe("generating")
+      expect(f.controller.list()[0].text).toBeUndefined()
+      f.page.answers = [
+        {
+          id: "answer-owned",
+          userID: owned.id,
+          text: "Owned final",
+          html: "<p>Owned final</p>",
+          complete: true,
+          truncated: false,
+          generating: false,
+          completionEvidence: "settled-marker",
+        },
+        {
+          id: "answer-followup",
+          userID: "manual-followup",
+          text: "Partial later response",
+          html: "<p>Partial later response</p>",
+          complete: false,
+          truncated: false,
+          generating: true,
+          completionEvidence: "unknown",
+        },
+      ]
+      await until(() => f.controller.list()[0].phase === "completed")
+      const result = await f.controller.command({ action: "read", id: job.id }, "main")
+      expect(result.userID).toBe(owned.id)
+      expect(result.text).toBe("Owned final")
+      expect(f.counts().submits).toBe(1)
+    } finally {
+      f.controller.dispose()
+    }
+  })
+  test("complete adapter evidence does not require a separate completion-reason label", async () => {
+    const f = fixture()
+    try {
+      const job = await f.controller.command({ prompt: "Evidence contract" }, "main")
+      await until(() => f.controller.list()[0].phase === "generating")
+      const user = f.page.users[0]!
+      f.page.answers = [
+        {
+          id: "answer-owned",
+          userID: user.id,
+          text: "Static but incomplete",
+          html: "<p>Static but incomplete</p>",
+          complete: false,
+          truncated: false,
+          generating: false,
+          completionEvidence: "unknown",
+        },
+      ]
+      f.page.answer = {
+        id: "answer-owned",
+        userID: user.id,
+        text: "Static but incomplete",
+        html: "<p>Static but incomplete</p>",
+        complete: false,
+        truncated: false,
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(f.controller.list()[0].phase).toBe("generating")
+      expect((await f.controller.command({ action: "read", id: job.id }, "main")).text).toBe("Static but incomplete")
+
+      f.page.answers = [
+        {
+          id: "answer-owned",
+          userID: user.id,
+          text: "Complete reply",
+          html: "<p>Complete reply</p>",
+          complete: true,
+          truncated: false,
+          generating: false,
+          completionEvidence: undefined as unknown as "unknown",
+        },
+      ]
+      f.page.answer = {
+        id: "answer-owned",
+        userID: user.id,
+        text: "Complete reply",
+        html: "<p>Complete reply</p>",
+        complete: true,
+        truncated: false,
+      }
+      await until(() => f.controller.list()[0].phase === "completed")
+      expect((await f.controller.command({ action: "read", id: job.id }, "main")).text).toBe("Complete reply")
+    } finally {
+      f.controller.dispose()
+    }
+  })
+  test("completes the owned answer despite a later user turn, draft, and global generation", async () => {
+    const f = fixture()
+    try {
+      const job = await f.controller.command({ prompt: "Original" }, "main")
+      await until(() => f.controller.list()[0].phase === "generating")
+      const owned = f.page.users[0]!
+      f.page.answers = [
+        {
+          id: "answer-owned",
+          userID: owned.id,
+          text: "Owned answer",
+          html: "<p>Owned answer</p>",
+          complete: true,
+          truncated: false,
+          generating: false,
+          completionEvidence: "settled-marker",
+        },
+      ]
+      f.page.answer = {
+        id: "answer-later",
+        userID: "manual-followup",
+        text: "Partial unrelated answer",
+        html: "<p>Partial unrelated answer</p>",
+        complete: false,
+        truncated: false,
+      }
+      f.page.users.push({ id: "manual-followup", text: "Follow-up" })
+      f.page.draft = "A separate draft"
+      f.page.generating = true
+      await until(() => f.controller.list()[0].phase === "completed")
+      const result = await f.controller.command({ action: "read", id: job.id }, "main")
+      expect(result.userID).toBe(owned.id)
+      expect(result.text).toBe("Owned answer")
+      expect(result.html).toBe("<p>Owned answer</p>")
+      expect(f.counts().submits).toBe(1)
+    } finally {
+      f.controller.dispose()
+    }
+  })
+  test("ignores a later turn's request error but blocks an owned-turn error", async () => {
+    const f = fixture()
+    try {
+      const job = await f.controller.command({ prompt: "Original" }, "main")
+      await until(() => f.controller.list()[0].phase === "generating")
+      const owned = f.page.users[0]!
+      f.page.answers = [
+        {
+          id: "answer-owned",
+          userID: owned.id,
+          text: "Owned answer",
+          html: "<p>Owned answer</p>",
+          complete: true,
+          truncated: false,
+          generating: false,
+          completionEvidence: "response-actions",
+        },
+      ]
+      f.page.users.push({ id: "manual-followup", text: "Follow-up" })
+      f.page.error = { kind: "request", message: "Unrelated request failed", scope: "turn", userID: "manual-followup" }
+      await until(() => f.controller.list()[0].phase === "completed")
+      expect((await f.controller.command({ action: "read", id: job.id }, "main")).text).toBe("Owned answer")
+      f.controller.dispose()
+
+      const target = fixture()
+      const targetJob = await target.controller.command({ prompt: "Target error" }, "main")
+      await until(() => target.controller.list()[0].phase === "generating")
+      const targetUser = target.page.users[0]!
+      target.page.error = {
+        kind: "request",
+        message: "Owned turn request failed",
+        scope: "turn",
+        userID: targetUser.id,
+      }
+      await until(() => target.controller.list()[0].phase === "paused")
+      expect(target.controller.list()[0].error).toContain("Owned turn request failed")
+      expect(target.controller.list()[0].userID).toBe(targetUser.id)
+      await target.controller.command({ action: "stop", id: targetJob.id }, "main")
+      target.controller.dispose()
+    } finally {
+      f.controller.dispose()
+    }
+  })
+  test("ignores a stale prior-turn request error when starting a new consultation", async () => {
     const f = fixture({
-      verify: async () => {
-        throw new Error("Wrong model")
+      initialPage: {
+        url: GPT_PRO_URL,
+        model: "GPT-6 Pro",
+        targetModel: true,
+        composer: true,
+        draft: "",
+        generating: false,
+        revision: 0,
+        users: [{ id: "previous-user", text: "Previous request" }],
+        error: {
+          kind: "request",
+          message: "Previous request failed",
+          scope: "turn",
+          userID: "previous-user",
+        },
       },
     })
     try {
-      await f.controller.command({ prompt: "Original" }, "main")
-      await until(() => !!f.controller.list()[0].recovery)
-      expect(f.counts().submits).toBe(0)
+      const job = await f.controller.command({ prompt: "New managed question" }, "main")
+      await until(() => f.controller.list()[0].phase === "generating")
+      f.finish("New answer")
+      await until(() => f.controller.list()[0].phase === "completed")
+      expect(f.counts().submits).toBe(1)
+      expect((await f.controller.command({ action: "read", id: job.id }, "main")).text).toBe("New answer")
     } finally {
       f.controller.dispose()
     }
   })
+  test("a page-wide verification challenge still blocks owned-turn completion", async () => {
+    const f = fixture()
+    try {
+      await f.controller.command({ prompt: "Owned turn" }, "main")
+      await until(() => f.controller.list()[0].phase === "generating")
+      f.page.error = {
+        kind: "verification",
+        message: "Human verification is required",
+        scope: "page",
+      }
+      await until(() => f.controller.list()[0].phase === "paused")
+      expect(f.controller.list()[0].userID).toBe("user-1")
+      const job = f.controller.list()[0]
+      expect((await f.controller.command({ action: "read", id: job.id }, "main")).text).toBeUndefined()
+      expect(f.controller.list()[0].recovery?.needsHuman).toBe(true)
+    } finally {
+      f.controller.dispose()
+    }
+  })
+  test.each(["Pro", "Thinking effort", "", "GPT-5.5 Pro"])(
+    "model observation %j cannot block submission or tracking",
+    async (model) => {
+      const f = fixture({
+        verify: async () => {
+          f.page.model = model
+          f.page.targetModel = false
+          return structuredClone(f.page)
+        },
+      })
+      try {
+        const job = await f.controller.command({ prompt: "Original" }, "main")
+        await until(() => f.controller.list()[0].phase === "generating")
+        f.page.model = ""
+        f.finish("Owned reply")
+        await until(() => f.controller.list()[0].phase === "completed")
+        expect((await f.controller.command({ action: "read", id: job.id }, "main")).text).toBe("Owned reply")
+        expect(f.controller.list()[0].model).toBe(model)
+        expect(f.controller.list()[0].recovery).toBeUndefined()
+        expect(f.counts().submits).toBe(1)
+      } finally {
+        f.controller.dispose()
+      }
+    },
+  )
   test("an agent repairs a fixed-flow failure with the same browser lease and resumes one submission", async () => {
     let repaired = false
     const f = fixture({
@@ -847,7 +1414,7 @@ describe("gpt-pro consultation control", () => {
       f.controller.dispose()
     }
   })
-  test("managed recovery send accepts an existing exact draft, tracks it, and rejects a second send", async () => {
+  test("managed recovery sends with unknown model semantics and still rejects a second send", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "gpt-pro-stage-"))
     const original = path.join(root, "managed.md")
     const bytes = Buffer.from("# managed\n")
@@ -863,19 +1430,26 @@ describe("gpt-pro consultation control", () => {
     })
     try {
       const owner = "/repo\nses_parent"
-      const job = await f.controller.command({
-        prompt: "Original prompt",
-        attachments: [{
-          id: "managed-file",
-          name: "managed.md",
-          path: original,
-          mime: "text/markdown",
-          size: bytes.byteLength,
-          sha256: createHash("sha256").update(bytes).digest("hex"),
-        }],
-      }, owner)
+      const job = await f.controller.command(
+        {
+          prompt: "Original prompt",
+          attachments: [
+            {
+              id: "managed-file",
+              name: "managed.md",
+              path: original,
+              mime: "text/markdown",
+              size: bytes.byteLength,
+              sha256: createHash("sha256").update(bytes).digest("hex"),
+            },
+          ],
+        },
+        owner,
+      )
       await until(() => !!f.controller.list()[0].recovery)
       f.page.draft = "Original prompt"
+      f.page.model = ""
+      f.page.targetModel = false
       await expect(f.controller.command({ action: "send", id: job.id, uid: "dismiss" }, owner)).rejects.toThrow(
         "not a send control",
       )
@@ -979,7 +1553,9 @@ describe("gpt-pro consultation control", () => {
       phase: "interrupted",
       prompt: "Original attachment prompt",
       attachments: [file],
-      stagedAttachments: [{ id: file.id, path: `/owned/${file.uploadName}`, sha256: file.sha256, uploadName: file.uploadName }],
+      stagedAttachments: [
+        { id: file.id, path: `/owned/${file.uploadName}`, sha256: file.sha256, uploadName: file.uploadName },
+      ],
       url,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -1002,11 +1578,13 @@ describe("gpt-pro consultation control", () => {
         draft: "",
         generating: true,
         revision: 0,
-        users: [{
-          id: "user-existing",
-          text: "Original attachment prompt",
-          attachments: [{ name: file.uploadName, kind: "document", status: "ready" }],
-        }],
+        users: [
+          {
+            id: "user-existing",
+            text: "Original attachment prompt",
+            attachments: [{ name: file.uploadName, kind: "document", status: "ready" }],
+          },
+        ],
       },
       upload: async () => {
         uploads++
@@ -1038,12 +1616,14 @@ describe("gpt-pro consultation control", () => {
       recovery: { stage: "track", reason: "HTTP 403 cloudflare_challenge" },
       prompt: "Inspect the uploaded image",
       attachments: [attachment],
-      stagedAttachments: [{
-        id: attachment.id,
-        path: `/owned/${attachment.uploadName}`,
-        sha256: attachment.sha256,
-        uploadName: attachment.uploadName,
-      }],
+      stagedAttachments: [
+        {
+          id: attachment.id,
+          path: `/owned/${attachment.uploadName}`,
+          sha256: attachment.sha256,
+          uploadName: attachment.uploadName,
+        },
+      ],
       url: GPT_PRO_URL,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -1065,11 +1645,13 @@ describe("gpt-pro consultation control", () => {
         generating: false,
         revision: 0,
         error: { kind: "request", message: "Cloudflare challenge requires recovery" },
-        users: [{
-          id: "rendered-user",
-          text: job.prompt,
-          attachments: [{ name: "", kind: "image", status: "unknown" }],
-        }],
+        users: [
+          {
+            id: "rendered-user",
+            text: job.prompt,
+            attachments: [{ name: "", kind: "image", status: "unknown" }],
+          },
+        ],
       },
     })
     await until(() => f.controller.list()[0]?.phase === "paused")
@@ -1087,6 +1669,68 @@ describe("gpt-pro consultation control", () => {
     ).rejects.toThrow("preserve the original ChatGPT conversation")
     expect(navigated).toBe(false)
     f.controller.dispose()
+  })
+  test("retries the same unsent job after the active-composer input becomes available", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "gpt-pro-input-retry-"))
+    const stagingRoot = path.join(root, "attachments")
+    const jobID = "gpt_00000000-0000-0000-0000-000000000003"
+    const uploadName = `${jobID.slice(4)}-1-chart.md`
+    const stagedPath = path.join(stagingRoot, jobID, "chart-file", uploadName)
+    const bytes = Buffer.from("# chart\n")
+    await mkdir(path.dirname(stagedPath), { recursive: true })
+    await writeFile(stagedPath, bytes)
+    const attachment = {
+      id: "chart-file",
+      name: "chart.md",
+      uploadName,
+      mime: "text/markdown",
+      size: bytes.byteLength,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      status: "unknown" as const,
+    }
+    const job: GptProJob = {
+      id: jobID,
+      owner: "owner",
+      requestID: "input-later",
+      phase: "paused",
+      recovery: { stage: "compose", reason: "ChatGPT's verified attachment input is unavailable" },
+      error: "ChatGPT's verified attachment input is unavailable",
+      prompt: "Review this chart",
+      attachments: [attachment],
+      stagedAttachments: [{ id: attachment.id, path: stagedPath, sha256: attachment.sha256, uploadName }],
+      url: GPT_PRO_URL,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      submitted: false,
+      uploadAttempted: false,
+      revision: 0,
+    }
+    let uploads = 0
+    const f = fixture({
+      loaded: [job],
+      stagingRoot,
+      upload: async (files, mayDispatch, _shouldContinue, setAttachments) => {
+        expect(mayDispatch).toBe(true)
+        uploads++
+        setAttachments(files.map(({ name }) => ({ name, status: "ready" })))
+      },
+    })
+    try {
+      await until(() => f.controller.list()[0]?.phase === "paused")
+      await f.controller.command({ action: "resume", id: job.id }, "owner")
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      if (f.counts().submits !== 1) throw new Error(f.logs.join("\n"))
+      await until(() => f.counts().submits === 1)
+      expect(uploads).toBe(1)
+      expect(f.saved()[0].uploadAttempted).toBe(true)
+      expect(f.saved()[0].sendAttempted).toBe(true)
+      f.finish("Read the chart")
+      await until(() => f.saved()[0].phase === "completed")
+      expect(f.counts().submits).toBe(1)
+    } finally {
+      f.controller.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
   })
   test("retention cleanup removes only owned staging and keeps original sources", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "gpt-pro-retention-"))
@@ -1107,17 +1751,21 @@ describe("gpt-pro consultation control", () => {
           requestID: `retained-${index}`,
           phase: "completed",
           prompt: "Review file",
-          attachments: [{
-            id: "file1",
-            name: "original.txt",
-            uploadName: `retention-${index}-original.txt`,
-            path: source,
-            mime: "text/plain",
-            size: 12,
-            sha256: "a".repeat(64),
-            status: "ready",
-          }],
-          stagedAttachments: [{ id: "file1", path: staged, sha256: "a".repeat(64), uploadName: `retention-${index}-original.txt` }],
+          attachments: [
+            {
+              id: "file1",
+              name: "original.txt",
+              uploadName: `retention-${index}-original.txt`,
+              path: source,
+              mime: "text/plain",
+              size: 12,
+              sha256: "a".repeat(64),
+              status: "ready",
+            },
+          ],
+          stagedAttachments: [
+            { id: "file1", path: staged, sha256: "a".repeat(64), uploadName: `retention-${index}-original.txt` },
+          ],
           url: GPT_PRO_URL,
           createdAt: index,
           updatedAt: index,
@@ -1130,6 +1778,140 @@ describe("gpt-pro consultation control", () => {
       expect(await readFile(source, "utf8")).toBe("keep original")
       expect(f.controller.list()).toHaveLength(30)
       f.controller.dispose()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+  test("previews the exact owned attachment copy without changing or exposing job paths", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "gpt-pro-preview-"))
+    try {
+      const stored = await previewJob(root)
+      const f = fixture({ loaded: [stored.job], stagingRoot: stored.stagingRoot })
+      expect(stored.job.stagedAttachments?.[0]?.path).toBe(
+        path.join(stored.stagingRoot, stored.job.id, stored.attachmentID, stored.job.attachments![0]!.uploadName),
+      )
+      const before = JSON.stringify(f.controller.list())
+      const outside = path.join(root, "outside.txt")
+      await writeFile(outside, "not the staged attachment")
+      const preview = await f.controller.attachmentPreview({
+        id: stored.job.id,
+        attachmentID: stored.attachmentID,
+        path: outside,
+      } as { id: string; attachmentID: string })
+      expect(preview).toEqual({
+        name: "preview.txt",
+        mime: "text/plain",
+        base64: stored.bytes.toString("base64"),
+      })
+      expect(JSON.stringify(f.controller.list())).toBe(before)
+      expect(JSON.stringify(f.controller.list())).not.toContain(stored.source)
+      expect(JSON.stringify(f.controller.list())).not.toContain(stored.stagedPath)
+      expect(f.logs.join("\n")).not.toContain(stored.bytes.toString("utf8"))
+      f.controller.dispose()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+  test("previews preparing and failed jobs without changing their state", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "gpt-pro-preview-state-"))
+    let release!: () => void
+    const blockedOpen = new Promise<void>((resolve) => (release = resolve))
+    const f = fixture({ stagingRoot: path.join(root, "owned"), open: () => blockedOpen })
+    try {
+      const source = path.join(root, "source.txt")
+      const bytes = Buffer.from("prepared attachment")
+      await writeFile(source, bytes)
+      const job = await f.controller.command(
+        {
+          prompt: "Review this attachment",
+          attachments: [
+            {
+              id: "prepared-file",
+              name: "prepared.txt",
+              path: source,
+              mime: "text/plain",
+              size: bytes.byteLength,
+              sha256: createHash("sha256").update(bytes).digest("hex"),
+            },
+          ],
+        },
+        "owner",
+      )
+      await until(() => f.saved()[0]?.phase === "preparing")
+      const phase = f.saved()[0].phase
+      const preview = await f.controller.attachmentPreview({
+        id: job.id,
+        attachmentID: "prepared-file",
+      })
+      expect(preview.base64).toBe(bytes.toString("base64"))
+      expect(f.saved()[0].phase).toBe(phase)
+      await f.controller.command({ action: "stop", id: job.id }, "owner")
+      release()
+      await until(() => f.saved()[0]?.phase === "cancelled")
+      f.controller.dispose()
+
+      const failed = await previewJob(root, {
+        id: "gpt_00000000-0000-0000-0000-000000000098",
+        phase: "failed",
+      })
+      const failedController = fixture({ loaded: [failed.job], stagingRoot: failed.stagingRoot })
+      const before = JSON.stringify(failedController.controller.list())
+      expect(
+        (
+          await failedController.controller.attachmentPreview({
+            id: failed.job.id,
+            attachmentID: failed.attachmentID,
+          })
+        ).base64,
+      ).toBe(failed.bytes.toString("base64"))
+      expect(JSON.stringify(failedController.controller.list())).toBe(before)
+      failedController.controller.dispose()
+    } finally {
+      release?.()
+      f.controller.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+  test("rejects unknown jobs, cross-job IDs, traversal, missing copies, and changed hashes", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "gpt-pro-preview-reject-"))
+    try {
+      const first = await previewJob(root, { id: "gpt_00000000-0000-0000-0000-000000000097" })
+      const second = await previewJob(root, {
+        id: "gpt_00000000-0000-0000-0000-000000000096",
+        attachmentID: "other-preview",
+      })
+      const f = fixture({ loaded: [first.job, second.job], stagingRoot: first.stagingRoot })
+      const before = JSON.stringify(f.controller.list())
+      await expect(
+        f.controller.attachmentPreview({
+          id: "gpt_00000000-0000-0000-0000-000000000095",
+          attachmentID: first.attachmentID,
+        }),
+      ).rejects.toThrow("not available")
+      await expect(
+        f.controller.attachmentPreview({ id: first.job.id, attachmentID: second.attachmentID }),
+      ).rejects.toThrow("not available")
+      await expect(
+        f.controller.attachmentPreview({ id: first.job.id, attachmentID: "../preview-file" }),
+      ).rejects.toThrow("not available")
+      expect(JSON.stringify(f.controller.list())).toBe(before)
+      f.controller.dispose()
+
+      await writeFile(first.stagedPath, Buffer.from("tampered payload for gpt_00000000-0000-0000-0000-000000000097"))
+      const tampered = fixture({ loaded: [first.job], stagingRoot: first.stagingRoot })
+      await expect(
+        tampered.controller.attachmentPreview({ id: first.job.id, attachmentID: first.attachmentID }),
+      ).rejects.toThrow("unavailable or changed")
+      expect(tampered.controller.list()[0].phase).toBe("completed")
+      tampered.controller.dispose()
+
+      await rm(second.stagedPath, { force: true })
+      const missing = fixture({ loaded: [second.job], stagingRoot: second.stagingRoot })
+      await expect(
+        missing.controller.attachmentPreview({ id: second.job.id, attachmentID: second.attachmentID }),
+      ).rejects.toThrow("unavailable or changed")
+      expect(missing.controller.list()[0].phase).toBe("completed")
+      missing.controller.dispose()
     } finally {
       await rm(root, { recursive: true, force: true })
     }
