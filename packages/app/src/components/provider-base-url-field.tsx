@@ -1,5 +1,5 @@
 import { TextField, type TextFieldProps } from "@opencode-ai/ui/text-field"
-import { onCleanup, Show, splitProps } from "solid-js"
+import { createEffect, onCleanup, Show, splitProps } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { hasProviderV1, pasteProviderBaseURL, usesProviderV1 } from "./provider-base-url"
 
@@ -11,6 +11,11 @@ export function ProviderBaseURLField(
   let suffix: HTMLSpanElement | undefined
   let animation: Animation | undefined
   onCleanup(() => animation?.cancel())
+  createEffect(() => {
+    console.info(
+      `[provider-base-url] SDK=${local.npm?.trim() || "@ai-sdk/openai-compatible"} autoV1=${usesProviderV1(local.npm)}`,
+    )
+  })
 
   const change = (value: string) => {
     local.onChange(value)

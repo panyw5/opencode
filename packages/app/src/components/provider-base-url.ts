@@ -1,5 +1,5 @@
+// Only SDKs with a verified /v1 default; generic compatible endpoints have no standard suffix.
 const V1_PACKAGES = new Set([
-  "@ai-sdk/openai-compatible",
   "@ai-sdk/openai",
   "@ai-sdk/anthropic",
   "@ai-sdk/groq",
@@ -13,7 +13,7 @@ const V1_PACKAGES = new Set([
 ])
 
 export function usesProviderV1(npm?: string) {
-  return V1_PACKAGES.has(npm?.trim().toLowerCase() || "@ai-sdk/openai-compatible")
+  return V1_PACKAGES.has(npm?.trim().toLowerCase() || "")
 }
 
 export function hasProviderV1(value: string) {

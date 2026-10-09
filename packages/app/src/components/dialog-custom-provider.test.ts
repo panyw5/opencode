@@ -53,6 +53,31 @@ function model(input: { row: string; id: string; name: string; values?: Record<s
 
 describe("validateCustomProvider", () => {
   test.each([
+    [undefined, "https://api.example.com/custom"],
+    ["@ai-sdk/openai-compatible", "https://api.example.com/v1/openai"],
+    ["@ai-sdk/google", "https://generativelanguage.googleapis.com/v1beta"],
+    ["@ai-sdk/cohere", "https://api.cohere.com/v2"],
+    ["@ai-sdk/azure", "https://resource.openai.azure.com/openai"],
+    ["custom-sdk", "https://api.example.com/custom"],
+  ])("preserves non-v1-standard endpoint for %s", (npm, baseURL) => {
+    const result = validateCustomProvider({
+      form: {
+        providerID: "custom-endpoint",
+        npm,
+        name: "Custom endpoint",
+        baseURL,
+        apiKey: "",
+        models: [model({ row: "m0", id: "smoke", name: "Smoke" })],
+        headers: [],
+        err: {},
+      },
+      t,
+      disabledProviders: [],
+      existingProviderIDs: new Set(),
+    })
+    expect(result.result?.config.options.baseURL).toBe(baseURL)
+  })
+  test.each([
     "https://api.example.com",
     "https://api.example.com/",
     "https://api.example.com/v1",
@@ -61,6 +86,7 @@ describe("validateCustomProvider", () => {
     const result = validateCustomProvider({
       form: {
         providerID: "v1-provider",
+        npm: "@ai-sdk/openai",
         name: "V1 provider",
         baseURL,
         apiKey: "",
@@ -202,7 +228,7 @@ describe("validateCustomProvider", () => {
         name: "Custom Provider",
         env: ["CUSTOM_PROVIDER_KEY"],
         options: {
-          baseURL: "https://api.example.com/v1",
+          baseURL: "https://api.example.com",
           headers: {
             "X-Test": "enabled",
           },
