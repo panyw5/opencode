@@ -1,11 +1,17 @@
-import { createEffect, createMemo, For, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, For, lazy, onCleanup, Show, Suspense } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { ToolPart } from "@opencode-ai/sdk/v2"
 import { gptProTerminal, type GptProAPI, type GptProJob } from "@opencode-ai/util/gpt-pro"
 import { BasicTool } from "./basic-tool"
 import { Button } from "./button"
+import { FileIcon } from "./file-icon"
+import { Spinner } from "./spinner"
 import { handoffGptPro } from "./gpt-pro-handoff"
 import { useI18n } from "../context/i18n"
+
+const AttachmentPreviewDialog = lazy(() =>
+  import("./gpt-pro-attachment-preview").then((module) => ({ default: module.AttachmentPreviewDialog })),
+)
 
 type Props = {
   status?: string
@@ -15,8 +21,52 @@ type Props = {
   part?: ToolPart
 }
 type AttachmentStatus = "pending" | "uploading" | "ready" | "failed" | "unknown"
-type AttachmentView = { id: string; name: string; status: AttachmentStatus; error?: string }
-const api = () => (window as unknown as { api?: { gptPro?: GptProAPI } }).api?.gptPro
+type AttachmentView = {
+  id: string
+  attachmentID?: string
+  name: string
+  mime?: string
+  status: AttachmentStatus
+  error?: string
+}
+type AttachmentPreviewData = { name: string; mime: string; base64: string }
+export type AttachmentPreviewState = {
+  open: boolean
+  loading: boolean
+  error: string
+  file?: AttachmentPreviewData
+}
+const api = () =>
+  typeof window === "undefined" ? undefined : (window as unknown as { api?: { gptPro?: GptProAPI } }).api?.gptPro
+
+function displayName(value: string) {
+  let path = value
+  if (/^file:\/\//i.test(value)) {
+    try {
+      path = decodeURIComponent(new URL(value).pathname)
+    } catch {}
+  }
+  return path.split(/[\\/]/).filter(Boolean).at(-1) || ""
+}
+
+export function fallbackAttachmentViews(value: unknown, failed = false): AttachmentView[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item, index) => {
+    const raw =
+      typeof item === "string"
+        ? item
+        : item && typeof item === "object"
+          ? typeof (item as Record<string, unknown>).name === "string"
+            ? String((item as Record<string, unknown>).name)
+            : typeof (item as Record<string, unknown>).path === "string"
+              ? String((item as Record<string, unknown>).path)
+              : ""
+          : ""
+    const name = displayName(raw)
+    if (!name) return []
+    return [{ id: `fallback:${index}:${name}`, name, status: failed ? ("failed" as const) : ("unknown" as const) }]
+  })
+}
 
 export function attachmentViews(value: unknown): AttachmentView[] {
   if (!Array.isArray(value)) return []
@@ -25,7 +75,8 @@ export function attachmentViews(value: unknown): AttachmentView[] {
     const attachment = item as Record<string, unknown>
     const rawName = typeof attachment.name === "string" ? attachment.name : ""
     // Names are display-only. Never expose the separately stored authorized path.
-    const name = rawName.split(/[\\/]/).filter(Boolean).at(-1) || `Attachment ${index + 1}`
+    const name = displayName(rawName) || `Attachment ${index + 1}`
+    const attachmentID = typeof attachment.id === "string" ? attachment.id : undefined
     const rawStatus = attachment.status
     const status: AttachmentStatus =
       rawStatus === "pending" || rawStatus === "uploading" || rawStatus === "ready" || rawStatus === "failed"
@@ -38,13 +89,60 @@ export function attachmentViews(value: unknown): AttachmentView[] {
       .replace(/(?:[A-Za-z]:\\|\\\\)[^\s"'<>]+/g, "")
       .replace(/\/(?:[^\s"'<>]+\/)*[^\s"'<>]+/g, "")
       .slice(0, 240)
-    return [{
-      id: typeof attachment.id === "string" ? attachment.id : `${index}:${name}`,
-      name,
-      status,
-      error: error || undefined,
-    }]
+    return [
+      {
+        id: attachmentID ?? `${index}:${name}`,
+        attachmentID,
+        name,
+        mime: typeof attachment.mime === "string" ? attachment.mime : undefined,
+        status,
+        error: error || undefined,
+      },
+    ]
   })
+}
+
+export async function fetchGptProAttachmentPreview(
+  client: Pick<GptProAPI, "attachmentPreview">,
+  jobID: string,
+  attachment: AttachmentView,
+) {
+  if (!attachment.attachmentID || !client.attachmentPreview) return
+  return client.attachmentPreview({ id: jobID, attachmentID: attachment.attachmentID })
+}
+
+export function gptProPreviewJobID(currentJobID: string | undefined, originalJobID: string | undefined) {
+  return currentJobID ?? originalJobID
+}
+
+export function isValidGptProAttachmentPreview(value: unknown): value is AttachmentPreviewData {
+  if (!value || typeof value !== "object") return false
+  const preview = value as Record<string, unknown>
+  return typeof preview.name === "string" && typeof preview.mime === "string" && typeof preview.base64 === "string"
+}
+
+function previewPath(name: string, mime: string) {
+  const extensions: Record<string, string> = {
+    "application/pdf": "pdf",
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "image/svg+xml": "svg",
+    "audio/mpeg": "mp3",
+    "audio/wav": "wav",
+    "audio/ogg": "ogg",
+    "audio/mp4": "m4a",
+    "text/markdown": "md",
+    "text/plain": "txt",
+    "text/csv": "csv",
+    "text/tab-separated-values": "tsv",
+    "application/json": "json",
+  }
+  const extension = extensions[mime.toLowerCase()]
+  if (!extension) return name
+  const base = name.replace(/\.[^.]*$/, "")
+  return `${base}.${extension}`
 }
 
 export function GptProTool(props: Props) {
@@ -52,7 +150,28 @@ export function GptProTool(props: Props) {
   const id = createMemo(() =>
     typeof props.metadata.consultation_id === "string" ? props.metadata.consultation_id : undefined,
   )
-  const [state, set] = createStore({ error: "", busy: false, job: undefined as GptProJob | undefined })
+  const [state, set] = createStore({
+    error: "",
+    busy: false,
+    job: undefined as GptProJob | undefined,
+    preview: { open: false, loading: false, error: "", file: undefined as AttachmentPreviewData | undefined },
+  })
+  const previewJobID = () => gptProPreviewJobID(state.job?.id, id())
+  let previewRequest = 0
+  const closePreview = () => {
+    console.debug(`[gpt-pro-tool] attachment preview closed job=${previewJobID() ?? "unknown"}`)
+    previewRequest++
+    set("preview", { open: false, loading: false, error: "", file: undefined })
+  }
+  createEffect(() => {
+    console.debug(`[gpt-pro-tool] tool mounted job=${id() ?? "unknown"}`)
+  })
+  onCleanup(() => {
+    console.debug(
+      `[gpt-pro-tool] tool cleanup job=${id() ?? "unknown"} previewOpen=${state.preview.open} previewLoading=${state.preview.loading}`,
+    )
+    previewRequest++
+  })
   const localStatus = () => state.job && (state.job.id !== id() || props.status !== "running")
   const phase = () =>
     String((localStatus() ? state.job!.phase : props.metadata.phase) ?? state.job?.phase ?? props.status ?? "")
@@ -69,8 +188,10 @@ export function GptProTool(props: Props) {
     const jobAttachments = state.job?.attachments
     if (Array.isArray(jobAttachments)) return attachmentViews(jobAttachments)
     const metadataAttachments = props.metadata.attachments
-    if (Array.isArray(metadataAttachments)) return attachmentViews(metadataAttachments)
-    return attachmentViews(props.input.attachments)
+    if (Array.isArray(metadataAttachments) && metadataAttachments.length) return attachmentViews(metadataAttachments)
+    const inputAttachments = attachmentViews(props.input.attachments)
+    if (inputAttachments.length) return inputAttachments
+    return fallbackAttachmentViews(props.input.files, status() === "error")
   })
   createEffect(() => {
     const jobID = id()
@@ -155,6 +276,47 @@ export function GptProTool(props: Props) {
       set("busy", false)
     }
   }
+  const previewAttachment = async (attachment: AttachmentView) => {
+    const client = api()
+    const jobID = previewJobID()
+    const attachmentID = attachment.attachmentID
+    if (!client || !jobID || !client.attachmentPreview || !attachmentID) return
+    const request = ++previewRequest
+    set("preview", { open: true, loading: true, error: "", file: undefined })
+    console.debug(`[gpt-pro-tool] attachment preview requested job=${jobID} attachment=${attachmentID}`)
+    try {
+      const result = await fetchGptProAttachmentPreview(client, jobID, attachment)
+      if (request !== previewRequest) {
+        console.debug(`[gpt-pro-tool] attachment preview result discarded job=${jobID} attachment=${attachmentID}`)
+        return
+      }
+      if (!isValidGptProAttachmentPreview(result)) throw new Error("Preview unavailable")
+      const padding = result.base64.endsWith("==") ? 2 : result.base64.endsWith("=") ? 1 : 0
+      console.debug(
+        `[gpt-pro-tool] attachment preview loaded job=${jobID} attachment=${attachmentID} mime=${result.mime} bytes=${Math.max(0, Math.floor((result.base64.length * 3) / 4) - padding)}`,
+      )
+      set("preview", {
+        open: true,
+        loading: false,
+        error: "",
+        file: { name: displayName(result.name) || attachment.name, mime: result.mime, base64: result.base64 },
+      })
+    } catch {
+      if (request !== previewRequest) {
+        console.debug(`[gpt-pro-tool] attachment preview error discarded job=${jobID} attachment=${attachmentID}`)
+        return
+      }
+      console.warn(`[gpt-pro-tool] attachment preview unavailable job=${jobID} attachment=${attachmentID}`)
+      set("preview", {
+        open: true,
+        loading: false,
+        error: t("ui.tool.gptPro.attachment.previewUnavailable"),
+        file: undefined,
+      })
+    }
+  }
+  const canPreview = (attachment: AttachmentView) =>
+    !!previewJobID() && !!api()?.attachmentPreview && !!attachment.attachmentID
   return (
     <div data-component="gpt-pro-tool">
       <BasicTool
@@ -266,29 +428,74 @@ export function GptProTool(props: Props) {
           </div>
         }
       />
+      <Show when={attachments().length > 0}>
+        <div
+          class="gpt-pro-tool__attachments"
+          role="group"
+          aria-label={t("ui.tool.gptPro.attachments")}
+          data-testid="gpt-pro-attachments-below"
+        >
+          <For each={attachments()}>
+            {(attachment) => {
+              const statusLabel = () => t(`ui.tool.gptPro.attachment.${attachment.status}`)
+              const accessibleName = () => `${attachment.name} · ${statusLabel()}`
+              return (
+                <button
+                  type="button"
+                  class="gpt-pro-attachment-chip"
+                  classList={{ "gpt-pro-attachment-chip--previewable": canPreview(attachment) }}
+                  data-testid="gpt-pro-attachment"
+                  data-attachment-status={attachment.status}
+                  aria-label={t("ui.tool.gptPro.attachment.previewAction", {
+                    name: attachment.name,
+                    status: statusLabel(),
+                  })}
+                  title={attachment.error ? `${accessibleName()} · ${attachment.error}` : accessibleName()}
+                  disabled={!canPreview(attachment) || state.preview.loading}
+                  onClick={(event: MouseEvent) => {
+                    event.stopPropagation()
+                    void previewAttachment(attachment)
+                  }}
+                  onKeyDown={(event: KeyboardEvent) => {
+                    if (event.key === "Enter" || event.key === " ") event.stopPropagation()
+                  }}
+                >
+                  <FileIcon
+                    class="gpt-pro-attachment-chip__icon"
+                    node={{ path: previewPath(attachment.name, attachment.mime ?? ""), type: "file" }}
+                    aria-hidden="true"
+                  />
+                  <span class="gpt-pro-attachment-chip__name" title={attachment.name}>
+                    {attachment.name}
+                  </span>
+                  <span class="gpt-pro-attachment-chip__status" aria-hidden="true">
+                    {statusLabel()}
+                  </span>
+                </button>
+              )
+            }}
+          </For>
+        </div>
+      </Show>
+      {/* Keep the lazy preview import local so it cannot replace the timeline's Suspense fallback. */}
+      <Suspense
+        fallback={
+          <Show when={state.preview.open}>
+            <div class="gpt-pro-preview-loading" role="status" data-testid="gpt-pro-preview-loading-shell">
+              <Spinner />
+              {t("ui.tool.gptPro.attachment.previewLoading")}
+            </div>
+          </Show>
+        }
+      >
+        <Show when={state.preview.open}>
+          <AttachmentPreviewDialog state={state.preview} onClose={closePreview} />
+        </Show>
+      </Suspense>
       <Show when={error()}>
         <p class="p-2 text-12-regular text-text-critical-base" role="alert">
           {error()}
         </p>
-      </Show>
-      <Show when={attachments().length > 0}>
-        <ul class="flex flex-col gap-1 px-2 pb-2" data-testid="gpt-pro-attachments" aria-label={t("ui.tool.gptPro.attachments")}>
-          <For each={attachments()}>
-            {(attachment) => (
-              <li class="flex min-w-0 flex-col gap-1 text-12-regular" data-testid="gpt-pro-attachment">
-                <div class="flex min-w-0 items-center gap-2">
-                  <span class="min-w-0 flex-1 truncate" title={attachment.name}>{attachment.name}</span>
-                  <span class="shrink-0 text-text-weak" data-attachment-status={attachment.status}>
-                    {t(`ui.tool.gptPro.attachment.${attachment.status}`)}
-                  </span>
-                </div>
-                <Show when={attachment.status === "failed" && attachment.error}>
-                  <span class="text-text-critical-base" role="status">{attachment.error}</span>
-                </Show>
-              </li>
-            )}
-          </For>
-        </ul>
       </Show>
     </div>
   )

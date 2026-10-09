@@ -1,6 +1,6 @@
 {
   "name": "@opencode-ai/ui",
-  "version": "1.18.53",
+  "version": "1.18.54",
   "type": "module",
   "license": "MIT",
   "exports": {
@@ -43,6 +43,7 @@
     "generate:lucide": "bun run script/sync-lucide-icons.ts"
   },
   "devDependencies": {
+    "@happy-dom/global-registrator": "20.0.11",
     "@tailwindcss/vite": "catalog:",
     "@tsconfig/node22": "catalog:",
     "@types/bun": "catalog:",

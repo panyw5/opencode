@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { GPT_PRO_PARTITION, isGptProOrigin, type GptProProbeStatus } from "@opencode-ai/util/gpt-pro"
 import { CdpClient, listTargets, withCdp } from "./cdp"
 
-// P0 only. Refuses non-dev renderers, non-Pro pages, drafts and existing
+// P0 only. Refuses non-dev renderers, drafts and existing
 // conversations. No API calls or access to installed OpenCode instances.
 const endpoint = "http://127.0.0.1:9222"
 const testPrompt =
@@ -35,25 +35,6 @@ async function send() {
     throw new Error("Expected exactly one ChatGPT target in the development app; refusing an ambiguous page")
   const page = await CdpClient.connect(targets[0].webSocketDebuggerUrl)
   try {
-    await page.evaluate(`(async () => {
-      const trigger = document.querySelector('button[aria-label="Select ChatGPT model"]')
-      if (!trigger) return true
-      if (trigger.getAttribute('aria-expanded') !== 'true') trigger.click()
-      for (let i = 0; i < 30; i++) {
-        const id = trigger.getAttribute('aria-controls')
-        if (id && document.getElementById(id)?.querySelector('[data-model-picker-view-toggle]')) return true
-        await new Promise(resolve => setTimeout(resolve, 50))
-      }
-      throw new Error('Model evidence could not be read; nothing sent')
-    })()`)
-    const verified = await inspect()
-    if (verified.phase !== "ready" || !verified.page?.targetModel)
-      throw new Error("GPT-6 Pro could not be verified; no message was sent")
-    await page.evaluate(`(() => {
-      const trigger = document.querySelector('button[aria-label="Select ChatGPT model"]')
-      if (trigger?.getAttribute('aria-expanded') === 'true') trigger.click()
-      return true
-    })()`)
     const focused = await page.evaluate<boolean>(`(() => {
       const editor = document.querySelector('#prompt-textarea, [data-composer-markdown][role="textbox"][contenteditable="true"]')
       if (!editor || (editor.innerText ?? editor.value ?? '').trim()) return false
@@ -64,8 +45,8 @@ async function send() {
     console.log("[gpt-pro-probe] inserting fixed integration-test prompt")
     await page.call("Input.insertText", { text: testPrompt })
     const filled = await inspect()
-    if (!filled.page?.targetModel || filled.page.draft.trim() !== testPrompt || filled.page.users.length !== 0)
-      throw new Error("Composer or model changed before submit; submission was not attempted")
+    if (!filled.page || filled.page.draft.trim() !== testPrompt || filled.page.users.length !== 0)
+      throw new Error("Composer changed before submit; submission was not attempted")
     console.log("[gpt-pro-probe] submitting once; retries must inspect, never resend")
     await page.call("Input.dispatchKeyEvent", {
       type: "rawKeyDown",
@@ -87,34 +68,6 @@ async function send() {
   await watch()
 }
 
-async function refreshModelEvidence() {
-  const targets = (await listTargets(endpoint)).filter((target) => target.type === "page" && isGptProOrigin(target.url))
-  if (targets.length !== 1) throw new Error("Expected one dedicated Chat target; no message was sent")
-  const page = await CdpClient.connect(targets[0].webSocketDebuggerUrl)
-  try {
-    await page.evaluate(`(async () => {
-      const trigger = [...document.querySelectorAll('button[aria-label="Select ChatGPT model"]')].filter(e => e.getClientRects().length && !e.closest('[inert], [aria-hidden="true"]')).at(-1)
-      if (!trigger) return true
-      if (trigger.getAttribute('aria-expanded') !== 'true') trigger.click()
-      for (let i = 0; i < 30; i++) {
-        const id = trigger.getAttribute('aria-controls')
-        if (id && document.getElementById(id)?.querySelector('[data-model-picker-view-toggle]')) return true
-        await new Promise(resolve => setTimeout(resolve, 50))
-      }
-      throw new Error('Model evidence could not be read; nothing sent')
-    })()`)
-    const status = await inspect()
-    await page.evaluate(`(() => {
-      const trigger = [...document.querySelectorAll('button[aria-label="Select ChatGPT model"]')].filter(e => e.getClientRects().length && !e.closest('[inert], [aria-hidden="true"]')).at(-1)
-      if (trigger?.getAttribute('aria-expanded') === 'true') trigger.click()
-      return true
-    })()`)
-    return status
-  } finally {
-    page.close()
-  }
-}
-
 async function watch() {
   const started = Date.now()
   const deadline = Date.now() + 30 * 60_000
@@ -123,11 +76,10 @@ async function watch() {
   let version = 0
   await mkdir(out, { recursive: true })
   while (Date.now() < deadline) {
-    let status = await inspect()
-    if (status.page?.composer && !status.page.targetModel) status = await refreshModelEvidence()
+    const status = await inspect()
     const state = status.page
-    if (!state?.targetModel || !isGptProOrigin(state.url))
-      throw new Error("Target model/page unavailable. Tracking stopped; no resend or fallback.")
+    if (!state || !isGptProOrigin(state.url))
+      throw new Error("Target page unavailable. Tracking stopped; no resend or fallback.")
     if (state.users.length > 1 || (state.users.length === 1 && state.users[0].text.trim() !== testPrompt))
       throw new Error("Dedicated conversation changed; refusing an unrelated reply")
     if (!state.users.length && Date.now() - started > 30000)

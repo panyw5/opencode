@@ -316,6 +316,44 @@ describe("session.message-v2.toModelMessage", () => {
     ])
   })
 
+  test("keeps direct GPT-Pro attachment bytes and legacy synthetic read output out of primary model history", async () => {
+    const messageID = "m-direct-gpt-pro"
+    const secret = "PRIVATE_FILE_CONTENT_MUST_NOT_REACH_MODEL"
+    const legacyReadSecret = "LEGACY_SYNTHETIC_READ_BODY_MUST_NOT_REACH_MODEL"
+    const input: MessageV2.WithParts[] = [
+      {
+        info: userInfo(messageID),
+        parts: [
+          { ...basePart(messageID, "direct-text"), type: "text", text: "Review the attachment" },
+          {
+            ...basePart(messageID, "legacy-read-output"),
+            type: "text",
+            text: legacyReadSecret,
+            synthetic: true,
+          },
+          { ...basePart(messageID, "direct-agent"), type: "agent", name: "gpt-pro" },
+          {
+            ...basePart(messageID, "direct-file"),
+            type: "file",
+            mime: "application/pdf",
+            filename: "private-report.pdf",
+            url: `data:application/pdf;base64,${Buffer.from(secret).toString("base64")}`,
+          },
+        ] as MessageV2.Part[],
+      },
+    ]
+
+    const converted = await MessageV2.toModelMessages(input, model)
+    const serialized = JSON.stringify(converted)
+    expect(serialized).toContain("private-report.pdf")
+    expect(serialized).toContain("application/pdf")
+    expect(serialized).toContain("Review the attachment")
+    expect(serialized).not.toContain(secret)
+    expect(serialized).not.toContain(legacyReadSecret)
+    expect(serialized).not.toContain("data:application/pdf")
+    expect(serialized).not.toContain(Buffer.from(secret).toString("base64"))
+  })
+
   test("converts assistant tool completion into tool-call + tool-result messages with attachments", async () => {
     const userID = "m-user"
     const assistantID = "m-assistant"

@@ -2,6 +2,7 @@ import {
   GPT_PRO_PARTITION,
   GPT_PRO_URL,
   isGptProOrigin,
+  isGptProLoginUrl,
   type GptProPageState,
   type GptProProbeStatus,
 } from "@opencode-ai/util/gpt-pro"
@@ -38,12 +39,19 @@ export class GptProProbe {
     })
     if (!state) return result("not_open")
     if (state.loading) return result("loading")
-    if (!isGptProOrigin(state.url))
-      return result("needs_login", "Finish login or verification in the gpt-pro browser tab.")
+    if (!isGptProOrigin(state.url)) {
+      if (isGptProLoginUrl(state.url)) return result("needs_login", "Finish login in the gpt-pro browser tab.")
+      return result("blocked", "The gpt-pro browser is on a non-ChatGPT origin; no message was sent.")
+    }
+    if (isGptProLoginUrl(state.url)) return result("needs_login", "Finish login in the gpt-pro browser tab.")
     const cdp = this.browser.cdp(GPT_PRO_PARTITION)
     if (!cdp) return result("not_open")
     const page = await cdp.evaluate<GptProPageState>(CHATGPT_INSPECT_EXPRESSION)
-    if (!isGptProOrigin(page.url)) return result("blocked", "The page changed origin during inspection.")
+    if (!isGptProOrigin(page.url)) {
+      if (isGptProLoginUrl(page.url)) return result("needs_login", "Finish login in the gpt-pro browser tab.", page)
+      return result("blocked", "The page changed origin during inspection.", page)
+    }
+    if (isGptProLoginUrl(page.url)) return result("needs_login", "Finish login in the gpt-pro browser tab.", page)
     this.log(
       `probe inspect: model=${page.model} composer=${page.composer} generating=${page.generating} users=${page.users.length} revision=${page.revision} htmlChars=${page.answer?.html.length ?? 0} complete=${page.answer?.complete ?? false}`,
     )
@@ -52,9 +60,10 @@ export class GptProProbe {
       return result(page.error.kind === "verification" ? "needs_login" : "blocked", page.error.message, page)
     }
     if (!page.composer)
-      return result("needs_login", "Login or page readiness needs verification; no message was sent.", page)
-    if (!page.targetModel)
-      return result("needs_model", "Select GPT-6 Pro in the Chat model picker; no fallback model is allowed.", page)
+      return result("loading", "The ChatGPT composer is not visible yet; no message was sent.", page)
+    this.log(
+      `probe model observation label=${JSON.stringify(page.model || "unknown")} policy=user-selected nonblocking=true`,
+    )
     if (page.generating) return result("tracking", undefined, page)
     if (page.answer?.complete) return result("completed", undefined, page)
     return result("ready", undefined, page)

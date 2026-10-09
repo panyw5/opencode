@@ -20,6 +20,7 @@ export type BrowserDisplayState = {
   views: { partition: string; visible: boolean; bounds: BrowserBounds }[]
 }
 export type WindowBrowserApi = {
+  capturePreview: (partition: string) => Promise<string | undefined>
   getDisplayState: () => Promise<BrowserDisplayState>
   acquireDisplay: () => Promise<number>
   updateDisplay: (frame: BrowserDisplayFrame) => Promise<boolean>

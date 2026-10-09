@@ -13,6 +13,7 @@ const option = (name: string) => args[args.indexOf(name) + 1]
 const partID = args.includes("--prompt-part") ? option("--prompt-part") : undefined
 const watchID = args.includes("--watch") ? option("--watch") : undefined
 const exerciseRecovery = args.includes("--exercise-agent-recovery")
+const maskModelUI = args.includes("--mask-model-ui")
 let prompt: string
 if (partID) {
   const db = new Database(join(homedir(), ".local/share/opencode/opencode.db"), { readonly: true })
@@ -43,11 +44,47 @@ if (!target.url.includes("localhost:5173") && !target.url.startsWith("oc://")) {
   throw new Error("9222 is not the OpenCode development renderer")
 }
 
+let maskedChat: CdpClient | undefined
+let maskScriptID: string | undefined
 try {
   const active = await client.evaluate<boolean>(
     `(async () => (await window.api.gptPro.list()).some(j=>['queued','preparing','sending','generating','paused'].includes(j.phase)))()`,
   )
   if (active && !watchID) throw new Error("Another consultation owns the browser; no test was sent")
+  if (maskModelUI && !watchID) {
+    await client.evaluate(`window.api.gptPro.open()`)
+    const target = (await listTargets()).find((t) => t.type === "page" && t.url.startsWith("https://chatgpt.com/"))
+    if (!target) throw Error("No dev Chat target available for the model-independent test")
+    maskedChat = await CdpClient.connect(target.webSocketDebuggerUrl)
+    const source = `(() => {
+      const mask = () => {
+        for (const button of document.querySelectorAll('[data-testid="model-switcher-dropdown-button"],button[aria-label="Select ChatGPT model"]')) {
+          button.setAttribute('data-opencode-e2e-model-trigger', JSON.stringify({testid:button.getAttribute('data-testid'),label:button.getAttribute('aria-label')}))
+          button.removeAttribute('data-testid'); button.removeAttribute('aria-label')
+        }
+      }
+      const observer = new MutationObserver(mask)
+      observer.observe(document,{subtree:true,childList:true,attributes:true,attributeFilter:['data-testid','aria-label']})
+      window.__modelPickerTestClicks = 0
+      document.addEventListener('click', e => { if(e.target instanceof Element && e.target.closest('[data-opencode-e2e-model-trigger]')) window.__modelPickerTestClicks++ },true)
+      window.__restoreModelPickerTest = () => {
+        observer.disconnect()
+        for (const button of document.querySelectorAll('[data-opencode-e2e-model-trigger]')) {
+          const attrs=JSON.parse(button.getAttribute('data-opencode-e2e-model-trigger'))
+          if(attrs.testid) button.setAttribute('data-testid',attrs.testid)
+          if(attrs.label) button.setAttribute('aria-label',attrs.label)
+          button.removeAttribute('data-opencode-e2e-model-trigger')
+        }
+      }
+      mask()
+    })()`
+    const installed = (await maskedChat.call("Page.addScriptToEvaluateOnNewDocument", { source })) as {
+      identifier: string
+    }
+    maskScriptID = installed.identifier
+    await maskedChat.evaluate(source)
+    log("model UI semantics masked in dev only; selection is unchanged and all recognition must remain nonblocking")
+  }
   if (exerciseRecovery && !watchID) {
     await client.evaluate(`window.api.browser.open('persist:consult-gpt-pro','https://chatgpt.com/')`)
     const readyDeadline = Date.now() + 90000
@@ -58,7 +95,7 @@ try {
         const chat = await CdpClient.connect(target.webSocketDebuggerUrl)
         try {
           const page = await chat.evaluate<GptProPageState>(CHATGPT_INSPECT_EXPRESSION)
-          if (page.composer && page.model && !page.generating && !page.users.length && !page.draft.trim()) {
+          if (page.composer && !page.generating && !page.users.length && !page.draft.trim()) {
             await chat.evaluate(`(()=>{
               document.querySelector('[role="dialog"][aria-label="Browser recovery exercise"] button')?.click()
               const modal=document.createElement('div')
@@ -194,8 +231,13 @@ try {
       )
     if (state.job?.phase === "completed" && state.notificationMatches) {
       const { job, page } = state
-      if (!job.submitted || job.model !== "GPT-6 Pro" || !job.text || !job.html || !state.tool?.promptMatches)
-        throw new Error("The completed job is missing submission, model, prompt or full-answer evidence")
+      if (!job.submitted || !job.text || !job.html || !state.tool?.promptMatches)
+        throw new Error("The completed job is missing submission, prompt or full-answer evidence")
+      if (maskModelUI) {
+        const clicks = await maskedChat!.evaluate<number>("window.__modelPickerTestClicks")
+        if (job.model || clicks !== 0) throw Error("The model-independent flow inferred a model or operated the picker")
+        log("PASS model label unavailable throughout submission/tracking; picker clicks=0")
+      }
       if (
         page?.users.length !== 1 ||
         page.users[0].id !== job.userID ||
@@ -253,5 +295,13 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 2000))
   }
 } finally {
+  if (maskedChat) {
+    try {
+      if (maskScriptID) await maskedChat.call("Page.removeScriptToEvaluateOnNewDocument", { identifier: maskScriptID })
+      await maskedChat.evaluate("window.__restoreModelPickerTest?.()")
+    } finally {
+      maskedChat.close()
+    }
+  }
   client.close()
 }

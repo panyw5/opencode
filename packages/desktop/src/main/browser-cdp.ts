@@ -77,6 +77,8 @@ const INTERESTING_ROLES = new Set([
   "form",
 ])
 
+export type BeforeTrustedClick = () => Promise<void | (() => void)> | void | (() => void)
+
 const INTERACTIVE_ROLES = new Set([
   "button",
   "link",
@@ -100,7 +102,7 @@ type AxNode = {
   ignored?: boolean
   role?: { value: string }
   name?: { value: string }
-  value?: { value: string }
+  value?: { value: string | number | boolean }
   focused?: boolean
 }
 
@@ -117,6 +119,15 @@ export class BrowserCdp {
 
   private get dbg() {
     return this.wc.debugger
+  }
+
+  private async releaseRemoteObject(objectId?: string) {
+    if (!objectId) return
+    try {
+      await this.dbg.sendCommand("Runtime.releaseObject", { objectId })
+    } catch {
+      log("object", "remote DOM object release skipped")
+    }
   }
 
   async ensureAttached() {
@@ -183,8 +194,88 @@ export class BrowserCdp {
     await this.ensureAttached()
     await this.dbg.sendCommand("Input.insertText", { text })
   }
+  private async resolveComposerFileInput(expression: string) {
+    const evaluated = (await this.dbg.sendCommand("Runtime.evaluate", { expression })) as {
+      result?: { objectId?: string }
+    }
+    const resolverObjectId = evaluated.result?.objectId
+    if (!resolverObjectId) {
+      log("file-input", "composer resolver returned no object")
+      throw new Error("Composer attachment resolver returned no result")
+    }
+    let inputObjectId: string | undefined
+    try {
+      const diagnostics = (await this.dbg.sendCommand("Runtime.callFunctionOn", {
+        objectId: resolverObjectId,
+        functionDeclaration:
+          "function() { return { editorCount:this.editorCount, globalInputCount:this.globalInputCount, eligibleGlobalInputCount:this.eligibleGlobalInputCount, scopedInputCount:this.scopedInputCount, reason:this.reason } }",
+        returnByValue: true,
+      })) as {
+        result?: {
+          value?: {
+            editorCount?: number
+            globalInputCount?: number
+            eligibleGlobalInputCount?: number
+            scopedInputCount?: number
+            reason?: string
+          }
+        }
+      }
+      const result = diagnostics.result?.value
+      log(
+        "file-input",
+        `composer resolver editorCount=${result?.editorCount ?? -1} globalInputs=${result?.globalInputCount ?? -1} eligibleGlobalInputs=${result?.eligibleGlobalInputCount ?? -1} scopedInputs=${result?.scopedInputCount ?? -1} reason=${result?.reason ?? "missing"}`,
+      )
+      if (result?.reason !== "ok")
+        throw new Error(`Active composer file input unavailable: ${result?.reason ?? "resolver failed"}`)
+      const inputHandle = (await this.dbg.sendCommand("Runtime.callFunctionOn", {
+        objectId: resolverObjectId,
+        functionDeclaration: "function() { return this.input }",
+      })) as { result?: { objectId?: string } }
+      if (!inputHandle.result?.objectId) {
+        log("file-input", "composer resolver input reference disappeared")
+        throw new Error("Active composer input disappeared")
+      }
+      inputObjectId = inputHandle.result.objectId
+      const requested = (await this.dbg.sendCommand("DOM.requestNode", {
+        objectId: inputHandle.result.objectId,
+      })) as { nodeId?: number }
+      if (!requested.nodeId) {
+        log("file-input", "composer resolver DOM request returned no node")
+        throw new Error("Active composer input could not be resolved")
+      }
+      const described = (await this.dbg.sendCommand("DOM.describeNode", { nodeId: requested.nodeId })) as {
+        node?: { backendNodeId?: number; nodeName?: string; attributes?: string[] }
+      }
+      const attrs = new Map<string, string>()
+      for (let i = 0; i < (described.node?.attributes?.length ?? 0); i += 2)
+        attrs.set(described.node!.attributes![i], described.node!.attributes![i + 1])
+      if (described.node?.nodeName !== "INPUT" || attrs.get("type") !== "file") {
+        log("file-input", "composer resolver selected a non-file node")
+        throw new Error("Composer resolver selected a non-file control")
+      }
+      if (attrs.has("disabled") || attrs.get("aria-disabled") === "true") {
+        log("file-input", "composer resolver selected a disabled node")
+        throw new Error("Composer file input is disabled")
+      }
+      if (!described.node.backendNodeId) {
+        log("file-input", "composer resolver node had no backend identity")
+        throw new Error("Composer file input has no backend node identity")
+      }
+      return { nodeId: requested.nodeId, backendNodeId: described.node.backendNodeId, attrs }
+    } finally {
+      await this.releaseRemoteObject(inputObjectId)
+      await this.releaseRemoteObject(resolverObjectId)
+    }
+  }
+
   /** Attach already-validated local files to a rendered file input via CDP. */
-  async setInputFiles(selector: string, files: string[]) {
+  async setInputFiles(
+    selector: string,
+    files: string[],
+    composerResolverExpression?: string,
+    beforeDispatch?: () => Promise<void>,
+  ) {
     if (!files.length) throw new Error("At least one file is required")
     if (files.some((file) => !path.isAbsolute(file))) throw new Error("File paths must be absolute")
     await this.ensureAttached()
@@ -193,42 +284,70 @@ export class BrowserCdp {
       root?: { nodeId?: number }
     }
     if (!document.root?.nodeId) throw new Error("Page document is unavailable")
-    const query = JSON.stringify(selector)
-    const eligibleCount = await this.evaluate<number>(`[...document.querySelectorAll(${query})].filter(input =>
-      input instanceof HTMLInputElement && input.type === 'file' && !input.disabled &&
-      input.getAttribute('aria-disabled') !== 'true' && !input.closest('[inert],[hidden],[aria-hidden="true"]')
-    ).length`)
-    if (!eligibleCount) throw new Error("Enabled file input was not found")
-    if (eligibleCount !== 1) throw new Error("Enabled file input is ambiguous")
-    const evaluated = (await this.dbg.sendCommand("Runtime.evaluate", {
-      expression: `[...document.querySelectorAll(${query})].find(input => input instanceof HTMLInputElement && input.type === 'file' && !input.disabled && input.getAttribute('aria-disabled') !== 'true' && !input.closest('[inert],[hidden],[aria-hidden="true"]'))`,
-    })) as { result?: { objectId?: string } }
-    if (!evaluated.result?.objectId) throw new Error("Enabled file input was not found")
-    const active = (await this.dbg.sendCommand("Runtime.callFunctionOn", {
-      objectId: evaluated.result.objectId,
-      functionDeclaration:
-        "function() { return this instanceof HTMLInputElement && this.type === 'file' && !this.disabled && this.getAttribute('aria-disabled') !== 'true' && !this.closest('[inert],[hidden],[aria-hidden=\\\"true\\\"]') }",
-      returnByValue: true,
-    })) as { result?: { value?: boolean } }
-    if (active.result?.value !== true) throw new Error("File input is no longer enabled in the active composer")
-    const requested = (await this.dbg.sendCommand("DOM.requestNode", { objectId: evaluated.result.objectId })) as {
-      nodeId?: number
+    let nodeId: number
+    let backendNodeId: number | undefined
+    let attrs: Map<string, string>
+    if (composerResolverExpression) {
+      const selected = await this.resolveComposerFileInput(composerResolverExpression)
+      nodeId = selected.nodeId
+      backendNodeId = selected.backendNodeId
+      attrs = selected.attrs
+      log("file-input", `composer input selected backendNodeId=${backendNodeId} phase=initial`)
+    } else {
+      const query = JSON.stringify(selector)
+      const eligibleCount = await this.evaluate<number>(`[...document.querySelectorAll(${query})].filter(input =>
+        input instanceof HTMLInputElement && input.type === 'file' && !input.disabled &&
+        input.getAttribute('aria-disabled') !== 'true' && !input.parentElement?.closest('[inert],[hidden],[aria-hidden="true"]')
+      ).length`)
+      log("file-input", `generic resolver selectorMatches=${eligibleCount} phase=initial`)
+      if (!eligibleCount) throw new Error("Enabled file input was not found")
+      if (eligibleCount !== 1) throw new Error("Enabled file input is ambiguous")
+      const queryInput = (await this.dbg.sendCommand("Runtime.evaluate", {
+        expression: `[...document.querySelectorAll(${query})].find(input => input instanceof HTMLInputElement && input.type === 'file' && !input.disabled && input.getAttribute('aria-disabled') !== 'true' && !input.parentElement?.closest('[inert],[hidden],[aria-hidden="true"]'))`,
+      })) as { result?: { objectId?: string } }
+      if (!queryInput.result?.objectId) throw new Error("Enabled file input was not found")
+      try {
+        const active = (await this.dbg.sendCommand("Runtime.callFunctionOn", {
+          objectId: queryInput.result.objectId,
+          functionDeclaration: `function() {
+            return this instanceof HTMLInputElement && this.type === 'file' && !this.disabled &&
+              this.getAttribute('aria-disabled') !== 'true' &&
+              !this.parentElement?.closest('[inert],[hidden],[aria-hidden="true"]')
+          }`,
+          returnByValue: true,
+        })) as { result?: { value?: boolean } }
+        if (active.result?.value !== true) throw new Error("File input is no longer enabled")
+        const requested = (await this.dbg.sendCommand("DOM.requestNode", { objectId: queryInput.result.objectId })) as {
+          nodeId?: number
+        }
+        if (!requested.nodeId) throw new Error("Enabled file input disappeared")
+        nodeId = requested.nodeId
+        const input = (await this.dbg.sendCommand("DOM.describeNode", { nodeId })) as {
+          node?: { backendNodeId?: number; nodeName?: string; attributes?: string[] }
+        }
+        attrs = new Map<string, string>()
+        for (let i = 0; i < (input.node?.attributes?.length ?? 0); i += 2)
+          attrs.set(input.node!.attributes![i], input.node!.attributes![i + 1])
+        backendNodeId = input.node?.backendNodeId
+        if (input.node?.nodeName !== "INPUT" || attrs.get("type") !== "file")
+          throw new Error("Selected control is not a file input")
+        if (attrs.has("disabled") || attrs.get("aria-disabled") === "true")
+          throw new Error("Selected file input is disabled")
+      } finally {
+        await this.releaseRemoteObject(queryInput.result.objectId)
+      }
     }
-    const nodeId = requested.nodeId
-    if (!nodeId) throw new Error("Enabled file input disappeared")
-    const input = (await this.dbg.sendCommand("DOM.describeNode", { nodeId })) as {
-      node?: { nodeName?: string; attributes?: string[] }
-    }
-    const attrs = new Map<string, string>()
-    for (let i = 0; i < (input.node?.attributes?.length ?? 0); i += 2)
-      attrs.set(input.node!.attributes![i], input.node!.attributes![i + 1])
-    if (input.node?.nodeName !== "INPUT" || attrs.get("type") !== "file")
-      throw new Error("Selected control is not a file input")
-    if (attrs.has("disabled") || attrs.get("aria-disabled") === "true")
-      throw new Error("Selected file input is disabled")
     if (files.length > 1 && !attrs.has("multiple")) throw new Error("File input does not allow multiple files")
+    if (composerResolverExpression) {
+      const current = await this.resolveComposerFileInput(composerResolverExpression)
+      if (current.backendNodeId !== backendNodeId)
+        throw new Error("Active composer changed before file dispatch; no upload was sent to a stale input")
+      nodeId = current.nodeId
+      log("file-input", `composer input revalidated backendNodeId=${current.backendNodeId} phase=dispatch`)
+    }
+    await beforeDispatch?.()
     await this.dbg.sendCommand("DOM.setFileInputFiles", { nodeId, files })
-    log("file-input", `files assigned count=${files.length}`)
+    log("file-input", `files assigned count=${files.length} backendNodeId=${backendNodeId ?? "unknown"}`)
   }
   async focus() {
     this.wc.focus()
@@ -297,6 +416,127 @@ export class BrowserCdp {
       })
   }
 
+  private async resolveElementExpression(expression: string) {
+    await this.ensureAttached()
+    await this.dbg.sendCommand("DOM.enable")
+    const document = (await this.dbg.sendCommand("DOM.getDocument", { depth: 0 })) as {
+      root?: { nodeId?: number }
+    }
+    if (!document.root?.nodeId) throw new Error("Page document is unavailable")
+    const selected = (await this.dbg.sendCommand("Runtime.evaluate", {
+      expression,
+      returnByValue: false,
+      awaitPromise: true,
+    })) as { result?: { objectId?: string; subtype?: string; description?: string }; exceptionDetails?: unknown }
+    if (selected.exceptionDetails) throw new Error("Resolved page target inspection failed")
+    const objectId = selected.result?.objectId
+    if (!objectId || selected.result?.subtype === "null") throw new Error("Resolved page target is unavailable")
+    try {
+      const requested = (await this.dbg.sendCommand("DOM.requestNode", { objectId })) as { nodeId?: number }
+      if (!requested.nodeId) throw new Error("Resolved page target disappeared")
+      const described = (await this.dbg.sendCommand("DOM.describeNode", { nodeId: requested.nodeId })) as {
+        node?: { backendNodeId?: number; nodeName?: string; attributes?: string[] }
+      }
+      if (!described.node?.backendNodeId) throw new Error("Resolved page target has no backend identity")
+      return { objectId, nodeId: requested.nodeId, backendNodeId: described.node.backendNodeId, nodeName: described.node.nodeName }
+    } catch (error) {
+      await this.releaseRemoteObject(objectId)
+      throw error
+    }
+  }
+
+  private async resolvedTargetPoint(objectId: string) {
+    const inspected = (await this.dbg.sendCommand("Runtime.callFunctionOn", {
+      objectId,
+      functionDeclaration: `function() {
+        if (!(this instanceof HTMLButtonElement) || this.disabled || this.getAttribute('aria-disabled') === 'true') return null
+        const style=getComputedStyle(this)
+        if (!this.getClientRects().length || style.display==='none' || style.visibility==='hidden' || style.contentVisibility==='hidden' || this.closest('[inert],[hidden],[aria-hidden="true"]')) return null
+        this.scrollIntoView({block:'center',inline:'center'})
+        const rect=this.getBoundingClientRect()
+        const point={x:rect.left+rect.width/2,y:rect.top+rect.height/2}
+        const hit=document.elementFromPoint(point.x,point.y)
+        if(!hit || (hit!==this&&!this.contains(hit))) return null
+        return point
+      }`,
+      returnByValue: true,
+    })) as { result?: { value?: { x: number; y: number } | null }; exceptionDetails?: unknown }
+    if (inspected.exceptionDetails) throw new Error("Resolved page target hit test failed")
+    return inspected.result?.value ?? undefined
+  }
+
+  /** Click the exact active DOM target returned by a shared page resolver. */
+  async clickResolved(expression: string, beforeDispatch?: BeforeTrustedClick) {
+    const initial = await this.resolveElementExpression(expression)
+    if (initial.nodeName !== "BUTTON") {
+      await this.releaseRemoteObject(initial.objectId)
+      throw new Error("Resolved target is not a button; no click dispatched")
+    }
+    const initialPoint = await this.resolvedTargetPoint(initial.objectId).finally(() =>
+      this.releaseRemoteObject(initial.objectId),
+    )
+    if (!initialPoint) throw new Error("Resolved button is disabled, hidden, or covered; no click dispatched")
+    log("click", `resolved target validated backendNodeId=${initial.backendNodeId} phase=initial`)
+    const commit = await beforeDispatch?.()
+
+    const current = await this.resolveElementExpression(expression)
+    if (current.nodeName !== "BUTTON" || current.backendNodeId !== initial.backendNodeId) {
+      await this.releaseRemoteObject(current.objectId)
+      throw new Error("Resolved send target changed before dispatch; no click dispatched")
+    }
+    const dbg = this.dbg
+    const preMovePoint = await this.resolvedTargetPoint(current.objectId).finally(() =>
+      this.releaseRemoteObject(current.objectId),
+    )
+    if (!preMovePoint) throw new Error("Resolved button became disabled, hidden, or covered; no click dispatched")
+    await dbg.sendCommand("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: preMovePoint.x,
+      y: preMovePoint.y,
+      button: "none",
+    })
+    this.wc.focus()
+
+    const finalTarget = await this.resolveElementExpression(expression)
+    if (finalTarget.nodeName !== "BUTTON" || finalTarget.backendNodeId !== initial.backendNodeId) {
+      await this.releaseRemoteObject(finalTarget.objectId)
+      throw new Error("Resolved send target changed before mouse press; no click dispatched")
+    }
+    const point = await this.resolvedTargetPoint(finalTarget.objectId).finally(() =>
+      this.releaseRemoteObject(finalTarget.objectId),
+    )
+    if (!point) throw new Error("Resolved button became disabled, hidden, or covered; no click dispatched")
+    log("click", `resolved target revalidated backendNodeId=${finalTarget.backendNodeId} phase=dispatch`)
+    commit?.()
+    await dbg.sendCommand("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      x: point.x,
+      y: point.y,
+      button: "left",
+      clickCount: 1,
+      buttons: 1,
+    })
+    await dbg.sendCommand("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      x: point.x,
+      y: point.y,
+      button: "left",
+      clickCount: 1,
+      buttons: 0,
+    })
+    await this.waitForNavigationSettle()
+    return { x: point.x, y: point.y, backendNodeId: finalTarget.backendNodeId }
+  }
+
+  /** Compare a snapshot UID with the exact target from the shared resolver. */
+  async matchesResolved(uid: string, expression: string) {
+    const expectedBackendNodeId = uid.startsWith("n") ? Number.parseInt(uid.slice(1), 10) : Number.NaN
+    if (!Number.isFinite(expectedBackendNodeId)) throw new Error("Invalid element uid; take a new browser_read snapshot")
+    const target = await this.resolveElementExpression(expression)
+    await this.releaseRemoteObject(target.objectId)
+    return target.nodeName === "BUTTON" && target.backendNodeId === expectedBackendNodeId
+  }
+
   async navigate(url: string) {
     // Plain navigation needs no debugger. Attaching the debugger to a
     // never-navigated webContents hangs: the renderer process (and its CDP
@@ -344,20 +584,23 @@ export class BrowserCdp {
     await new Promise((resolve) => setTimeout(resolve, 300))
     const ax = (await this.dbg.sendCommand("Accessibility.getFullAXTree", {})) as { nodes: AxNode[] }
     const nodes: SnapshotNode[] = []
+    let normalizedValues = 0
     for (const node of ax.nodes) {
       if (node.ignored) continue
       const role = node.role?.value
       if (!role || !INTERESTING_ROLES.has(role)) continue
       const uid = node.backendDOMNodeId ? `n${node.backendDOMNodeId}` : `ax${node.nodeId}`
+      if (node.value && typeof node.value.value !== "string") normalizedValues++
       nodes.push({
         uid,
         role,
         name: node.name?.value ?? "",
-        value: node.value?.value,
+        value: node.value?.value === undefined ? undefined : String(node.value.value),
         focused: node.focused,
       })
       if (nodes.length >= limit) break
     }
+    log("browser", `snapshot nodes=${nodes.length} normalizedScalarValues=${normalizedValues}`)
     return { url: this.wc.getURL(), title: this.wc.getTitle(), nodes }
   }
 
@@ -373,7 +616,34 @@ export class BrowserCdp {
   }
 
   /** Resolve the click point for an AX uid and dispatch a trusted CDP click. */
-  async click(uid: string, position?: { x: number; y: number }, beforeDispatch?: () => Promise<void>) {
+  private async uidTargetHit(uid: string, point: { x: number; y: number }) {
+    await this.ensureAttached()
+    if (!this.domEnabled) {
+      await this.dbg.sendCommand("DOM.enable")
+      this.domEnabled = true
+    }
+    const backendNodeId = uid.startsWith("n") ? Number.parseInt(uid.slice(1), 10) : Number.NaN
+    if (!Number.isFinite(backendNodeId)) return false
+    const resolved = (await this.dbg.sendCommand("DOM.resolveNode", { backendNodeId })) as {
+      object?: { objectId?: string }
+    }
+    const objectId = resolved.object?.objectId
+    if (!objectId) return false
+    try {
+      const hit = (await this.dbg.sendCommand("Runtime.callFunctionOn", {
+        objectId,
+        functionDeclaration:
+          "function(point) { return this.contains(document.elementFromPoint(point.x,point.y)) && !this.closest('[disabled],[aria-disabled=\"true\"],[inert]') }",
+        arguments: [{ value: point }],
+        returnByValue: true,
+      })) as { result?: { value?: boolean } }
+      return hit.result?.value === true
+    } finally {
+      await this.releaseRemoteObject(objectId)
+    }
+  }
+
+  async click(uid: string, position?: { x: number; y: number }, beforeDispatch?: BeforeTrustedClick) {
     if (
       position &&
       (![position.x, position.y].every(Number.isFinite) ||
@@ -383,37 +653,41 @@ export class BrowserCdp {
         position.y > 1)
     )
       throw new Error("Click position must be inside the element (0..1)")
-    const point = await this.resolveUidCenter(uid, position)
+    let point = await this.resolveUidCenter(uid, position)
     if (!point) throw new Error(`element not found for uid ${uid} (page may have navigated; take a new snapshot)`)
-    await this.ensureAttached()
+    let commit: void | (() => void) = undefined
     if (beforeDispatch) {
-      const backendNodeId = Number.parseInt(uid.slice(1), 10)
-      const resolved = (await this.dbg.sendCommand("DOM.resolveNode", { backendNodeId })) as {
-        object?: { objectId?: string }
-      }
-      if (!resolved.object?.objectId) throw new Error("Control disappeared before submission; no click dispatched")
-      const hit = (await this.dbg.sendCommand("Runtime.callFunctionOn", {
-        objectId: resolved.object.objectId,
-        functionDeclaration:
-          "function(point) { return this.contains(document.elementFromPoint(point.x,point.y)) && !this.closest('[disabled],[aria-disabled=\"true\"],[inert]') }",
-        arguments: [{ value: point }],
-        returnByValue: true,
-      })) as { result?: { value?: boolean } }
-      if (hit.result?.value !== true) throw new Error("Control is disabled or covered; no click dispatched")
-      await beforeDispatch()
+      if (!(await this.uidTargetHit(uid, point))) throw new Error("Control is disabled or covered; no click dispatched")
+      commit = await beforeDispatch()
+      point = await this.resolveUidCenter(uid, position)
+      if (!point) throw new Error("Control disappeared before submission; no click dispatched")
+      if (!(await this.uidTargetHit(uid, point))) throw new Error("Control is disabled or covered; no click dispatched")
     }
     const dbg = this.dbg
     await dbg.sendCommand("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y, button: "none" })
-    for (const type of ["mousePressed", "mouseReleased"] as const) {
-      await dbg.sendCommand("Input.dispatchMouseEvent", {
-        type,
-        x: point.x,
-        y: point.y,
-        button: "left",
-        clickCount: 1,
-        buttons: type === "mousePressed" ? 1 : 0,
-      })
+    this.wc.focus()
+    if (beforeDispatch) {
+      point = await this.resolveUidCenter(uid, position)
+      if (!point) throw new Error(`element not found for uid ${uid} before mouse press; no click dispatched`)
+      if (!(await this.uidTargetHit(uid, point))) throw new Error("Control is disabled or covered; no click dispatched")
     }
+    commit?.()
+    await dbg.sendCommand("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      x: point.x,
+      y: point.y,
+      button: "left",
+      clickCount: 1,
+      buttons: 1,
+    })
+    await dbg.sendCommand("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      x: point.x,
+      y: point.y,
+      button: "left",
+      clickCount: 1,
+      buttons: 0,
+    })
     // Navigation triggered by the click happens asynchronously: wait briefly
     // for it to start and finish so the reported URL/title reflect the result
     // of the interaction (P2-S-04 acceptance).

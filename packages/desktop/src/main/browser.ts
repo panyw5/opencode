@@ -297,8 +297,31 @@ export class BrowserController {
       views: [...this.views]
         .filter(([, entry]) => !entry.view.webContents.isDestroyed())
         .map(([partition, entry]) => ({
-          partition, visible: entry.view.getVisible(), bounds: entry.view.getBounds(),
+          partition,
+          visible: entry.view.getVisible(),
+          bounds: entry.view.getBounds(),
         })),
+    }
+  }
+
+  async capturePreview(partition: string) {
+    const entry = this.views.get(partition)
+    if (!entry?.visible || entry.view.webContents.isDestroyed()) {
+      log("preview", `skipped partition=${partition} reason=not-visible`)
+      return
+    }
+    log("preview", `capture started partition=${partition}`)
+    try {
+      // Capture at the live viewport size before parking the native view. Unlike
+      // tool screenshots this must never resize or temporarily show a hidden tab.
+      const image = await entry.view.webContents.capturePage()
+      if (image.isEmpty()) throw new Error("empty browser preview")
+      const size = image.getSize()
+      log("preview", `captured partition=${partition} width=${size.width} height=${size.height}`)
+      return image.toDataURL()
+    } catch (error) {
+      log("preview", `failed partition=${partition} error=${String(error)}`)
+      throw error
     }
   }
 
@@ -317,8 +340,11 @@ export class BrowserController {
     const bounds = frame.bounds
     if (
       (frame.partition !== null && typeof frame.partition !== "string") ||
-      ((frame.partition === null) !== (bounds === null)) ||
-      (bounds && (![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isSafeInteger) || bounds.width < 1 || bounds.height < 1))
+      (frame.partition === null) !== (bounds === null) ||
+      (bounds &&
+        (![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isSafeInteger) ||
+          bounds.width < 1 ||
+          bounds.height < 1))
     ) {
       log("display", `rejected invalid bounds lease=${frame.lease}`)
       return false
@@ -332,7 +358,10 @@ export class BrowserController {
       if (!visible) this.applyBounds(partition)
     }
     if (frame.partition) this.applyBounds(frame.partition)
-    log("display", `applied lease=${frame.lease} revision=${frame.revision} partition=${frame.partition ?? "none"} visible=${!!bounds}`)
+    log(
+      "display",
+      `applied lease=${frame.lease} revision=${frame.revision} partition=${frame.partition ?? "none"} visible=${!!bounds}`,
+    )
     return !frame.partition || this.views.has(frame.partition)
   }
 

@@ -153,6 +153,9 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("gpt-pro-config", () => getGptProController().config())
   ipcMain.handle("gpt-pro-set-config", (_event, config: GptProConfig) => getGptProController().setConfig(config))
   ipcMain.handle("gpt-pro-command", (_event, command: GptProCommand) => getGptProController().command(command))
+  ipcMain.handle("gpt-pro-attachment-preview", (_event, input: { id: string; attachmentID: string }) =>
+    getGptProController().attachmentPreview(input),
+  )
   ipcMain.handle("gpt-pro-list", () => getGptProController().list())
   ipcMain.handle("gpt-pro-open", () => gptProProbe.open())
   ipcMain.handle("gpt-pro-status", () => gptProProbe.status())
@@ -165,6 +168,7 @@ export function registerIpcHandlers(deps: Deps) {
   )
   ipcMain.handle("browser-acquire-display", () => browserController.acquireDisplay())
   ipcMain.handle("browser-display-state", () => browserController.getDisplayState())
+  ipcMain.handle("browser-capture-preview", (_event, partition: string) => browserController.capturePreview(partition))
   ipcMain.handle("browser-update-display", (_event, frame) => browserController.updateDisplay(frame))
   ipcMain.handle("browser-release-display", (_event, lease: number) => browserController.releaseDisplay(lease))
   ipcMain.handle("browser-set-bounds", (_event: IpcMainInvokeEvent, partition: string, bounds: BrowserBounds | null) =>

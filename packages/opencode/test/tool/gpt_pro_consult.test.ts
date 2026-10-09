@@ -1,6 +1,9 @@
 import { describe, expect } from "bun:test"
-import { mkdir, symlink, truncate, writeFile } from "node:fs/promises"
+import { readFileSync, statSync } from "node:fs"
+import { mkdir, readFile, readdir, symlink, truncate, writeFile } from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 import { Effect, Exit, Layer } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { Browser } from "../../src/browser"
@@ -11,14 +14,25 @@ import type { Tool } from "../../src/tool/tool"
 import type { GptProCommand, GptProJob, GptProPhase } from "@opencode-ai/util/gpt-pro"
 import { testEffect } from "../lib/effect"
 import { TestInstance } from "../fixture/fixture"
+import * as Log from "@opencode-ai/core/util/log"
 
 const calls: Array<{ owner: string; input: GptProCommand }> = []
+const attachmentBytes = new Map<string, Buffer>()
+const attachmentModes = new Map<string, { file: number; directory: number; root: number }>()
 let phase: GptProPhase = "completed"
 let recovery = false
 const browser = Layer.mock(Browser.Service, {
   gptPro: (owner, input) =>
     Effect.sync(() => {
       calls.push({ owner, input })
+      for (const attachment of input.attachments ?? []) {
+        attachmentBytes.set(attachment.name, readFileSync(attachment.path))
+        attachmentModes.set(attachment.name, {
+          file: statSync(attachment.path).mode & 0o777,
+          directory: statSync(path.dirname(attachment.path)).mode & 0o777,
+          root: statSync(path.dirname(path.dirname(attachment.path))).mode & 0o777,
+        })
+      }
       return {
         id: "gpt_test",
         owner,
@@ -92,6 +106,8 @@ describe("gpt_pro_consult tool", () => {
   it.instance("a failed background consultation never claims it is still running", () =>
     Effect.gen(function* () {
       calls.length = 0
+      attachmentBytes.clear()
+      attachmentModes.clear()
       phase = "failed"
       try {
         const tool = yield* (yield* GptProConsultTool).init()
@@ -177,7 +193,7 @@ describe("gpt_pro_consult tool", () => {
       }).pipe(Effect.orDie)
       const c = context()
       const tool = yield* (yield* GptProConsultTool).init()
-      const result = yield* tool.execute({ prompt: "Review", files: ["notes.md", "notes.md"] }, c.ctx)
+      const result = yield* tool.execute({ prompt: "Review", files: ["notes.md", pathToFileURL(filepath).href] }, c.ctx)
       const descriptor = calls[0]?.input.attachments?.[0]
       expect(c.asks).toEqual(["read", "gpt_pro_consult"])
       expect(c.requests[1]?.metadata).toMatchObject({
@@ -189,6 +205,346 @@ describe("gpt_pro_consult tool", () => {
       expect(descriptor).toMatchObject({ name: "notes.md", mime: "text/markdown", size: 25 })
       expect(descriptor?.sha256).toMatch(/^[a-f0-9]{64}$/)
       expect(JSON.parse(result.output).attachments[0]).toMatchObject({ id: descriptor?.id, status: "pending" })
+    }),
+  )
+  it.instance("normalizes and stages direct data parts in private scoped temp storage", () =>
+    Effect.gen(function* () {
+      calls.length = 0
+      attachmentBytes.clear()
+      attachmentModes.clear()
+      const c = context()
+      c.ctx.extra = {
+        gptProAttachmentParts: [
+          {
+            type: "file",
+            filename: "fixture-notes.md",
+            mime: "text/plain",
+            url: `data:text/plain;base64,${Buffer.from("# Fixture notes\nKeep the original bytes.\n").toString("base64")}`,
+          },
+        ],
+      }
+      const tool = yield* (yield* GptProConsultTool).init()
+      const result = yield* tool.execute({ prompt: "Review this attachment" }, c.ctx)
+      const attachment = calls[0]?.input.attachments?.[0]
+      expect(attachment).toMatchObject({ name: "fixture-notes.md", mime: "text/markdown" })
+      expect(attachment?.path).toContain(os.tmpdir())
+      expect(yield* Effect.promise(() => Bun.file(attachment!.path).exists())).toBe(false)
+      expect(attachmentBytes.get("fixture-notes.md")?.toString("utf8")).toBe(
+        "# Fixture notes\nKeep the original bytes.\n",
+      )
+      expect(attachmentModes.get("fixture-notes.md")).toEqual({ file: 0o600, directory: 0o700, root: 0o700 })
+      expect(c.asks).toEqual(["gpt_pro_consult"])
+      expect(JSON.parse(result.output).attachments[0].name).toBe("fixture-notes.md")
+      expect(JSON.parse(result.output).attachments[0].path).toBeUndefined()
+      expect(result.metadata.attachments[0].path).toBeUndefined()
+      let logOutput = ""
+      for (let attempt = 0; attempt < 20; attempt++) {
+        logOutput = yield* Effect.promise(() => readFile(Log.file(), "utf8").catch(() => ""))
+        if (logOutput.includes("private attachment staging cleaned")) break
+        yield* Effect.sleep("10 millis")
+      }
+      expect(logOutput).toContain("private attachment staging cleaned")
+    }),
+  )
+  it.instance("rejects text/plain data parts with binary filenames before dispatch and removes all staged data", () =>
+    Effect.gen(function* () {
+      calls.length = 0
+      for (const filename of ["fixture.png", "fixture.pdf"]) {
+        const c = context()
+        c.ctx.extra = {
+          gptProAttachmentParts: [
+            {
+              type: "file",
+              filename,
+              mime: "text/plain",
+              url: `data:text/plain;base64,${Buffer.from("not binary").toString("base64")}`,
+            },
+          ],
+        }
+        const tool = yield* (yield* GptProConsultTool).init()
+        const result = yield* Effect.exit(tool.execute({ prompt: "Review" }, c.ctx))
+        expect(Exit.isFailure(result)).toBe(true)
+        expect(calls).toHaveLength(0)
+        expect(c.asks).toEqual([])
+      }
+    }),
+  )
+  it.instance("rejects unknown MIME data without a filename before authorization or staging", () =>
+    Effect.gen(function* () {
+      calls.length = 0
+      const before = new Set(
+        (yield* Effect.promise(() => readdir(os.tmpdir()))).filter((name) => name.startsWith("opencode-gpt-pro-")),
+      )
+      const c = context()
+      c.ctx.extra = {
+        gptProAttachmentParts: [
+          {
+            type: "file",
+            mime: "application/x-unknown",
+            url: `data:application/x-unknown;base64,${Buffer.from("unknown").toString("base64")}`,
+          },
+        ],
+      }
+      const tool = yield* (yield* GptProConsultTool).init()
+      const result = yield* Effect.exit(tool.execute({ prompt: "Review" }, c.ctx))
+      expect(Exit.isFailure(result)).toBe(true)
+      expect(c.asks).toEqual([])
+      expect(calls).toHaveLength(0)
+      const after = (yield* Effect.promise(() => readdir(os.tmpdir()))).filter((name) =>
+        name.startsWith("opencode-gpt-pro-"),
+      )
+      expect(after.filter((name) => !before.has(name))).toEqual([])
+    }),
+  )
+  it.instance("rejects invalid or oversized display filenames before authorization", () =>
+    Effect.gen(function* () {
+      calls.length = 0
+      for (const filename of [`bad\0name.txt`, `${"a".repeat(240)}.txt`]) {
+        const c = context()
+        c.ctx.extra = {
+          gptProAttachmentParts: [
+            {
+              type: "file",
+              filename,
+              mime: "text/plain",
+              url: `data:text/plain;base64,${Buffer.from("text").toString("base64")}`,
+            },
+          ],
+        }
+        const tool = yield* (yield* GptProConsultTool).init()
+        const result = yield* Effect.exit(tool.execute({ prompt: "Review" }, c.ctx))
+        expect(Exit.isFailure(result)).toBe(true)
+        expect(c.asks).toEqual([])
+      }
+      expect(calls).toHaveLength(0)
+    }),
+  )
+  it.instance("rejects direct file source and URL identity mismatches before authorization", () =>
+    Effect.gen(function* () {
+      calls.length = 0
+      const instance = yield* TestInstance
+      const source = path.join(instance.directory, "source.md")
+      const other = path.join(instance.directory, "other.md")
+      yield* Effect.tryPromise({
+        try: async () => {
+          await writeFile(source, "source")
+          await writeFile(other, "other")
+        },
+        catch: (error) => error,
+      }).pipe(Effect.orDie)
+      const c = context()
+      c.ctx.extra = {
+        gptProAttachmentParts: [
+          {
+            type: "file",
+            filename: "source.md",
+            mime: "text/plain",
+            url: pathToFileURL(other).href,
+            source: { type: "file", path: source },
+          },
+        ],
+      }
+      const tool = yield* (yield* GptProConsultTool).init()
+      const result = yield* Effect.exit(tool.execute({ prompt: "Review" }, c.ctx))
+      expect(Exit.isFailure(result)).toBe(true)
+      expect(c.asks).toEqual([])
+      expect(calls).toHaveLength(0)
+    }),
+  )
+  it.instance("preserves the requested filename for a local symbolic-link alias", () =>
+    Effect.gen(function* () {
+      calls.length = 0
+      const instance = yield* TestInstance
+      const target = path.join(instance.directory, "actual.md")
+      const alias = path.join(instance.directory, "requested.txt")
+      yield* Effect.tryPromise({
+        try: async () => {
+          await writeFile(target, "plain text bytes")
+          await symlink(target, alias)
+        },
+        catch: (error) => error,
+      }).pipe(Effect.orDie)
+      const c = context()
+      c.ctx.extra = {
+        gptProAttachmentParts: [
+          {
+            type: "file",
+            filename: "requested.txt",
+            mime: "text/plain",
+            url: pathToFileURL(alias).href,
+            source: { type: "file", path: alias },
+          },
+        ],
+      }
+      const tool = yield* (yield* GptProConsultTool).init()
+      const result = yield* tool.execute({ prompt: "Review" }, c.ctx)
+      expect(calls[0]?.input.attachments?.[0]).toMatchObject({ name: "requested.txt", mime: "text/plain" })
+      expect(JSON.parse(result.output).attachments[0].name).toBe("requested.txt")
+    }),
+  )
+  it.instance("derives a raw file part filename from its file URL when none is provided", () =>
+    Effect.gen(function* () {
+      calls.length = 0
+      const instance = yield* TestInstance
+      const filepath = path.join(instance.directory, "url-fallback.md")
+      yield* Effect.tryPromise({ try: () => writeFile(filepath, "fallback text"), catch: (error) => error }).pipe(
+        Effect.orDie,
+      )
+      const c = context()
+      c.ctx.extra = {
+        gptProAttachmentParts: [{ type: "file", mime: "text/plain", url: `file://localhost${filepath}` }],
+      }
+      const tool = yield* (yield* GptProConsultTool).init()
+      yield* tool.execute({ prompt: "Review" }, c.ctx)
+      expect(calls[0]?.input.attachments?.[0]).toMatchObject({ name: "url-fallback.md", mime: "text/markdown" })
+    }),
+  )
+  it.instance("rejects non-file source descriptors even when their URL contains local data", () =>
+    Effect.gen(function* () {
+      calls.length = 0
+      const c = context()
+      c.ctx.extra = {
+        gptProAttachmentParts: [
+          {
+            type: "file",
+            filename: "resource.txt",
+            mime: "text/plain",
+            url: `data:text/plain;base64,${Buffer.from("resource").toString("base64")}`,
+            source: { type: "resource" },
+          },
+        ],
+      }
+      const tool = yield* (yield* GptProConsultTool).init()
+      const result = yield* Effect.exit(tool.execute({ prompt: "Review" }, c.ctx))
+      expect(Exit.isFailure(result)).toBe(true)
+      expect(c.asks).toEqual([])
+      expect(calls).toHaveLength(0)
+    }),
+  )
+  it.instance("rejects file URLs with remote hosts", () =>
+    Effect.gen(function* () {
+      calls.length = 0
+      const c = context()
+      c.ctx.extra = {
+        gptProAttachmentParts: [
+          { type: "file", filename: "remote.md", mime: "text/plain", url: "file://remote.invalid/share/remote.md" },
+        ],
+      }
+      const tool = yield* (yield* GptProConsultTool).init()
+      const result = yield* Effect.exit(tool.execute({ prompt: "Review" }, c.ctx))
+      expect(Exit.isFailure(result)).toBe(true)
+      expect(c.asks).toEqual([])
+      expect(calls).toHaveLength(0)
+    }),
+  )
+  it.instance("deduplicates canonical paths before applying the attachment count limit", () =>
+    Effect.gen(function* () {
+      calls.length = 0
+      const instance = yield* TestInstance
+      const files = Array.from({ length: 10 }, (_, index) => path.join(instance.directory, `count-${index}.txt`))
+      yield* Effect.tryPromise({
+        try: async () => Promise.all(files.map((file, index) => writeFile(file, `content-${index}`))),
+        catch: (error) => error,
+      }).pipe(Effect.orDie)
+      const tool = yield* (yield* GptProConsultTool).init()
+      const result = yield* tool.execute({ prompt: "Review", files: [...files, files[0]!] }, context().ctx)
+      expect(JSON.parse(result.output).attachments).toHaveLength(10)
+    }),
+  )
+  it.instance("validates every direct part before authorizing or dispatching any source", () =>
+    Effect.gen(function* () {
+      calls.length = 0
+      const instance = yield* TestInstance
+      const existing = path.join(instance.directory, "present.md")
+      const missing = path.join(instance.directory, "missing.md")
+      yield* Effect.tryPromise({ try: () => writeFile(existing, "present"), catch: (error) => error }).pipe(
+        Effect.orDie,
+      )
+      const c = context()
+      c.ctx.extra = {
+        gptProAttachmentParts: [
+          {
+            type: "file",
+            filename: "present.md",
+            mime: "text/plain",
+            url: pathToFileURL(existing).href,
+            source: { type: "file", path: existing },
+          },
+          {
+            type: "file",
+            filename: "missing.md",
+            mime: "text/plain",
+            url: pathToFileURL(missing).href,
+            source: { type: "file", path: missing },
+          },
+        ],
+      }
+      const tool = yield* (yield* GptProConsultTool).init()
+      const result = yield* Effect.exit(tool.execute({ prompt: "Review" }, c.ctx))
+      expect(Exit.isFailure(result)).toBe(true)
+      expect(c.asks).toEqual([])
+      expect(calls).toHaveLength(0)
+    }),
+  )
+  it.instance("cleans private staged data after a later content validation failure", () =>
+    Effect.gen(function* () {
+      calls.length = 0
+      const before = new Set(
+        (yield* Effect.promise(() => readdir(os.tmpdir()))).filter((name) => name.startsWith("opencode-gpt-pro-")),
+      )
+      const c = context()
+      c.ctx.extra = {
+        gptProAttachmentParts: [
+          {
+            type: "file",
+            filename: "valid.md",
+            mime: "text/plain",
+            url: `data:text/plain;base64,${Buffer.from("valid markdown").toString("base64")}`,
+          },
+          {
+            type: "file",
+            filename: "invalid.pdf",
+            mime: "application/pdf",
+            url: `data:application/pdf;base64,${Buffer.from("not a pdf").toString("base64")}`,
+          },
+        ],
+      }
+      const tool = yield* (yield* GptProConsultTool).init()
+      const result = yield* Effect.exit(tool.execute({ prompt: "Review" }, c.ctx))
+      expect(Exit.isFailure(result)).toBe(true)
+      expect(calls).toHaveLength(0)
+      const after = (yield* Effect.promise(() => readdir(os.tmpdir()))).filter((name) =>
+        name.startsWith("opencode-gpt-pro-"),
+      )
+      expect(after.filter((name) => !before.has(name))).toEqual([])
+    }),
+  )
+  it.instance("does not create private staging when GPT-Pro authorization is denied", () =>
+    Effect.gen(function* () {
+      calls.length = 0
+      const before = new Set(
+        (yield* Effect.promise(() => readdir(os.tmpdir()))).filter((name) => name.startsWith("opencode-gpt-pro-")),
+      )
+      const c = context(true)
+      c.ctx.extra = {
+        gptProAttachmentParts: [
+          {
+            type: "file",
+            filename: "private.txt",
+            mime: "text/plain",
+            url: `data:text/plain;base64,${Buffer.from("private").toString("base64")}`,
+          },
+        ],
+      }
+      const tool = yield* (yield* GptProConsultTool).init()
+      const result = yield* Effect.exit(tool.execute({ prompt: "Review" }, c.ctx))
+      expect(Exit.isFailure(result)).toBe(true)
+      expect(c.asks).toEqual(["gpt_pro_consult"])
+      expect(calls).toHaveLength(0)
+      const after = (yield* Effect.promise(() => readdir(os.tmpdir()))).filter((name) =>
+        name.startsWith("opencode-gpt-pro-"),
+      )
+      expect(after.filter((name) => !before.has(name))).toEqual([])
     }),
   )
   it.instance("keeps distinct same-name files while deduplicating an identical canonical path", () =>

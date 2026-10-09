@@ -62,7 +62,6 @@ import {
   consultMentionFor,
   isConsultMention,
 } from "@/tool/consult-mention"
-import { materializeGptProDirectFiles } from "@/tool/gpt-pro-direct-files"
 import { SessionRunState } from "./run-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -827,9 +826,21 @@ export const layer = Layer.effect(
 
       const uniqueNames = [...new Set(input.names.filter(isConsultMention))]
       if (uniqueNames.length === 0) return
+      const gptProFileCount =
+        uniqueNames.includes("gpt-pro") ? lastUserParts.filter((part) => part.type === "file").length : 0
+      if (uniqueNames.includes("gpt-pro")) {
+        log.info("direct GPT-Pro raw attachment parts forwarded", {
+          phase: "consult-input",
+          sessionID,
+          messageID: lastUser.id,
+          count: gptProFileCount,
+          partIDs: lastUserParts.filter((part) => part.type === "file").map((part) => part.id),
+        })
+      }
 
       const allTools = yield* registry.all()
       const toolByID = new Map(allTools.map((tool) => [tool.id, tool] as const))
+      const consultOutcomes = new Map<string, { returned: boolean; error?: string }>()
 
       const assistantMessage: MessageV2.Assistant = yield* sessions.updateMessage({
         id: MessageID.ascending(),
@@ -853,6 +864,7 @@ export const layer = Layer.effect(
         const consultTool = toolByID.get(mention.tool)
         if (!consultTool) {
           log.error("consult tool missing from registry", { tool: mention.tool, sessionID })
+          consultOutcomes.set(name, { returned: false, error: `Consult tool ${mention.tool} is unavailable` })
           continue
         }
         const backgroundChoice = lastUserParts.find(
@@ -861,25 +873,12 @@ export const layer = Layer.effect(
         const promptText =
           buildConsultPromptFromParts(lastUserParts, name !== "gpt-pro").trim() ||
           "The user requested an external consultation. Review the project context and provide structured analysis."
-        const directFiles: string[] = []
-        let cleanupDirectFiles: Effect.Effect<void> = Effect.void
-        let attachmentPreparationError: Error | undefined
-        if (name === "gpt-pro") {
-          const prepared = yield* materializeGptProDirectFiles(lastUserParts, ctx.directory).pipe(
-            Effect.match({
-              onFailure: (error) => ({ type: "error" as const, error }),
-              onSuccess: (value) => ({ type: "success" as const, value }),
-            }),
-          )
-          if (prepared.type === "error") attachmentPreparationError = prepared.error
-          else {
-            directFiles.push(...prepared.value.files)
-            cleanupDirectFiles = prepared.value.cleanup()
-          }
-        }
+        const gptProAttachmentParts =
+          name === "gpt-pro"
+            ? lastUserParts.filter((part): part is MessageV2.FilePart => part.type === "file")
+            : []
         const toolArgs = {
           prompt: promptText,
-          ...(directFiles.length ? { files: directFiles } : {}),
           ...(name === "gpt-pro" && backgroundChoice?.type === "text"
             ? { background: backgroundChoice.metadata!.gptProBackground as boolean }
             : {}),
@@ -899,89 +898,74 @@ export const layer = Layer.effect(
               time: { start: Date.now() },
             },
           })
-          .pipe(
-            Effect.onError(() => cleanupDirectFiles),
-            Effect.onInterrupt(() => cleanupDirectFiles),
-          )
 
         yield* plugin
           .trigger("tool.execute.before", { tool: mention.tool, sessionID, callID: part.id }, { args: toolArgs })
-          .pipe(
-            Effect.onError(() => cleanupDirectFiles),
-            Effect.onInterrupt(() => cleanupDirectFiles),
-          )
 
-        let error: Error | undefined = attachmentPreparationError
+        let error: Error | undefined
         const consultAbort = new AbortController()
         let result: Tool.ExecuteResult | void = undefined
-        if (attachmentPreparationError) {
-          log.error("direct GPT-Pro attachment rejected before tool dispatch", {
+        result = yield* consultTool
+          .execute(toolArgs, {
+            agent: lastUser.agent,
+            messageID: assistantMessage.id,
             sessionID,
-            error: attachmentPreparationError,
-          })
-        } else {
-          result = yield* consultTool
-            .execute(toolArgs, {
-              agent: lastUser.agent,
-              messageID: assistantMessage.id,
-              sessionID,
-              abort: consultAbort.signal,
-              callID: part.callID,
-              messages: msgs,
-              metadata: (val: { title?: string; metadata?: Record<string, unknown> }) =>
-                Effect.gen(function* () {
-                  if (part.state.status !== "running") return
-                  part = yield* sessions.updatePart({
-                    ...part,
-                    type: "tool",
-                    state: {
-                      ...part.state,
-                      ...(val.title === undefined ? {} : { title: val.title }),
-                      ...(val.metadata === undefined ? {} : { metadata: { ...part.state.metadata, ...val.metadata } }),
-                    },
-                  } satisfies MessageV2.ToolPart)
-                }),
-              ask: (req: any) =>
-                permission
-                  .ask({
-                    ...req,
-                    sessionID,
-                    ruleset: Permission.merge(agent.permission, session.permission ?? []),
-                  })
-                  .pipe(Effect.orDie),
-            })
-            .pipe(
-              Effect.catchCause((cause) => {
-                const defect = Cause.squash(cause)
-                error = defect instanceof Error ? defect : new Error(String(defect))
-                log.error("consult mention execution failed", {
-                  error,
-                  advisor: name,
-                  tool: mention.tool,
-                  sessionID,
-                })
-                return Effect.void
+            abort: consultAbort.signal,
+            callID: part.callID,
+            extra: name === "gpt-pro" ? { gptProAttachmentParts } : undefined,
+            messages: msgs,
+            metadata: (val: { title?: string; metadata?: Record<string, unknown> }) =>
+              Effect.gen(function* () {
+                if (part.state.status !== "running") return
+                part = yield* sessions.updatePart({
+                  ...part,
+                  type: "tool",
+                  state: {
+                    ...part.state,
+                    ...(val.title === undefined ? {} : { title: val.title }),
+                    ...(val.metadata === undefined ? {} : { metadata: { ...part.state.metadata, ...val.metadata } }),
+                  },
+                } satisfies MessageV2.ToolPart)
               }),
-              Effect.ensuring(cleanupDirectFiles),
-              Effect.onInterrupt(() =>
-                Effect.uninterruptible(
-                  Effect.gen(function* () {
-                    consultAbort.abort()
-                    if (part.state.status === "running") {
-                      yield* sessions.abortToolPart({
-                        sessionID,
-                        messageID: assistantMessage.id,
-                        partID: part.id,
-                        source: "tool-specific-interrupt",
-                        error: "Cancelled",
-                        ownerMessageID: assistantMessage.id,
-                      })
-                    }
-                  }),
-                ),
+            ask: (req: any) =>
+              permission
+                .ask({
+                  ...req,
+                  sessionID,
+                  ruleset: Permission.merge(agent.permission, session.permission ?? []),
+                })
+                .pipe(Effect.orDie),
+          })
+          .pipe(
+            Effect.catchCause((cause) => {
+              const defect = Cause.squash(cause)
+              error = defect instanceof Error ? defect : new Error(String(defect))
+              log.error("consult mention execution failed", {
+                error,
+                advisor: name,
+                tool: mention.tool,
+                sessionID,
+              })
+              return Effect.void
+            }),
+            Effect.onInterrupt(() =>
+              Effect.uninterruptible(
+                Effect.gen(function* () {
+                  consultAbort.abort()
+                  if (part.state.status === "running") {
+                    yield* sessions.abortToolPart({
+                      sessionID,
+                      messageID: assistantMessage.id,
+                      partID: part.id,
+                      source: "tool-specific-interrupt",
+                      error: "Cancelled",
+                      ownerMessageID: assistantMessage.id,
+                    })
+                  }
+                }),
               ),
-            )
-        }
+            ),
+          )
 
         const attachments = result?.attachments?.map((attachment) => ({
           ...attachment,
@@ -1012,6 +996,8 @@ export const layer = Layer.effect(
         }
 
         if (!result) {
+          const errorText = error?.message ?? "Tool execution failed"
+          consultOutcomes.set(name, { returned: false, error: errorText })
           yield* sessions.updatePart({
             ...part,
             state: {
@@ -1025,6 +1011,8 @@ export const layer = Layer.effect(
               input: part.state.input,
             },
           } satisfies MessageV2.ToolPart)
+        } else {
+          consultOutcomes.set(name, { returned: true })
         }
       }
 
@@ -1042,12 +1030,26 @@ export const layer = Layer.effect(
         model: lastUser.model,
       }
       yield* sessions.updateMessage(summaryUserMsg)
+      const gptProFailure = consultOutcomes.get("gpt-pro")
+      const returnedConsults = [...consultOutcomes.keys()].filter((name) => consultOutcomes.get(name)?.returned)
+      const followup = [
+        ...(uniqueNames.includes("gpt-pro") && gptProFailure?.returned === false
+          ? [
+              `GPT-Pro consultation failed: ${gptProFailure.error ?? "Tool execution failed"}. No advisor answer was returned. Explain this error accurately. Do not automatically retry or resend the request, do not upload only the remaining files, and do not replace the consultation with a local Read of the attachment.`,
+            ]
+          : []),
+        ...(returnedConsults.length
+          ? [buildConsultFollowupSynthetic(returnedConsults)]
+          : uniqueNames.includes("gpt-pro") && gptProFailure?.returned === false
+            ? []
+            : [buildConsultFollowupSynthetic(uniqueNames)]),
+      ].join("\n\n")
       yield* sessions.updatePart({
         id: PartID.ascending(),
         messageID: summaryUserMsg.id,
         sessionID,
         type: "text",
-        text: buildConsultFollowupSynthetic(uniqueNames),
+        text: followup,
         synthetic: true,
       } satisfies MessageV2.TextPart)
     })
@@ -1428,10 +1430,25 @@ export const layer = Layer.effect(
         })
       })
 
+      const directGptProTurn = input.parts.some((part) => part.type === "agent" && part.name === "gpt-pro")
+      if (directGptProTurn) {
+        const files = input.parts.filter((part) => part.type === "file")
+        log.info("direct GPT-Pro file resolution bypassed", {
+          phase: "resolve-input",
+          sessionID: input.sessionID,
+          messageID: info.id,
+          count: files.length,
+          partIDs: files.flatMap((part) => (part.id ? [part.id] : [])),
+        })
+      }
+
       const resolvePart: (part: PromptInput["parts"][number]) => Effect.Effect<Draft<MessageV2.Part>[]> = Effect.fn(
         "SessionPrompt.resolveUserPart",
       )(function* (part) {
         if (part.type === "file") {
+          if (directGptProTurn) {
+            return [{ ...part, messageID: info.id, sessionID: input.sessionID }]
+          }
           if (part.source?.type === "resource") {
             const { clientName, uri } = part.source
             log.info("mcp resource", { clientName, uri, mime: part.mime })
@@ -1713,6 +1730,18 @@ export const layer = Layer.effect(
       const resolvedParts = yield* Effect.forEach(input.parts, resolvePart, { concurrency: "unbounded" }).pipe(
         Effect.map((x) => x.flat().map(assign)),
       )
+      const directGptProFileIDs = directGptProTurn
+        ? new Set(resolvedParts.flatMap((part) => (part.type === "file" ? [part.id] : [])))
+        : undefined
+      if (directGptProFileIDs?.size) {
+        log.info("direct GPT-Pro image normalization bypassed", {
+          phase: "post-hook-normalize",
+          sessionID: input.sessionID,
+          messageID: info.id,
+          count: directGptProFileIDs.size,
+          partIDs: [...directGptProFileIDs],
+        })
+      }
 
       const beforeChatMessageHook = structuredClone(resolvedParts)
       yield* plugin.trigger(
@@ -1729,7 +1758,9 @@ export const layer = Layer.effect(
       const hookSeparatedParts = separateHookInjectedText(beforeChatMessageHook, resolvedParts).map(assign)
 
       const parts = yield* Effect.forEach(hookSeparatedParts, (part) =>
-        part.type === "file" && part.mime.startsWith("image/")
+        part.type === "file" &&
+        !directGptProFileIDs?.has(part.id) &&
+        part.mime.startsWith("image/")
           ? image.normalize(part).pipe(
               Effect.catchIf(
                 (error) => error instanceof Image.ResizerUnavailableError,

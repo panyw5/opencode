@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   GPT_PRO_PARTITION,
   GPT_PRO_URL,
-  isGpt6ProLabel,
+  isGptProLoginUrl,
   isGptProOrigin,
   type GptProPageState,
 } from "@opencode-ai/util/gpt-pro"
@@ -55,17 +55,17 @@ function fixture(input: { existing?: boolean; loading?: boolean; url?: string; p
 }
 
 describe("gpt-pro P0 diagnostics", () => {
-  test("requires GPT-6 Pro, not another Pro model or plain GPT-6", () => {
-    expect(isGpt6ProLabel("GPT-6 Pro")).toBe(true)
-    expect(isGpt6ProLabel("GPT 6 Pro")).toBe(true)
-    for (const label of ["GPT-5.5 Pro", "GPT-6", "GPT-6.1 Pro", "Pro", "GPT-60 Pro"])
-      expect(isGpt6ProLabel(label)).toBe(false)
-  })
-
   test("rejects lookalike hosts and non-HTTPS origins", () => {
     expect(isGptProOrigin("https://chatgpt.com/c/123")).toBe(true)
     for (const url of ["http://chatgpt.com", "https://chatgpt.com.example.com", "https://auth.openai.com", "garbage"])
       expect(isGptProOrigin(url)).toBe(false)
+  })
+
+  test("recognizes explicit login URLs without treating arbitrary pages as login", () => {
+    expect(isGptProLoginUrl("https://auth.openai.com/login")).toBe(true)
+    expect(isGptProLoginUrl("https://chatgpt.com/auth/login")).toBe(true)
+    expect(isGptProLoginUrl("https://chatgpt.com/c/123")).toBe(false)
+    expect(isGptProLoginUrl("https://example.com/login")).toBe(false)
   })
 
   test("opens only the dedicated persistent profile", async () => {
@@ -87,11 +87,26 @@ describe("gpt-pro P0 diagnostics", () => {
     expect((await f.probe.status()).phase).toBe("needs_login")
     expect(f.evaluated).toHaveLength(0)
   })
+  test("recognizes the explicit same-origin ChatGPT login route", async () => {
+    const f = fixture({ url: `${GPT_PRO_URL}auth/login` })
+    expect((await f.probe.status()).phase).toBe("needs_login")
+    expect(f.evaluated).toHaveLength(0)
+  })
+  test("does not misclassify an unrelated external origin as a login page", async () => {
+    const f = fixture({ url: "https://example.com/" })
+    expect((await f.probe.status()).phase).toBe("blocked")
+    expect(f.evaluated).toHaveLength(0)
+  })
 
   test("waits for navigation to finish", async () => {
     const f = fixture({ loading: true })
     expect((await f.probe.status()).phase).toBe("loading")
     expect(f.evaluated).toHaveLength(0)
+  })
+  test("treats a same-origin missing composer as page loading, not login evidence", async () => {
+    const f = fixture({ page: { ...page, composer: false } })
+    expect((await f.probe.status()).phase).toBe("loading")
+    expect(f.opened).toHaveLength(0)
   })
   test("does not label a composer as ready when the website shows a request error", async () => {
     const f = fixture({ page: { ...page, error: { kind: "request", message: "ChatGPT request rejected" } } })
@@ -107,12 +122,15 @@ describe("gpt-pro P0 diagnostics", () => {
     expect(f.opened).toHaveLength(0)
   })
 
-  test("blocks wrong model without sending or switching channels", async () => {
-    const f = fixture({ page: { ...page, model: "GPT-5.5 Pro", targetModel: false } })
-    expect((await f.probe.status()).phase).toBe("needs_model")
-    expect(f.opened).toHaveLength(0)
-    expect(f.evaluated).toHaveLength(1)
-  })
+  test.each(["", "Pro", "Thinking effort", "GPT-5.5 Pro"])(
+    "model label %j cannot block readiness or change selection",
+    async (model) => {
+      const f = fixture({ page: { ...page, model, targetModel: false } })
+      expect((await f.probe.status()).phase).toBe("ready")
+      expect(f.opened).toHaveLength(0)
+      expect(f.evaluated).toHaveLength(1)
+    },
+  )
 
   test("tracks generating pages and keeps prompt/answer out of diagnostic logs", async () => {
     const f = fixture({

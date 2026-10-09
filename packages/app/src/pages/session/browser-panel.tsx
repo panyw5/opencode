@@ -12,6 +12,7 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { GPT_PRO_PARTITION } from "@opencode-ai/util/gpt-pro"
 import { OPEN_TAB_EVENT, type BrowserTab } from "@/browser/tabs"
 import { createBrowserDisplay } from "@/browser/display"
+import { browserOverlay } from "@/browser/overlays"
 import { CLOSE_BROWSER_TAB_COMMAND } from "@/browser/close-tab"
 
 export { browserApi } from "@/browser/types"
@@ -41,22 +42,31 @@ export function BrowserPanel(props: { class?: string }) {
     setConfirmClose(undefined)
   }
   let placeholder: HTMLDivElement | undefined
+  const [preview, setPreview] = createStore({ partition: "", image: "" })
 
   const display = createBrowserDisplay({
     api,
     read: () => {
       const tab = tabs().find((tab) => tab.partition === active())
-      if (!opened() || dialog.active || !placeholder?.isConnected || !tab?.state?.epoch)
-        return { partition: null, bounds: null }
+      if (!opened() || !placeholder?.isConnected || !tab?.state?.epoch) return { partition: null, bounds: null }
       const rect = placeholder.getBoundingClientRect()
       const x = Math.max(0, Math.ceil(rect.left))
       const y = Math.max(0, Math.ceil(rect.top))
       const width = Math.floor(Math.min(window.innerWidth, rect.right)) - x
       const height = Math.floor(Math.min(window.innerHeight, rect.bottom)) - y
       if (width < 2 || height < 2) return { partition: null, bounds: null }
-      return { partition: active(), bounds: { x, y, width, height } }
+      const bounds = { x, y, width, height }
+      return { partition: active(), bounds, overlay: dialog.active ? "dialog" : browserOverlay(bounds) }
     },
     shown: () => service.acknowledge(service.presentation()),
+    preview: async (partition, image) => {
+      const decoded = new Image()
+      decoded.src = image
+      await decoded.decode()
+      setPreview({ partition, image })
+      // Paint the decoded DOM replacement before hiding the native surface.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    },
   })
   let frame: number | undefined
   const schedule = () => {
@@ -79,10 +89,18 @@ export function BrowserPanel(props: { class?: string }) {
     if (!placeholder) return
     const observer = new ResizeObserver(schedule)
     observer.observe(placeholder)
+    const overlays = new MutationObserver(schedule)
+    overlays.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["style", "class", "hidden", "data-expanded", "data-closed", "data-state"],
+    })
     window.addEventListener("resize", schedule)
     window.addEventListener("scroll", schedule, true)
     onCleanup(() => {
       observer.disconnect()
+      overlays.disconnect()
       window.removeEventListener("resize", schedule)
       window.removeEventListener("scroll", schedule, true)
     })
@@ -353,7 +371,18 @@ export function BrowserPanel(props: { class?: string }) {
             />
           </div>
           <div class="flex-1 min-h-0 relative">
-            <div ref={placeholder} class="absolute inset-0" data-browser-placeholder={active()} />
+            <div ref={placeholder} class="absolute inset-0" data-browser-placeholder={active()}>
+              <Show when={preview.partition === active() && preview.image}>
+                <img
+                  data-browser-preview={preview.partition}
+                  src={preview.image}
+                  alt=""
+                  aria-hidden="true"
+                  draggable={false}
+                  class="size-full pointer-events-none select-none"
+                />
+              </Show>
+            </div>
             <Show when={tabs().length === 0}>
               <div class="absolute inset-0 flex items-center justify-center text-13-regular text-text-weak pointer-events-none">
                 {language.t("panel.browser.empty")}

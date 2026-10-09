@@ -18,6 +18,7 @@
 @import "../components/file.css" layer(components);
 @import "../components/collapsible.css" layer(components);
 @import "../components/diff-changes.css" layer(components);
+@import "../components/gpt-pro-tool.css" layer(components);
 @import "../components/context-menu.css" layer(components);
 @import "../components/dropdown-menu.css" layer(components);
 @import "../components/dialog.css" layer(components);

@@ -1,11 +1,13 @@
 import type { BrowserBounds, WindowBrowserApi } from "./types"
 
-export type BrowserDisplaySnapshot = { partition: string | null; bounds: BrowserBounds | null }
+export type BrowserDisplaySnapshot = { partition: string | null; bounds: BrowserBounds | null; overlay?: string }
 
 export function createBrowserDisplay(input: {
-  api?: WindowBrowserApi
+  api?: Pick<WindowBrowserApi, "acquireDisplay" | "updateDisplay" | "releaseDisplay"> &
+    Partial<Pick<WindowBrowserApi, "capturePreview">>
   read: () => BrowserDisplaySnapshot
   shown?: () => void
+  preview?: (partition: string, image: string) => Promise<void>
 }) {
   let disposed = false
   let started = false
@@ -21,27 +23,59 @@ export function createBrowserDisplay(input: {
   const sync = () => {
     if (disposed || lease === undefined || !input.api) return
     const snapshot = input.read()
-    const next = JSON.stringify(snapshot)
+    // While covered, geometry and nested overlay changes do not alter the
+    // native hit region. Capture once rather than every layout-animation frame.
+    const next = JSON.stringify(snapshot.overlay ? { partition: snapshot.partition, overlay: true } : snapshot)
     if (signature === next) {
-      if (confirmed === next && snapshot.partition && snapshot.bounds) input.shown?.()
+      if (confirmed === next && snapshot.partition && snapshot.bounds && !snapshot.overlay) input.shown?.()
       return
     }
     signature = next
     const version = ++revision
-    console.debug(
-      `[browser-display] submit lease=${lease} revision=${version} partition=${snapshot.partition ?? "none"}`,
-    )
-    void input.api
-      .updateDisplay({ lease, revision: version, ...snapshot })
-      .then((accepted) => {
-        if (disposed || version !== revision) return
-        if (accepted) confirmed = next
-        if (accepted && snapshot.partition && snapshot.bounds) input.shown?.()
+    const submit = () => {
+      if (disposed || version !== revision) return
+      const frame = snapshot.overlay ? { partition: null, bounds: null } : snapshot
+      console.debug(
+        `[browser-display] submit lease=${lease} revision=${version} partition=${frame.partition ?? "none"}`,
+      )
+      void input
+        .api!.updateDisplay({ lease: lease!, revision: version, partition: frame.partition, bounds: frame.bounds })
+        .then((accepted) => {
+          if (disposed || version !== revision) return
+          if (accepted) confirmed = next
+          if (accepted && snapshot.partition && snapshot.bounds && !snapshot.overlay) input.shown?.()
+        })
+        .catch((error) => {
+          if (version === revision) signature = undefined
+          console.warn(`[browser-display] failed lease=${lease} revision=${version} error=${String(error)}`)
+        })
+    }
+    if (snapshot.overlay && snapshot.partition && input.api.capturePreview) {
+      const partition = snapshot.partition
+      console.debug(`[browser-display] overlay=${snapshot.overlay} capture partition=${partition} revision=${version}`)
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const deadline = new Promise<undefined>((resolve) => {
+        timer = setTimeout(() => {
+          console.warn(`[browser-display] preview timed out partition=${partition}`)
+          resolve(undefined)
+        }, 1500)
       })
-      .catch((error) => {
-        if (version === revision) signature = undefined
-        console.warn(`[browser-display] failed lease=${lease} revision=${version} error=${String(error)}`)
-      })
+      void Promise.race([input.api.capturePreview(partition), deadline])
+        .then(async (image) => {
+          if (disposed || version !== revision) return
+          if (image) await input.preview?.(partition, image)
+          if (disposed || version !== revision) return
+          console.debug(`[browser-display] preview ready partition=${partition} revision=${version} image=${!!image}`)
+          submit()
+        })
+        .catch((error) => {
+          console.warn(`[browser-display] preview failed partition=${partition} error=${String(error)}`)
+          submit()
+        })
+        .finally(() => clearTimeout(timer))
+      return
+    }
+    submit()
   }
   return {
     sync,

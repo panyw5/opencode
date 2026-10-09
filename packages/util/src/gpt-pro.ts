@@ -5,19 +5,44 @@ export const GPT_PRO_MAX_HTML_CHARS = 1_000_000
 export type GptProPageState = {
   url: string
   model: string
+  /** Informational label observation only; never a submission/readiness gate. */
   targetModel: boolean
   composer: boolean
   draft: string
   attachmentInput?: boolean
+  attachmentInputDiagnostics?: {
+    editorCount: number
+    globalInputCount: number
+    eligibleGlobalInputCount: number
+    scopedInputCount: number
+    reason: string
+  }
   attachments?: Array<{
     name: string
     kind?: "document" | "image"
     sha256?: string
     status: "uploading" | "ready" | "failed" | "unknown"
   }>
+  sendControlDiagnostics?: {
+    reason:
+      | "ok"
+      | "no-editor"
+      | "ambiguous-editor"
+      | "no-scoped-control"
+      | "ambiguous-scoped-control"
+      | "disabled-control"
+      | "obscured-control"
+    editorCount: number
+    scopedControlCount: number
+  }
   generating: boolean
   sendReady?: boolean
-  error?: { kind: "verification" | "request"; message: string }
+  error?: {
+    kind: "verification" | "request"
+    message: string
+    scope?: "page" | "turn"
+    userID?: string
+  }
   revision: number
   users: Array<{
     id: string
@@ -36,11 +61,23 @@ export type GptProPageState = {
     html: string
     complete: boolean
     truncated: boolean
+    generating?: boolean
+    completionEvidence?: "settled-marker" | "response-actions" | "unknown"
   }
+  answers?: Array<{
+    id: string
+    userID: string
+    text: string
+    html: string
+    complete: boolean
+    truncated: boolean
+    generating: boolean
+    completionEvidence: "settled-marker" | "response-actions" | "unknown"
+  }>
 }
 
 export type GptProProbeStatus = {
-  phase: "not_open" | "loading" | "needs_login" | "needs_model" | "ready" | "tracking" | "completed" | "blocked"
+  phase: "not_open" | "loading" | "needs_login" | "ready" | "tracking" | "completed" | "blocked"
   partition: string
   page?: GptProPageState
   detail?: string
@@ -56,11 +93,13 @@ export type GptProAPI = {
   getConfig(): Promise<GptProConfig>
   setConfig(config: GptProConfig): Promise<GptProConfig>
   command(input: GptProCommand): Promise<GptProJob>
+  attachmentPreview?(input: { id: string; attachmentID: string }): Promise<GptProAttachmentPreview>
   list(): Promise<GptProJob[]>
 }
 
 export type GptProConfig = { enabled: boolean; timeoutMinutes: number; progressIntervalSeconds?: number }
 export const DEFAULT_GPT_PRO_CONFIG: GptProConfig = { enabled: false, timeoutMinutes: 30 }
+export type GptProAttachmentPreview = { name: string; mime: string; base64: string }
 export type GptProAction =
   | "consult"
   | "status"
@@ -91,6 +130,8 @@ export type GptProAttachment = {
 }
 export type GptProJobAttachment = Omit<GptProAttachment, "path"> & { path?: string } & {
   uploadName: string
+  /** ChatGPT's rendered preview hash, distinct from the source-file hash. */
+  previewSha256?: string
   status: "pending" | "uploading" | "ready" | "failed" | "unknown"
   error?: string
 }
@@ -150,6 +191,7 @@ export type GptProJob = {
   updatedAt: number
   submitted: boolean
   sendAttempted?: boolean
+  uploadAttempted?: boolean
   recovery?: GptProRecovery
   resumeCurrentPage?: boolean
   userID?: string
@@ -188,13 +230,21 @@ export type GptProLoginStatus = {
   error?: string
 }
 
-export function isGpt6ProLabel(label: string) {
-  return /\bGPT[\s-]*6[\s-]+Pro\b/i.test(label.trim())
-}
-
 export function isGptProOrigin(url: string) {
   try {
     return new URL(url).origin === new URL(GPT_PRO_URL).origin
+  } catch {
+    return false
+  }
+}
+
+export function isGptProLoginUrl(url: string) {
+  try {
+    const parsed = new URL(url)
+    return (
+      parsed.hostname === "auth.openai.com" ||
+      (parsed.origin === new URL(GPT_PRO_URL).origin && /^\/(?:auth\/)?login(?:\/|$)/i.test(parsed.pathname))
+    )
   } catch {
     return false
   }

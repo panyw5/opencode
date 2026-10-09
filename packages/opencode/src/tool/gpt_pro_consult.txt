@@ -3,6 +3,7 @@ Consult GPT-6 Pro on complicated tasks through the embedded ChatGPT Chat browser
 
 # GUIDELINES
 
+- The dedicated Chat browser uses the user's current model selection. Model labels are informational only: do not open the picker, change reasoning effort, or pause/resend because model recognition is unavailable. No API or alternative product is used.
 - GPT-6 Pro cannot access the local file system. Use the `files` parameter only when the user explicitly attached or requested specific files for this consultation; do not infer attachments from paths mentioned in prompt text.
 - `files` accepts local workspace paths (absolute or relative to the workspace) for `consult` and `intervene`. Plain text paths in the prompt are not attachments.
 - Supported file types are `.md`, `.txt`, `.pdf`, `.png`, `.jpg`, `.jpeg`, and `.webp`; limits are 10 files, 20 MiB per file, and 50 MiB total.
@@ -26,6 +27,6 @@ Consult GPT-6 Pro on complicated tasks through the embedded ChatGPT Chat browser
 # BROWSER RECOVERY
 The fixed flow runs first. If its result or background notification contains `recovery`, do not create another consultation. Use the existing browser_read, browser_screenshot, browser_click, browser_type, browser_scroll, browser_navigate and browser_console tools with `consultation_id` to operate only this owned ChatGPT page. Inspect before acting; preserve unrelated drafts and the original conversation.
 
-After repairing an overlay, navigation, focus or model selection, call action=resume with the same consultation_id. The program will continue prompt preparation, attachment/upload tracking, single submission, and result injection without duplicating uploads. To restore the composer yourself, use only the exact `managed_prompt` returned by action=read, without submit=true. A send button click is centrally guarded; action=send is also available for a send control observed by the model.
+After repairing an overlay, navigation or focus, call action=resume with the same consultation_id. The program will continue prompt preparation, attachment/upload tracking, single submission, and result injection without duplicating uploads. To restore the composer yourself, use only the exact `managed_prompt` returned by action=read, without submit=true. A send button click is centrally guarded; action=send is also available for a send control observed by the model.
 
 If `send_attempted` is true, never submit again. Inspect the original question and resume tracking. Login or human-verification challenges require the user; do not automate or bypass them.

@@ -6,6 +6,7 @@ const api: ElectronAPI = {
     getConfig: () => ipcRenderer.invoke("gpt-pro-config"),
     setConfig: config => ipcRenderer.invoke("gpt-pro-set-config", config),
     command: input => ipcRenderer.invoke("gpt-pro-command", input),
+    attachmentPreview: (input) => ipcRenderer.invoke("gpt-pro-attachment-preview", input),
     list: () => ipcRenderer.invoke("gpt-pro-list"),
     open: () => ipcRenderer.invoke("gpt-pro-open"),
     status: () => ipcRenderer.invoke("gpt-pro-status"),
@@ -15,6 +16,7 @@ const api: ElectronAPI = {
   },
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
   browser: {
+    capturePreview: (partition) => ipcRenderer.invoke("browser-capture-preview", partition),
     getDisplayState: () => ipcRenderer.invoke("browser-display-state"),
     acquireDisplay: () => ipcRenderer.invoke("browser-acquire-display"),
     updateDisplay: frame => ipcRenderer.invoke("browser-update-display", frame),
