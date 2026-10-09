@@ -30,6 +30,7 @@ function fixture() {
     getDisplayState: async () => ({ lease: 0, revision: 0, views: [] }),
     acquireDisplay: async () => 1,
     updateDisplay: async () => true,
+    capturePreview: async () => undefined,
     releaseDisplay: async () => {},
     getPresentation: async () => undefined,
     acknowledgePresentation: async () => {},

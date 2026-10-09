@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test"
 
 let windows = 0
 let contents = 0
+let captures = 0
 class FakeWindow {
   constructor() {
     windows++
@@ -20,6 +21,14 @@ class FakeView {
     getURL: () => "https://chatgpt.com/",
     getTitle: () => "ChatGPT",
     isLoading: () => false,
+    capturePage: async () => {
+      captures++
+      return {
+        isEmpty: () => false,
+        getSize: () => ({ width: 500, height: 700 }),
+        toDataURL: () => "data:image/png;base64,preview",
+      }
+    },
     close: () => {
       this.closed = true
     },
@@ -31,8 +40,12 @@ class FakeView {
   setBounds(value: unknown) {
     this.bounds = value
   }
-  getBounds() { return this.bounds }
-  getVisible() { return this.visible }
+  getBounds() {
+    return this.bounds
+  }
+  getVisible() {
+    return this.visible
+  }
 }
 mock.module("electron", () => ({ BrowserWindow: FakeWindow, WebContentsView: FakeView, session: {} }))
 mock.module("./logging", () => ({ write: () => {} }))
@@ -46,6 +59,31 @@ mock.module("./browser-cdp", () => ({
 const { BrowserController } = await import("./browser")
 
 describe("sidebar browser presentation", () => {
+  test("preview captures the live viewport without changing visibility or geometry", async () => {
+    const controller = new BrowserController()
+    const children: FakeView[] = []
+    controller.attachWindow({
+      isDestroyed: () => false,
+      contentView: { addChildView: (view: FakeView) => children.push(view), removeChildView: () => {} },
+    } as never)
+    await controller.open("preview", "https://example.com/")
+    const bounds = { x: 800, y: 150, width: 500, height: 700 }
+    const lease = controller.acquireDisplay()
+    const before = captures
+    expect(await controller.capturePreview("preview")).toBeUndefined()
+    expect(await controller.capturePreview("missing")).toBeUndefined()
+    expect(captures).toBe(before)
+    controller.updateDisplay({ lease, revision: 1, partition: "preview", bounds })
+    expect(await controller.capturePreview("preview")).toBe("data:image/png;base64,preview")
+    expect(captures).toBe(before + 1)
+    expect(children[0].visible).toBe(true)
+    expect(children[0].bounds).toEqual(bounds)
+    controller.updateDisplay({ lease, revision: 2, partition: null, bounds: null })
+    expect(await controller.capturePreview("preview")).toBeUndefined()
+    expect(children[0].visible).toBe(false)
+    expect(children[0].bounds).toEqual({ x: -32000, y: 0, width: 1, height: 1 })
+    controller.dispose()
+  })
   test("native close routing only recognizes a visible browser in the focused window", async () => {
     const controller = new BrowserController()
     const children: FakeView[] = []
@@ -80,26 +118,32 @@ describe("sidebar browser presentation", () => {
     const bounds = { x: 800, y: 150, width: 500, height: 700 }
     const lease = controller.acquireDisplay()
     expect(controller.updateDisplay({ lease, revision: 1, partition: "user", bounds })).toBe(true)
-    expect(children.map(view => view.visible)).toEqual([true, false])
+    expect(children.map((view) => view.visible)).toEqual([true, false])
     expect(controller.updateDisplay({ lease, revision: NaN, partition: "agent", bounds })).toBe(false)
-    expect(controller.updateDisplay({ lease, revision: 2, partition: "agent", bounds: { ...bounds, x: NaN } })).toBe(false)
-    expect(children.map(view => view.visible)).toEqual([true, false])
+    expect(controller.updateDisplay({ lease, revision: 2, partition: "agent", bounds: { ...bounds, x: NaN } })).toBe(
+      false,
+    )
+    expect(children.map((view) => view.visible)).toEqual([true, false])
     expect(controller.updateDisplay({ lease, revision: 3, partition: "agent", bounds })).toBe(true)
-    expect(children.map(view => view.visible)).toEqual([false, true])
+    expect(children.map((view) => view.visible)).toEqual([false, true])
     expect(controller.updateDisplay({ lease, revision: 2, partition: "user", bounds })).toBe(false)
     controller.setVisible("user", true)
     controller.setBounds("agent", { ...bounds, width: 900 })
-    expect(children.map(view => view.visible)).toEqual([false, true])
+    expect(children.map((view) => view.visible)).toEqual([false, true])
     expect(children[1].bounds).toEqual(bounds)
     const nextLease = controller.acquireDisplay()
-    expect(children.every(view => !view.visible)).toBe(true)
+    expect(children.every((view) => !view.visible)).toBe(true)
     controller.updateDisplay({ lease: nextLease, revision: 1, partition: "user", bounds })
     controller.releaseDisplay(lease)
     expect(controller.updateDisplay({ lease, revision: 4, partition: "agent", bounds })).toBe(false)
-    expect(children.map(view => view.visible)).toEqual([true, false])
+    expect(children.map((view) => view.visible)).toEqual([true, false])
     controller.updateDisplay({ lease: nextLease, revision: 2, partition: null, bounds: null })
-    expect(children.every(view => !view.visible)).toBe(true)
-    expect(children.every(view => JSON.stringify(view.bounds) === JSON.stringify({ x: -32000, y: 0, width: 1, height: 1 }))).toBe(true)
+    expect(children.every((view) => !view.visible)).toBe(true)
+    expect(
+      children.every(
+        (view) => JSON.stringify(view.bounds) === JSON.stringify({ x: -32000, y: 0, width: 1, height: 1 }),
+      ),
+    ).toBe(true)
     controller.releaseDisplay(nextLease)
     expect(controller.updateDisplay({ lease: nextLease, revision: 3, partition: "agent", bounds })).toBe(false)
     controller.dispose()
