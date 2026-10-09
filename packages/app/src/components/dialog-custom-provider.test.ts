@@ -53,6 +53,28 @@ function model(input: { row: string; id: string; name: string; values?: Record<s
 
 describe("validateCustomProvider", () => {
   test.each([
+    "https://api.example.com",
+    "https://api.example.com/",
+    "https://api.example.com/v1",
+    "https://api.example.com/v1/",
+  ])("supplies v1 exactly once when saving %s", (baseURL) => {
+    const result = validateCustomProvider({
+      form: {
+        providerID: "v1-provider",
+        name: "V1 provider",
+        baseURL,
+        apiKey: "",
+        models: [model({ row: "m0", id: "smoke", name: "Smoke" })],
+        headers: [],
+        err: {},
+      },
+      t,
+      disabledProviders: [],
+      existingProviderIDs: new Set(),
+    })
+    expect(result.result?.config.options.baseURL).toBe("https://api.example.com/v1")
+  })
+  test.each([
     ["@ai-sdk/groq", { reasoningFormat: "parsed", reasoningEffort: "low" }],
     ["@ai-sdk/mistral", { safePrompt: true, parallelToolCalls: false }],
     ["@ai-sdk/alibaba", { enableThinking: true, thinkingBudget: 512 }],
@@ -180,7 +202,7 @@ describe("validateCustomProvider", () => {
         name: "Custom Provider",
         env: ["CUSTOM_PROVIDER_KEY"],
         options: {
-          baseURL: "https://api.example.com",
+          baseURL: "https://api.example.com/v1",
           headers: {
             "X-Test": "enabled",
           },

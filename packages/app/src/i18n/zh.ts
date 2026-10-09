@@ -420,6 +420,7 @@ export const dict = {
   "provider.custom.field.name.label": "显示名称",
   "provider.custom.field.name.placeholder": "我的 AI 提供商",
   "provider.custom.field.baseURL.label": "基础 URL",
+  "provider.custom.field.baseURL.autoV1": "无需填写 /v1，应用会自动补充。",
   "provider.custom.field.baseURL.placeholder": "https://api.myprovider.com/v1",
   "provider.custom.field.apiKey.label": "API 密钥",
   "provider.custom.field.apiKey.placeholder": "API 密钥",

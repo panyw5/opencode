@@ -55,6 +55,8 @@ import {
 import { FetchProviderModels } from "@/components/fetch-provider-models"
 import { ModelConfigFields } from "@/components/model-config-fields"
 import { TestProviderModelButton } from "@/components/test-provider-model-button"
+import { ProviderBaseURLField } from "@/components/provider-base-url-field"
+import { resolveProviderBaseURL, stripProviderV1 } from "@/components/provider-base-url"
 import { Link } from "@/components/link"
 import { paintCode } from "@/utils/paint-code"
 import { decode64 } from "@/utils/base64"
@@ -1153,7 +1155,7 @@ function providerCfg(input: ProviderCfg | undefined): CustomState {
     providerID: "",
     npm: input?.npm ?? OPENAI_COMPATIBLE,
     name: input?.name ?? "",
-    baseURL: typeof input?.options?.baseURL === "string" ? input.options.baseURL : "",
+    baseURL: typeof input?.options?.baseURL === "string" ? stripProviderV1(input.options.baseURL, input.npm) : "",
     apiKey: api || env,
     models:
       models.length > 0
@@ -3504,11 +3506,12 @@ function CustomEditor(props: {
                 validationState={props.form.err.name ? "invalid" : undefined}
                 error={props.form.err.name}
               />
-              <TextField
+              <ProviderBaseURLField
                 label={language.t("config.custom.field.baseURL")}
                 placeholder={
-                  props.form.npm === "@ai-sdk/deepinfra" ? "https://api.deepinfra.com/v1" : "https://api.example.com/v1"
+                  props.form.npm === "@ai-sdk/deepinfra" ? "https://api.deepinfra.com" : "https://api.example.com"
                 }
+                npm={props.form.npm}
                 value={props.form.baseURL}
                 onChange={(value) => props.onField("baseURL", value)}
                 validationState={props.form.err.baseURL ? "invalid" : undefined}
@@ -3555,7 +3558,7 @@ function CustomEditor(props: {
               <div class="mb-3">
                 <FetchProviderModels
                   title={language.t("config.custom.models.title")}
-                  baseURL={props.form.baseURL}
+                  baseURL={resolveProviderBaseURL(props.form.baseURL, props.form.npm)}
                   apiKey={props.form.apiKey}
                   npm={props.form.npm}
                   headers={props.form.headers}
@@ -3611,7 +3614,7 @@ function CustomEditor(props: {
                         />
                         <TestProviderModelButton
                           class="flex h-8 w-full items-center justify-center"
-                          baseURL={props.form.baseURL}
+                          baseURL={resolveProviderBaseURL(props.form.baseURL, props.form.npm)}
                           apiKey={props.form.apiKey}
                           modelId={item.id}
                           npm={props.form.npm}

@@ -1,3 +1,5 @@
+import { resolveProviderBaseURL } from "./provider-base-url"
+
 const PROVIDER_ID = /^[a-z0-9][a-z0-9-_]*$/
 export const OPENAI_COMPATIBLE = "@ai-sdk/openai-compatible"
 
@@ -367,7 +369,7 @@ export function validateCustomProvider(input: ValidateArgs) {
         name,
         ...(env ? { env: [env] } : {}),
         options: {
-          baseURL,
+          baseURL: resolveProviderBaseURL(baseURL, npm),
           headers: headerConfig,
         },
         models: modelConfig,

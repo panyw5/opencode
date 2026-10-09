@@ -188,6 +188,7 @@ export const dict = {
   "provider.custom.field.name.label": "顯示名稱",
   "provider.custom.field.name.placeholder": "我的 AI 提供商",
   "provider.custom.field.baseURL.label": "基礎 URL",
+  "provider.custom.field.baseURL.autoV1": "無需填寫 /v1，應用程式會自動補上。",
   "provider.custom.field.baseURL.placeholder": "https://api.myprovider.com/v1",
   "provider.custom.field.apiKey.label": "API 金鑰",
   "provider.custom.field.apiKey.placeholder": "API 金鑰",
