@@ -19,6 +19,7 @@ import type { BrowserBounds } from "../preload/types"
 import { browserController } from "./browser"
 import { GptProProbe } from "./gpt-pro-probe"
 import { GptProLoginServer } from "./gpt-pro-login-server"
+import { launchGptProLogin } from "./gpt-pro-login-launcher"
 import { importSessionCookies } from "./gpt-pro-session-cookies"
 import { GPT_PRO_PARTITION, GPT_PRO_URL } from "@opencode-ai/util/gpt-pro"
 import type { GptProCommand, GptProConfig } from "@opencode-ai/util/gpt-pro"
@@ -96,10 +97,9 @@ function loginConnection() {
   gptProLogin = new GptProLoginServer({
     extensionDirectory: app.isPackaged ? join(process.resourcesPath, "gpt-pro-login") : join(app.getAppPath(), "resources", "gpt-pro-login"),
     log: (message) => writeLog("gpt-pro", message),
-    importCookies: (cookies) => {
-      if (getGptProController().busy()) throw new Error("Stop the active consultation before replacing its login session.")
-      return importSessionCookies(session.fromPartition(GPT_PRO_PARTITION).cookies, cookies, (message) => writeLog("gpt-pro", message))
-    },
+    importCookies: (cookies) => getGptProController().importLogin(() =>
+      importSessionCookies(session.fromPartition(GPT_PRO_PARTITION).cookies, cookies, (message) => writeLog("gpt-pro", message)),
+    ),
     imported: async () => {
       await browserController.open(GPT_PRO_PARTITION, GPT_PRO_URL)
       browserController.cdp(GPT_PRO_PARTITION)?.reload()
@@ -111,11 +111,7 @@ function loginConnection() {
 }
 
 async function openGptProLogin() {
-  if (getGptProController().busy()) throw new Error("Stop active gpt-pro consultations before opening a new login connection.")
-  const login = loginConnection()
-  const url = await login.start()
-  try { await shell.openExternal(url) } catch { login.cancel(); throw new Error("Could not open the default browser for login.") }
-  return login.status()
+  return launchGptProLogin(loginConnection(), (url) => shell.openExternal(url), (message) => writeLog("gpt-pro", message))
 }
 
 type Deps = {

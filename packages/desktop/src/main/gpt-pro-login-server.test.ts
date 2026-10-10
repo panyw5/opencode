@@ -78,7 +78,7 @@ describe("one-time loopback ChatGPT login connection", () => {
       expect(page.body).toContain("确保启用插件")
       expect(page.body).toContain("完成会话连接")
       expect(page.body).toContain("同意授权")
-      expect(page.body).toContain("导入 ChatGPT 会话")
+      expect(page.body).toContain("<strong>导入会话</strong>")
       expect(page.body).toContain("/tmp/test-extension")
       expect(page.body).not.toContain(f.token)
       expect(page.headers["referrer-policy"]).toBe("no-referrer")
