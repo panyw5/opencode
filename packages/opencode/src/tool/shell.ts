@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect"
+import { Effect, Exit, Stream } from "effect"
 import os from "os"
 import { createWriteStream } from "node:fs"
 import * as Tool from "./tool"
@@ -16,6 +16,8 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Shell } from "@/shell/shell"
 import { ShellID } from "./shell/id"
 import { BackgroundShell } from "@/background/shell"
+import { Env as PtyEnv } from "@/pty/env"
+import { createHash } from "node:crypto"
 
 import * as Truncate from "./truncate"
 import { Plugin } from "@/plugin"
@@ -66,16 +68,20 @@ const CMD_FILES = new Set([
 ])
 const FLAGS = new Set(["-destination", "-literalpath", "-path"])
 const SWITCHES = new Set(["-confirm", "-debug", "-force", "-nonewline", "-recurse", "-verbose", "-whatif"])
+const WRAPPERS = new Set(["builtin", "command", "env", "exec"])
 
 type Part = {
   type: string
   text: string
+  pattern?: boolean
+  dynamic?: boolean
 }
 
 type Scan = {
   dirs: Set<string>
   patterns: Set<string>
   always: Set<string>
+  fallback: boolean
 }
 
 type Chunk = {
@@ -100,18 +106,27 @@ function parts(node: Node) {
     if (child.type === "command_elements") {
       for (let j = 0; j < child.childCount; j++) {
         const item = child.child(j)
-        if (!item || item.type === "command_argument_sep" || item.type === "redirection") continue
+        if (
+          !item ||
+          item.type === "command_argument_sep" ||
+          item.type === "redirection" ||
+          item.type === "file_redirect" ||
+          item.type === "heredoc_redirect" ||
+          item.type === "herestring_redirect"
+        ) {
+          continue
+        }
         out.push({ type: item.type, text: item.text })
       }
       continue
     }
     if (
-      child.type !== "command_name" &&
-      child.type !== "command_name_expr" &&
-      child.type !== "word" &&
-      child.type !== "string" &&
-      child.type !== "raw_string" &&
-      child.type !== "concatenation"
+      !child.isNamed ||
+      child.type === "command_argument_sep" ||
+      child.type === "redirection" ||
+      child.type === "file_redirect" ||
+      child.type === "heredoc_redirect" ||
+      child.type === "herestring_redirect"
     ) {
       continue
     }
@@ -128,39 +143,253 @@ function commands(node: Node) {
   return node.descendantsOfType("command").filter((child): child is Node => Boolean(child))
 }
 
-function unquote(text: string) {
-  if (text.length < 2) return text
-  const first = text[0]
-  const last = text[text.length - 1]
-  if ((first === '"' || first === "'") && first === last) return text.slice(1, -1)
-  return text
+function envValue(key: string, env: NodeJS.ProcessEnv) {
+  if (process.platform !== "win32") return env[key]
+  const name = Object.keys(env).find((item) => item.toLowerCase() === key.toLowerCase())
+  return name ? env[name] : undefined
 }
 
-function home(text: string) {
-  if (text === "~") return os.homedir()
-  if (text.startsWith("~/") || text.startsWith("~\\")) return path.join(os.homedir(), text.slice(2))
-  return text
+type Decoded = { value: string; dynamic: boolean; pattern?: boolean }
+
+function hasBraceExpansion(text: string) {
+  let quote: "single" | "double" | undefined
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+    if (quote === "single") {
+      if (char === "'") quote = undefined
+      continue
+    }
+    if (char === "\\") {
+      i++
+      continue
+    }
+    if (char === "'" && quote !== "double") {
+      quote = "single"
+      continue
+    }
+    if (char === '"') {
+      quote = quote === "double" ? undefined : "double"
+      continue
+    }
+    if (!quote && char === "{" && text[i - 1] !== "$") {
+      const end = text.indexOf("}", i + 1)
+      if (end >= 0 && /,|\.\./.test(text.slice(i + 1, end))) return true
+    }
+  }
+  return false
 }
 
-function envValue(key: string) {
-  if (process.platform !== "win32") return process.env[key]
-  const name = Object.keys(process.env).find((item) => item.toLowerCase() === key.toLowerCase())
-  return name ? process.env[name] : undefined
+function decodePosix(text: string, cwd: string, env: NodeJS.ProcessEnv): Decoded {
+  let value = ""
+  let dynamic = false
+  let pattern = false
+  let quote: "single" | "double" | undefined
+  const tilde = text.startsWith("~") && (text.length === 1 || text[1] === "/")
+  const namedTilde = text.startsWith("~") && !tilde
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+    if (quote === "single") {
+      if (char === "'") quote = undefined
+      else value += char
+      continue
+    }
+    if (char === "'" && quote !== "double") {
+      quote = "single"
+      continue
+    }
+    if (char === '"') {
+      quote = quote === "double" ? undefined : "double"
+      continue
+    }
+    if (char === "\\") {
+      const next = text[++i]
+      if (next === undefined) {
+        value += "\\"
+        continue
+      }
+      if (quote === "double" && !["$", "`", '"', "\\", "\n"].includes(next)) value += "\\"
+      if (next !== "\n") value += next
+      continue
+    }
+    if (char === "`") {
+      dynamic = true
+      break
+    }
+    if (!quote && char === "(" && (text[i - 1] === "<" || text[i - 1] === ">")) {
+      dynamic = true
+      break
+    }
+    if (char !== "$") {
+      if (!quote && /[?*[]/.test(char)) pattern = true
+      value += char
+      continue
+    }
+    const next = text[i + 1]
+    if (next === "(") {
+      dynamic = true
+      break
+    }
+    let key = ""
+    let end = i
+    if (next === "{") {
+      const close = text.indexOf("}", i + 2)
+      if (close < 0) {
+        dynamic = true
+        break
+      }
+      const body = text.slice(i + 2, close)
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(body)) {
+        dynamic = true
+        break
+      }
+      key = body
+      end = close
+    } else {
+      const match = text.slice(i + 1).match(/^[A-Za-z_][A-Za-z0-9_]*/)
+      if (!match) {
+        dynamic = true
+        break
+      }
+      key = match[0]
+      end = i + key.length
+    }
+    const auto = key === "PWD" ? cwd : key === "HOME" ? envValue("HOME", env) || os.homedir() : undefined
+    const expanded = auto ?? envValue(key, env)
+    if (expanded === undefined) dynamic = true
+    else {
+      // Login shell startup files may change values, and unquoted values can split.
+      dynamic = true
+      if (!quote && /[?*[]/.test(expanded)) pattern = true
+      value += expanded
+    }
+    i = end
+  }
+  if (tilde) {
+    const expanded = envValue("HOME", env) || os.homedir()
+    // The login shell can change HOME after preflight.
+    dynamic = true
+    if (/[?*[]/.test(expanded)) pattern = true
+    value = path.join(expanded, value.slice(1))
+  }
+  if (namedTilde) dynamic = true
+  return { value, dynamic, pattern }
 }
 
-function auto(key: string, cwd: string, shell: string) {
-  const name = key.toUpperCase()
-  if (name === "HOME") return os.homedir()
-  if (name === "PWD") return cwd
-  if (name === "PSHOME") return path.dirname(shell)
+export function decodePowerShellPath(text: string, cwd: string, shell: string, env: NodeJS.ProcessEnv): Decoded {
+  let value = ""
+  let dynamic = false
+  let quote: "single" | "double" | undefined
+  const expandTilde = text.startsWith("~") && (text.length === 1 || text[1] === "/" || text[1] === "\\")
+  const lookup = (key: string) => {
+    const normalized = key.toUpperCase()
+    if (normalized === "HOME") return envValue("HOME", env) || envValue("USERPROFILE", env) || os.homedir()
+    if (normalized === "PWD") return cwd
+    if (normalized === "PSHOME") return path.dirname(shell)
+    return envValue(key, env)
+  }
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+    if (quote === "single") {
+      if (char === "'" && text[i + 1] === "'") {
+        value += "'"
+        i++
+      } else if (char === "'") quote = undefined
+      else value += char
+      continue
+    }
+    if (char === "`") {
+      const next = text[i + 1]
+      if (next === undefined) {
+        value += char
+        continue
+      }
+      const escapes: Record<string, string> = {
+        "0": "\0",
+        a: "\x07",
+        b: "\b",
+        e: "\x1b",
+        f: "\f",
+        n: "\n",
+        r: "\r",
+        t: "\t",
+        v: "\x0b",
+      }
+      value += escapes[next] ?? next
+      i++
+      continue
+    }
+    if (char === "'" && quote !== "double") {
+      quote = "single"
+      continue
+    }
+    if (char === '"') {
+      quote = quote === "double" ? undefined : "double"
+      continue
+    }
+    if (char === "$") {
+      let key: string | undefined
+      let end = i
+      const braced = text.slice(i).match(/^\$\{env:([^}]+)\}/i)
+      const envVar = text.slice(i).match(/^\$env:([A-Za-z_][A-Za-z0-9_]*)/i)
+      const automatic = text.slice(i).match(/^\$(HOME|PWD|PSHOME)(?=$|[\\/])/i)
+      if (braced) {
+        key = braced[1]
+        end = i + braced[0].length - 1
+      } else if (envVar) {
+        key = envVar[1]
+        end = i + envVar[0].length - 1
+      } else if (automatic) {
+        key = automatic[1]
+        end = i + automatic[0].length - 1
+      } else {
+        dynamic = true
+        value += char
+        continue
+      }
+      const expanded = lookup(key ?? "")
+      if (expanded === undefined) dynamic = true
+      else {
+        // Same-command assignments can change variables after preflight.
+        dynamic = true
+        value += expanded
+      }
+      i = end
+      continue
+    }
+    value += char
+  }
+
+  if (expandTilde) {
+    dynamic = true
+    value = path.join(lookup("HOME") || os.homedir(), value.slice(1))
+  }
+  return { value, dynamic, pattern: /[?*[]/.test(value) }
 }
 
-function expand(text: string, cwd: string, shell: string) {
-  const out = unquote(text)
-    .replace(/\$\{env:([^}]+)\}/gi, (_, key: string) => envValue(key) || "")
-    .replace(/\$env:([A-Za-z_][A-Za-z0-9_]*)/gi, (_, key: string) => envValue(key) || "")
-    .replace(/\$(HOME|PWD|PSHOME)(?=$|[\\/])/gi, (_, key: string) => auto(key, cwd, shell) || "")
-  return home(out)
+export function decodeCmd(text: string, env: NodeJS.ProcessEnv): Decoded {
+  let value = ""
+  let quoted = false
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '"') {
+      quoted = !quoted
+      continue
+    }
+    if (text[i] === "^" && i + 1 < text.length) {
+      value += text[++i]
+      continue
+    }
+    value += text[i]
+  }
+  let dynamic = quoted
+  value = value.replace(/%([A-Za-z_][A-Za-z0-9_]*)%/g, (_, key: string) => {
+    const expanded = envValue(key, env)
+    // CMD expansions can be changed by earlier SET commands in the line.
+    dynamic = true
+    return expanded ?? ""
+  })
+  if (value.includes("!")) dynamic = true
+  return { value, dynamic, pattern: /[?*[]/.test(value) }
 }
 
 function provider(text: string) {
@@ -175,14 +404,8 @@ function provider(text: string) {
   return
 }
 
-function dynamic(text: string, ps: boolean) {
-  if (text.startsWith("(") || text.startsWith("@(")) return true
-  if (text.includes("$(") || text.includes("${") || text.includes("`")) return true
-  if (ps) return /\$(?!env:)/i.test(text)
-  return text.includes("$")
-}
-
-function prefix(text: string) {
+function prefix(text: string, pattern = true) {
+  if (!pattern) return text
   const match = /[?*[]/.exec(text)
   if (!match) return text
   if (match.index === 0) return
@@ -191,22 +414,30 @@ function prefix(text: string) {
 
 function pathArgs(list: Part[], ps: boolean, cmd = false) {
   if (!ps) {
-    return list
-      .slice(1)
-      .filter(
-        (item) =>
-          !item.text.startsWith("-") &&
-          !(cmd && item.text.startsWith("/")) &&
-          !(list[0]?.text === "chmod" && item.text.startsWith("+")),
-      )
-      .map((item) => item.text)
+    const out: Part[] = []
+    let positional = false
+    for (const item of list.slice(1)) {
+      if (!positional && item.text === "--") {
+        positional = true
+        continue
+      }
+      if (positional) {
+        out.push(item)
+        continue
+      }
+      if (item.text.startsWith("-")) continue
+      if (cmd && item.text.startsWith("/")) continue
+      if (list[0]?.text === "chmod" && item.text.startsWith("+")) continue
+      out.push(item)
+    }
+    return out
   }
 
-  const out: string[] = []
+  const out: Part[] = []
   let want = false
   for (const item of list.slice(1)) {
     if (want) {
-      out.push(item.text)
+      out.push(item)
       want = false
       continue
     }
@@ -216,7 +447,7 @@ function pathArgs(list: Part[], ps: boolean, cmd = false) {
       want = FLAGS.has(flag)
       continue
     }
-    out.push(item.text)
+    out.push(item)
   }
   return out
 }
@@ -265,26 +496,66 @@ const parse = Effect.fn("ShellTool.parse")(function* (command: string, ps: boole
 })
 
 const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan) {
+  log.info("shell permission scan ready", {
+    sessionID: ctx.sessionID,
+    callID: ctx.callID,
+    externalDirectoryCount: scan.dirs.size,
+    commandPatternCount: scan.patterns.size,
+    fallback: scan.fallback,
+  })
   if (scan.dirs.size > 0) {
     const globs = Array.from(scan.dirs).map((dir) => {
-      if (process.platform === "win32") return AppFileSystem.normalizePathPattern(path.join(dir, "*"))
-      return path.join(dir, "*")
+      const pattern = path.join(dir, scan.fallback ? "**" : "*")
+      if (process.platform === "win32") return AppFileSystem.normalizePathPattern(pattern)
+      return pattern
     })
-    yield* ctx.ask({
-      permission: "external_directory",
-      patterns: globs,
-      always: globs,
-      metadata: {},
+    log.info("shell external directory approval requested", {
+      sessionID: ctx.sessionID,
+      callID: ctx.callID,
+      count: globs.length,
+      fallback: scan.fallback,
     })
+    const result = yield* Effect.exit(
+      ctx.ask({
+        permission: "external_directory",
+        patterns: globs,
+        always: globs,
+        metadata: {},
+      }),
+    )
+    log.info("shell external directory approval resolved", {
+      sessionID: ctx.sessionID,
+      callID: ctx.callID,
+      count: globs.length,
+      outcome: Exit.isSuccess(result) ? "approved" : "denied",
+      fallback: scan.fallback,
+    })
+    if (Exit.isFailure(result)) return yield* Effect.failCause(result.cause)
   }
 
   if (scan.patterns.size === 0) return
-  yield* ctx.ask({
-    permission: ShellID.ToolID,
-    patterns: Array.from(scan.patterns),
-    always: Array.from(scan.always),
-    metadata: {},
+  log.info("shell command approval requested", {
+    sessionID: ctx.sessionID,
+    callID: ctx.callID,
+    count: scan.patterns.size,
+    fallback: scan.fallback,
   })
+  const result = yield* Effect.exit(
+    ctx.ask({
+      permission: ShellID.ToolID,
+      patterns: Array.from(scan.patterns),
+      always: Array.from(scan.always),
+      metadata: {},
+    }),
+  )
+  log.info("shell command approval resolved", {
+    sessionID: ctx.sessionID,
+    callID: ctx.callID,
+    count: scan.patterns.size,
+    outcome: Exit.isSuccess(result) ? "approved" : "denied",
+    fallback: scan.fallback,
+  })
+  if (Exit.isFailure(result)) return yield* Effect.failCause(result.cause)
 })
 
 function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv) {
@@ -364,13 +635,30 @@ export const ShellTool = Tool.define(
       return path.resolve(root, text)
     })
 
-    const argPath = Effect.fn("ShellTool.argPath")(function* (arg: string, cwd: string, ps: boolean, shell: string) {
-      const text = ps ? expand(arg, cwd, shell) : home(unquote(arg))
-      const file = text && prefix(text)
-      if (!file || dynamic(file, ps)) return
+    const argPath = Effect.fn("ShellTool.argPath")(function* (
+      arg: string,
+      cwd: string,
+      ps: boolean,
+      shell: string,
+      env: NodeJS.ProcessEnv,
+      isDecoded = false,
+      pattern?: boolean,
+      isDynamic = false,
+    ) {
+      const decoded = isDecoded
+        ? { value: arg, dynamic: isDynamic, pattern }
+        : ps
+          ? decodePowerShellPath(arg, cwd, shell, env)
+          : Shell.name(shell) === "cmd"
+            ? decodeCmd(arg, env)
+            : decodePosix(arg, cwd, env)
+      if (isDynamic) decoded.dynamic = true
+      const file = prefix(decoded.value, decoded.pattern)
+      if (!file && /[?*[]/.test(decoded.value)) return { path: cwd, dynamic: decoded.dynamic }
+      if (!file) return { dynamic: decoded.dynamic }
       const next = ps ? provider(file) : file
-      if (!next) return
-      return yield* resolvePath(next, cwd, shell)
+      if (!next) return { dynamic: true as const }
+      return { path: yield* resolvePath(next, cwd, shell), dynamic: decoded.dynamic }
     })
 
     const collect = Effect.fn("ShellTool.collect")(function* (
@@ -378,35 +666,163 @@ export const ShellTool = Tool.define(
       cwd: string,
       ps: boolean,
       shell: string,
+      env: NodeJS.ProcessEnv,
+      commandText: string,
       instance: InstanceContext,
+      sessionID: string,
+      callID: string | undefined,
     ) {
       const scan: Scan = {
         dirs: new Set<string>(),
         patterns: new Set<string>(),
         always: new Set<string>(),
+        fallback: root.hasError,
       }
       const shellKind = ShellID.toKind(Shell.name(shell))
+      const rootDir = path.parse(cwd).root
+      let cwdUnknown = false
+
+      const addPath = Effect.fnUntraced(function* (
+        arg: string,
+        base: string,
+        isDecoded = false,
+        pattern?: boolean,
+        isDynamic = false,
+      ) {
+        const resolved = yield* argPath(arg, base, ps, shell, env, isDecoded, pattern, isDynamic)
+        log.info("shell path checked", {
+          sessionID,
+          callID,
+          fingerprint: createHash("sha256").update(arg).digest("hex").slice(0, 12),
+          startsQuoted: /^[\"']/.test(arg),
+          startsTilde: arg.startsWith("~"),
+          dynamic: resolved.dynamic,
+          resolved: Boolean(resolved.path),
+          external: Boolean(resolved.path && !containsPath(resolved.path, instance)),
+        })
+        if (resolved.path && !containsPath(resolved.path, instance)) {
+          const dir = (yield* fs.isDir(resolved.path)) ? resolved.path : path.dirname(resolved.path)
+          scan.dirs.add(dir)
+        }
+        if (resolved.dynamic) scan.fallback = true
+      })
+
+      if (root.hasError) {
+        log.warn("shell permission scan used fallback", {
+          reason: "incomplete syntax tree",
+          sessionID,
+          callID,
+          fingerprint: createHash("sha256").update(commandText).digest("hex").slice(0, 12),
+          length: commandText.length,
+          lines: commandText.split("\n").length,
+        })
+        scan.dirs.add(rootDir)
+        scan.patterns.add(commandText)
+        scan.always.add(commandText)
+        return scan
+      }
 
       for (const node of commands(root)) {
-        const command = parts(node)
+        const raw = parts(node)
+        const hasAssignments = raw.some((item) => item.type === "variable_assignment")
+        const decoded = raw.map((item) =>
+          ps
+            ? decodePowerShellPath(item.text, cwd, shell, env)
+            : shellKind === "cmd"
+              ? decodeCmd(item.text, env)
+              : decodePosix(item.text, cwd, env),
+        )
+        const command = raw
+          .map((item, index) => ({
+            ...item,
+            text: decoded[index]?.value ?? item.text,
+            pattern: decoded[index]?.pattern,
+            dynamic:
+              decoded[index]?.dynamic ||
+              (shellKind !== "cmd" && !ps && hasBraceExpansion(item.text)) ||
+              item.type === "process_substitution",
+          }))
+          .filter((item) => item.type !== "variable_assignment")
         const tokens = command.map((item) => item.text)
         const cmd = ps || shellKind === "cmd" ? tokens[0]?.toLowerCase() : tokens[0]
+        const wrapped = command[1]?.text.toLowerCase()
+        const wrapperFallback =
+          !ps &&
+          WRAPPERS.has(cmd ?? "") &&
+          (!wrapped || wrapped.startsWith("-") || FILES.has(wrapped) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(wrapped))
+        if (command[0]?.dynamic || wrapperFallback || (hasAssignments && Boolean(cmd && FILES.has(cmd)))) {
+          scan.fallback = true
+        }
 
         if (cmd && (FILES.has(cmd) || (shellKind === "cmd" && CMD_FILES.has(cmd)))) {
           for (const arg of pathArgs(command, ps, shellKind === "cmd")) {
-            const resolved = yield* argPath(arg, cwd, ps, shell)
-            log.info("resolved path", { arg, resolved })
-            if (!resolved || containsPath(resolved, instance)) continue
-            const dir = (yield* fs.isDir(resolved)) ? resolved : path.dirname(resolved)
-            scan.dirs.add(dir)
+            if (cwdUnknown && !path.isAbsolute(arg.text)) {
+              scan.fallback = true
+              continue
+            }
+            yield* addPath(arg.text, cwd, true, arg.pattern, arg.dynamic)
           }
         }
+
+        if (cmd && CWD.has(cmd)) cwdUnknown = true
 
         if (tokens.length && (!cmd || !CWD.has(cmd))) {
           scan.patterns.add(source(node))
           scan.always.add(BashArity.prefix(tokens).join(" ") + " *")
         }
       }
+
+      const pending: Node[] = [root]
+      while (pending.length) {
+        const node = pending.pop()!
+        if (ps && /redirect|redirection/i.test(node.type) && node.type !== "file_redirect") {
+          scan.fallback = true
+        }
+        if (node.type === "file_redirect") {
+          const statement = node.parent?.type === "redirected_statement" ? node.parent.text.trim() : node.text.trim()
+          scan.patterns.add(statement)
+          scan.always.add(statement)
+          let destination: Node | undefined
+          let descriptorDuplication = false
+          for (let i = 0; i < node.childCount; i++) {
+            const child = node.child(i)
+            if (child?.text === ">&" || child?.text === "<&") descriptorDuplication = true
+            if (node.fieldNameForChild(i) === "destination") {
+              destination = child ?? undefined
+              break
+            }
+          }
+          if (destination && !(destination.type === "number" && descriptorDuplication)) {
+            if (cwdUnknown && !path.isAbsolute(destination.text)) scan.fallback = true
+            else
+              yield* addPath(
+                destination.text,
+                cwd,
+                false,
+                undefined,
+                hasBraceExpansion(destination.text) || destination.type === "process_substitution",
+              )
+          }
+        }
+        for (let i = 0; i < node.childCount; i++) {
+          const child = node.child(i)
+          if (child) pending.push(child)
+        }
+      }
+
+      if (scan.fallback) {
+        scan.dirs.add(rootDir)
+        scan.patterns.add(commandText)
+        scan.always.add(commandText)
+      }
+      log.info("shell permission scan completed", {
+        sessionID,
+        callID,
+        commandCount: commands(root).length,
+        externalDirectoryCount: scan.dirs.size,
+        commandPatternCount: scan.patterns.size,
+        fallback: scan.fallback,
+      })
 
       return scan
     })
@@ -417,10 +833,12 @@ export const ShellTool = Tool.define(
         { cwd, sessionID: ctx.sessionID, callID: ctx.callID },
         { env: {} },
       )
-      return {
-        ...process.env,
-        ...extra.env,
-      }
+      log.info("shell environment preflight resolved", {
+        sessionID: ctx.sessionID,
+        callID: ctx.callID,
+        pluginEntryCount: Object.keys(extra.env).length,
+      })
+      return PtyEnv.prepare({ plugin: extra.env })
     })
 
     function backgroundOutput(info: BackgroundShell.Info) {
@@ -467,7 +885,9 @@ export const ShellTool = Tool.define(
     }
 
     function cleanEnv(env: NodeJS.ProcessEnv) {
-      return Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined))
+      return Object.fromEntries(
+        Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+      )
     }
 
     const finalizeOutput = Effect.fn("ShellTool.finalizeOutput")(function* (raw: string, note?: string) {
@@ -497,15 +917,35 @@ export const ShellTool = Tool.define(
       },
       ctx: Tool.Context,
     ) {
-      let latest = yield* backgroundShell.create({
+      const fingerprint = createHash("sha256").update(input.command).digest("hex").slice(0, 12)
+      log.info("supervised shell preparation started", {
         sessionID: ctx.sessionID,
-        messageID: ctx.messageID,
         callID: ctx.callID,
-        command: input.command,
-        cwd: input.cwd,
-        description: input.description,
-        env: cleanEnv(input.env),
-        background: input.background,
+        commandFingerprint: fingerprint,
+        commandLength: input.command.length,
+        commandLines: input.command.split("\n").length,
+        envEntryCount: Object.keys(input.env).length,
+      })
+      let latest = yield* backgroundShell.create(
+        {
+          sessionID: ctx.sessionID,
+          messageID: ctx.messageID,
+          callID: ctx.callID,
+          command: input.command,
+          cwd: input.cwd,
+          description: input.description,
+          env: cleanEnv(input.env),
+          background: input.background,
+        },
+        { shellEnvResolved: true },
+      )
+      log.info("supervised shell process prepared", {
+        sessionID: latest.sessionID,
+        messageID: latest.messageID,
+        callID: latest.callID,
+        jobID: latest.id,
+        ptyID: latest.ptyID,
+        commandFingerprint: fingerprint,
       })
 
       const update = Effect.fn("ShellTool.updateSupervisedMetadata")(function* (info: BackgroundShell.Info) {
@@ -519,6 +959,12 @@ export const ShellTool = Tool.define(
       yield* update(latest)
 
       if (input.background) {
+        log.info("supervised shell background started", {
+          sessionID: latest.sessionID,
+          callID: latest.callID,
+          jobID: latest.id,
+          ptyID: latest.ptyID,
+        })
         const output = backgroundOutput(latest)
         return {
           title: input.description,
@@ -562,6 +1008,15 @@ export const ShellTool = Tool.define(
         const full = yield* backgroundShell.output(latest.id)
         const stopped = yield* backgroundShell.stop(latest.id)
         if (stopped) latest = stopped
+        log.info("supervised shell settled", {
+          sessionID: latest.sessionID,
+          callID: latest.callID,
+          jobID: latest.id,
+          ptyID: latest.ptyID,
+          status: latest.status,
+          reason: result.kind,
+          commandFingerprint: createHash("sha256").update(input.command).digest("hex").slice(0, 12),
+        })
         const fin = yield* finalizeOutput(full ?? latest.outputTail ?? "", note)
         return {
           title: input.description,
@@ -575,6 +1030,12 @@ export const ShellTool = Tool.define(
 
       if (result.value.backgrounded) {
         latest = result.value.info ?? latest
+        log.info("supervised shell moved to background", {
+          sessionID: latest.sessionID,
+          callID: latest.callID,
+          jobID: latest.id,
+          ptyID: latest.ptyID,
+        })
         const output = sentToBackgroundOutput(latest)
         return {
           title: input.description,
@@ -584,6 +1045,15 @@ export const ShellTool = Tool.define(
       }
 
       latest = result.value.info ?? latest
+      log.info("supervised shell settled", {
+        sessionID: latest.sessionID,
+        callID: latest.callID,
+        jobID: latest.id,
+        ptyID: latest.ptyID,
+        status: latest.status,
+        exitCode: latest.exitCode,
+        commandFingerprint: createHash("sha256").update(input.command).digest("hex").slice(0, 12),
+      })
       const fin = yield* finalizeOutput(result.value.output ?? latest.outputTail ?? "")
       return {
         title: input.description,
@@ -653,6 +1123,12 @@ export const ShellTool = Tool.define(
       const code: number | null = yield* Effect.scoped(
         Effect.gen(function* () {
           yield* Effect.addFinalizer(closeSink)
+          log.info("shell process spawn requested", {
+            shell: Shell.name(input.shell),
+            fingerprint: createHash("sha256").update(input.command).digest("hex").slice(0, 12),
+            length: input.command.length,
+            lines: input.command.split("\n").length,
+          })
           const handle = yield* spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env))
 
           yield* Effect.forkScoped(
@@ -792,17 +1268,56 @@ export const ShellTool = Tool.define(
               }
               const timeout = params.timeout ?? defaultTimeout
               const ps = Shell.ps(shell)
+              log.info("shell command received", {
+                sessionID: ctx.sessionID,
+                messageID: ctx.messageID,
+                callID: ctx.callID,
+                shell: name,
+                commandFingerprint: createHash("sha256").update(params.command).digest("hex").slice(0, 12),
+                commandLength: params.command.length,
+                commandLines: params.command.split("\n").length,
+              })
               const env = yield* shellEnv(ctx, cwd)
+              log.info("shell command validation started", {
+                sessionID: ctx.sessionID,
+                callID: ctx.callID,
+                shell: name,
+                fingerprint: createHash("sha256").update(params.command).digest("hex").slice(0, 12),
+                length: params.command.length,
+                lines: params.command.split("\n").length,
+              })
               yield* Effect.scoped(
                 Effect.gen(function* () {
+                  log.info("shell syntax parse started", { sessionID: ctx.sessionID, callID: ctx.callID, shell: name })
                   const tree = yield* Effect.acquireRelease(parse(params.command, ps), (tree) =>
                     Effect.sync(() => tree.delete()),
                   )
-                  const scan = yield* collect(tree.rootNode, cwd, ps, shell, instanceCtx)
+                  log.info("shell syntax parse completed", {
+                    sessionID: ctx.sessionID,
+                    callID: ctx.callID,
+                    shell: name,
+                    incomplete: tree.rootNode.hasError,
+                  })
+                  const scan = yield* collect(
+                    tree.rootNode,
+                    cwd,
+                    ps,
+                    shell,
+                    env,
+                    params.command,
+                    instanceCtx,
+                    ctx.sessionID,
+                    ctx.callID,
+                  )
                   if (!containsPath(cwd, instanceCtx)) scan.dirs.add(cwd)
                   yield* ask(ctx, scan)
                 }),
               )
+              log.info("shell command validation passed", {
+                sessionID: ctx.sessionID,
+                callID: ctx.callID,
+                commandFingerprint: createHash("sha256").update(params.command).digest("hex").slice(0, 12),
+              })
 
               return yield* runSupervised(
                 {

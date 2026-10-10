@@ -21,7 +21,10 @@ export type Limits = {
 
 export function parameterSchema(description: string) {
   return Schema.Struct({
-    command: Schema.String.annotate({ description: "The command to execute" }),
+    command: Schema.String.annotate({
+      description:
+        "Raw command text for one invocation of the selected shell. Literal newlines and heredocs are supported; do not JSON-escape shell syntax.",
+    }),
     timeout: Schema.optional(PositiveInt).annotate({ description: "Optional timeout in milliseconds" }),
     background: Schema.optional(Schema.Boolean).annotate({
       description:
@@ -122,7 +125,7 @@ Usage notes:
     - If the commands are independent and can run in parallel, make multiple bash tool calls in a single message. For example, if you need to run "git status" and "git diff", send a single message with two bash tool calls in parallel.
     - ${chain}
     - Use ';' only when you need to run commands sequentially but don't care if earlier commands fail
-    - DO NOT use newlines to separate commands (newlines are ok in quoted strings)
+    - You may pass literal newlines, multiline commands, and heredocs. Do not JSON-escape quotes or backslashes, and do not encode newlines as \\n.
   - AVOID using \`cd <directory> && <command>\`. Use the \`workdir\` parameter to change directories instead.
     <good-example>
     Use workdir="/foo/bar" with command: pytest tests
@@ -169,7 +172,7 @@ Usage notes:
     - If the commands are independent and can run in parallel, make multiple bash tool calls in a single message. For example, if you need to run "git status" and "git diff", send a single message with two bash tool calls in parallel.
     - ${chain}
     - Use \`;\` only when you need to run commands sequentially but don't care if earlier commands fail
-    - DO NOT use newlines to separate commands (newlines are ok in quoted strings)
+  - You may pass literal newlines, multiline commands, and heredocs. Do not JSON-escape quotes or backslashes, and do not encode newlines as \\n.
   - AVOID changing directories inside the command. Use the \`workdir\` parameter to change directories instead.
     <good-example>
     Use workdir="project${pathSep}subdir" with command: pytest tests
@@ -220,7 +223,7 @@ Usage notes:
     - If the commands are independent and can run in parallel, make multiple bash tool calls in a single message. For example, if you need to run "dir" and "where cmd", send a single message with two bash tool calls in parallel.
     - ${chain}
     - Use \`&\` only when you need to run commands sequentially but don't care if earlier commands fail
-    - DO NOT use newlines to separate commands (newlines are ok in quoted strings)
+  - You may pass literal newlines, multiline commands, and heredocs. Do not JSON-escape quotes or backslashes, and do not encode newlines as \\n.
   - AVOID changing directories inside the command. Use the \`workdir\` parameter to change directories instead.
     <good-example>
     Use workdir="project\\subdir" with command: dir
@@ -263,8 +266,7 @@ function profile(name: string, platform: NodeJS.Platform, limits: Limits) {
     }
   }
   return {
-    intro:
-      "Executes a given bash command in a persistent shell session with optional timeout, ensuring proper handling and security measures.",
+    intro: `Executes raw command text in a fresh ${shellDisplayName(name)} process for each call, with optional timeout and output capture.`,
     workdirSection:
       "All commands run in the current working directory by default. Use the `workdir` parameter if you need to run a command in a different directory. AVOID using `cd <directory> && <command>` patterns - use `workdir` instead.",
     commandSection: bashCommandSection(chain, limits),

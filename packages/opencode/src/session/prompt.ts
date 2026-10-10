@@ -45,6 +45,7 @@ import { LLM } from "./llm"
 import { Shell } from "@/shell/shell"
 import { ShellID } from "@/tool/shell/id"
 import { BackgroundShell } from "@/background/shell"
+import { PromptTemplate } from "./prompt-template"
 import { BackgroundGptPro, notificationKind as gptProNotificationKind } from "@/background/gpt-pro"
 import { Browser } from "@/browser"
 import { GptProNotificationReceived } from "@/browser/events"
@@ -2969,46 +2970,96 @@ export const layer = Layer.effect(
       const agentName = cmd.agent ?? input.agent
 
       const templateCommand = yield* Effect.promise(async () => cmd.template)
-      let template = templateCommand
+      if (templateCommand.includes("\0")) throw new TypeError("Command template cannot contain a NUL byte")
+      if (input.arguments.includes("\0")) throw new TypeError("Command arguments cannot contain a NUL byte")
+      const needsArgumentTokens = cmd.source !== "skill" && PromptTemplate.usesNumericArguments(templateCommand)
+      const args = needsArgumentTokens ? PromptTemplate.argumentsList(input.arguments) : []
+      const segments = PromptTemplate.split(templateCommand)
+      const values = PromptTemplate.placeholders(templateCommand, input.arguments, args)
+      const trustedShellCount = segments.filter((segment) => segment.kind === "shell").length
+      log.info("command template validation started", {
+        shellBlockCount: trustedShellCount,
+        argumentCount: args.length,
+        argumentLength: input.arguments.length,
+      })
 
-      if (cmd.source === "skill") {
-        if (input.arguments.trim()) template = template + "\n\n" + input.arguments
-      } else {
-        const raw = input.arguments.match(argsRegex) ?? []
-        const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
-        const placeholders = templateCommand.match(placeholderRegex) ?? []
-        let last = 0
-        for (const item of placeholders) {
-          const value = Number(item.slice(1))
-          if (value > last) last = value
-        }
-
-        const withArgs = templateCommand.replaceAll(placeholderRegex, (_, index) => {
-          const position = Number(index)
-          const argIndex = position - 1
-          if (argIndex >= args.length) return ""
-          if (position === last) return args.slice(argIndex).join(" ")
-          return args[argIndex]
-        })
-        const usesArgumentsPlaceholder = templateCommand.includes("$ARGUMENTS")
-        template = withArgs.replaceAll("$ARGUMENTS", input.arguments)
-
-        if (placeholders.length === 0 && !usesArgumentsPlaceholder && input.arguments.trim()) {
-          template = template + "\n\n" + input.arguments
-        }
-      }
-
-      const shellMatches = ConfigMarkdown.shell(template)
-      if (shellMatches.length > 0) {
+      const bound = new Map<number, { source: string; env: NodeJS.ProcessEnv }>()
+      let template: string
+      if (trustedShellCount > 0) {
         const cfg = yield* config.get()
         const sh = Shell.preferred(cfg.shell)
-        const results = yield* Effect.promise(() =>
+        const shellName = Shell.name(sh)
+        const instance = yield* InstanceState.context
+        for (const [index, segment] of segments.entries()) {
+          if (segment.kind !== "shell") continue
+          const binding =
+            cmd.source === "skill"
+              ? { source: segment.value, env: {} as NodeJS.ProcessEnv }
+              : PromptTemplate.bindShell(segment.value, input.arguments, args, shellName, templateCommand)
+          bound.set(index, binding)
+          log.info("trusted template shell validated", {
+            index,
+            shell: shellName,
+            sourceLength: segment.value.length,
+            argumentCount: args.length,
+          })
+        }
+
+        const shellNodes = segments.flatMap((segment, index) =>
+          segment.kind === "shell" ? [{ index, binding: bound.get(index)! }] : [],
+        )
+        for (const { index, binding } of shellNodes) {
+          log.info("trusted template shell spawn requested", {
+            index,
+            shell: shellName,
+            sourceLength: binding.source.length,
+          })
+        }
+        const shellResults = yield* Effect.promise(() =>
           Promise.all(
-            shellMatches.map(async ([, cmd]) => (await Process.text([cmd], { shell: sh, nothrow: true })).text),
+            shellNodes.map(({ binding }) =>
+              Process.text([binding.source], {
+                shell: sh,
+                cwd: instance.directory,
+                env: binding.env,
+                nothrow: true,
+              }),
+            ),
           ),
         )
-        let index = 0
-        template = template.replace(bashRegex, () => results[index++])
+        const completed: string[] = []
+        for (const [index, { index: segmentIndex }] of shellNodes.entries()) {
+          const result = shellResults[index]!
+          completed[segmentIndex] = result.text
+          log.info("trusted template shell completed", {
+            index: segmentIndex,
+            exitCode: result.code,
+            outputLength: result.text.length,
+          })
+        }
+
+        template = segments
+          .map((segment, index) => {
+            if (segment.kind === "shell") {
+              return completed[index] ?? ""
+            }
+            return cmd.source === "skill" ? segment.value : values.replace(segment.value)
+          })
+          .join("")
+
+        if (cmd.source === "skill" && input.arguments.trim()) {
+          template += "\n\n" + input.arguments
+        } else if (cmd.source !== "skill" && !values.hasArguments && !values.hasNumbers && input.arguments.trim()) {
+          template += "\n\n" + input.arguments
+        }
+      } else {
+        template = segments
+          .map((segment) => (cmd.source === "skill" ? segment.value : values.replace(segment.value)))
+          .join("")
+        if (cmd.source === "skill" && input.arguments.trim()) template += "\n\n" + input.arguments
+        else if (cmd.source !== "skill" && !values.hasArguments && !values.hasNumbers && input.arguments.trim()) {
+          template += "\n\n" + input.arguments
+        }
       }
       template = template.trim()
 
@@ -3254,10 +3305,4 @@ export function createStructuredOutputTool(input: {
     },
   })
 }
-const bashRegex = /!`([^`]+)`/g
-// Match [Image N] as single token, quoted strings, or non-space sequences
-const argsRegex = /(?:\[Image\s+\d+\]|"[^"]*"|'[^']*'|[^\s"']+)/gi
-const placeholderRegex = /\$(\d+)/g
-const quoteTrimRegex = /^["']|["']$/g
-
 export * as SessionPrompt from "./prompt"

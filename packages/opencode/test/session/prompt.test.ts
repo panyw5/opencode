@@ -1,7 +1,7 @@
 import { NodeFileSystem } from "@effect/platform-node"
 import { FetchHttpClient } from "effect/unstable/http"
 import { expect } from "bun:test"
-import { Cause, Context, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
+import { Cause, Context, Deferred, Duration, Effect, Exit, Fiber, Layer, Stream } from "effect"
 import path from "path"
 import { fileURLToPath, pathToFileURL } from "url"
 import { NamedError } from "@opencode-ai/core/util/error"
@@ -3113,6 +3113,159 @@ unix(
   30_000,
 )
 
+unix(
+  "command executes only original trusted shell blocks and preserves inserted text and output",
+  () =>
+    withSh(() =>
+      Effect.gen(function* () {
+        const markerName = "must-not-run"
+        const { dir, llm } = yield* useServerConfig((url) => {
+          return {
+            ...providerCfg(url),
+            shell: "/bin/sh",
+            command: {
+              probe: {
+                template: [
+                  "Argument: $ARGUMENTS",
+                  "Trusted: !`printf '%s' 'trusted'`",
+                  "Generated: !`printf '%s' '$ARG''UMENTS !'; printf '%s' '$ARGUMENTS_COUNT'; printf '\\140touch " +
+                    markerName +
+                    "\\140'`",
+                  "Project cwd: !`pwd`",
+                ].join("\n"),
+              },
+              append: { template: "Trusted append: !`printf append-trusted`" },
+            },
+          }
+        })
+        const marker = path.join(dir, markerName)
+        const { prompt, chat } = yield* boot()
+        yield* llm.text("done")
+
+        const userText = `literal !\`touch ${marker}\` $ARGUMENTS $&`
+        const result = yield* prompt.command({ sessionID: chat.id, command: "probe", arguments: userText })
+
+        expect(result.info.role).toBe("assistant")
+        expect(yield* Effect.promise(() => Bun.file(marker).exists())).toBe(false)
+        const inputs = yield* llm.inputs
+        const messages = JSON.stringify(inputs.at(-1)?.messages)
+        expect(messages).toContain(userText)
+        expect(messages).toContain("trusted")
+        expect(messages).toContain(`$ARGUMENTS !$ARGUMENTS_COUNT\`touch ${markerName}\``)
+        expect(messages).toContain("$ARGUMENTS_COUNT")
+        expect(messages).toContain(dir)
+
+        yield* llm.text("done")
+        const appendResult = yield* prompt.command({ sessionID: chat.id, command: "append", arguments: userText })
+        expect(appendResult.info.role).toBe("assistant")
+        expect(yield* Effect.promise(() => Bun.file(marker).exists())).toBe(false)
+        const afterAppend = yield* llm.inputs
+        expect(JSON.stringify(afterAppend.at(-1)?.messages)).toContain(userText)
+        expect(JSON.stringify(afterAppend.at(-1)?.messages)).toContain("append-trusted")
+      }),
+    ),
+  30_000,
+)
+
+unix(
+  "command arguments containing NUL are rejected before trusted shell execution",
+  () =>
+    withSh(() =>
+      Effect.gen(function* () {
+        const markerName = "nul-must-not-run"
+        const { dir, llm } = yield* useServerConfig((url) => ({
+          ...providerCfg(url),
+          shell: "/bin/sh",
+          command: { probe: { template: `!` + "`touch ${markerName}`" } },
+        }))
+        const marker = path.join(dir, markerName)
+        const { prompt, chat } = yield* boot()
+        const result = yield* prompt
+          .command({
+            sessionID: chat.id,
+            command: "probe",
+            arguments: "before\0after",
+          })
+          .pipe(Effect.exit)
+
+        expect(Exit.isFailure(result)).toBe(true)
+        expect(yield* Effect.promise(() => Bun.file(marker).exists())).toBe(false)
+        expect(yield* llm.calls).toBe(0)
+      }),
+    ),
+  30_000,
+)
+
+unix(
+  "command binds numeric shell arguments as single data values",
+  () =>
+    withSh(() =>
+      Effect.gen(function* () {
+        const { dir, llm } = yield* useServerConfig((url) => ({
+          ...providerCfg(url),
+          shell: "/bin/sh",
+          command: {
+            probe: {
+              template: [
+                "Question: $1 | $2 | $3",
+                "Raw arguments: $ARGUMENTS",
+                `Unquoted: !` + "`printf '<%s>|<%s>|<%s>' $1 $2 $3`",
+                `Double quoted: !` + "`printf '<%s>' \"$2\"`",
+                `Single quoted: !` + "`printf '<%s>' '$3'`",
+              ].join("\n"),
+            },
+          },
+        }))
+        const marker = path.join(dir, "argument-marker")
+        const { prompt, chat } = yield* boot()
+        yield* llm.text("done")
+        const userArgs = `"hello world" "O'Brien" 'semi;$(touch ${marker});$&\`tick\`\\backslash' "trailing value"`
+
+        const result = yield* prompt.command({ sessionID: chat.id, command: "probe", arguments: userArgs })
+
+        expect(result.info.role).toBe("assistant")
+        expect(yield* Effect.promise(() => Bun.file(marker).exists())).toBe(false)
+        const inputs = yield* llm.inputs
+        const messages = JSON.stringify(inputs.at(-1)?.messages)
+        expect(messages).toContain("Question: hello world | O'Brien | semi;")
+        expect(messages).toContain("trailing value")
+        expect(messages).toContain("Unquoted: <hello world>|<O'Brien>|<semi;")
+        expect(messages).toContain("Double quoted: <O'Brien>")
+        expect(messages).toContain("Single quoted: <semi;")
+        expect(messages).toContain(JSON.stringify(userArgs).slice(1, -1))
+      }),
+    ),
+  30_000,
+)
+
+unix(
+  "skill command appends marker-looking arguments without executing them",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      const marker = path.join(dir, "skill-marker")
+      yield* writeText(
+        path.join(dir, ".opencode", "skills", "probe", "SKILL.md"),
+        ["---", "name: probe", "description: test skill command", "---", "", "Trusted: !`printf skill-trusted`"].join(
+          "\n",
+        ),
+      )
+      const { prompt, chat } = yield* boot()
+      yield* llm.text("done")
+      const userText = `append !\`touch ${marker}\` and $ARGUMENTS`
+
+      const result = yield* prompt.command({ sessionID: chat.id, command: "probe", arguments: userText })
+
+      expect(result.info.role).toBe("assistant")
+      expect(yield* Effect.promise(() => Bun.file(marker).exists())).toBe(false)
+      const inputs = yield* llm.inputs
+      const messages = JSON.stringify(inputs.at(-1)?.messages)
+      expect(messages).toContain("skill-trusted")
+      expect(messages).toContain(userText)
+    }),
+  30_000,
+)
+
 const researchSkillWithLatexExamples = [
   "---",
   "name: research",
@@ -3271,6 +3424,8 @@ unix(
       const { dir, llm } = yield* useServerConfig(providerCfg)
       const prompt = yield* SessionPrompt.Service
       const sessions = yield* Session.Service
+      const backgroundShell = yield* BackgroundShell.Service
+      const bus = yield* Bus.Service
       const chat = yield* sessions.create({
         title: "Interrupted bash truncation",
         permission: [{ permission: "*", pattern: "*", action: "allow" }],
@@ -3285,15 +3440,31 @@ unix(
 
       yield* llm.tool("bash", {
         command:
-          'i=0; while [ "$i" -lt 4000 ]; do printf "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx %05d\\n" "$i"; i=$((i + 1)); done; sleep 30',
+          'i=0; while [ "$i" -lt 4000 ]; do printf "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx %05d\\n" "$i"; i=$((i + 1)); done; printf "PROMPT_TRUNCATION_READY\\n"; sleep 30',
         description: "Print many lines",
         timeout: 30_000,
         workdir: path.resolve(dir),
       })
 
+      const created = yield* Deferred.make<BackgroundShell.Info>()
+      const shellCreated = yield* bus.subscribe(BackgroundShell.Event.Created)
+      yield* Stream.runForEach(shellCreated, (event) => {
+        const info = event.properties.info
+        if (info.sessionID === chat.id && info.description === "Print many lines") {
+          return Deferred.succeed(created, info)
+        }
+        return Effect.void
+      }).pipe(Effect.forkScoped)
+
       const run = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
-      yield* llm.wait(1)
-      yield* Effect.sleep(150)
+      const shell = yield* Deferred.await(created)
+      yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const output = yield* backgroundShell.output(shell.id)
+          return output?.includes("PROMPT_TRUNCATION_READY") ? (true as const) : undefined
+        }),
+        "timed out waiting for shell truncation marker",
+      )
       yield* prompt.cancel(chat.id)
 
       const exit = yield* Fiber.await(run)

@@ -724,6 +724,7 @@
     "builder-util-runtime@9.5.1": "patches/builder-util-runtime@9.5.1.patch",
     "@ai-sdk/groq@3.0.31": "patches/@ai-sdk%2Fgroq@3.0.31.patch",
     "@ai-sdk/xai@3.0.102": "patches/@ai-sdk%2Fxai@3.0.102.patch",
+    "bun-pty@0.4.8": "patches/bun-pty@0.4.8.patch",
     "@tanstack/virtual-core@3.17.0": "patches/@tanstack%2Fvirtual-core@3.17.0.patch",
     "@standard-community/standard-openapi@0.2.9": "patches/@standard-community%2Fstandard-openapi@0.2.9.patch",
     "@npmcli/agent@4.0.0": "patches/@npmcli%2Fagent@4.0.0.patch",

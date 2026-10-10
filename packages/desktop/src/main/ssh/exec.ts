@@ -94,13 +94,11 @@ export function shellEscape(value: string) {
 }
 
 /**
- * Remote shell path that keeps `~` and `$HOME` expansion working: single
- * quotes suppress tilde expansion, so a leading `~` must stay unquoted and
- * only the remainder is escaped.
+ * Keep the home expansion quoted as data, and shell-escape the literal suffix.
  */
 export function remotePath(path: string) {
-  if (path === "~") return "$HOME"
-  if (path.startsWith("~/")) return `$HOME/${shellEscape(path.slice(2))}`
+  if (path === "~") return '"$HOME"'
+  if (path.startsWith("~/")) return `"$HOME"/${shellEscape(path.slice(2))}`
   return shellEscape(path)
 }
 
