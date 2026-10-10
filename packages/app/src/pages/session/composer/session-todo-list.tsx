@@ -8,7 +8,7 @@ import { TextStrikethrough } from "@opencode-ai/ui/text-strikethrough"
 function dot(status: Todo["status"]) {
   if (status !== "in_progress") return undefined
   // 16px box (viewBox 12 scaled) keeps the visible dot column width identical
-  // to the checkbox / circle-check glyphs.
+  // to the completed status glyphs.
   return (
     <svg
       viewBox="0 0 12 12"
@@ -42,6 +42,13 @@ export function TodoList(props: { todos: Todo[]; open: boolean; maxHeight?: stri
 
   const inProgress = createMemo(() => props.todos.findIndex((todo) => todo.status === "in_progress"))
   const maxHeight = () => props.maxHeight ?? "10.5rem" // max-h-42 default for dock
+
+  createEffect(() => {
+    if (!props.open) return
+    console.debug(
+      `[session-todo-list] render states=${props.todos.map((todo) => todo.status).join(",")} pendingIndicator=none`,
+    )
+  })
 
   const ensure = () => {
     if (!props.open) return
@@ -104,8 +111,7 @@ export function TodoList(props: { todos: Todo[]; open: boolean; maxHeight?: stri
               class="flex items-center gap-3 rounded-md px-2 py-1 -mx-2 -my-1 transition-colors duration-200"
               classList={{
                 // Subtle brand-tinted pill so the running task reads at a glance.
-                "bg-[color-mix(in_srgb,var(--surface-brand-base)_9%,transparent)]":
-                  todo().status === "in_progress",
+                "bg-[color-mix(in_srgb,var(--surface-brand-base)_9%,transparent)]": todo().status === "in_progress",
               }}
             >
               {/* Fixed-width icon column keeps the icon→text gap identical across statuses. */}
@@ -120,7 +126,7 @@ export function TodoList(props: { todos: Todo[]; open: boolean; maxHeight?: stri
                 ) : todo().status === "in_progress" ? (
                   // In-progress: breathing dot only, no checkbox frame.
                   dot(todo().status)
-                ) : (
+                ) : todo().status === "pending" ? null : (
                   <Checkbox
                     readOnly
                     checked={todo().status === "completed"}
@@ -128,7 +134,6 @@ export function TodoList(props: { todos: Todo[]; open: boolean; maxHeight?: stri
                       "--checkbox-align": "center",
                       "--checkbox-offset": "1px",
                       transition: "opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
-                      opacity: todo().status === "pending" ? "0.94" : "1",
                     }}
                   />
                 )}
