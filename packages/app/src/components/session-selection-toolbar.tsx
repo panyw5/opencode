@@ -9,6 +9,8 @@ import { useSettings } from "@/context/settings"
 import { QUICK_ASSISTANT_SELECTION_EVENT } from "@/utils/selection-prompt"
 import { selectionMarkdown } from "./session-selection-markdown"
 
+export const shouldTrackSelectionScroll = (visible: boolean, selected: boolean) => visible || selected
+
 export function SessionSelectionToolbar(props: {
   root: Accessor<HTMLElement | undefined>
   onPrompt: (text: string) => void
@@ -21,7 +23,16 @@ export function SessionSelectionToolbar(props: {
   let range: Range | undefined
   let frame = 0
   let dragging = false
+  let selectionActive = false
   let copyTimer: ReturnType<typeof setTimeout> | undefined
+
+  const hasSessionSelection = () => {
+    const selection = window.getSelection()
+    const root = props.root()
+    if (!root || !selection || selection.isCollapsed || !selection.rangeCount) return false
+    const selected = selection.getRangeAt(0)
+    return root.contains(selected.startContainer) && root.contains(selected.endContainer)
+  }
 
   const hide = () => {
     if (state.visible) console.debug("[session-selection] toolbar hidden")
@@ -32,10 +43,16 @@ export function SessionSelectionToolbar(props: {
     if (dragging || toolbar?.contains(document.activeElement)) return
     const selection = window.getSelection()
     const root = props.root()
-    if (!root || !selection || selection.isCollapsed || !selection.rangeCount || !selection.toString().trim())
+    if (!root || !selection || selection.isCollapsed || !selection.rangeCount || !selection.toString().trim()) {
+      selectionActive = false
       return hide()
+    }
     const next = selection.getRangeAt(0)
-    if (!root.contains(next.startContainer) || !root.contains(next.endContainer)) return hide()
+    if (!root.contains(next.startContainer) || !root.contains(next.endContainer)) {
+      selectionActive = false
+      return hide()
+    }
+    selectionActive = true
     const content = (node: Node) => {
       const element = node instanceof Element ? node : node.parentElement
       return (
@@ -67,6 +84,10 @@ export function SessionSelectionToolbar(props: {
   const schedule = () => {
     cancelAnimationFrame(frame)
     frame = requestAnimationFrame(update)
+  }
+  const scheduleSelected = () => {
+    if (!shouldTrackSelectionScroll(state.visible, selectionActive)) return
+    schedule()
   }
   const text = () => {
     if (!range || !props.root()?.contains(range.commonAncestorContainer)) return ""
@@ -104,6 +125,11 @@ export function SessionSelectionToolbar(props: {
     }
     const up = () => {
       dragging = false
+      selectionActive = hasSessionSelection()
+      schedule()
+    }
+    const selectionChanged = () => {
+      selectionActive = hasSessionSelection()
       schedule()
     }
     const key = (event: KeyboardEvent) => {
@@ -111,21 +137,22 @@ export function SessionSelectionToolbar(props: {
       hide()
       window.getSelection()?.removeAllRanges()
     }
-    document.addEventListener("selectionchange", schedule)
+    selectionActive = hasSessionSelection()
+    document.addEventListener("selectionchange", selectionChanged)
     document.addEventListener("pointerdown", down)
     document.addEventListener("pointerup", up)
     document.addEventListener("pointercancel", up)
     document.addEventListener("keydown", key)
-    document.addEventListener("scroll", schedule, true)
-    window.addEventListener("resize", schedule)
+    document.addEventListener("scroll", scheduleSelected, true)
+    window.addEventListener("resize", scheduleSelected)
     onCleanup(() => {
-      document.removeEventListener("selectionchange", schedule)
+      document.removeEventListener("selectionchange", selectionChanged)
       document.removeEventListener("pointerdown", down)
       document.removeEventListener("pointerup", up)
       document.removeEventListener("pointercancel", up)
       document.removeEventListener("keydown", key)
-      document.removeEventListener("scroll", schedule, true)
-      window.removeEventListener("resize", schedule)
+      document.removeEventListener("scroll", scheduleSelected, true)
+      window.removeEventListener("resize", scheduleSelected)
       cancelAnimationFrame(frame)
       clearTimeout(copyTimer)
     })
