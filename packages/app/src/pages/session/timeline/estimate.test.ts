@@ -3,7 +3,6 @@ import type { Part, ToolPart } from "@opencode-ai/sdk/v2"
 import {
   capRowEstimate,
   clampRowEstimate,
-  clampTextRowEstimate,
   COLLAPSED_TOOL_HEIGHT,
   diffSummaryColumns,
   DIFF_SUMMARY_DESKTOP_HORIZONTAL_INSET,
@@ -506,13 +505,6 @@ describe("capRowEstimate", () => {
   })
 })
 
-describe("clampTextRowEstimate", () => {
-  test("allows completed Markdown to span more than three viewports", () => {
-    expect(clampTextRowEstimate(5000, 800)).toBe(3600)
-    expect(clampTextRowEstimate(120, 800)).toBe(120)
-  })
-})
-
 describe("estimateRowHeight viewport clamp", () => {
   test("uses the default viewport before the list ResizeObserver reports a positive height", () => {
     const part = textPart("one line")
@@ -530,7 +522,7 @@ describe("estimateRowHeight viewport clamp", () => {
     ).toBeGreaterThan(MIN_ROW_ESTIMATE)
   })
 
-  test("clamps a very long text row to four and a half viewports", () => {
+  test("clamps a very long text row to three viewports", () => {
     const part = textPart("word ".repeat(20000))
     expect(
       estimateRowHeight(
@@ -542,7 +534,7 @@ describe("estimateRowHeight viewport clamp", () => {
         WIDTH,
         { ...base, parts: lookup(part), viewportHeight: 600 },
       ),
-    ).toBe(2700)
+    ).toBe(1800)
   })
 })
 

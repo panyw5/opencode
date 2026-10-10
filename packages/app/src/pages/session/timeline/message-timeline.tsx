@@ -490,17 +490,6 @@ export function MessageTimeline(props: {
         if (index === undefined) continue
         const width = estimatorWidth()
         const contentVersion = currentRow ? rowContentVersion(currentRow, getMessagePart) : undefined
-        const item = virtualizer.measurementsCache[index]
-        const part =
-          currentRow?._tag === "AssistantPart" && currentRow.group.type === "part"
-            ? getMessagePart(currentRow.group.ref.messageID, currentRow.group.ref.partID)
-            : undefined
-        const refreshRenderedText =
-          part?.type === "text" &&
-          item &&
-          item.size > 200 &&
-          measurement.size < item.size / 2 &&
-          !!measurement.element.querySelector("[data-markdown-rendered-stage]")
         const resolution = resolveObserverMeasurement({
           sampleSize: measurement.size,
           readCurrentSize: () => measurement.element.offsetHeight,
@@ -508,14 +497,8 @@ export function MessageTimeline(props: {
           currentWidth: width,
           sampleVersion: measurement.contentVersion,
           currentVersion: contentVersion,
-          forceRefresh: !!refreshRenderedText,
         })
         if (!resolution) continue
-        if (refreshRenderedText && lagging())
-          timelineLag(
-            "observer-stale-sample",
-            `index=${index} key=${rowKey} sample=${Math.round(measurement.size)} current=${Math.round(resolution.size)} virtual=${Math.round(item.size)}`,
-          )
         resolved.push({ rowKey, element: measurement.element, index, size: resolution.size, width, contentVersion })
       }
       for (const measurement of resolved) {
@@ -582,17 +565,8 @@ export function MessageTimeline(props: {
       return 0
     }
     const before = root.scrollTop
-    if (top === before) {
-      if (lagging()) timelineLag("scroll-write-skipped", `source=${origin} top=${Math.round(before)}`)
-      return 0
-    }
     const max = Math.max(0, root.scrollHeight - root.clientHeight)
-    const target = Math.max(0, Math.min(top, max))
-    if (target === before) {
-      if (lagging()) timelineLag("scroll-write-skipped", `source=${origin} top=${Math.round(before)} clamped=true`)
-      return 0
-    }
-    root.scrollTop = target
+    root.scrollTop = Math.max(0, Math.min(top, max))
     const after = root.scrollTop
     scrollLedger.recordWrite(before, after, origin)
     programmaticScrollDelta = scrollLedger.snapshot().systemCompensation
