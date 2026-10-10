@@ -78,6 +78,9 @@ export const PRESENT_FILE_MOBILE_BREAKPOINT = 560
 
 export const MIN_ROW_ESTIMATE = 40
 export const MAX_VIEWPORT_MULTIPLIER = 3
+// Long completed Markdown can contain display math whose measured height is
+// several viewports; the general three-viewport cap causes large late growth.
+export const MAX_TEXT_VIEWPORT_MULTIPLIER = 4.5
 const DEFAULT_VIEWPORT_HEIGHT = 800
 const DEFAULT_TEXT_LINE_HEIGHT = 25.2 // 14px × 1.8 (base theme markdown)
 const DEFAULT_CHAR_WIDTH = 7.7 // ~0.55em sans at 14px
@@ -297,6 +300,11 @@ export function clampRowEstimate(height: number, viewportHeight: number) {
   return Math.min(Math.max(height, MIN_ROW_ESTIMATE), max)
 }
 
+export function clampTextRowEstimate(height: number, viewportHeight: number) {
+  const max = Math.max(viewportHeight * MAX_TEXT_VIEWPORT_MULTIPLIER, MIN_ROW_ESTIMATE)
+  return Math.min(Math.max(height, MIN_ROW_ESTIMATE), max)
+}
+
 /**
  * Structural heights (collapsed tools, dividers, gaps) are calibrated against
  * the real DOM, so raising them to MIN_ROW_ESTIMATE would only introduce an
@@ -365,7 +373,7 @@ export function estimateRowHeight(row: EstimateRowInput, width: number, options:
     case "AssistantPart": {
       const group = estimatePartGroupHeight(row, width, options)
       const raw = previousSpacing + group.height
-      return group.uncertain ? clampRowEstimate(raw, viewportHeight) : capRowEstimate(raw, viewportHeight)
+      return group.uncertain ? clampTextRowEstimate(raw, viewportHeight) : capRowEstimate(raw, viewportHeight)
     }
 
     case "ToolGroup":

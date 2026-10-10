@@ -58,6 +58,21 @@ test("observer samples refresh only when metadata is stale and reject invalid si
   expect(reads).toBe(1)
   expect(
     resolveObserverMeasurement({
+      sampleSize: 64,
+      readCurrentSize: () => {
+        reads++
+        return 4169
+      },
+      sampleWidth: 400,
+      currentWidth: 400,
+      sampleVersion: "rendered",
+      currentVersion: "rendered",
+      forceRefresh: true,
+    }),
+  ).toEqual({ stale: true, size: 4169 })
+  expect(reads).toBe(2)
+  expect(
+    resolveObserverMeasurement({
       sampleSize: 90,
       readCurrentSize: () => 140,
       sampleWidth: 400,

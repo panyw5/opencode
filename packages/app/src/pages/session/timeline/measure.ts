@@ -78,8 +78,10 @@ export function resolveObserverMeasurement(input: {
   currentWidth: number
   sampleVersion: string | undefined
   currentVersion: string | undefined
+  forceRefresh?: boolean
 }) {
-  const stale = input.sampleWidth !== input.currentWidth || input.sampleVersion !== input.currentVersion
+  const stale =
+    input.forceRefresh === true || input.sampleWidth !== input.currentWidth || input.sampleVersion !== input.currentVersion
   const size = stale ? input.readCurrentSize() : input.sampleSize
   return Number.isFinite(size) && size > 0 ? { stale, size } : undefined
 }

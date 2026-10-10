@@ -115,6 +115,7 @@ function usage() {
     "  eval <js>                       Runtime.evaluate, print JSON",
     "  click <text|selector>           Click by visible text or CSS selector",
     "  click-xy <x> <y>                Click viewport CSS pixels",
+    "  wheel <deltaY> [count] [delayMs] Send wheel events to the renderer",
     "  type <text>                     Type into the focused element",
     "  press <key>                     Press a key (Enter, Escape, Tab, ...)",
     "  screenshot [path]               Save a PNG (default /tmp/opencode-cdp.png)",
@@ -207,6 +208,20 @@ async function main() {
       await cdp.call("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 })
       await cdp.call("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 })
       console.log(JSON.stringify({ ok: true, x, y }))
+      return
+    }
+
+    if (command === "wheel") {
+      const deltaY = Number(args[1])
+      const count = Number(args[2] ?? 1)
+      const delayMs = Number(args[3] ?? 25)
+      if (![deltaY, count, delayMs].every(Number.isFinite) || count < 1 || count > 100 || delayMs < 0)
+        throw new Error("wheel requires numeric deltaY [count] [delayMs]")
+      for (let i = 0; i < count; i++) {
+        await cdp.call("Input.dispatchMouseEvent", { type: "mouseWheel", x: 800, y: 500, deltaX: 0, deltaY })
+        if (i + 1 < count) await Bun.sleep(delayMs)
+      }
+      console.log(JSON.stringify({ ok: true, deltaY, count, delayMs }))
       return
     }
 
