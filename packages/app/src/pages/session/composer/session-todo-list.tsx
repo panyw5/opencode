@@ -43,13 +43,6 @@ export function TodoList(props: { todos: Todo[]; open: boolean; maxHeight?: stri
   const inProgress = createMemo(() => props.todos.findIndex((todo) => todo.status === "in_progress"))
   const maxHeight = () => props.maxHeight ?? "10.5rem" // max-h-42 default for dock
 
-  createEffect(() => {
-    if (!props.open) return
-    console.debug(
-      `[session-todo-list] render states=${props.todos.map((todo) => todo.status).join(",")} pendingIndicator=none`,
-    )
-  })
-
   const ensure = () => {
     if (!props.open) return
     if (store.scrolling) return
