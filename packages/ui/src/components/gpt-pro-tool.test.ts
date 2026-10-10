@@ -118,8 +118,8 @@ describe("GPT-Pro attachment display", () => {
     })
     try {
       const component = await server.ssrLoadModule(fileURLToPath(new URL("./gpt-pro-tool.tsx", import.meta.url)))
-      const { renderToString } = await server.ssrLoadModule("solid-js/web")
-      const html = renderToString(() =>
+      const { renderToStringAsync } = await server.ssrLoadModule("solid-js/web")
+      const html = await renderToStringAsync(() =>
         component.GptProTool({
           status: "error",
           input: {},
@@ -174,6 +174,87 @@ describe("GPT-Pro attachment display", () => {
       expect(html).toContain('data-attachment-status="failed"')
       expect(html).toContain("disabled")
       expect(html).not.toContain("/private/")
+    } finally {
+      await server.close()
+    }
+  })
+  test("renders why a queued consultation is waiting", async () => {
+    const server = await createServer({
+      configFile: false,
+      plugins: [solid({ solid: { generate: "ssr" } })],
+      resolve: { alias: { "@": fileURLToPath(new URL("../../../app/src", import.meta.url)) } },
+      server: { middlewareMode: true },
+      appType: "custom",
+      logLevel: "silent",
+    })
+    try {
+      const component = await server.ssrLoadModule(fileURLToPath(new URL("./gpt-pro-tool.tsx", import.meta.url)))
+      const { renderToString } = await server.ssrLoadModule("solid-js/web")
+      const capacity = renderToString(() =>
+        component.GptProTool({ status: "running", input: {}, metadata: { phase: "queued", queue_reason: "capacity" } }),
+      )
+      expect(capacity).toContain("Waiting for an available consultation slot")
+      expect(capacity).toContain('data-queue-reason="capacity"')
+      const pageCapacity = renderToString(() =>
+        component.GptProTool({ status: "running", input: {}, metadata: { phase: "queued", queue_reason: "page_capacity" } }),
+      )
+      expect(pageCapacity).toContain("Waiting for a resident consultation page to become available")
+      expect(pageCapacity).toContain('data-queue-reason="page_capacity"')
+      const ownerBusy = renderToString(() =>
+        component.GptProTool({
+          status: "running",
+          input: {},
+          metadata: {
+            phase: "queued",
+            queue_reason: "owner_busy",
+            queue_owner_consultation_id: "gpt_owner_job",
+          },
+        }),
+      )
+      expect(ownerBusy).toContain("gpt_owner_job")
+      expect(ownerBusy).toContain('data-queue-reason="owner_busy"')
+    } finally {
+      await server.close()
+    }
+  })
+  test("renders cached result text through the shared Markdown component without injecting result HTML", async () => {
+    const server = await createServer({
+      configFile: false,
+      plugins: [solid({ solid: { generate: "ssr" } })],
+      resolve: { alias: { "@": fileURLToPath(new URL("../../../app/src", import.meta.url)) } },
+      server: { middlewareMode: true },
+      appType: "custom",
+      logLevel: "silent",
+    })
+    try {
+      const component = await server.ssrLoadModule(
+        fileURLToPath(new URL("./gpt-pro-result-preview.tsx", import.meta.url)),
+      )
+      const marked = await server.ssrLoadModule(fileURLToPath(new URL("../context/marked.tsx", import.meta.url)))
+      const { renderToString } = await server.ssrLoadModule("solid-js/web")
+      const html = renderToString(() =>
+        marked.MarkedProvider({
+          children: () =>
+            component.GptProResultPreviewContent({
+            state: {
+              open: true,
+              loading: false,
+              opening: false,
+              error: "",
+              result: {
+                id: "gpt_cached_preview",
+                phase: "completed",
+                url: "https://chatgpt.com/c/gpt_cached_preview",
+                text: "Cached answer\n\n<script>unsafe result content</script>",
+                source: "read",
+              },
+            },
+            }),
+        }),
+      )
+      expect(html).toContain("Cached answer")
+      expect(html).not.toContain("<script>")
+      expect(html).not.toContain("onerror=")
     } finally {
       await server.close()
     }

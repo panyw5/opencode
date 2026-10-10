@@ -4,6 +4,8 @@ export const dict = {
   "gptPro.backgroundHint":
     "Choose whether to wait for Pro or keep working with automatic progress and completion updates.",
   "gptPro.progressInterval": "Background progress interval (seconds)",
+  "gptPro.maxConcurrent": "Maximum concurrent consultations",
+  "gptPro.maxResidentPages": "Maximum resident consultation pages",
   "gptPro.description":
     "Consult GPT-6 Pro through the embedded Chat page. Uses Chat usage, not Codex, Work, or an API.",
   "gptPro.enabled": "Enable gpt-pro mentions and agent consultations",
@@ -21,6 +23,8 @@ export const dict = {
   "gptPro.configSection": "Configuration",
   "gptPro.loggedIn": "Chat composer available",
   "gptPro.history": "Recent consultations",
+  "gptPro.viewResult": "View result",
+  "gptPro.resultUnavailable": "The saved result is unavailable. You can try opening the original webpage.",
   "gptPro.guide.title": "Login flow",
   "gptPro.guide.flow": "Login connection flow",
   "gptPro.guide.flow.install": "Install the Chrome extension",

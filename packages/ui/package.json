@@ -16,6 +16,8 @@
     "./pierre": "./src/pierre/index.ts",
     "./pierre/*": "./src/pierre/*.ts",
     "./hooks": "./src/hooks/index.ts",
+    "./gpt-pro-handoff": "./src/components/gpt-pro-handoff.ts",
+    "./gpt-pro-result": "./src/components/gpt-pro-result.tsx",
     "./context": "./src/context/index.ts",
     "./context/*": "./src/context/*.tsx",
     "./styles": "./src/styles/index.css",

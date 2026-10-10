@@ -163,35 +163,35 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("gpt-pro-login-status", () => loginConnection().status())
   ipcMain.handle("gpt-pro-login-cancel", () => loginConnection().cancel())
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
-  ipcMain.handle("browser-open", (_event: IpcMainInvokeEvent, partition: string, url: string) =>
-    browserController.open(partition, url),
+  ipcMain.handle("browser-open", (_event: IpcMainInvokeEvent, pageID: string, url: string) =>
+    browserController.open(pageID, url),
   )
   ipcMain.handle("browser-acquire-display", () => browserController.acquireDisplay())
   ipcMain.handle("browser-display-state", () => browserController.getDisplayState())
-  ipcMain.handle("browser-capture-preview", (_event, partition: string) => browserController.capturePreview(partition))
+  ipcMain.handle("browser-capture-preview", (_event, pageID: string) => browserController.capturePreview(pageID))
   ipcMain.handle("browser-update-display", (_event, frame) => browserController.updateDisplay(frame))
   ipcMain.handle("browser-release-display", (_event, lease: number) => browserController.releaseDisplay(lease))
-  ipcMain.handle("browser-set-bounds", (_event: IpcMainInvokeEvent, partition: string, bounds: BrowserBounds | null) =>
-    browserController.setBounds(partition, bounds),
+  ipcMain.handle("browser-set-bounds", (_event: IpcMainInvokeEvent, pageID: string, bounds: BrowserBounds | null) =>
+    browserController.setBounds(pageID, bounds),
   )
-  ipcMain.handle("browser-set-visible", (_event: IpcMainInvokeEvent, partition: string, visible: boolean) =>
-    browserController.setVisible(partition, visible),
+  ipcMain.handle("browser-set-visible", (_event: IpcMainInvokeEvent, pageID: string, visible: boolean) =>
+    browserController.setVisible(pageID, visible),
   )
-  ipcMain.handle("browser-close", (_event: IpcMainInvokeEvent, partition: string) => browserController.close(partition))
+  ipcMain.handle("browser-close", (_event: IpcMainInvokeEvent, pageID: string) => browserController.close(pageID))
   ipcMain.handle(
     "browser-navigate",
-    (_event: IpcMainInvokeEvent, partition: string, action: "back" | "forward" | "reload") => {
+    (_event: IpcMainInvokeEvent, pageID: string, action: "back" | "forward" | "reload") => {
       // No ensure-create: navigating a missing view (tab closed, render crash)
       // must be a no-op, not a silently created blank view nobody drives.
-      const cdp = browserController.cdp(partition)
+      const cdp = browserController.cdp(pageID)
       if (!cdp) return
       if (action === "back") cdp.back()
       else if (action === "forward") cdp.forward()
       else cdp.reload()
     },
   )
-  ipcMain.handle("browser-set-shared", (_event: IpcMainInvokeEvent, partition: string, shared: boolean) =>
-    browserController.setShared(partition, shared),
+  ipcMain.handle("browser-set-shared", (_event: IpcMainInvokeEvent, pageID: string, shared: boolean) =>
+    browserController.setShared(pageID, shared),
   )
   ipcMain.handle("browser-get-state", () => browserController.getState())
   ipcMain.handle("browser-get-presentation", () => browserController.getPresentation())
@@ -206,9 +206,9 @@ export function registerIpcHandlers(deps: Deps) {
       if (!win.isDestroyed()) win.webContents.send("browser-updated", state)
     }
   })
-  browserController.onViewClosed((partition, epoch) => {
+  browserController.onViewClosed((pageID, epoch, profileID) => {
     for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) win.webContents.send("browser-closed", partition, epoch)
+      if (!win.isDestroyed()) win.webContents.send("browser-closed", pageID, epoch, profileID)
     }
   })
   ipcMain.handle("install-cli", () => installCli())

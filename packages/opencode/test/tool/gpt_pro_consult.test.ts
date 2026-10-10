@@ -21,6 +21,7 @@ const attachmentBytes = new Map<string, Buffer>()
 const attachmentModes = new Map<string, { file: number; directory: number; root: number }>()
 let phase: GptProPhase = "completed"
 let recovery = false
+let queueReason: GptProJob["queueReason"]
 const browser = Layer.mock(Browser.Service, {
   gptPro: (owner, input) =>
     Effect.sync(() => {
@@ -38,6 +39,8 @@ const browser = Layer.mock(Browser.Service, {
         owner,
         requestID: "request",
         phase,
+        queueReason,
+        ...(queueReason === "owner_busy" ? { queueOwnerConsultationID: "gpt_owner_job" } : {}),
         ...(recovery
           ? { recovery: { stage: "model" as const, reason: "Unknown picker" }, sendAttempted: false, submitted: false }
           : {}),
@@ -136,8 +139,26 @@ describe("gpt_pro_consult tool", () => {
         expect(JSON.parse(result.output)).toMatchObject({ background: true, phase: "generating" })
         expect(result.metadata.background).toBe(true)
         expect(JSON.parse(result.output).instruction).toContain("automatically")
+        expect(calls.some((call) => call.input.action === "stop")).toBe(false)
       } finally {
         phase = "completed"
+      }
+    }),
+  )
+  it.instance("returns the queue reason through live tool metadata and final output", () =>
+    Effect.gen(function* () {
+      calls.length = 0
+      phase = "queued"
+      queueReason = "capacity"
+      try {
+        const c = context()
+        const tool = yield* (yield* GptProConsultTool).init()
+        const result = yield* tool.execute({ prompt: "Wait for a slot", background: true }, c.ctx)
+        expect(result.metadata).toMatchObject({ phase: "queued", queue_reason: "capacity" })
+        expect(JSON.parse(result.output)).toMatchObject({ phase: "queued", queue_reason: "capacity" })
+      } finally {
+        phase = "completed"
+        queueReason = undefined
       }
     }),
   )
@@ -167,6 +188,7 @@ describe("gpt_pro_consult tool", () => {
       expect(calls[0].owner.endsWith("\nses_gptpro")).toBe(true)
       expect(calls[0].input.requestID).toBe("ses_gptpro:call_test")
       expect(calls.at(-1)?.input.action).toBe("read")
+      expect(calls.some((call) => call.input.action === "stop")).toBe(false)
       expect(JSON.parse(result.output).html).toBe("<p>Answer</p>")
       expect(result.metadata.consultation_id).toBe("gpt_test")
     }),

@@ -37,6 +37,10 @@ export function BrowserPanel(props: { class?: string }) {
   const setActive = service.activate
   const tabs = createMemo(service.tabs)
   const opened = createMemo(() => view().browser.opened())
+  const showGptProLogin = () => {
+    const tab = tabs().find((candidate) => candidate.pageID === active())
+    return !!platform.gptPro && tab?.profileID === GPT_PRO_PARTITION
+  }
   const closeUserTab = (partition: string) => {
     console.debug(`[browser-panel] tab close requested partition=${partition}`)
     service.close(partition)
@@ -69,15 +73,16 @@ export function BrowserPanel(props: { class?: string }) {
     read: () => {
       const tab = tabs().find((tab) => tab.partition === active())
       const surface = maximized() ? floatingPlaceholder : placeholder
-      if (!opened() || !surface?.isConnected || !tab?.state?.epoch) return { partition: null, bounds: null }
+      if (!opened() || !surface?.isConnected || !tab?.state?.epoch)
+        return { pageID: null, partition: null, bounds: null }
       const rect = surface.getBoundingClientRect()
       const x = Math.max(0, Math.ceil(rect.left))
       const y = Math.max(0, Math.ceil(rect.top))
       const width = Math.floor(Math.min(window.innerWidth, rect.right)) - x
       const height = Math.floor(Math.min(window.innerHeight, rect.bottom)) - y
-      if (width < 2 || height < 2) return { partition: null, bounds: null }
+      if (width < 2 || height < 2) return { pageID: null, partition: null, bounds: null }
       const bounds = { x, y, width, height }
-      return { partition: active(), bounds, overlay: dialog.active ? "dialog" : browserOverlay(bounds) }
+      return { pageID: tab.pageID, partition: tab.pageID, bounds, overlay: dialog.active ? "dialog" : browserOverlay(bounds) }
     },
     shown: () => service.acknowledge(service.presentation()),
     preview: async (partition, image) => {
@@ -197,7 +202,11 @@ export function BrowserPanel(props: { class?: string }) {
   })
 
   const tabLabel = (tab: BrowserTab) => {
-    if (tab.partition === GPT_PRO_PARTITION) return "gpt-pro"
+    if (tab.state?.kind === "consultation") {
+      const owner = tab.state.owner?.sessionID ?? tab.pageID
+      return `gpt-pro · ${owner.slice(-6)}`
+    }
+    if (tab.state?.kind === "login" || tab.partition === GPT_PRO_PARTITION) return "gpt-pro login"
     // Interstitial pages (e.g. Google /sorry) expose their URL as the title —
     // fall back to the hostname so the tab never shows a raw URL. Chromium's
     // about:blank page literally titles itself "about:blank" — treat that as
@@ -267,7 +276,7 @@ export function BrowserPanel(props: { class?: string }) {
         class="flex-1 min-w-0 h-7 px-2 rounded-md bg-surface-base text-13-regular text-text-strong placeholder:text-text-weak outline-none focus:ring-1 focus:ring-border-strong-base"
         classList={{ "text-text-weak": activeAgent() }}
       />
-      <Show when={active() === GPT_PRO_PARTITION && platform.gptPro}>
+      <Show when={showGptProLogin()}>
         <IconButton
           icon="globe"
           variant="ghost"

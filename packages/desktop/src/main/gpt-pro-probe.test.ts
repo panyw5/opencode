@@ -75,6 +75,29 @@ describe("gpt-pro P0 diagnostics", () => {
     expect(f.opened).toEqual([{ partition: GPT_PRO_PARTITION, url: GPT_PRO_URL }])
     expect(f.presented).toEqual([GPT_PRO_PARTITION])
   })
+  test("keeps the manual login page on the legacy pageID and shared profile", async () => {
+    const opened: Array<{ pageID: string; profileID: string; url: string; kind?: string }> = []
+    let state: Record<string, unknown> | undefined
+    const browser = {
+      has: () => !!state,
+      getState: () => (state ? [state] : []),
+      open: async () => {
+        throw new Error("the probe must use explicit page/profile identity")
+      },
+      openPage: async (pageID: string, profileID: string, url: string, metadata: { kind?: string }) => {
+        opened.push({ pageID, profileID, url, kind: metadata.kind })
+        state = { pageID, partition: pageID, profileID, url, title: "ChatGPT", loading: false, shared: false, epoch: 1 }
+        return state
+      },
+      present: () => {},
+      cdp: () => ({ evaluate: async () => page }),
+    }
+    const probe = new GptProProbe(browser as never)
+    expect((await probe.open()).phase).toBe("ready")
+    expect(opened).toEqual([
+      { pageID: GPT_PRO_PARTITION, profileID: GPT_PRO_PARTITION, url: GPT_PRO_URL, kind: "login" },
+    ])
+  })
 
   test("does not navigate an existing conversation or erase its draft", async () => {
     const f = fixture({ page: { ...page, draft: "unsent question", url: `${GPT_PRO_URL}c/existing` } })

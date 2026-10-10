@@ -2,6 +2,14 @@ export const GPT_PRO_PARTITION = "persist:consult-gpt-pro"
 export const GPT_PRO_URL = "https://chatgpt.com/"
 export const GPT_PRO_MAX_HTML_CHARS = 1_000_000
 
+/** A browser page is a WebContents identity; its profile is the Electron session. */
+export type BrowserPageIdentity = {
+  pageID: string
+  profileID: string
+  owner?: { directory?: string; sessionID?: string }
+  kind?: "user" | "agent" | "consultation" | "login"
+}
+
 export type GptProPageState = {
   url: string
   model: string
@@ -97,8 +105,19 @@ export type GptProAPI = {
   list(): Promise<GptProJob[]>
 }
 
-export type GptProConfig = { enabled: boolean; timeoutMinutes: number; progressIntervalSeconds?: number }
-export const DEFAULT_GPT_PRO_CONFIG: GptProConfig = { enabled: false, timeoutMinutes: 30 }
+export type GptProConfig = {
+  enabled: boolean
+  timeoutMinutes: number
+  progressIntervalSeconds?: number
+  maxConcurrent?: number
+  maxResidentPages?: number
+}
+export const DEFAULT_GPT_PRO_CONFIG: GptProConfig = {
+  enabled: false,
+  timeoutMinutes: 30,
+  maxConcurrent: 4,
+  maxResidentPages: 8,
+}
 export type GptProAttachmentPreview = { name: string; mime: string; base64: string }
 export type GptProAction =
   | "consult"
@@ -177,11 +196,17 @@ export type GptProPhase =
   | "send_uncertain"
 export type GptProJob = {
   id: string
+  /** Page identity is distinct from profileID; multiple pages may share login. */
+  pageID?: string
+  profileID?: string
+  ownerPage?: { directory?: string; sessionID?: string }
   owner: string
   requestID: string
   parentID?: string
   successorID?: string
   phase: GptProPhase
+  queueReason?: "capacity" | "owner_busy" | "page_capacity"
+  queueOwnerConsultationID?: string
   prompt: string
   attachments?: GptProJobAttachment[]
   /** App-owned staged copies are persisted so recovery reuses the same bytes. */
@@ -211,6 +236,9 @@ export type GptProJob = {
 export const gptProTerminal = (phase: GptProPhase) =>
   ["completed", "cancelled", "failed", "interrupted", "send_uncertain", "paused"].includes(phase)
 export function normalizeGptProConfig(config: Partial<GptProConfig>): GptProConfig {
+  const maxConcurrent = Number.isFinite(config.maxConcurrent)
+    ? Math.min(8, Math.max(1, Math.round(config.maxConcurrent!)))
+    : 4
   return {
     enabled: config.enabled === true,
     timeoutMinutes: Number.isFinite(config.timeoutMinutes)
@@ -219,6 +247,10 @@ export function normalizeGptProConfig(config: Partial<GptProConfig>): GptProConf
     progressIntervalSeconds: Number.isFinite(config.progressIntervalSeconds)
       ? Math.min(600, Math.max(10, Math.round(config.progressIntervalSeconds!)))
       : 60,
+    maxConcurrent,
+    maxResidentPages: Number.isFinite(config.maxResidentPages)
+      ? Math.min(32, Math.max(maxConcurrent, Math.round(config.maxResidentPages!)))
+      : Math.max(8, maxConcurrent),
   }
 }
 

@@ -46,6 +46,7 @@ import { Shell } from "@/shell/shell"
 import { ShellID } from "@/tool/shell/id"
 import { BackgroundShell } from "@/background/shell"
 import { BackgroundGptPro, notificationKind as gptProNotificationKind } from "@/background/gpt-pro"
+import { Browser } from "@/browser"
 import { GptProNotificationReceived } from "@/browser/events"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Truncate } from "@/tool/truncate"
@@ -183,6 +184,7 @@ export const layer = Layer.effect(
     const projectTasks = yield* ProjectTask.Service
     const inbox = yield* SessionInput.Service
     const backgroundPro = yield* BackgroundGptPro.Service
+    const browser = yield* Browser.Service
     type InboxRecoveryState = { initialized: boolean; draining: Set<SessionID>; requested: Set<SessionID> }
     const inboxRecovery = yield* InstanceState.make<InboxRecoveryState>(() =>
       Effect.succeed({ initialized: false, draining: new Set<SessionID>(), requested: new Set<SessionID>() }),
@@ -236,9 +238,27 @@ export const layer = Layer.effect(
     const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID) {
       yield* backgroundPro.suppress(sessionID, true)
       yield* elog.info("cancel start", { sessionID })
+      const match = yield* sessionOwnerMatch(sessionID)
+      const cancelDesktopConsultations = browser.cancelGptProOwner(match.ownerDirectory, sessionID).pipe(
+        Effect.tap((cancelled) =>
+          elog.info("gpt-pro owner cancellation persisted", {
+            sessionID,
+            ownerDirectory: match.ownerDirectory,
+            consultations: cancelled,
+          }),
+        ),
+        Effect.tapError((error) =>
+          elog.warn("gpt-pro owner cancellation bridge unavailable; local session stop continues", {
+            sessionID,
+            ownerDirectory: match.ownerDirectory,
+            error: String(error),
+          }),
+        ),
+        Effect.ignore,
+      )
+      yield* cancelDesktopConsultations.pipe(Effect.forkIn(scope, { startImmediately: true }), Effect.asVoid)
       yield* state.cancel(sessionID, sessions.finalizeOrphanedAssistant(sessionID, { abortSource: "user-cancel" }))
       yield* elog.info("cancel finalize done", { sessionID })
-      const match = yield* sessionOwnerMatch(sessionID)
       yield* elog.info("cancel ownership check", {
         sessionID,
         owned: match.owned,
@@ -3099,7 +3119,7 @@ export const layer = Layer.effect(
 
 export const defaultLayer = Layer.suspend(() =>
   layer.pipe(
-    Layer.provide([SessionRunState.defaultLayer, BackgroundGptPro.defaultLayer]),
+    Layer.provide([Browser.defaultLayer, SessionRunState.defaultLayer, BackgroundGptPro.defaultLayer]),
     Layer.provide(SessionStatus.defaultLayer),
     Layer.provide(SessionCompaction.defaultLayer),
     Layer.provide(SessionProcessor.defaultLayer),

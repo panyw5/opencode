@@ -7,10 +7,14 @@ import { Button } from "./button"
 import { FileIcon } from "./file-icon"
 import { Spinner } from "./spinner"
 import { handoffGptPro } from "./gpt-pro-handoff"
+import { resolveGptProView, type GptProCachedResult } from "./gpt-pro-result"
 import { useI18n } from "../context/i18n"
 
 const AttachmentPreviewDialog = lazy(() =>
   import("./gpt-pro-attachment-preview").then((module) => ({ default: module.AttachmentPreviewDialog })),
+)
+const GptProResultPreviewDialog = lazy(() =>
+  import("./gpt-pro-result-preview").then((module) => ({ default: module.GptProResultPreviewDialog })),
 )
 
 type Props = {
@@ -155,9 +159,19 @@ export function GptProTool(props: Props) {
     busy: false,
     job: undefined as GptProJob | undefined,
     preview: { open: false, loading: false, error: "", file: undefined as AttachmentPreviewData | undefined },
+    result: {
+      open: false,
+      loading: false,
+      opening: false,
+      error: "",
+      originalURL: undefined as string | undefined,
+      jobID: undefined as string | undefined,
+      result: undefined as GptProCachedResult | undefined,
+    },
   })
   const previewJobID = () => gptProPreviewJobID(state.job?.id, id())
   let previewRequest = 0
+  let resultRequest = 0
   const closePreview = () => {
     console.debug(`[gpt-pro-tool] attachment preview closed job=${previewJobID() ?? "unknown"}`)
     previewRequest++
@@ -171,10 +185,22 @@ export function GptProTool(props: Props) {
       `[gpt-pro-tool] tool cleanup job=${id() ?? "unknown"} previewOpen=${state.preview.open} previewLoading=${state.preview.loading}`,
     )
     previewRequest++
+    resultRequest++
   })
   const localStatus = () => state.job && (state.job.id !== id() || props.status !== "running")
   const phase = () =>
     String((localStatus() ? state.job!.phase : props.metadata.phase) ?? state.job?.phase ?? props.status ?? "")
+  const queueReason = () =>
+    String((localStatus() ? state.job?.queueReason : props.metadata.queue_reason) ?? "")
+  const queueOwnerConsultationID = () =>
+    String((localStatus() ? state.job?.queueOwnerConsultationID : props.metadata.queue_owner_consultation_id) ?? "")
+  const phaseLabel = () => {
+    if (phase() === "queued" && queueReason() === "capacity") return t("ui.tool.gptPro.queueReason.capacity")
+    if (phase() === "queued" && queueReason() === "page_capacity") return t("ui.tool.gptPro.queueReason.pageCapacity")
+    if (phase() === "queued" && queueReason() === "owner_busy")
+      return t("ui.tool.gptPro.queueReason.ownerBusy", { consultationID: queueOwnerConsultationID() })
+    return t(`ui.tool.gptPro.phase.${phase()}`)
+  }
   const status = () => {
     const current = phase()
     if (current === "completed") return "completed"
@@ -267,14 +293,66 @@ export function GptProTool(props: Props) {
     const client = api()
     const jobID = state.job?.id ?? id()
     if (!client || !jobID) return
+    const request = ++resultRequest
     set({ busy: true, error: "" })
+    set("result", {
+      open: false,
+      loading: false,
+      opening: false,
+      error: "",
+      originalURL: typeof props.metadata.url === "string" ? props.metadata.url : state.job?.url,
+      jobID,
+      result: undefined,
+    })
+    console.debug(`[gpt-pro-tool] resolving View action id=${jobID}`)
     try {
-      set("job", await handoffGptPro(client, jobID))
-    } catch (error) {
-      set("error", String(error))
-    } finally {
+      const resolution = await resolveGptProView(client, jobID, props.output)
+      if (request !== resultRequest) return
+      if (resolution.kind === "cached") {
+        console.debug(`[gpt-pro-tool] cached result ready id=${resolution.result.id} source=${resolution.result.source}`)
+        set("busy", false)
+        set("result", {
+          open: true,
+          loading: false,
+          opening: false,
+          error: "",
+          originalURL: resolution.result.url || undefined,
+          jobID: resolution.result.id,
+          result: resolution.result,
+        })
+        return
+      }
+      if (resolution.kind === "unavailable") {
+        console.debug(`[gpt-pro-tool] cached result unavailable id=${resolution.id}`)
+        set("busy", false)
+        set("result", {
+          open: true,
+          loading: false,
+          opening: false,
+          error: t("ui.tool.gptPro.resultUnavailable"),
+          originalURL:
+            resolution.url ||
+            (typeof props.metadata.url === "string" ? props.metadata.url : state.job?.url) ||
+            undefined,
+          jobID: resolution.id,
+          result: undefined,
+        })
+        return
+      }
+      set("result", { open: false, loading: false, opening: false, error: "", originalURL: undefined, jobID: undefined, result: undefined })
+      set("job", resolution.job)
+      set("job", await handoffGptPro(client, resolution.job.id))
       set("busy", false)
+    } catch (error) {
+      if (request !== resultRequest) return
+      set("busy", false)
+      set("error", String(error))
+      set("result", { open: false, loading: false, opening: false, error: "", originalURL: undefined, jobID: undefined, result: undefined })
     }
+  }
+  const closeResult = () => {
+    resultRequest++
+    set("result", { open: false, loading: false, opening: false, error: "", originalURL: undefined, jobID: undefined, result: undefined })
   }
   const previewAttachment = async (attachment: AttachmentView) => {
     const client = api()
@@ -341,7 +419,9 @@ export function GptProTool(props: Props) {
               >
                 GPT-6 Pro <span class="text-text-weak">Chat</span>
               </button>
-              <span data-slot="basic-tool-tool-subtitle">{t(`ui.tool.gptPro.phase.${phase()}`)}</span>
+              <span data-slot="basic-tool-tool-subtitle" data-queue-reason={queueReason() || undefined}>
+                {phaseLabel()}
+              </span>
               <Show when={state.job?.background ?? props.metadata.background}>
                 <span class="text-11-regular text-text-weak" data-testid="gpt-pro-background-badge">
                   {t("ui.tool.gptPro.background")}
@@ -490,6 +570,16 @@ export function GptProTool(props: Props) {
       >
         <Show when={state.preview.open}>
           <AttachmentPreviewDialog state={state.preview} onClose={closePreview} />
+        </Show>
+      </Suspense>
+      <Suspense fallback={null}>
+        <Show when={state.result.open}>
+          <GptProResultPreviewDialog
+            state={state.result}
+            client={api()!}
+            jobID={state.result.jobID}
+            onClose={closeResult}
+          />
         </Show>
       </Suspense>
       <Show when={error()}>

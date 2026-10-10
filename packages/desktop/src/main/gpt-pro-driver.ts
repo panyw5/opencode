@@ -16,12 +16,37 @@ const attachmentInputSelector = 'input[type="file"][aria-label="Attach files"]'
 export class GptProDriver {
   private observedCdp?: ReturnType<BrowserController["cdp"]>
   private stopObserving?: () => void
+  private pageEpoch?: number
+  private inspectionTail: Promise<void> = Promise.resolve()
   constructor(
     private readonly browser: BrowserController,
     private readonly log: (message: string) => void = () => {},
+    private readonly identity: {
+      pageID?: string
+      profileID?: string
+      owner?: { directory?: string; sessionID?: string }
+    } = {},
   ) {}
+  private get pageID() {
+    return this.identity.pageID ?? GPT_PRO_PARTITION
+  }
+  private get profileID() {
+    return this.identity.profileID ?? GPT_PRO_PARTITION
+  }
+  boundPageEpoch() {
+    return this.pageEpoch
+  }
+  private state() {
+    return this.browser.getState().find((view) => (view.pageID ?? view.partition) === this.pageID)
+  }
+  hasPage() {
+    return this.browser.has(this.pageID)
+  }
   private cdp() {
-    const cdp = this.browser.cdp(GPT_PRO_PARTITION)
+    const state = this.state()
+    if (!state || (this.pageEpoch !== undefined && state.epoch !== this.pageEpoch))
+      throw new Error("The consultation page generation changed. Reopen or recover explicitly; no automatic resend is allowed.")
+    const cdp = this.browser.cdp(this.pageID)
     if (!cdp)
       throw new Error("The gpt-pro browser was closed. Reopen the consultation; no automatic resend is allowed.")
     return cdp
@@ -37,65 +62,67 @@ export class GptProDriver {
     return error
   }
   async open(url = GPT_PRO_URL, fresh = false) {
-    this.log(`driver open fresh=${fresh}`)
+    this.log(`driver open pageID=${this.pageID} profileID=${this.profileID} fresh=${fresh} presentation=hidden`)
     if (
       !isGptProOrigin(url) ||
       !/^\/(?:c\/(?:[a-zA-Z0-9-]+|local-chatgpt:[a-zA-Z0-9-]+))?$/.test(decodeURIComponent(new URL(url).pathname))
     )
       throw new Error("Invalid Chat conversation URL")
-    const current = this.browser.getState().find((view) => view.partition === GPT_PRO_PARTITION)
-    if (fresh && current && isGptProOrigin(current.url)) {
+    const current = this.state()
+    if (current && isGptProOrigin(current.url)) {
+      this.pageEpoch = current.epoch
       const page = await this.page()
-      if (page.draft.trim() || page.attachments?.length)
+      if (fresh && (page.draft.trim() || page.attachments?.length))
         throw new Error("A manual draft or attachment is present. It will not be erased to start a consultation.")
-      if (page.generating)
+      if (fresh && page.generating)
         throw new Error(
           "A reply is being generated in the browser. It will not be interrupted to start another consultation.",
         )
+      if (!fresh && current.url === url) return
       if (current.url === url && page.composer && !page.generating && !page.users.length) {
-        this.browser.present(GPT_PRO_PARTITION)
         return
       }
+      if (current.url !== url)
+        throw new Error("This consultation page is already bound to another conversation")
     }
-    if (fresh && current && isGptProOrigin(current.url)) {
-      const routed = await this.cdp().evaluate<boolean>(`(() => {
-        const el=[...document.querySelectorAll('button[aria-label="New chat"],a')].filter(e=>e.getClientRects().length&&!e.closest('[inert],[aria-hidden="true"]')).find(e=>e.getAttribute('aria-label')==='New chat'||e.textContent?.trim()==='New chat')
-        if(!el) return false
-        el.click(); return true
-      })()`)
-      if (routed) {
-        for (let i = 0; i < 40; i++) {
-          const page = await this.page()
-          if (
-            new URL(page.url).pathname === "/" &&
-            page.composer &&
-            !page.users.length &&
-            !page.draft.trim() &&
-            !page.attachments?.length
-          ) {
-            await this.show()
-            return
-          }
-          await new Promise((r) => setTimeout(r, 125))
-        }
-        throw new Error("New Chat navigation was not confirmed. No question was sent.")
-      }
-    }
-    await this.browser.open(GPT_PRO_PARTITION, url)
-    if (fresh && current?.url === url) await this.cdp().navigate(url)
-    this.browser.present(GPT_PRO_PARTITION)
+    const opened =
+      typeof (this.browser as BrowserController & { openPage?: BrowserController["openPage"] }).openPage === "function"
+        ? await this.browser.openPage(this.pageID, this.profileID, url, {
+            kind: "consultation",
+            owner: this.identity.owner,
+          })
+        : await this.browser.open(this.pageID, url)
+    this.pageEpoch = opened?.epoch
+    this.log(`driver page bound pageID=${this.pageID} profileID=${this.profileID} epoch=${this.pageEpoch ?? "missing"}`)
   }
   async show(url = GPT_PRO_URL) {
-    if (!this.browser.has(GPT_PRO_PARTITION)) {
-      this.log("driver restoring the closed consultation view without resubmitting")
+    if (!this.browser.has(this.pageID)) {
+      this.log(`driver explicit show restoring pageID=${this.pageID} without resubmitting`)
       await this.open(url)
-      return
+    } else {
+      const current = this.state()
+      if (current) this.pageEpoch = current.epoch
     }
-    this.browser.present(GPT_PRO_PARTITION)
+    this.browser.present(this.pageID)
   }
   async page(): Promise<GptProPageState> {
-    const state = this.browser.getState().find((v) => v.partition === GPT_PRO_PARTITION)
-    if (!state) throw new Error("The gpt-pro browser view is unavailable. Reopen the dedicated browser view.")
+    const previous = this.inspectionTail
+    let release!: () => void
+    this.inspectionTail = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    await previous
+    try {
+      return await this.inspectPage()
+    } finally {
+      release()
+    }
+  }
+  private async inspectPage(): Promise<GptProPageState> {
+    const state = this.state()
+    if (!state) throw new Error(`The consultation browser view is unavailable for page ${this.pageID}. Reopen explicitly.`)
+    if (this.pageEpoch !== undefined && state.epoch !== this.pageEpoch)
+      throw new Error("The consultation page generation changed; stale page evidence was discarded")
     if (!isGptProOrigin(state.url))
       throw new Error("The gpt-pro browser is on an unexpected origin. Navigate it to ChatGPT before continuing.")
     const cdp = this.cdp()
@@ -132,6 +159,9 @@ export class GptProDriver {
           return images.length ? { ...user, attachments: [...(user.attachments ?? []), ...images] } : user
         })
         if (attempt > 1) this.log(`driver page snapshot consistency restored attempt=${attempt}/3`)
+        const latest = this.state()
+        if (!latest || latest.epoch !== state.epoch || latest.url !== imageEvidence.url)
+          throw new Error("The consultation page changed during inspection; stale page evidence was discarded")
         return page
       } catch {
         this.log(`driver page snapshot inspection unavailable attempt=${attempt}/3; retrying without dispatch`)
@@ -405,7 +435,15 @@ export class GptProDriver {
     }
   }
   recover() {
-    this.log("driver recovery acknowledged; rendered webpage state remains authoritative")
+    const current = this.state()
+    if (current) this.pageEpoch = current.epoch
+    this.log(`driver explicit recovery adopted pageID=${this.pageID} epoch=${this.pageEpoch ?? "missing"}; rendered webpage state remains authoritative`)
+  }
+  dispose() {
+    this.stopObserving?.()
+    this.stopObserving = undefined
+    this.observedCdp = undefined
+    this.log(`driver disposed pageID=${this.pageID} epoch=${this.pageEpoch ?? "missing"}`)
   }
   async submit(beforeDispatch?: BeforeTrustedClick, uid?: string) {
     this.log("driver waiting for enabled Chat send control")
@@ -441,7 +479,7 @@ export class GptProDriver {
   }
   async stop() {
     this.log("driver checking generation before stop")
-    if (!this.browser.has(GPT_PRO_PARTITION)) {
+    if (!this.browser.has(this.pageID)) {
       this.log("driver stop: browser view already closed; no page action dispatched")
       return
     }

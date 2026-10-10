@@ -48,7 +48,7 @@ describe("native browser display", () => {
     paint()
     await flush()
     expect(order).toEqual(["display:first", "capture:first", "preview:first:preview", "display:null"])
-    expect(frames[1]).toEqual({ lease: 7, revision: 2, partition: null, bounds: null })
+    expect(frames[1]).toEqual({ lease: 7, revision: 2, protectedPageID: "first", partition: null, bounds: null })
     display.sync()
     expect(shown).toBe(1)
     snapshot = { ...snapshot, overlay: undefined }
@@ -120,7 +120,9 @@ describe("native browser display", () => {
     display.start()
     await flush()
     await flush()
-    expect(frames).toEqual([{ lease: 7, revision: 1, partition: null, bounds: null }])
+    expect(frames).toEqual([
+      { lease: 7, revision: 1, protectedPageID: "first", partition: null, bounds: null },
+    ])
     display.dispose()
   })
 
@@ -140,7 +142,7 @@ describe("native browser display", () => {
     })
     display.start()
     await new Promise((resolve) => setTimeout(resolve, 1550))
-    expect(frames).toEqual([{ lease: 7, revision: 1, partition: null, bounds: null }])
+    expect(frames).toEqual([{ lease: 7, revision: 1, protectedPageID: "first", partition: null, bounds: null }])
     display.dispose()
   })
   test("one display path handles tab switching, modal blocking and release", async () => {
@@ -171,6 +173,32 @@ describe("native browser display", () => {
     display.sync()
     expect(frames).toHaveLength(3)
     expect(released).toEqual([7])
+  })
+  test("targets native display by pageID when pages share a profile", async () => {
+    const frames: BrowserDisplayFrame[] = []
+    let snapshot: BrowserDisplaySnapshot = {
+      pageID: "consult:one",
+      partition: "consult:one",
+      bounds: { x: 0, y: 0, width: 400, height: 600 },
+    }
+    const display = createBrowserDisplay({
+      api: {
+        acquireDisplay: async () => 9,
+        updateDisplay: async (frame) => {
+          frames.push(frame)
+          return true
+        },
+        releaseDisplay: async () => {},
+      },
+      read: () => snapshot,
+    })
+    display.start()
+    await flush()
+    snapshot = { ...snapshot, pageID: "consult:two", partition: "consult:two" }
+    display.sync()
+    expect(frames.map((frame) => frame.pageID)).toEqual(["consult:one", "consult:two"])
+    expect(frames.map((frame) => frame.partition)).toEqual(["consult:one", "consult:two"])
+    display.dispose()
   })
   test("acquire completion after unmount releases its lease without displaying anything", async () => {
     let resolve!: (lease: number) => void

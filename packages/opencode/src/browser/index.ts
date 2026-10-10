@@ -1,8 +1,8 @@
 import { Context, Effect, Layer, Schema } from "effect"
 import type { Duration } from "effect"
+import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { BrowserBridge } from "./bridge"
 import {
-  GPT_PRO_PARTITION,
   type GptProCommand,
   type GptProJob,
   type GptProNotification,
@@ -12,10 +12,10 @@ import { InstanceState } from "@/effect/instance-state"
 export * as Browser from "./index"
 
 // P2-S-01: tool-facing facade over the browser bridge. Tools never talk to the
-// bridge directly: this module owns the session -> agent partition mapping and
+// bridge directly: this module owns the session -> agent page mapping and
 // translates wire-protocol results into typed values. The desktop side defaults
-// missing partitions to the user view, so every command here passes an explicit
-// per-session agent partition (`agent-browser-<sessionID>`, ephemeral). Recovery
+// missing page IDs to the user view, so every command here passes an explicit
+// per-session agent page ID (`agent-browser-<sessionID>`, ephemeral profile). Recovery
 // targets instead go through an owner-scoped GPT-Pro broker, never arbitrary partitions.
 
 // Canonical agent partition naming, mirrored in
@@ -78,9 +78,11 @@ export const ConsultationParameter = Schema.optional(Schema.String).annotate({
 
 export interface Interface {
   readonly gptPro: (owner: string, input: GptProCommand) => Effect.Effect<GptProJob, BrowserError>
+  /** Internal session-stop hook; callers supply identity resolved from session storage, never tool input. */
+  readonly cancelGptProOwner: (directory: string, sessionID: string) => Effect.Effect<number, BrowserError>
   readonly gptProNotifications: (directory: string) => Effect.Effect<GptProNotification[], BrowserError>
   readonly gptProAcknowledge: (directory: string, ids: string[]) => Effect.Effect<void, BrowserError>
-  /** Ephemeral partition backing this session's browser view. */
+  /** Legacy page ID / Electron profile backing this session's browser view. */
   readonly partition: (sessionID: string) => string
   /** Current view state, or undefined when this session has no open page. */
   readonly state: (sessionID: string, target?: Target) => Effect.Effect<ViewState | undefined, BrowserError>
@@ -127,7 +129,7 @@ export interface Interface {
     },
   ) => Effect.Effect<ViewState | undefined, BrowserError>
   /**
-   * Console entries captured from the agent partition. Without `options.since`
+   * Console entries captured from the agent page. Without `options.since`
    * this is incremental per session: each call returns entries newer than the
    * previous call's and advances the cursor.
    */
@@ -137,7 +139,7 @@ export interface Interface {
   ) => Effect.Effect<ConsoleEntry[], BrowserError>
   /**
    * Close this session's embedded browser view, freeing its resources. The
-   * agent partition is ephemeral — a later navigate reopens it fresh.
+   * agent page is ephemeral — a later navigate reopens it fresh.
    */
   readonly close: (sessionID: string, target?: Target) => Effect.Effect<void, BrowserError>
 }
@@ -193,12 +195,12 @@ export const layer = Layer.effect(
       target?: Target,
     ): Effect.Effect<A, BrowserError> => {
       if (!target?.consultationID)
-        return command(name, { ...args, partition: agentPartition(sessionID) }, decode, timeout)
+        return command(name, { ...args, pageID: agentPartition(sessionID) }, decode, timeout)
       return Effect.gen(function* () {
         const { directory } = yield* InstanceState.context
         return yield* command(
           "gpt-pro-browser",
-          { owner: `${directory}\n${sessionID}`, id: target.consultationID, name, args },
+          { owner: `${AppFileSystem.resolve(directory)}\n${sessionID}`, id: target.consultationID, name, args },
           decode,
           timeout,
         )
@@ -209,7 +211,7 @@ export const layer = Layer.effect(
       gptProNotifications: (directory) =>
         command(
           "gpt-pro-notifications",
-          { directory },
+          { directory: AppFileSystem.resolve(directory) },
           (result) => {
             const decode = Schema.decodeUnknownSync(
               Schema.Array(
@@ -251,7 +253,8 @@ export const layer = Layer.effect(
           },
           "10 seconds",
         ),
-      gptProAcknowledge: (directory, ids) => command("gpt-pro-ack", { directory, ids }, () => undefined, "10 seconds"),
+      gptProAcknowledge: (directory, ids) =>
+        command("gpt-pro-ack", { directory: AppFileSystem.resolve(directory), ids }, () => undefined, "10 seconds"),
       gptPro: (owner, input) =>
         command(
           "gpt-pro",
@@ -263,6 +266,18 @@ export const layer = Layer.effect(
             return job
           },
           "60 seconds",
+        ),
+      cancelGptProOwner: (directory, sessionID) =>
+        command(
+          "gpt-pro-cancel-owner",
+          { directory: AppFileSystem.resolve(directory), sessionID },
+          (result) => {
+            const count = (result as { cancelled?: unknown })?.cancelled
+            if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0)
+              throw new Error("Invalid owner cancellation response")
+            return count
+          },
+          "3 seconds",
         ),
       partition: (sessionID) => agentPartition(sessionID),
 
@@ -381,24 +396,29 @@ export const layer = Layer.effect(
       console: (sessionID, options) => {
         const cursor = `${sessionID}:${options?.consultationID ?? "ordinary"}`
         const since = options?.since ?? lastConsoleAt.get(cursor) ?? 0
-        const authorized: Effect.Effect<number, BrowserError> = options?.consultationID
+        const authorized: Effect.Effect<{ pageID: string; earliest: number }, BrowserError> = options?.consultationID
           ? targetCommand(
               sessionID,
               "state",
               {},
               (result) => {
-                const at = (result as { consultationCreatedAt?: number }).consultationCreatedAt
-                if (typeof at !== "number") throw new Error("Missing consultation console ownership boundary")
-                return at
+                const response = result as {
+                  consultationCreatedAt?: number
+                  state?: { pageID?: string; partition?: string }
+                }
+                const pageID = response.state?.pageID ?? response.state?.partition
+                if (typeof response.consultationCreatedAt !== "number" || typeof pageID !== "string")
+                  throw new Error("Missing consultation console ownership boundary")
+                return { pageID, earliest: response.consultationCreatedAt }
               },
               "10 seconds",
               options,
             )
-          : Effect.succeed(0)
+          : Effect.succeed({ pageID: agentPartition(sessionID), earliest: 0 })
         return authorized.pipe(
-          Effect.flatMap((earliest) =>
+          Effect.flatMap(({ pageID, earliest }) =>
             bridge.console(
-              options?.consultationID ? GPT_PRO_PARTITION : agentPartition(sessionID),
+              pageID,
               Math.max(since, earliest),
             ),
           ),

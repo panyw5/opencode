@@ -217,6 +217,7 @@ function makePrompt(input?: {
   ).pipe(Layer.provideMerge(infra))
   const question = Question.layer.pipe(Layer.provideMerge(deps))
   const todo = Todo.layer.pipe(Layer.provideMerge(deps))
+  const browserLayer = input?.browser ?? Browser.defaultLayer
   const registry = ToolRegistry.layer.pipe(
     Layer.provide(Skill.defaultLayer),
     Layer.provide(FetchHttpClient.layer),
@@ -226,7 +227,7 @@ function makePrompt(input?: {
     Layer.provide(Reference.defaultLayer),
     Layer.provide(Ripgrep.defaultLayer),
     Layer.provide(Format.defaultLayer),
-    Layer.provide(input?.browser ?? Browser.defaultLayer),
+    Layer.provide(browserLayer),
     Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
     Layer.provide(ProjectTask.defaultLayer),
     Layer.provideMerge(todo),
@@ -249,6 +250,7 @@ function makePrompt(input?: {
     Layer.provideMerge(deps),
   )
   return SessionPrompt.layer.pipe(
+    Layer.provide(browserLayer),
     Layer.provide(BackgroundGptPro.defaultLayer),
     Layer.provideMerge(SessionRevert.defaultLayer),
     Layer.provide(Image.defaultLayer),
@@ -339,6 +341,28 @@ it.instance("Pro progress enters the timeline without interrupting an active req
   expect(yield* inbox.promotedUnacked(chat.id)).toHaveLength(0)
 }), 5_000)
 const noLLMServer = testEffect(makeHttpNoLLMServer())
+const ownerCancellationCalls: Array<{ directory: string; sessionID: string }> = []
+const ownerCancellationBrowser = Layer.mock(Browser.Service, {
+  cancelGptProOwner: (directory, sessionID) =>
+    Effect.sync(() => {
+      ownerCancellationCalls.push({ directory, sessionID })
+      return 1
+    }),
+})
+const ownerCancellationServer = testEffect(makeHttpNoLLMServer({ browser: ownerCancellationBrowser }))
+const ownerCancellationLiveServer = testEffect(
+  Layer.mergeAll(TestLLMServer.layer, ProjectTask.defaultLayer, makePrompt({ browser: ownerCancellationBrowser })),
+)
+let ownerCancellationBridgeStarted = false
+const unresponsiveOwnerCancellationBrowser = Layer.mock(Browser.Service, {
+  cancelGptProOwner: () =>
+    Effect.sync(() => {
+      ownerCancellationBridgeStarted = true
+    }).pipe(Effect.andThen(Effect.never)),
+})
+const unresponsiveOwnerCancellationServer = testEffect(
+  makeHttpNoLLMServer({ browser: unresponsiveOwnerCancellationBrowser }),
+)
 const raceNoLLMServer = testEffect(makeHttpNoLLMServer({ processor: "blocking" }))
 const unix = process.platform !== "win32" ? it.instance : it.instance.skip
 const unixNoLLMServer = process.platform !== "win32" ? noLLMServer.instance : noLLMServer.instance.skip
@@ -862,6 +886,65 @@ noLLMServer.instance("cancel succeeds for a session owned by another instance di
       expect(assistant.info.time.completed).toBeNumber()
       expect(assistant.info.error?.name).toBe("MessageAbortedError")
     }
+  }),
+)
+
+ownerCancellationServer.instance("cancel scopes desktop consultation cancellation to the stored session owner", () =>
+  Effect.gen(function* () {
+    ownerCancellationCalls.length = 0
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Stored owner consultation cancel" })
+    const storedOwner = AppFileSystem.resolve(chat.directory)
+    Database.use((db) =>
+      db
+        .update(SessionTable)
+        .set({ directory: "/tmp/session-owner-authority" })
+        .where(Database.eq(SessionTable.id, chat.id))
+        .run(),
+    )
+
+    yield* prompt.cancel(chat.id)
+
+    expect(ownerCancellationCalls).toEqual([
+      { directory: AppFileSystem.resolve("/tmp/session-owner-authority"), sessionID: chat.id },
+    ])
+    expect(ownerCancellationCalls[0]?.directory).not.toBe(storedOwner)
+  }),
+)
+ownerCancellationLiveServer.instance("normal prompt completion does not cancel the session's consultations", () =>
+  Effect.gen(function* () {
+    ownerCancellationCalls.length = 0
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({ title: "Normal background consultation return" })
+    yield* llm.push(reply().text("Normal answer").stop())
+    const result = yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      parts: [{ type: "text", text: "Finish normally without stopping background consultations." }],
+    })
+    expect(result.info.role).toBe("assistant")
+    expect(ownerCancellationCalls).toHaveLength(0)
+  }),
+)
+
+unresponsiveOwnerCancellationServer.instance("session stop finalizes locally without waiting for desktop acknowledgement", () =>
+  Effect.gen(function* () {
+    ownerCancellationBridgeStarted = false
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({ title: "Unresponsive desktop consultation stop" })
+    const seeded = yield* seed(session.id)
+
+    yield* awaitWithTimeout(prompt.cancel(session.id), "session stop blocked on desktop owner cancellation", "1 second")
+
+    expect(ownerCancellationBridgeStarted).toBe(true)
+    const messages = yield* sessions.messages({ sessionID: session.id })
+    const assistant = messages.find((message) => message.info.id === seeded.assistant.id)
+    expect(assistant?.info.role).toBe("assistant")
+    if (assistant?.info.role === "assistant") expect(assistant.info.error?.name).toBe("MessageAbortedError")
   }),
 )
 

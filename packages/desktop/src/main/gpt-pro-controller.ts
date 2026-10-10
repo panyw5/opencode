@@ -12,6 +12,7 @@ import {
   type GptProAttachmentPreview,
   type GptProConfig,
   type GptProJob,
+  type GptProPhase,
   type GptProPageState,
   type GptProBrowserCommand,
   type GptProRecovery,
@@ -23,6 +24,8 @@ import { collectGptProNotification } from "./gpt-pro-notifications"
 
 export type GptProDriverAPI = {
   open(url?: string, fresh?: boolean): Promise<void>
+  hasPage?(): boolean
+  boundPageEpoch?(): number | undefined
   ready(): Promise<GptProPageState>
   page(): Promise<GptProPageState>
   observeModel(): Promise<GptProPageState>
@@ -39,13 +42,48 @@ export type GptProDriverAPI = {
   stop(): Promise<void>
   show?(url?: string): Promise<void>
   focus?(): Promise<void>
+  dispose?(): void
 }
+type DriverSource = GptProDriverAPI | ((job: GptProJob) => GptProDriverAPI)
 type Persistence = {
   load(): GptProJob[]
   save(jobs: GptProJob[]): void
   config(): GptProConfig
   setConfig(config: GptProConfig): void
   stagingRoot?(): string
+}
+export type GptProManagedPage = {
+  pageID: string
+  epoch: number
+  lastActivity: number
+  protected: boolean
+}
+export type GptProPageResources = {
+  list(): GptProManagedPage[]
+  inspect(pageID: string, epoch: number): Promise<GptProPageState>
+  stop(pageID: string, epoch: number): Promise<void>
+  close(pageID: string, epoch: number, reason: string): boolean
+  setFocus(pageID: string, epoch: number, enabled: boolean): Promise<boolean>
+  onClosed(listener: (pageID: string, epoch: number, reason?: string) => void): () => void
+  onProtectionChanged(listener: () => void): () => void
+}
+export type GptProLifecycleOptions = {
+  resources: GptProPageResources
+  graceMs?: number
+  setTimeout?: typeof setTimeout
+  clearTimeout?: typeof clearTimeout
+}
+type TerminalPageProof = {
+  jobID: string
+  pageID: string
+  phase: "completed" | "cancelled" | "failed"
+  url: string
+  promptHash: string
+  userID?: string
+  userCount?: number
+  submitted?: boolean
+  sendAttempted?: boolean
+  attachmentIdentities: string[]
 }
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 const ATTACHMENT_COUNT_LIMIT = 10
@@ -89,6 +127,15 @@ const uploadFileName = (jobID: string, index: number, originalName: string) => {
   const maxStemBytes = ATTACHMENT_NAME_LIMIT - Buffer.byteLength(prefix + extension, "utf8")
   return `${prefix}${truncateUtf8(stem, maxStemBytes)}${extension}`
 }
+const ownerPage = (owner: string) => {
+  const separator = owner.lastIndexOf("\n")
+  if (separator < 0) return undefined
+  return { directory: owner.slice(0, separator), sessionID: owner.slice(separator + 1) }
+}
+const isUnfinished = (job: GptProJob) =>
+  !["completed", "cancelled", "failed"].includes(job.phase)
+const isDiscardable = (job: GptProJob) => ["completed", "cancelled", "failed"].includes(job.phase)
+const hasSendAttempt = (job: GptProJob) => job.sendAttempted === true
 function validateAttachmentBytes(extension: string, bytes: Uint8Array) {
   const ascii = (start: number, length: number) => Buffer.from(bytes.subarray(start, start + length)).toString("ascii")
   if (extension === ".pdf" && ascii(0, 5) !== "%PDF-") throw new Error("Attachment content does not match PDF type")
@@ -112,44 +159,84 @@ function validateAttachmentBytes(extension: string, bytes: Uint8Array) {
 export class GptProController {
   private jobs: GptProJob[]
   private pumping = false
-  private active?: string
+  private pumpRequested = false
+  private running = new Map<string, Promise<void>>()
+  private pendingWork = new Map<string, Promise<void>>()
+  private activeOwners = new Set<string>()
+  private runTokens = new Map<string, number>()
+  private interrupts = new Map<string, () => void>()
+  private drivers = new Map<string, GptProDriverAPI>()
   private disposed = false
   private controlling = new Set<string>()
+  private mutating = new Set<string>()
+  private inspecting = new Map<string, number>()
+  private pendingOps = new Map<string, number>()
   private creating = new Map<string, Promise<GptProJob>>()
+  private ownerCancelEpoch = new Map<string, number>()
   private stages = new Map<string, GptProRecovery["stage"]>()
+  private pageReservations = new Map<string, string>()
+  private cleanupTimers = new Map<string, { timer: ReturnType<typeof setTimeout>; epoch: number; token: number }>()
+  private cleanupBlocked = new Map<string, { epoch: number; reason: string; attempts: number }>()
+  private cleanupSequence = 0
+  private focusState = new Map<string, boolean>()
+  private driverBindings = new Map<string, { pageID: string; epoch?: number }>()
+  private terminalPageProofs = new Map<string, TerminalPageProof>()
+  private lifecycleUnsubscribes: Array<() => void> = []
+  private readonly lifecycle?: GptProLifecycleOptions
   constructor(
-    private readonly driver: GptProDriverAPI,
+    private readonly driverSource: DriverSource,
     private readonly persistence: Persistence,
     private readonly log: (message: string) => void,
     private readonly pollMs = 1000,
     private readonly stableMs = 3000,
+    lifecycle?: GptProLifecycleOptions,
   ) {
-    this.jobs = persistence.load().map((job) =>
-      job.recovery && ["paused", "interrupted"].includes(job.phase)
-        ? { ...job, phase: "queued" as const }
-        : gptProTerminal(job.phase)
-          ? job
-          : {
-              ...job,
-              phase: job.background && job.submitted && job.userID ? ("queued" as const) : ("interrupted" as const),
-              error:
-                job.background && job.submitted && job.userID
-                  ? undefined
-                  : "Application restarted. Resume the original page; do not resend automatically.",
-            },
-    )
+    this.lifecycle = lifecycle
+    this.jobs = persistence.load().map((job) => {
+      const migrated = {
+        ...job,
+        pageID: `gpt-pro-page-${job.id}`,
+        profileID: GPT_PRO_PARTITION,
+        ownerPage: ownerPage(job.owner),
+      }
+      if (["completed", "cancelled", "failed"].includes(job.phase)) return migrated
+      if (job.sendAttempted === true && !job.userID)
+        return {
+          ...migrated,
+          phase: "send_uncertain" as const,
+          error: "Application restarted before the submitted turn could be confirmed. Never resend automatically.",
+        }
+      if (job.phase === "paused" || job.phase === "send_uncertain") return migrated
+      if (job.background && job.submitted && job.userID)
+        return { ...migrated, phase: "queued" as const, resumeCurrentPage: false, error: undefined }
+      if (gptProTerminal(job.phase)) return migrated
+      return {
+        ...migrated,
+        phase: "interrupted" as const,
+        error: "Application restarted before submission. Resume explicitly; do not send automatically.",
+      }
+    })
+    for (const job of this.jobs) this.rememberTerminalPageProof(job)
     this.save()
+    if (lifecycle) {
+      this.lifecycleUnsubscribes.push(
+        lifecycle.resources.onClosed((pageID, epoch, reason) => this.onManagedPageClosed(pageID, epoch, reason)),
+        lifecycle.resources.onProtectionChanged(() => this.reconcilePageLifecycle(true)),
+      )
+      this.reconcilePageLifecycle()
+    }
     void this.pump()
   }
   config() {
     return normalizeGptProConfig(this.persistence.config())
   }
   busy() {
-    return !!this.active || this.jobs.some((job) => job.phase === "queued")
+    return this.running.size > 0 || this.jobs.some(isUnfinished)
   }
   setConfig(config: GptProConfig) {
     const next = normalizeGptProConfig(config)
     this.persistence.setConfig(next)
+    void this.pump()
     return next
   }
   list() {
@@ -320,28 +407,60 @@ export class GptProController {
   }
   dispose() {
     this.disposed = true
-    for (const job of this.jobs)
-      if (!gptProTerminal(job.phase) || job.id === this.active)
+    for (const unsubscribe of this.lifecycleUnsubscribes.splice(0)) unsubscribe()
+    for (const pageID of [...this.cleanupTimers.keys()]) this.clearPageCleanup(pageID, "controller-dispose")
+    for (const job of this.jobs) {
+      this.interrupts.get(job.id)?.()
+      if (job.phase === "paused" || gptProTerminal(job.phase)) continue
+      if (job.background && job.submitted && job.userID) {
+        this.update(job, {
+          phase: "generating",
+          error: "Application stopped. Resume tracking the original confirmed turn; never resend.",
+        })
+        continue
+      }
+      if (job.sendAttempted === true && !job.userID)
+        this.update(job, {
+          phase: "send_uncertain",
+          error: "Application stopped before the submitted turn could be confirmed. Never resend automatically.",
+        })
+      else
         this.update(job, {
           phase: "interrupted",
-          error: "Application stopped. Resume tracking; never resend automatically.",
+          error: "Application stopped. Resume explicitly; never resend automatically.",
         })
+    }
+    for (const driver of this.drivers.values()) driver.dispose?.()
+    this.drivers.clear()
+    this.log(`consult lifecycle disposed timers=0 observers=0 drivers=0`)
   }
   private save() {
     const previous = this.jobs
     const retained = new Set(
       this.jobs
-        .filter((job) => gptProTerminal(job.phase) && job.id !== this.active)
+        .filter((job) =>
+          isDiscardable(job) &&
+          this.isQuiescent(job.id) &&
+          !this.pageIsProtected(this.pageID(job)),
+        )
         .slice(-30)
         .map((job) => job.id),
     )
     this.jobs = this.jobs.filter(
       (job) =>
-        !gptProTerminal(job.phase) || job.id === this.active || retained.has(job.id) || !!job.notifications?.length,
+        !isDiscardable(job) ||
+        !this.isQuiescent(job.id) ||
+        this.pageIsProtected(this.pageID(job)) ||
+        retained.has(job.id) ||
+        !!job.notifications?.length,
     )
     const remaining = new Set(this.jobs.map((job) => job.id))
-    for (const job of previous) {
-      if (remaining.has(job.id) || !job.stagedAttachments?.length) continue
+    const removed = previous.filter((job) => !remaining.has(job.id))
+    this.persistence.save(this.jobs)
+    for (const job of removed) {
+      this.releaseDriver(job.id, "history-pruned")
+      if (!this.pageExists(this.pageID(job))) this.terminalPageProofs.delete(this.pageID(job))
+      if (!job.stagedAttachments?.length) continue
       const root = this.persistence.stagingRoot?.()
       if (!/^gpt_[a-f0-9-]+$/i.test(job.id)) continue
       const owned = root && path.join(root, job.id)
@@ -360,19 +479,526 @@ export class GptProController {
         )
       }
     }
-    this.persistence.save(this.jobs)
+    this.reconcilePageLifecycle()
   }
   private update(job: GptProJob, input: Partial<GptProJob>) {
     const previous = job.phase
     Object.assign(job, input, { updatedAt: Date.now() })
+    this.rememberTerminalPageProof(job)
     this.save()
     if (previous !== job.phase) this.log(`consult id=${job.id} phase=${job.phase} revision=${job.revision}`)
     this.notify(job)
+    this.reconcilePageLifecycle()
   }
   private publicJob(job: GptProJob): GptProJob {
     const attachments = job.attachments?.map(({ path: _path, ...attachment }) => ({ ...attachment }))
     const { stagedAttachments: _stagedAttachments, ...result } = job
     return { ...result, ...(attachments ? { attachments } : {}) }
+  }
+  private pageID(job: GptProJob) {
+    return job.pageID ?? `gpt-pro-page-${job.id}`
+  }
+  private pageIsProtected(pageID: string) {
+    return this.lifecycle?.resources.list().some((page) => page.pageID === pageID && page.protected) ?? false
+  }
+  private pageExists(pageID: string) {
+    return this.lifecycle?.resources.list().some((page) => page.pageID === pageID) ?? false
+  }
+  private isQuiescent(jobID: string) {
+    return (
+      !this.running.has(jobID) &&
+      !this.pendingWork.has(jobID) &&
+      !this.mutating.has(jobID) &&
+      !this.inspecting.has(jobID) &&
+      !this.pendingOps.has(jobID) &&
+      !this.controlling.has(jobID)
+    )
+  }
+  private releaseDriver(jobID: string, reason: string, expected?: { pageID: string; epoch: number }) {
+    const driver = this.drivers.get(jobID)
+    if (!driver) return false
+    const binding = this.driverBindings.get(jobID)
+    const actualEpoch = driver.boundPageEpoch?.() ?? binding?.epoch
+    const job = this.jobs.find((item) => item.id === jobID)
+    const actualPageID = binding?.pageID ?? (job ? this.pageID(job) : "unknown")
+    if (expected && (actualPageID !== expected.pageID || (actualEpoch !== undefined && actualEpoch !== expected.epoch))) {
+      this.log(`consult driver release ignored id=${jobID} expectedPageID=${expected.pageID} expectedEpoch=${expected.epoch} actualPageID=${actualPageID} actualEpoch=${actualEpoch ?? "unknown"}`)
+      return false
+    }
+    driver.dispose?.()
+    this.drivers.delete(jobID)
+    this.driverBindings.delete(jobID)
+    this.log(`consult driver released id=${jobID} pageID=${actualPageID} epoch=${actualEpoch ?? "unknown"} reason=${reason}`)
+    return true
+  }
+  private releaseExecution(job: GptProJob, reason: string) {
+    return this.releaseExecutionByID(job.id, this.pageID(job), reason, job.phase)
+  }
+  private releaseExecutionByID(jobID: string, pageID: string, reason: string, phase?: string) {
+    if (!this.isQuiescent(jobID)) return false
+    const hadResources =
+      this.drivers.has(jobID) ||
+      this.runTokens.has(jobID) ||
+      this.interrupts.has(jobID) ||
+      this.stages.has(jobID) ||
+      this.pageReservations.has(pageID)
+    if (!hadResources) return false
+    this.releaseDriver(jobID, reason)
+    this.runTokens.delete(jobID)
+    this.interrupts.delete(jobID)
+    this.stages.delete(jobID)
+    this.pageReservations.delete(pageID)
+    this.log(`consult execution resources released id=${jobID} phase=${phase ?? "pruned"} reason=${reason}`)
+    this.reconcilePageLifecycle()
+    void this.pump()
+    return true
+  }
+  private clearPageCleanup(pageID: string, reason: string) {
+    const record = this.cleanupTimers.get(pageID)
+    if (!record) return
+    const clear = this.lifecycle?.clearTimeout ?? clearTimeout
+    clear(record.timer)
+    this.cleanupTimers.delete(pageID)
+    this.log(`consult page cleanup timer cleared pageID=${pageID} epoch=${record.epoch} token=${record.token} reason=${reason}`)
+  }
+  private blockPageCleanup(pageID: string, epoch: number, reason: string) {
+    const previous = this.cleanupBlocked.get(pageID)
+    const attempts = previous?.epoch === epoch ? Math.min(previous.attempts + 1, 4) : 1
+    this.cleanupBlocked.set(pageID, { epoch, reason, attempts })
+    const delay = Math.min(60_000 * 2 ** (attempts - 1), 300_000)
+    this.log(`consult page cleanup blocked pageID=${pageID} epoch=${epoch} reason=${reason} retryMs=${delay}`)
+    const page = this.lifecycle?.resources.list().find((page) => page.pageID === pageID && page.epoch === epoch)
+    if (!page || page.protected || this.disposed || this.cleanupTimers.has(pageID)) return
+    this.schedulePageCleanup(page, delay)
+  }
+  private schedulePageCleanup(page: GptProManagedPage, delay: number) {
+    if (!this.lifecycle) return
+    const token = ++this.cleanupSequence
+    const schedule = this.lifecycle.setTimeout ?? setTimeout
+    const handle = schedule(() => void this.cleanupTerminalPage(page.pageID, page.epoch, token), delay)
+    ;(handle as unknown as { unref?: () => void }).unref?.()
+    this.cleanupTimers.set(page.pageID, { timer: handle, epoch: page.epoch, token })
+    this.log(`consult page cleanup scheduled pageID=${page.pageID} epoch=${page.epoch} token=${token} graceMs=${delay}`)
+  }
+  private setTerminalFocus(page: GptProManagedPage, enabled: boolean) {
+    const key = `${page.pageID}\n${page.epoch}`
+    if (this.focusState.get(key) === enabled) return
+    this.focusState.set(key, enabled)
+    void this.lifecycle?.resources.setFocus(page.pageID, page.epoch, enabled).then((applied) => {
+      if (!applied) {
+        if (this.focusState.get(key) === enabled) this.focusState.delete(key)
+        this.log(`consult terminal focus update skipped pageID=${page.pageID} epoch=${page.epoch} enabled=${enabled}`)
+      }
+    }).catch((error) => {
+      if (this.focusState.get(key) === enabled) this.focusState.delete(key)
+      this.log(`consult terminal focus update failed pageID=${page.pageID} epoch=${page.epoch} enabled=${enabled} error=${String(error)}`)
+    })
+    this.log(`consult terminal focus update pageID=${page.pageID} epoch=${page.epoch} enabled=${enabled}`)
+  }
+  private reconcilePageLifecycle(retryBlocked = false) {
+    const lifecycle = this.lifecycle
+    if (!lifecycle || this.disposed) return
+    if (retryBlocked) this.cleanupBlocked.clear()
+    const pages = lifecycle.resources.list()
+    const existing = new Map(pages.map((page) => [page.pageID, page]))
+    for (const [pageID, blocked] of this.cleanupBlocked) {
+      const current = existing.get(pageID)
+      if (!current || current.epoch !== blocked.epoch) this.cleanupBlocked.delete(pageID)
+    }
+    for (const [pageID, timer] of this.cleanupTimers) {
+      const current = existing.get(pageID)
+      if (!current || current.epoch !== timer.epoch) this.clearPageCleanup(pageID, "page-replaced-or-closed")
+    }
+    for (const page of pages) {
+      const job = this.jobs.find((candidate) => this.pageID(candidate) === page.pageID)
+      const proof = this.terminalPageProofs.get(page.pageID)
+      const jobID = job?.id ?? proof?.jobID
+      if (!jobID || (job && !isDiscardable(job)) || !this.isQuiescent(jobID)) {
+        this.clearPageCleanup(page.pageID, "page-protected-by-job-state")
+        if (page.protected) this.setTerminalFocus(page, true)
+        continue
+      }
+      if (page.protected) {
+        this.clearPageCleanup(page.pageID, "page-viewed")
+        this.setTerminalFocus(page, true)
+        continue
+      }
+      if (this.cleanupBlocked.get(page.pageID)?.epoch === page.epoch) continue
+      // A terminal job may now contain a manual draft or a new website generation.
+      // Keep its scheduling active until inspection proves the page safe to close.
+      this.setTerminalFocus(page, true)
+      const timer = this.cleanupTimers.get(page.pageID)
+      if (timer?.epoch === page.epoch) continue
+      this.schedulePageCleanup(page, lifecycle.graceMs ?? 30_000)
+    }
+    for (const job of this.jobs) {
+      if (isDiscardable(job) && this.isQuiescent(job.id) && !existing.has(this.pageID(job)))
+        this.releaseExecution(job, "terminal-page-absent")
+    }
+    void this.pump()
+  }
+  private async cleanupTerminalPage(pageID: string, epoch: number, token: number) {
+    const record = this.cleanupTimers.get(pageID)
+    if (!record || record.epoch !== epoch || record.token !== token) return
+    const lifecycle = this.lifecycle
+    const pageBefore = lifecycle?.resources.list().find((item) => item.pageID === pageID)
+    const job = this.jobs.find((candidate) => this.pageID(candidate) === pageID)
+    const proof = this.terminalPageProofs.get(pageID)
+    const jobID = job?.id ?? proof?.jobID
+    if (
+      !lifecycle ||
+      !pageBefore ||
+      pageBefore.epoch !== epoch ||
+      pageBefore.protected ||
+      !jobID ||
+      (job && !isDiscardable(job)) ||
+      !this.isQuiescent(jobID)
+    ) {
+      this.log(`consult page cleanup skipped pageID=${pageID} epoch=${epoch} token=${token} reason=stale-viewed-or-active`)
+      this.clearPageCleanup(pageID, "cleanup-skipped")
+      this.reconcilePageLifecycle()
+      return
+    }
+    if (!job && !proof) {
+      this.log(`consult page cleanup skipped pageID=${pageID} epoch=${epoch} token=${token} reason=missing-job-proof`)
+      this.clearPageCleanup(pageID, "missing-job-proof")
+      return
+    }
+    let page: GptProPageState
+    try {
+      page = await lifecycle.resources.inspect(pageID, epoch)
+    } catch (error) {
+      this.log(`consult page cleanup inspection failed pageID=${pageID} epoch=${epoch} token=${token} error=${String(error)}`)
+      this.clearPageCleanup(pageID, "inspection-failed")
+      this.blockPageCleanup(pageID, epoch, "inspection-unavailable")
+      return
+    }
+    const current = lifecycle.resources.list().find((item) => item.pageID === pageID)
+    const currentJob = this.jobs.find((candidate) => this.pageID(candidate) === pageID)
+    const currentProof = this.terminalPageProofs.get(pageID)
+    const currentJobID = currentJob?.id ?? currentProof?.jobID
+    if (this.cleanupTimers.get(pageID)?.token !== token) {
+      this.log(`consult page cleanup ignored stale callback pageID=${pageID} epoch=${epoch} token=${token}`)
+      return
+    }
+    if (
+      this.disposed ||
+      !current ||
+      current.epoch !== epoch ||
+      current.protected ||
+      !currentJobID ||
+      (currentJob && !isDiscardable(currentJob)) ||
+      !this.isQuiescent(currentJobID) ||
+      !(currentJob ? this.safeToCloseTerminalPage(currentJob, page) : currentProof && this.safeToCloseByProof(currentProof, page))
+    ) {
+      this.log(`consult page cleanup preserved pageID=${pageID} epoch=${epoch} token=${token} reason=page-state-or-lease-changed`)
+      this.clearPageCleanup(pageID, "state-changed")
+      if (current && current.epoch === epoch && !current.protected && currentJobID)
+        this.blockPageCleanup(pageID, epoch, "page-state-changed-or-unsafe")
+      else this.reconcilePageLifecycle()
+      return
+    }
+    const closed = lifecycle.resources.close(pageID, epoch, "terminal-grace-expired")
+    this.log(`consult page cleanup close pageID=${pageID} epoch=${epoch} token=${token} outcome=${closed ? "closed" : "stale"}`)
+    if (closed) {
+      this.focusState.delete(`${pageID}\n${epoch}`)
+      this.terminalPageProofs.delete(pageID)
+      this.releaseDriver(currentJobID, "terminal-page-closed", { pageID, epoch })
+      if (currentJob) this.releaseExecution(currentJob, "terminal-page-closed")
+      else this.releaseExecutionByID(currentJobID, pageID, "terminal-page-closed")
+      this.save()
+    }
+  }
+  private safeToCloseTerminalPage(job: GptProJob, page: GptProPageState) {
+    this.rememberTerminalPageProof(job)
+    const proof = this.terminalPageProofs.get(this.pageID(job))
+    return proof ? this.safeToCloseByProof(proof, page) : false
+  }
+  private rememberTerminalPageProof(job: GptProJob) {
+    if (!isDiscardable(job)) return
+    const pageID = this.pageID(job)
+    this.terminalPageProofs.set(pageID, {
+      jobID: job.id,
+      pageID,
+      phase: job.phase as TerminalPageProof["phase"],
+      url: job.url,
+      promptHash: digest(Buffer.from(job.prompt.trim())),
+      userID: job.userID,
+      userCount: job.userCount,
+      submitted: job.submitted,
+      sendAttempted: job.sendAttempted,
+      attachmentIdentities: (job.attachments ?? []).map(attachmentIdentity).sort(),
+    })
+  }
+  private safeToCloseByProof(proof: TerminalPageProof, page: GptProPageState) {
+    if (page.error || page.generating || page.url !== proof.url) return false
+    const expectedAttachments = proof.attachmentIdentities
+    const pageAttachments = (page.attachments ?? []).map(attachmentIdentity).sort()
+    const attachmentsMatch =
+      pageAttachments.length === expectedAttachments.length &&
+      pageAttachments.every((identity, index) => identity === expectedAttachments[index]) &&
+      (page.attachments ?? []).every((attachment) => attachment.status === "ready")
+    const ownedUnsentDraft =
+      proof.phase === "cancelled" &&
+      digest(Buffer.from(page.draft.trim())) === proof.promptHash &&
+      attachmentsMatch
+    if (page.attachments?.length && !ownedUnsentDraft) return false
+    if (page.draft.trim()) {
+      if (!ownedUnsentDraft) return false
+    }
+    const expectedUsers = proof.userID ? (proof.userCount ?? 0) + 1 : proof.userCount ?? 0
+    if (page.users.length !== expectedUsers) return false
+    if (proof.userID) {
+      const user = page.users.find((candidate) => candidate.id === proof.userID)
+      const identities = (user?.attachments ?? []).map(attachmentIdentity).sort()
+      if (
+        !user ||
+        digest(Buffer.from(user.text.trim())) !== proof.promptHash ||
+        identities.length !== expectedAttachments.length ||
+        identities.some((identity, index) => identity !== expectedAttachments[index]) ||
+        (user.attachments ?? []).some((attachment) => attachment.status !== "ready")
+      )
+        return false
+    } else if (proof.submitted || proof.sendAttempted) {
+      return false
+    }
+    return true
+  }
+  private onManagedPageClosed(pageID: string, epoch: number, reason = "manual-close") {
+    this.clearPageCleanup(pageID, reason)
+    const job = this.jobs.find((candidate) => this.pageID(candidate) === pageID)
+    const proof = this.terminalPageProofs.get(pageID)
+    if (job && !isDiscardable(job)) {
+      const uncertain = job.sendAttempted === true && !job.userID
+      this.update(job, {
+        phase: uncertain ? "send_uncertain" : "paused",
+        error: uncertain ? "The consultation page closed before submission could be confirmed. Never resend." : "The consultation page closed. Resume explicitly to reopen its original URL.",
+        recovery: uncertain ? undefined : { stage: this.stages.get(job.id) ?? "open", reason: "Consultation page closed" },
+        resumeCurrentPage: false,
+      })
+      this.interrupts.get(job.id)?.()
+      this.log(`consult page closure fenced active job id=${job.id} pageID=${pageID} epoch=${epoch} phase=${job.phase} reason=${reason}`)
+    }
+    const jobID = job?.id ?? proof?.jobID
+    if (jobID) this.releaseDriver(jobID, reason, { pageID, epoch })
+    this.focusState.delete(`${pageID}\n${epoch}`)
+    if (jobID && this.isQuiescent(jobID)) {
+      if (job) this.releaseExecution(job, `page-closed:${reason}`)
+      else this.releaseExecutionByID(jobID, pageID, `page-closed:${reason}`)
+    }
+    this.terminalPageProofs.delete(pageID)
+    this.save()
+    this.reconcilePageLifecycle()
+  }
+  private driverFor(job: GptProJob) {
+    const existing = this.drivers.get(job.id)
+    if (existing) return existing
+    const driver = typeof this.driverSource === "function" ? this.driverSource(job) : this.driverSource
+    this.drivers.set(job.id, driver)
+    return driver
+  }
+  private ownerBusy(owner: string, exceptID?: string) {
+    return this.jobs.find((job) => job.id !== exceptID && job.owner === owner && isUnfinished(job))
+  }
+  private schedulerOwnerBlocker(job: GptProJob) {
+    const candidateIndex = this.jobs.indexOf(job)
+    return this.jobs.find((other, index) => {
+      if (other.id === job.id || other.owner !== job.owner || !isUnfinished(other)) return false
+      return other.phase !== "queued" || index < candidateIndex
+    })
+  }
+  private allocationTail: Promise<void> = Promise.resolve()
+  private async reservePage(job: GptProJob) {
+    const lifecycle = this.lifecycle
+    if (!lifecycle) return true
+    let unlock!: () => void
+    const previous = this.allocationTail
+    this.allocationTail = new Promise<void>((resolve) => (unlock = resolve))
+    await previous
+    try {
+      const pageID = this.pageID(job)
+      const current = lifecycle.resources.list().find((page) => page.pageID === pageID)
+      if (current) return true
+      const reservedBy = this.pageReservations.get(pageID)
+      if (reservedBy) return reservedBy === job.id
+      const limit = this.config().maxResidentPages ?? 8
+      const reservationCount = () =>
+        [...this.pageReservations.keys()].filter((id) => !lifecycle.resources.list().some((page) => page.pageID === id)).length
+      while (lifecycle.resources.list().length + reservationCount() >= limit) {
+        const pages = lifecycle.resources
+          .list()
+          .filter((candidate) => {
+            const candidateJob = this.jobs.find((item) => this.pageID(item) === candidate.pageID)
+            return (
+              !candidate.protected &&
+              this.cleanupBlocked.get(candidate.pageID)?.epoch !== candidate.epoch &&
+              !!candidateJob &&
+              isDiscardable(candidateJob) &&
+              this.isQuiescent(candidateJob.id) &&
+              candidate.pageID !== pageID
+            )
+          })
+          .sort((a, b) => a.lastActivity - b.lastActivity)
+        let evicted = false
+        for (const candidate of pages) {
+          const candidateJob = this.jobs.find((item) => this.pageID(item) === candidate.pageID)
+          if (!candidateJob) continue
+          let state: GptProPageState
+          try {
+            state = await lifecycle.resources.inspect(candidate.pageID, candidate.epoch)
+          } catch (error) {
+            this.log(`consult page eviction inspection failed pageID=${candidate.pageID} epoch=${candidate.epoch} error=${String(error)}`)
+            this.blockPageCleanup(candidate.pageID, candidate.epoch, "inspection-unavailable")
+            continue
+          }
+          const latest = lifecycle.resources.list().find((item) => item.pageID === candidate.pageID)
+          if (
+            !latest ||
+            latest.epoch !== candidate.epoch ||
+            latest.protected ||
+            !this.isQuiescent(candidateJob.id) ||
+            !isDiscardable(candidateJob) ||
+            !this.safeToCloseTerminalPage(candidateJob, state)
+          ) {
+            if (latest && latest.epoch === candidate.epoch && !latest.protected)
+              this.blockPageCleanup(candidate.pageID, candidate.epoch, "page-state-changed-or-unsafe")
+            continue
+          }
+          evicted = lifecycle.resources.close(candidate.pageID, candidate.epoch, "resident-budget-eviction")
+          this.log(`consult page eviction pageID=${candidate.pageID} epoch=${candidate.epoch} outcome=${evicted ? "closed" : "stale"}`)
+          if (evicted) break
+        }
+        if (!evicted) return false
+      }
+      this.pageReservations.set(pageID, job.id)
+      this.log(`consult page reservation acquired id=${job.id} pageID=${pageID} resident=${lifecycle.resources.list().length} reserved=${reservationCount()} limit=${limit}`)
+      return true
+    } finally {
+      unlock()
+    }
+  }
+  private releasePageReservation(job: GptProJob, reason: string) {
+    const pageID = this.pageID(job)
+    if (this.pageReservations.get(pageID) !== job.id) return
+    this.pageReservations.delete(pageID)
+    this.log(`consult page reservation released id=${job.id} pageID=${pageID} reason=${reason}`)
+  }
+  private async openJobPage(job: GptProJob, driver: GptProDriverAPI, fresh?: boolean, show = false) {
+    const pageID = this.pageID(job)
+    const existed = this.lifecycle?.resources.list().some((page) => page.pageID === pageID) ?? driver.hasPage?.() ?? true
+    if (!existed && !(await this.reservePage(job))) throw new Error("page_capacity: all resident consultation pages are protected or in use")
+    try {
+      if (show && driver.show) await driver.show(job.url)
+      else await driver.open(job.url, fresh)
+      const resource = this.lifecycle?.resources.list().find((page) => page.pageID === pageID)
+      this.driverBindings.set(job.id, { pageID, epoch: driver.boundPageEpoch?.() ?? resource?.epoch })
+      this.log(`consult page opened id=${job.id} pageID=${pageID} epoch=${driver.boundPageEpoch?.() ?? resource?.epoch ?? "unknown"} fresh=${fresh === true} show=${show}`)
+    } finally {
+      this.releasePageReservation(job, "open-settled")
+    }
+  }
+  cancelOwner(owner: string) {
+    const epoch = (this.ownerCancelEpoch.get(owner) ?? 0) + 1
+    this.ownerCancelEpoch.set(owner, epoch)
+    const jobs = this.jobs.filter((job) => job.owner === owner && isUnfinished(job))
+    const drivers = new Map(jobs.map((job) => [job.id, this.drivers.get(job.id)]))
+    const pages = new Map(jobs.map((job) => [job.id, this.lifecycle?.resources.list().find((page) => page.pageID === this.pageID(job))]))
+    for (const job of jobs) {
+      this.update(job, {
+        phase: "cancelled",
+        error: undefined,
+        recovery: undefined,
+        queueReason: undefined,
+        queueOwnerConsultationID: undefined,
+        notifications: job.notifications?.filter((event) => !event.recovery),
+      })
+      this.interrupts.get(job.id)?.()
+    }
+    for (const job of jobs) this.stopExistingPage(job, drivers.get(job.id), "owner-cancel", pages.get(job.id))
+    this.log(`consult owner cancelled owner=${owner} epoch=${epoch} jobs=${jobs.length}`)
+    return jobs.length
+  }
+  private stopExistingPage(job: GptProJob, driver: GptProDriverAPI | undefined, reason: string, page?: GptProManagedPage) {
+    if (!driver && !page) {
+      this.log(`consult native stop skipped id=${job.id} pageID=${this.pageID(job)} reason=${reason} detail=no-cached-driver`)
+      return
+    }
+    const pageID = this.pageID(job)
+    const epoch = page?.epoch ?? driver?.boundPageEpoch?.() ?? this.driverBindings.get(job.id)?.epoch
+    this.log(`consult native stop started id=${job.id} pageID=${pageID} epoch=${epoch ?? "unknown"} reason=${reason}`)
+    void this.mutate(job, () => {
+      if (page && this.lifecycle) return this.lifecycle.resources.stop(page.pageID, page.epoch)
+      if (!driver || (epoch !== undefined && driver.boundPageEpoch?.() !== epoch))
+        throw new Error("Native stop lease changed; replacement page was preserved")
+      return driver.stop()
+    }, true)
+      .then(() => this.log(`consult native stop settled id=${job.id} pageID=${pageID} epoch=${epoch ?? "unknown"} outcome=stopped`))
+      .catch((error) =>
+        this.log(`consult native stop settled id=${job.id} pageID=${pageID} epoch=${epoch ?? "unknown"} outcome=failed error=${String(error)}`),
+      )
+  }
+  private async mutate<A>(job: GptProJob, action: () => Promise<A>, allowCancelled = false) {
+    this.pendingOps.set(job.id, (this.pendingOps.get(job.id) ?? 0) + 1)
+    let acquired = false
+    try {
+      while (!this.disposed && (this.mutating.has(job.id) || this.inspecting.has(job.id))) await sleep(5)
+      if (this.disposed || (job.phase === "cancelled" && !allowCancelled))
+        throw new Error("Consultation was cancelled before page mutation")
+      this.mutating.add(job.id)
+      acquired = true
+      return await action()
+    } finally {
+      if (acquired) this.mutating.delete(job.id)
+      this.endPendingOp(job.id)
+    }
+  }
+  private beginPendingOp(jobID: string) {
+    this.pendingOps.set(jobID, (this.pendingOps.get(jobID) ?? 0) + 1)
+  }
+  private endPendingOp(jobID: string) {
+    const count = this.pendingOps.get(jobID) ?? 0
+    if (count <= 1) this.pendingOps.delete(jobID)
+    else this.pendingOps.set(jobID, count - 1)
+    const job = this.jobs.find((item) => item.id === jobID)
+    if (job && this.isQuiescent(jobID)) this.releaseExecution(job, "operation-settled")
+  }
+  private canDispatch(job: GptProJob, runToken?: number) {
+    if (this.disposed || job.phase === "cancelled" || job.phase === "send_uncertain") return false
+    const managedRecovery = this.controlling.has(job.id) && job.phase === "paused" && !!job.recovery
+    const automaticRun =
+      runToken !== undefined &&
+      this.runTokens.get(job.id) === runToken &&
+      this.running.has(job.id) &&
+      job.phase === "sending" &&
+      !this.controlling.has(job.id)
+    return managedRecovery || automaticRun
+  }
+  private beginInspect(jobID: string) {
+    this.inspecting.set(jobID, (this.inspecting.get(jobID) ?? 0) + 1)
+  }
+  private endInspect(jobID: string) {
+    const count = this.inspecting.get(jobID) ?? 0
+    if (count <= 1) this.inspecting.delete(jobID)
+    else this.inspecting.set(jobID, count - 1)
+    const job = this.jobs.find((item) => item.id === jobID)
+    if (job && this.isQuiescent(jobID)) this.releaseExecution(job, "inspection-settled")
+  }
+  private async inspectPage(job: GptProJob, driver = this.driverFor(job)) {
+    this.beginPendingOp(job.id)
+    try {
+      while (!this.disposed && this.mutating.has(job.id)) await sleep(5)
+      this.beginInspect(job.id)
+      try {
+        return await driver.page()
+      } finally {
+        this.endInspect(job.id)
+      }
+    } finally {
+      this.endPendingOp(job.id)
+    }
+  }
+  private unconfirmedPhase(job: GptProJob): GptProPhase {
+    return job.sendAttempted === true && !job.userID ? "send_uncertain" : "paused"
   }
   private get(id: string | undefined, owner?: string) {
     let job = this.jobs.find((job) => job.id === id)
@@ -479,16 +1105,24 @@ export class GptProController {
     jobOwner: string,
     requestID: string,
     owner?: string,
+    createEpoch = this.ownerCancelEpoch.get(jobOwner) ?? 0,
   ) {
     const jobID = `gpt_${randomUUID()}`
     const stagedAttachments = await this.stageAttachments(jobID, input.attachments ?? [])
     try {
-      if (parent) {
-        if (this.active && this.active !== parent.id) throw new Error("Another consultation currently owns the browser")
-        if (this.active === parent.id) await this.command({ action: "stop", id: parent.id }, owner)
-      }
+      if ((this.ownerCancelEpoch.get(jobOwner) ?? 0) !== createEpoch)
+        throw new Error("owner_session_cancelled: consultation creation was revoked while staging")
+      if (parent && isUnfinished(parent)) await this.command({ action: "stop", id: parent.id }, owner)
+      if ((this.ownerCancelEpoch.get(jobOwner) ?? 0) !== createEpoch)
+        throw new Error("owner_session_cancelled: consultation creation was revoked before admission")
+      const busy = this.ownerBusy(jobOwner, parent?.id)
+      if (busy) throw new Error(`owner_page_busy: consultation ${busy.id} is still ${busy.phase}`)
+      const ownerContext = ownerPage(jobOwner)
       const job: GptProJob = {
         id: jobID,
+        pageID: `gpt-pro-page-${jobID}`,
+        profileID: GPT_PRO_PARTITION,
+        ...(ownerContext ? { ownerPage: ownerContext } : {}),
         owner: jobOwner,
         requestID,
         ...(parent ? { parentID: parent.id } : {}),
@@ -533,10 +1167,11 @@ export class GptProController {
       throw error
     }
   }
-  private async ensureAttachments(job: GptProJob) {
+  private async ensureAttachments(job: GptProJob, runToken?: number) {
     if (!job.attachments?.length) return
+    const driver = this.driverFor(job)
     const staged = job.stagedAttachments ?? []
-    if (staged.length !== job.attachments.length || !this.driver.uploadAttachments)
+    if (staged.length !== job.attachments.length || !driver.uploadAttachments)
       throw new Error("Owned attachment staging or browser upload support is unavailable")
     const root = this.persistence.stagingRoot?.()
     if (!root) throw new Error("Owned attachment staging is unavailable")
@@ -567,20 +1202,21 @@ export class GptProController {
         attachments: job.attachments.map((attachment) => ({ ...attachment, status: "uploading", error: undefined })),
       })
     try {
-      await this.driver.uploadAttachments(
+      await driver.uploadAttachments(
         files,
         mayDispatch,
-        () => this.checkpoint(job),
+        async () =>
+          (this.controlling.has(job.id) && job.phase === "paused" && !!job.recovery) ||
+          (await this.checkpoint(job, runToken)),
         async () => {
           const managedRecovery = this.controlling.has(job.id) && job.phase === "paused" && !!job.recovery
-          const automaticRun = !this.controlling.has(job.id) && job.phase === "sending"
-          if (this.disposed || this.active !== job.id || (!managedRecovery && !automaticRun))
+          if (!managedRecovery && !this.canDispatch(job, runToken))
             throw new Error("Attachment dispatch cancelled before file input; no upload was attempted")
           this.update(job, { uploadAttempted: true })
           this.log(`consult attachment dispatch boundary job=${job.id} count=${files.length} persisted=true`)
         },
       )
-      const page = await this.driver.page()
+      const page = await driver.page()
       if (!this.bindPreviewEvidence(job, page))
         throw new Error("Composer attachment preview identity did not match this consultation")
       if (!this.hasExactAttachmentEvidence(job, page))
@@ -591,7 +1227,7 @@ export class GptProController {
       this.log(`consult attachments verified job=${job.id} count=${files.length}`)
     } catch (error) {
       if (job.phase === "cancelled" || this.disposed) throw error
-      const page = await this.driver.page().catch(() => undefined)
+      const page = await driver.page().catch(() => undefined)
       if (page && job.uploadAttempted === true) this.bindPreviewEvidence(job, page)
       const observed = page && job.uploadAttempted === true ? this.observedAttachmentStatuses(job, page) : undefined
       this.update(job, {
@@ -723,12 +1359,15 @@ export class GptProController {
       if (!this.config().enabled) throw new Error("Enable gpt-pro in Settings > External Agents first.")
       if (!input.prompt?.trim() || input.prompt.length > 100000)
         throw new Error("A self-contained prompt of at most 100000 characters is required")
-      if (this.jobs.filter((job) => !gptProTerminal(job.phase)).length >= 30)
+      if (this.jobs.filter(isUnfinished).length >= 30)
         throw new Error("Too many queued consultations")
       const requestID = input.requestID ?? randomUUID()
       const parent = action === "intervene" ? this.get(input.id, owner) : undefined
-      if (parent) await this.syncURL(parent)
       const jobOwner = parent?.owner ?? owner ?? "human"
+      const createEpoch = this.ownerCancelEpoch.get(jobOwner) ?? 0
+      if (parent) await this.syncURL(parent)
+      if ((this.ownerCancelEpoch.get(jobOwner) ?? 0) !== createEpoch)
+        throw new Error("owner_session_cancelled: consultation creation was revoked")
       if (input.background && !jobOwner.includes("\n"))
         throw new Error("Background consultations require a parent OpenCode session")
       const key = JSON.stringify([jobOwner, requestID])
@@ -736,7 +1375,11 @@ export class GptProController {
       if (pending) return this.publicJob(await pending)
       const duplicate = this.jobs.find((job) => job.requestID === requestID && job.owner === jobOwner)
       if (duplicate) return this.publicJob(this.get(duplicate.id, jobOwner))
-      const task = this.createConsultation(input, parent, jobOwner, requestID, owner)
+      if (action === "consult") {
+        const busy = this.ownerBusy(jobOwner)
+        if (busy) throw new Error(`owner_page_busy: consultation ${busy.id} is still ${busy.phase}`)
+      }
+      const task = this.createConsultation(input, parent, jobOwner, requestID, owner, createEpoch)
       this.creating.set(key, task)
       try {
         return this.publicJob(await task)
@@ -746,10 +1389,12 @@ export class GptProController {
     }
     const job = this.get(input.id, owner)
     if (action === "send") {
+      if (job.sendAttempted === true || job.submitted)
+        throw new Error("A send was already attempted. Inspect and resume the original question; never resend.")
       this.requireRecovery(job, owner)
       this.controlling.add(job.id)
       try {
-        await this.send(job, input.uid)
+        await this.mutate(job, () => this.send(job, input.uid))
       } finally {
         this.controlling.delete(job.id)
       }
@@ -766,125 +1411,220 @@ export class GptProController {
     }
     if (action === "read") return this.publicJob(job)
     if (action === "open") {
-      if (this.active && this.active !== job.id)
-        throw new Error("Pause or stop the active consultation before opening another conversation")
-      if (this.active === job.id && this.driver.show) await this.driver.show(job.url)
-      else await this.driver.open(job.url)
-      await this.driver.focus?.()
+      const driver = this.driverFor(job)
+      await this.mutate(job, () => this.openJobPage(job, driver, undefined, true), true)
+      await driver.focus?.()
     }
     if (action === "pause") {
-      if (this.active !== job.id) throw new Error("Only the active consultation can be paused")
-      this.update(job, { phase: "paused" })
-      if (this.driver.show) await this.driver.show(job.url)
-      else await this.driver.open(job.url)
-      await this.driver.focus?.()
+      if (!this.running.has(job.id) && job.phase !== "queued")
+        throw new Error("Only a queued or running consultation can be paused")
+      const keepCurrentPage = this.running.has(job.id)
+      this.update(job, {
+        phase: "paused",
+        resumeCurrentPage: keepCurrentPage,
+        queueReason: undefined,
+        queueOwnerConsultationID: undefined,
+      })
+      this.interrupts.get(job.id)?.()
+      const driver = this.driverFor(job)
+      void this.mutate(job, () => this.openJobPage(job, driver, undefined, true))
+        .then(() => driver.focus?.())
+        .catch((error) => this.log(`consult pause reveal failed id=${job.id} error=${String(error)}`))
     }
     if (action === "stop") {
       if (job.phase === "completed" || job.phase === "cancelled") return this.publicJob(job)
-      if (this.controlling.has(job.id)) throw new Error("A control operation is already in progress")
-      this.controlling.add(job.id)
-      try {
-        if (this.active === job.id) await this.driver.stop()
-        await this.syncURL(job)
-        this.update(job, {
-          phase: "cancelled",
-          error: undefined,
-          recovery: undefined,
-          notifications: job.notifications?.filter((event) => !event.recovery),
-        })
-      } finally {
-        this.controlling.delete(job.id)
-      }
+      const driver = this.drivers.get(job.id)
+      const page = this.lifecycle?.resources.list().find((page) => page.pageID === this.pageID(job))
+      this.update(job, {
+        phase: "cancelled",
+        error: undefined,
+        recovery: undefined,
+        queueReason: undefined,
+        queueOwnerConsultationID: undefined,
+        notifications: job.notifications?.filter((event) => !event.recovery),
+      })
+      this.interrupts.get(job.id)?.()
+      this.stopExistingPage(job, driver, "explicit-stop", page)
     }
     if (action === "resume") {
-      if (!job.submitted && this.active !== job.id && !job.recovery)
-        throw new Error(
-          "Submission is unconfirmed. Use a new explicit consultation rather than automatically resending.",
-        )
-      if (this.active && this.active !== job.id) throw new Error("Another consultation owns the browser")
-      const recovered = !!job.recovery
-      if (recovered) this.driver.recover?.()
-      await this.syncURL(job)
-      if (recovered) this.log(`consult agent recovery released id=${job.id}; no new consultation created`)
-      if (this.active === job.id)
-        this.update(job, { phase: "generating", error: undefined, recovery: undefined, resumeCurrentPage: recovered })
-      else {
-        this.update(job, { phase: "queued", error: undefined, recovery: undefined, resumeCurrentPage: recovered })
-        void this.pump()
+      if (job.phase === "send_uncertain" || (job.sendAttempted === true && !job.userID))
+        throw new Error("Submission is uncertain. Inspect the original page manually; never resend this consultation.")
+      if (!isUnfinished(job) && !(job.phase === "interrupted" && job.submitted && job.userID))
+        throw new Error(`Cannot resume a ${job.phase} consultation`)
+      const currentTask = this.running.get(job.id)
+      if (currentTask) {
+        if (job.phase !== "paused") throw new Error("Consultation is already running")
+        await currentTask
       }
+      const recovered = !!job.recovery
+      const driver = this.driverFor(job)
+      const pageAvailable = driver.hasPage?.() ?? true
+      const resumeCurrentPage = pageAvailable && (recovered || job.resumeCurrentPage === true)
+      if (!pageAvailable)
+        this.log(
+          `consult explicit resume reopening missing page id=${job.id} pageID=${job.pageID ?? `gpt-pro-page-${job.id}`} submitted=${job.submitted === true} sendAttempted=${job.sendAttempted === true}`,
+        )
+      if (resumeCurrentPage) driver.recover?.()
+      if (!resumeCurrentPage) await this.syncURL(job, true)
+      if (recovered) this.log(`consult agent recovery released id=${job.id}; no new consultation created`)
+      this.update(job, {
+        phase: "queued",
+        error: undefined,
+        recovery: undefined,
+        queueReason: undefined,
+        queueOwnerConsultationID: undefined,
+        resumeCurrentPage,
+      })
+      void this.pump()
     }
     return this.publicJob(job)
   }
   private async pump() {
-    if (this.pumping) return
+    if (this.pumping) {
+      this.pumpRequested = true
+      return
+    }
     this.pumping = true
+    this.pumpRequested = false
     try {
-      while (true) {
-        const job = this.jobs.find((job) => job.phase === "queued")
-        if (!job) return
-        this.active = job.id
-        try {
-          await this.run(job)
-        } catch (error) {
-          if (job.phase !== "cancelled") {
-            const reason = error instanceof Error ? error.message : "Browser consultation failed"
-            this.log(
-              `consult fixed flow handoff id=${job.id} stage=${this.stages.get(job.id) ?? "open"} attempted=${job.sendAttempted === true || job.submitted} error=${reason}`,
-            )
-            this.update(job, {
-              phase: "paused",
-              // Returning recovery control ends the foreground waiter. Keep
-              // owned results deliverable even if the model resumes asynchronously.
-              background: job.background || job.owner.includes("\n"),
-              error: reason,
-              notificationPhase: undefined,
-              recovery: {
-                stage: this.stages.get(job.id) ?? "open",
-                reason,
-                needsHuman: error instanceof GptProPageError && error.kind === "verification",
-              },
-            })
-            while (!this.disposed && job.phase === "paused") await sleep(this.pollMs)
-            if (job.phase === "generating") {
-              this.update(job, { phase: "queued" })
-              continue
-            }
+      const capacity = this.config().maxConcurrent ?? 4
+      const pageCapacityBlocked = new Set<string>()
+      while (!this.disposed && this.running.size < capacity) {
+        let job: GptProJob | undefined
+        for (const candidate of this.jobs) {
+          if (
+            candidate.phase !== "queued" ||
+            this.pendingWork.has(candidate.id) ||
+            this.activeOwners.has(candidate.owner) ||
+            this.schedulerOwnerBlocker(candidate)
+          )
+            continue
+          if (!(await this.reservePage(candidate))) {
+            pageCapacityBlocked.add(candidate.id)
+            this.log(`consult scheduler blocked id=${candidate.id} pageID=${this.pageID(candidate)} reason=page_capacity`)
+            continue
           }
+          if (
+            this.disposed ||
+            !this.jobs.includes(candidate) ||
+            candidate.phase !== "queued" ||
+            this.pendingWork.has(candidate.id) ||
+            this.activeOwners.has(candidate.owner) ||
+            this.schedulerOwnerBlocker(candidate)
+          ) {
+            this.releasePageReservation(candidate, "dispatch-eligibility-changed")
+            this.log(`consult scheduler stale allocation skipped id=${candidate.id} phase=${candidate.phase} disposed=${this.disposed}`)
+            continue
+          }
+          job = candidate
+          break
         }
-        this.active = undefined
+        if (!job) break
+        this.activeOwners.add(job.owner)
+        this.log(`consult scheduler dispatch id=${job.id} owner=${job.owner} running=${this.running.size + 1}/${capacity}`)
+        const runToken = (this.runTokens.get(job.id) ?? 0) + 1
+        this.runTokens.set(job.id, runToken)
+        let interrupt!: () => void
+        const interrupted = new Promise<void>((resolve) => {
+          interrupt = resolve
+        })
+        this.interrupts.set(job.id, interrupt)
+        const work = this.run(job, runToken)
+        this.pendingWork.set(job.id, work)
+        void work.catch(() => {})
+        const task = Promise.race([work, interrupted])
+          .catch((error) => this.failRun(job, error))
+          .finally(() => {
+            if (this.runTokens.get(job.id) === runToken) {
+              this.running.delete(job.id)
+              this.activeOwners.delete(job.owner)
+              this.save()
+              this.log(`consult scheduler release id=${job.id} phase=${job.phase} running=${this.running.size}`)
+            }
+            void work.finally(() => {
+              if (this.pendingWork.get(job.id) === work) this.pendingWork.delete(job.id)
+              this.save()
+              if (this.runTokens.get(job.id) === runToken) this.releaseExecution(job, "runner-settled")
+            }).catch(() => {})
+            void this.pump()
+          })
+        this.running.set(job.id, task)
+      }
+      for (const job of this.jobs) {
+        if (job.phase !== "queued" || this.running.has(job.id)) continue
+        const ownerJob = this.schedulerOwnerBlocker(job)
+        const queueReason = pageCapacityBlocked.has(job.id)
+          ? "page_capacity"
+          : ownerJob
+            ? "owner_busy"
+            : this.running.size >= capacity
+              ? "capacity"
+              : undefined
+        const queueOwnerConsultationID = ownerJob?.id
+        if (job.queueReason === queueReason && job.queueOwnerConsultationID === queueOwnerConsultationID) continue
+        this.update(job, { queueReason, queueOwnerConsultationID })
       }
     } finally {
       this.pumping = false
+      if (this.pumpRequested && !this.disposed) void this.pump()
     }
   }
-  private async run(job: GptProJob) {
-    if (job.recovery) {
-      this.update(job, { phase: "paused" })
-      if (!(await this.checkpoint(job))) return
+  private failRun(job: GptProJob, error: unknown) {
+    if (job.phase === "cancelled" || this.disposed) return
+    const reason = error instanceof Error ? error.message : "Browser consultation failed"
+    const attempted = job.sendAttempted === true || job.submitted
+    this.log(`consult fixed flow handoff id=${job.id} stage=${this.stages.get(job.id) ?? "open"} attempted=${attempted} error=${reason}`)
+    if (attempted && !job.userID) {
+      this.update(job, {
+        phase: "send_uncertain",
+        error: `Submission was attempted but not confirmed: ${reason}. Never resend automatically.`,
+        recovery: undefined,
+        notificationPhase: undefined,
+      })
+      return
     }
+    this.update(job, {
+      phase: "paused",
+      background: job.background || job.owner.includes("\n"),
+      error: reason,
+      notificationPhase: undefined,
+      queueReason: undefined,
+      queueOwnerConsultationID: undefined,
+      recovery: {
+        stage: this.stages.get(job.id) ?? "open",
+        reason,
+        needsHuman: error instanceof GptProPageError && error.kind === "verification",
+      },
+    })
+  }
+  private async run(job: GptProJob, runToken: number) {
+    const driver = this.driverFor(job)
     const current = job.resumeCurrentPage === true
-    this.update(job, { phase: "preparing", resumeCurrentPage: undefined })
+    this.update(job, { phase: "preparing", resumeCurrentPage: undefined, queueReason: undefined, queueOwnerConsultationID: undefined })
     this.stage(job, "open")
-    if (!current) await this.driver.open(job.url, !job.parentID && !job.submitted)
-    if (!(await this.checkpoint(job))) return
+    if (!current)
+      await this.mutate(job, () => this.openJobPage(job, driver, !job.parentID && !job.submitted))
+    if (!(await this.checkpoint(job, runToken))) return
     this.stage(job, "ready")
-    await this.driver.ready()
-    if (!(await this.checkpoint(job))) return
+    await this.mutate(job, () => driver.ready())
+    if (!(await this.checkpoint(job, runToken))) return
     this.stage(job, "model")
-    let page = job.submitted ? await this.driver.page() : await this.driver.observeModel()
+    let page = job.submitted
+      ? await this.inspectPage(job, driver)
+      : await this.mutate(job, () => driver.observeModel())
     this.log(
       `consult model observation id=${job.id} label=${JSON.stringify(page.model || "unknown")} policy=user-selected nonblocking=true`,
     )
-    if (!(await this.checkpoint(job))) return
+    if (!(await this.checkpoint(job, runToken))) return
     if (!job.submitted) {
       const parent = job.parentID ? this.jobs.find((item) => item.id === job.parentID) : undefined
       if (parent?.userID) {
         const limit = Date.now() + 30000
         while (!page.users.some((user) => user.id === parent.userID)) {
           if (Date.now() >= limit) throw new Error("Previous Chat context did not load. No follow-up was sent.")
-          if (!(await this.checkpoint(job))) return
+          if (!(await this.checkpoint(job, runToken))) return
           await sleep(this.pollMs)
-          page = await this.driver.page()
+          page = await this.inspectPage(job, driver)
         }
       }
       if (
@@ -897,25 +1637,25 @@ export class GptProController {
       this.update(job, { userCount: page.users.length, model: page.model, phase: "sending" })
       this.stage(job, "compose")
       if (job.attachments?.length) {
-        await this.ensureAttachments(job)
-        if (!(await this.checkpoint(job))) return
-        page = await this.driver.page()
+        await this.mutate(job, () => this.ensureAttachments(job, runToken))
+        if (!(await this.checkpoint(job, runToken))) return
+        page = await this.inspectPage(job, driver)
         const blockingError = this.blockingOwnedTurnError(page, undefined)
         if (blockingError) throw new GptProPageError(blockingError.message, blockingError.kind)
         if (page.generating || (page.draft.trim() && (!current || page.draft.trim() !== job.prompt)))
           throw new Error("Composer changed during attachment upload. No prompt was submitted.")
       }
-      if (!current || page.draft.trim() !== job.prompt) await this.driver.fill(job.prompt)
-      if (!(await this.checkpoint(job))) return
-      page = await this.driver.page()
+      if (!current || page.draft.trim() !== job.prompt) await this.mutate(job, () => driver.fill(job.prompt))
+      if (!(await this.checkpoint(job, runToken))) return
+      page = await this.inspectPage(job, driver)
       if (page.draft.trim() !== job.prompt || !this.hasExactAttachmentEvidence(job, page))
         throw new Error("Exact prompt and attachment evidence must be present immediately before sending")
       this.stage(job, "submit")
       const sendURL = page.url
-      await this.driver.submit(async () => {
-        if (this.disposed || this.active !== job.id || job.phase !== "sending" || this.controlling.has(job.id))
+      await this.mutate(job, () => driver.submit(async () => {
+        if (!this.canDispatch(job, runToken))
           throw new Error("Consultation was paused or cancelled before the send boundary. Nothing was dispatched.")
-        const current = await this.driver.page()
+        const current = await driver.page()
         const blockingError = this.blockingOwnedTurnError(current, undefined)
         if (
           blockingError ||
@@ -927,11 +1667,11 @@ export class GptProController {
         )
           throw new Error("Composer or attachment evidence changed at the send boundary. Nothing was dispatched.")
         return () => {
-          if (this.disposed || this.active !== job.id || job.phase !== "sending" || this.controlling.has(job.id))
+          if (!this.canDispatch(job, runToken))
             throw new Error("Consultation was paused or cancelled before the send boundary. Nothing was dispatched.")
           this.update(job, { submitted: true, sendAttempted: true })
         }
-      })
+      }))
     }
     this.stage(job, "track")
     let deadline = Date.now() + this.config().timeoutMinutes * 60000
@@ -939,20 +1679,22 @@ export class GptProController {
     let stableAt = Date.now()
     let html = ""
     while (true) {
-      if (this.disposed || ["cancelled", "failed", "interrupted"].includes(job.phase)) return
-      if (this.controlling.has(job.id) || job.phase === "paused") {
+      if (this.disposed || ["cancelled", "failed", "interrupted", "send_uncertain"].includes(job.phase)) return
+      if (job.phase === "paused") return
+      if (this.controlling.has(job.id)) {
         await sleep(this.pollMs)
         continue
       }
       if (Date.now() >= deadline) {
         this.update(job, {
-          phase: "paused",
+          phase: this.unconfirmedPhase(job),
           error: "Consultation timed out. The original page is preserved; stop or resume explicitly.",
         })
-        if (!(await this.checkpoint(job))) return
+        if (!(await this.checkpoint(job, runToken))) return
         deadline = Date.now() + this.config().timeoutMinutes * 60000
       }
-      page = await this.driver.page()
+      page = await this.inspectPage(job, driver)
+      if (!(await this.checkpoint(job, runToken))) return
       this.capturePendingURL(job, page)
       const errorUser = job.userID ? page.users.find((user) => user.id === job.userID) : page.users[job.userCount ?? 0]
       const blockingError = this.blockingOwnedTurnError(page, errorUser)
@@ -963,14 +1705,14 @@ export class GptProController {
         const candidate = page.users[job.userCount ?? 0]
         if (candidate && candidate.text.trim() !== job.prompt) {
           this.update(job, {
-            phase: "paused",
+            phase: this.unconfirmedPhase(job),
             error: "The submitted user turn does not match the managed prompt; no reply was accepted.",
           })
           continue
         }
         if (candidate && this.hasUnexpectedUserAttachments(job, candidate)) {
           this.update(job, {
-            phase: "paused",
+            phase: this.unconfirmedPhase(job),
             error: "The submitted user turn has different attachments from the managed request.",
           })
           continue
@@ -978,7 +1720,7 @@ export class GptProController {
         if (candidate && !this.hasExactUserAttachmentEvidence(job, candidate)) {
           if (page.users.length > expectedCount || Date.now() - submittedAt > 30000) {
             this.update(job, {
-              phase: "paused",
+              phase: this.unconfirmedPhase(job),
               error: "Submitted turn attachment evidence did not match. No reply was accepted.",
             })
             continue
@@ -1056,9 +1798,12 @@ export class GptProController {
       await sleep(this.pollMs)
     }
   }
-  private async checkpoint(job: GptProJob) {
-    while (!this.disposed && (job.phase === "paused" || this.controlling.has(job.id))) await sleep(this.pollMs)
-    return !this.disposed && job.phase !== "cancelled"
+  private async checkpoint(job: GptProJob, runToken?: number) {
+    return (
+      !this.disposed &&
+      !["paused", "cancelled", "send_uncertain"].includes(job.phase) &&
+      (runToken === undefined || this.runTokens.get(job.id) === runToken)
+    )
   }
   private blockingOwnedTurnError(page: GptProPageState, user: GptProPageState["users"][number] | undefined) {
     const error = page.error as
@@ -1079,22 +1824,22 @@ export class GptProController {
   }
   private requireRecovery(job: GptProJob, owner?: string) {
     if (owner !== undefined && job.owner !== owner) throw new Error("Consultation belongs to another session")
-    if (this.active !== job.id || job.phase !== "paused" || !job.recovery)
-      throw new Error("Browser interaction is available only for the active consultation's agent recovery handoff")
+    if (job.phase !== "paused" || !job.recovery)
+      throw new Error("Browser interaction is available only for the active consultation's recovery handoff")
     if (this.controlling.has(job.id)) throw new Error("A browser control operation is already in progress")
   }
   private async requireReadable(job: GptProJob) {
-    if (this.active === job.id) return
-    if (!this.active && job.submitted && job.userID) {
-      const page = await this.driver.page()
-      if (page.url === job.url && page.users.at(-1)?.id === job.userID) return
-    }
-    throw new Error("The requested consultation does not own the current browser page")
+    const driver = this.driverFor(job)
+    if (this.running.has(job.id)) return
+    const page = await this.inspectPage(job, driver)
+    if (!job.submitted || !job.userID || page.users.some((user) => user.id === job.userID)) return
+    throw new Error("The requested consultation does not own a readable browser page")
   }
   private async send(job: GptProJob, uid?: string) {
+    const driver = this.driverFor(job)
     if (job.sendAttempted === true || job.submitted)
       throw new Error("A send was already attempted. Inspect and resume the original question; never resend.")
-    let page = await this.driver.page()
+    let page = await driver.page()
     if (page.error) throw new GptProPageError(page.error.message, page.error.kind)
     if (
       page.url !== job.url ||
@@ -1104,7 +1849,7 @@ export class GptProController {
     )
       throw new Error("Managed send requires the exact original prompt and unchanged conversation")
     await this.ensureAttachments(job)
-    page = await this.driver.page()
+    page = await driver.page()
     if (
       page.error ||
       page.url !== job.url ||
@@ -1114,20 +1859,17 @@ export class GptProController {
       page.users.length !== (job.userCount ?? 0)
     )
       throw new Error("Managed send requires the exact original prompt, attachments, and unchanged conversation")
-    if (uid && !(await this.driver.element?.(uid))?.send)
+    if (uid && !(await driver.element?.(uid))?.send)
       throw new Error("The observed element is not a send control; no question dispatched")
     this.update(job, { model: page.model, userCount: page.users.length })
     this.log(`consult managed recovery send id=${job.id} uid=${uid ?? "website-send-control"}`)
-    await this.driver.submit(async () => {
+    await driver.submit(async () => {
       if (
         this.disposed ||
-        this.active !== job.id ||
-        job.phase !== "paused" ||
-        !job.recovery ||
-        !this.controlling.has(job.id)
+        !this.canDispatch(job)
       )
         throw new Error("Managed recovery was paused or cancelled before the send boundary. Nothing was dispatched.")
-      const current = await this.driver.page()
+      const current = await driver.page()
       if (
         current.error ||
         current.url !== job.url ||
@@ -1140,16 +1882,19 @@ export class GptProController {
       return () => {
         if (
           this.disposed ||
-          this.active !== job.id ||
-          job.phase !== "paused" ||
-          !job.recovery ||
-          !this.controlling.has(job.id)
+          !this.canDispatch(job)
         )
           throw new Error("Managed recovery was paused or cancelled before the send boundary. Nothing was dispatched.")
         this.update(job, { submitted: true, sendAttempted: true })
       }
     }, uid)
-    await this.syncURL(job)
+    await this.syncURL(job, true, true)
+    if (hasSendAttempt(job) && !job.userID && job.phase !== "cancelled")
+      this.update(job, {
+        phase: "send_uncertain",
+        error: "The page did not confirm the submitted user turn. Inspect the original page; never resend.",
+        recovery: undefined,
+      })
   }
   async browserCommand(
     owner: string,
@@ -1159,9 +1904,18 @@ export class GptProController {
     execute: (partition: string) => Promise<unknown>,
   ) {
     const job = this.get(id, owner)
+    const driver = this.driverFor(job)
     const readOnly = ["state", "snapshot", "screenshot"].includes(name)
-    if (readOnly) await this.requireReadable(job)
-    else {
+    if (readOnly) {
+      while (!this.disposed && this.mutating.has(job.id)) await sleep(5)
+      this.beginInspect(job.id)
+      try {
+        await this.requireReadable(job)
+      } catch (error) {
+        this.endInspect(job.id)
+        throw error
+      }
+    } else {
       this.requireRecovery(job, owner)
       this.controlling.add(job.id)
     }
@@ -1170,7 +1924,7 @@ export class GptProController {
       if (!["state", "snapshot", "screenshot", "navigate", "click", "type", "scroll", "close"].includes(name))
         throw new Error("Unsupported consultation browser operation")
       if (!readOnly) {
-        const current = await this.driver.page().catch(() => undefined)
+        const current = await driver.page().catch(() => undefined)
         if (current?.error?.kind === "verification")
           throw new Error("Human browser verification is required; all agent browser mutations are blocked")
       }
@@ -1178,7 +1932,7 @@ export class GptProController {
         const url = String(args.url ?? "")
         if (!isGptProOrigin(url) || (job.submitted && url !== job.url))
           throw new Error("Recovery navigation must preserve the original ChatGPT conversation")
-        const page = await this.driver.page().catch(() => undefined)
+        const page = await driver.page().catch(() => undefined)
         if (
           page &&
           ((page.draft.trim() && page.draft.trim() !== job.prompt) ||
@@ -1187,13 +1941,13 @@ export class GptProController {
           throw new Error("Recovery navigation must preserve unrelated drafts and generation")
       }
       if (name === "click" || name === "type") {
-        const page = await this.driver.page()
+        const page = await driver.page()
         if (page.error?.kind === "verification")
           throw new Error("Human browser verification is required; agent clicks and typing are blocked")
         if (job.submitted && page.url !== job.url)
           throw new Error("The original submitted conversation must be restored before interacting")
         const uid = String(args.uid ?? "")
-        const element = await this.driver.element?.(uid)
+        const element = await driver.element?.(uid)
         if (!element) throw new Error("Browser element inspection is unavailable")
         if (name === "click" && element.retry && (job.sendAttempted === true || job.submitted))
           throw new Error(
@@ -1213,24 +1967,30 @@ export class GptProController {
             )
         }
         if (name === "click" && element.send) {
-          await this.send(job, uid)
+          await this.mutate(job, () => this.send(job, uid))
           return { state: undefined, managedSend: true }
         }
       }
-      const result = await execute(GPT_PRO_PARTITION)
-      await this.syncURL(job)
+      const result = readOnly
+        ? await execute(job.pageID ?? `gpt-pro-page-${job.id}`)
+        : await this.mutate(job, () => execute(job.pageID ?? `gpt-pro-page-${job.id}`))
+      await this.syncURL(job, job.phase === "paused")
       return name === "state" && result && typeof result === "object"
         ? { ...result, consultationCreatedAt: job.createdAt }
         : result
     } finally {
       if (!readOnly) this.controlling.delete(job.id)
+      else this.endInspect(job.id)
       this.log(`consult recovery browser settled id=${job.id} command=${name}`)
     }
   }
-  private async syncURL(job: GptProJob) {
+  private async syncURL(job: GptProJob, allowPaused = false, alreadyMutating = false) {
     try {
-      const page = await this.driver.page()
-      this.capturePendingURL(job, page)
+      const page = alreadyMutating
+        ? await this.driverFor(job).page()
+        : await this.inspectPage(job, this.driverFor(job))
+      if (this.disposed || job.phase === "cancelled" || (job.phase === "paused" && !allowPaused)) return
+      this.capturePendingURL(job, page, allowPaused)
       const user = page.users.at(-1)
       if (
         !job.userID &&
@@ -1250,7 +2010,8 @@ export class GptProController {
       /* closed views must not cause a new submission */
     }
   }
-  private capturePendingURL(job: GptProJob, page: GptProPageState) {
+  private capturePendingURL(job: GptProJob, page: GptProPageState, allowPaused = false) {
+    if (this.disposed || job.phase === "cancelled" || (job.phase === "paused" && !allowPaused)) return
     const user = page.users.at(-1)
     const submittedPromptVisible = page.users.length === (job.userCount ?? 0) + 1 && user?.text.trim() === job.prompt
     if (

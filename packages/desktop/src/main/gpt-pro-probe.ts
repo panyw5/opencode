@@ -11,6 +11,7 @@ import type { BrowserCdp } from "./browser-cdp"
 import { CHATGPT_INSPECT_EXPRESSION } from "@opencode-ai/util/chatgpt-page"
 
 type ProbeBrowser = Pick<BrowserController, "has" | "open" | "getState" | "present"> & {
+  openPage?: BrowserController["openPage"]
   cdp(partition: string): Pick<BrowserCdp, "evaluate"> | undefined
 }
 
@@ -24,7 +25,11 @@ export class GptProProbe {
     this.log("probe open: opening dedicated persistent Chat browser")
     // Do not navigate an existing conversation: opening diagnostics must not
     // interrupt a manually started Pro response or erase an unsent draft.
-    if (!this.browser.has(GPT_PRO_PARTITION)) await this.browser.open(GPT_PRO_PARTITION, GPT_PRO_URL)
+    if (!this.browser.has(GPT_PRO_PARTITION)) {
+      if (this.browser.openPage)
+        await this.browser.openPage(GPT_PRO_PARTITION, GPT_PRO_PARTITION, GPT_PRO_URL, { kind: "login" })
+      else await this.browser.open(GPT_PRO_PARTITION, GPT_PRO_URL)
+    }
     this.browser.present(GPT_PRO_PARTITION)
     return this.status()
   }

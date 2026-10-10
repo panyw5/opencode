@@ -8,6 +8,11 @@ export const AGENT_PARTITION_PREFIX = "agent-browser-"
 export const OPEN_TAB_EVENT = "browser-panel:open-tab"
 export const isAgentPartition = (partition: string) =>
   partition.startsWith(AGENT_PARTITION_PREFIX) || partition === GPT_PRO_PARTITION
+export const browserPageID = (state: BrowserViewState) => state.pageID ?? state.partition
+export const isAgentView = (state: BrowserViewState) =>
+  state.kind === undefined
+    ? isAgentPartition(browserPageID(state))
+    : state.kind === "agent" || state.kind === "consultation" || state.kind === "login"
 export const displayUrl = (url: string) => (url === "about:blank" ? "" : url)
 
 export function normalizeAddress(input: string) {
@@ -19,8 +24,8 @@ export function normalizeAddress(input: string) {
   return `https://duckduckgo.com/?q=${encodeURIComponent(value)}`
 }
 
-export type BrowserTab = { partition: string; agent: boolean; state?: BrowserViewState }
-export function pickFallback(list: readonly BrowserTab[], closed: string): string {
+export type BrowserTab = { pageID: string; profileID: string; partition: string; agent: boolean; state?: BrowserViewState }
+export function pickFallback(list: readonly Pick<BrowserTab, "partition" | "agent">[], closed: string): string {
   const index = list.findIndex((tab) => tab.partition === closed)
   const rest = list.filter((tab) => tab.partition !== closed)
   if (!rest.length) return ""
@@ -52,11 +57,14 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
     Object.values(state.views)
       .filter(Boolean)
       .map((view) => ({
-        partition: view.partition,
+        pageID: browserPageID(view),
+        profileID: view.profileID ?? view.partition,
+        // Deprecated routing alias; tab selection remains page-scoped.
+        partition: browserPageID(view),
         state: view,
-        agent: isAgentPartition(view.partition),
+        agent: isAgentView(view),
       }))
-  const stale = (next: BrowserViewState) => next.epoch <= (closed.get(next.partition) ?? -1)
+  const stale = (next: BrowserViewState) => next.epoch <= (closed.get(browserPageID(next)) ?? -1)
   const syncAddress = () =>
     setState("address", displayUrl(pending.get(state.active)?.url ?? state.views[state.active]?.url ?? ""))
   const reconcile = () => {
@@ -66,19 +74,21 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
   }
   const record = (next: BrowserViewState) => {
     if (disposed || stale(next)) return
-    if ((state.views[next.partition]?.epoch ?? -1) > next.epoch) return
-    closed.delete(next.partition)
+    const pageID = browserPageID(next)
+    const normalized = { ...next, pageID, partition: pageID, profileID: next.profileID ?? next.partition }
+    if ((state.views[pageID]?.epoch ?? -1) > next.epoch) return
+    closed.delete(pageID)
     batch(() => {
-      setState("views", next.partition, next)
+      setState("views", pageID, normalized)
       reconcile()
-      if (next.partition !== state.active) return
-      const nav = pending.get(next.partition)
+      if (pageID !== state.active) return
+      const nav = pending.get(pageID)
       if (nav && next.loading && next.url !== nav.url) return
-      if (nav) pending.delete(next.partition)
+      if (nav) pending.delete(pageID)
       syncAddress()
     })
     // Background state updates never claim the user's dock or native display.
-    console.debug(`[browser-tabs] recorded partition=${next.partition} epoch=${next.epoch} active=${state.active}`)
+    console.debug(`[browser-tabs] recorded pageID=${pageID} profileID=${normalized.profileID} epoch=${next.epoch} active=${state.active}`)
   }
   const activate = (partition: string) => {
     if (disposed || !state.views[partition]) return
@@ -86,12 +96,12 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
       setState("active", partition)
       syncAddress()
     })
-    console.debug(`[browser-tabs] activate partition=${partition}`)
+    console.debug(`[browser-tabs] activate pageID=${partition}`)
   }
   const remove = (partition: string, epoch: number) => {
     if (disposed) return
     if ((state.views[partition]?.epoch ?? -1) > epoch) {
-      console.debug(`[browser-tabs] ignored stale close partition=${partition} epoch=${epoch}`)
+    console.debug(`[browser-tabs] ignored stale close pageID=${partition} epoch=${epoch}`)
       return
     }
     closed.set(partition, Math.max(epoch, closed.get(partition) ?? -1))
@@ -109,17 +119,17 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
       }
     })
     console.debug(
-      `[browser-tabs] remove partition=${partition} epoch=${epoch} active=${state.active} count=${tabs().length}`,
+      `[browser-tabs] remove pageID=${partition} epoch=${epoch} active=${state.active} count=${tabs().length}`,
     )
   }
   const present = (request: BrowserPresentation) => {
     if (disposed || request.id <= presented || stale(request.state)) return
     presented = request.id
     record(request.state)
-    activate(request.state.partition)
+    activate(browserPageID(request.state))
     setState("presentation", request.id)
     input.reveal()
-    console.debug(`[browser-tabs] reveal partition=${request.state.partition} request=${request.id}`)
+    console.debug(`[browser-tabs] reveal pageID=${browserPageID(request.state)} request=${request.id}`)
   }
   const navigate = (partition: string, url: string) => {
     if (!api || disposed) return
@@ -146,7 +156,7 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
     if (!api || disposed) return
     const partition = `persist:tab-${crypto.randomUUID()}`
     const target = url ? normalizeAddress(url) : undefined
-    record({ partition, url: "about:blank", title: "", loading: false, shared: false, epoch: 0 })
+    record({ pageID: partition, profileID: partition, partition, url: "about:blank", title: "", loading: false, shared: false, epoch: 0 })
     activate(partition)
     navigate(partition, target ?? "about:blank")
     return partition
@@ -160,10 +170,10 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
     setAddress: (value: string) => setState("address", value),
     activate,
     addUserTab,
-    activeAgent: () => isAgentPartition(state.active),
+    activeAgent: () => tabs().some((tab) => tab.pageID === state.active && tab.agent),
     activeUserTab: () => tabs().find((tab) => tab.partition === state.active && !tab.agent),
     go(raw: string) {
-      if (isAgentPartition(state.active)) return
+      if (tabs().some((tab) => tab.pageID === state.active && tab.agent)) return
       const target = normalizeAddress(raw)
       if (!target) return
       if (!state.views[state.active]) addUserTab(raw)
@@ -198,7 +208,7 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
         .then((snapshot) => {
           if (disposed) return
           batch(() => {
-            for (const next of snapshot) if (!state.views[next.partition]) record(next)
+            for (const next of snapshot) if (!state.views[browserPageID(next)]) record(next)
             reconcile()
           })
           console.debug(`[browser-tabs] restored count=${tabs().length}`)

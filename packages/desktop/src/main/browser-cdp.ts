@@ -113,6 +113,7 @@ export class BrowserCdp {
   private domEnabled = false
   private consoleEnabled = false
   private networkEnabled = false
+  private viewportQueue: Promise<void> = Promise.resolve()
   private responseListeners = new Set<(response: { origin: string; path: string; status: number }) => void>()
 
   constructor(private readonly wc: WebContents) {}
@@ -138,6 +139,38 @@ export class BrowserCdp {
     await this.dbg.sendCommand("Page.enable")
     await this.dbg.sendCommand("Runtime.enable")
     log("attach", "debugger attached", { webContentsId: this.wc.id })
+  }
+
+  /** Set Chromium's layout viewport independently of the native view bounds. */
+  async setViewport(width: number, height: number) {
+    if (!Number.isSafeInteger(width) || width < 1 || !Number.isSafeInteger(height) || height < 1)
+      throw new Error("Browser viewport dimensions must be positive integers")
+    const apply = this.viewportQueue.then(async () => {
+      await this.ensureAttached()
+      await this.dbg.sendCommand("Emulation.setDeviceMetricsOverride", {
+        width,
+        height,
+        deviceScaleFactor: 1,
+        mobile: false,
+      })
+      await this.dbg.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: true })
+      log(
+        "viewport",
+        `device metrics and page focus emulation applied width=${width} height=${height} webContentsId=${this.wc.id}`,
+      )
+    })
+    this.viewportQueue = apply.catch(() => {})
+    await apply
+  }
+
+  async setFocusEmulation(enabled: boolean) {
+    const apply = this.viewportQueue.then(async () => {
+      await this.ensureAttached()
+      await this.dbg.sendCommand("Emulation.setFocusEmulationEnabled", { enabled })
+      log("focus-emulation", `page focus emulation enabled=${enabled} webContentsId=${this.wc.id}`)
+    })
+    this.viewportQueue = apply.catch(() => {})
+    await apply
   }
 
   private async onDebuggerMessage(method: string, params: Record<string, unknown>) {
@@ -366,7 +399,6 @@ export class BrowserCdp {
   }
   async pressEscape() {
     await this.ensureAttached()
-    this.wc.focus()
     for (const type of ["rawKeyDown", "keyUp"])
       await this.dbg.sendCommand("Input.dispatchKeyEvent", {
         type,
@@ -378,7 +410,6 @@ export class BrowserCdp {
   }
   async pressArrowRight() {
     await this.ensureAttached()
-    this.wc.focus()
     for (const type of ["rawKeyDown", "keyUp"])
       await this.dbg.sendCommand("Input.dispatchKeyEvent", {
         type,
@@ -404,7 +435,6 @@ export class BrowserCdp {
       y: point.y,
       button: "none",
     })
-    this.wc.focus()
     for (const type of ["mousePressed", "mouseReleased"])
       await this.dbg.sendCommand("Input.dispatchMouseEvent", {
         type,
@@ -495,8 +525,6 @@ export class BrowserCdp {
       y: preMovePoint.y,
       button: "none",
     })
-    this.wc.focus()
-
     const finalTarget = await this.resolveElementExpression(expression)
     if (finalTarget.nodeName !== "BUTTON" || finalTarget.backendNodeId !== initial.backendNodeId) {
       await this.releaseRemoteObject(finalTarget.objectId)
@@ -665,7 +693,6 @@ export class BrowserCdp {
     }
     const dbg = this.dbg
     await dbg.sendCommand("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y, button: "none" })
-    this.wc.focus()
     if (beforeDispatch) {
       point = await this.resolveUidCenter(uid, position)
       if (!point) throw new Error(`element not found for uid ${uid} before mouse press; no click dispatched`)

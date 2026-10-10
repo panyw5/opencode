@@ -183,6 +183,65 @@ function fixture(
 }
 
 describe("gpt-pro trusted submission", () => {
+  test("binds hidden pages to distinct WebContents identities on the shared GPT profile", async () => {
+    const pages = new Map<string, { pageID: string; partition: string; profileID: string; url: string; epoch: number }>()
+    const opened: Array<{ pageID: string; profileID: string; url: string; kind?: string; owner?: unknown }> = []
+    const presented: string[] = []
+    const browser = {
+      getState: () => [...pages.values()],
+      openPage: async (
+        pageID: string,
+        profileID: string,
+        url: string,
+        metadata: { kind?: string; owner?: unknown },
+      ) => {
+        opened.push({ pageID, profileID, url, ...metadata })
+        const state = { pageID, partition: pageID, profileID, url, epoch: 1 }
+        pages.set(pageID, state)
+        return state
+      },
+      cdp: () => ({
+        evaluate: async (expression: string) =>
+          expression === CHATGPT_INSPECT_EXPRESSION
+            ? {
+                url: GPT_PRO_URL,
+                model: "Website selection",
+                targetModel: false,
+                composer: true,
+                draft: "",
+                generating: false,
+                revision: 0,
+                users: [],
+              }
+            : { url: GPT_PRO_URL, composer: [], users: [] },
+      }),
+      present: (pageID: string) => presented.push(pageID),
+      has: (pageID: string) => pages.has(pageID),
+    }
+    const ownerA = { directory: "/repo", sessionID: "ses_a" }
+    const ownerB = { directory: "/repo", sessionID: "ses_b" }
+    const first = new GptProDriver(browser as never, () => {}, {
+      pageID: "gpt-pro-page-one",
+      profileID: GPT_PRO_PARTITION,
+      owner: ownerA,
+    })
+    const second = new GptProDriver(browser as never, () => {}, {
+      pageID: "gpt-pro-page-two",
+      profileID: GPT_PRO_PARTITION,
+      owner: ownerB,
+    })
+    await first.open(GPT_PRO_URL, true)
+    await second.open(GPT_PRO_URL, true)
+    expect(opened).toEqual([
+      { pageID: "gpt-pro-page-one", profileID: GPT_PRO_PARTITION, url: GPT_PRO_URL, kind: "consultation", owner: ownerA },
+      { pageID: "gpt-pro-page-two", profileID: GPT_PRO_PARTITION, url: GPT_PRO_URL, kind: "consultation", owner: ownerB },
+    ])
+    expect(presented).toEqual([])
+    expect(await first.page()).toMatchObject({ composer: true, users: [] })
+    pages.set("gpt-pro-page-one", { ...pages.get("gpt-pro-page-one")!, epoch: 2 })
+    await expect(first.page()).rejects.toThrow("generation changed")
+    expect(await second.page()).toMatchObject({ composer: true, users: [] })
+  })
   test("a covered send control hands off before recording any send attempt", async () => {
     const f = fixture()
     f.cover()

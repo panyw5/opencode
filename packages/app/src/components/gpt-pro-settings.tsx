@@ -5,6 +5,9 @@ import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { Switch } from "@opencode-ai/ui/switch"
 import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
+import { handoffGptPro } from "@opencode-ai/ui/gpt-pro-handoff"
+import { resolveGptProView, type GptProCachedResult } from "@opencode-ai/ui/gpt-pro-result"
+import { GptProResultPreviewDialog, type GptProResultPreviewState } from "@opencode-ai/ui/gpt-pro-result-preview"
 import { getDirectory } from "@opencode-ai/core/util/path"
 import { usePlatform } from "@/context/platform"
 import { useLanguage } from "@/context/language"
@@ -20,6 +23,15 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
     login: "",
     extensionDirectory: "",
     jobs: [] as GptProJob[],
+    result: {
+      open: false,
+      loading: false,
+      opening: false,
+      error: "",
+      originalURL: undefined as string | undefined,
+      jobID: undefined as string | undefined,
+      result: undefined as GptProCachedResult | undefined,
+    },
     error: "",
     busy: false,
   })
@@ -63,6 +75,72 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
     if (state.login === "imported") return t("gptPro.importStatus.success")
     if (state.login === "failed") return t("gptPro.importStatus.failed")
     return t("gptPro.importStatus.notImported")
+  }
+  const viewHistory = async (job: GptProJob) => {
+    if (!api || state.busy) return
+    set("busy", true)
+    set("error", "")
+    set("result", {
+      open: false,
+      loading: false,
+      opening: false,
+      error: "",
+      originalURL: job.url,
+      jobID: job.id,
+      result: undefined,
+    })
+    console.debug(`[gpt-pro-settings] resolving history View id=${job.id} phase=${job.phase}`)
+    try {
+      const resolution = await resolveGptProView(api, job.id)
+      if (disposed) return
+      if (resolution.kind === "cached") {
+        set("busy", false)
+        set("result", {
+          open: true,
+          loading: false,
+          opening: false,
+          error: "",
+          originalURL: resolution.result.url || job.url,
+          jobID: resolution.result.id,
+          result: resolution.result,
+        })
+        return
+      }
+      if (resolution.kind === "unavailable") {
+        set("busy", false)
+        set("result", {
+          open: true,
+          loading: false,
+          opening: false,
+          error: t("gptPro.resultUnavailable"),
+          originalURL: resolution.url || job.url,
+          jobID: resolution.id,
+          result: undefined,
+        })
+        return
+      }
+      set("result", { open: false, loading: false, opening: false, error: "", originalURL: undefined, jobID: undefined, result: undefined })
+      await handoffGptPro(api, resolution.job.id)
+      set("busy", false)
+    } catch (error) {
+      if (!disposed) {
+        console.warn(`[gpt-pro-settings] history View failed id=${job.id} error=${String(error)}`)
+        set("busy", false)
+        set("result", {
+          open: true,
+          loading: false,
+          opening: false,
+          error: t("gptPro.resultUnavailable"),
+          originalURL: job.url,
+          jobID: job.id,
+          result: undefined,
+        })
+      }
+    }
+  }
+  const closeResult = () => {
+    if (disposed) return
+    set("result", { open: false, loading: false, opening: false, error: "", originalURL: undefined, jobID: undefined, result: undefined })
   }
   onMount(() => {
     void refresh()
@@ -298,6 +376,34 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
                   }
                 />
               </label>
+              <label class="flex items-center justify-between gap-4 text-13-regular">
+                {t("gptPro.maxConcurrent")}
+                <input
+                  aria-label={t("gptPro.maxConcurrent")}
+                  type="number"
+                  min="1"
+                  max="8"
+                  class="h-8 w-20 rounded-lg border border-border-weak-base bg-background-base px-2.5 text-13-regular text-text-base"
+                  value={state.config.maxConcurrent ?? 4}
+                  onChange={(event) =>
+                    void save({ ...state.config, maxConcurrent: Number(event.currentTarget.value) })
+                  }
+                />
+              </label>
+              <label class="flex items-center justify-between gap-4 text-13-regular">
+                {t("gptPro.maxResidentPages")}
+                <input
+                  aria-label={t("gptPro.maxResidentPages")}
+                  type="number"
+                  min={state.config.maxConcurrent ?? 4}
+                  max="32"
+                  class="h-8 w-20 rounded-lg border border-border-weak-base bg-background-base px-2.5 text-13-regular text-text-base"
+                  value={state.config.maxResidentPages ?? 8}
+                  onChange={(event) =>
+                    void save({ ...state.config, maxResidentPages: Number(event.currentTarget.value) })
+                  }
+                />
+              </label>
             </div>
           </section>
         </div>
@@ -319,19 +425,30 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
               {(job) => (
                 <button
                   type="button"
+                  aria-label={`${t("gptPro.viewResult")}: ${job.id}`}
                   class="rounded-lg border border-border-weak-base p-3 text-start hover:bg-surface-secondary"
-                  onClick={() => void run(() => api!.command({ action: "open", id: job.id }))}
+                  onClick={() => void viewHistory(job)}
                 >
                   <div class="text-12-medium">
-                    {job.phase} · {job.prompt.slice(0, 90)}
+                    {job.phase} · {job.ownerPage?.sessionID ?? "manual"} · page {job.pageID?.slice(-8) ?? "legacy"}
                   </div>
+                  <div class="mt-1 text-11-regular text-text-weak">{job.prompt.slice(0, 90)}</div>
                   <div class="mt-1 text-11-regular text-text-weak">{job.id}</div>
+                  <div class="mt-2 text-11-medium text-text-base">{t("gptPro.viewResult")}</div>
                 </button>
               )}
             </For>
           </div>
         </Collapsible.Content>
       </Collapsible>
+      <Show when={state.result.open}>
+        <GptProResultPreviewDialog
+          state={state.result as GptProResultPreviewState}
+          client={api!}
+          jobID={state.result.jobID}
+          onClose={closeResult}
+        />
+      </Show>
     </div>
   )
 }

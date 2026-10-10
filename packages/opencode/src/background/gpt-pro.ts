@@ -8,6 +8,7 @@ import { Database, eq, sql } from "@/storage/db"
 import { SessionTable, SessionInputTable } from "@/session/session.sql"
 import * as EffectLogger from "@opencode-ai/core/effect/logger"
 import { Browser } from "@/browser"
+import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import type { GptProNotification } from "@opencode-ai/util/gpt-pro"
 
 const log = EffectLogger.create({ service: "background.gpt-pro" })
@@ -124,7 +125,7 @@ export const layer = Layer.effect(
         if (!paused && wake && drain) yield* drain(sessionID)
       })
     const receive = Effect.fn("BackgroundGptPro.receive")(function* (event: GptProNotification) {
-      const { directory } = yield* InstanceState.context
+      const directory = AppFileSystem.resolve((yield* InstanceState.context).directory)
       const separator = event.owner.lastIndexOf("\n")
       if (
         separator < 0 ||
@@ -137,7 +138,7 @@ export const layer = Layer.effect(
       const sessionID = SessionID.make(event.owner.slice(separator + 1))
       const parent = yield* sessions.get(sessionID).pipe(Effect.option)
       if (Option.isNone(parent)) return { ack: true }
-      if (parent.value.directory !== directory) return { ack: false }
+      if (AppFileSystem.resolve(parent.value.directory) !== directory) return { ack: false }
       // Inbox rows are removed when claimed; historical message metadata is the durable replay receipt.
       const previous = yield* MessageV2.get({
         sessionID,

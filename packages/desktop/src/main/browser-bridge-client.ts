@@ -37,7 +37,9 @@ export class BridgeClient {
     this.unsubscribeController()
     this.unsubs.push(
       this.controller.onViewState((state) => this.sendEvent("browser.updated", state)),
-      this.controller.onViewClosed((partition, epoch) => this.sendEvent("browser.closed", { partition, epoch })),
+      this.controller.onViewClosed((pageID, epoch, profileID) =>
+        this.sendEvent("browser.closed", { pageID, partition: pageID, profileID, epoch }),
+      ),
     )
     this.controller.events.onConsole = (entry) => this.sendEvent("browser.console", entry)
     const timer = setInterval(() => {
@@ -166,14 +168,19 @@ export class BridgeClient {
   }
 
   private async execute(name: string, args: Record<string, unknown>): Promise<unknown> {
-    const partition = typeof args.partition === "string" && args.partition ? args.partition : USER_PARTITION
+    const pageID =
+      typeof args.pageID === "string" && args.pageID
+        ? args.pageID
+        : typeof args.partition === "string" && args.partition
+          ? args.partition
+          : USER_PARTITION
     const controller = this.controller
     // cdp() no longer ensure-creates views: commands against a missing view
     // must fail loudly (the tool surfaces the error) instead of silently
     // materializing a blank view nobody navigates.
     const requireCdp = () => {
-      const cdp = controller.cdp(partition)
-      if (!cdp) throw new Error(`no browser view open for partition ${partition} (navigate first)`)
+      const cdp = controller.cdp(pageID)
+      if (!cdp) throw new Error(`no browser view open for page ${pageID} (navigate first)`)
       return cdp
     }
     switch (name) {
@@ -186,7 +193,7 @@ export class BridgeClient {
           args.id,
           args.name as GptProBrowserCommand,
           operationArgs,
-          (partition) => this.execute(args.name as string, { ...operationArgs, partition }),
+          (pageID) => this.execute(args.name as string, { ...operationArgs, partition: pageID, pageID }),
         )
       }
       case "gpt-pro-notifications": {
@@ -203,6 +210,13 @@ export class BridgeClient {
         getGptProController().acknowledge(args.directory, args.ids as string[])
         return true
       }
+      case "gpt-pro-cancel-owner": {
+        if (typeof args.directory !== "string" || !args.directory || typeof args.sessionID !== "string" || !args.sessionID)
+          throw new Error("Missing stored session owner identity")
+        const owner = `${args.directory}\n${args.sessionID}`
+        const cancelled = getGptProController().cancelOwner(owner)
+        return { cancelled }
+      }
       case "gpt-pro": {
         if (typeof args.owner !== "string" || !args.owner || args.owner.length > 4096)
           throw new Error("Missing consultation owner")
@@ -211,7 +225,7 @@ export class BridgeClient {
       case "navigate": {
         const url = String(args.url ?? "")
         if (!url) throw new Error("navigate requires url")
-        const state = await controller.open(partition, url)
+        const state = await controller.open(pageID, url)
         return { state }
       }
       case "snapshot": {
@@ -219,7 +233,7 @@ export class BridgeClient {
         return { snapshot }
       }
       case "screenshot": {
-        const data = await controller.captureScreenshot(partition, args.fullPage === true)
+        const data = await controller.captureScreenshot(pageID, args.fullPage === true)
         return { data, mime: "image/png" }
       }
       case "click": {
@@ -228,7 +242,7 @@ export class BridgeClient {
         const position =
           args.position && typeof args.position === "object" ? (args.position as { x: number; y: number }) : undefined
         const point = await requireCdp().click(uid, position)
-        return { point, state: controller.getState().find((s) => s.partition === partition) }
+        return { point, state: controller.getState().find((s) => s.pageID === pageID || s.partition === pageID) }
       }
       case "type": {
         const uid = String(args.uid ?? "")
@@ -238,14 +252,14 @@ export class BridgeClient {
           clear: args.clear !== false,
           submit: args.submit === true,
         })
-        return { ...result, state: controller.getState().find((s) => s.partition === partition) }
+        return { ...result, state: controller.getState().find((s) => s.pageID === pageID || s.partition === pageID) }
       }
       case "scroll": {
         const uid = typeof args.uid === "string" && args.uid ? args.uid : undefined
         const direction = args.direction === "up" ? ("up" as const) : ("down" as const)
         const amount = typeof args.amount === "number" && args.amount > 0 ? args.amount : undefined
         await requireCdp().scroll({ uid, direction, amount })
-        return { state: controller.getState().find((s) => s.partition === partition) }
+        return { state: controller.getState().find((s) => s.pageID === pageID || s.partition === pageID) }
       }
       case "back":
         requireCdp().back()
@@ -257,11 +271,11 @@ export class BridgeClient {
         requireCdp().reload()
         return {}
       case "state": {
-        const state = controller.getState().find((s) => s.partition === partition)
+        const state = controller.getState().find((s) => s.pageID === pageID || s.partition === pageID)
         return { state }
       }
       case "close": {
-        controller.close(partition)
+        controller.close(pageID)
         return {}
       }
       default:

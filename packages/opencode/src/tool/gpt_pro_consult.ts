@@ -6,6 +6,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { gptProTerminal, type GptProJob } from "@opencode-ai/util/gpt-pro"
 import * as Log from "@opencode-ai/core/util/log"
 import { prepareGptProAttachments } from "./gpt-pro-attachments"
+import { AppFileSystem } from "@opencode-ai/core/filesystem"
 
 const log = Log.create({ service: "tool.gpt_pro_consult" })
 const Parameters = Schema.Struct({
@@ -60,7 +61,7 @@ export const GptProConsultTool = Tool.define(
         return Effect.scoped(
           Effect.gen(function* () {
             const action = params.action ?? "consult"
-            const directory = (yield* InstanceState.context).directory
+            const directory = AppFileSystem.resolve((yield* InstanceState.context).directory)
             const owner = `${directory}\n${ctx.sessionID}`
             const directParts = ctx.extra?.gptProAttachmentParts as readonly unknown[] | undefined
             if ((params.files?.length || directParts?.length) && action !== "consult" && action !== "intervene") {
@@ -87,6 +88,8 @@ export const GptProConsultTool = Tool.define(
             const metadata = (job: GptProJob) => ({
               consultation_id: job.id,
               phase: job.phase,
+              queue_reason: job.queueReason,
+              queue_owner_consultation_id: job.queueOwnerConsultationID,
               url: job.url,
               model: job.model,
               preview: job.prompt.slice(0, 160),
@@ -135,6 +138,8 @@ export const GptProConsultTool = Tool.define(
             const output = JSON.stringify({
               consultation_id: job.id,
               phase: job.phase,
+              queue_reason: job.queueReason,
+              queue_owner_consultation_id: job.queueOwnerConsultationID,
               url: job.url,
               model: job.model,
               error: job.error,
