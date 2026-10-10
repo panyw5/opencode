@@ -5,7 +5,13 @@ import {
   CHATGPT_ONBOARDING_DISMISS_EXPRESSION,
   CHATGPT_SEND_TARGET_EXPRESSION,
 } from "@opencode-ai/util/chatgpt-page"
-import { GPT_PRO_PARTITION, GPT_PRO_URL, isGptProOrigin, type GptProPageState } from "@opencode-ai/util/gpt-pro"
+import {
+  GPT_PRO_PARTITION,
+  GPT_PRO_URL,
+  isGptProOrigin,
+  isGptProLoginUrl,
+  type GptProPageState,
+} from "@opencode-ai/util/gpt-pro"
 import type { BrowserController } from "./browser"
 import type { BeforeTrustedClick } from "./browser-cdp"
 import { GptProPageError } from "./gpt-pro-page-error"
@@ -45,7 +51,9 @@ export class GptProDriver {
   private cdp() {
     const state = this.state()
     if (!state || (this.pageEpoch !== undefined && state.epoch !== this.pageEpoch))
-      throw new Error("The consultation page generation changed. Reopen or recover explicitly; no automatic resend is allowed.")
+      throw new Error(
+        "The consultation page generation changed. Reopen or recover explicitly; no automatic resend is allowed.",
+      )
     const cdp = this.browser.cdp(this.pageID)
     if (!cdp)
       throw new Error("The gpt-pro browser was closed. Reopen the consultation; no automatic resend is allowed.")
@@ -56,7 +64,9 @@ export class GptProDriver {
     if (!error) return
     if (error.kind === "verification") return error
     if (error.kind === "request") {
-      this.log(`driver passing request diagnostic scope=${error.scope ?? "legacy"} to consultation owner; no driver-wide gate`)
+      this.log(
+        `driver passing request diagnostic scope=${error.scope ?? "legacy"} to consultation owner; no driver-wide gate`,
+      )
       return
     }
     return error
@@ -123,6 +133,10 @@ export class GptProDriver {
     if (!state) throw new Error(`The consultation browser view is unavailable for page ${this.pageID}. Reopen explicitly.`)
     if (this.pageEpoch !== undefined && state.epoch !== this.pageEpoch)
       throw new Error("The consultation page generation changed; stale page evidence was discarded")
+    if (isGptProLoginUrl(state.url)) {
+      this.log(`driver login required pageID=${this.pageID} epoch=${state.epoch}; no input dispatched`)
+      throw new GptProPageError("Sign in to ChatGPT before continuing this consultation.", "login")
+    }
     if (!isGptProOrigin(state.url))
       throw new Error("The gpt-pro browser is on an unexpected origin. Navigate it to ChatGPT before continuing.")
     const cdp = this.cdp()
@@ -205,7 +219,9 @@ export class GptProDriver {
       if (await this.cdp().evaluate(CHATGPT_ONBOARDING_DISMISS_EXPRESSION))
         this.log("driver promo remains after best-effort dismissal; editor focus and send hit tests decide readiness")
     } catch {
-      this.log("driver promo state unavailable after best-effort dismissal; editor focus and send hit tests decide readiness")
+      this.log(
+        "driver promo state unavailable after best-effort dismissal; editor focus and send hit tests decide readiness",
+      )
     }
   }
   async ready() {
@@ -254,7 +270,9 @@ export class GptProDriver {
       }
       await new Promise((r) => setTimeout(r, 250))
     }
-    throw new Error("The ChatGPT composer did not become available. The page may still be loading or its interface may have changed. No message was sent.")
+    throw new Error(
+      "The ChatGPT composer did not become available. The page may still be loading or its interface may have changed. No message was sent.",
+    )
   }
   async observeModel() {
     this.log("driver observing current model without opening or changing the picker")
@@ -375,7 +393,9 @@ export class GptProDriver {
           readiness = state
         }
         if (page.attachments?.length)
-          throw new Error("Composer attachments appeared before this consultation uploaded files; no matching manual file was accepted")
+          throw new Error(
+            "Composer attachments appeared before this consultation uploaded files; no matching manual file was accepted",
+          )
         await new Promise((resolve) => setTimeout(resolve, 250))
         page = await this.page()
         const nextBlockingError = this.blockingPageError(page)
@@ -437,7 +457,9 @@ export class GptProDriver {
   recover() {
     const current = this.state()
     if (current) this.pageEpoch = current.epoch
-    this.log(`driver explicit recovery adopted pageID=${this.pageID} epoch=${this.pageEpoch ?? "missing"}; rendered webpage state remains authoritative`)
+    this.log(
+      `driver explicit recovery adopted pageID=${this.pageID} epoch=${this.pageEpoch ?? "missing"}; rendered webpage state remains authoritative`,
+    )
   }
   dispose() {
     this.stopObserving?.()

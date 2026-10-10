@@ -1826,6 +1826,9 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
             {(() => {
               const state = part().state
               if (state.status !== "error") return null
+              if (tool === "gpt_pro_consult") {
+                return <GptProTool status="error" input={input()} metadata={partMetadata()} error={state.error} part={part()} />
+              }
               if (tool === "present_file") {
                 return (
                   <PresentationCard

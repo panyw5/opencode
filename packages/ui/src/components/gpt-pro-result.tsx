@@ -1,4 +1,5 @@
 import { gptProTerminal, type GptProAPI, type GptProJob } from "@opencode-ai/util/gpt-pro"
+import { gptProErrorText, gptProIssue, type GptProIssueCode } from "@opencode-ai/util/gpt-pro-error"
 
 export type GptProCachedResult = {
   id: string
@@ -6,13 +7,14 @@ export type GptProCachedResult = {
   url: string
   text?: string
   error?: string
+  errorCode?: GptProIssueCode
   source: "read" | "output"
 }
 
 export type GptProViewResolution =
   | { kind: "cached"; result: GptProCachedResult }
   | { kind: "live"; job: GptProJob }
-  | { kind: "unavailable"; id: string; url?: string }
+  | { kind: "unavailable"; id: string; url?: string; error?: string; errorCode?: GptProIssueCode }
 
 function finalPhase(value: unknown): value is GptProCachedResult["phase"] {
   return value === "completed" || value === "cancelled" || value === "failed"
@@ -25,6 +27,7 @@ function resultFromJob(job: GptProJob): GptProCachedResult {
     url: job.url,
     text: job.text,
     error: job.error,
+    errorCode: job.errorCode,
     source: "read",
   }
 }
@@ -62,7 +65,8 @@ export async function resolveGptProView(
   try {
     // Read is successor-aware and preserves the full answer; never build a result from list/status text.
     current = await client.command({ action: "read", id })
-  } catch {
+  } catch (error) {
+    const failure = { error: gptProErrorText(error), errorCode: gptProIssue({ error })?.code ?? "unknown" as const }
     let currentID = id
     let url: string | undefined
     try {
@@ -72,10 +76,10 @@ export async function resolveGptProView(
       if (!finalPhase(status.phase)) return { kind: "live", job: status }
     } catch {
       const fallback = parseGptProOutputFallback(output, id)
-      return fallback ? { kind: "cached", result: fallback } : { kind: "unavailable", id }
+      return fallback ? { kind: "cached", result: fallback } : { kind: "unavailable", id, ...failure }
     }
     const fallback = parseGptProOutputFallback(output, currentID)
-    return fallback ? { kind: "cached", result: fallback } : { kind: "unavailable", id: currentID, url }
+    return fallback ? { kind: "cached", result: fallback } : { kind: "unavailable", id: currentID, url, ...failure }
   }
   if (!gptProTerminal(current.phase) || !finalPhase(current.phase)) return { kind: "live", job: current }
   return { kind: "cached", result: resultFromJob(current) }

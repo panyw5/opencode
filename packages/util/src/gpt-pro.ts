@@ -1,3 +1,5 @@
+import type { GptProIssueCode } from "./gpt-pro-error"
+
 export const GPT_PRO_PARTITION = "persist:consult-gpt-pro"
 export const GPT_PRO_URL = "https://chatgpt.com/"
 export const GPT_PRO_MAX_HTML_CHARS = 1_000_000
@@ -205,7 +207,7 @@ export type GptProJob = {
   parentID?: string
   successorID?: string
   phase: GptProPhase
-  queueReason?: "capacity" | "owner_busy" | "page_capacity"
+  queueReason?: "capacity" | "owner_busy" | "page_capacity" | "login_import"
   queueOwnerConsultationID?: string
   prompt: string
   attachments?: GptProJobAttachment[]
@@ -226,6 +228,8 @@ export type GptProJob = {
   html?: string
   revision: number
   error?: string
+  errorCode?: GptProIssueCode
+  stopPending?: boolean
   background?: boolean
   notifications?: GptProNotification[]
   notificationSequence?: number

@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { GptProController, type GptProDriverAPI, type GptProLifecycleOptions, type GptProManagedPage } from "./gpt-pro-controller"
+import {
+  GptProController,
+  type GptProDriverAPI,
+  type GptProLifecycleOptions,
+  type GptProManagedPage,
+} from "./gpt-pro-controller"
 import {
   GPT_PRO_URL,
   type GptProAttachment,
@@ -523,7 +528,11 @@ describe("gpt-pro consultation control", () => {
       const next = await f.controller.command({ prompt: "New question" }, "/repo\nses_new_terminal")
       await until(() => resources.closed.length === 1)
       await until(() => f.controller.list().find((job) => job.id === next.id)?.phase === "generating")
-      expect(resources.closed[0]).toMatchObject({ pageID: old.pageID ?? `gpt-pro-page-${old.id}`, epoch: 3, reason: "resident-budget-eviction" })
+      expect(resources.closed[0]).toMatchObject({
+        pageID: old.pageID ?? `gpt-pro-page-${old.id}`,
+        epoch: 3,
+        reason: "resident-budget-eviction",
+      })
       expect(resources.pages.has(`gpt-pro-page-${old.id}`)).toBe(false)
     } finally {
       f.controller.dispose()
@@ -640,7 +649,12 @@ describe("gpt-pro consultation control", () => {
       { pageID: `gpt-pro-page-${paused.id}`, epoch: 1, lastActivity: 2, protected: false },
       { url: GPT_PRO_URL, composer: true, draft: "", generating: false, revision: 0, users: [] },
     )
-    const f = fixture({ loaded: [protectedJob, paused], lifecycle: resources.options, maxConcurrent: 2, maxResidentPages: 2 })
+    const f = fixture({
+      loaded: [protectedJob, paused],
+      lifecycle: resources.options,
+      maxConcurrent: 2,
+      maxResidentPages: 2,
+    })
     try {
       const next = await f.controller.command({ prompt: "Third page" }, "/repo\nses_page_limit")
       await until(() => f.controller.list().find((job) => job.id === next.id)?.queueReason === "page_capacity")
@@ -670,11 +684,18 @@ describe("gpt-pro consultation control", () => {
       { url: GPT_PRO_URL, composer: true, draft: "", generating: false, revision: 0, users: [] },
     )
     let f!: ReturnType<typeof multiPageFixture>
-    f = multiPageFixture(2, undefined, undefined, resources.options, (jobID) => {
-      const pageID = `gpt-pro-page-${jobID}`
-      const page = f.pages.get(jobID)!
-      resources.add({ pageID, epoch: 1, lastActivity: Date.now(), protected: false }, page)
-    }, [viewed])
+    f = multiPageFixture(
+      2,
+      undefined,
+      undefined,
+      resources.options,
+      (jobID) => {
+        const pageID = `gpt-pro-page-${jobID}`
+        const page = f.pages.get(jobID)!
+        resources.add({ pageID, epoch: 1, lastActivity: Date.now(), protected: false }, page)
+      },
+      [viewed],
+    )
     f.controller.setConfig({ enabled: true, timeoutMinutes: 30, maxConcurrent: 2, maxResidentPages: 2 })
     try {
       const [first, second] = await Promise.all([
@@ -725,9 +746,9 @@ describe("gpt-pro consultation control", () => {
     try {
       const first = await f.controller.command({ requestID: "owner-first", prompt: "First" }, owner)
       await until(() => f.controller.list().find((job) => job.id === first.id)?.phase === "generating")
-      await expect(
-        f.controller.command({ requestID: "owner-second", prompt: "Second" }, owner),
-      ).rejects.toThrow(`owner_page_busy: consultation ${first.id} is still generating`)
+      await expect(f.controller.command({ requestID: "owner-second", prompt: "Second" }, owner)).rejects.toThrow(
+        `owner_page_busy: consultation ${first.id} is still generating`,
+      )
       await f.controller.command({ action: "stop", id: first.id }, owner)
       const second = await f.controller.command({ requestID: "owner-second", prompt: "Second" }, owner)
       expect(second.pageID).not.toBe(first.pageID)
@@ -785,10 +806,128 @@ describe("gpt-pro consultation control", () => {
         expect(f.pages.get(b.id)?.generating).toBe(true)
         expect(f.controller.list().find((item) => item.id === b.id)?.phase).toBe("generating")
         expect(resources.pages.size).toBe(2)
-        expect(f.logs.some((line) => line.includes(`native stop settled id=${a.id}`) && line.includes("outcome=stopped"))).toBe(true)
+        expect(
+          f.logs.some((line) => line.includes(`native stop settled id=${a.id}`) && line.includes("outcome=stopped")),
+        ).toBe(true)
       } finally {
         f.controller.dispose()
       }
+    }
+  })
+  test("paused unsent login recovery can import login without cancelling or automatically sending", async () => {
+    const job: GptProJob = { id: "gpt_login_wait", owner: "/repo\nses_login_wait", requestID: "login-wait", phase: "paused",
+      prompt: "Original question", url: GPT_PRO_URL, createdAt: 1, updatedAt: 1, submitted: false, revision: 0,
+      recovery: { stage: "ready", reason: "Sign in to ChatGPT", needsHuman: true } }
+    const f = fixture({ loaded: [job] })
+    let imported = 0
+    try {
+      await f.controller.importLogin(async () => { imported++ })
+      expect(imported).toBe(1)
+      expect(f.controller.list()[0].phase).toBe("paused")
+      expect(f.controller.list()[0].prompt).toBe(job.prompt)
+      expect(f.counts().submits).toBe(0)
+    } finally { f.controller.dispose() }
+  })
+  test("already-sent paused jobs protect their shared account from replacement", async () => {
+    const job: GptProJob = { id: "gpt_login_sent", owner: "/repo\nses_login_sent", requestID: "login-sent", phase: "paused",
+      prompt: "Original question", url: GPT_PRO_URL, createdAt: 1, updatedAt: 1, submitted: true, userID: "user", revision: 0 }
+    const f = fixture({ loaded: [job] })
+    let imported = 0
+    try {
+      await expect(f.controller.importLogin(async () => { imported++ })).rejects.toThrow("login_import_busy")
+      expect(imported).toBe(0)
+      expect(f.controller.list()[0].phase).toBe("paused")
+    } finally { f.controller.dispose() }
+  })
+  test("new consultations cannot dispatch while cookie import is in progress", async () => {
+    const f = fixture()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const importing = f.controller.importLogin(async () => { await gate })
+    try {
+      const job = await f.controller.command({ prompt: "Wait for import" }, "/repo\nses_import_queue")
+      expect(f.controller.list().find((item) => item.id === job.id)).toMatchObject({ phase: "queued", queueReason: "login_import" })
+      expect(f.opens).toHaveLength(0)
+      expect(f.counts().submits).toBe(0)
+      await expect(f.controller.importLogin(async () => {})).rejects.toThrow("login_import_busy")
+      release()
+      await importing
+      await until(() => f.page.generating)
+      expect(f.counts().submits).toBe(1)
+    } finally { release(); await importing; f.controller.dispose() }
+  })
+  test("failed login import releases the scheduling lock", async () => {
+    const f = fixture()
+    try {
+      await expect(f.controller.importLogin(async () => { throw Error("Import failed") })).rejects.toThrow("Import failed")
+      await f.controller.importLogin(async () => {})
+      await f.controller.command({ prompt: "Fresh question" }, "/repo\nses_import_unlock")
+      await until(() => f.page.generating)
+      expect(f.counts().submits).toBe(1)
+    } finally { f.controller.dispose() }
+  })
+  test("native stop failure is persisted as a warning without undoing local cancellation", async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const f = fixture({
+      stop: async () => {
+        await gate
+        throw new Error("Stop control unavailable")
+      },
+    })
+    try {
+      const job = await f.controller.command({ prompt: "Stop safely" }, "/repo\nses_stop_warning")
+      await until(() => f.page.generating)
+      const stopped = await f.controller.command({ action: "stop", id: job.id })
+      expect(stopped.phase).toBe("cancelled")
+      expect(stopped.stopPending).toBe(true)
+      release()
+      await until(() => f.saved().find((item) => item.id === job.id)?.errorCode === "stop_unconfirmed")
+      const saved = await f.controller.command({ action: "read", id: job.id })
+      expect(saved.phase).toBe("cancelled")
+      expect(saved.stopPending).toBe(false)
+      expect(saved.error).toContain("stopped locally")
+      expect(f.counts().submits).toBe(1)
+      await expect(f.controller.command({ action: "resume", id: job.id })).rejects.toThrow("Cannot resume")
+    } finally {
+      release()
+      f.controller.dispose()
+    }
+  })
+  test("restart does not leave cancelled consultations polling an unfinished native stop", () => {
+    const job: GptProJob = {
+      id: "gpt_restart_stop", owner: "main", requestID: "restart-stop", phase: "cancelled",
+      prompt: "Stopped question", url: GPT_PRO_URL, createdAt: 1, updatedAt: 1,
+      submitted: true, userID: "user-original", revision: 1, stopPending: true,
+    }
+    const f = fixture({ loaded: [job] })
+    try {
+      expect(f.controller.list()[0]).toMatchObject({ phase: "cancelled", stopPending: false, errorCode: "stop_unconfirmed" })
+      expect(f.opens).toHaveLength(0)
+      expect(f.counts().submits).toBe(0)
+    } finally { f.controller.dispose() }
+  })
+  test("history retention keeps an old terminal job until its native stop settles", async () => {
+    const resources = fakePageResources()
+    const old: GptProJob = {
+      id: "gpt_stop_retention", owner: "main", requestID: "stop-retention", phase: "paused",
+      prompt: "Original question", url: GPT_PRO_URL, createdAt: 0, updatedAt: 0,
+      submitted: false, revision: 0,
+    }
+    const completed = Array.from({ length: 31 }, (_, index) => ({ ...old, id: `gpt_stop_history_${index}`, phase: "completed" as const }))
+    resources.add({ pageID: `gpt-pro-page-${old.id}`, epoch: 1, lastActivity: 1, protected: false },
+      { url: GPT_PRO_URL, model: "", targetModel: false, composer: true, draft: "", generating: false, revision: 0, users: [] })
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    resources.options.resources.stop = async () => { await gate; throw Error("Native stop unavailable") }
+    const f = fixture({ loaded: [old, ...completed], lifecycle: resources.options })
+    try {
+      await f.controller.command({ action: "stop", id: old.id })
+      expect(f.saved().some((job) => job.id === old.id && job.stopPending)).toBe(true)
+      expect(f.controller.list().filter((job) => job.phase === "completed")).toHaveLength(30)
+    } finally {
+      release()
+      f.controller.dispose()
     }
   })
   test("owner cancellation revokes an in-flight consultation creation before admission", async () => {
@@ -803,7 +942,10 @@ describe("gpt-pro consultation control", () => {
     const stagingEntered = new Promise<void>((resolve) => (entered = resolve))
     const stagingGate = new Promise<void>((resolve) => (release = resolve))
     const controller = f.controller as unknown as {
-      stageAttachments: (jobID: string, attachments: GptProAttachment[]) => Promise<NonNullable<GptProJob["stagedAttachments"]>>
+      stageAttachments: (
+        jobID: string,
+        attachments: GptProAttachment[],
+      ) => Promise<NonNullable<GptProJob["stagedAttachments"]>>
     }
     const stage = controller.stageAttachments.bind(f.controller)
     controller.stageAttachments = async (jobID, attachments) => {
@@ -835,7 +977,10 @@ describe("gpt-pro consultation control", () => {
       await expect(creating).rejects.toThrow("owner_session_cancelled")
       expect(f.controller.list()).toHaveLength(0)
       expect(f.counts().submits).toBe(0)
-      const fresh = await f.controller.command({ requestID: "fresh-after-stop", prompt: "Fresh explicit request" }, owner)
+      const fresh = await f.controller.command(
+        { requestID: "fresh-after-stop", prompt: "Fresh explicit request" },
+        owner,
+      )
       expect(fresh.pageID).toBe(`gpt-pro-page-${fresh.id}`)
       expect(f.controller.list()).toHaveLength(1)
       await f.controller.command({ action: "stop", id: fresh.id }, owner)
@@ -875,7 +1020,12 @@ describe("gpt-pro consultation control", () => {
       submitted: false,
       revision: 0,
     }
-    const paused: GptProJob = { ...base, id: "gpt_paused", phase: "paused", recovery: { stage: "compose", reason: "Inspect" } }
+    const paused: GptProJob = {
+      ...base,
+      id: "gpt_paused",
+      phase: "paused",
+      recovery: { stage: "compose", reason: "Inspect" },
+    }
     const uncertain: GptProJob = {
       ...base,
       id: "gpt_uncertain",
@@ -985,18 +1135,21 @@ describe("gpt-pro consultation control", () => {
     }
   })
   test("retention never prunes recoverable paused or uncertain jobs", async () => {
-    const completed = Array.from({ length: 35 }, (_, index): GptProJob => ({
-      id: `gpt_completed_${index}`,
-      owner: `/repo\nses_${index}`,
-      requestID: `completed-${index}`,
-      phase: "completed",
-      prompt: `Question ${index}`,
-      url: GPT_PRO_URL,
-      createdAt: index,
-      updatedAt: index,
-      submitted: true,
-      revision: 0,
-    }))
+    const completed = Array.from(
+      { length: 35 },
+      (_, index): GptProJob => ({
+        id: `gpt_completed_${index}`,
+        owner: `/repo\nses_${index}`,
+        requestID: `completed-${index}`,
+        phase: "completed",
+        prompt: `Question ${index}`,
+        url: GPT_PRO_URL,
+        createdAt: index,
+        updatedAt: index,
+        submitted: true,
+        revision: 0,
+      }),
+    )
     const paused: GptProJob = {
       id: "gpt_recoverable_paused",
       owner: "/repo\nses_paused",
@@ -1052,10 +1205,7 @@ describe("gpt-pro consultation control", () => {
       const job = await f.controller.command({ prompt: "Keep this answer", background: true }, owner)
       await until(() => f.page.generating)
       f.finish("Durable answer")
-      resources.add(
-        { pageID: job.pageID!, epoch: 1, lastActivity: Date.now(), protected: false },
-        f.page,
-      )
+      resources.add({ pageID: job.pageID!, epoch: 1, lastActivity: Date.now(), protected: false }, f.page)
       await until(() => f.controller.list()[0]?.phase === "completed")
       await until(() => f.disposals() > 0)
       expect(resources.timers.size).toBe(1)
@@ -1079,7 +1229,10 @@ describe("gpt-pro consultation control", () => {
       const job = await f.controller.command({ prompt: "Later settled page" }, "/repo\nses_cleanup_retry")
       await until(() => f.page.generating)
       f.finish("Saved result")
-      resources.add({ pageID: job.pageID!, epoch: 1, lastActivity: Date.now(), protected: false }, { ...f.page, generating: true })
+      resources.add(
+        { pageID: job.pageID!, epoch: 1, lastActivity: Date.now(), protected: false },
+        { ...f.page, generating: true },
+      )
       await until(() => f.disposals() > 0)
       expect(resources.scheduledDelays).toEqual([30_000])
       for (const delay of [60_000, 120_000, 240_000, 300_000, 300_000]) {
@@ -1161,7 +1314,12 @@ describe("gpt-pro consultation control", () => {
       submitted: false,
       revision: 0,
     }
-    const paused: GptProJob = { ...base, id: "gpt_lifecycle_paused", phase: "paused", recovery: { stage: "compose", reason: "resume" } }
+    const paused: GptProJob = {
+      ...base,
+      id: "gpt_lifecycle_paused",
+      phase: "paused",
+      recovery: { stage: "compose", reason: "resume" },
+    }
     const uncertain: GptProJob = {
       ...base,
       id: "gpt_lifecycle_uncertain",
@@ -1252,7 +1410,22 @@ describe("gpt-pro consultation control", () => {
     )
     let saved: GptProJob[] = jobs
     const controller = new GptProController(
-      { open: async () => {}, ready: async () => ({ url: GPT_PRO_URL, composer: true, draft: "", generating: false, revision: 0, users: [] }), page: async () => ({ url: GPT_PRO_URL, composer: true, draft: "", generating: false, revision: 0, users: [] }), observeModel: async () => ({ url: GPT_PRO_URL, composer: true, draft: "", generating: false, revision: 0, users: [] }), fill: async () => {}, submit: async () => {}, stop: async () => {} },
+      {
+        open: async () => {},
+        ready: async () => ({ url: GPT_PRO_URL, composer: true, draft: "", generating: false, revision: 0, users: [] }),
+        page: async () => ({ url: GPT_PRO_URL, composer: true, draft: "", generating: false, revision: 0, users: [] }),
+        observeModel: async () => ({
+          url: GPT_PRO_URL,
+          composer: true,
+          draft: "",
+          generating: false,
+          revision: 0,
+          users: [],
+        }),
+        fill: async () => {},
+        submit: async () => {},
+        stop: async () => {},
+      },
       {
         load: () => saved,
         save: (next) => (saved = next),
@@ -1279,10 +1452,7 @@ describe("gpt-pro consultation control", () => {
     try {
       const job = await f.controller.command({ prompt: "Keep this active draft" }, "/repo\nses_manual_page_close")
       await until(() => f.controller.list()[0]?.phase === "generating")
-      resources.add(
-        { pageID: job.pageID!, epoch: 1, lastActivity: Date.now(), protected: false },
-        f.page,
-      )
+      resources.add({ pageID: job.pageID!, epoch: 1, lastActivity: Date.now(), protected: false }, f.page)
       resources.options.resources.close(job.pageID!, 1, "manual-close")
       await until(() => f.controller.list()[0]?.phase === "paused")
       expect(f.controller.list()[0]?.recovery?.reason).toBe("Consultation page closed")
@@ -1361,7 +1531,11 @@ describe("gpt-pro consultation control", () => {
       release()
       await new Promise((resolve) => setTimeout(resolve, 5))
       expect(f.controller.list().find((candidate) => candidate.id === job.id)?.phase).toBe("cancelled")
-      expect(f.controller.notifications("/repo").some((event) => event.consultationID === job.id && event.kind === "completed")).toBe(false)
+      expect(
+        f.controller
+          .notifications("/repo")
+          .some((event) => event.consultationID === job.id && event.kind === "completed"),
+      ).toBe(false)
     } finally {
       release()
       f.controller.dispose()
@@ -1639,6 +1813,23 @@ describe("gpt-pro consultation control", () => {
     try {
       await f.controller.command({ prompt: "Question" }, "main")
       await until(() => !!f.controller.list()[0].recovery)
+      expect(f.controller.list()[0].recovery?.needsHuman).toBe(true)
+      expect(f.controller.list()[0].errorCode).toBe("verification")
+      expect(f.counts().fills).toBe(0)
+      expect(f.counts().submits).toBe(0)
+    } finally {
+      f.controller.dispose()
+    }
+  })
+  test("login failure receives its own code and human handoff without filling or sending", async () => {
+    const f = fixture({
+      verify: async () => {
+        throw new GptProPageError("Sign in to ChatGPT", "login")
+      },
+    })
+    try {
+      await f.controller.command({ prompt: "Wait for login" }, "/repo\nses_needs_login")
+      await until(() => f.controller.list()[0]?.errorCode === "login")
       expect(f.controller.list()[0].recovery?.needsHuman).toBe(true)
       expect(f.counts().fills).toBe(0)
       expect(f.counts().submits).toBe(0)
@@ -2845,8 +3036,14 @@ describe("gpt-pro consultation control", () => {
     expect(next.controller.config().maxResidentPages).toBe(8)
     expect(next.controller.setConfig({ enabled: true, timeoutMinutes: 30, maxConcurrent: 99 }).maxConcurrent).toBe(8)
     expect(next.controller.setConfig({ enabled: true, timeoutMinutes: 30, maxConcurrent: 0 }).maxConcurrent).toBe(1)
-    expect(next.controller.setConfig({ enabled: true, timeoutMinutes: 30, maxConcurrent: 5, maxResidentPages: 2 }).maxResidentPages).toBe(5)
-    expect(next.controller.setConfig({ enabled: true, timeoutMinutes: 30, maxConcurrent: 2, maxResidentPages: 99 }).maxResidentPages).toBe(32)
+    expect(
+      next.controller.setConfig({ enabled: true, timeoutMinutes: 30, maxConcurrent: 5, maxResidentPages: 2 })
+        .maxResidentPages,
+    ).toBe(5)
+    expect(
+      next.controller.setConfig({ enabled: true, timeoutMinutes: 30, maxConcurrent: 2, maxResidentPages: 99 })
+        .maxResidentPages,
+    ).toBe(32)
     expect(next.controller.list()[0].id).toBe(job.id)
     next.controller.dispose()
   })

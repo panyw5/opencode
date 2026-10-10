@@ -9,12 +9,15 @@ import { useI18n } from "../context/i18n"
 import { handoffGptPro } from "./gpt-pro-handoff"
 import type { GptProCachedResult } from "./gpt-pro-result"
 import type { GptProAPI } from "@opencode-ai/util/gpt-pro"
+import { GptProErrorNotice } from "./gpt-pro-error-notice"
+import type { GptProIssueCode } from "@opencode-ai/util/gpt-pro-error"
 
 export type GptProResultPreviewState = {
   open: boolean
   loading: boolean
   opening: boolean
   error: string
+  errorCode?: GptProIssueCode
   originalURL?: string
   result?: GptProCachedResult
 }
@@ -39,14 +42,10 @@ export function GptProResultPreviewContent(props: { state: GptProResultPreviewSt
         </div>
       </Show>
       <Show when={props.state.error}>
-        <p class="text-13-regular text-text-critical-base" role="alert">
-          {props.state.error}
-        </p>
+        <GptProErrorNotice error={props.state.error} code={props.state.errorCode ?? "history_missing"} />
       </Show>
       <Show when={props.localError}>
-        <p class="text-13-regular text-text-critical-base" role="alert">
-          {props.localError}
-        </p>
+        <GptProErrorNotice error={props.localError} />
       </Show>
       <Show when={props.state.result}>
         {(result) => (
@@ -56,9 +55,7 @@ export function GptProResultPreviewContent(props: { state: GptProResultPreviewSt
               <span class="ml-2 select-text">{result().id}</span>
             </div>
             <Show when={result().error}>
-              <p class="shrink-0 text-12-regular text-text-weak" data-testid="gpt-pro-result-error">
-                {result().error}
-              </p>
+              <GptProErrorNotice error={result().error} code={result().errorCode} phase={result().phase} />
             </Show>
             <div class="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border-weak-base bg-background-base p-4">
               <Show when={result().text} fallback={<p class="text-13-regular text-text-weak">{t("ui.tool.gptPro.resultNoText")}</p>}>

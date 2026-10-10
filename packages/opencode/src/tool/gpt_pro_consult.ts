@@ -95,6 +95,11 @@ export const GptProConsultTool = Tool.define(
               preview: job.prompt.slice(0, 160),
               revision: job.revision,
               error: job.error,
+              error_code: job.errorCode,
+              send_attempted: job.sendAttempted === true || job.submitted,
+              user_id: job.userID,
+              submitted: job.submitted,
+              stop_pending: job.stopPending === true,
               text: job.text,
               background: job.background === true,
               recovery: job.recovery,
@@ -143,7 +148,9 @@ export const GptProConsultTool = Tool.define(
               url: job.url,
               model: job.model,
               error: job.error,
+              error_code: job.errorCode,
               background: job.background === true,
+              stop_pending: job.stopPending === true,
               recovery: job.recovery,
               attachments: job.attachments ?? attachmentSummary,
               ...(job.recovery
@@ -153,13 +160,15 @@ export const GptProConsultTool = Tool.define(
                 ? { text: job.text, html: job.html }
                 : {
                     partial_text: job.text,
-                    instruction: job.recovery
-                      ? `The fixed flow failed at ${job.recovery.stage}. Use the existing browser_* tools with consultation_id=${job.id} to inspect and repair this consultation's page, then resume this same ID. Never create a replacement or resend an attempted question. The program owns managed prompt submission and tracking. ${job.recovery.needsHuman ? "Human browser verification is required; do not automate the challenge." : "You may use action=send after verifying the exact managed prompt and GPT-6 Pro; send is guarded against duplicates."}`
-                      : gptProTerminal(job.phase) && job.phase !== "paused"
-                        ? "The consultation did not complete. Report its error, do not claim an answer, and do not automatically resubmit. Resolve browser verification, login or network access before a new explicit consultation."
-                        : job.background && job.phase !== "paused"
-                          ? "The consultation is running independently. Progress and completion are injected automatically. Continue your own exploration; do not sleep, poll or resend. Partial output is not final."
-                          : "Use status with consultation_id to wait or read. Do not resubmit. Paused/partial output is not a final answer.",
+                    instruction: job.stopPending
+                      ? "This consultation is cancelled locally. Website generation stop is still being confirmed; do not claim the webpage has stopped. Inspect the original page or read this same consultation's status. Never resend."
+                      : job.recovery
+                        ? `The fixed flow failed at ${job.recovery.stage}. Use the existing browser_* tools with consultation_id=${job.id} to inspect and repair this consultation's page, then resume this same ID. Never create a replacement or resend an attempted question. The program owns managed prompt submission and tracking. ${job.recovery.needsHuman ? (job.errorCode === "login" ? "Human ChatGPT login is required; ask the user to reconnect their login before continuing." : "Human browser verification is required; do not automate the challenge.") : "You may use action=send after verifying the exact managed prompt and GPT-6 Pro; send is guarded against duplicates."}`
+                        : gptProTerminal(job.phase) && job.phase !== "paused"
+                          ? "The consultation did not complete. Report its error, do not claim an answer, and do not automatically resubmit. Resolve browser verification, login or network access before a new explicit consultation."
+                          : job.background && job.phase !== "paused"
+                            ? "The consultation is running independently. Progress and completion are injected automatically. Continue your own exploration; do not sleep, poll or resend. Partial output is not final."
+                            : "Use status with consultation_id to wait or read. Do not resubmit. Paused/partial output is not a final answer.",
                   }),
             })
             log.info("gpt-pro command result", {

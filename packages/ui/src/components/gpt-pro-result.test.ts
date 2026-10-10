@@ -104,6 +104,12 @@ describe("GPT-Pro cached result view", () => {
     expect(result.kind).toBe("live")
     expect(f.calls.map((call) => call.action)).toEqual(["read"])
   })
+  test("a connection failure while reading history is not mislabeled as an expired record", async () => {
+    const f = client(async () => { throw new Error("Failed to fetch") })
+    const result = await resolveGptProView(f.api, "gpt_saved")
+    expect(result).toMatchObject({ kind: "unavailable", id: "gpt_saved", errorCode: "connection", error: "Failed to fetch" })
+    expect(f.calls.some((call) => call.action === "open" || call.action === "send")).toBe(false)
+  })
 
   test("does not accept non-final fallback output", () => {
     expect(

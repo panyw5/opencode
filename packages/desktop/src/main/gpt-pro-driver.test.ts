@@ -183,6 +183,15 @@ function fixture(
 }
 
 describe("gpt-pro trusted submission", () => {
+  test("login redirects are detected without waiting for or operating a composer", async () => {
+    const f = fixture()
+    f.page.url = "https://auth.openai.com/log-in"
+    await expect(f.driver.ready()).rejects.toMatchObject({ kind: "login" })
+    expect(f.reads()).toBe(0)
+    expect(f.clicks).toHaveLength(0)
+    expect(f.inserted).toHaveLength(0)
+    expect(f.logs.some((line) => line.includes("login required"))).toBe(true)
+  })
   test("binds hidden pages to distinct WebContents identities on the shared GPT profile", async () => {
     const pages = new Map<string, { pageID: string; partition: string; profileID: string; url: string; epoch: number }>()
     const opened: Array<{ pageID: string; profileID: string; url: string; kind?: string; owner?: unknown }> = []
@@ -233,8 +242,20 @@ describe("gpt-pro trusted submission", () => {
     await first.open(GPT_PRO_URL, true)
     await second.open(GPT_PRO_URL, true)
     expect(opened).toEqual([
-      { pageID: "gpt-pro-page-one", profileID: GPT_PRO_PARTITION, url: GPT_PRO_URL, kind: "consultation", owner: ownerA },
-      { pageID: "gpt-pro-page-two", profileID: GPT_PRO_PARTITION, url: GPT_PRO_URL, kind: "consultation", owner: ownerB },
+      {
+        pageID: "gpt-pro-page-one",
+        profileID: GPT_PRO_PARTITION,
+        url: GPT_PRO_URL,
+        kind: "consultation",
+        owner: ownerA,
+      },
+      {
+        pageID: "gpt-pro-page-two",
+        profileID: GPT_PRO_PARTITION,
+        url: GPT_PRO_URL,
+        kind: "consultation",
+        owner: ownerB,
+      },
     ])
     expect(presented).toEqual([])
     expect(await first.page()).toMatchObject({ composer: true, users: [] })

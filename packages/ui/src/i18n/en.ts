@@ -1,4 +1,9 @@
+import { gptProErrorEnglish } from "./gpt-pro-errors"
+
 export const dict: Record<string, string> = {
+  ...gptProErrorEnglish,
+  "ui.tool.gptPro.error.details": "Diagnostic details",
+  "ui.tool.gptPro.stopPending": "Stopping the webpage reply…",
   "ui.message.injection.gptProProgress": "GPT-Pro background progress (partial)",
   "ui.message.injection.gptProCompleted": "GPT-Pro background result",
   "ui.message.injection.gptProState": "GPT-Pro background status",
@@ -14,7 +19,8 @@ export const dict: Record<string, string> = {
   "ui.tool.gptPro.attachment.unknown": "Unknown",
   "ui.tool.gptPro.attachment.previewTitle": "Attachment preview",
   "ui.tool.gptPro.attachment.previewLoading": "Loading the sent attachment…",
-  "ui.tool.gptPro.attachment.previewUnavailable": "This attachment preview has expired or is unavailable.",
+  "ui.tool.gptPro.attachment.previewUnavailable":
+    "The attachment preview has expired or is unavailable. Check the original file or ChatGPT webpage; no question will be resent.",
   "ui.tool.gptPro.attachment.previewAction": "Preview {{name}} ({{status}})",
   "ui.tool.gptPro.phase.queued": "Queued",
   "ui.tool.gptPro.queueReason.capacity": "Waiting for an available consultation slot",
@@ -36,14 +42,17 @@ export const dict: Record<string, string> = {
   "ui.tool.gptPro.view": "View",
   "ui.tool.gptPro.viewHint": "View this ChatGPT conversation without pausing tracking.",
   "ui.tool.gptPro.resultTitle": "Saved GPT-6 Pro result",
+  "ui.tool.gptPro.resultUnavailable":
+    "The saved result is unavailable. Check the reply in this conversation or the original webpage; do not resend the question.",
   "ui.tool.gptPro.resultLoading": "Loading the saved result…",
   "ui.tool.gptPro.resultNoText": "No saved answer text is available for this result.",
   "ui.tool.gptPro.resultOpening": "Opening original page…",
   "ui.tool.gptPro.openOriginal": "Open original webpage",
   "ui.tool.gptPro.stop": "Stop",
   "ui.tool.gptPro.intervene": "Intervene",
-  "ui.tool.gptPro.resume": "Resume tracking",
-  "ui.tool.gptPro.resumeHint": "Continue reading the original question's reply without resending it.",
+  "ui.tool.gptPro.resume": "Continue consultation",
+  "ui.tool.gptPro.resumeHint":
+    "Continue the same consultation. Sent questions are tracked only; an unsent question may be sent once.",
   "ui.tool.gptPro.prompt": "Add an instruction to the same Chat conversation...",
   "ui.tool.gptPro.send": "Send intervention",
   "ui.sessionReview.title": "Session changes",

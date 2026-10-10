@@ -8,6 +8,8 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { handoffGptPro } from "@opencode-ai/ui/gpt-pro-handoff"
 import { resolveGptProView, type GptProCachedResult } from "@opencode-ai/ui/gpt-pro-result"
 import { GptProResultPreviewDialog, type GptProResultPreviewState } from "@opencode-ai/ui/gpt-pro-result-preview"
+import { GptProErrorNotice } from "@opencode-ai/ui/gpt-pro-error-notice"
+import type { GptProIssueCode } from "@opencode-ai/util/gpt-pro-error"
 import { getDirectory } from "@opencode-ai/core/util/path"
 import { usePlatform } from "@/context/platform"
 import { useLanguage } from "@/context/language"
@@ -21,6 +23,8 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
   const [state, set] = createStore({
     config: { ...DEFAULT_GPT_PRO_CONFIG },
     login: "",
+    loginError: "",
+    refreshError: "",
     extensionDirectory: "",
     jobs: [] as GptProJob[],
     result: {
@@ -28,6 +32,7 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
       loading: false,
       opening: false,
       error: "",
+      errorCode: undefined as GptProIssueCode | undefined,
       originalURL: undefined as string | undefined,
       jobID: undefined as string | undefined,
       result: undefined as GptProCachedResult | undefined,
@@ -44,12 +49,15 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
       set({
         config,
         login: login.phase,
+        loginError: login.error ?? "",
+        refreshError: "",
         extensionDirectory: login.extensionDirectory ?? "",
         jobs: jobs.slice().reverse().slice(0, 10),
       })
       props.onConfig?.(config)
     } catch (error) {
-      if (!disposed) set("error", String(error))
+      console.warn(`[gpt-pro-settings] status refresh failed`)
+      if (!disposed) set("refreshError", String(error))
     }
   }
   const run = async (action: () => Promise<unknown>) => {
@@ -58,6 +66,7 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
       await action()
       await refresh()
     } catch (error) {
+      console.warn(`[gpt-pro-settings] action failed`)
       set("error", String(error))
     } finally {
       set("busy", false)
@@ -112,14 +121,23 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
           open: true,
           loading: false,
           opening: false,
-          error: t("gptPro.resultUnavailable"),
+          error: resolution.error || t("gptPro.resultUnavailable"),
+          errorCode: resolution.errorCode,
           originalURL: resolution.url || job.url,
           jobID: resolution.id,
           result: undefined,
         })
         return
       }
-      set("result", { open: false, loading: false, opening: false, error: "", originalURL: undefined, jobID: undefined, result: undefined })
+      set("result", {
+        open: false,
+        loading: false,
+        opening: false,
+        error: "",
+        originalURL: undefined,
+        jobID: undefined,
+        result: undefined,
+      })
       await handoffGptPro(api, resolution.job.id)
       set("busy", false)
     } catch (error) {
@@ -140,7 +158,15 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
   }
   const closeResult = () => {
     if (disposed) return
-    set("result", { open: false, loading: false, opening: false, error: "", originalURL: undefined, jobID: undefined, result: undefined })
+    set("result", {
+      open: false,
+      loading: false,
+      opening: false,
+      error: "",
+      originalURL: undefined,
+      jobID: undefined,
+      result: undefined,
+    })
   }
   onMount(() => {
     void refresh()
@@ -227,10 +253,12 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
                 </Button>
               </Show>
             </div>
-            <Show when={state.error}>
-              <p class="text-12-regular text-text-critical-base" role="alert">
-                {state.error}
-              </p>
+            <Show when={state.error || state.refreshError || ["failed", "expired"].includes(state.login)}>
+              <GptProErrorNotice
+                error={state.error || state.refreshError || state.loginError}
+                code={state.error ? undefined : state.refreshError ? "connection" : state.login === "expired" ? "login_expired" : undefined}
+                busy={state.busy}
+              />
             </Show>
             <div class="mt-4 border-t border-border-weak-base pt-4">
               <h4 class="text-13-medium text-text-strong">{t("gptPro.guide.title")}</h4>

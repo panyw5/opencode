@@ -1,8 +1,12 @@
 import { dict as en } from "./en"
+import { gptProErrorChinese } from "./gpt-pro-errors"
 
 type Keys = keyof typeof en
 
 export const dict = {
+  ...gptProErrorChinese,
+  "ui.tool.gptPro.error.details": "诊断详情",
+  "ui.tool.gptPro.stopPending": "正在停止网页回复…",
   "ui.message.injection.gptProProgress": "GPT-Pro 后台进展（未完成）",
   "ui.message.injection.gptProCompleted": "GPT-Pro 后台结果",
   "ui.message.injection.gptProState": "GPT-Pro 后台状态",
@@ -18,7 +22,8 @@ export const dict = {
   "ui.tool.gptPro.attachment.unknown": "状态未知",
   "ui.tool.gptPro.attachment.previewTitle": "附件预览",
   "ui.tool.gptPro.attachment.previewLoading": "正在加载已发送的附件…",
-  "ui.tool.gptPro.attachment.previewUnavailable": "该附件预览已过期或不可用。",
+  "ui.tool.gptPro.attachment.previewUnavailable":
+    "附件预览已过期或不可用。请查看原文件或 ChatGPT 原网页，不会重新发送问题。",
   "ui.tool.gptPro.attachment.previewAction": "预览 {{name}}（{{status}}）",
   "ui.tool.gptPro.phase.queued": "排队中",
   "ui.tool.gptPro.queueReason.capacity": "等待可用的咨询名额",
@@ -40,14 +45,15 @@ export const dict = {
   "ui.tool.gptPro.view": "查看",
   "ui.tool.gptPro.viewHint": "查看对应的 ChatGPT 会话，不暂停跟踪。",
   "ui.tool.gptPro.resultTitle": "已保存的 GPT-6 Pro 结果",
+  "ui.tool.gptPro.resultUnavailable": "已保存的结果暂时不可用。请查看会话里的回复或原网页，不要重新发送问题。",
   "ui.tool.gptPro.resultLoading": "正在加载已保存的结果…",
   "ui.tool.gptPro.resultNoText": "此结果没有可用的已保存回答文本。",
   "ui.tool.gptPro.resultOpening": "正在打开原网页…",
   "ui.tool.gptPro.openOriginal": "打开原网页",
   "ui.tool.gptPro.stop": "停止",
   "ui.tool.gptPro.intervene": "介入",
-  "ui.tool.gptPro.resume": "继续跟踪",
-  "ui.tool.gptPro.resumeHint": "继续读取原问题的回复，不重新发送。",
+  "ui.tool.gptPro.resume": "继续咨询",
+  "ui.tool.gptPro.resumeHint": "恢复同一条咨询：已发送的问题只跟踪，未发送的问题可能发送一次，不会重复提交。",
   "ui.tool.gptPro.prompt": "在同一 Chat 对话中追加指令…",
   "ui.tool.gptPro.send": "发送介入消息",
   "ui.sessionReview.title": "会话变更",
