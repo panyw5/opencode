@@ -34,5 +34,8 @@ export function visibleBeforeRevert<T extends OrderedMessage>(
   pending: (id: string) => boolean = () => false,
 ) {
   if (!boundary) return messages
-  return messages.filter((message) => pending(message.id) || compareMessages(message, boundary.message) < 0)
+  return messages.filter(
+    (message) =>
+      message.id !== boundary.message.id && (pending(message.id) || compareMessages(message, boundary.message) < 0),
+  )
 }

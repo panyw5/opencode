@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { createSessionMessagesService } from "./session-messages-service"
+import { createSessionService } from "./session-service"
+import { sessionDataMutation } from "./session-data-event"
 import { createSessionControllerHarness, deferred } from "./session-service-test-utils"
 
 const message = (id: string, completed = 1) =>
@@ -14,6 +16,26 @@ const response = (messages: Message[], parts: Part[] = []) => ({
 })
 
 describe("session messages controller", () => {
+  test("removal clears only the deleted optimistic message before an authoritative refresh", async () => {
+    const pending = message("pending")
+    const removed = message("removed")
+    const harness = createSessionControllerHarness({ messages: async () => response([]) })
+    const controller = createSessionService(harness.deps)
+    const service = controller.api.messages
+    for (const item of [pending, removed]) {
+      service.optimistic.add("/project", { sessionID: "session", message: item, parts: [] })
+    }
+    const mutation = sessionDataMutation(
+      { type: "message.removed", properties: { sessionID: "session", messageID: removed.id } },
+      () => undefined,
+    )!
+    controller.event("/project", mutation)
+    expect(service.optimistic.has("/project", "session", removed.id)).toBe(false)
+    expect(service.optimistic.has("/project", "session", pending.id)).toBe(true)
+    await service.load({ directory: "/project", sessionID: "session", limit: 80, authoritative: true })
+    expect(service.get("/project", "session")).toEqual([pending])
+  })
+
   test("distinguishes a new pending send from reverted user messages", () => {
     const harness = createSessionControllerHarness({ messages: async () => response([]) })
     const service = createSessionMessagesService(harness.deps)

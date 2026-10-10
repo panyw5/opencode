@@ -4,6 +4,17 @@ import { resolveSessionRevertBoundary, visibleBeforeRevert } from "./session-rev
 const message = (id: string, created: number) => ({ id, time: { created } })
 
 describe("revert send visibility", () => {
+  test("never treats the rollback target itself as a new pending send", () => {
+    const reverted = message("msg_boundary", 200)
+    const pending = message("msg_new", 300)
+    const boundary = resolveSessionRevertBoundary({
+      sessionKey: "session",
+      messageID: reverted.id,
+      messages: [reverted],
+    })
+    expect(visibleBeforeRevert([reverted, pending], boundary, () => true)).toEqual([pending])
+  })
+
   test("shows a pending send immediately without restoring the reverted suffix", () => {
     const retained = message("msg_z_old", 100)
     const reverted = message("msg_boundary", 200)

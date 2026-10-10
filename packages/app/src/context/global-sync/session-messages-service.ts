@@ -135,7 +135,12 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
         }
 
         const next = mergeOptimisticSessionPage(result, optimisticItems(directory, input.sessionID))
-        for (const messageID of next.confirmed) clearOptimistic(directory, input.sessionID, messageID)
+        for (const messageID of next.confirmed) {
+          console.debug(
+            `[session-messages] optimistic-confirmed directory=${directory} sid=${input.sessionID} message=${messageID} source=snapshot`,
+          )
+          clearOptimistic(directory, input.sessionID, messageID)
+        }
         const eventChanged = rev(directory, input.sessionID) !== eventRevision
         const cached = child[0].message[input.sessionID] ?? []
         const preserveCached =
@@ -283,8 +288,14 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
       },
       remove: removeOptimistic,
     },
-    event(directory: string, sessionID: string, strategy: "merge" | "discard") {
+    event(directory: string, sessionID: string, strategy: "merge" | "discard", removedMessageID?: string) {
       bump(directory, sessionID)
+      if (removedMessageID) {
+        console.debug(
+          `[session-messages] optimistic-removed directory=${directory} sid=${sessionID} message=${removedMessageID} pending=${optimistic.get(keyFor(directory, sessionID))?.has(removedMessageID) ?? false}`,
+        )
+        clearOptimistic(directory, sessionID, removedMessageID)
+      }
       if (strategy === "discard") {
         const key = keyFor(directory, sessionID)
         discardRevision.set(key, (discardRevision.get(key) ?? 0) + 1)
