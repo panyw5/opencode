@@ -16,6 +16,93 @@ const response = (messages: Message[], parts: Part[] = []) => ({
 })
 
 describe("session messages controller", () => {
+  test("coalesces authoritative refreshes and cancels them on session clear", async () => {
+    const request = deferred<ReturnType<typeof response>>()
+    let calls = 0
+    const harness = createSessionControllerHarness({
+      messages: () => {
+        calls++
+        return request.promise
+      },
+    })
+    const service = createSessionMessagesService(harness.deps)
+    const input = { directory: "/project", sessionID: "session", limit: 80 }
+    const old = service.load(input)
+    const fresh = service.load({ ...input, authoritative: true })
+    expect(service.load({ ...input, authoritative: true })).toBe(fresh)
+    service.clear(input.directory, [input.sessionID])
+    request.resolve(response([message("stale")]))
+    await old
+    expect((await fresh).committed).toBe(false)
+    expect(calls).toBe(1)
+    expect(service.loading(input.directory, input.sessionID)).toBe(false)
+  })
+
+  test("authoritative refresh retains the size of the loaded history window", async () => {
+    let limit = 0
+    const history = Array.from({ length: 120 }, (_, i) => message(`message-${i}`))
+    const harness = createSessionControllerHarness({
+      messages: async (input) => {
+        limit = input.limit
+        return response(history)
+      },
+    })
+    const service = createSessionMessagesService(harness.deps)
+    harness.child[1]("message", "session", history)
+    await service.load({ directory: "/project", sessionID: "session", limit: 80, authoritative: true })
+    expect(limit).toBe(120)
+    expect(service.get("/project", "session")).toHaveLength(120)
+  })
+
+  test("authoritative refresh queues a fresh snapshot after an invalidated read", async () => {
+    const first = deferred<ReturnType<typeof response>>()
+    const second = deferred<ReturnType<typeof response>>()
+    let calls = 0
+    const harness = createSessionControllerHarness({ messages: () => (++calls === 1 ? first.promise : second.promise) })
+    const service = createSessionMessagesService(harness.deps)
+    harness.child[1]("message", "session", [message("stale")])
+    const input = { directory: "/project", sessionID: "session", limit: 80 }
+    const old = service.load(input)
+    service.event(input.directory, input.sessionID, "discard")
+    const fresh = service.load({ ...input, authoritative: true, mode: "replace" })
+    first.resolve(response([message("stale")]))
+    await old
+    await Promise.resolve()
+    expect(calls).toBe(2)
+    second.resolve(response([message("fresh")]))
+    expect((await fresh).committed).toBe(true)
+    expect(service.get(input.directory, input.sessionID)).toEqual([message("fresh")])
+  })
+
+  test("an authoritative empty part list clears previously cached text", async () => {
+    const harness = createSessionControllerHarness({ messages: async () => response([message("message")]) })
+    const service = createSessionMessagesService(harness.deps)
+    harness.child[1]("message", "session", [message("message")])
+    harness.child[1]("part", "message", [part("deleted text")])
+    await service.load({ directory: "/project", sessionID: "session", limit: 80, authoritative: true })
+    expect(service.parts("/project", "message")).toEqual([])
+  })
+
+  test("repeated clear and reload never commits a canceled message page", async () => {
+    const first = deferred<ReturnType<typeof response>>()
+    const second = deferred<ReturnType<typeof response>>()
+    let calls = 0
+    const harness = createSessionControllerHarness({ messages: () => (++calls === 1 ? first.promise : second.promise) })
+    const service = createSessionMessagesService(harness.deps)
+    const input = { directory: "/project", sessionID: "session", limit: 80 }
+    const old = service.load(input)
+    service.clear(input.directory, [input.sessionID])
+    service.clear(input.directory, [input.sessionID])
+    const fresh = service.load(input)
+    first.resolve(response([message("deleted")]))
+    expect((await old).committed).toBe(false)
+    expect(service.get(input.directory, input.sessionID)).toBeUndefined()
+    expect(service.load(input)).toBe(fresh)
+    second.resolve(response([message("fresh")]))
+    expect((await fresh).committed).toBe(true)
+    expect(service.get(input.directory, input.sessionID)).toEqual([message("fresh")])
+  })
+
   test("removal clears only the deleted optimistic message before an authoritative refresh", async () => {
     const pending = message("pending")
     const removed = message("removed")

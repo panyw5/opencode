@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import type { Session } from "@opencode-ai/sdk/v2/client"
-import { clearSessionInfoLoads, loadSessionInfo, resolveSessionInfoCommit } from "./session-info-load"
+import {
+  clearSessionInfos,
+  clearSessionInfoLoads,
+  loadSessionInfo,
+  resolveSessionInfoCommit,
+} from "./session-info-load"
+import { deferred } from "./session-service-test-utils"
 
 const session = (id: string): Session =>
   ({
@@ -13,6 +19,21 @@ const session = (id: string): Session =>
   }) as Session
 
 describe("loadSessionInfo", () => {
+  test("repeated clears cannot authorize a removed request or erase its replacement", async () => {
+    const first = deferred<Session>()
+    const second = deferred<Session>()
+    const input = { directory: "/project", sessionID: "double-clear" }
+    const old = loadSessionInfo({ ...input, load: () => first.promise })
+    clearSessionInfos(input.directory, [input.sessionID])
+    clearSessionInfos(input.directory, [input.sessionID])
+    const fresh = loadSessionInfo({ ...input, load: () => second.promise })
+    first.resolve(session(input.sessionID))
+    expect(await old).toBeUndefined()
+    expect(loadSessionInfo({ ...input, load: async () => session("wrong") })).toBe(fresh)
+    second.resolve(session(input.sessionID))
+    expect(await fresh).toMatchObject({ id: input.sessionID })
+  })
+
   test("shares one inflight request for the same directory and session", async () => {
     let resolve!: (value: Session) => void
     let calls = 0

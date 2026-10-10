@@ -46,6 +46,9 @@ await withCdp(async (cdp, target) => {
     return response.status === 204 ? undefined : response.json()
   }
   const session = await request("/session", "POST", { title: "QA attachment revert cache" })
+  const previousScope = await cdp.evaluate<string | undefined>(
+    "document.querySelector('[data-prompt-scope]')?.getAttribute('data-prompt-scope')",
+  )
   log(`created sid=${session.id}`)
   const route = `/${Buffer.from(directory).toString("base64url")}/session/${session.id}`
   const wait = async (label: string, predicate: () => Promise<boolean>) => {
@@ -55,40 +58,42 @@ await withCdp(async (cdp, target) => {
     }
     throw new Error(`Timed out: ${label}`)
   }
-  await cdp.evaluate(`(() => {
+  try {
+    await cdp.evaluate(`(() => {
     void import(${JSON.stringify(navigation)}).then(m=>m.handleNotificationClick(${JSON.stringify(route)}));
     return true;
   })()`)
-  await wait("composer", () =>
-    cdp.evaluate(
-      `!!document.querySelector('[data-component=session-page][data-session-id="${session.id}"] [data-component=prompt-input]')`,
-    ),
-  )
-  log("composer ready")
-  await cdp.evaluate(`(() => {
-    const button=[...document.querySelectorAll('button')].find(e=>e.innerText.trim()==='选择模型' && e.getBoundingClientRect().width>0);
+    await wait("composer", () =>
+      cdp.evaluate(
+        `!!document.querySelector('[data-component=session-page][data-session-id="${session.id}"] [data-component=prompt-input]')`,
+      ),
+    )
+    log("composer ready")
+    await cdp.evaluate(`(() => {
+    const button=[...document.querySelectorAll('[data-prompt-composer] button.prompt-pick')].find(e=>(e.innerText.trim()==='选择模型'||e.innerText.includes(' / ')) && e.getBoundingClientRect().width>0);
     button?.click();
   })()`)
-  await wait("model selector", () =>
-    cdp.evaluate("!!document.querySelector('button[data-key=\"axonhub-codex:gpt-6.1-sol\"]')"),
-  )
-  await cdp.evaluate("document.querySelector('button[data-key=\"axonhub-codex:gpt-6.1-sol\"]').click()")
-  // Exercise the real prompt submit path, including its optimistic cache.
-  await cdp.evaluate(`(() => {
+    await wait("model selector", () =>
+      cdp.evaluate("!!document.querySelector('button[data-key=\"axonhub-codex:gpt-6.1-sol\"]')"),
+    )
+    await cdp.evaluate("document.querySelector('button[data-key=\"axonhub-codex:gpt-6.1-sol\"]').click()")
+    // Exercise the real prompt submit path, including its optimistic cache.
+    await cdp.evaluate(`(() => {
     const editor=document.querySelector('[data-component=prompt-input]');
     const transfer=new DataTransfer();
     transfer.items.add(new File([${JSON.stringify(pdf())}], 'revert-cache.pdf', {type:'application/pdf'}));
     editor.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:transfer}));
     editor.focus();
   })()`)
-  await wait("PDF attached", () => cdp.evaluate("document.body.innerText.includes('revert-cache.pdf')"))
-  await cdp.call("Input.insertText", {
-    text: "Reply with exactly REVERT_CACHE_FIRST_OK. Do not use tools or read the attached PDF.",
-  })
-  // Keep attachment acceptance deterministic even when the model gateway
-  // does not support PDF input. The second turn exercises a real model reply.
-  await cdp.evaluate(`(() => {
+    await wait("PDF attached", () => cdp.evaluate("document.body.innerText.includes('revert-cache.pdf')"))
+    await cdp.call("Input.insertText", {
+      text: "Reply with exactly REVERT_CACHE_FIRST_OK. Do not use tools or read the attached PDF.",
+    })
+    // Keep attachment acceptance deterministic even when the model gateway
+    // does not support PDF input. The second turn exercises a real model reply.
+    await cdp.evaluate(`(() => {
     const original=window.fetch;
+    window.__revertAttachmentFetch=original;
     window.fetch=async (input,init)=>{
       const request=new Request(input,init);
       if(new URL(request.url).pathname==='/session/${session.id}/prompt_async'){
@@ -99,55 +104,71 @@ await withCdp(async (cdp, target) => {
       return original(input,init);
     };
   })()`)
-  await wait("send enabled", () => cdp.evaluate("!!document.querySelector('button[aria-label=发送]:not(:disabled)')"))
-  await cdp.evaluate("document.querySelector('button[aria-label=发送]').click()")
-  let firstID = ""
-  await wait("first user persisted", async () => {
-    const rows = await request(`/session/${session.id}/message`)
-    firstID = rows.find((row: any) => row.info.role === "user")?.info.id ?? ""
-    return !!firstID
-  })
-  const first = (await request(`/session/${session.id}/message`)).find((row: any) => row.info.id === firstID)
-  if (!first.parts.some((part: any) => part.type === "file" && part.mime === "application/pdf")) {
-    throw new Error("PDF was not received by the sidecar")
-  }
-  log(`sidecar received PDF sid=${session.id} message=${firstID}`)
-  await wait("rollback action", () =>
-    cdp.evaluate("!!document.querySelector('button[aria-label=重置到此点]:not(:disabled)')"),
-  )
-  await cdp.evaluate("document.querySelector('button[aria-label=重置到此点]').click()")
-  await wait("revert stored", async () => (await request(`/session/${session.id}`)).revert?.messageID === firstID)
-  await wait("first bubble hidden", () => cdp.evaluate(`!document.querySelector('#message-${firstID}')`))
-  log("rollback hides first message without reload")
-  await cdp.evaluate("document.querySelector('button[aria-label=移除附件]')?.click()")
-  await cdp.evaluate(`(() => {
+    await wait("send enabled", () => cdp.evaluate("!!document.querySelector('button[aria-label=发送]:not(:disabled)')"))
+    await cdp.evaluate("document.querySelector('button[aria-label=发送]').click()")
+    let firstID = ""
+    await wait("first user persisted", async () => {
+      const rows = await request(`/session/${session.id}/message`)
+      firstID = rows.find((row: any) => row.info.role === "user")?.info.id ?? ""
+      return !!firstID
+    })
+    const first = (await request(`/session/${session.id}/message`)).find((row: any) => row.info.id === firstID)
+    if (!first.parts.some((part: any) => part.type === "file" && part.mime === "application/pdf")) {
+      throw new Error("PDF was not received by the sidecar")
+    }
+    log(`sidecar received PDF sid=${session.id} message=${firstID}`)
+    await wait("rollback action", () =>
+      cdp.evaluate("!!document.querySelector('button[aria-label=重置到此点]:not(:disabled)')"),
+    )
+    await cdp.evaluate("document.querySelector('button[aria-label=重置到此点]').click()")
+    await wait("revert stored", async () => (await request(`/session/${session.id}`)).revert?.messageID === firstID)
+    await wait("first bubble hidden", () => cdp.evaluate(`!document.querySelector('#message-${firstID}')`))
+    log("rollback hides first message without reload")
+    await cdp.evaluate("document.querySelector('button[aria-label=移除附件]')?.click()")
+    await cdp.evaluate(`(() => {
     const editor=document.querySelector('[data-component=prompt-input]');
     editor.focus();
     const selection=getSelection();
     const range=document.createRange();range.selectNodeContents(editor);
     selection.removeAllRanges();selection.addRange(range);
   })()`)
-  await cdp.call("Input.insertText", { text: "Reply with exactly REVERT_CACHE_SECOND_OK. Do not use tools." })
-  await wait("second send enabled", () =>
-    cdp.evaluate(
-      "!!document.querySelector('button[aria-label=发送]:not(:disabled),button[aria-label^=发送干预]:not(:disabled)')",
-    ),
-  )
-  await cdp.evaluate("document.querySelector('button[aria-label=发送],button[aria-label^=发送干预]').click()")
-  await wait("cleanup persisted", async () => {
-    const rows = await request(`/session/${session.id}/message`)
-    return !rows.some((row: any) => row.info.id === firstID) && rows.some((row: any) => row.info.role === "user")
-  })
-  await wait("second reply", async () => {
-    const rows = await request(`/session/${session.id}/message`)
-    return rows.some(
-      (row: any) =>
-        row.info.role === "assistant" &&
-        row.parts.some((part: any) => part.type === "text" && part.text.includes("REVERT_CACHE_SECOND_OK")),
+    await cdp.call("Input.insertText", { text: "Reply with exactly REVERT_CACHE_SECOND_OK. Do not use tools." })
+    await wait("second send enabled", () =>
+      cdp.evaluate(
+        "!!document.querySelector('button[aria-label=发送]:not(:disabled),button[aria-label^=发送干预]:not(:disabled)')",
+      ),
     )
-  })
-  await Bun.sleep(1500)
-  const present = await cdp.evaluate<boolean>(`!!document.querySelector('#message-${firstID}')`)
-  if (present) throw new Error("Deleted first message was resurrected")
-  log("PASS second reply received; deleted first message stays absent without reload")
+    await cdp.evaluate("document.querySelector('button[aria-label=发送],button[aria-label^=发送干预]').click()")
+    await wait("cleanup persisted", async () => {
+      const rows = await request(`/session/${session.id}/message`)
+      return !rows.some((row: any) => row.info.id === firstID) && rows.some((row: any) => row.info.role === "user")
+    })
+    await wait("second reply", async () => {
+      const rows = await request(`/session/${session.id}/message`)
+      return rows.some(
+        (row: any) =>
+          row.info.role === "assistant" &&
+          row.parts.some((part: any) => part.type === "text" && part.text.includes("REVERT_CACHE_SECOND_OK")),
+      )
+    })
+    await Bun.sleep(1500)
+    const present = await cdp.evaluate<boolean>(`!!document.querySelector('#message-${firstID}')`)
+    if (present) throw new Error("Deleted first message was resurrected")
+    log("PASS second reply received; deleted first message stays absent without reload")
+  } finally {
+    await cdp.evaluate(
+      "(()=>{if(window.__revertAttachmentFetch)window.fetch=window.__revertAttachmentFetch;return true})()",
+    )
+    await request(`/session/${session.id}`, "DELETE")
+    if (previousScope) {
+      const [previousDirectory, previousID] = JSON.parse(previousScope)
+      if (previousDirectory && previousID) {
+        const previousRoute = `/${Buffer.from(previousDirectory).toString("base64url")}/session/${previousID}`
+        await cdp.evaluate(
+          `(()=>{void import(${JSON.stringify(navigation)}).then(m=>m.handleNotificationClick(${JSON.stringify(previousRoute)}));return true})()`,
+        )
+      }
+    }
+    log("owned test session cleaned")
+  }
 })

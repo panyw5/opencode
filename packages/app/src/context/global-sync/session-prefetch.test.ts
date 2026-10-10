@@ -4,6 +4,7 @@ import {
   clearSessionPrefetchDirectory,
   getSessionPrefetch,
   getSessionPrefetchStats,
+  isSessionPrefetchCurrent,
   isSessionCold,
   markSessionCold,
   markSessionHot,
@@ -13,8 +14,30 @@ import {
   setSessionPrefetch,
   shouldSkipSessionPrefetch,
 } from "./session-prefetch"
+import { deferred } from "./session-service-test-utils"
 
 describe("session prefetch", () => {
+  test("repeated clear never makes an old prefetch token current again", async () => {
+    const request = deferred<void>()
+    let current = true
+    const directory = "/tmp/prefetch-double-clear"
+    const loading = runSessionPrefetch({
+      directory,
+      sessionID: "session",
+      task: async (token) => {
+        await request.promise
+        current = isSessionPrefetchCurrent(directory, "session", token)
+        return undefined
+      },
+    })
+    clearSessionPrefetch(directory, ["session"])
+    clearSessionPrefetch(directory, ["session"])
+    request.resolve()
+    await loading
+    expect(current).toBe(false)
+    clearSessionPrefetchDirectory(directory)
+  })
+
   test("prefetches message bodies for only the immediate neighbors", () => {
     const items = ["a", "b", "c", "d"]
     expect(neighboringMessagePrefetch(items, 2)).toEqual(["b", "d"])

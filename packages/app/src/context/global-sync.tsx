@@ -22,6 +22,7 @@ import { createRefreshQueue } from "./global-sync/queue"
 import { clearSessionPrefetch, clearSessionPrefetchDirectory, markSessionCold } from "./global-sync/session-prefetch"
 import { canCoolSessionCache, coolSessionCaches } from "./global-sync/session-cache"
 import { loadRootSessions } from "./global-sync/session-load"
+import { createSessionListRequests, mergeSessionListSnapshot } from "./global-sync/session-list-snapshot"
 import { sessionDataMutation } from "./global-sync/session-data-event"
 import { createSessionService } from "./global-sync/session-service"
 import type { SessionChildStore } from "./global-sync/session-service-types"
@@ -77,6 +78,7 @@ function createGlobalSync() {
   const sdkCache = new Map<string, OpencodeClient>()
   const booting = new Map<string, Promise<void>>()
   const sessionLoads = new Map<string, Promise<void>>()
+  const sessionListRequests = createSessionListRequests()
   const sessionLoaded = new Set<string>()
   const providerRefreshes = new Map<DomainId, Promise<ProviderListResponse>>()
   const revs = new Map<string, number>()
@@ -305,6 +307,8 @@ function createGlobalSync() {
       },
       onDispose: (directory) => {
         bump(directory, "dispose")
+        sessionListRequests.clear(directory, "directory-dispose")
+        sessionLoads.delete(directory)
         queueFor(domain).clear(directory)
         sessionLoaded.delete(directory)
         clearSessionControllers(directory)
@@ -611,6 +615,11 @@ function createGlobalSync() {
     if (opts?.force) sessionLoaded.delete(directoryKey)
 
     const startedAt = Date.now()
+    const request = sessionListRequests.begin(directoryKey)
+    const current = () =>
+      sessionListRequests.current(directoryKey, request) &&
+      rev(directoryKey) === mark &&
+      managerOf(logical).children[directoryKey] === child
     console.debug(
       `[global-sync] load sessions start directory=${logical} identity=${directoryKey} force=${opts?.force ? 1 : 0} silent=${opts?.silent ? 1 : 0}`,
     )
@@ -628,13 +637,18 @@ function createGlobalSync() {
       },
     })
       .then((x) => {
-        const nonArchived = (x.data ?? [])
-          .filter((s) => !!s?.id)
-          .filter((s) => !s.time?.archived)
-          .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-        const childSessions = store.session.filter((s) => !!s.parentID)
-        const sessions = [...nonArchived, ...childSessions].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-        const total = nonArchived.length
+        if (!current()) {
+          console.debug(`[session-list] discard directory=${logical} token=${request.token} reason=invalidated-request`)
+          return
+        }
+        const sessions = mergeSessionListSnapshot(x.data ?? [], store.session, request.changes)
+        const total = sessions.filter((session) => !session.parentID).length
+        console.debug(
+          `[session-list] commit directory=${logical} token=${request.token} fetched=${x.data?.length ?? 0} changes=${request.changes.size} roots=${total} rootIDs=${sessions
+            .filter((session) => !session.parentID)
+            .map((session) => session.id)
+            .join(",")}`,
+        )
         setStore("sessionTotal", total)
         // Keep the directory cache complete. Sidebar views own visible limits,
         // so clipping here would let whichever view loads first hide newer rows.
@@ -653,6 +667,10 @@ function createGlobalSync() {
         )
       })
       .catch((err) => {
+        if (!current()) {
+          console.debug(`[session-list] discard-error directory=${logical} token=${request.token}`)
+          return
+        }
         const message = err instanceof Error ? err.message : String(err)
         console.error(
           `[global-sync] failed to load sessions directory=${logical} identity=${directoryKey} elapsed=${Date.now() - startedAt}ms err=${message}`,
@@ -678,7 +696,8 @@ function createGlobalSync() {
       console.debug(
         `[global-sync] load sessions done directory=${logical} identity=${directoryKey} elapsed=${Date.now() - startedAt}ms`,
       )
-      sessionLoads.delete(directoryKey)
+      if (sessionLoads.get(directoryKey) === promise) sessionLoads.delete(directoryKey)
+      sessionListRequests.finish(directoryKey, request)
       children.unpin(directoryKey)
     })
     return promise
@@ -858,6 +877,7 @@ function createGlobalSync() {
     const resolved = resolveChild(directory)
     if (!resolved) return
     const { key, child, domain: resolvedDomain } = resolved
+    sessionListRequests.record(key, event)
     children.mark(key)
     const [store, setStore] = child
     const logical = store.path.directory || directory
@@ -962,6 +982,7 @@ function createGlobalSync() {
 
   onCleanup(unsub)
   onCleanup(() => {
+    sessionListRequests.clearAll()
     for (const queue of queues.values()) queue.dispose()
     queues.clear()
   })
@@ -1015,6 +1036,7 @@ function createGlobalSync() {
           for (const dir of dirs) {
             booting.delete(dir)
             sessionLoads.delete(dir)
+            sessionListRequests.clear(dir, "backend-reset")
             sessionLoaded.delete(dir)
             sessionService.clearDirectory(dir)
             bump(dir, "server-reset")

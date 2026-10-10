@@ -4,6 +4,7 @@ import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { batch } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { markSessionProfile } from "@/utils/session-profile"
+import { createFreshRequestQueue } from "@/utils/fresh-request-queue"
 import { setSessionPrefetch } from "./session-prefetch"
 import {
   compareSessionItemID,
@@ -32,7 +33,12 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
   const pageInflight = new Map<string, Promise<SessionMessagePage>>()
   const inflight = new Map<string, Promise<LoadResult>>()
   const optimistic = new Map<string, Map<string, SessionOptimisticItem>>()
-  const [activity, setActivity] = createStore({ loading: {} as Record<string, number | undefined> })
+  const refreshes = createFreshRequestQueue<LoadResult>()
+  const [activity, setActivity] = createStore({
+    loading: {} as Record<string, number | undefined>,
+    queued: {} as Record<string, boolean | undefined>,
+    pending: {} as Record<string, Record<string, true> | undefined>,
+  })
   const keyFor = (directory: string, sessionID: string) => `${deps.key(directory)}\n${sessionID}`
   const rev = (directory: string, sessionID: string) => revision.get(keyFor(directory, sessionID)) ?? 0
   const bump = (directory: string, sessionID: string) => {
@@ -46,6 +52,16 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
 
   const clearOptimistic = (directory: string, sessionID: string, messageID?: string) => {
     const key = keyFor(directory, sessionID)
+    setActivity(
+      "pending",
+      produce((draft) => {
+        if (!messageID) delete draft[key]
+        else if (draft[key]) {
+          delete draft[key][messageID]
+          if (Object.keys(draft[key]).length === 0) delete draft[key]
+        }
+      }),
+    )
     if (!messageID) {
       optimistic.delete(key)
       return
@@ -100,7 +116,7 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
     return promise
   }
 
-  const load = (input: {
+  const load = (requested: {
     directory: string
     sessionID: string
     limit: number
@@ -108,10 +124,41 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
     mode?: "replace" | "prepend"
     authoritative?: boolean
   }): Promise<LoadResult> => {
+    const input =
+      requested.authoritative && !requested.before
+        ? {
+            ...requested,
+            limit: Math.max(
+              requested.limit,
+              deps.child(requested.directory)[0].message[requested.sessionID]?.length ?? 0,
+            ),
+          }
+        : requested
     const directory = input.directory
     const key = keyFor(directory, input.sessionID)
     const pending = inflight.get(key)
-    if (pending) return pending
+    if (pending) {
+      if (!input.authoritative) return pending
+      const child = deps.child(directory)
+      const mark = deps.revision(directory)
+      const canceled = (): LoadResult => ({
+        committed: false,
+        count: child[0].message[input.sessionID]?.length ?? 0,
+        complete: false,
+      })
+      discardRevision.set(key, (discardRevision.get(key) ?? 0) + 1)
+      setActivity("queued", key, true)
+      return refreshes.enqueue(
+        key,
+        pending,
+        () => {
+          setActivity("queued", key, undefined)
+          if (!deps.current(directory, child, mark)) return canceled()
+          return load(input)
+        },
+        canceled,
+      )
+    }
     const child = deps.child(directory)
     const directoryRevision = deps.revision(directory)
     const eventRevision = rev(directory, input.sessionID)
@@ -121,7 +168,10 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
     setActivity("loading", key, (value) => (value ?? 0) + 1)
     const promise = page(input)
       .then((result) => {
-        if (!deps.current(directory, child, directoryRevision)) {
+        if (inflight.get(key) !== promise || !deps.current(directory, child, directoryRevision)) {
+          console.debug(
+            `[session-messages] discard directory=${directory} sid=${input.sessionID} reason=invalidated-request`,
+          )
           return { committed: false, count: child[0].message[input.sessionID]?.length ?? 0, complete: false }
         }
         const history = child[0].session_history?.[input.sessionID]
@@ -135,12 +185,6 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
         }
 
         const next = mergeOptimisticSessionPage(result, optimisticItems(directory, input.sessionID))
-        for (const messageID of next.confirmed) {
-          console.debug(
-            `[session-messages] optimistic-confirmed directory=${directory} sid=${input.sessionID} message=${messageID} source=snapshot`,
-          )
-          clearOptimistic(directory, input.sessionID, messageID)
-        }
         const eventChanged = rev(directory, input.sessionID) !== eventRevision
         const cached = child[0].message[input.sessionID] ?? []
         const preserveCached =
@@ -150,6 +194,12 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
           `[session-messages] commit sid=${input.sessionID} mode=${input.mode ?? "replace"} authoritative=${!!input.authoritative} eventChanged=${eventChanged} cached=${cached.length} fetched=${next.session.length} merged=${messages.length}`,
         )
         batch(() => {
+          for (const messageID of next.confirmed) {
+            console.debug(
+              `[session-messages] optimistic-confirmed directory=${directory} sid=${input.sessionID} message=${messageID} source=snapshot`,
+            )
+            clearOptimistic(directory, input.sessionID, messageID)
+          }
           child[1]("message", input.sessionID, reconcile(messages, { key: "id" }))
           if (input.authoritative) {
             const keep = new Set(next.session.map((message) => message.id))
@@ -171,7 +221,7 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
               : eventChanged
                 ? mergeSessionItems(fetched, current ?? [])
                 : mergeFetchedSessionParts(fetched, current)
-            if (parts.length) child[1]("part", item.id, reconcileFetchedSessionParts(parts))
+            if (input.authoritative || parts.length) child[1]("part", item.id, reconcileFetchedSessionParts(parts))
           }
           child[1]("session_history", input.sessionID, {
             cursor: next.cursor,
@@ -215,6 +265,12 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
     const value = { message: input.message, parts: sortSessionParts(input.parts) }
     if (items) items.set(input.message.id, value)
     else optimistic.set(key, new Map([[input.message.id, value]]))
+    setActivity(
+      "pending",
+      produce((draft) => {
+        ;(draft[key] ??= {})[input.message.id] = true
+      }),
+    )
     const child = deps.child(directory)
     const messages = child[0].message[input.sessionID] ?? []
     const result = Binary.search(messages, input.message.id, (message) => message.id)
@@ -256,7 +312,8 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
     page,
     load,
     loading(directory: string, sessionID: string) {
-      return (activity.loading[keyFor(directory, sessionID)] ?? 0) > 0
+      const key = keyFor(directory, sessionID)
+      return (activity.loading[key] ?? 0) > 0 || activity.queued[key] === true
     },
     history(directory: string, sessionID: string) {
       return deps.child(directory)[0].session_history?.[sessionID]
@@ -268,14 +325,14 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
     },
     optimistic: {
       has(directory: string, sessionID: string, messageID: string) {
-        return optimistic.get(keyFor(directory, sessionID))?.has(messageID) ?? false
+        return activity.pending[keyFor(directory, sessionID)]?.[messageID] ?? false
       },
       add: addOptimistic,
       complete(directory: string, input: { sessionID: string; messageID: string }) {
         clearOptimistic(directory, input.sessionID, input.messageID)
         const [, setStore] = deps.child(directory)
-        setStore("part", input.messageID, (parts: Part[]) =>
-          parts.filter(
+        setStore("part", input.messageID, (parts: Part[] | undefined) =>
+          (parts ?? []).filter(
             (part) =>
               !(
                 part.type === "text" &&
@@ -305,10 +362,13 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
       for (const sessionID of sessionIDs) {
         const key = keyFor(directory, sessionID)
         const pending = inflight.get(key)
+        console.debug(`[session-messages] clear directory=${directory} sid=${sessionID} pending=${!!pending}`)
         generation.set(key, (generation.get(key) ?? 0) + 1)
         revision.set(key, (revision.get(key) ?? 0) + 1)
         inflight.delete(key)
-        optimistic.delete(key)
+        refreshes.clear(key)
+        setActivity("queued", key, undefined)
+        clearOptimistic(directory, sessionID)
         for (const pageKey of pageInflight.keys()) {
           if (pageKey.startsWith(`${key}\n`)) pageInflight.delete(pageKey)
         }
@@ -338,6 +398,15 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
       clear(pageInflight)
       clear(inflight)
       clear(optimistic)
+      refreshes.clearPrefix(prefix)
+      for (const field of ["queued", "pending"] as const) {
+        setActivity(
+          field,
+          produce((draft) => {
+            for (const key of Object.keys(draft)) if (key.startsWith(prefix)) delete draft[key]
+          }),
+        )
+      }
       setActivity("loading", (items) => {
         const next = { ...items }
         for (const key of Object.keys(next)) {

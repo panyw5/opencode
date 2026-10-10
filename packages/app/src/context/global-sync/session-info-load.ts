@@ -48,6 +48,7 @@ export function clearSessionInfos(directory: string, sessionIDs: Iterable<string
   for (const sessionID of sessionIDs) {
     const key = keyFor(domain, directory, sessionID)
     const pending = inflight.get(key)
+    console.debug(`[session-info] clear directory=${directory} sid=${sessionID} pending=${!!pending}`)
     sessionGeneration.set(key, (sessionGeneration.get(key) ?? 0) + 1)
     inflight.delete(key)
     if (!pending) sessionGeneration.delete(key)
@@ -73,13 +74,21 @@ export function loadSessionInfo(input: {
   const currentDirectoryGeneration = directoryGeneration.get(prefix) ?? 0
   const currentSessionGeneration = sessionGeneration.get(key) ?? 0
   const promise = retry(input.load)
-    .then((value) =>
-      (generation.get(domain) ?? 0) === currentGeneration &&
-      (directoryGeneration.get(prefix) ?? 0) === currentDirectoryGeneration &&
-      (sessionGeneration.get(key) ?? 0) === currentSessionGeneration
-        ? value
-        : undefined,
-    )
+    .then((value) => {
+      if (
+        inflight.get(key) !== promise ||
+        (generation.get(domain) ?? 0) !== currentGeneration ||
+        (directoryGeneration.get(prefix) ?? 0) !== currentDirectoryGeneration ||
+        (sessionGeneration.get(key) ?? 0) !== currentSessionGeneration
+      ) {
+        console.debug(
+          `[session-info] discard directory=${input.directory} sid=${input.sessionID} reason=invalidated-request`,
+        )
+        return
+      }
+      console.debug(`[session-info] resolved directory=${input.directory} sid=${input.sessionID} found=${!!value}`)
+      return value
+    })
     .finally(() => {
       if (inflight.get(key) === promise) inflight.delete(key)
       if (!inflight.has(key)) sessionGeneration.delete(key)
