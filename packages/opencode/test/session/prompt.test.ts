@@ -187,10 +187,7 @@ const blockingProcessor = Layer.succeed(
   }),
 )
 
-function makePrompt(input?: {
-  processor?: "blocking"
-  browser?: Layer.Layer<Browser.Service, never, never>
-}) {
+function makePrompt(input?: { processor?: "blocking"; browser?: Layer.Layer<Browser.Service, never, never> }) {
   const deps = Layer.mergeAll(
     Session.defaultLayer,
     Snapshot.defaultLayer,
@@ -270,17 +267,11 @@ function makePrompt(input?: {
   )
 }
 
-function makeHttp(input?: {
-  processor?: "blocking"
-  browser?: Layer.Layer<Browser.Service, never, never>
-}) {
+function makeHttp(input?: { processor?: "blocking"; browser?: Layer.Layer<Browser.Service, never, never> }) {
   return Layer.mergeAll(TestLLMServer.layer, ProjectTask.defaultLayer, makePrompt(input))
 }
 
-function makeHttpNoLLMServer(input?: {
-  processor?: "blocking"
-  browser?: Layer.Layer<Browser.Service, never, never>
-}) {
+function makeHttpNoLLMServer(input?: { processor?: "blocking"; browser?: Layer.Layer<Browser.Service, never, never> }) {
   return makePrompt(input)
 }
 
@@ -309,37 +300,65 @@ const directMentionBrowser = Layer.mock(Browser.Service, {
     }),
 })
 const directMentionIt = testEffect(makeHttp({ browser: directMentionBrowser }))
-it.instance("Pro progress enters the timeline without interrupting an active request and final output wakes an idle session", () => Effect.gen(function* () {
-  const { llm } = yield* useServerConfig(providerCfg)
-  const prompt = yield* SessionPrompt.Service
-  const sessions = yield* Session.Service
-  const inbox = yield* SessionInput.Service
-  const chat = yield* sessions.create({ title: "Pro live input", permission: [{ permission: "*", pattern: "*", action: "allow" }] })
-  yield* user(chat.id, "independent exploration")
-  const gate = yield* Deferred.make<void>()
-  yield* llm.push(
-    reply().wait(deferredAsPromise(gate)).text("independent work finished").stop(),
-    reply().text("used the new Pro progress").stop(),
-    reply().text("used the final Pro result").stop(),
-  )
-  const firstRun = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
-  yield* llm.wait(1)
-  yield* inbox.admit({ id: "evt_pro_progress", sessionID: chat.id, source: "background-gpt-pro", prompt: { text: "PRO_PARTIAL_MARKER", agent: "build", model: ref, metadata: { kind: "background-gpt-pro-injection", phase: "generating" } } })
-  yield* prompt.drain(chat.id)
-  expect(yield* llm.calls).toBe(1)
-  const liveParts = (yield* sessions.messages({ sessionID: chat.id })).flatMap(m => m.parts)
-  expect(liveParts.some(p => p.type === "text" && p.text === "PRO_PARTIAL_MARKER")).toBe(true)
-  yield* Deferred.succeed(gate, undefined)
-  yield* awaitWithTimeout(Fiber.await(firstRun), "active request did not finish", "3 seconds")
-  yield* awaitWithTimeout(llm.wait(2), "progress was not consumed", "3 seconds")
-  expect(JSON.stringify((yield* llm.inputs)[1]?.messages)).toContain("PRO_PARTIAL_MARKER")
-  yield* inbox.admit({ id: "evt_pro_final", sessionID: chat.id, source: "background-gpt-pro", prompt: { text: "PRO_FINAL_MARKER", agent: "build", model: ref, metadata: { kind: "background-gpt-pro-injection", phase: "completed" } } })
-  yield* prompt.drain(chat.id)
-  expect(yield* llm.calls).toBe(3)
-  expect(JSON.stringify((yield* llm.inputs)[2]?.messages)).toContain("PRO_FINAL_MARKER")
-  expect(yield* inbox.pending(chat.id)).toHaveLength(0)
-  expect(yield* inbox.promotedUnacked(chat.id)).toHaveLength(0)
-}), 5_000)
+it.instance(
+  "Pro progress enters the timeline without interrupting an active request and final output wakes an idle session",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const inbox = yield* SessionInput.Service
+      const chat = yield* sessions.create({
+        title: "Pro live input",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* user(chat.id, "independent exploration")
+      const gate = yield* Deferred.make<void>()
+      yield* llm.push(
+        reply().wait(deferredAsPromise(gate)).text("independent work finished").stop(),
+        reply().text("used the new Pro progress").stop(),
+        reply().text("used the final Pro result").stop(),
+      )
+      const firstRun = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* llm.wait(1)
+      yield* inbox.admit({
+        id: "evt_pro_progress",
+        sessionID: chat.id,
+        source: "background-gpt-pro",
+        prompt: {
+          text: "PRO_PARTIAL_MARKER",
+          agent: "build",
+          model: ref,
+          metadata: { kind: "background-gpt-pro-injection", phase: "generating" },
+        },
+      })
+      yield* prompt.drain(chat.id)
+      expect(yield* llm.calls).toBe(1)
+      const liveParts = (yield* sessions.messages({ sessionID: chat.id })).flatMap((m) => m.parts)
+      expect(liveParts.some((p) => p.type === "text" && p.text === "PRO_PARTIAL_MARKER")).toBe(true)
+      yield* Deferred.succeed(gate, undefined)
+      yield* awaitWithTimeout(Fiber.await(firstRun), "active request did not finish", "3 seconds")
+      yield* awaitWithTimeout(llm.wait(2), "progress was not consumed", "3 seconds")
+      expect(JSON.stringify((yield* llm.inputs)[1]?.messages)).toContain("PRO_PARTIAL_MARKER")
+      yield* inbox.admit({
+        id: "evt_pro_final",
+        sessionID: chat.id,
+        source: "background-gpt-pro",
+        prompt: {
+          text: "PRO_FINAL_MARKER",
+          agent: "build",
+          model: ref,
+          metadata: { kind: "background-gpt-pro-injection", phase: "completed" },
+        },
+      })
+      yield* prompt.drain(chat.id)
+      expect(yield* llm.calls).toBe(3)
+      expect(JSON.stringify((yield* llm.inputs)[2]?.messages)).toContain("PRO_FINAL_MARKER")
+      expect(yield* inbox.pending(chat.id)).toHaveLength(0)
+      expect(yield* inbox.promotedUnacked(chat.id)).toHaveLength(0)
+    }),
+  5_000,
+)
 const noLLMServer = testEffect(makeHttpNoLLMServer())
 const ownerCancellationCalls: Array<{ directory: string; sessionID: string }> = []
 const ownerCancellationBrowser = Layer.mock(Browser.Service, {
@@ -487,10 +506,20 @@ directMentionIt.instance(
       expect(fileParts.map((part) => ({ filename: part.filename, mime: part.mime, url: part.url }))).toEqual([
         { filename: "local-note.txt", mime: "text/plain", url: pathToFileURL(localFile).href },
         { filename: "pasted image.png", mime: "image/png", url: `data:image/png;base64,${png.toString("base64")}` },
-        { filename: "pasted.md", mime: "text/markdown", url: `data:text/markdown;base64,${markdown.toString("base64")}` },
-        { filename: "pasted.pdf", mime: "application/pdf", url: `data:application/pdf;base64,${pdf.toString("base64")}` },
+        {
+          filename: "pasted.md",
+          mime: "text/markdown",
+          url: `data:text/markdown;base64,${markdown.toString("base64")}`,
+        },
+        {
+          filename: "pasted.pdf",
+          mime: "application/pdf",
+          url: `data:application/pdf;base64,${pdf.toString("base64")}`,
+        },
       ])
-      expect(user?.parts.some((part) => part.type === "text" && part.text.startsWith("Called the Read tool"))).toBe(false)
+      expect(user?.parts.some((part) => part.type === "text" && part.text.startsWith("Called the Read tool"))).toBe(
+        false,
+      )
       const consultPart = messages
         .flatMap((message) => message.parts)
         .find((part) => part.type === "tool" && part.tool === "gpt_pro_consult")
@@ -601,7 +630,10 @@ directMentionIt.instance(
       yield* prompt.prompt({
         sessionID: chat.id,
         agent: "build",
-        parts: [{ type: "text", text: "What is the main risk here?" }, { type: "agent", name: "gpt-pro" }],
+        parts: [
+          { type: "text", text: "What is the main risk here?" },
+          { type: "agent", name: "gpt-pro" },
+        ],
       })
       const consult = directGptProCalls.find((call) => call.action === "consult")
       expect(consult).toBeDefined()
@@ -640,7 +672,8 @@ directMentionIt.instance(
       expect(failed?.type).toBe("tool")
       if (failed?.type === "tool") {
         expect(failed.state.status).toBe("error")
-        if (failed.state.status === "error") expect(failed.state.error).toContain("GPT-Pro attachment source is unsupported: remote.txt")
+        if (failed.state.status === "error")
+          expect(failed.state.error).toContain("GPT-Pro attachment source is unsupported: remote.txt")
       }
     }),
   { config: cfg },
@@ -930,22 +963,28 @@ ownerCancellationLiveServer.instance("normal prompt completion does not cancel t
   }),
 )
 
-unresponsiveOwnerCancellationServer.instance("session stop finalizes locally without waiting for desktop acknowledgement", () =>
-  Effect.gen(function* () {
-    ownerCancellationBridgeStarted = false
-    const prompt = yield* SessionPrompt.Service
-    const sessions = yield* Session.Service
-    const session = yield* sessions.create({ title: "Unresponsive desktop consultation stop" })
-    const seeded = yield* seed(session.id)
+unresponsiveOwnerCancellationServer.instance(
+  "session stop finalizes locally without waiting for desktop acknowledgement",
+  () =>
+    Effect.gen(function* () {
+      ownerCancellationBridgeStarted = false
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "Unresponsive desktop consultation stop" })
+      const seeded = yield* seed(session.id)
 
-    yield* awaitWithTimeout(prompt.cancel(session.id), "session stop blocked on desktop owner cancellation", "1 second")
+      yield* awaitWithTimeout(
+        prompt.cancel(session.id),
+        "session stop blocked on desktop owner cancellation",
+        "1 second",
+      )
 
-    expect(ownerCancellationBridgeStarted).toBe(true)
-    const messages = yield* sessions.messages({ sessionID: session.id })
-    const assistant = messages.find((message) => message.info.id === seeded.assistant.id)
-    expect(assistant?.info.role).toBe("assistant")
-    if (assistant?.info.role === "assistant") expect(assistant.info.error?.name).toBe("MessageAbortedError")
-  }),
+      expect(ownerCancellationBridgeStarted).toBe(true)
+      const messages = yield* sessions.messages({ sessionID: session.id })
+      const assistant = messages.find((message) => message.info.id === seeded.assistant.id)
+      expect(assistant?.info.role).toBe("assistant")
+      if (assistant?.info.role === "assistant") expect(assistant.info.error?.name).toBe("MessageAbortedError")
+    }),
 )
 
 noLLMServer.instance(
@@ -1324,9 +1363,9 @@ it.instance(
 
       const result = yield* prompt.loop({ sessionID: chat.id })
       expect(yield* llm.calls).toBe(1)
-      expect(result.parts.some((part) => part.type === "text" && part.text === "recovered materialized notification")).toBe(
-        true,
-      )
+      expect(
+        result.parts.some((part) => part.type === "text" && part.text === "recovered materialized notification"),
+      ).toBe(true)
       expect((yield* inbox.cursor(chat.id)).consumedSeq).toBe(0)
       expect(yield* inbox.promotedUnacked(chat.id)).toEqual([])
     }),
@@ -2281,7 +2320,9 @@ it.instance(
 
       // The interrupted turn finalized gracefully — no aborted error marker.
       const messages = yield* sessions.messages({ sessionID: chat.id })
-      const interrupted = messages.find((message) => message.info.role === "assistant" && message.info.parentID === original.id)
+      const interrupted = messages.find(
+        (message) => message.info.role === "assistant" && message.info.parentID === original.id,
+      )
       expect(interrupted?.info.role).toBe("assistant")
       if (interrupted?.info.role === "assistant") {
         expect(interrupted.info.error).toBeUndefined()
@@ -4535,10 +4576,7 @@ it.instance(
       })
 
       yield* llm.push(
-        reply()
-          .wait(deferredAsPromise(gate))
-          .text("Let me look for the files.")
-          .tool("glob", { pattern: "**/*.txt" }),
+        reply().wait(deferredAsPromise(gate)).text("Let me look for the files.").tool("glob", { pattern: "**/*.txt" }),
       )
 
       const runFiber = yield* prompt
@@ -4606,10 +4644,7 @@ it.instance(
       })
 
       yield* llm.push(
-        reply()
-          .wait(deferredAsPromise(gate))
-          .text("Let me look for the files.")
-          .tool("glob", { pattern: "**/*.txt" }),
+        reply().wait(deferredAsPromise(gate)).text("Let me look for the files.").tool("glob", { pattern: "**/*.txt" }),
       )
       yield* llm.text("done")
 
@@ -4653,10 +4688,7 @@ it.instance(
       })
 
       yield* llm.push(
-        reply()
-          .wait(deferredAsPromise(gate))
-          .text("Let me look for the files.")
-          .tool("glob", { pattern: "**/*.txt" }),
+        reply().wait(deferredAsPromise(gate)).text("Let me look for the files.").tool("glob", { pattern: "**/*.txt" }),
       )
       yield* llm.text("done")
 
