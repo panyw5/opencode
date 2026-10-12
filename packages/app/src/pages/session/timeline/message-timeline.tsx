@@ -102,7 +102,6 @@ import type {
 } from "../message-navigation"
 import { createScrollLedger, type ScrollOrigin, type ScrollRuntime } from "./scroll-ledger"
 import type { HistoryInput } from "../history-edge"
-import { SessionSelectionToolbar } from "@/components/session-selection-toolbar"
 
 const emptyMessages: MessageType[] = []
 const emptyParts: PartType[] = []
@@ -278,7 +277,6 @@ export type MessageTimelineViewport = {
 export function MessageTimeline(props: {
   actions?: UserActions
   onSendQueued?: () => void
-  onSelectionToPrompt: (text: string) => void
   onBackgroundShell?: MessageProps["onBackgroundShell"]
   onBackgroundTask?: MessageProps["onBackgroundTask"]
   scroll: { overflow: boolean; bottom: boolean }
@@ -2292,7 +2290,6 @@ export function MessageTimeline(props: {
           </Show>
         </div>
       </ScrollView>
-      <SessionSelectionToolbar root={listRoot} onPrompt={props.onSelectionToPrompt} />
       <Show when={sessionFind.open()}>
         <FileSearchBar
           pos={sessionFind.pos}

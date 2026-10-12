@@ -1,4 +1,4 @@
-import { createEffect, onCleanup, onMount, Show, type Accessor } from "solid-js"
+import { onCleanup, onMount, Show, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Portal } from "solid-js/web"
 import { Button } from "@opencode-ai/ui/button"
@@ -8,8 +8,7 @@ import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { QUICK_ASSISTANT_SELECTION_EVENT } from "@/utils/selection-prompt"
 import { selectionMarkdown } from "./session-selection-markdown"
-
-export const shouldTrackSelectionScroll = (visible: boolean, selected: boolean) => visible || selected
+import { createSelectionFrameScheduler, readSessionSelection } from "./session-selection-state"
 
 export function SessionSelectionToolbar(props: {
   root: Accessor<HTMLElement | undefined>
@@ -21,57 +20,53 @@ export function SessionSelectionToolbar(props: {
   const [state, setState] = createStore({ visible: false, left: 0, top: 0, below: false, copied: false })
   let toolbar: HTMLDivElement | undefined
   let range: Range | undefined
-  let frame = 0
   let dragging = false
-  let selectionActive = false
+  let selectionLength = 0
+  let trackedRoot: HTMLElement | undefined
+  let releaseTracking: (() => void) | undefined
+  let toolbarSize: { width: number; height: number } | undefined
+  let toolbarObserver: ResizeObserver | undefined
   let copyTimer: ReturnType<typeof setTimeout> | undefined
-
-  const hasSessionSelection = () => {
-    const selection = window.getSelection()
-    const root = props.root()
-    if (!root || !selection || selection.isCollapsed || !selection.rangeCount) return false
-    const selected = selection.getRangeAt(0)
-    return root.contains(selected.startContainer) && root.contains(selected.endContainer)
-  }
-
-  const hide = () => {
+  const hideVisible = () => {
     if (state.visible) console.debug("[session-selection] toolbar hidden")
-    range = undefined
+    if (toolbar) toolbarObserver?.unobserve(toolbar)
+    toolbar = undefined
+    toolbarSize = undefined
     setState({ visible: false, copied: false })
+  }
+  const hide = () => {
+    scheduler.cancel()
+    range = undefined
+    selectionLength = 0
+    releaseTracking?.()
+    releaseTracking = undefined
+    trackedRoot = undefined
+    hideVisible()
   }
   const update = () => {
     if (dragging || toolbar?.contains(document.activeElement)) return
-    const selection = window.getSelection()
     const root = props.root()
-    if (!root || !selection || selection.isCollapsed || !selection.rangeCount || !selection.toString().trim()) {
-      selectionActive = false
-      return hide()
-    }
-    const next = selection.getRangeAt(0)
-    if (!root.contains(next.startContainer) || !root.contains(next.endContainer)) {
-      selectionActive = false
-      return hide()
-    }
-    selectionActive = true
-    const content = (node: Node) => {
-      const element = node instanceof Element ? node : node.parentElement
-      return (
-        element?.closest(
-          '[data-component="markdown"], [data-component="bash-output"], [data-component="tool-output"]',
-        ) && !element.closest('button, input, textarea, [contenteditable="true"]')
-      )
-    }
-    if (!content(next.startContainer) || !content(next.endContainer)) return hide()
-    const bounds = root.getBoundingClientRect()
-    const rects = Array.from(next.getClientRects()).filter(
-      (rect) => rect.width && rect.height && rect.bottom > bounds.top && rect.top < bounds.bottom,
+    if (
+      !root ||
+      !range ||
+      range.collapsed ||
+      !root.contains(range.startContainer) ||
+      !root.contains(range.endContainer)
     )
-    const rect = rects[0]
-    if (!rect) return hide()
-    range = next.cloneRange()
-    if (!state.visible) console.debug(`[session-selection] toolbar shown length=${selection.toString().length}`)
-    const width = toolbar?.offsetWidth || Math.min(440, window.innerWidth - 16)
-    const height = toolbar?.offsetHeight || 40
+      return hide()
+    const bounds = root.getBoundingClientRect()
+    let rect: DOMRect | undefined
+    for (const candidate of range.getClientRects()) {
+      if (!candidate.width || !candidate.height || candidate.bottom <= bounds.top || candidate.top >= bounds.bottom)
+        continue
+      rect = candidate
+      break
+    }
+    // Keep tracking an offscreen selection so scrolling it back reveals the toolbar.
+    if (!rect) return hideVisible()
+    if (!state.visible) console.debug(`[session-selection] toolbar shown length=${selectionLength}`)
+    const width = toolbarSize?.width || Math.min(440, window.innerWidth - 16)
+    const height = toolbarSize?.height || 40
     const top = Math.max(bounds.top, rect.top)
     const below = top - height - 8 < Math.max(8, bounds.top)
     setState({
@@ -81,13 +76,48 @@ export function SessionSelectionToolbar(props: {
       below,
     })
   }
-  const schedule = () => {
-    cancelAnimationFrame(frame)
-    frame = requestAnimationFrame(update)
+  const scheduler = createSelectionFrameScheduler(update, {
+    request: (callback) => requestAnimationFrame(callback),
+    cancel: (frame) => cancelAnimationFrame(frame),
+  })
+  const refreshSelection = () => {
+    if (dragging || toolbar?.contains(document.activeElement)) return
+    const root = props.root()
+    const selected = readSessionSelection(window.getSelection(), root)
+    if (!selected || !root) return hide()
+    range = selected.range
+    selectionLength = selected.length
+    if (trackedRoot !== root) {
+      releaseTracking?.()
+      const schedule = () => scheduler.schedule()
+      const observer = new ResizeObserver(schedule)
+      observer.observe(root)
+      root.addEventListener("scroll", schedule, true)
+      window.addEventListener("resize", schedule)
+      trackedRoot = root
+      console.debug(`[session-selection] tracking enabled length=${selectionLength}`)
+      releaseTracking = () => {
+        observer.disconnect()
+        root.removeEventListener("scroll", schedule, true)
+        window.removeEventListener("resize", schedule)
+        console.debug("[session-selection] tracking disabled")
+      }
+    }
+    scheduler.schedule()
   }
-  const scheduleSelected = () => {
-    if (!shouldTrackSelectionScroll(state.visible, selectionActive)) return
-    schedule()
+  const bindToolbar = (node: HTMLDivElement) => {
+    if (toolbar) toolbarObserver?.unobserve(toolbar)
+    toolbar = node
+    toolbarObserver ??= new ResizeObserver((entries) => {
+      const entry = entries.find((entry) => entry.target === toolbar)
+      if (!entry) return
+      const box = entry.borderBoxSize[0]
+      if (!box || !box.inlineSize || !box.blockSize) return
+      if (toolbarSize?.width === box.inlineSize && toolbarSize.height === box.blockSize) return
+      toolbarSize = { width: box.inlineSize, height: box.blockSize }
+      scheduler.schedule()
+    })
+    toolbarObserver.observe(node)
   }
   const text = () => {
     if (!range || !props.root()?.contains(range.commonAncestorContainer)) return ""
@@ -125,53 +155,35 @@ export function SessionSelectionToolbar(props: {
     }
     const up = () => {
       dragging = false
-      selectionActive = hasSessionSelection()
-      schedule()
-    }
-    const selectionChanged = () => {
-      selectionActive = hasSessionSelection()
-      schedule()
+      refreshSelection()
     }
     const key = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return
       hide()
       window.getSelection()?.removeAllRanges()
     }
-    selectionActive = hasSessionSelection()
-    document.addEventListener("selectionchange", selectionChanged)
+    document.addEventListener("selectionchange", refreshSelection)
     document.addEventListener("pointerdown", down)
     document.addEventListener("pointerup", up)
     document.addEventListener("pointercancel", up)
     document.addEventListener("keydown", key)
-    document.addEventListener("scroll", scheduleSelected, true)
-    window.addEventListener("resize", scheduleSelected)
+    refreshSelection()
     onCleanup(() => {
-      document.removeEventListener("selectionchange", selectionChanged)
+      document.removeEventListener("selectionchange", refreshSelection)
       document.removeEventListener("pointerdown", down)
       document.removeEventListener("pointerup", up)
       document.removeEventListener("pointercancel", up)
       document.removeEventListener("keydown", key)
-      document.removeEventListener("scroll", scheduleSelected, true)
-      window.removeEventListener("resize", scheduleSelected)
-      cancelAnimationFrame(frame)
+      hide()
+      toolbarObserver?.disconnect()
       clearTimeout(copyTimer)
     })
   })
-  createEffect(() => {
-    if (!state.visible) return
-    schedule()
-    requestAnimationFrame(() => {
-      if (!toolbar?.isConnected) return
-      const style = getComputedStyle(toolbar)
-      console.debug(`[session-selection] toolbar style background=${style.backgroundColor} z=${style.zIndex}`)
-    })
-  })
-
   return (
     <Show when={state.visible}>
       <Portal>
         <div
-          ref={toolbar}
+          ref={bindToolbar}
           role="toolbar"
           aria-label={language.t("session.selection.toolbar")}
           data-component="session-selection-toolbar"
