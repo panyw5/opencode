@@ -6,10 +6,12 @@ import { join, resolve } from "node:path"
 import semver from "semver"
 
 // electron-builder already depends on js-yaml; resolve through it rather than adding a dependency.
-const require = createRequire(
-  import.meta.resolve("electron-builder", new URL("../packages/desktop/package.json", import.meta.url).href),
-)
+// Use Node's workspace-relative resolver: Bun 1.3.9 on Windows cannot reliably
+// resolve import.meta.resolve(package, fileURL) even when the package is installed.
+const desktopRequire = createRequire(new URL("../packages/desktop/package.json", import.meta.url))
+const require = createRequire(desktopRequire.resolve("electron-builder"))
 const yaml = require("js-yaml") as { load(text: string): unknown; dump(value: unknown): string }
+if (import.meta.main) console.log(`[desktop-artifacts] YAML parser ready platform=${process.platform}`)
 
 export type Contract = {
   repo: string
