@@ -16,6 +16,7 @@ import { lt } from "drizzle-orm"
 import { or } from "drizzle-orm"
 import { sql } from "drizzle-orm"
 import { MessageTable, PartTable, SessionTable } from "./session.sql"
+import { withStreamingText } from "./streaming-text"
 import * as ProviderError from "@/provider/error"
 import { errorMessage } from "@/util/error"
 import { isMedia } from "@/util/media"
@@ -549,6 +550,7 @@ export const Event = {
       partID: PartID,
       field: Schema.String,
       delta: Schema.String,
+      offset: Schema.optional(Schema.Number),
     }),
   ),
   PartRemoved: SyncEvent.define({
@@ -619,12 +621,12 @@ const info = (row: typeof MessageTable.$inferSelect) =>
   }) as Info
 
 const part = (row: typeof PartTable.$inferSelect) =>
-  ({
+  withStreamingText({
     ...row.data,
     id: row.id,
     sessionID: row.session_id,
     messageID: row.message_id,
-  }) as Part
+  } as Part)
 
 const older = (row: Cursor) =>
   or(lt(MessageTable.time_created, row.time), and(eq(MessageTable.time_created, row.time), lt(MessageTable.id, row.id)))
@@ -1338,15 +1340,7 @@ export function parts(message_id: MessageID) {
       .orderBy(PartTable.time_created, PartTable.id)
       .all(),
   )
-  return rows.map(
-    (row) =>
-      ({
-        ...row.data,
-        id: row.id,
-        sessionID: row.session_id,
-        messageID: row.message_id,
-      }) as Part,
-  )
+  return rows.map(part)
 }
 
 export const get = Effect.fn("MessageV2.get")(function* (input: { sessionID: SessionID; messageID: MessageID }) {

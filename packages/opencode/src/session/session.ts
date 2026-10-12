@@ -31,6 +31,7 @@ import { ProjectTable } from "../project/project.sql"
 import { Storage } from "@/storage/storage"
 import * as Log from "@opencode-ai/core/util/log"
 import { MessageV2 } from "./message-v2"
+import { appendStreamingText, streamingText, withStreamingText } from "./streaming-text"
 import type { InstanceContext } from "../project/instance-context"
 import { InstanceState } from "@/effect/instance-state"
 import { Snapshot } from "@/snapshot"
@@ -802,12 +803,12 @@ export const layer: Layer.Layer<
           .get(),
       )
       if (!row) return
-      return {
+      return withStreamingText({
         ...row.data,
         id: row.id,
         sessionID: row.session_id,
         messageID: row.message_id,
-      } as MessageV2.Part
+      } as MessageV2.Part)
     })
 
     const abortToolPart: Interface["abortToolPart"] = Effect.fn("Session.abortToolPart")(function* (input) {
@@ -1114,7 +1115,25 @@ export const layer: Layer.Layer<
       field: string
       delta: string
     }) {
-      yield* bus.publish(MessageV2.Event.PartDelta, input)
+      let offset: number | undefined
+      if (input.field === "text") {
+        let base = streamingText(input)
+        if (base === undefined) {
+          const part = yield* getPart(input)
+          if (part?.type === "text" || part?.type === "reasoning") base = part.text
+        }
+        if (base !== undefined) {
+          offset = appendStreamingText(input, base, input.delta)
+          const line = `[session-stream] snapshot session=${input.sessionID} message=${input.messageID} part=${input.partID} offset=${offset} delta=${input.delta.length} text=${offset + input.delta.length}`
+          if (offset === 0 || Math.floor(offset / 1024) !== Math.floor((offset + input.delta.length) / 1024))
+            log.info(line)
+          else log.debug(line)
+        } else log.warn(`[session-stream] missing part session=${input.sessionID} part=${input.partID}`)
+      }
+      yield* bus.publish(MessageV2.Event.PartDelta, { ...input, offset })
+      log.debug(
+        `[session-stream] published session=${input.sessionID} part=${input.partID} field=${input.field} delta=${input.delta.length}`,
+      )
     })
 
     /** Finds the first message matching the predicate, searching newest-first. */

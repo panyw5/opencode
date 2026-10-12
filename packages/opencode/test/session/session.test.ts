@@ -99,6 +99,52 @@ const createOrphanedToolSession = Effect.gen(function* () {
   return { info, assistant, started, tool }
 })
 
+describe("streaming message snapshots", () => {
+  it.instance("includes received text deltas before text-end in every message read", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const { info, assistant } = yield* createOrphanedToolSession
+      const text = yield* session.updatePart({
+        id: PartID.ascending(),
+        messageID: assistant.id,
+        sessionID: info.id,
+        type: "text",
+        text: "## First section\n\n",
+        time: { start: Date.now() },
+      })
+      const deltas = ["Already generated **bold** paragraph.\n\n", "```ts\nconst x = 1\n", "```\n\nNext section"]
+      let expected = text.text
+      for (const delta of deltas) {
+        yield* session.updatePartDelta({
+          sessionID: info.id,
+          messageID: assistant.id,
+          partID: text.id,
+          field: "text",
+          delta,
+        })
+        expected += delta
+        const single = yield* MessageV2.get({ sessionID: info.id, messageID: assistant.id })
+        const page = yield* MessageV2.page({ sessionID: info.id, limit: 20 })
+        const full = yield* session.messages({ sessionID: info.id })
+        expect(yield* session.getPart({ sessionID: info.id, messageID: assistant.id, partID: text.id })).toMatchObject({
+          text: expected,
+        })
+        for (const parts of [
+          single.parts,
+          page.items.find((item) => item.info.id === assistant.id)!.parts,
+          full.find((item) => item.info.id === assistant.id)!.parts,
+        ]) {
+          expect(parts.find((part) => part.id === text.id)).toMatchObject({ text: expected })
+        }
+      }
+      const finalText = expected + " plugin-completed"
+      yield* session.updatePart({ ...text, text: finalText, time: { start: text.time!.start!, end: Date.now() } })
+      expect(MessageV2.parts(assistant.id).find((part) => part.id === text.id)).toMatchObject({ text: finalText })
+      yield* session.remove(info.id)
+    }),
+  )
+})
+
 describe("session.created event", () => {
   it.instance("should emit session.created event when session is created", () =>
     Effect.gen(function* () {

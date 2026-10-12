@@ -3051,6 +3051,7 @@ export type EventMessagePartDelta = {
     partID: string
     field: string
     delta: string
+    offset?: number
   }
 }
 

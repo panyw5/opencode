@@ -72,9 +72,18 @@ export function upgradeStreamingMath(
 const max = 200
 const cache = new Map<string, Entry>()
 
-function mark(_name: string, _data: Mark = {}) {}
+function mark(name: string, data: Mark = {}) {
+  if (
+    typeof window === "undefined" ||
+    !(window as Window & { __opencodeMarkdownDebug?: boolean }).__opencodeMarkdownDebug
+  )
+    return
+  console.debug(`[markdown] ${name} ${JSON.stringify(data)}`)
+}
 
-function markImpact(_kind: string, _data: Mark = {}) {}
+function markImpact(kind: string, data: Mark = {}) {
+  mark(kind, data)
+}
 
 if (typeof window !== "undefined" && DOMPurify.isSupported) {
   DOMPurify.addHook("afterSanitizeAttributes", (node: Element) => {
@@ -488,9 +497,7 @@ export function markdownCacheMode(input: {
     input.math ?? "full",
     input.chunked ? "chunked" : "plain",
     input.annotated ? "lines" : "nolines",
-  ].join(
-    ":",
-  )
+  ].join(":")
 }
 
 function wrapCodeBlocks(container: HTMLElement) {
@@ -876,7 +883,10 @@ export function Markdown(
       // tokenization); anything else silently falls back to plain rendering.
       const { parseAnnotated } = marked
       const useAnnotated =
-        input.annotated === true && input.mode === "full" && input.math === "full" && typeof parseAnnotated === "function"
+        input.annotated === true &&
+        input.mode === "full" &&
+        input.math === "full" &&
+        typeof parseAnnotated === "function"
       let renderPromise =
         useAnnotated && parseAnnotated
           ? await parseAnnotated(input.normalized)
@@ -891,7 +901,9 @@ export function Markdown(
                       ? marked.parseNoMath
                       : marked.parse
               )(input.normalized).catch((err) => {
-                console.error("markdown render failed", err)
+                console.error(
+                  `[markdown] render failed key=${input.cacheKey ?? input.key ?? "none"} text=${input.markdown.length} error=${err instanceof Error ? err.message : String(err)}`,
+                )
                 return fallback(input.normalized)
               })
 
@@ -1066,13 +1078,15 @@ export function Markdown(
     const time = performance.now()
 
     if (isStreaming && prevHtml && content.length < prevHtml.length) {
-      console.warn("[markdown] html rollback", {
-        key: local.cacheKey ?? "",
-        prev: prevHtml.length,
-        next: content.length,
-        text: local.text.length,
-        tail: clip(local.text),
-      })
+      console.warn(
+        `[markdown] html rollback ${JSON.stringify({
+          key: local.cacheKey ?? "",
+          prev: prevHtml.length,
+          next: content.length,
+          text: local.text.length,
+          tail: clip(local.text),
+        })}`,
+      )
     }
 
     const done = (mode: string) => {

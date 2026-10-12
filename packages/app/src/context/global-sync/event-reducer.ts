@@ -328,6 +328,7 @@ export function applyDirectoryEvent(input: {
         partID: string
         field: string
         delta: string
+        offset?: number
       }
       const parts = input.store.part[props.messageID]
       if (!parts) {
@@ -358,7 +359,25 @@ export function applyDirectoryEvent(input: {
           const part = draft[result.index]
           const field = props.field as keyof typeof part
           const existing = part[field] as string | undefined
-          ;(part[field] as string) = (existing ?? "") + props.delta
+          const text = existing ?? ""
+          const offset = props.offset
+          // A freshly fetched snapshot may already contain queued SSE deltas.
+          // Append only the portion beyond its current UTF-16 text length.
+          if (offset !== undefined && offset >= 0 && offset <= text.length) {
+            const skip = text.length - offset
+            if (skip > 0)
+              console.debug(
+                `[sync] snapshot delta overlap msg=${props.messageID} part=${props.partID} offset=${offset} text=${text.length} skip=${Math.min(skip, props.delta.length)}`,
+              )
+            ;(part[field] as string) = text + props.delta.slice(skip)
+            return
+          }
+          if (offset !== undefined && offset > text.length) {
+            console.warn(
+              `[sync] delta gap msg=${props.messageID} part=${props.partID} offset=${offset} text=${text.length}`,
+            )
+          }
+          ;(part[field] as string) = text + props.delta
         }),
       )
       break
