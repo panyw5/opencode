@@ -37,6 +37,8 @@ import { useLanguage } from "@/context/language"
 import { useModels } from "@/context/models"
 import { useSessionTabs } from "@/context/session-tabs"
 import { formatDateTimeLocal, parseDateTimeLocal } from "@/utils/time"
+import { filterTasks } from "./task-search"
+import { TaskSearchField } from "./task-search-field"
 import {
   sameScheduledTaskPanelScope,
   scheduledTaskEventMatchesScope,
@@ -929,7 +931,7 @@ export function ScheduledTasksPanel(props: {
   const sdk = useGlobalSDK()
   const language = useLanguage()
   const dialog = useDialog()
-  const [state, setState] = createStore({ tasks: [] as ScheduledTask[], loading: true, error: "" })
+  const [state, setState] = createStore({ tasks: [] as ScheduledTask[], loading: true, error: "", query: "" })
   let request = 0
   const activeScope = createMemo<ScheduledTaskPanelScope>(
     () => ({ projectID: props.projectID(), directory: props.directory().replaceAll("\\", "/").replace(/\/+$/, "") }),
@@ -1039,6 +1041,7 @@ export function ScheduledTasksPanel(props: {
 
   createEffect(() => {
     const scope = activeScope()
+    setState("query", "")
     void load({ source: "scope-effect", scope })
   })
   // listenAll: name=directory, details.type=event type (e.g. scheduled-task.created)
@@ -1053,7 +1056,11 @@ export function ScheduledTasksPanel(props: {
   })
   onCleanup(stop)
 
-  const tasks = createMemo(() => state.tasks.slice().sort((a, b) => a.name.localeCompare(b.name)))
+  const tasks = createMemo(() =>
+    filterTasks(state.tasks, state.query, ["name", "prompt"])
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  )
 
   return (
     <div
@@ -1104,6 +1111,9 @@ export function ScheduledTasksPanel(props: {
         </div>
       </div>
 
+      <div class="shrink-0 px-1 pb-3">
+        <TaskSearchField value={state.query} onChange={(value) => setState("query", value)} />
+      </div>
       <div data-slot="scheduled-task-list" class="min-h-0 flex-1 overflow-y-auto no-scrollbar px-1 pt-1 pb-4">
         <Show
           when={!state.loading}
@@ -1124,7 +1134,9 @@ export function ScheduledTasksPanel(props: {
             <Show
               when={tasks().length > 0}
               fallback={
-                <div class="px-4 py-10 text-center text-14-regular text-text-base">{language.t("scheduled.empty")}</div>
+                <div class="px-4 py-10 text-center text-14-regular text-text-base">
+                  {language.t(state.query.trim() ? "task.search.empty" : "scheduled.empty")}
+                </div>
               }
             >
               <div class="flex flex-col gap-2">

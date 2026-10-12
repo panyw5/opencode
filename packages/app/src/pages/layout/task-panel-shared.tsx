@@ -64,6 +64,7 @@ export function TaskPanelShell(props: {
   refreshLabel: string
   onRefresh: () => void
   refreshDisabled?: boolean
+  toolbar?: JSX.Element
   children: JSX.Element
   "data-panel"?: string
 }): JSX.Element {
@@ -119,6 +120,7 @@ export function TaskPanelShell(props: {
             </Tooltip>
           </div>
         </div>
+        {props.toolbar}
       </div>
       <div class="flex-1 min-h-0 overflow-y-auto no-scrollbar px-1 pb-4">{props.children}</div>
     </div>

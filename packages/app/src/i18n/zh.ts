@@ -486,6 +486,9 @@ export const dict = {
   "model.tooltip.context": "上下文上限 {{limit}}",
 
   "common.search.placeholder": "搜索",
+  "task.search.placeholder": "搜索标题和描述",
+  "task.search.clear": "清除任务搜索",
+  "task.search.empty": "没有匹配的任务",
   "common.goBack": "返回",
   "common.goForward": "前进",
   "common.loading": "加载中",

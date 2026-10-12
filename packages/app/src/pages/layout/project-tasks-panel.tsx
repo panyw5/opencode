@@ -32,6 +32,8 @@ import { setPendingProjectTaskMount } from "@/components/session/pending-project
 import { errorMessage } from "./helpers"
 import { directoriesFromSessions, groupProjectTasksByWorktree, taskNeedsDirectoryHydrate } from "./project-task-groups"
 import { projectTaskEventMatchesScope, sameProjectTaskPanelScope } from "./project-tasks-panel-scope"
+import { filterTasks } from "./task-search"
+import { TaskSearchField } from "./task-search-field"
 import {
   Empty,
   ErrorCard,
@@ -900,7 +902,7 @@ export function ProjectTasksPanel(props: {
   )
   const dir = createMemo(() => scope().directory)
   const client = createMemo(() => globalSDK.createClient({ directory: dir().replace(/\\/g, "/"), throwOnError: true }))
-  const [state, setState] = createStore({ tasks: [] as ProjectTask[], loading: true, error: "" })
+  const [state, setState] = createStore({ tasks: [] as ProjectTask[], loading: true, error: "", query: "" })
   let request = 0
 
   async function hydrateSessionDirectories(listed: ProjectTask[], requestId: number): Promise<ProjectTask[]> {
@@ -1038,6 +1040,7 @@ export function ProjectTasksPanel(props: {
 
   createEffect(() => {
     scope()
+    setState("query", "")
     void load()
   })
 
@@ -1056,9 +1059,10 @@ export function ProjectTasksPanel(props: {
     const root = dir()
     return root ? [root] : []
   })
+  const tasks = createMemo(() => filterTasks(state.tasks, state.query, ["title", "description"]))
   const groups = createMemo(() =>
     groupProjectTasksByWorktree({
-      tasks: state.tasks,
+      tasks: tasks(),
       worktrees: worktrees(),
     }).filter((group) => group.tasks.length > 0),
   )
@@ -1092,16 +1096,20 @@ export function ProjectTasksPanel(props: {
       refreshLabel={language.t("projectTask.refresh")}
       onRefresh={() => void load()}
       refreshDisabled={!dir() || state.loading}
+      toolbar={<TaskSearchField value={state.query} onChange={(value) => setState("query", value)} />}
     >
       <Show when={dir()} fallback={<Empty text={language.t("projectTask.empty")} />}>
         <Show when={!state.loading} fallback={<Empty text={language.t("projectTask.loading")} />}>
           <Show when={!state.error} fallback={<ErrorCard err={state.error} />}>
-            <Show when={state.tasks.length > 0} fallback={<Empty text={language.t("projectTask.empty")} />}>
+            <Show
+              when={tasks().length > 0}
+              fallback={<Empty text={language.t(state.query.trim() ? "task.search.empty" : "projectTask.empty")} />}
+            >
               <Show
                 when={showWorktreeGroups()}
                 fallback={
                   <ProjectTaskCards
-                    tasks={state.tasks}
+                    tasks={tasks()}
                     directory={dir()}
                     onOpen={open}
                     onArchive={archive}

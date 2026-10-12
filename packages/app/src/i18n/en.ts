@@ -465,6 +465,9 @@ export const dict = {
   "model.tooltip.context": "Context limit {{limit}}",
 
   "common.search.placeholder": "Search",
+  "task.search.placeholder": "Search titles and descriptions",
+  "task.search.clear": "Clear task search",
+  "task.search.empty": "No matching tasks",
   "common.goBack": "Navigate back",
   "common.goForward": "Navigate forward",
   "common.loading": "Loading",
