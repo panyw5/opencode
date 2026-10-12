@@ -55,6 +55,7 @@ import { useSync } from "@/context/sync"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { markSessionProfile } from "@/utils/session-profile"
 import { useComponentMountProfile } from "@/utils/component-mount-profile"
+import { SessionSelectionToolbar } from "@/components/session-selection-toolbar"
 import { timelineMessageScrollTop } from "./scroll-owner"
 import {
   captureVirtualViewportAnchor,
@@ -305,6 +306,7 @@ export function MessageTimeline(props: {
   onViewportTurnChange?: (userMessageID: string | undefined) => void
   onReviewTurnDiff?: (input: { userMessageID: string; file: string }) => void
   onReviewTurnAll?: (userMessageID: string) => void
+  onSelectionToPrompt: (text: string) => void
 }) {
   const sync = useSync()
   const settings = useSettings()
@@ -2290,6 +2292,7 @@ export function MessageTimeline(props: {
           </Show>
         </div>
       </ScrollView>
+      <SessionSelectionToolbar root={() => listRoot()} onPrompt={props.onSelectionToPrompt} />
       <Show when={sessionFind.open()}>
         <FileSearchBar
           pos={sessionFind.pos}

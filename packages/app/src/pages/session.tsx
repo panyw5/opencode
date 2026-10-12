@@ -34,6 +34,7 @@ import { base64Encode, checksum } from "@opencode-ai/core/util/encode"
 import { useLocation, useNavigate, useSearchParams } from "@solidjs/router"
 import { setCursorPosition } from "@/components/prompt-input/editor-dom"
 import { promptLength } from "@/components/prompt-input/history"
+import { appendSelectionToPrompt } from "@/utils/selection-prompt"
 import { NewSessionView, SessionHeader } from "@/components/session"
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
@@ -1721,6 +1722,17 @@ export default function Page() {
       }
       input.focus()
       setCursorPosition(input, promptLength(prompt.current()))
+    })
+  }
+  const appendSelectionToPromptInput = (text: string) => {
+    console.debug(`[session-selection] append prompt start length=${text.length}`)
+    const next = appendSelectionToPrompt(prompt.current(), text)
+    prompt.set(next.prompt, next.cursor)
+    requestAnimationFrame(() => {
+      if (!inputRef?.isConnected) return
+      inputRef.focus()
+      setCursorPosition(inputRef, next.cursor)
+      console.debug(`[session-selection] append prompt focused cursor=${next.cursor}`)
     })
   }
   const openChildAgent = (entry: SessionChildAgentEntry): void => {
@@ -3505,6 +3517,7 @@ export default function Page() {
                         onMarkScrollGesture={markScrollGesture}
                         onUserScroll={markUserScroll}
                         onReadingTakeover={takeoverReading}
+                        onSelectionToPrompt={appendSelectionToPromptInput}
                         onUserMotion={observeUserMotion}
                         onFindNavigate={scrollToFind}
                         onFindRelease={(reason) => {

@@ -65,20 +65,16 @@
     }
 
     [data-slot="user-message-text"] {
-      display: inline-grid;
-      grid-template-columns: minmax(0, 1fr) 24px;
-      column-gap: 8px;
-      align-items: start;
+      overflow: visible;
+      padding-top: 16px;
+      padding-right: 24px;
       border-style: dashed;
 
       > [data-component="markdown"] {
-        grid-column: 1;
-        grid-row: 1;
         opacity: 0.68;
       }
 
       [data-slot="user-message-expand-wrapper"] {
-        grid-column: 1 / -1;
         opacity: 0.68;
       }
     }
@@ -328,10 +324,10 @@
   }
 
   [data-slot="user-message-queued-badge"] {
-    position: relative;
+    position: absolute;
+    top: -13px;
+    right: -13px;
     z-index: 1;
-    grid-column: 2;
-    grid-row: 1;
     width: 24px;
     height: 24px;
     display: flex;
