@@ -11,7 +11,9 @@ export function createBottomFollow() {
       previousTop = 0
     },
     pause() {
+      if (!following) return false
       following = false
+      return true
     },
     written(node: Metrics) {
       previousTop = node.scrollTop
@@ -25,5 +27,45 @@ export function createBottomFollow() {
       previousTop = top
       return following
     },
+  }
+}
+
+type WheelEventTarget = Pick<HTMLElement, "addEventListener" | "removeEventListener">
+type ResizeObserverTarget = Pick<ResizeObserver, "observe" | "unobserve">
+
+export function observeBottomFollowTargets(
+  observer: Pick<ResizeObserver, "observe">,
+  viewport: Element,
+  content?: Element,
+) {
+  observer.observe(viewport)
+  if (content) observer.observe(content)
+}
+
+export function replaceBottomFollowContent<T extends Element>(
+  observer: ResizeObserverTarget | undefined,
+  previous: T | undefined,
+  next: T,
+) {
+  if (previous === next) return next
+  if (previous) observer?.unobserve(previous)
+  observer?.observe(next)
+  return next
+}
+
+export function bindBottomFollowWheel(
+  target: WheelEventTarget,
+  follow: ReturnType<typeof createBottomFollow>,
+  onPause: () => void,
+) {
+  let active = true
+  const listener = (event: WheelEvent) => {
+    if (event.deltaY < 0 && follow.pause()) onPause()
+  }
+  target.addEventListener("wheel", listener, { passive: true })
+  return () => {
+    if (!active) return
+    active = false
+    target.removeEventListener("wheel", listener)
   }
 }
