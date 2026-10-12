@@ -29,6 +29,8 @@ jobs:
       ARCH: ${{ inputs.arch }}
       VERSION_INPUT: ${{ inputs.version }}
       OPENCODE_CHANNEL: prod
+      # The bundled Node sidecar exceeds Node's ~2 GiB default during Rollup rendering.
+      NODE_OPTIONS: --max-old-space-size=4096
       RUST_TARGET: ${{ inputs.arch == 'x64' && 'x86_64-apple-darwin' || 'aarch64-apple-darwin' }}
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
       CSC_NAME: "Yiwen Pan (8L95FJ9774)"

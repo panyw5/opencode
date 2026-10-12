@@ -120,6 +120,8 @@ case "${1:-}" in
     configure_arch
     cd "$ROOT/packages/desktop"
     log "build signed App arch=$ARCH version=$OPENCODE_VERSION"
+    log "Node build budget NODE_OPTIONS=${NODE_OPTIONS:-default}"
+    node -e 'console.log(`[desktop-macos] node=${process.version} arch=${process.arch} heapLimitMiB=${Math.round(require("node:v8").getHeapStatistics().heap_size_limit / 1048576)} totalMemoryMiB=${Math.round(require("node:os").totalmem() / 1048576)}`)'
     # Dist contains only build outputs; never allow a previous App/DMG into this run.
     rm -rf "$DIST"
     bun run build

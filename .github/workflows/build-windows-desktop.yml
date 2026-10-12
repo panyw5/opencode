@@ -24,6 +24,7 @@ jobs:
     env:
       REQUESTED_VERSION: ${{ inputs.version }}
       OPENCODE_CHANNEL: prod
+      NODE_OPTIONS: --max-old-space-size=4096
       RUST_TARGET: x86_64-pc-windows-msvc
       # GitHub-hosted Windows runners are x64. Windows arm64 desktop builds and
       # runtime smoke tests require a Windows arm64 self-hosted release runner.
