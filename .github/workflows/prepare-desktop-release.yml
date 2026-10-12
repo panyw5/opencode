@@ -1,0 +1,68 @@
+name: Prepare Desktop Release
+run-name: "Prepare desktop release ${{ inputs.version }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Exact release version (e.g., v1.2.1)"
+        required: true
+        type: string
+      macos_x64_run_id:
+        description: "Successful manual macOS x64 build run ID"
+        required: true
+        type: string
+      macos_arm64_run_id:
+        description: "Successful manual macOS arm64 build run ID"
+        required: true
+        type: string
+      windows_run_id:
+        description: "Successful manual Windows x64 build run ID"
+        required: true
+        type: string
+      artifact_only:
+        description: "Validate and upload assets only; do not create a draft release"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: desktop-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'panyw5/opencode'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Validate builds and prepare assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          MACOS_X64_RUN_ID: ${{ inputs.macos_x64_run_id }}
+          MACOS_ARM64_RUN_ID: ${{ inputs.macos_arm64_run_id }}
+          WINDOWS_RUN_ID: ${{ inputs.windows_run_id }}
+          ARTIFACT_ONLY: ${{ inputs.artifact_only }}
+        run: bun script/desktop-release.ts
+      - name: Upload verified consolidated assets
+        if: inputs.artifact_only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opencode-desktop-release-${{ inputs.version }}
+          path: desktop-release/assets/*
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error

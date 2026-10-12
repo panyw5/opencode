@@ -1,58 +1,59 @@
-name: Build macOS Desktop
-run-name: "Build macOS Desktop App"
+name: Build macOS Desktop (Reusable)
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      version:
-        description: "Version to release (e.g., v1.2.1-test). Leave empty to skip release creation."
-        required: false
-        type: string
-      windows_run_id:
-        description: "Matching Windows workflow run ID used by the serial draft release job."
+      arch:
+        description: "Architecture enum: x64 or arm64 (validated before building)"
         required: true
         type: string
-      artifact_only:
-        description: "Validate and bundle release assets without creating a release."
+      version:
+        description: "Optional semver version (defaults to committed VERSION)"
         required: false
-        default: false
-        type: boolean
+        default: ""
+        type: string
 
 permissions:
-  actions: read
-  contents: write
+  contents: read
+
+concurrency:
+  group: desktop-macos-${{ inputs.arch }}-${{ github.ref }}-${{ inputs.version || 'VERSION' }}
+  cancel-in-progress: false
 
 jobs:
-  build-macos-x64:
-    runs-on: macos-15-intel
+  build:
+    if: github.repository == 'panyw5/opencode'
+    runs-on: ${{ inputs.arch == 'x64' && 'macos-15-intel' || 'macos-15' }}
+    timeout-minutes: 180
     env:
-      APP_VERSION: ${{ inputs.version != '' && inputs.version || github.ref_name }}
+      ARCH: ${{ inputs.arch }}
+      VERSION_INPUT: ${{ inputs.version }}
       OPENCODE_CHANNEL: prod
-      RUST_TARGET: x86_64-apple-darwin
+      RUST_TARGET: ${{ inputs.arch == 'x64' && 'x86_64-apple-darwin' || 'aarch64-apple-darwin' }}
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
       CSC_NAME: "Yiwen Pan (8L95FJ9774)"
       NOTARY_PROFILE: opencode-notary-ci
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Validate architecture
+        run: |
+          case "$ARCH" in x64|arm64) ;; *) printf 'Invalid architecture: %s\n' "$ARCH"; exit 1 ;; esac
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.3.11
+          bun-version-file: package.json
 
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
-      - name: Prepare Desktop
+      - name: Prepare version
         run: |
-          VERSION="${APP_VERSION#v}"
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            BASE=$(cat VERSION)
-            TAG=$(printf '%s' "${APP_VERSION}" | tr '[:upper:]' '[:lower:]' | tr -cs '0-9a-z-' '-' | sed 's/^-*//; s/-*$//')
-            VERSION="${BASE}-${TAG:-dev}.${GITHUB_RUN_NUMBER}"
-          fi
-          bun ./script/sync-version.ts "$VERSION"
-          echo "OPENCODE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          bun ./script/sync-version.ts "$VERSION_INPUT"
+          printf 'OPENCODE_VERSION=%s\n' "$(< VERSION)" >> "$GITHUB_ENV"
 
       - name: Import Developer ID certificate
         env:
@@ -61,438 +62,36 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bash script/desktop-macos.sh import
+
+      - name: Build and notarize App and final DMG
+        # Two notary submissions each have a 60m bound, within the job's 180m budget.
+        timeout-minutes: 160
+        run: bash script/desktop-macos.sh build
+
+      - name: Verify App, ZIP and final DMG
+        run: bash script/desktop-macos.sh verify
+
+      - name: Create artifact manifest
         run: |
-          set -euo pipefail
-          KEYCHAIN_PATH="$RUNNER_TEMP/opencode-signing.keychain-db"
-          KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
-          CERTIFICATE_PATH="$RUNNER_TEMP/developer-id.p12"
-          trap 'rm -f "$CERTIFICATE_PATH"' EXIT
+          STAGING="$RUNNER_TEMP/desktop-artifacts"
+          mkdir -p "$STAGING"
+          DMG_ARCH=x64
+          if [ "$ARCH" = arm64 ]; then DMG_ARCH=aarch64; fi
+          cp "packages/desktop/dist/OpenCode_${OPENCODE_VERSION}_${DMG_ARCH}.dmg" "$STAGING/"
+          cp "packages/desktop/dist/opencode-desktop-mac-${ARCH}.zip" "$STAGING/"
+          cp "packages/desktop/dist/latest-mac-${ARCH}.yml" "$STAGING/"
+          bun script/desktop-artifacts.ts create --platform macos --arch "$ARCH" --directory "$STAGING"
 
-          test -n "$CERTIFICATE_BASE64"
-          test -n "$CERTIFICATE_PASSWORD"
-          test -n "$APPLE_ID"
-          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
-          test -n "$APPLE_TEAM_ID"
-
-          printf '%s' "$CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security import "$CERTIFICATE_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" "$HOME/Library/Keychains/login.keychain-db"
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -F 'Developer ID Application: Yiwen Pan (8L95FJ9774)'
-
-          xcrun notarytool store-credentials "$NOTARY_PROFILE" \
-            --keychain "$KEYCHAIN_PATH" \
-            --apple-id "$APPLE_ID" \
-            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID"
-
-          echo "CSC_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
-          echo "APPLE_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
-          echo "APPLE_KEYCHAIN_PROFILE=$NOTARY_PROFILE" >> "$GITHUB_ENV"
-
-      - name: Build Desktop App
-        run: |
-          cd packages/desktop
-          bun run package:mac
-          DMG="$(find dist -maxdepth 1 -name '*.dmg' -type f | head -n 1)"
-          test -n "$DMG"
-          mv "$DMG" "dist/OpenCode_${OPENCODE_VERSION}_x64.dmg"
-
-      - name: Notarize final DMG
-        run: |
-          set -euo pipefail
-          cd packages/desktop
-          DMG="dist/OpenCode_${OPENCODE_VERSION}_x64.dmg"
-          # stapler/spctl ticket lookups hit api.apple-cloudkit.com and have
-          # been flaking (NSURLError -1005, exit 68) on hosted runners; notary
-          # submissions stay valid, so retry the ticket fetch with backoff.
-          retry() {
-            local n=1 max=5 delay=20
-            while true; do
-              if "$@"; then return 0; fi
-              if [ "$n" -ge "$max" ]; then return 1; fi
-              echo "retry $n/$max failed for: $*; sleeping ${delay}s"
-              n=$((n+1))
-              delay=$((delay*2))
-              sleep "$delay"
-            done
-          }
-          xcrun notarytool submit "$DMG" \
-            --keychain "$APPLE_KEYCHAIN" \
-            --keychain-profile "$APPLE_KEYCHAIN_PROFILE" \
-            --wait \
-            --timeout 12h
-          retry xcrun stapler staple "$DMG"
-          retry xcrun stapler validate "$DMG"
-          codesign --verify --strict --verbose=2 "$DMG"
-          spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
-      - name: Verify packaged versions
-        run: |
-          cd packages/desktop
-          # Same CloudKit flake retry as the notarize step above.
-          retry() {
-            local n=1 max=5 delay=20
-            while true; do
-              if "$@"; then return 0; fi
-              if [ "$n" -ge "$max" ]; then return 1; fi
-              echo "retry $n/$max failed for: $*; sleeping ${delay}s"
-              n=$((n+1))
-              delay=$((delay*2))
-              sleep "$delay"
-            done
-          }
-          APP_PATH=""
-          for CANDIDATE in dist/mac*/OpenCode.app; do
-            if [ -d "$CANDIDATE" ]; then
-              APP_PATH="$CANDIDATE"
-              break
-            fi
-          done
-          test -n "$APP_PATH"
-          APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
-          SOURCE_VERSION="$(cat ../../VERSION)"
-          SIDECAR_PATH="$APP_PATH/Contents/Resources/sidecars/opencode-cli-${RUST_TARGET}"
-          UPDATER_CONFIG="$APP_PATH/Contents/Resources/app-update.yml"
-          test -x "$SIDECAR_PATH"
-          test -f "$UPDATER_CONFIG"
-          SIDECAR_VERSION="$("$SIDECAR_PATH" --version)"
-          printf 'expected version=%s\nsource version=%s\napp version=%s\nsidecar path=%s\nsidecar version=%s\nRUST_TARGET=%s\nupdater config=%s\n' "$OPENCODE_VERSION" "$SOURCE_VERSION" "$APP_VERSION" "$SIDECAR_PATH" "$SIDECAR_VERSION" "$RUST_TARGET" "$UPDATER_CONFIG"
-          test "$SOURCE_VERSION" = "$OPENCODE_VERSION"
-          test "$APP_VERSION" = "$OPENCODE_VERSION"
-          test "$SIDECAR_VERSION" = "$OPENCODE_VERSION"
-          grep -Eq '^owner:[[:space:]]*panyw5[[:space:]]*$' "$UPDATER_CONFIG"
-          grep -Eq '^repo:[[:space:]]*opencode[[:space:]]*$' "$UPDATER_CONFIG"
-          ! grep -q 'anomalyco' "$UPDATER_CONFIG"
-          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-          spctl --assess --type execute --verbose=4 "$APP_PATH"
-          retry xcrun stapler validate "$APP_PATH"
-
-      - name: Upload macOS x64 DMG
-        uses: actions/upload-artifact@v4
+      - name: Upload verified macOS artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: opencode-desktop-macos-x64
-          path: packages/desktop/dist/OpenCode_*_x64.dmg
-
-      - name: Prepare macOS x64 updater metadata
-        run: |
-          cp packages/desktop/dist/latest-mac.yml packages/desktop/dist/latest-mac-x64.yml
-
-      - name: Upload macOS x64 updater artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: opencode-desktop-macos-x64-updater
-          path: |
-            packages/desktop/dist/opencode-desktop-mac-x64.zip
-            packages/desktop/dist/latest-mac-x64.yml
-
-      - name: Remove signing keychain
-        if: always()
-        run: |
-          rm -f "$RUNNER_TEMP/developer-id.p12"
-          KEYCHAIN_PATH="$RUNNER_TEMP/opencode-signing.keychain-db"
-          if [ -f "$KEYCHAIN_PATH" ]; then
-            security delete-keychain "$KEYCHAIN_PATH"
-          fi
-
-  build-macos-arm64:
-    # Runs in parallel with build-macos-x64: both jobs are fully independent
-    # (own checkout, build, keychain, notarization) and upload distinctly named
-    # artifacts; create-draft-release fans in on both.
-    runs-on: macos-15
-    env:
-      APP_VERSION: ${{ inputs.version != '' && inputs.version || github.ref_name }}
-      OPENCODE_CHANNEL: prod
-      RUST_TARGET: aarch64-apple-darwin
-      CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      CSC_NAME: "Yiwen Pan (8L95FJ9774)"
-      NOTARY_PROFILE: opencode-notary-ci
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.11
-
-      - name: Install dependencies
-        run: bun install
-
-      - name: Prepare Desktop
-        run: |
-          VERSION="${APP_VERSION#v}"
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            BASE=$(cat VERSION)
-            TAG=$(printf '%s' "${APP_VERSION}" | tr '[:upper:]' '[:lower:]' | tr -cs '0-9a-z-' '-' | sed 's/^-*//; s/-*$//')
-            VERSION="${BASE}-${TAG:-dev}.${GITHUB_RUN_NUMBER}"
-          fi
-          bun ./script/sync-version.ts "$VERSION"
-          echo "OPENCODE_VERSION=$VERSION" >> "$GITHUB_ENV"
-
-      - name: Import Developer ID certificate
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          set -euo pipefail
-          KEYCHAIN_PATH="$RUNNER_TEMP/opencode-signing.keychain-db"
-          KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
-          CERTIFICATE_PATH="$RUNNER_TEMP/developer-id.p12"
-          trap 'rm -f "$CERTIFICATE_PATH"' EXIT
-
-          test -n "$CERTIFICATE_BASE64"
-          test -n "$CERTIFICATE_PASSWORD"
-          test -n "$APPLE_ID"
-          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
-          test -n "$APPLE_TEAM_ID"
-
-          printf '%s' "$CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security import "$CERTIFICATE_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" "$HOME/Library/Keychains/login.keychain-db"
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -F 'Developer ID Application: Yiwen Pan (8L95FJ9774)'
-
-          xcrun notarytool store-credentials "$NOTARY_PROFILE" \
-            --keychain "$KEYCHAIN_PATH" \
-            --apple-id "$APPLE_ID" \
-            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID"
-
-          echo "CSC_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
-          echo "APPLE_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
-          echo "APPLE_KEYCHAIN_PROFILE=$NOTARY_PROFILE" >> "$GITHUB_ENV"
-
-      - name: Build Desktop App
-        run: |
-          cd packages/desktop
-          bun run package:mac
-          DMG="$(find dist -maxdepth 1 -name '*.dmg' -type f | head -n 1)"
-          test -n "$DMG"
-          mv "$DMG" "dist/OpenCode_${OPENCODE_VERSION}_aarch64.dmg"
-
-      - name: Notarize final DMG
-        run: |
-          set -euo pipefail
-          cd packages/desktop
-          DMG="dist/OpenCode_${OPENCODE_VERSION}_aarch64.dmg"
-          # stapler/spctl ticket lookups hit api.apple-cloudkit.com and have
-          # been flaking (NSURLError -1005, exit 68) on hosted runners; notary
-          # submissions stay valid, so retry the ticket fetch with backoff.
-          retry() {
-            local n=1 max=5 delay=20
-            while true; do
-              if "$@"; then return 0; fi
-              if [ "$n" -ge "$max" ]; then return 1; fi
-              echo "retry $n/$max failed for: $*; sleeping ${delay}s"
-              n=$((n+1))
-              delay=$((delay*2))
-              sleep "$delay"
-            done
-          }
-          xcrun notarytool submit "$DMG" \
-            --keychain "$APPLE_KEYCHAIN" \
-            --keychain-profile "$APPLE_KEYCHAIN_PROFILE" \
-            --wait \
-            --timeout 12h
-          retry xcrun stapler staple "$DMG"
-          retry xcrun stapler validate "$DMG"
-          codesign --verify --strict --verbose=2 "$DMG"
-          spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
-
-      - name: Verify packaged versions
-        run: |
-          cd packages/desktop
-          # Same CloudKit flake retry as the notarize step above.
-          retry() {
-            local n=1 max=5 delay=20
-            while true; do
-              if "$@"; then return 0; fi
-              if [ "$n" -ge "$max" ]; then return 1; fi
-              echo "retry $n/$max failed for: $*; sleeping ${delay}s"
-              n=$((n+1))
-              delay=$((delay*2))
-              sleep "$delay"
-            done
-          }
-          APP_PATH=""
-          for CANDIDATE in dist/mac*/OpenCode.app; do
-            if [ -d "$CANDIDATE" ]; then
-              APP_PATH="$CANDIDATE"
-              break
-            fi
-          done
-          test -n "$APP_PATH"
-          APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
-          SOURCE_VERSION="$(cat ../../VERSION)"
-          SIDECAR_PATH="$APP_PATH/Contents/Resources/sidecars/opencode-cli-${RUST_TARGET}"
-          UPDATER_CONFIG="$APP_PATH/Contents/Resources/app-update.yml"
-          test -x "$SIDECAR_PATH"
-          test -f "$UPDATER_CONFIG"
-          SIDECAR_VERSION="$("$SIDECAR_PATH" --version)"
-          printf 'expected version=%s\nsource version=%s\napp version=%s\nsidecar path=%s\nsidecar version=%s\nRUST_TARGET=%s\nupdater config=%s\n' "$OPENCODE_VERSION" "$SOURCE_VERSION" "$APP_VERSION" "$SIDECAR_PATH" "$SIDECAR_VERSION" "$RUST_TARGET" "$UPDATER_CONFIG"
-          test "$SOURCE_VERSION" = "$OPENCODE_VERSION"
-          test "$APP_VERSION" = "$OPENCODE_VERSION"
-          test "$SIDECAR_VERSION" = "$OPENCODE_VERSION"
-          grep -Eq '^owner:[[:space:]]*panyw5[[:space:]]*$' "$UPDATER_CONFIG"
-          grep -Eq '^repo:[[:space:]]*opencode[[:space:]]*$' "$UPDATER_CONFIG"
-          ! grep -q 'anomalyco' "$UPDATER_CONFIG"
-          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-          spctl --assess --type execute --verbose=4 "$APP_PATH"
-          retry xcrun stapler validate "$APP_PATH"
-
-      - name: Upload macOS arm64 DMG
-        uses: actions/upload-artifact@v4
-        with:
-          name: opencode-desktop-macos-arm64
-          path: packages/desktop/dist/OpenCode_*_aarch64.dmg
-
-      - name: Prepare macOS arm64 updater metadata
-        run: |
-          cp packages/desktop/dist/latest-mac.yml packages/desktop/dist/latest-mac-arm64.yml
-
-      - name: Upload macOS arm64 updater artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: opencode-desktop-macos-arm64-updater
-          path: |
-            packages/desktop/dist/opencode-desktop-mac-arm64.zip
-            packages/desktop/dist/latest-mac-arm64.yml
-
-      - name: Remove signing keychain
-        if: always()
-        run: |
-          rm -f "$RUNNER_TEMP/developer-id.p12"
-          KEYCHAIN_PATH="$RUNNER_TEMP/opencode-signing.keychain-db"
-          if [ -f "$KEYCHAIN_PATH" ]; then
-            security delete-keychain "$KEYCHAIN_PATH"
-          fi
-
-  create-draft-release:
-    needs: [build-macos-x64, build-macos-arm64]
-    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.version != '')
-    runs-on: ubuntu-latest
-    env:
-      APP_VERSION: ${{ inputs.version != '' && inputs.version || github.ref_name }}
-      WINDOWS_RUN_ID: ${{ inputs.windows_run_id }}
-    steps:
-      - name: Download macOS artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: opencode-desktop-macos-*
-          path: release-assets
-          merge-multiple: true
-
-      - name: Download macOS updater artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: opencode-desktop-macos-*-updater
-          path: release-assets/updater
-          merge-multiple: true
-
-      - name: Download matching Windows artifact
-        run: |
-          for _ in $(seq 1 120); do
-            RUN="$(gh run view "$WINDOWS_RUN_ID" -R "$GITHUB_REPOSITORY" --json event,headSha,status,conclusion,workflowName)"
-            WINDOWS_SHA="$(printf '%s' "$RUN" | jq -r '.headSha')"
-            WINDOWS_EVENT="$(printf '%s' "$RUN" | jq -r '.event')"
-            WINDOWS_WORKFLOW="$(printf '%s' "$RUN" | jq -r '.workflowName')"
-            WINDOWS_STATUS="$(printf '%s' "$RUN" | jq -r '.status')"
-            WINDOWS_CONCLUSION="$(printf '%s' "$RUN" | jq -r '.conclusion // empty')"
-            [ "$WINDOWS_SHA" = "$GITHUB_SHA" ] || { echo "Windows run head SHA mismatch: $WINDOWS_SHA != $GITHUB_SHA"; exit 1; }
-            [ "$WINDOWS_EVENT" = "workflow_dispatch" ] || { echo "Windows run event mismatch: $WINDOWS_EVENT"; exit 1; }
-            [ "$WINDOWS_WORKFLOW" = "Build Windows Desktop" ] || { echo "Windows workflow mismatch: $WINDOWS_WORKFLOW"; exit 1; }
-            if [ "$WINDOWS_STATUS" = "completed" ]; then
-              [ "$WINDOWS_CONCLUSION" = "success" ] || { echo "matching Windows run $WINDOWS_RUN_ID failed: $WINDOWS_CONCLUSION"; exit 1; }
-              break
-            fi
-            sleep 30
-          done
-          [ "$WINDOWS_STATUS" = "completed" ] && [ "$WINDOWS_CONCLUSION" = "success" ] || { echo "matching successful Windows run did not complete in time"; exit 1; }
-          printf 'windows run id=%s\nwindows head sha=%s\n' "$WINDOWS_RUN_ID" "$WINDOWS_SHA"
-          mkdir -p release-assets/windows
-          gh run download "$WINDOWS_RUN_ID" -R "$GITHUB_REPOSITORY" -n opencode-desktop-windows-x64 -D release-assets/windows
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Prepare release assets
-        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.version != '')
-        run: |
-          TAG="${APP_VERSION}"
-          VERSION="${TAG#v}"
-          X64="release-assets/OpenCode_${VERSION}_x64.dmg"
-          ARM64="release-assets/OpenCode_${VERSION}_aarch64.dmg"
-          WINDOWS="release-assets/windows/OpenCode_${VERSION}_x64-setup.exe"
-          MAC_X64_ZIP="release-assets/updater/opencode-desktop-mac-x64.zip"
-          MAC_ARM64_ZIP="release-assets/updater/opencode-desktop-mac-arm64.zip"
-          MAC_X64_METADATA="release-assets/updater/latest-mac-x64.yml"
-          MAC_ARM64_METADATA="release-assets/updater/latest-mac-arm64.yml"
-          MAC_METADATA="release-assets/latest-mac.yml"
-          WINDOWS_METADATA="release-assets/windows/latest.yml"
-          test -f "$X64"
-          test -f "$ARM64"
-          test -f "$WINDOWS"
-          test -f "$MAC_X64_ZIP"
-          test -f "$MAC_ARM64_ZIP"
-          test -f "$MAC_X64_METADATA"
-          test -f "$MAC_ARM64_METADATA"
-          test -f "$WINDOWS_METADATA"
-          ruby -ryaml -ropenssl -rbase64 -e '
-            x64 = YAML.load_file(ARGV[0])
-            arm64 = YAML.load_file(ARGV[1])
-            files = Array(x64["files"]) + Array(arm64["files"])
-            abort "macOS updater metadata has no files" if files.empty?
-            dmgs = { "x64" => ARGV[3], "arm64" => ARGV[4] }
-            files.each do |entry|
-              next unless entry.fetch("url").end_with?(".dmg")
-              arch = entry.fetch("url").include?("arm64") ? "arm64" : "x64"
-              path = dmgs.fetch(arch)
-              entry["url"] = File.basename(path)
-              entry["size"] = File.size(path)
-              entry["sha512"] = Base64.strict_encode64(OpenSSL::Digest::SHA512.file(path).digest)
-            end
-            metadata = {
-              "version" => x64.fetch("version"),
-              "files" => files,
-              "releaseDate" => x64["releaseDate"] || arm64["releaseDate"],
-            }
-            File.write(ARGV[2], metadata.to_yaml)
-          ' "$MAC_X64_METADATA" "$MAC_ARM64_METADATA" "$MAC_METADATA" "$X64" "$ARM64"
-          printf 'release target=%s\nx64 asset=%s\narm64 asset=%s\nwindows asset=%s\nmac metadata=%s\nwindows metadata=%s\n' "$GITHUB_SHA" "$X64" "$ARM64" "$WINDOWS" "$MAC_METADATA" "$WINDOWS_METADATA"
-
-      - name: Upload consolidated release assets
-        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.version != '')
-        uses: actions/upload-artifact@v4
-        with:
-          name: opencode-desktop-release-assets
-          path: |
-            release-assets/OpenCode_*.dmg
-            release-assets/windows/OpenCode_*_x64-setup.exe
-            release-assets/updater/opencode-desktop-mac-*.zip
-            release-assets/latest-mac.yml
-            release-assets/windows/latest.yml
+          name: opencode-desktop-macos-${{ inputs.arch }}
+          path: ${{ runner.temp }}/desktop-artifacts/*
+          retention-days: 14
+          compression-level: 0
           if-no-files-found: error
 
-      - name: Create draft release
-        if: (startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.version != '')) && inputs.artifact_only != true
-        run: |
-          TAG="${APP_VERSION}"
-          VERSION="${TAG#v}"
-          X64="release-assets/OpenCode_${VERSION}_x64.dmg"
-          ARM64="release-assets/OpenCode_${VERSION}_aarch64.dmg"
-          WINDOWS="release-assets/windows/OpenCode_${VERSION}_x64-setup.exe"
-          MAC_X64_ZIP="release-assets/updater/opencode-desktop-mac-x64.zip"
-          MAC_ARM64_ZIP="release-assets/updater/opencode-desktop-mac-arm64.zip"
-          MAC_METADATA="release-assets/latest-mac.yml"
-          WINDOWS_METADATA="release-assets/windows/latest.yml"
-          gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft --title "$TAG" --target "$GITHUB_SHA" \
-            "$X64" "$ARM64" "$WINDOWS" "$MAC_X64_ZIP" "$MAC_ARM64_ZIP" "$MAC_METADATA" "$WINDOWS_METADATA"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Remove signing keychain
+        if: always()
+        run: bash script/desktop-macos.sh cleanup
