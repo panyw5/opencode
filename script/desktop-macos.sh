@@ -126,7 +126,9 @@ case "${1:-}" in
     rm -rf "$DIST"
     bun run build
     # Disable builder's unbounded automatic notary wait; explicitly submit the App below.
-    bun x --no-install electron-builder --mac --dir "--$ARCH" --publish never --config electron-builder.config.ts -c.mac.notarize=false
+    # A distributable target is required: --dir omits app-update.yml. Generate a
+    # temporary ZIP so builder embeds the updater config before signing the App.
+    bun x --no-install electron-builder --mac zip "--$ARCH" --publish never --config electron-builder.config.ts -c.mac.notarize=false
     find_app
     APP_ZIP="$RUNNER_TEMP/opencode-notary-app.zip"
     log 'submit App ZIP container, then staple the accepted ticket to App'
@@ -135,6 +137,8 @@ case "${1:-}" in
     rm -f "$APP_ZIP"
     retry_transient xcrun stapler staple "$APP"
     verify_app "$APP"
+    log 'discard pre-staple ZIP and metadata; regenerate from notarized App'
+    rm -f "$ZIP" "$ZIP.blockmap" "$DIST/latest-mac.yml"
     log 'package previously signed and notarized App into DMG and updater ZIP'
     bun x --no-install electron-builder --mac "--$ARCH" --prepackaged "$APP" --publish never --config electron-builder.config.ts -c.mac.notarize=false
     shopt -s nullglob
