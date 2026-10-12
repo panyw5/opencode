@@ -1,8 +1,9 @@
-import { DEFAULT_GPT_PRO_CONFIG, GPT_PRO_PARTITION, type GptProConfig, type GptProJob } from "@opencode-ai/util/gpt-pro"
+import { GPT_PRO_PARTITION } from "@opencode-ai/util/gpt-pro"
 import { browserController } from "./browser"
 import { getStore } from "./store"
 import { GptProController, type GptProPageResources } from "./gpt-pro-controller"
 import { GptProDriver } from "./gpt-pro-driver"
+import { createGptProPersistence } from "./gpt-pro-persistence"
 import { write as writeLog } from "./logging"
 import { app } from "electron"
 
@@ -32,7 +33,8 @@ export function getGptProController() {
     stop: (pageID, epoch) => withExistingPage(pageID, epoch, (driver) => driver.stop()),
     close: (pageID, epoch, reason) => browserController.closeIfEpoch(pageID, epoch, reason),
     setFocus: (pageID, epoch, enabled) => browserController.setPageFocusEmulation(pageID, epoch, enabled),
-    onClosed: (listener) => browserController.onViewClosed((pageID, epoch, _profileID, reason) => listener(pageID, epoch, reason)),
+    onClosed: (listener) =>
+      browserController.onViewClosed((pageID, epoch, _profileID, reason) => listener(pageID, epoch, reason)),
     onProtectionChanged: (listener) => browserController.onProtectionChanged(listener),
   }
   instance = new GptProController(
@@ -43,18 +45,7 @@ export function getGptProController() {
         owner: job.ownerPage,
       }),
     {
-      load: () => {
-        const value = store.get("jobs")
-        return Array.isArray(value)
-          ? (value.filter(
-              (job) =>
-                job && typeof job.id === "string" && typeof job.owner === "string" && typeof job.prompt === "string",
-            ) as GptProJob[])
-          : []
-      },
-      save: (jobs) => store.set("jobs", jobs),
-      config: () => (store.get("config") as GptProConfig | undefined) ?? DEFAULT_GPT_PRO_CONFIG,
-      setConfig: (config) => store.set("config", config),
+      ...createGptProPersistence(store, (message) => writeLog("gpt-pro", message)),
       stagingRoot: () => `${app.getPath("userData")}/gpt-pro/attachments`,
     },
     (message) => writeLog("gpt-pro", message),

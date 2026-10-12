@@ -133,8 +133,7 @@ const ownerPage = (owner: string) => {
   if (separator < 0) return undefined
   return { directory: owner.slice(0, separator), sessionID: owner.slice(separator + 1) }
 }
-const isUnfinished = (job: GptProJob) =>
-  !["completed", "cancelled", "failed"].includes(job.phase)
+const isUnfinished = (job: GptProJob) => !["completed", "cancelled", "failed"].includes(job.phase)
 const isDiscardable = (job: GptProJob) => ["completed", "cancelled", "failed"].includes(job.phase)
 const hasSendAttempt = (job: GptProJob) => job.sendAttempted === true
 function validateAttachmentBytes(extension: string, bytes: Uint8Array) {
@@ -183,6 +182,8 @@ export class GptProController {
   private focusState = new Map<string, boolean>()
   private driverBindings = new Map<string, { pageID: string; epoch?: number }>()
   private terminalPageProofs = new Map<string, TerminalPageProof>()
+  private notificationCandidates = new Set<GptProJob>()
+  private notificationOutbox = new Set<GptProJob>()
   private lifecycleUnsubscribes: Array<() => void> = []
   private readonly lifecycle?: GptProLifecycleOptions
   constructor(
@@ -225,7 +226,14 @@ export class GptProController {
         error: "Application restarted before submission. Resume explicitly; do not send automatically.",
       }
     })
-    for (const job of this.jobs) this.rememberTerminalPageProof(job)
+    for (const job of this.jobs) {
+      this.rememberTerminalPageProof(job)
+      // Recover unannounced terminal states once, not on every bridge poll.
+      this.notify(job, false)
+    }
+    this.log(
+      `notification index ready active=${this.notificationCandidates.size} pending=${this.notificationOutbox.size} history=${this.jobs.length}`,
+    )
     this.save()
     if (lifecycle) {
       this.lifecycleUnsubscribes.push(
@@ -245,11 +253,22 @@ export class GptProController {
   async importLogin<T>(importCookies: () => Promise<T>): Promise<T> {
     const attempted = this.jobs.some((job) => isUnfinished(job) && (job.submitted || job.sendAttempted || !!job.userID))
     if (
-      this.disposed || this.loginImporting || this.pumping || attempted || this.running.size ||
-      this.pendingWork.size || this.pendingOps.size || this.controlling.size || this.creating.size
+      this.disposed ||
+      this.loginImporting ||
+      this.pumping ||
+      attempted ||
+      this.running.size ||
+      this.pendingWork.size ||
+      this.pendingOps.size ||
+      this.controlling.size ||
+      this.creating.size
     ) {
-      this.log(`login-import blocked running=${this.running.size} pending=${this.pendingWork.size} attempted=${attempted} importing=${this.loginImporting}`)
-      throw new Error("login_import_busy: Finish or stop running or already-sent consultations before replacing the shared login session. Opening the connection page remains available.")
+      this.log(
+        `login-import blocked running=${this.running.size} pending=${this.pendingWork.size} attempted=${attempted} importing=${this.loginImporting}`,
+      )
+      throw new Error(
+        "login_import_busy: Finish or stop running or already-sent consultations before replacing the shared login session. Opening the connection page remains available.",
+      )
     }
     this.loginImporting = true
     this.log("login-import lock acquired; paused unsent consultations preserved; new dispatch suspended")
@@ -404,8 +423,8 @@ export class GptProController {
     }
   }
   notifications(directory?: string) {
-    for (const job of this.jobs) this.notify(job)
-    return this.jobs
+    for (const job of this.notificationCandidates) this.notify(job)
+    return Array.from(this.notificationOutbox)
       .filter(
         (job) =>
           job.owner.includes("\n") &&
@@ -418,17 +437,38 @@ export class GptProController {
   }
   acknowledge(directory: string, ids: string[]) {
     const accepted = new Set(ids)
-    for (const job of this.jobs) {
+    let changed = false
+    for (const job of this.notificationOutbox) {
       if (job.owner.slice(0, job.owner.lastIndexOf("\n")) !== directory) continue
-      job.notifications = job.notifications?.filter((event) => !accepted.has(event.id))
+      const next = job.notifications?.filter((event) => !accepted.has(event.id))
+      if (next?.length === job.notifications?.length) continue
+      job.notifications = next
+      this.trackNotifications(job)
+      changed = true
     }
+    if (!changed) return
     this.save()
     this.log(`background notifications acknowledged directory=${directory} count=${ids.length}`)
   }
-  private notify(job: GptProJob) {
+  private trackNotifications(job: GptProJob) {
+    const active = job.phase === "generating" && (job.background || !!(job.recovery && job.owner.includes("\n")))
+    const wasActive = this.notificationCandidates.has(job)
+    const hadPending = this.notificationOutbox.has(job)
+    if (active) this.notificationCandidates.add(job)
+    else this.notificationCandidates.delete(job)
+    if (job.notifications?.length) this.notificationOutbox.add(job)
+    else this.notificationOutbox.delete(job)
+    if (active !== wasActive || hadPending !== this.notificationOutbox.has(job))
+      this.log(
+        `notification index changed id=${job.id} phase=${job.phase} active=${!!active} pending=${!!job.notifications?.length}`,
+      )
+  }
+  private notify(job: GptProJob, persist = true) {
+    this.trackNotifications(job)
     const event = collectGptProNotification(job, Date.now(), this.config().progressIntervalSeconds! * 1000)
     if (!event) return
-    this.save()
+    this.trackNotifications(job)
+    if (persist) this.save()
     this.log(
       `background notification queued id=${event.id} kind=${event.kind} revision=${event.revision} chars=${event.text.length}`,
     )
@@ -489,6 +529,8 @@ export class GptProController {
     const removed = previous.filter((job) => !remaining.has(job.id))
     this.persistence.save(this.jobs)
     for (const job of removed) {
+      this.notificationCandidates.delete(job)
+      this.notificationOutbox.delete(job)
       this.releaseDriver(job.id, "history-pruned")
       if (!this.pageExists(this.pageID(job))) this.terminalPageProofs.delete(this.pageID(job))
       if (!job.stagedAttachments?.length) continue
@@ -525,9 +567,9 @@ export class GptProController {
         `consult error classification id=${job.id} phase=${job.phase} code=${job.errorCode ?? "none"} stage=${job.recovery?.stage ?? "none"}`,
       )
     this.rememberTerminalPageProof(job)
+    this.notify(job, false)
     this.save()
     if (previous !== job.phase) this.log(`consult id=${job.id} phase=${job.phase} revision=${job.revision}`)
-    this.notify(job)
     this.reconcilePageLifecycle()
   }
   private publicJob(job: GptProJob): GptProJob {
@@ -747,7 +789,9 @@ export class GptProController {
       !currentJobID ||
       (currentJob && !isDiscardable(currentJob)) ||
       !this.isQuiescent(currentJobID) ||
-      !(currentJob ? this.safeToCloseTerminalPage(currentJob, page) : currentProof && this.safeToCloseByProof(currentProof, page))
+      !(currentJob
+        ? this.safeToCloseTerminalPage(currentJob, page)
+        : currentProof && this.safeToCloseByProof(currentProof, page))
     ) {
       this.log(
         `consult page cleanup preserved pageID=${pageID} epoch=${epoch} token=${token} reason=page-state-or-lease-changed`,
@@ -801,9 +845,7 @@ export class GptProController {
       pageAttachments.every((identity, index) => identity === expectedAttachments[index]) &&
       (page.attachments ?? []).every((attachment) => attachment.status === "ready")
     const ownedUnsentDraft =
-      proof.phase === "cancelled" &&
-      digest(Buffer.from(page.draft.trim())) === proof.promptHash &&
-      attachmentsMatch
+      proof.phase === "cancelled" && digest(Buffer.from(page.draft.trim())) === proof.promptHash && attachmentsMatch
     if (page.attachments?.length && !ownedUnsentDraft) return false
     if (page.draft.trim()) {
       if (!ownedUnsentDraft) return false
@@ -834,8 +876,12 @@ export class GptProController {
       const uncertain = job.sendAttempted === true && !job.userID
       this.update(job, {
         phase: uncertain ? "send_uncertain" : "paused",
-        error: uncertain ? "The consultation page closed before submission could be confirmed. Never resend." : "The consultation page closed. Resume explicitly to reopen its original URL.",
-        recovery: uncertain ? undefined : { stage: this.stages.get(job.id) ?? "open", reason: "Consultation page closed" },
+        error: uncertain
+          ? "The consultation page closed before submission could be confirmed. Never resend."
+          : "The consultation page closed. Resume explicitly to reopen its original URL.",
+        recovery: uncertain
+          ? undefined
+          : { stage: this.stages.get(job.id) ?? "open", reason: "Consultation page closed" },
         resumeCurrentPage: false,
       })
       this.interrupts.get(job.id)?.()
@@ -887,7 +933,8 @@ export class GptProController {
       if (reservedBy) return reservedBy === job.id
       const limit = this.config().maxResidentPages ?? 8
       const reservationCount = () =>
-        [...this.pageReservations.keys()].filter((id) => !lifecycle.resources.list().some((page) => page.pageID === id)).length
+        [...this.pageReservations.keys()].filter((id) => !lifecycle.resources.list().some((page) => page.pageID === id))
+          .length
       while (lifecycle.resources.list().length + reservationCount() >= limit) {
         const pages = lifecycle.resources
           .list()
@@ -955,8 +1002,10 @@ export class GptProController {
   }
   private async openJobPage(job: GptProJob, driver: GptProDriverAPI, fresh?: boolean, show = false) {
     const pageID = this.pageID(job)
-    const existed = this.lifecycle?.resources.list().some((page) => page.pageID === pageID) ?? driver.hasPage?.() ?? true
-    if (!existed && !(await this.reservePage(job))) throw new Error("page_capacity: all resident consultation pages are protected or in use")
+    const existed =
+      this.lifecycle?.resources.list().some((page) => page.pageID === pageID) ?? driver.hasPage?.() ?? true
+    if (!existed && !(await this.reservePage(job)))
+      throw new Error("page_capacity: all resident consultation pages are protected or in use")
     try {
       if (show && driver.show) await driver.show(job.url)
       else await driver.open(job.url, fresh)
@@ -1459,8 +1508,7 @@ export class GptProController {
       if (!this.config().enabled) throw new Error("Enable gpt-pro in Settings > External Agents first.")
       if (!input.prompt?.trim() || input.prompt.length > 100000)
         throw new Error("A self-contained prompt of at most 100000 characters is required")
-      if (this.jobs.filter(isUnfinished).length >= 30)
-        throw new Error("Too many queued consultations")
+      if (this.jobs.filter(isUnfinished).length >= 30) throw new Error("Too many queued consultations")
       const requestID = input.requestID ?? randomUUID()
       const parent = action === "intervene" ? this.get(input.id, owner) : undefined
       const jobOwner = parent?.owner ?? owner ?? "human"
@@ -1655,11 +1703,13 @@ export class GptProController {
               this.save()
               this.log(`consult scheduler release id=${job.id} phase=${job.phase} running=${this.running.size}`)
             }
-            void work.finally(() => {
-              if (this.pendingWork.get(job.id) === work) this.pendingWork.delete(job.id)
-              this.save()
-              if (this.runTokens.get(job.id) === runToken) this.releaseExecution(job, "runner-settled")
-            }).catch(() => {})
+            void work
+              .finally(() => {
+                if (this.pendingWork.get(job.id) === work) this.pendingWork.delete(job.id)
+                this.save()
+                if (this.runTokens.get(job.id) === runToken) this.releaseExecution(job, "runner-settled")
+              })
+              .catch(() => {})
             void this.pump()
           })
         this.running.set(job.id, task)
@@ -1723,16 +1773,13 @@ export class GptProController {
       queueOwnerConsultationID: undefined,
     })
     this.stage(job, "open")
-    if (!current)
-      await this.mutate(job, () => this.openJobPage(job, driver, !job.parentID && !job.submitted))
+    if (!current) await this.mutate(job, () => this.openJobPage(job, driver, !job.parentID && !job.submitted))
     if (!(await this.checkpoint(job, runToken))) return
     this.stage(job, "ready")
     await this.mutate(job, () => driver.ready())
     if (!(await this.checkpoint(job, runToken))) return
     this.stage(job, "model")
-    let page = job.submitted
-      ? await this.inspectPage(job, driver)
-      : await this.mutate(job, () => driver.observeModel())
+    let page = job.submitted ? await this.inspectPage(job, driver) : await this.mutate(job, () => driver.observeModel())
     this.log(
       `consult model observation id=${job.id} label=${JSON.stringify(page.model || "unknown")} policy=user-selected nonblocking=true`,
     )
@@ -1987,10 +2034,7 @@ export class GptProController {
     this.update(job, { model: page.model, userCount: page.users.length })
     this.log(`consult managed recovery send id=${job.id} uid=${uid ?? "website-send-control"}`)
     await driver.submit(async () => {
-      if (
-        this.disposed ||
-        !this.canDispatch(job)
-      )
+      if (this.disposed || !this.canDispatch(job))
         throw new Error("Managed recovery was paused or cancelled before the send boundary. Nothing was dispatched.")
       const current = await driver.page()
       if (
@@ -2003,10 +2047,7 @@ export class GptProController {
       )
         throw new Error("Composer or attachment evidence changed at the send boundary. Nothing was dispatched.")
       return () => {
-        if (
-          this.disposed ||
-          !this.canDispatch(job)
-        )
+        if (this.disposed || !this.canDispatch(job))
           throw new Error("Managed recovery was paused or cancelled before the send boundary. Nothing was dispatched.")
         this.update(job, { submitted: true, sendAttempted: true })
       }
@@ -2109,9 +2150,7 @@ export class GptProController {
   }
   private async syncURL(job: GptProJob, allowPaused = false, alreadyMutating = false) {
     try {
-      const page = alreadyMutating
-        ? await this.driverFor(job).page()
-        : await this.inspectPage(job, this.driverFor(job))
+      const page = alreadyMutating ? await this.driverFor(job).page() : await this.inspectPage(job, this.driverFor(job))
       if (this.disposed || job.phase === "cancelled" || (job.phase === "paused" && !allowPaused)) return
       this.capturePendingURL(job, page, allowPaused)
       const user = page.users.at(-1)
