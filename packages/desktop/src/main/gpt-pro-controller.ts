@@ -28,7 +28,7 @@ export type GptProDriverAPI = {
   hasPage?(): boolean
   boundPageEpoch?(): number | undefined
   ready(): Promise<GptProPageState>
-  page(): Promise<GptProPageState>
+  page(options?: { userID: string; force?: boolean }): Promise<GptProPageState>
   observeModel(): Promise<GptProPageState>
   fill(prompt: string): Promise<void>
   uploadAttachments?(
@@ -1138,7 +1138,7 @@ export class GptProController {
       while (!this.disposed && this.mutating.has(job.id)) await sleep(5)
       this.beginInspect(job.id)
       try {
-        return await driver.page()
+        return await driver.page(job.userID ? { userID: job.userID } : undefined)
       } finally {
         this.endInspect(job.id)
       }

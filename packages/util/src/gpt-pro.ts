@@ -84,6 +84,13 @@ export type GptProPageState = {
     generating: boolean
     completionEvidence: "settled-marker" | "response-actions" | "unknown"
   }>
+  capture?: {
+    userID: string
+    version: string
+    mode: "snapshot" | "unchanged" | "append"
+    baseVersion?: string
+    reads: number
+  }
 }
 
 export type GptProProbeStatus = {

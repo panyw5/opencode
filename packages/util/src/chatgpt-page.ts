@@ -133,8 +133,7 @@ export function chatGptComposerAttachmentTarget() {
   return result
 }
 
-export const CHATGPT_COMPOSER_ATTACHMENT_TARGET_EXPRESSION =
-  `(${chatGptComposerAttachmentTarget.toString()})()`
+export const CHATGPT_COMPOSER_ATTACHMENT_TARGET_EXPRESSION = `(${chatGptComposerAttachmentTarget.toString()})()`
 
 export function chatGptSendTarget(attachmentTarget = chatGptComposerAttachmentTarget()) {
   type Reason = NonNullable<GptProPageState["sendControlDiagnostics"]>["reason"]
@@ -218,8 +217,7 @@ export function chatGptSendTarget(attachmentTarget = chatGptComposerAttachmentTa
   return result
 }
 
-export const CHATGPT_SEND_TARGET_EXPRESSION =
-  `(${chatGptSendTarget.toString()})((${chatGptComposerAttachmentTarget.toString()})()).send`
+export const CHATGPT_SEND_TARGET_EXPRESSION = `(${chatGptSendTarget.toString()})((${chatGptComposerAttachmentTarget.toString()})()).send`
 
 // Serialized into the page: all browser helpers must remain inside this function.
 // It reads only rendered conversation data, never credentials or private APIs.
@@ -229,6 +227,7 @@ export function inspectChatGptPage(
   readComposer = readChatGptComposer,
   attachmentTarget = chatGptComposerAttachmentTarget(),
   sendTarget = chatGptSendTarget(attachmentTarget),
+  captureOptions?: { userID: string; knownVersion?: string; force?: boolean },
 ): GptProPageState {
   const visible = (el: Element) =>
     el.getClientRects().length > 0 &&
@@ -301,9 +300,25 @@ export function inspectChatGptPage(
     documentID: string
     nextID: number
     revision: number
+    captureSequence?: number
     observer: MutationObserver
     ids: WeakMap<Element, string>
     stop: () => void
+    capture?: {
+      userID: string
+      url: string
+      maxChars: number
+      content: HTMLElement
+      observer: MutationObserver
+      dirty: boolean
+      version?: string
+      reads: number
+      at: number
+      complete: boolean
+      html: string
+      text: string
+      truncated: boolean
+    }
   }
   const trackingWindow = window as typeof window & { __opencodeGptProTracking?: Tracking }
   let tracking = trackingWindow.__opencodeGptProTracking
@@ -312,6 +327,7 @@ export function inspectChatGptPage(
       documentID: crypto.randomUUID(),
       nextID: 0,
       revision: 0,
+      captureSequence: 0,
       ids: new WeakMap(),
       observer: new MutationObserver(() => record.revision++),
       stop: () => {},
@@ -326,6 +342,7 @@ export function inspectChatGptPage(
     trackingWindow.__opencodeGptProTracking = record
     record.stop = () => {
       record.observer.disconnect()
+      record.capture?.observer.disconnect()
     }
     tracking = record
   }
@@ -392,41 +409,50 @@ export function inspectChatGptPage(
   const assistantForUser = (userIndex: number) => {
     const nextUser = turns.findIndex((turn, index) => index > userIndex && role(turn) === "user")
     const end = nextUser < 0 ? turns.length : nextUser
-    return turns.slice(userIndex + 1, end).filter((turn) => role(turn) === "assistant").at(-1)
+    return turns
+      .slice(userIndex + 1, end)
+      .filter((turn) => role(turn) === "assistant")
+      .at(-1)
   }
   const assistantTurn = (assistant: HTMLElement) =>
     assistant.closest<HTMLElement>('article, [data-testid^="conversation-turn-"], .group.flex.flex-col') ?? assistant
   const stopSelector = '[data-testid="stop-button"], button[aria-label="Stop generating"], button[aria-label="Stop"]'
+  let captureResult: GptProPageState["capture"]
   const answerFor = (user: HTMLElement, assistant: HTMLElement, isLatest: boolean) => {
-    const contents = assistant.querySelectorAll<HTMLElement>('.markdown, [data-markdown-text-style="assistant-message"]')
+    const contents = assistant.querySelectorAll<HTMLElement>(
+      '.markdown, [data-markdown-text-style="assistant-message"]',
+    )
     // Multiple regions can include reasoning and a final answer. Never guess which one is the answer.
     if (contents.length !== 1) return
     const content = contents[0]!
     const turn = assistantTurn(assistant)
-    const clone = content.cloneNode(true) as HTMLElement
-    clone
-      .querySelectorAll(
-        "script, style, iframe, object, embed, form, input, button, meta, link, svg, animate, animateMotion, animateTransform, set, foreignObject, annotation-xml",
-      )
-      .forEach((el) => el.remove())
-    for (const el of [clone, ...clone.querySelectorAll("*")]) {
-      for (const attr of [...el.attributes]) {
-        const name = attr.name.toLowerCase()
-        if (name.startsWith("on") || ["srcdoc", "style", "srcset"].includes(name)) el.removeAttribute(attr.name)
-        if (["href", "src", "xlink:href", "action", "formaction"].includes(name)) {
-          try {
-            const target = new URL(attr.value, location.href)
-            if (!["http:", "https:"].includes(target.protocol)) el.removeAttribute(name)
-            else el.setAttribute(name, target.href)
-          } catch {
-            el.removeAttribute(name)
+    const captureBody = () => {
+      const clone = content.cloneNode(true) as HTMLElement
+      clone
+        .querySelectorAll(
+          "script, style, iframe, object, embed, form, input, button, meta, link, svg, animate, animateMotion, animateTransform, set, foreignObject, annotation-xml",
+        )
+        .forEach((el) => el.remove())
+      for (const el of [clone, ...clone.querySelectorAll("*")]) {
+        for (const attr of [...el.attributes]) {
+          const name = attr.name.toLowerCase()
+          if (name.startsWith("on") || ["srcdoc", "style", "srcset"].includes(name)) el.removeAttribute(attr.name)
+          if (["href", "src", "xlink:href", "action", "formaction"].includes(name)) {
+            try {
+              const target = new URL(attr.value, location.href)
+              if (!["http:", "https:"].includes(target.protocol)) el.removeAttribute(name)
+              else el.setAttribute(name, target.href)
+            } catch {
+              el.removeAttribute(name)
+            }
           }
         }
       }
+      const html = clone.innerHTML
+      const text = readText(content)
+      const truncated = html.length > maxChars || text.length > maxChars
+      return { html: html.slice(0, maxChars), text: text.slice(0, maxChars), truncated }
     }
-    const html = clone.innerHTML
-    const text = readText(content)
-    const truncated = html.length > maxChars || text.length > maxChars
     const responseActions = [...turn.querySelectorAll<HTMLButtonElement>("button")]
       .filter(
         (button) =>
@@ -458,29 +484,109 @@ export function inspectChatGptPage(
         el.getAttribute("data-streaming") === "true",
     )
     const turnGenerating =
-      activeMarker || [...turn.querySelectorAll<HTMLButtonElement>(stopSelector)].some(visible) || (isLatest && generating)
+      activeMarker ||
+      [...turn.querySelectorAll<HTMLButtonElement>(stopSelector)].some(visible) ||
+      (isLatest && generating)
     const completionEvidence = settledMarker
       ? ("settled-marker" as const)
       : actionGroup
         ? ("response-actions" as const)
         : ("unknown" as const)
+    let body: { html: string; text: string; truncated: boolean }
+    if (captureOptions) {
+      let cached = tracking.capture
+      if (
+        !cached ||
+        cached.content !== content ||
+        cached.userID !== id(user) ||
+        cached.url !== location.href ||
+        cached.maxChars !== maxChars
+      ) {
+        cached?.observer.disconnect()
+        const next: NonNullable<Tracking["capture"]> = {
+          userID: id(user),
+          url: location.href,
+          maxChars,
+          content,
+          dirty: true,
+          reads: 0,
+          at: 0,
+          complete: false,
+          html: "",
+          text: "",
+          truncated: false,
+          observer: new MutationObserver(() => {
+            next.dirty = true
+          }),
+        }
+        next.observer.observe(content, { subtree: true, childList: true, characterData: true, attributes: true })
+        tracking.capture = next
+        cached = next
+      }
+      if (cached.observer.takeRecords().length) cached.dirty = true
+      const completing = !turnGenerating && completionEvidence !== "unknown" && !cached.complete
+      const fallback = Date.now() - cached.at >= 10_000
+      const changed = cached.dirty || captureOptions.force || completing || fallback || !cached.version
+      const previousVersion = cached.version
+      const previousHtml = cached.html
+      const previousText = cached.text
+      if (changed) {
+        body = captureBody()
+        tracking.captureSequence = (tracking.captureSequence ?? 0) + 1
+        cached.version = `${tracking.documentID}:${tracking.captureSequence}`
+        cached.reads++
+        cached.at = Date.now()
+        cached.dirty = false
+        Object.assign(cached, body)
+      } else body = { html: cached.html, text: cached.text, truncated: cached.truncated }
+      cached.complete = !turnGenerating && completionEvidence !== "unknown" && !body.truncated && !!body.text
+      const mode =
+        !changed && captureOptions.knownVersion === cached.version
+          ? "unchanged"
+          : changed &&
+              !captureOptions.force &&
+              !completing &&
+              !fallback &&
+              previousVersion === captureOptions.knownVersion &&
+              body.html.startsWith(previousHtml) &&
+              body.text.startsWith(previousText)
+            ? "append"
+            : "snapshot"
+      captureResult = {
+        userID: id(user),
+        version: cached.version!,
+        mode,
+        reads: cached.reads,
+        ...(mode === "append" ? { baseVersion: previousVersion } : {}),
+      }
+      if (mode === "unchanged") body = { ...body, html: "", text: "" }
+      if (mode === "append")
+        body = { ...body, html: body.html.slice(previousHtml.length), text: body.text.slice(previousText.length) }
+    } else body = captureBody()
     return {
       id: id(assistant),
       userID: id(user),
-      text: text.slice(0, maxChars),
-      html: html.slice(0, maxChars),
-      complete: !turnGenerating && !truncated && !!text && completionEvidence !== "unknown",
-      truncated,
+      text: body.text,
+      html: body.html,
+      complete: captureOptions
+        ? !!tracking.capture?.complete
+        : !turnGenerating && !body.truncated && !!body.text && completionEvidence !== "unknown",
+      truncated: body.truncated,
       generating: turnGenerating,
       completionEvidence,
     }
   }
   const answers = users.flatMap((user) => {
+    if (captureOptions && id(user) !== captureOptions.userID) return []
     const assistant = assistantForUser(turns.indexOf(user))
     if (!assistant) return []
     const value = answerFor(user, assistant, user === lastUser)
     return value ? [value] : []
   })
+  if (captureOptions && !captureResult) {
+    tracking.capture?.observer.disconnect()
+    tracking.capture = undefined
+  }
   const answer = lastUser ? answers.findLast((item) => item.userID === id(lastUser)) : undefined
   generating ||= answers.some((item) => item.generating)
   const challengePattern =
@@ -502,7 +608,7 @@ export function inspectChatGptPage(
       (element) =>
         visible(element) &&
         !element.closest(
-          '[data-message-author-role], [data-chatgpt-search-unit-key], [data-user-message-bubble], .markdown, [data-markdown-text-style]',
+          "[data-message-author-role], [data-chatgpt-search-unit-key], [data-user-message-bubble], .markdown, [data-markdown-text-style]",
         ),
     )
     if (pageChallenge) {
@@ -527,7 +633,11 @@ export function inspectChatGptPage(
         let requestFailure = false
         let verificationFailure = false
         let region: Element | null = retry.parentElement
-        for (let depth = 0; region && currentTurn.contains(region) && depth < 4; depth++, region = region.parentElement) {
+        for (
+          let depth = 0;
+          region && currentTurn.contains(region) && depth < 4;
+          depth++, region = region.parentElement
+        ) {
           const clone = region.cloneNode(true) as HTMLElement
           clone
             .querySelectorAll(
@@ -584,6 +694,7 @@ export function inspectChatGptPage(
     },
     ...(error ? { error } : {}),
     revision: tracking.revision,
+    ...(captureResult ? { capture: captureResult } : {}),
     users: users.map((el) => {
       const attachments = userAttachments(el)
       return {
@@ -592,11 +703,18 @@ export function inspectChatGptPage(
         ...(attachments.length ? { attachments } : {}),
       }
     }),
-    ...(answer ? { answer, answers } : { answers }),
+    ...(answer && !captureOptions ? { answer, answers } : { answers }),
   }
 }
 
 export const CHATGPT_INSPECT_EXPRESSION = `(()=>{const attachmentTarget=(${chatGptComposerAttachmentTarget.toString()})();const sendTarget=(${chatGptSendTarget.toString()})(attachmentTarget);return (${inspectChatGptPage.toString()})(${GPT_PRO_MAX_HTML_CHARS},${CHATGPT_MODEL_PICKER_EXPRESSION},(${readChatGptComposer.toString()}),attachmentTarget,sendTarget)})()`
+
+export function chatGptCaptureExpression(options: { userID: string; knownVersion?: string; force?: boolean }) {
+  return CHATGPT_INSPECT_EXPRESSION.replace(
+    "attachmentTarget,sendTarget)})()",
+    `attachmentTarget,sendTarget,${JSON.stringify(options)})})()`,
+  )
+}
 
 // Image previews are inspected separately so the main page snapshot stays
 // synchronous and no image bytes ever leave the page context.

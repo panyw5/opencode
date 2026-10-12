@@ -1,5 +1,6 @@
 import {
   CHATGPT_INSPECT_EXPRESSION,
+  chatGptCaptureExpression,
   CHATGPT_COMPOSER_ATTACHMENT_TARGET_EXPRESSION,
   CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION,
   CHATGPT_ONBOARDING_DISMISS_EXPRESSION,
@@ -23,6 +24,13 @@ export class GptProDriver {
   private observedCdp?: ReturnType<BrowserController["cdp"]>
   private stopObserving?: () => void
   private pageEpoch?: number
+  private answerCapture?: {
+    userID: string
+    url: string
+    epoch: number
+    version: string
+    answer: NonNullable<GptProPageState["answers"]>[number]
+  }
   private inspectionTail: Promise<void> = Promise.resolve()
   constructor(
     private readonly browser: BrowserController,
@@ -92,8 +100,7 @@ export class GptProDriver {
       if (current.url === url && page.composer && !page.generating && !page.users.length) {
         return
       }
-      if (current.url !== url)
-        throw new Error("This consultation page is already bound to another conversation")
+      if (current.url !== url) throw new Error("This consultation page is already bound to another conversation")
     }
     const opened =
       typeof (this.browser as BrowserController & { openPage?: BrowserController["openPage"] }).openPage === "function"
@@ -115,7 +122,7 @@ export class GptProDriver {
     }
     this.browser.present(this.pageID)
   }
-  async page(): Promise<GptProPageState> {
+  async page(options?: { userID: string; force?: boolean }): Promise<GptProPageState> {
     const previous = this.inspectionTail
     let release!: () => void
     this.inspectionTail = new Promise<void>((resolve) => {
@@ -123,14 +130,15 @@ export class GptProDriver {
     })
     await previous
     try {
-      return await this.inspectPage()
+      return await this.inspectPage(options)
     } finally {
       release()
     }
   }
-  private async inspectPage(): Promise<GptProPageState> {
+  private async inspectPage(options?: { userID: string; force?: boolean }): Promise<GptProPageState> {
     const state = this.state()
-    if (!state) throw new Error(`The consultation browser view is unavailable for page ${this.pageID}. Reopen explicitly.`)
+    if (!state)
+      throw new Error(`The consultation browser view is unavailable for page ${this.pageID}. Reopen explicitly.`)
     if (this.pageEpoch !== undefined && state.epoch !== this.pageEpoch)
       throw new Error("The consultation page generation changed; stale page evidence was discarded")
     if (isGptProLoginUrl(state.url)) {
@@ -140,9 +148,18 @@ export class GptProDriver {
     if (!isGptProOrigin(state.url))
       throw new Error("The gpt-pro browser is on an unexpected origin. Navigate it to ChatGPT before continuing.")
     const cdp = this.cdp()
+    let force = options?.force
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        const page = await cdp.evaluate<GptProPageState>(CHATGPT_INSPECT_EXPRESSION)
+        const previous = this.answerCapture
+        const known =
+          previous?.userID === options?.userID && previous?.epoch === state.epoch && previous?.url === state.url
+            ? previous
+            : undefined
+        const expression = options
+          ? chatGptCaptureExpression({ ...options, force, knownVersion: known?.version })
+          : CHATGPT_INSPECT_EXPRESSION
+        const page = await cdp.evaluate<GptProPageState>(expression)
         const imageEvidence = await cdp.evaluate<{
           url: string
           composer: Array<{ name: string; kind: "image"; sha256?: string; status: "ready" | "unknown" }>
@@ -176,6 +193,33 @@ export class GptProDriver {
         const latest = this.state()
         if (!latest || latest.epoch !== state.epoch || latest.url !== imageEvidence.url)
           throw new Error("The consultation page changed during inspection; stale page evidence was discarded")
+        if (options && page.capture) {
+          const capture = page.capture
+          const answer = page.answers?.find((answer) => answer.userID === options.userID)
+          if (capture.userID !== options.userID || !answer) throw new Error("Captured answer owner mismatch")
+          if (capture.mode !== "snapshot") {
+            const base = capture.mode === "append" ? capture.baseVersion : capture.version
+            if (!known || known.version !== base || known.answer.id !== answer.id) {
+              force = true
+              throw new Error("Captured answer base changed; requesting a full snapshot")
+            }
+            answer.html = known.answer.html + (capture.mode === "append" ? answer.html : "")
+            answer.text = known.answer.text + (capture.mode === "append" ? answer.text : "")
+          }
+          this.answerCapture = {
+            userID: options.userID,
+            url: page.url,
+            epoch: state.epoch,
+            version: capture.version,
+            answer: { ...answer },
+          }
+          if (page.users.at(-1)?.id === options.userID) page.answer = { ...answer }
+          else delete page.answer
+          if (capture.mode !== "unchanged")
+            this.log(
+              `driver answer capture mode=${capture.mode} reads=${capture.reads} htmlChars=${answer.html.length}`,
+            )
+        } else if (options) this.answerCapture = undefined
         return page
       } catch {
         this.log(`driver page snapshot inspection unavailable attempt=${attempt}/3; retrying without dispatch`)
@@ -462,6 +506,7 @@ export class GptProDriver {
     )
   }
   dispose() {
+    this.answerCapture = undefined
     this.stopObserving?.()
     this.stopObserving = undefined
     this.observedCdp = undefined
