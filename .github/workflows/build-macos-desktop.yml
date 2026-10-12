@@ -106,18 +106,44 @@ jobs:
           set -euo pipefail
           cd packages/desktop
           DMG="dist/OpenCode_${OPENCODE_VERSION}_x64.dmg"
+          # stapler/spctl ticket lookups hit api.apple-cloudkit.com and have
+          # been flaking (NSURLError -1005, exit 68) on hosted runners; notary
+          # submissions stay valid, so retry the ticket fetch with backoff.
+          retry() {
+            local n=1 max=5 delay=20
+            while true; do
+              if "$@"; then return 0; fi
+              if [ "$n" -ge "$max" ]; then return 1; fi
+              echo "retry $n/$max failed for: $*; sleeping ${delay}s"
+              n=$((n+1))
+              delay=$((delay*2))
+              sleep "$delay"
+            done
+          }
           xcrun notarytool submit "$DMG" \
             --keychain "$APPLE_KEYCHAIN" \
             --keychain-profile "$APPLE_KEYCHAIN_PROFILE" \
             --wait \
             --timeout 12h
-          xcrun stapler staple "$DMG"
-          xcrun stapler validate "$DMG"
+          retry xcrun stapler staple "$DMG"
+          retry xcrun stapler validate "$DMG"
           codesign --verify --strict --verbose=2 "$DMG"
           spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
       - name: Verify packaged versions
         run: |
           cd packages/desktop
+          # Same CloudKit flake retry as the notarize step above.
+          retry() {
+            local n=1 max=5 delay=20
+            while true; do
+              if "$@"; then return 0; fi
+              if [ "$n" -ge "$max" ]; then return 1; fi
+              echo "retry $n/$max failed for: $*; sleeping ${delay}s"
+              n=$((n+1))
+              delay=$((delay*2))
+              sleep "$delay"
+            done
+          }
           APP_PATH=""
           for CANDIDATE in dist/mac*/OpenCode.app; do
             if [ -d "$CANDIDATE" ]; then
@@ -142,7 +168,7 @@ jobs:
           ! grep -q 'anomalyco' "$UPDATER_CONFIG"
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
           spctl --assess --type execute --verbose=4 "$APP_PATH"
-          xcrun stapler validate "$APP_PATH"
+          retry xcrun stapler validate "$APP_PATH"
 
       - name: Upload macOS x64 DMG
         uses: actions/upload-artifact@v4
@@ -257,19 +283,45 @@ jobs:
           set -euo pipefail
           cd packages/desktop
           DMG="dist/OpenCode_${OPENCODE_VERSION}_aarch64.dmg"
+          # stapler/spctl ticket lookups hit api.apple-cloudkit.com and have
+          # been flaking (NSURLError -1005, exit 68) on hosted runners; notary
+          # submissions stay valid, so retry the ticket fetch with backoff.
+          retry() {
+            local n=1 max=5 delay=20
+            while true; do
+              if "$@"; then return 0; fi
+              if [ "$n" -ge "$max" ]; then return 1; fi
+              echo "retry $n/$max failed for: $*; sleeping ${delay}s"
+              n=$((n+1))
+              delay=$((delay*2))
+              sleep "$delay"
+            done
+          }
           xcrun notarytool submit "$DMG" \
             --keychain "$APPLE_KEYCHAIN" \
             --keychain-profile "$APPLE_KEYCHAIN_PROFILE" \
             --wait \
             --timeout 12h
-          xcrun stapler staple "$DMG"
-          xcrun stapler validate "$DMG"
+          retry xcrun stapler staple "$DMG"
+          retry xcrun stapler validate "$DMG"
           codesign --verify --strict --verbose=2 "$DMG"
           spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
 
       - name: Verify packaged versions
         run: |
           cd packages/desktop
+          # Same CloudKit flake retry as the notarize step above.
+          retry() {
+            local n=1 max=5 delay=20
+            while true; do
+              if "$@"; then return 0; fi
+              if [ "$n" -ge "$max" ]; then return 1; fi
+              echo "retry $n/$max failed for: $*; sleeping ${delay}s"
+              n=$((n+1))
+              delay=$((delay*2))
+              sleep "$delay"
+            done
+          }
           APP_PATH=""
           for CANDIDATE in dist/mac*/OpenCode.app; do
             if [ -d "$CANDIDATE" ]; then
@@ -294,7 +346,7 @@ jobs:
           ! grep -q 'anomalyco' "$UPDATER_CONFIG"
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
           spctl --assess --type execute --verbose=4 "$APP_PATH"
-          xcrun stapler validate "$APP_PATH"
+          retry xcrun stapler validate "$APP_PATH"
 
       - name: Upload macOS arm64 DMG
         uses: actions/upload-artifact@v4
