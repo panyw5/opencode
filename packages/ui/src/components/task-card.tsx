@@ -219,18 +219,9 @@ export function PresentedTaskCard(props: PresentedTaskCardProps): JSX.Element {
                 size="normal"
                 class="presented-task-card__icon"
               />
-              <div class="presented-task-card__heading">
-                <span class="presented-task-card__kind">
-                  {i18n.t(
-                    value().kind === "project_task"
-                      ? "ui.presentedTask.kind.project"
-                      : "ui.presentedTask.kind.scheduled",
-                  )}
-                </span>
-                <strong class="presented-task-card__title" title={value().title}>
-                  {value().title}
-                </strong>
-              </div>
+              <strong class="presented-task-card__title" title={value().title}>
+                {value().title}
+              </strong>
             </div>
             <span class="presented-task-card__status">{presentedTaskStatusLabel(value(), i18n.t)}</span>
           </header>
@@ -239,14 +230,9 @@ export function PresentedTaskCard(props: PresentedTaskCardProps): JSX.Element {
             {(item) => (
               <>
                 <Show when={item().prdExcerpt}>
-                  <pre class="presented-task-card__excerpt">{item().prdExcerpt}</pre>
-                </Show>
-                <Show when={item().descriptionPath}>
-                  <footer class="presented-task-card__footer">
-                    <span class="presented-task-card__path" title={item().descriptionPath}>
-                      {item().descriptionPath}
-                    </span>
-                  </footer>
+                  <div class="presented-task-card__excerpt">
+                    <pre class="presented-task-card__excerpt-text">{item().prdExcerpt}</pre>
+                  </div>
                 </Show>
                 <div class="presented-task-card__metrics">
                   <div
@@ -287,7 +273,9 @@ export function PresentedTaskCard(props: PresentedTaskCardProps): JSX.Element {
             {(item) => (
               <>
                 <Show when={item().promptExcerpt}>
-                  <pre class="presented-task-card__excerpt">{item().promptExcerpt}</pre>
+                  <div class="presented-task-card__excerpt">
+                    <pre class="presented-task-card__excerpt-text">{item().promptExcerpt}</pre>
+                  </div>
                 </Show>
                 <footer class="presented-task-card__footer">
                   <Show when={item().agent}>

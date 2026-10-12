@@ -95,7 +95,7 @@ function ScheduledTaskCard(props: {
       ref={card}
       type="button"
       data-component="scheduled-task-card"
-      class="flex min-h-24 w-full flex-col gap-2 rounded-xl border border-border-weak-base bg-surface-raised-base px-3 py-3 text-left transition-colors hover:bg-surface-raised-base-hover"
+      class="flex min-h-24 w-full flex-col gap-2 rounded-[var(--task-surface-radius)] border border-border-weak-base bg-surface-raised-base px-3 py-3 text-left transition-colors hover:bg-surface-raised-base-hover"
       onClick={props.onOpen}
     >
       <div data-slot="scheduled-task-header" class="flex w-full items-center gap-2">

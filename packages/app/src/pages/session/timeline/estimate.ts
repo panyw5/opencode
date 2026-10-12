@@ -71,9 +71,9 @@ export const PRESENT_FILE_MOBILE_HEIGHT = 276
 export const PRESENT_DIAGRAM_DESKTOP_HEIGHT = 560
 export const PRESENT_DIAGRAM_MOBILE_HEIGHT = 440
 /** Presented task card: header/metrics/footer plus a clamped excerpt. */
-export const PRESENT_TASK_CHROME_HEIGHT = 123
-export const PRESENT_TASK_EXCERPT_HEIGHT = 116
-export const PRESENT_TASK_MOBILE_EXCERPT_HEIGHT = 92
+export const PRESENT_TASK_CHROME_HEIGHT = 102
+export const PRESENT_TASK_EXCERPT_HEIGHT = 89
+export const PRESENT_TASK_MOBILE_EXCERPT_HEIGHT = 89
 export const PRESENT_FILE_MOBILE_BREAKPOINT = 560
 
 export const MIN_ROW_ESTIMATE = 40

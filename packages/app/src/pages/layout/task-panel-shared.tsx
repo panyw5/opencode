@@ -173,7 +173,7 @@ export function TaskCardShell(props: {
       data-component={props["data-component"] ?? "task-list-item"}
       role="button"
       tabIndex={0}
-      class="group/task w-full rounded-xl border border-border-weak-base bg-background-stronger px-3 py-3 text-left transition-colors hover:bg-surface-base-hover"
+      class="group/task w-full rounded-[var(--task-surface-radius)] border border-border-weak-base bg-background-stronger px-3 py-3 text-left transition-colors hover:bg-surface-base-hover"
       classList={{ "border-border-brand-base bg-surface-interactive-selected/40": !!props.active }}
       onClick={() => props.onOpen()}
       onKeyDown={onKeyDown}

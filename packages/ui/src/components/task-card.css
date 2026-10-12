@@ -1,3 +1,19 @@
+html {
+  --task-surface-radius: var(--radius-3xl);
+}
+
+html[data-theme="claude"] {
+  --task-surface-radius: calc(var(--claude-session-radius-lg) + 4px);
+}
+
+html[data-theme="chatgpt"] {
+  --task-surface-radius: var(--radius-4xl);
+}
+
+html[data-theme="arc"] {
+  --task-surface-radius: var(--radius-4xl);
+}
+
 [data-component="presented-task-card"] {
   position: relative;
   width: min(100%, 840px);
@@ -6,7 +22,7 @@
   gap: 10px;
   padding: 14px;
   border: 1px solid var(--border-weak-base);
-  border-radius: var(--radius-lg);
+  border-radius: var(--task-surface-radius);
   background: var(--surface-raised-base);
   box-sizing: border-box;
   contain: layout paint;
@@ -14,6 +30,18 @@
     border-color 0.15s ease,
     background-color 0.15s ease,
     box-shadow 0.15s ease;
+}
+
+html[data-theme="claude"] [data-component="presented-task-card"] {
+  --presented-task-card-inset-radius: var(--claude-session-radius-sm);
+}
+
+html[data-theme="chatgpt"] [data-component="presented-task-card"] {
+  --presented-task-card-inset-radius: var(--chatgpt-session-radius-sm, var(--radius-md));
+}
+
+html[data-theme="arc"] [data-component="presented-task-card"] {
+  --presented-task-card-inset-radius: var(--arc-session-radius-sm, var(--radius-md));
 }
 
 /* Hover affordance only when the card is clickable: the overlay button exists. */
@@ -31,36 +59,32 @@
   height: 100%;
   padding: 0;
   border: 0;
+  border-radius: inherit;
   background: transparent;
   cursor: pointer;
 }
 .presented-task-card__open:focus-visible {
   outline: 2px solid var(--border-interactive-base);
   outline-offset: -3px;
-  border-radius: var(--radius-lg);
 }
 
 .presented-task-card__header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
   min-width: 0;
 }
-/* The icon is taller than the two-line heading, so pair them in their own row
-   and center it against the kind label + title. */
 .presented-task-card__heading-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   flex: 1;
   min-width: 0;
 }
-/* `Icon` puts `class` on the inner <svg>, so the 2x size has to go on the
-   wrapper: a sized svg would overflow its 20px box and lean on the heading. */
+/* `Icon` puts `class` on the svg; size its wrapper to match the title. */
 .presented-task-card__heading-row [data-component="icon"] {
-  /* Twice the icon's `normal` size (20px); icon.css pins [data-size] at the same specificity. */
-  width: 40px;
-  height: 40px;
+  width: 18px;
+  height: 18px;
   flex: none;
 }
 .presented-task-card__icon {
@@ -68,25 +92,12 @@
   height: 100%;
   color: var(--text-base);
 }
-.presented-task-card__heading {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.presented-task-card__kind {
-  color: var(--text-weak);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
 .presented-task-card__title {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: 16px;
   color: var(--text-strong);
 }
 .presented-task-card__status {
@@ -124,15 +135,20 @@
 }
 
 .presented-task-card__excerpt {
-  margin: 0;
   padding: 8px 10px;
-  max-height: 108px;
-  overflow: hidden;
-  border-radius: var(--radius-md);
+  border-radius: var(--presented-task-card-inset-radius, var(--radius-md));
   background: var(--surface-base);
   color: var(--text-base);
+}
+
+.presented-task-card__excerpt-text {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
@@ -175,8 +191,5 @@
 @media (max-width: 560px) {
   [data-component="presented-task-card"] {
     padding: 12px;
-  }
-  .presented-task-card__excerpt {
-    max-height: 84px;
   }
 }
