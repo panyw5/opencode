@@ -76,6 +76,9 @@ export type SessionTodoBundle = Types.DeepMutable<Schema.Schema.Type<typeof Sess
 export const Detail = Schema.Struct({
   ...Info.fields,
   sessions: Schema.Array(SessionTodoBundle),
+  /** Editable progress record, separate from the aggregated session-todo progress. */
+  progressContent: Schema.optional(Schema.String),
+  progressPath: Schema.optional(Schema.String),
   /**
    * Absolute directory `descriptionPath` resolves against (git worktree root;
    * instance directory for non-git projects). Lets clients build correct
@@ -97,6 +100,8 @@ export const UpdateInput = Schema.Struct({
   title: Schema.optional(Schema.String),
   /** When set, overwrites the description file at `descriptionPath`. */
   description: Schema.optional(Schema.String),
+  /** When set, overwrites `.project-tasks/<taskID>/progress.md`. */
+  progressContent: Schema.optional(Schema.String),
   status: Schema.optional(Status),
 }).annotate({ identifier: "ProjectTaskUpdateInput" })
 export type UpdateInput = Types.DeepMutable<Schema.Schema.Type<typeof UpdateInput>>

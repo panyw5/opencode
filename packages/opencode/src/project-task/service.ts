@@ -98,10 +98,7 @@ export const layer = Layer.effect(
           },
         }),
       )
-      return ProjectTaskRepository.toInfo(
-        { ...meta, descriptionPath: ensured.descriptionPath },
-        ensured.content,
-      )
+      return ProjectTaskRepository.toInfo({ ...meta, descriptionPath: ensured.descriptionPath }, ensured.content)
     })
 
     const find = Effect.fn("ProjectTask.find")(function* (id: ProjectTaskID) {
@@ -121,12 +118,7 @@ export const layer = Layer.effect(
       for (const row of rows) {
         const descriptionPath = row.descriptionPath || descriptionRelativePath(row.id)
         const content = yield* Effect.promise(() => readDescriptionFile(dir, descriptionPath))
-        out.push(
-          ProjectTaskRepository.toInfo(
-            { ...row, descriptionPath },
-            content ?? row.legacyDescription ?? "",
-          ),
-        )
+        out.push(ProjectTaskRepository.toInfo({ ...row, descriptionPath }, content ?? row.legacyDescription ?? ""))
       }
       console.debug(
         `[project-task] list projectID=${pid} count=${out.length} dirs=${out.map((task) => `${task.id}:${task.sessionDirectories.join("|") || "-"}`).join(",") || "none"}`,
@@ -148,7 +140,11 @@ export const layer = Layer.effect(
       if (row.projectID !== pid) return yield* new NotFoundError({ taskID: id })
       const info = yield* hydrate(row)
       const anchor = yield* anchorDirectory()
-      return { ...info, sessions: row.sessions, workspaceDirectory: anchor }
+      const progressPath = progressRelativePath(id)
+      console.debug(`[project-task] detail read-progress taskID=${id} path=${progressPath}`)
+      const progressContent = (yield* Effect.promise(() => readDescriptionFile(anchor, progressPath))) ?? ""
+      console.debug(`[project-task] detail progress-read taskID=${id} length=${progressContent.length}`)
+      return { ...info, sessions: row.sessions, workspaceDirectory: anchor, progressPath, progressContent }
     })
 
     const create: Interface["create"] = Effect.fn("ProjectTask.create")(function* (input) {
@@ -181,7 +177,7 @@ export const layer = Layer.effect(
     const update: Interface["update"] = Effect.fn("ProjectTask.update")(function* (id, input) {
       // Keep description content out of logs while making desktop save failures traceable.
       console.debug(
-        `[project-task] update start taskID=${id} hasTitle=${String(input.title !== undefined)} hasStatus=${String(input.status !== undefined)} hasDescription=${String(input.description !== undefined)} descriptionLength=${input.description?.length ?? 0}`,
+        `[project-task] update start taskID=${id} hasTitle=${String(input.title !== undefined)} hasStatus=${String(input.status !== undefined)} hasDescription=${String(input.description !== undefined)} descriptionLength=${input.description?.length ?? 0} hasProgress=${String(input.progressContent !== undefined)} progressLength=${input.progressContent?.length ?? 0}`,
       )
       const current = yield* get(id)
       if (input.title !== undefined && !input.title.trim()) {
@@ -192,10 +188,21 @@ export const layer = Layer.effect(
 
       if (input.description !== undefined) {
         const rel = current.descriptionPath || descriptionRelativePath(id)
-        console.debug(`[project-task] update write-description taskID=${id} path=${rel} descriptionLength=${input.description.length}`)
+        console.debug(
+          `[project-task] update write-description taskID=${id} path=${rel} descriptionLength=${input.description.length}`,
+        )
         yield* Effect.promise(() => writeDescriptionFile(anchor, rel, input.description!))
         yield* ProjectTaskRepository.setDescriptionPath(id, rel, { clearLegacy: true })
         console.debug(`[project-task] update description-written taskID=${id} path=${rel}`)
+      }
+
+      if (input.progressContent !== undefined) {
+        const rel = progressRelativePath(id)
+        console.debug(
+          `[project-task] update write-progress taskID=${id} path=${rel} length=${input.progressContent.length}`,
+        )
+        yield* Effect.promise(() => writeDescriptionFile(anchor, rel, input.progressContent!))
+        console.debug(`[project-task] update progress-written taskID=${id} path=${rel}`)
       }
 
       const task = yield* ProjectTaskRepository.update(id, {
@@ -230,9 +237,9 @@ export const layer = Layer.effect(
     })
 
     const mount: Interface["mount"] = Effect.fn("ProjectTask.mount")(function* (input) {
-      const session = yield* sessions.get(input.sessionID).pipe(
-        Effect.mapError(() => new SessionNotFoundError({ sessionID: input.sessionID })),
-      )
+      const session = yield* sessions
+        .get(input.sessionID)
+        .pipe(Effect.mapError(() => new SessionNotFoundError({ sessionID: input.sessionID })))
       const pid = yield* projectID()
       const dir = yield* directory()
       if (session.projectID !== pid) {

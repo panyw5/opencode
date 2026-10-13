@@ -176,14 +176,6 @@ function NewProjectTaskDialog(props: {
   )
 }
 
-function projectTaskStatusLabel(status: ProjectTaskStatus, t: ReturnType<typeof useLanguage>["t"]): string {
-  if (status === "open") return t("projectTask.status.open")
-  if (status === "in_progress") return t("projectTask.status.inProgress")
-  if (status === "done") return t("projectTask.status.done")
-  if (status === "archived") return t("projectTask.status.archived")
-  return labelStatus(status)
-}
-
 function ProjectTaskCard(props: {
   task: ProjectTask
   directory: string
@@ -199,14 +191,9 @@ function ProjectTaskCard(props: {
       completedAt: props.task.time.archived != null ? String(props.task.time.archived) : null,
     }),
   )
-  // Last-row chips: task status (lifecycle) + session-todo progress + session count.
-  // Status and todo progress are intentionally separate (multi-session work).
   const meta = createMemo(() => {
-    const items: string[] = [projectTaskStatusLabel(props.task.status, language.t), progressText(props.task)]
-    if (props.task.sessionCount > 0) {
-      items.push(language.t("projectTask.sessions.count", { count: props.task.sessionCount }))
-    }
-    return items
+    if (props.task.sessionCount <= 0) return []
+    return [language.t("projectTask.sessions.count", { count: props.task.sessionCount })]
   })
   return (
     <TaskCardShell
@@ -218,15 +205,12 @@ function ProjectTaskCard(props: {
       onOpen={() => props.onOpen(props.task)}
       actions={
         <>
-          <TaskCardActionButton
-            icon="new-session"
-            onClick={() => props.onNewSession(props.task, props.directory)}
-          >
+          <TaskCardActionButton icon="new-session" onClick={() => props.onNewSession(props.task, props.directory)}>
             {language.t("projectTask.sessions.new")}
           </TaskCardActionButton>
           <TaskCardActionButton
             danger
-            icon="trash"
+            icon="archive"
             disabled={!canAct() || props.task.status === "archived"}
             onClick={() => {
               setPending("archive")
@@ -246,6 +230,7 @@ export type ProjectTaskDetailSnapshot = {
   draft: string
   mode: "preview" | "edit"
   dirty: boolean
+  document?: "description" | "progress"
 }
 
 /** Everything needed to reopen a minimized project task detail dialog. */
@@ -282,6 +267,7 @@ export function ProjectTaskDetailDialog(props: {
     pending: false,
     error: "",
     mode: restored?.mode ?? ("preview" as "preview" | "edit"),
+    document: restored?.document ?? ("description" as "description" | "progress"),
     draft: restored?.draft ?? props.task.description,
     dirty: restored?.dirty ?? false,
     saved: props.task.description,
@@ -293,8 +279,11 @@ export function ProjectTaskDetailDialog(props: {
   const status = createMemo(() => detail()?.status ?? props.task.status)
   // Prefer the hydrated anchor + descriptionPath (worktree-anchored, handles legacy/custom
   // locations); before detail loads fall back to the panel directory + canonical prd.md path.
-  const prdPath = createMemo(() => {
-    const rel = detail()?.descriptionPath?.trim() || `.project-tasks/${props.task.id}/prd.md`
+  const documentPath = createMemo(() => {
+    const rel =
+      state.document === "progress"
+        ? detail()?.progressPath?.trim() || `.project-tasks/${props.task.id}/progress.md`
+        : detail()?.descriptionPath?.trim() || `.project-tasks/${props.task.id}/prd.md`
     const anchor = (detail()?.workspaceDirectory?.trim() || props.directory).replace(/[\\/]+$/, "")
     return `${anchor}/${rel.replace(/^\//, "")}`
   })
@@ -316,21 +305,30 @@ export function ProjectTaskDetailDialog(props: {
   )
 
   async function load() {
+    console.debug(`[project-task] editor load-start task=${props.task.id} document=${state.document}`)
     setState({ loading: true, error: "" })
     try {
       const result = await props.client.projectTask.detail({ taskID: props.task.id })
       if (result.data) {
         // A restored editing session keeps its draft; the server description
         // stays the "saved" baseline so dirty state remains meaningful.
+        const content = state.document === "progress" ? (result.data.progressContent ?? "") : result.data.description
         setState({
           detail: result.data,
-          draft: restored ? restored.draft : result.data.description,
-          saved: result.data.description,
-          dirty: restored ? restored.dirty : false,
+          draft: restored ? restored.draft : content,
+          saved: content,
+          dirty: restored ? restored.draft !== content : false,
         })
+        console.debug(
+          `[project-task] editor load-success task=${props.task.id} document=${state.document} length=${content.length}`,
+        )
       } else {
+        throw new Error(language.t("common.requestFailed"))
       }
     } catch (error) {
+      console.error(
+        `[project-task] editor load-failed task=${props.task.id} error=${error instanceof Error ? error.message : String(error)}`,
+      )
       setState("error", error instanceof Error ? error.message : String(error))
     } finally {
       setState("loading", false)
@@ -339,8 +337,13 @@ export function ProjectTaskDetailDialog(props: {
 
   /** Park the dialog on the rail stash: snapshot the draft, then close without saving. */
   async function minimize(event: MouseEvent & { currentTarget: HTMLElement }) {
-    if (!props.onMinimize) return
-    const snapshot: ProjectTaskDetailSnapshot = { draft: state.draft, mode: state.mode, dirty: state.dirty }
+    if (!props.onMinimize || state.pending || state.loading) return
+    const snapshot: ProjectTaskDetailSnapshot = {
+      draft: state.draft,
+      mode: state.mode,
+      dirty: state.dirty,
+      document: state.document,
+    }
     console.debug(`[project-task] detail minimize task=${props.task.id} dirty=${String(snapshot.dirty)}`)
     const source = event.currentTarget.closest<HTMLElement>('[data-component="dialog"]')
     if (!source) {
@@ -364,21 +367,37 @@ export function ProjectTaskDetailDialog(props: {
     }
   }
 
-  async function saveDescription(options?: { preview?: boolean }) {
+  async function saveDocument(options?: { preview?: boolean }) {
+    if (state.pending || state.loading) return false
+    const document = state.document
+    const draft = state.draft
     if (!state.dirty && state.draft === state.saved) {
-      console.debug(`[project-task] description-save skipped task=${props.task.id} preview=${String(!!options?.preview)}`)
+      console.debug(
+        `[project-task] document-save skipped task=${props.task.id} document=${document} preview=${String(!!options?.preview)}`,
+      )
       if (options?.preview) setState("mode", "preview")
       return true
     }
     console.debug(
-      `[project-task] description-save start task=${props.task.id} preview=${String(!!options?.preview)} length=${state.draft.length}`,
+      `[project-task] document-save start task=${props.task.id} document=${document} preview=${String(!!options?.preview)} length=${draft.length}`,
     )
     setState({ pending: true, error: "" })
     try {
       const result = await props.client.projectTask.update({
         taskID: props.task.id,
-        projectTaskUpdateInput: { description: state.draft },
+        projectTaskUpdateInput: document === "progress" ? { progressContent: draft } : { description: draft },
       })
+      if (!result.data) throw new Error(language.t("common.requestFailed"))
+      if (document === "progress") {
+        const verified = await props.client.projectTask.detail({ taskID: props.task.id })
+        if (!verified.data || verified.data.progressContent !== draft) {
+          throw new Error(language.t("projectTask.progress.saveFailed"))
+        }
+        setState("detail", verified.data)
+        console.debug(
+          `[project-task] document-save verified task=${props.task.id} document=progress length=${draft.length}`,
+        )
+      }
       if (result.data) {
         setState("detail", {
           ...(state.detail ?? result.data),
@@ -386,13 +405,15 @@ export function ProjectTaskDetailDialog(props: {
           sessions: state.detail?.sessions ?? [],
         })
       }
-      setState({ dirty: false, saved: state.draft, mode: options?.preview ? "preview" : state.mode })
+      setState({ dirty: false, saved: draft, mode: options?.preview ? "preview" : state.mode })
       await props.onChanged()
-      console.debug(`[project-task] description-save success task=${props.task.id} preview=${String(!!options?.preview)}`)
+      console.debug(
+        `[project-task] document-save success task=${props.task.id} document=${document} preview=${String(!!options?.preview)}`,
+      )
       return true
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      console.error(`[project-task] description-save failed task=${props.task.id} error=${message}`)
+      console.error(`[project-task] document-save failed task=${props.task.id} document=${document} error=${message}`)
       setState("error", message)
       return false
     } finally {
@@ -400,7 +421,22 @@ export function ProjectTaskDetailDialog(props: {
     }
   }
 
+  async function switchDocument(next: "description" | "progress") {
+    if (next === state.document || state.pending || state.loading) return
+    console.debug(
+      `[project-task] document-switch start task=${props.task.id} from=${state.document} to=${next} dirty=${state.dirty}`,
+    )
+    if (state.dirty && !(await saveDocument())) return
+    const content =
+      next === "progress" ? (detail()?.progressContent ?? "") : (detail()?.description ?? props.task.description)
+    setState({ document: next, draft: content, saved: content, dirty: false, error: "" })
+    console.debug(
+      `[project-task] document-switch success task=${props.task.id} document=${next} length=${content.length}`,
+    )
+  }
+
   async function setStatus(next: ProjectTaskStatus) {
+    if (state.pending || state.loading) return
     setState({ pending: true, error: "" })
     try {
       const result = await props.client.projectTask.update({
@@ -461,17 +497,16 @@ export function ProjectTaskDetailDialog(props: {
   }
 
   const enterEdit = () => {
+    if (state.pending || state.loading) return
     console.debug(`[project-task] editor-mode task=${props.task.id} mode=edit`)
     setState({
       mode: "edit",
-      draft: detail()?.description ?? props.task.description,
-      dirty: false,
     })
   }
 
   const saveAndPreview = async () => {
     console.debug(`[project-task] editor-mode-request task=${props.task.id} mode=preview dirty=${String(state.dirty)}`)
-    const ok = await saveDescription({ preview: true })
+    const ok = await saveDocument({ preview: true })
     if (ok) {
       setState("mode", "preview")
       console.debug(`[project-task] editor-mode task=${props.task.id} mode=preview`)
@@ -479,8 +514,9 @@ export function ProjectTaskDetailDialog(props: {
   }
 
   const closeDialog = async () => {
-    if (state.mode === "edit" && state.dirty) {
-      const ok = await saveDescription()
+    if (state.pending) return
+    if (state.dirty) {
+      const ok = await saveDocument()
       if (!ok) return
     }
     dialog.close()
@@ -524,28 +560,22 @@ export function ProjectTaskDetailDialog(props: {
               </span>
             </div>
             <div class="mt-0.5 flex min-w-0 items-center gap-1 text-12-regular text-text-weak">
-                <span class="shrink-0">{language.t("trellis.tasks.taskId")}:</span>
-                <span class="min-w-0 truncate">{props.task.id}</span>
-                <Tooltip
-                  placement="bottom"
-                  value={idCopied() ? language.t("session.share.copy.copied") : language.t("trellis.tasks.copyId")}
-                >
-                  <IconButton
-                    data-action="project-task-copy-id"
-                    icon={idCopied() ? "check" : "copy"}
-                    variant="ghost"
-                    size="small"
-                    class="shrink-0"
-                    aria-label={
-                      idCopied() ? language.t("session.share.copy.copied") : language.t("trellis.tasks.copyId")
-                    }
-                    onClick={copyTaskID}
-                  />
-                </Tooltip>
-                <span class="shrink-0 text-text-subtle">·</span>
-                <span class="shrink-0">
-                  {labelStatus(status())} · {progressText(detail() ?? props.task)}
-                </span>
+              <span class="shrink-0">{language.t("trellis.tasks.taskId")}:</span>
+              <span class="min-w-0 truncate">{props.task.id}</span>
+              <Tooltip
+                placement="bottom"
+                value={idCopied() ? language.t("session.share.copy.copied") : language.t("trellis.tasks.copyId")}
+              >
+                <IconButton
+                  data-action="project-task-copy-id"
+                  icon={idCopied() ? "check" : "copy"}
+                  variant="ghost"
+                  size="small"
+                  class="shrink-0"
+                  aria-label={idCopied() ? language.t("session.share.copy.copied") : language.t("trellis.tasks.copyId")}
+                  onClick={copyTaskID}
+                />
+              </Tooltip>
             </div>
           </div>
         }
@@ -606,7 +636,28 @@ export function ProjectTaskDetailDialog(props: {
           <Show when={state.error}>{(err) => <ErrorCard err={err()} />}</Show>
 
           <div class="flex shrink-0 flex-wrap items-center gap-2">
-            <For each={["open", "in_progress", "done"] as ProjectTaskStatus[]}>
+            <div
+              role="group"
+              aria-label={language.t("projectTask.document.label")}
+              class="config-editor-mode-toggle__group"
+            >
+              <For each={["description", "progress"] as const}>
+                {(document) => (
+                  <button
+                    type="button"
+                    class="config-editor-mode-toggle__button"
+                    data-active={state.document === document ? "true" : undefined}
+                    data-project-task-document={document}
+                    aria-pressed={state.document === document}
+                    disabled={state.loading || state.pending}
+                    onClick={() => void switchDocument(document)}
+                  >
+                    {document === "description" ? language.t("projectTask.field.description") : "progress.md"}
+                  </button>
+                )}
+              </For>
+            </div>
+            <For each={["open", "in_progress", "done"] as const}>
               {(value) => (
                 <button
                   type="button"
@@ -617,19 +668,31 @@ export function ProjectTaskDetailDialog(props: {
                       status() !== value,
                   }}
                   disabled={state.pending || state.loading}
+                  data-project-task-status={value}
                   onClick={() => void setStatus(value)}
                 >
-                  {labelStatus(value)}
+                  {language.t(
+                    value === "in_progress"
+                      ? "projectTask.status.inProgress"
+                      : value === "open"
+                        ? "projectTask.status.open"
+                        : "projectTask.status.done",
+                  )}
                 </button>
               )}
             </For>
             <div data-component="project-task-editor-toolbar" class="ml-auto flex items-center gap-2">
-              <OpenInApp path={prdPath()} logPrefix={`project-task-editor taskID=${props.task.id}`} />
+              <OpenInApp
+                path={documentPath()}
+                logPrefix={`project-task-editor taskID=${props.task.id} document=${state.document}`}
+              />
             </div>
           </div>
 
           <div
-            class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-base shadow-xs-border-base"
+            data-slot="project-task-markdown-shell"
+            data-document={state.document}
+            class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-base"
             classList={{ "border-border-focus": state.mode === "edit" }}
           >
             <Show when={state.loading}>
@@ -641,22 +704,30 @@ export function ProjectTaskDetailDialog(props: {
             <Show when={!state.loading}>
               <MarkdownEditorField
                 text={state.draft}
+                editable={!state.pending}
                 chrome={false}
                 autofocus
                 preview
                 mode={state.mode === "edit" ? "source" : "preview"}
-                placeholder={language.t("projectTask.field.descriptionPlaceholder")}
-                previewPlaceholder={language.t("projectTask.noDescription")}
+                placeholder={language.t(
+                  state.document === "progress"
+                    ? "projectTask.progress.placeholder"
+                    : "projectTask.field.descriptionPlaceholder",
+                )}
+                previewPlaceholder={language.t(
+                  state.document === "progress" ? "projectTask.progress.empty" : "projectTask.noDescription",
+                )}
                 class="min-h-0 flex-1 bg-transparent"
                 onModeChange={(next) => (next === "preview" ? saveAndPreview() : enterEdit())}
                 onInput={(next) => {
+                  if (state.pending || state.loading) return
                   const dirty = next !== state.saved
                   setState({ draft: next, dirty })
                 }}
                 onKeyDown={(event) => {
                   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
                     event.preventDefault()
-                    void saveDescription()
+                    void saveDocument()
                     return
                   }
                   if (event.key === "Escape") {
@@ -694,7 +765,8 @@ export function ProjectTaskDetailDialog(props: {
                   type="button"
                   class="rounded-md bg-surface-interactive-base px-4 py-1.5 text-12-medium text-text-on-interactive transition-colors hover:bg-surface-interactive-base-hover disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={state.pending || !state.dirty}
-                  onClick={() => void saveDescription()}
+                  data-action="project-task-save-document"
+                  onClick={() => void saveDocument()}
                 >
                   {state.pending ? language.t("trellis.tasks.saving") : language.t("trellis.tasks.save")}
                 </button>
@@ -788,7 +860,9 @@ function ProjectTaskCards(props: {
 }): JSX.Element {
   const language = useLanguage()
   const tasks = createMemo(() => sortProjectTasks(props.tasks, props.sort))
-  const activeTasks = createMemo(() => tasks().filter((task) => task.status === "open" || task.status === "in_progress"))
+  const activeTasks = createMemo(() =>
+    tasks().filter((task) => task.status === "open" || task.status === "in_progress"),
+  )
   const doneTasks = createMemo(() => tasks().filter((task) => task.status === "done"))
   const archivedTasks = createMemo(() => tasks().filter((task) => task.status === "archived"))
   const [doneOpen, setDoneOpen] = createSignal(false)
@@ -892,7 +966,13 @@ export function ProjectTasksPanel(props: {
   )
   const dir = createMemo(() => scope().directory)
   const client = createMemo(() => globalSDK.createClient({ directory: dir().replace(/\\/g, "/"), throwOnError: true }))
-  const [state, setState] = createStore({ tasks: [] as ProjectTask[], loading: true, error: "", query: "", sort: "created" as TaskSort })
+  const [state, setState] = createStore({
+    tasks: [] as ProjectTask[],
+    loading: true,
+    error: "",
+    query: "",
+    sort: "created" as TaskSort,
+  })
   let request = 0
 
   async function hydrateSessionDirectories(listed: ProjectTask[], requestId: number): Promise<ProjectTask[]> {
@@ -966,7 +1046,8 @@ export function ProjectTasksPanel(props: {
         minimizeLabel={props.editorMinimizeLabel}
         onMinimize={
           props.onStashEditor
-            ? (snapshot, source) => props.onStashEditor!({ task, directory: dir(), projectName: props.projectName(), snapshot }, source)
+            ? (snapshot, source) =>
+                props.onStashEditor!({ task, directory: dir(), projectName: props.projectName(), snapshot }, source)
             : undefined
         }
       />
@@ -1059,9 +1140,7 @@ export function ProjectTasksPanel(props: {
   const showWorktreeGroups = createMemo(() => worktrees().length > 1)
   createEffect(() => {
     const grouped = groups()
-    const summary = grouped
-      .map((group) => `${group.directory}:${group.tasks.length}`)
-      .join(",")
+    const summary = grouped.map((group) => `${group.directory}:${group.tasks.length}`).join(",")
     console.debug(
       `[project-task] list-group directory=${dir() || "none"} worktrees=${worktrees().length} show=${String(showWorktreeGroups())} groups=${summary || "none"} dirs=${state.tasks.map((task) => `${task.id}:${(task.sessionDirectories ?? []).join("|") || "-"}`).join(",") || "none"}`,
     )

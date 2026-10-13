@@ -2164,12 +2164,15 @@ export type ProjectTaskDetail = {
     archived?: number
   }
   sessions: Array<ProjectTaskSessionTodos>
+  progressContent?: string
+  progressPath?: string
   workspaceDirectory?: string
 }
 
 export type ProjectTaskUpdateInput = {
   title?: string
   description?: string
+  progressContent?: string
   status?: ProjectTaskStatus
 }
 

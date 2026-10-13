@@ -16,6 +16,7 @@ import { dict as th } from "./th"
 import { dict as zh } from "./zh"
 import { dict as zht } from "./zht"
 import { dict as tr } from "./tr"
+import { dict as uk } from "./uk"
 
 const locales = [ar, br, bs, da, de, es, fr, ja, ko, no, pl, ru, th, tr, zh, zht]
 const keys = ["command.session.previous.unseen", "command.session.next.unseen"] as const
@@ -36,6 +37,18 @@ const searchIndexKeys = [
 ] as const
 
 describe("i18n parity", () => {
+  test("all non-English locales translate project task status controls", () => {
+    for (const locale of [...locales, uk]) {
+      for (const key of [
+        "projectTask.status.open",
+        "projectTask.status.inProgress",
+        "projectTask.status.done",
+      ] as const) {
+        expect(locale[key]).toBeDefined()
+        expect(locale[key]).not.toBe(en[key])
+      }
+    }
+  })
   test("non-English locales translate targeted unseen session keys", () => {
     for (const locale of locales) {
       for (const key of keys) {
