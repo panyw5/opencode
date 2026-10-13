@@ -652,8 +652,8 @@ export const ImChannelSidebar = (props: {
         <div class="flex items-start justify-between gap-2 py-2 pl-2 pr-0">
           <div class="flex min-w-0 flex-col">
             <div data-component="im-channel-heading" class="flex min-w-0 items-center gap-2">
-              <ChannelBrandIcon platform={props.channelType()} size={20} label={props.channelMeta()} />
-              <div class="truncate text-14-medium text-text-strong">{props.channel()}</div>
+              <ChannelBrandIcon platform={props.channelType()} size={24} label={props.channelMeta()} />
+              <div class="truncate text-[18px] font-medium leading-6 text-text-strong">{props.channel()}</div>
             </div>
             <Show when={directory()}>
               {(dir) => (
