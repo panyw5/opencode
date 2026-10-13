@@ -2049,7 +2049,7 @@ export const dict = {
   "config.channels.existing.count": "已保存 {{count}} 个",
   "config.channels.existing.empty": "该平台下尚无通道。请在下方添加；凭证写入 OpenCode 通道配置。",
   "config.channels.add.title": "添加通道",
-  "config.channels.add.action": "保存通道",
+  "config.channels.add.action": "创建渠道",
   "config.channels.editor.delete": "删除",
   "config.channels.field.name": "名称",
   "config.channels.field.appId": "App ID",

@@ -9,6 +9,44 @@
 }
 
 @layer components {
+  [data-component="wechat-channel-notice"] {
+    --wechat-accent: #72927e;
+
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid color-mix(in srgb, var(--wechat-accent) 35%, var(--border-weak-base));
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--wechat-accent) 10%, var(--background-base));
+    color: light-dark(#405e4c, #bdcfc2);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.7;
+
+    [data-slot="notice-icon"] {
+      display: flex;
+      flex: none;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: var(--wechat-accent);
+      color: #fff;
+
+      [data-component="icon"] {
+        color: inherit;
+      }
+    }
+
+    p {
+      min-width: 0;
+      margin: 3px 0;
+      overflow-wrap: anywhere;
+    }
+  }
+
   [data-component="provider-base-url"] {
     min-width: 0;
 

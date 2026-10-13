@@ -1047,6 +1047,15 @@ export const ConfigChannelsDetail: Component<{
           <section class="flex flex-col gap-4 rounded-[14px] border border-border-weak-base bg-surface-base/40 p-4">
             <div class="text-14-medium text-text-strong">{language.t("config.channels.add.title")}</div>
 
+            <Show when={props.platform === "wechat"}>
+              <div data-component="wechat-channel-notice">
+                <span data-slot="notice-icon" aria-hidden="true">
+                  <Icon name="speech-bubble" size="small" />
+                </span>
+                <p>{language.t("config.channels.wechat.createHint")}</p>
+              </div>
+            </Show>
+
             <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(180px,0.65fr)_minmax(0,1.35fr)]">
               <TextField
                 label={language.t("config.channels.field.name")}
@@ -1243,9 +1252,6 @@ export const ConfigChannelsDetail: Component<{
                   value={form.proxy}
                   onChange={(v) => setForm("proxy", v ?? "")}
                 />
-              </Match>
-              <Match when={props.platform === "wechat"}>
-                <p class="text-12-regular text-text-weak">{language.t("config.channels.wechat.createHint")}</p>
               </Match>
               <Match when={props.platform === "qq"}>
                 <p class="text-12-regular text-text-weak">{language.t("config.channels.qq.hint")}</p>

@@ -2120,7 +2120,7 @@ export const dict = {
   "config.channels.existing.empty":
     "No channels of this type yet. Add one below. Credentials are stored in OpenCode channel configuration.",
   "config.channels.add.title": "Add channel",
-  "config.channels.add.action": "Save channel",
+  "config.channels.add.action": "Create channel",
   "config.channels.editor.delete": "Delete",
   "config.channels.field.name": "Name",
   "config.channels.field.appId": "App ID",
