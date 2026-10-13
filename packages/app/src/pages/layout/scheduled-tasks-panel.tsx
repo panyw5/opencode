@@ -39,6 +39,7 @@ import { useSessionTabs } from "@/context/session-tabs"
 import { formatDateTimeLocal, parseDateTimeLocal } from "@/utils/time"
 import { filterTasks } from "./task-search"
 import { TaskSearchField } from "./task-search-field"
+import { sortScheduledTasks, type TaskSort } from "./task-sort"
 import {
   sameScheduledTaskPanelScope,
   scheduledTaskEventMatchesScope,
@@ -931,7 +932,7 @@ export function ScheduledTasksPanel(props: {
   const sdk = useGlobalSDK()
   const language = useLanguage()
   const dialog = useDialog()
-  const [state, setState] = createStore({ tasks: [] as ScheduledTask[], loading: true, error: "", query: "" })
+  const [state, setState] = createStore({ tasks: [] as ScheduledTask[], loading: true, error: "", query: "", sort: "created" as TaskSort })
   let request = 0
   const activeScope = createMemo<ScheduledTaskPanelScope>(
     () => ({ projectID: props.projectID(), directory: props.directory().replaceAll("\\", "/").replace(/\/+$/, "") }),
@@ -1057,9 +1058,7 @@ export function ScheduledTasksPanel(props: {
   onCleanup(stop)
 
   const tasks = createMemo(() =>
-    filterTasks(state.tasks, state.query, ["name", "prompt"])
-      .slice()
-      .sort((a, b) => a.name.localeCompare(b.name)),
+    sortScheduledTasks(filterTasks(state.tasks, state.query, ["name", "prompt"]), state.sort),
   )
 
   return (
@@ -1112,7 +1111,13 @@ export function ScheduledTasksPanel(props: {
       </div>
 
       <div class="shrink-0 px-1 pb-3">
-        <TaskSearchField value={state.query} onChange={(value) => setState("query", value)} />
+        <TaskSearchField
+          value={state.query}
+          onChange={(value) => setState("query", value)}
+          sort={state.sort}
+          recentLabel={language.t("task.sort.recentRun")}
+          onSortChange={(sort) => setState("sort", sort)}
+        />
       </div>
       <div data-slot="scheduled-task-list" class="min-h-0 flex-1 overflow-y-auto no-scrollbar px-1 pt-1 pb-4">
         <Show

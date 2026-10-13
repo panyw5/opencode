@@ -42,6 +42,8 @@ export const Info = Schema.Struct({
   descriptionPath: Schema.String,
   status: Status,
   sessionCount: NonNegativeInt,
+  /** Maximum updated time of currently mounted sessions, including archived sessions as in sessionCount. */
+  lastSessionAt: optionalOmitUndefined(NonNegativeInt),
   progress: Progress,
   /**
    * Unique session directories currently mounting this task (worktree / sandbox roots).

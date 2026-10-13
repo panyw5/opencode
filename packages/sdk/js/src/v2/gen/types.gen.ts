@@ -359,6 +359,7 @@ export type ProjectTask = {
   descriptionPath: string
   status: ProjectTaskStatus
   sessionCount: number
+  lastSessionAt?: number
   progress: ProjectTaskProgress
   sessionDirectories: Array<string>
   time: {

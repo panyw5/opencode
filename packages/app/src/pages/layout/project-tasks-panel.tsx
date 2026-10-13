@@ -34,6 +34,7 @@ import { directoriesFromSessions, groupProjectTasksByWorktree, taskNeedsDirector
 import { projectTaskEventMatchesScope, sameProjectTaskPanelScope } from "./project-tasks-panel-scope"
 import { filterTasks } from "./task-search"
 import { TaskSearchField } from "./task-search-field"
+import { sortProjectTasks, type TaskSort } from "./task-sort"
 import {
   Empty,
   ErrorCard,
@@ -777,27 +778,16 @@ export function ProjectTaskDetailDialog(props: {
   )
 }
 
-function sortProjectTasks(tasks: ProjectTask[]) {
-  return tasks.slice().sort((a, b) => {
-    const rank = (status: ProjectTaskStatus) => {
-      if (status === "in_progress") return 0
-      if (status === "open") return 1
-      if (status === "done") return 2
-      return 3
-    }
-    return rank(a.status) - rank(b.status) || b.time.updated - a.time.updated
-  })
-}
-
 function ProjectTaskCards(props: {
   tasks: ProjectTask[]
+  sort: TaskSort
   directory: string
   onOpen: (task: ProjectTask) => void
   onArchive: (task: ProjectTask) => void | Promise<void>
   onNewSession: (task: ProjectTask, directory: string) => void
 }): JSX.Element {
   const language = useLanguage()
-  const tasks = createMemo(() => sortProjectTasks(props.tasks))
+  const tasks = createMemo(() => sortProjectTasks(props.tasks, props.sort))
   const activeTasks = createMemo(() => tasks().filter((task) => task.status === "open" || task.status === "in_progress"))
   const doneTasks = createMemo(() => tasks().filter((task) => task.status === "done"))
   const archivedTasks = createMemo(() => tasks().filter((task) => task.status === "archived"))
@@ -902,7 +892,7 @@ export function ProjectTasksPanel(props: {
   )
   const dir = createMemo(() => scope().directory)
   const client = createMemo(() => globalSDK.createClient({ directory: dir().replace(/\\/g, "/"), throwOnError: true }))
-  const [state, setState] = createStore({ tasks: [] as ProjectTask[], loading: true, error: "", query: "" })
+  const [state, setState] = createStore({ tasks: [] as ProjectTask[], loading: true, error: "", query: "", sort: "created" as TaskSort })
   let request = 0
 
   async function hydrateSessionDirectories(listed: ProjectTask[], requestId: number): Promise<ProjectTask[]> {
@@ -1096,7 +1086,15 @@ export function ProjectTasksPanel(props: {
       refreshLabel={language.t("projectTask.refresh")}
       onRefresh={() => void load()}
       refreshDisabled={!dir() || state.loading}
-      toolbar={<TaskSearchField value={state.query} onChange={(value) => setState("query", value)} />}
+      toolbar={
+        <TaskSearchField
+          value={state.query}
+          onChange={(value) => setState("query", value)}
+          sort={state.sort}
+          recentLabel={language.t("task.sort.recentSession")}
+          onSortChange={(sort) => setState("sort", sort)}
+        />
+      }
     >
       <Show when={dir()} fallback={<Empty text={language.t("projectTask.empty")} />}>
         <Show when={!state.loading} fallback={<Empty text={language.t("projectTask.loading")} />}>
@@ -1110,6 +1108,7 @@ export function ProjectTasksPanel(props: {
                 fallback={
                   <ProjectTaskCards
                     tasks={tasks()}
+                    sort={state.sort}
                     directory={dir()}
                     onOpen={open}
                     onArchive={archive}
@@ -1141,6 +1140,7 @@ export function ProjectTasksPanel(props: {
                           <div class="flex flex-col gap-2 pt-2 pl-2">
                             <ProjectTaskCards
                               tasks={group.tasks}
+                              sort={state.sort}
                               directory={group.directory}
                               onOpen={open}
                               onArchive={archive}
