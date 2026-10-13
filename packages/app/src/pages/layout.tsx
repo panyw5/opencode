@@ -2158,20 +2158,15 @@ export default function Layout(props: ParentProps) {
     return resolveChannelDirectory(name, entry?.directory, configDir, home)
   }
 
-  function collectImChannelSessions(directory: string): Session[] {
-    const [child] = globalSync.child(directory, { bootstrap: false })
-    return sortedRootSessions(child, Date.now())
-  }
-
   let sidebarDomainRequest = 0
 
   /**
-   * Open an IM channel as its own session-list domain (same pattern as
-   * GenericAgent / extra agents). Does not nest under any OpenCode project.
+   * Select an IM session list without changing the current page or its tabs,
+   * just like selecting a project on the rail.
    */
   async function openImChannel(name: string) {
     const request = ++sidebarDomainRequest
-    const current = activeImChannel()?.name
+    const current = sidebarImChannel()?.name
     console.debug(`[layout] openImChannel request=${request} name=${name} current=${current ?? "none"}`)
     const entry = globalSync.data.config.channels?.[name]
     if (!entry || entry.enabled === false) {
@@ -2200,29 +2195,24 @@ export default function Layout(props: ParentProps) {
     }
 
     const dir = channelWorkDirectory(name, entry)
-    // Already on this channel domain — no-op (like openExtraAgent).
-    if (workspaceKey(routeDir()) === workspaceKey(dir) && onSessionRoute()) {
-      console.debug(`[layout] openImChannel already active name=${name} directory=${dir}`)
-      setSidebarProjectRoot(dir)
-      setStore("sidebarPanel", "project")
-      layout.sidebar.open()
+    if (current === name && store.sidebarPanel === "project" && layout.sidebar.opened()) {
+      console.debug(`[layout] openImChannel collapse name=${name} directory=${dir} navigated=false`)
+      layout.sidebar.close()
       return
     }
 
     console.debug(`[layout] openImChannel workdir=${dir}`)
     sessionTabs.cancelNavigation("im-channel-selected")
-    setSidebarProjectRoot(dir)
-    console.debug(`[sidebar-project] select-im-domain directory=${dir}`)
-    // Enter the channel domain before loading its sessions. Otherwise the
-    // sidebar keeps the previously selected OpenCode project while the first
-    // channel request is in flight, which makes the first click show the
-    // wrong session list.
+    // The sidebar selection is independent of the session route. Going through
+    // ProjectIndexRoute here would create a draft just for opening the list.
     batch(() => {
+      setSidebarProjectRoot(dir)
       setStore("sidebarPanel", "project")
       layout.sidebar.open()
     })
-    console.debug(`[layout] openImChannel navigate-domain name=${name} directory=${dir}`)
-    navigateWithSidebarReset(`/${base64Encode(dir)}`)
+    console.debug(
+      `[sidebar-project] select-im-domain directory=${dir} route-directory=${routeDir() || "none"} navigated=false`,
+    )
 
     const loadStartedAt = performance.now()
     console.debug(`[layout] openImChannel load-start name=${name} directory=${dir}`)
@@ -2243,21 +2233,10 @@ export default function Layout(props: ParentProps) {
       return
     }
 
-    const imSessions = collectImChannelSessions(dir)
+    const [child] = globalSync.child(dir, { bootstrap: false })
     console.debug(
-      `[layout] openImChannel sessions-ready name=${name} directory=${dir} count=${imSessions.length} route=${routeDir() || "none"}`,
+      `[layout] openImChannel opened name=${name} type=${entry.type} count=${child.session.length} route-directory=${routeDir() || "none"} navigated=false`,
     )
-    const viewingIm = imSessions.some((session) => sessionRouteMatches(session.directory, session.id))
-    if (viewingIm) {
-      console.debug(`[layout] openImChannel already viewing im session name=${name}`)
-    } else if (imSessions[0]) {
-      console.debug(`[layout] openImChannel navigate latest id=${imSessions[0].id} dir=${imSessions[0].directory}`)
-      navigateToSession(imSessions[0])
-    } else {
-      console.debug(`[layout] openImChannel no-session name=${name} directory=${dir} stay-on-domain=true`)
-    }
-
-    console.debug(`[layout] openImChannel opened name=${name} type=${entry.type} imCount=${imSessions.length}`)
   }
 
   function openExtraAgent(id: Parameters<typeof extraAgentDir>[0]) {
@@ -3847,10 +3826,9 @@ export default function Layout(props: ParentProps) {
     }
 
     const hasCurrentSession = onSessionRoute() && !!params.id
-    // Domain rail selections own both the sidebar list and the backing server.
-    // Leaving IM or an external agent must therefore navigate through the
-    // project switcher instead of only replacing the selected sidebar root.
-    const viewingExternalDomain = !!activeImChannel() || !!extraAgentByDirectory(routeDir())
+    // Extra agents use a different server. IM sessions share the project
+    // server, so selecting a project while viewing IM only changes the list.
+    const viewingExternalDomain = !!extraAgentByDirectory(routeDir())
     // Default false: rail click switches project context / opens sidebar without
     // forcing a new-session route when nothing is currently displayed.
     const navigateWhenNoSession = options?.navigateWhenNoSession ?? false
@@ -4582,7 +4560,7 @@ export default function Layout(props: ParentProps) {
               id: name,
               // Platform first, then channel name: e.g. "飞书 | cc"
               label: () => `${platform} | ${name}`,
-              // Active when route is this channel's work directory (independent domain).
+              // Highlight the selected list, independently of the current session.
               active: () => workspaceKey(sidebarProjectRoot() ?? "") === workspaceKey(dir),
               available: () => true,
               icon: "speech-bubble" as IconName,
