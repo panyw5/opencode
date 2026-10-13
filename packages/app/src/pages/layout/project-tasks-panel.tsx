@@ -192,7 +192,6 @@ function ProjectTaskCard(props: {
     }),
   )
   const meta = createMemo(() => {
-    if (props.task.sessionCount <= 0) return []
     return [language.t("projectTask.sessions.count", { count: props.task.sessionCount })]
   })
   return (
@@ -275,6 +274,20 @@ export function ProjectTaskDetailDialog(props: {
 
   const detail = createMemo(() => state.detail)
   const mainSessions = createMemo(() => (detail()?.sessions ?? []).filter((session) => !session.parentID))
+  createEffect(() => {
+    const value = detail()
+    if (!value) return
+    const sessions = mainSessions()
+    const children = value.sessions.length - sessions.length
+    console.debug(
+      `[project-task] linked-sessions task=${props.task.id} reported=${value.sessionCount} visible=${sessions.length} children-hidden=${children}`,
+    )
+    if (value.sessionCount !== sessions.length) {
+      console.warn(
+        `[project-task] linked-sessions mismatch task=${props.task.id} reported=${value.sessionCount} visible=${sessions.length}`,
+      )
+    }
+  })
   const title = createMemo(() => detail()?.title ?? props.task.title)
   const status = createMemo(() => detail()?.status ?? props.task.status)
   // Prefer the hydrated anchor + descriptionPath (worktree-anchored, handles legacy/custom
@@ -456,9 +469,12 @@ export function ProjectTaskDetailDialog(props: {
     }
   }
 
-  function openSession(sessionID: string) {
+  function openSession(sessionID: string, directory: string) {
+    console.debug(
+      `[project-task] linked-session open task=${props.task.id} session=${sessionID} directory=${directory}`,
+    )
     dialog.close()
-    navigate(`/${base64Encode(props.directory)}/session/${sessionID}`)
+    navigate(`/${base64Encode(directory)}/session/${sessionID}`)
   }
 
   function newSession() {
@@ -775,7 +791,10 @@ export function ProjectTaskDetailDialog(props: {
           </Show>
 
           <Show when={state.mode === "preview" ? detail() : undefined}>
-            <section class="flex max-h-[28vh] min-h-0 shrink-0 flex-col gap-2 overflow-hidden">
+            <section
+              data-slot="project-task-linked-sessions"
+              class="flex max-h-[28vh] min-h-0 shrink-0 flex-col gap-2 overflow-hidden"
+            >
               <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
                 <span class="text-12-medium text-text-base">
                   {language.t("projectTask.sessions.title")} ({mainSessions().length})
@@ -800,11 +819,15 @@ export function ProjectTaskDetailDialog(props: {
                 <div class="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
                   <For each={mainSessions()}>
                     {(session) => (
-                      <div class="rounded-xl border border-border-weak-base bg-background-stronger px-3 py-2">
+                      <div
+                        data-slot="project-task-linked-session"
+                        data-session-id={session.sessionID}
+                        class="rounded-xl border border-border-weak-base bg-background-stronger px-3 py-2"
+                      >
                         <button
                           type="button"
                           class="flex w-full items-center justify-between gap-2 text-left"
-                          onClick={() => openSession(session.sessionID)}
+                          onClick={() => openSession(session.sessionID, session.directory)}
                         >
                           <div class="min-w-0">
                             <div class="truncate text-13-medium text-text-strong">{session.title}</div>

@@ -81,6 +81,7 @@ await withCdp(async (cdp, target) => {
   }
   let taskID: string | undefined
   let sessionID: string | undefined
+  const childIDs: string[] = []
   try {
     const task = await request("/project-task", "POST", {
       title: "QA editable progress",
@@ -111,6 +112,21 @@ await withCdp(async (cdp, target) => {
     )
     log(`sidecar message sent and received session=${sessionID}`)
     await request(`/session/${sessionID}/project-task`, "PUT", { taskID })
+    for (let index = 0; index < 2; index++) {
+      const child = await request("/session", "POST", { parentID: sessionID, title: `QA linked child ${index}` })
+      childIDs.push(child.id)
+      await request(`/session/${child.id}/project-task`, "PUT", { taskID })
+    }
+    const mixed = await request(`/project-task/${taskID}/detail`)
+    assert.equal(mixed.sessionCount, 1, "child sessions must not increase the primary count")
+    assert.equal(mixed.sessions.length, 3, "child associations must remain available")
+    await request(`/session/${sessionID}/project-task`, "DELETE")
+    const childOnly = await request(`/project-task/${taskID}/detail`)
+    const listed = (await request("/project-task")).find((item: any) => item.id === taskID)
+    assert.equal(listed.sessionCount, 0)
+    assert.equal(childOnly.sessionCount, 0)
+    assert.equal(childOnly.sessions.length, 2)
+    log("sidecar primary-only counts verified: mixed=1, child-only=0, child associations preserved")
     await cdp.evaluate(
       `window.dispatchEvent(new CustomEvent("opencode:deep-link", { detail: { urls: [${JSON.stringify(`opencode://open-project?directory=${encodeURIComponent(directory)}`)}] } }))`,
     )
@@ -161,6 +177,17 @@ await withCdp(async (cdp, target) => {
     assert.equal(ui.border, "1px")
     assert.equal(ui.shadow, "none")
     assert.ok(ui.toggleFirst)
+    const displayed = await cdp.evaluate<{ ids: string[]; text: string; chips: string[] }>(`(() => {
+      const section = document.querySelector('${root} [data-slot="project-task-linked-sessions"]');
+      const item = Array.from(document.querySelectorAll('[data-component="project-task-item"]')).find(x => x.textContent.includes('QA editable progress'));
+      return { ids: Array.from(section.querySelectorAll('[data-slot="project-task-linked-session"]'), x => x.dataset.sessionId),
+        text: section.textContent, chips: Array.from(item.querySelectorAll('span.inline-flex'), x => x.textContent) };
+    })()`)
+    assert.equal(displayed.ids.length, 0, "child-only associations must not appear in the detail list")
+    assert.ok(displayed.text.includes("(0)"))
+    assert.equal(displayed.chips.length, 1)
+    assert.match(displayed.chips[0]!, /^0 /)
+    log("list and detail both show zero associated primary sessions for a child-only task")
     log("translated statuses, toggle position and thin border verified")
     await click(documentButton("progress"))
     await click(edit)
@@ -253,6 +280,7 @@ await withCdp(async (cdp, target) => {
         await wait("test project closed", () => cdp.evaluate(`!document.querySelector(${JSON.stringify(rail)})`))
       }
     } finally {
+      for (const childID of childIDs) await request(`/session/${childID}`, "DELETE")
       if (sessionID) await request(`/session/${sessionID}`, "DELETE")
       if (taskID) await request(`/project-task/${taskID}`, "DELETE")
       if (previous?.directory && previous.sessionID) await navigate(previous.directory, previous.sessionID)

@@ -140,6 +140,9 @@ export const layer = Layer.effect(
       if (row.projectID !== pid) return yield* new NotFoundError({ taskID: id })
       const info = yield* hydrate(row)
       const anchor = yield* anchorDirectory()
+      console.debug(
+        `[project-task] detail linked-sessions taskID=${id} primary=${info.sessionCount} total=${row.sessions.length} children=${row.sessions.filter((session) => !!session.parentID).length}`,
+      )
       const progressPath = progressRelativePath(id)
       console.debug(`[project-task] detail read-progress taskID=${id} path=${progressPath}`)
       const progressContent = (yield* Effect.promise(() => readDescriptionFile(anchor, progressPath))) ?? ""

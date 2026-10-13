@@ -398,7 +398,13 @@ export function detailRow(id: ProjectTaskID): Effect.Effect<(TaskRowMeta & { ses
     }
 
     return {
-      ...rowMeta(row, bundles.length, progress, sessionDirectories, sessions[0]?.time_updated),
+      ...rowMeta(
+        row,
+        bundles.filter((session) => !session.parentID).length,
+        progress,
+        sessionDirectories,
+        sessions[0]?.time_updated,
+      ),
       sessions: bundles,
     }
   })
@@ -425,6 +431,7 @@ function aggregatesForTasks(taskIDs: ProjectTaskID[]): Map<ProjectTaskID, TaskAg
       .select({
         id: SessionTable.id,
         mounted_task_id: SessionTable.mounted_task_id,
+        parent_id: SessionTable.parent_id,
         directory: SessionTable.directory,
         time_updated: SessionTable.time_updated,
       })
@@ -440,7 +447,7 @@ function aggregatesForTasks(taskIDs: ProjectTaskID[]): Map<ProjectTaskID, TaskAg
     sessionToTask.set(session.id, session.mounted_task_id)
     const entry = result.get(session.mounted_task_id)
     if (!entry) continue
-    entry.sessionCount += 1
+    if (!session.parent_id) entry.sessionCount += 1
     entry.lastSessionAt = Math.max(entry.lastSessionAt ?? session.time_updated, session.time_updated)
     pushUniqueDirectory(entry.directories, entry.seen, session.directory)
   }

@@ -146,7 +146,11 @@ describe("ProjectTaskRepository", () => {
     expect(archived?.lastSessionAt).toBeUndefined()
 
     const sessionRow = Database.use((db) =>
-      db.select({ mounted: SessionTable.mounted_task_id }).from(SessionTable).where(eq(SessionTable.id, sessionA)).get(),
+      db
+        .select({ mounted: SessionTable.mounted_task_id })
+        .from(SessionTable)
+        .where(eq(SessionTable.id, sessionA))
+        .get(),
     )
     expect(sessionRow?.mounted).toBeNull()
 
@@ -173,6 +177,44 @@ describe("ProjectTaskRepository", () => {
     expect(listed[0].sessionCount).toBe(2)
     expect(listed[0].sessionDirectories.toSorted()).toEqual([directory, `${directory}-wt`].toSorted())
   })
+
+  it.live("counts only directly linked primary sessions without losing child associations", () =>
+    Effect.gen(function* () {
+      seedProject()
+      const task = yield* ProjectTaskRepository.create(projectID, { title: "Primary sessions" })
+      const other = yield* ProjectTaskRepository.create(projectID, { title: "Other task" })
+      const parent = seedSession({ mountedTaskID: task.id })
+      const child = seedSession({ mountedTaskID: task.id, parentID: parent })
+      const archivedChild = seedSession({ mountedTaskID: task.id, parentID: parent, archived: Date.now() })
+      seedTodos(child, ["completed"])
+      seedTodos(archivedChild, ["pending"])
+      const listed = yield* ProjectTaskRepository.list({ projectID })
+      expect(listed.find((item) => item.id === task.id)?.sessionCount).toBe(1)
+      expect((yield* ProjectTaskRepository.get(task.id))?.sessionCount).toBe(1)
+      const detail = yield* ProjectTaskRepository.detail(task.id)
+      expect(detail?.sessionCount).toBe(1)
+      expect(detail?.sessions).toHaveLength(3)
+      expect(detail?.progress.total).toBe(2)
+
+      Database.use((db) =>
+        db.update(SessionTable).set({ mounted_task_id: other.id }).where(eq(SessionTable.id, parent)).run(),
+      )
+      const moved = yield* ProjectTaskRepository.list({ projectID })
+      expect(moved.find((item) => item.id === task.id)?.sessionCount).toBe(0)
+      expect(moved.find((item) => item.id === other.id)?.sessionCount).toBe(1)
+      const childOnly = yield* ProjectTaskRepository.detail(task.id)
+      expect(childOnly?.sessionCount).toBe(0)
+      expect(childOnly?.sessions.map((item) => item.sessionID).sort()).toEqual([child, archivedChild].sort())
+      expect(childOnly?.sessions.every((item) => item.parentID === parent)).toBe(true)
+      expect(childOnly?.progress.total).toBe(2)
+
+      yield* ProjectTaskRepository.archive(task.id)
+      expect((yield* ProjectTaskRepository.detail(task.id))?.sessions).toHaveLength(0)
+      expect(
+        Database.use((db) => db.select().from(SessionTable).where(eq(SessionTable.id, parent)).get())?.mounted_task_id,
+      ).toBe(other.id)
+    }),
+  )
 
   it.live("preserves latest mounted session time across all repository outputs and scopes", () =>
     Effect.gen(function* () {
@@ -203,14 +245,16 @@ describe("ProjectTaskRepository", () => {
       expect((yield* ProjectTaskRepository.detailRow(task.id))?.lastSessionAt).toBe(800)
       const detail = yield* ProjectTaskRepository.detail(task.id)
       expect(detail?.lastSessionAt).toBe(800)
-      expect(detail?.sessionCount).toBe(3)
+      expect(detail?.sessionCount).toBe(2)
       const updated = yield* ProjectTaskRepository.update(task.id, { title: "Updated task" }, 2000)
       expect(updated?.time.updated).toBe(2000)
       expect(updated?.lastSessionAt).toBe(800)
 
       Database.use((db) => db.update(SessionTable).set({ time_updated: 1200 }).where(eq(SessionTable.id, parent)).run())
       expect((yield* ProjectTaskRepository.get(task.id))?.lastSessionAt).toBe(1200)
-      Database.use((db) => db.update(SessionTable).set({ mounted_task_id: null }).where(eq(SessionTable.id, parent)).run())
+      Database.use((db) =>
+        db.update(SessionTable).set({ mounted_task_id: null }).where(eq(SessionTable.id, parent)).run(),
+      )
       expect((yield* ProjectTaskRepository.get(task.id))?.lastSessionAt).toBe(800)
       Database.use((db) => db.delete(SessionTable).where(eq(SessionTable.id, latest)).run())
       expect((yield* ProjectTaskRepository.detail(task.id))?.lastSessionAt).toBe(600)
@@ -218,7 +262,10 @@ describe("ProjectTaskRepository", () => {
       expect((yield* ProjectTaskRepository.archive(task.id))?.lastSessionAt).toBeUndefined()
       expect((yield* ProjectTaskRepository.getRow(task.id))?.lastSessionAt).toBeUndefined()
       expect((yield* ProjectTaskRepository.detail(task.id))?.lastSessionAt).toBeUndefined()
-      expect((yield* ProjectTaskRepository.list({ projectID, includeArchived: true })).find((x) => x.id === task.id)?.lastSessionAt).toBeUndefined()
+      expect(
+        (yield* ProjectTaskRepository.list({ projectID, includeArchived: true })).find((x) => x.id === task.id)
+          ?.lastSessionAt,
+      ).toBeUndefined()
     }),
   )
 })

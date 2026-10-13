@@ -41,6 +41,7 @@ export const Info = Schema.Struct({
    */
   descriptionPath: Schema.String,
   status: Status,
+  /** Number of directly mounted primary (parentless) sessions, including archived ones. */
   sessionCount: NonNegativeInt,
   /** Maximum updated time of currently mounted sessions, including archived sessions as in sessionCount. */
   lastSessionAt: optionalOmitUndefined(NonNegativeInt),
@@ -75,6 +76,7 @@ export type SessionTodoBundle = Types.DeepMutable<Schema.Schema.Type<typeof Sess
 
 export const Detail = Schema.Struct({
   ...Info.fields,
+  /** All direct associations, including child sessions needed for unmount/archive operations. */
   sessions: Schema.Array(SessionTodoBundle),
   /** Editable progress record, separate from the aggregated session-todo progress. */
   progressContent: Schema.optional(Schema.String),
