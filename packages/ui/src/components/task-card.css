@@ -23,7 +23,7 @@ html[data-theme="arc"] {
   padding: 14px;
   border: 1px solid var(--border-weak-base);
   border-radius: var(--task-surface-radius);
-  background: var(--surface-raised-base);
+  background: var(--surface-base);
   box-sizing: border-box;
   contain: layout paint;
   transition:
@@ -47,7 +47,7 @@ html[data-theme="arc"] [data-component="presented-task-card"] {
 /* Hover affordance only when the card is clickable: the overlay button exists. */
 [data-component="presented-task-card"]:has(.presented-task-card__open:hover) {
   border-color: var(--border-interactive-hover);
-  background: var(--surface-raised-base-hover);
+  background: var(--surface-base-hover);
   box-shadow: var(--shadow-xs-border-hover);
 }
 
@@ -115,6 +115,16 @@ html[data-theme="arc"] [data-component="presented-task-card"] {
   align-items: center;
   gap: 8px;
 }
+.presented-task-card__metrics--scheduled {
+  flex: 0 1 auto;
+  min-width: 0;
+  justify-content: flex-end;
+}
+.presented-task-card__schedule {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 .presented-task-card__bar {
   flex: 1 1 120px;
   min-width: 96px;
@@ -159,6 +169,18 @@ html[data-theme="arc"] [data-component="presented-task-card"] {
   flex-wrap: wrap;
   gap: 8px;
   min-width: 0;
+}
+.presented-task-card__footer--scheduled {
+  flex-wrap: nowrap;
+  align-items: center;
+  padding-inline: 5px;
+}
+.presented-task-card__metadata {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  gap: 8px;
+  overflow: hidden;
 }
 .presented-task-card__path {
   min-width: 0;

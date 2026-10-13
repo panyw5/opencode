@@ -272,39 +272,47 @@ export function PresentedTaskCard(props: PresentedTaskCardProps): JSX.Element {
           <Show when={scheduled()}>
             {(item) => (
               <>
+                <div class="presented-task-card__footer presented-task-card__footer--scheduled">
+                  <div class="presented-task-card__metadata">
+                    <Show when={item().agent}>
+                      <span class="presented-task-card__path" title={item().agent}>
+                        {item().agent}
+                      </span>
+                    </Show>
+                    <Show when={item().model?.modelID}>
+                      <span
+                        class="presented-task-card__path"
+                        title={`${item().model!.providerID}/${item().model!.modelID}`}
+                      >
+                        {`${item().model!.providerID}/${item().model!.modelID}`}
+                      </span>
+                    </Show>
+                    <Show when={!item().enabled}>
+                      <span class="presented-task-card__path">{i18n.t("ui.presentedTask.status.disabled")}</span>
+                    </Show>
+                  </div>
+                  <div class="presented-task-card__metrics presented-task-card__metrics--scheduled">
+                    <span class="presented-task-card__metric presented-task-card__schedule">
+                      <Icon name="alarm-clock-check" size="small" />
+                      {formatPresentedTaskSchedule(item().schedule, i18n.t)}
+                    </span>
+                    <Show when={item().enabled && item().nextRunAt}>
+                      <span class="presented-task-card__metric">
+                        {`${i18n.t("ui.presentedTask.nextRun")} ${date(item().nextRunAt)}`}
+                      </span>
+                    </Show>
+                    <Show when={item().lastRunAt}>
+                      <span class="presented-task-card__metric">
+                        {`${i18n.t("ui.presentedTask.lastRun")} ${date(item().lastRunAt)}`}
+                      </span>
+                    </Show>
+                  </div>
+                </div>
                 <Show when={item().promptExcerpt}>
                   <div class="presented-task-card__excerpt">
                     <pre class="presented-task-card__excerpt-text">{item().promptExcerpt}</pre>
                   </div>
                 </Show>
-                <footer class="presented-task-card__footer">
-                  <Show when={item().agent}>
-                    <span class="presented-task-card__path">{item().agent}</span>
-                  </Show>
-                  <Show when={item().model?.modelID}>
-                    <span class="presented-task-card__path">
-                      {`${item().model!.providerID}/${item().model!.modelID}`}
-                    </span>
-                  </Show>
-                  <Show when={!item().enabled}>
-                    <span class="presented-task-card__path">{i18n.t("ui.presentedTask.status.disabled")}</span>
-                  </Show>
-                </footer>
-                <div class="presented-task-card__metrics">
-                  <span class="presented-task-card__metric">
-                    {formatPresentedTaskSchedule(item().schedule, i18n.t)}
-                  </span>
-                  <Show when={item().enabled && item().nextRunAt}>
-                    <span class="presented-task-card__metric">
-                      {`${i18n.t("ui.presentedTask.nextRun")} ${date(item().nextRunAt)}`}
-                    </span>
-                  </Show>
-                  <Show when={item().lastRunAt}>
-                    <span class="presented-task-card__metric">
-                      {`${i18n.t("ui.presentedTask.lastRun")} ${date(item().lastRunAt)}`}
-                    </span>
-                  </Show>
-                </div>
               </>
             )}
           </Show>
