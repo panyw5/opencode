@@ -1,24 +1,73 @@
 import type { GptProIssueCode } from "@opencode-ai/util/gpt-pro-error"
 
 const messages = {
+  login_invalid_session: {
+    en: [
+      "The imported session payload is unsupported",
+      "No credentials were imported. Sign in in the same Chrome profile and retry with a new connection.",
+    ],
+    zh: ["导入的会话数据不受支持", "没有导入凭据。在同一个 Chrome 配置中登录后，重新打开连接并导入。"],
+  },
+  login_import_failed: {
+    en: [
+      "Session replacement could not finish",
+      "Check secure storage and the original browser. The previous login was restored when possible; this is not proof that your ChatGPT account is invalid.",
+    ],
+    zh: ["会话替换未能完成", "检查安全存储和原浏览器。已尽可能恢复旧登录；这不代表 ChatGPT 账号无效。"],
+  },
+  credential_storage: {
+    en: [
+      "Secure credential storage needs attention",
+      "Restore the operating system's secure storage. OpenCode will not save plaintext credentials or assume import succeeded.",
+    ],
+    zh: ["安全凭据存储需要处理", "恢复系统安全存储。OpenCode 不会回退到明文保存，也不会假定导入成功。"],
+  },
+  account_changed: {
+    en: [
+      "The ChatGPT account changed",
+      "Restore the original account before resuming this consultation. No question will be sent under a different account.",
+    ],
+    zh: ["ChatGPT 账号已变化", "恢复原账号后再继续同一咨询。程序不会在另一个账号下发送原问题。"],
+  },
   login_import_busy: {
-    en: ["Login import is blocked by an unfinished consultation", "You can open the connection page. Before importing another login, finish or stop consultations that are running or have already sent a question; changing accounts could break their reply tracking."],
-    zh: ["已有咨询需要保留原账号登录", "连接页可以先打开。真正导入登录前，请结束正在运行或已发送问题的咨询，避免更换账号后无法继续读取原回复。"],
+    en: [
+      "Login import is blocked by an unfinished consultation",
+      "You can open the connection page. Before importing another login, finish or stop consultations that are running or have already sent a question; changing accounts could break their reply tracking.",
+    ],
+    zh: [
+      "已有咨询需要保留原账号登录",
+      "连接页可以先打开。真正导入登录前，请结束正在运行或已发送问题的咨询，避免更换账号后无法继续读取原回复。",
+    ],
   },
   login_import_pending: {
-    en: ["Waiting for login import", "The login is being updated. This queued consultation will continue automatically when the import finishes; do not submit it again."],
+    en: [
+      "Waiting for login import",
+      "The login is being updated. This queued consultation will continue automatically when the import finishes; do not submit it again.",
+    ],
     zh: ["正在等待登录导入完成", "登录状态正在更新，导入结束后这条排队咨询会自动继续，不需要重新提交。"],
   },
   login_expired: {
-    en: ["The connection page has expired", "Click Open connection page in default browser again, then finish importing within ten minutes. This is not a ChatGPT login failure."],
-    zh: ["连接页面已过期", "重新点击“用默认浏览器打开连接页面”，并在 10 分钟内完成导入。这不代表 ChatGPT 账号登录失败。"],
+    en: [
+      "The connection page has expired",
+      "Click Open connection page in default browser again, then finish importing within ten minutes. This is not a ChatGPT login failure.",
+    ],
+    zh: [
+      "连接页面已过期",
+      "重新点击“用默认浏览器打开连接页面”，并在 10 分钟内完成导入。这不代表 ChatGPT 账号登录失败。",
+    ],
   },
   login_connection_failed: {
-    en: ["The local connection page could not start", "Try opening the connection page again. If it still fails, restart OpenCode after saving your work. No account login was changed."],
+    en: [
+      "The local connection page could not start",
+      "Try opening the connection page again. If it still fails, restart OpenCode after saving your work. No account login was changed.",
+    ],
     zh: ["本地连接页面未能启动", "请重新点击打开连接页面。如果仍失败，保存工作后重启 OpenCode。账号登录没有被修改。"],
   },
   browser_open_failed: {
-    en: ["The default browser could not be opened", "Check that your system has a working default browser, then click Open connection page again. This is not a ChatGPT login failure."],
+    en: [
+      "The default browser could not be opened",
+      "Check that your system has a working default browser, then click Open connection page again. This is not a ChatGPT login failure.",
+    ],
     zh: ["未能打开默认浏览器", "检查系统默认浏览器是否能正常启动，再点击打开连接页面。这不是 ChatGPT 账号登录失败。"],
   },
   verification: {

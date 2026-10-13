@@ -2,6 +2,7 @@ import { BrowserController, USER_PARTITION, type ViewState } from "./browser"
 import { write as writeLog } from "./logging"
 import { getGptProController } from "./gpt-pro-runtime"
 import type { GptProCommand, GptProBrowserCommand } from "@opencode-ai/util/gpt-pro"
+import { setGptProBridgeState } from "./gpt-pro-bridge-state"
 
 // P1-D-03: connects the opencode server to the in-app browser. Main process
 // acts as the WS client; the server sends commands, we execute them against
@@ -32,6 +33,10 @@ export class BridgeClient {
   constructor(private readonly controller: BrowserController) {}
 
   start(info: ServerInfo) {
+    const generation = ++this.generation
+    this.ws?.close()
+    this.ws = undefined
+    setGptProBridgeState(false, info.url)
     this.info = info
     this.stopped = false
     this.unsubscribeController()
@@ -47,7 +52,7 @@ export class BridgeClient {
       for (const event of getGptProController().notifications()) this.sendEvent("gpt-pro.notification", event)
     }, 2000)
     this.unsubs.push(() => clearInterval(timer))
-    void this.connectLoop(++this.generation, 0)
+    void this.connectLoop(generation, 0)
   }
 
   stop() {
@@ -55,6 +60,7 @@ export class BridgeClient {
     this.generation++
     this.ws?.close()
     this.ws = undefined
+    setGptProBridgeState(false, this.info?.url)
     this.unsubscribeController()
   }
 
@@ -66,8 +72,8 @@ export class BridgeClient {
   private async connectLoop(generation: number, attempt: number) {
     if (this.stopped || generation !== this.generation || !this.info) return
     try {
-      await this.connectOnce()
-      log("connect", "connected")
+      await this.connectOnce(generation)
+      log("connect", "socket created; waiting for open")
       return // connected; close handler schedules the next loop
     } catch (error) {
       const next = attempt + 1
@@ -78,8 +84,7 @@ export class BridgeClient {
     }
   }
 
-  private async ticket(): Promise<string> {
-    const info = this.info!
+  private async ticket(info: ServerInfo): Promise<string> {
     const headers: Record<string, string> = { "x-opencode-ticket": "1" }
     if (info.username && info.password) {
       headers.Authorization = `Basic ${Buffer.from(`${info.username}:${info.password}`).toString("base64")}`
@@ -93,20 +98,22 @@ export class BridgeClient {
     return body.ticket
   }
 
-  private async connectOnce() {
+  private async connectOnce(generation: number) {
     const info = this.info
     if (!info) throw new Error("no server info")
-    const ticket = await this.ticket()
+    const ticket = await this.ticket(info)
+    if (this.stopped || generation !== this.generation) return
     const wsUrl = `${info.url.replace(/^http/, "ws")}/browser/bridge?ticket=${encodeURIComponent(ticket)}`
     const ws = new WebSocket(wsUrl)
     this.ws = ws
 
-    const generation = this.generation
     ws.addEventListener("open", () => {
       if (generation !== this.generation) {
         ws.close()
         return
       }
+      setGptProBridgeState(true, info.url)
+      log("connect", "open generation accepted")
       this.send({
         type: "hello",
         client: "desktop",
@@ -116,11 +123,12 @@ export class BridgeClient {
     })
 
     ws.addEventListener("message", (event) => {
-      void this.handleFrame(String(event.data))
+      if (generation === this.generation && ws === this.ws) void this.handleFrame(String(event.data), ws)
     })
 
     ws.addEventListener("close", () => {
       if (generation !== this.generation || this.stopped) return
+      setGptProBridgeState(false, info.url)
       log("connect", "socket closed, reconnecting")
       void this.connectLoop(generation, 0)
     })
@@ -139,7 +147,7 @@ export class BridgeClient {
     this.send({ type: "event", name, properties })
   }
 
-  private async handleFrame(text: string) {
+  private async handleFrame(text: string, source = this.ws) {
     let frame: Record<string, unknown>
     try {
       frame = JSON.parse(text)
@@ -159,11 +167,11 @@ export class BridgeClient {
     const args = (frame.args ?? {}) as Record<string, unknown>
     try {
       const result = await this.execute(name, args)
-      this.send({ type: "resp", id, ok: true, result })
+      if (source === this.ws) this.send({ type: "resp", id, ok: true, result })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       log("cmd", `${name} failed`, { error: message })
-      this.send({ type: "resp", id, ok: false, error: message })
+      if (source === this.ws) this.send({ type: "resp", id, ok: false, error: message })
     }
   }
 
@@ -211,7 +219,12 @@ export class BridgeClient {
         return true
       }
       case "gpt-pro-cancel-owner": {
-        if (typeof args.directory !== "string" || !args.directory || typeof args.sessionID !== "string" || !args.sessionID)
+        if (
+          typeof args.directory !== "string" ||
+          !args.directory ||
+          typeof args.sessionID !== "string" ||
+          !args.sessionID
+        )
           throw new Error("Missing stored session owner identity")
         const owner = `${args.directory}\n${args.sessionID}`
         const cancelled = getGptProController().cancelOwner(owner)
@@ -220,7 +233,13 @@ export class BridgeClient {
       case "gpt-pro": {
         if (typeof args.owner !== "string" || !args.owner || args.owner.length > 4096)
           throw new Error("Missing consultation owner")
-        return getGptProController().command(args as GptProCommand, args.owner)
+        const readOwners =
+          Array.isArray(args.readOwners) &&
+          args.readOwners.length <= 512 &&
+          args.readOwners.every((owner) => typeof owner === "string")
+            ? (args.readOwners as string[])
+            : []
+        return getGptProController().command(args as GptProCommand, args.owner, readOwners)
       }
       case "navigate": {
         const url = String(args.url ?? "")

@@ -93,6 +93,7 @@ export const layer = Layer.effect(
     const inbox = yield* SessionInput.Service
     const sessions = yield* Session.Service
     const browser = yield* Browser.Service
+    const scope = yield* Effect.scope
     let drain: ((sessionID: SessionID) => Effect.Effect<void>) | undefined
     const suppressed = (sessionID: SessionID) =>
       Effect.sync(() =>
@@ -219,7 +220,15 @@ export const layer = Layer.effect(
             }),
           ),
         )
-        if (result.wake && drain) yield* drain(result.wake)
+        if (result.wake && drain) {
+          // A model turn can wait on tools or permissions indefinitely. It must not hold up completion delivery.
+          yield* drain(result.wake).pipe(
+            Effect.catch((error) =>
+              log.warn("notification wake failed", { sessionID: result.wake, error: String(error) }),
+            ),
+            Effect.forkIn(scope, { startImmediately: true }),
+          )
+        }
       }
     })
     const acknowledge = Effect.fn("BackgroundGptPro.acknowledge")(function* (eventID: string) {

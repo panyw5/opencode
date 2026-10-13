@@ -33,6 +33,9 @@
   "errorNoSession": { "message": "找不到受支援的 ChatGPT 登入工作階段。請在目前的 Chrome 設定檔登入 ChatGPT 後重試。" },
   "errorConnection": { "message": "連線失敗。請從 OpenCode 開啟新的連線頁。" },
   "errorImport": { "message": "尚未確認匯入，請檢查 OpenCode 的 GPT-Pro 設定頁。" },
+  "errorBusy": { "message": "諮詢或手動草稿正在使用登入，現有登入未變更。結束後重試此連線即可，不需要重新登入。" },
+  "errorStorage": { "message": "安全憑證儲存不可用。請查看 OpenCode 設定頁，不能假定匯入成功。" },
+  "statusSessionFound": { "message": "偵測到工作階段 Cookie（尚未驗證登入）" },
   "errorInvalidSession": {
     "message": "ChatGPT 工作階段無效或不受支援。請在 Chrome 重新登入，再從 OpenCode 開啟新的連線頁。"
   },

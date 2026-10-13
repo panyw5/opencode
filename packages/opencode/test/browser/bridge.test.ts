@@ -137,6 +137,25 @@ describe("BrowserBridge service", () => {
       expect(fake.sent[0]).toBeDefined()
     }),
   )
+  it.live("stale socket finalizers and frames cannot disconnect or overwrite a replacement", () =>
+    Effect.gen(function* () {
+      const bridge = yield* BrowserBridge.Service
+      const first = fakeAdapter()
+      const second = fakeAdapter()
+      yield* bridge.connect({ adapter: first.adapter })
+      yield* bridge.connect({ adapter: second.adapter })
+      yield* Effect.void.pipe(Effect.ensuring(bridge.disconnect(first.adapter)))
+      yield* bridge.handleFrame(
+        JSON.stringify({ type: "hello", client: "stale", version: "stale", views: [viewState] }),
+        first.adapter,
+      )
+      const state = yield* bridge.state()
+      expect(state.status).toBe("connected")
+      if (state.status === "connected") expect(state.views).toEqual([])
+      yield* bridge.disconnect(second.adapter)
+      expect((yield* bridge.state()).status).toBe("absent")
+    }),
+  )
 
   it.live("isolates concurrent commands by id", () =>
     Effect.gen(function* () {

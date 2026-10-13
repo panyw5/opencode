@@ -86,7 +86,7 @@ try {
     log("model UI semantics masked in dev only; selection is unchanged and all recognition must remain nonblocking")
   }
   if (exerciseRecovery && !watchID) {
-    await client.evaluate(`window.api.browser.open('persist:consult-gpt-pro','https://chatgpt.com/')`)
+    await client.evaluate(`window.api.gptPro.open()`)
     const readyDeadline = Date.now() + 90000
     let prepared = false
     while (Date.now() < readyDeadline) {
@@ -216,6 +216,17 @@ try {
       return {tool:tool?{id:tool.state.metadata?.consultation_id,promptMatches:tool.state.input.prompt===${JSON.stringify(prompt)},status:tool.state.status}:undefined,job,page,notificationMatches,recoveryTools}
     })()`)
     id ??= state.tool?.id
+    if (state.job) {
+      const owned = (await listTargets()).find((target) => target.type === "page" && target.url === state.job!.url)
+      if (owned) {
+        const chat = await CdpClient.connect(owned.webSocketDebuggerUrl)
+        try {
+          state.page = await chat.evaluate<GptProPageState>(CHATGPT_INSPECT_EXPRESSION)
+        } finally {
+          chat.close()
+        }
+      } else state.page = undefined
+    }
     const summary = `id=${id ?? "pending"} phase=${state.job?.phase ?? "pending"} recovery=${state.job?.recovery?.stage ?? "none"} tools=${state.recoveryTools.map((t) => t.tool + ":" + t.status).join(",")} submitted=${state.job?.submitted ?? false} userID=${state.job?.userID ?? "pending"} answerChars=${state.job?.text?.length ?? 0} inbox=${state.notificationMatches}`
     if (summary !== observed) {
       log(summary)

@@ -53,6 +53,11 @@
   "errorImport": {
     "message": "Import not confirmed. Check the GPT-Pro config page in OpenCode."
   },
+  "errorBusy": {
+    "message": "Consultations or manual drafts are active. Existing login is unchanged. Finish them, then retry this connection; signing in again is not required."
+  },
+  "errorStorage": { "message": "Secure credential storage is unavailable. Check OpenCode; import was not confirmed." },
+  "statusSessionFound": { "message": "Session cookies found (login not yet verified)" },
   "errorInvalidSession": {
     "message": "The ChatGPT session is invalid or unsupported. Log in again in Chrome, then open a new connection from OpenCode."
   },

@@ -31,7 +31,9 @@ export type ClientInfo = {
 export const ViewState = Schema.Struct({
   pageID: Schema.optional(Schema.String),
   profileID: Schema.optional(Schema.String),
-  owner: Schema.optional(Schema.Struct({ directory: Schema.optional(Schema.String), sessionID: Schema.optional(Schema.String) })),
+  owner: Schema.optional(
+    Schema.Struct({ directory: Schema.optional(Schema.String), sessionID: Schema.optional(Schema.String) }),
+  ),
   kind: Schema.optional(Schema.Literals(["user", "agent", "consultation", "login"])),
   partition: Schema.String,
   url: Schema.String,
@@ -86,7 +88,7 @@ export interface Interface {
     readonly views?: readonly ViewState[]
     readonly instance?: InstanceContext
   }) => Effect.Effect<void>
-  readonly disconnect: () => Effect.Effect<void>
+  readonly disconnect: (expected?: Adapter) => Effect.Effect<void>
   readonly state: () => Effect.Effect<State>
   /** Send a command to the connected desktop client and await its response. */
   readonly command: <T = unknown>(
@@ -95,7 +97,7 @@ export interface Interface {
     options?: { readonly timeout?: Duration.Input },
   ) => Effect.Effect<T, CommandError>
   /** Feed one raw text frame coming from the desktop client. */
-  readonly handleFrame: (text: string) => Effect.Effect<void>
+  readonly handleFrame: (text: string, expected?: Adapter) => Effect.Effect<void>
   /** Buffered console entries captured from `browser.console` event frames. */
   readonly console: (pageID: string, since?: number) => Effect.Effect<ConsoleEntry[]>
 }
@@ -113,8 +115,7 @@ export const layer = Layer.effect(
     const pending = new Map<string, Pending>()
     const consoleBuffer: ConsoleEntry[] = []
 
-    const normalizeView = (view: ViewState) =>
-      view.pageID === undefined ? view : { ...view, partition: view.pageID }
+    const normalizeView = (view: ViewState) => (view.pageID === undefined ? view : { ...view, partition: view.pageID })
 
     const failPending = (error: CommandError) => {
       for (const [id, entry] of pending) {
@@ -152,7 +153,12 @@ export const layer = Layer.effect(
         }
         if (name === "browser.closed") {
           const decoded = Schema.decodeUnknownSync(
-            Schema.Struct({ pageID: Schema.optional(Schema.String), partition: Schema.String, profileID: Schema.optional(Schema.String), epoch: Schema.optional(Schema.Number) }),
+            Schema.Struct({
+              pageID: Schema.optional(Schema.String),
+              partition: Schema.String,
+              profileID: Schema.optional(Schema.String),
+              epoch: Schema.optional(Schema.Number),
+            }),
           )(properties)
           const pageID = decoded.pageID ?? decoded.partition
           const current = views.find((view) => (view.pageID ?? view.partition) === pageID)
@@ -211,8 +217,9 @@ export const layer = Layer.effect(
           log.info("client connected", { client: client?.kind, version: client?.version, views: views.length })
         }),
 
-      disconnect: () =>
+      disconnect: (expected) =>
         Effect.sync(() => {
+          if (expected && adapter !== expected) return
           if (!adapter) return
           adapter = undefined
           client = undefined
@@ -252,8 +259,9 @@ export const layer = Layer.effect(
             ),
           ) as Effect.Effect<T, CommandError>
         }),
-      handleFrame: (text) =>
+      handleFrame: (text, expected) =>
         Effect.gen(function* () {
+          if (expected && adapter !== expected) return
           let frame: Record<string, unknown>
           try {
             frame = JSON.parse(text)

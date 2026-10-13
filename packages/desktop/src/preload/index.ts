@@ -3,9 +3,10 @@ import type { BrowserViewState, ElectronAPI, InitStep, SqliteMigrationProgress }
 
 const api: ElectronAPI = {
   gptPro: {
+    runtimeStatus: () => ipcRenderer.invoke("gpt-pro-runtime-status"),
     getConfig: () => ipcRenderer.invoke("gpt-pro-config"),
-    setConfig: config => ipcRenderer.invoke("gpt-pro-set-config", config),
-    command: input => ipcRenderer.invoke("gpt-pro-command", input),
+    setConfig: (config) => ipcRenderer.invoke("gpt-pro-set-config", config),
+    command: (input) => ipcRenderer.invoke("gpt-pro-command", input),
     attachmentPreview: (input) => ipcRenderer.invoke("gpt-pro-attachment-preview", input),
     list: () => ipcRenderer.invoke("gpt-pro-list"),
     open: () => ipcRenderer.invoke("gpt-pro-open"),
@@ -19,8 +20,8 @@ const api: ElectronAPI = {
     capturePreview: (pageID) => ipcRenderer.invoke("browser-capture-preview", pageID),
     getDisplayState: () => ipcRenderer.invoke("browser-display-state"),
     acquireDisplay: () => ipcRenderer.invoke("browser-acquire-display"),
-    updateDisplay: frame => ipcRenderer.invoke("browser-update-display", frame),
-    releaseDisplay: lease => ipcRenderer.invoke("browser-release-display", lease),
+    updateDisplay: (frame) => ipcRenderer.invoke("browser-update-display", frame),
+    releaseDisplay: (lease) => ipcRenderer.invoke("browser-release-display", lease),
     getPresentation: () => ipcRenderer.invoke("browser-get-presentation"),
     acknowledgePresentation: (id) => ipcRenderer.invoke("browser-ack-presentation", id),
     onPresented: (cb) => {

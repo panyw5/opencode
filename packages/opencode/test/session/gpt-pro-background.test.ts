@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Deferred, Effect, Layer } from "effect"
 import { BackgroundGptPro, notificationText } from "../../src/background/gpt-pro"
 import { Browser } from "../../src/browser"
 import { Session } from "../../src/session/session"
@@ -25,6 +25,43 @@ const it = testEffect(
 )
 
 describe("background Pro inbox delivery", () => {
+  it.instance("a blocked model drain cannot prevent the next completion from reaching the durable inbox", () =>
+    Effect.gen(function* () {
+      const service = yield* BackgroundGptPro.Service
+      const sessions = yield* Session.Service
+      const inbox = yield* SessionInput.Service
+      const { directory } = yield* InstanceState.context
+      const parent = yield* sessions.create({ title: "Blocked drain" })
+      const gate = yield* Deferred.make<void>()
+      service.registerDrain(() => Deferred.await(gate))
+      const event: GptProNotification = {
+        id: "gpt_blocked:notification:1",
+        consultationID: "gpt_blocked",
+        owner: `${directory}\n${parent.id}`,
+        phase: "generating",
+        revision: 1,
+        at: 1,
+        url: "https://chatgpt.com/c/test",
+        kind: "progress",
+        format: "snapshot",
+        text: "Partial",
+        truncated: false,
+      }
+      acknowledgements[directory] = []
+      events[directory] = [event]
+      yield* service.poll().pipe(Effect.timeout("1 second"))
+      events[directory] = [
+        { ...event, id: "gpt_blocked:notification:2", phase: "completed", kind: "completed", text: "Final" },
+      ]
+      yield* service.poll().pipe(Effect.timeout("1 second"))
+      expect((yield* inbox.pending(parent.id)).map((row) => row.prompt.metadata?.phase)).toEqual([
+        "generating",
+        "completed",
+      ])
+      expect(acknowledgements[directory]).toHaveLength(2)
+      yield* Deferred.succeed(gate, undefined)
+    }),
+  )
   it.instance("recovery notifications tell the parent to reuse scoped browser tools instead of resubmitting", () =>
     Effect.gen(function* () {
       const text = notificationText({

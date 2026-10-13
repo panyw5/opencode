@@ -2,12 +2,9 @@ import { Context, Effect, Layer, Schema } from "effect"
 import type { Duration } from "effect"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { BrowserBridge } from "./bridge"
-import {
-  type GptProCommand,
-  type GptProJob,
-  type GptProNotification,
-} from "@opencode-ai/util/gpt-pro"
+import { type GptProCommand, type GptProJob, type GptProNotification } from "@opencode-ai/util/gpt-pro"
 import { InstanceState } from "@/effect/instance-state"
+import { gptProReadOwners } from "./gpt-pro-read-owners"
 
 export * as Browser from "./index"
 
@@ -194,8 +191,7 @@ export const layer = Layer.effect(
       timeout: Duration.Input,
       target?: Target,
     ): Effect.Effect<A, BrowserError> => {
-      if (!target?.consultationID)
-        return command(name, { ...args, pageID: agentPartition(sessionID) }, decode, timeout)
+      if (!target?.consultationID) return command(name, { ...args, pageID: agentPartition(sessionID) }, decode, timeout)
       return Effect.gen(function* () {
         const { directory } = yield* InstanceState.context
         return yield* command(
@@ -256,17 +252,25 @@ export const layer = Layer.effect(
       gptProAcknowledge: (directory, ids) =>
         command("gpt-pro-ack", { directory: AppFileSystem.resolve(directory), ids }, () => undefined, "10 seconds"),
       gptPro: (owner, input) =>
-        command(
-          "gpt-pro",
-          { ...input, owner },
-          (result) => {
-            const job = result as GptProJob
-            if (!job || typeof job.id !== "string" || typeof job.phase !== "string" || job.owner !== owner)
-              throw new Error("Invalid consultation response")
-            return job
-          },
-          "60 seconds",
-        ),
+        Effect.suspend(() => {
+          const readOwners = ["read", "status"].includes(input.action ?? "consult") ? gptProReadOwners(owner) : [owner]
+          return command(
+            "gpt-pro",
+            { ...input, owner, readOwners },
+            (result) => {
+              const job = result as GptProJob
+              if (
+                !job ||
+                typeof job.id !== "string" ||
+                typeof job.phase !== "string" ||
+                !readOwners.includes(job.owner)
+              )
+                throw new Error("Invalid consultation response")
+              return job
+            },
+            "60 seconds",
+          )
+        }),
       cancelGptProOwner: (directory, sessionID) =>
         command(
           "gpt-pro-cancel-owner",
@@ -416,12 +420,7 @@ export const layer = Layer.effect(
             )
           : Effect.succeed({ pageID: agentPartition(sessionID), earliest: 0 })
         return authorized.pipe(
-          Effect.flatMap(({ pageID, earliest }) =>
-            bridge.console(
-              pageID,
-              Math.max(since, earliest),
-            ),
-          ),
+          Effect.flatMap(({ pageID, earliest }) => bridge.console(pageID, Math.max(since, earliest))),
           Effect.map((entries) => {
             if (options?.since === undefined) {
               const max = entries.reduce((acc, entry) => Math.max(acc, entry.at), since)

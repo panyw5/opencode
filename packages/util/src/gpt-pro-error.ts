@@ -3,6 +3,10 @@ export const GPT_PRO_ISSUE_CODES = [
   "login",
   "login_import_busy",
   "login_import_pending",
+  "login_invalid_session",
+  "login_import_failed",
+  "credential_storage",
+  "account_changed",
   "login_expired",
   "login_connection_failed",
   "browser_open_failed",
@@ -30,6 +34,15 @@ export const GPT_PRO_ISSUE_CODES = [
 ] as const
 
 export type GptProIssueCode = (typeof GPT_PRO_ISSUE_CODES)[number]
+export class GptProOperationError extends Error {
+  constructor(
+    readonly code: GptProIssueCode,
+    message: string,
+  ) {
+    super(`${code}: ${message}`)
+    this.name = "GptProOperationError"
+  }
+}
 export type GptProIssueContext = {
   error?: unknown
   code?: unknown
@@ -62,8 +75,14 @@ export function gptProIssue(
       return "send_uncertain"
     if (/website stop could not be confirmed/.test(text)) return "stop_unconfirmed"
     if (GPT_PRO_ISSUE_CODES.includes(context.code as GptProIssueCode)) return context.code as GptProIssueCode
-    if (/login_import_busy|stop.*consultation.*(?:replacing.*login|opening.*login)/.test(text)) return "login_import_busy"
+    if (/login_invalid_session/.test(text)) return "login_invalid_session"
+    if (/login_import_failed/.test(text)) return "login_import_failed"
+    if (/credential_storage/.test(text)) return "credential_storage"
+    if (/account_changed/.test(text)) return "account_changed"
+    if (/login_import_busy|stop.*consultation.*(?:replacing.*login|opening.*login)/.test(text))
+      return "login_import_busy"
     if (context.queueReason === "login_import") return "login_import_pending"
+    if (context.queueReason === "disabled") return "disabled"
     if (/browser_open_failed|could not open the default browser/.test(text)) return "browser_open_failed"
     if (/login_connection_failed/.test(text)) return "login_connection_failed"
     if (/verification|verify you|cloudflare|human.*challenge|验证/.test(text)) return "verification"
@@ -114,7 +133,9 @@ export function gptProIssue(
   if (!code) return
   return {
     code,
-    tone: ["owner_busy", "page_capacity", "queue_capacity", "cancelled", "paused", "login_import_pending"].includes(code)
+    tone: ["owner_busy", "page_capacity", "queue_capacity", "cancelled", "paused", "login_import_pending"].includes(
+      code,
+    )
       ? "info"
       : [
             "verification",

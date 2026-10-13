@@ -16,6 +16,8 @@ import {
 import type { BrowserController } from "./browser"
 import type { BeforeTrustedClick } from "./browser-cdp"
 import { GptProPageError } from "./gpt-pro-page-error"
+import { readGptProAuthentication } from "./gpt-pro-authentication"
+import { GptProOperationError } from "@opencode-ai/util/gpt-pro-error"
 
 const editorSelector = '#prompt-textarea, [data-composer-markdown][role="textbox"][contenteditable="true"]'
 const attachmentInputSelector = 'input[type="file"][aria-label="Attach files"]'
@@ -39,6 +41,7 @@ export class GptProDriver {
       pageID?: string
       profileID?: string
       owner?: { directory?: string; sessionID?: string }
+      prepare?: () => Promise<void>
     } = {},
   ) {}
   private get pageID() {
@@ -80,6 +83,7 @@ export class GptProDriver {
     return error
   }
   async open(url = GPT_PRO_URL, fresh = false) {
+    await this.identity.prepare?.()
     this.log(`driver open pageID=${this.pageID} profileID=${this.profileID} fresh=${fresh} presentation=hidden`)
     if (
       !isGptProOrigin(url) ||
@@ -121,6 +125,19 @@ export class GptProDriver {
       if (current) this.pageEpoch = current.epoch
     }
     this.browser.present(this.pageID)
+  }
+  async account() {
+    await this.identity.prepare?.()
+    const authentication = await readGptProAuthentication(this.cdp())
+    this.log(`driver authentication phase=${authentication.phase}; account and credentials omitted`)
+    if (authentication.phase === "needs_login")
+      throw new GptProOperationError("login", "Sign in to ChatGPT before sending. No message was dispatched.")
+    if (authentication.phase !== "authenticated")
+      throw new GptProOperationError(
+        "connection",
+        "The current ChatGPT account could not be verified. No message was dispatched; inspect the original page.",
+      )
+    return authentication.accountID
   }
   async page(options?: { userID: string; force?: boolean }): Promise<GptProPageState> {
     const previous = this.inspectionTail

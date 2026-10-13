@@ -77,8 +77,13 @@ describe("ChatGPT session import scope", () => {
     }
   })
   test("extension candidates include no Google cookies", () => {
-    expect(candidateNames()).toHaveLength(34)
+    expect(candidateNames()).toHaveLength(66)
     expect(candidateNames().every((name) => name.includes("session-token"))).toBe(true)
+  })
+  test("accepts distinct cookie scopes while rejecting duplicate identities", () => {
+    const host = { ...cookie, domain: "chatgpt.com", hostOnly: true }
+    expect(parseSessionCookies(payload([cookie, host]), 1000)).toHaveLength(2)
+    expect(() => parseSessionCookies(payload([host, host]), 1000)).toThrow()
   })
   test("connection URLs must be local, unambiguous and have a full one-time token", () => {
     const token = "a".repeat(64)

@@ -6,6 +6,7 @@ import { GptProDriver } from "./gpt-pro-driver"
 import { createGptProPersistence } from "./gpt-pro-persistence"
 import { write as writeLog } from "./logging"
 import { app } from "electron"
+import { getGptProCredentials } from "./gpt-pro-credentials"
 
 let instance: GptProController | undefined
 export function getGptProController() {
@@ -43,6 +44,7 @@ export function getGptProController() {
         pageID: job.pageID ?? `gpt-pro-page-${job.id}`,
         profileID: job.profileID ?? GPT_PRO_PARTITION,
         owner: job.ownerPage,
+        prepare: () => getGptProCredentials().ready(),
       }),
     {
       ...createGptProPersistence(store, (message) => writeLog("gpt-pro", message)),

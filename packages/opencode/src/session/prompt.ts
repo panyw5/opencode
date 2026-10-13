@@ -847,8 +847,9 @@ export const layer = Layer.effect(
 
       const uniqueNames = [...new Set(input.names.filter(isConsultMention))]
       if (uniqueNames.length === 0) return
-      const gptProFileCount =
-        uniqueNames.includes("gpt-pro") ? lastUserParts.filter((part) => part.type === "file").length : 0
+      const gptProFileCount = uniqueNames.includes("gpt-pro")
+        ? lastUserParts.filter((part) => part.type === "file").length
+        : 0
       if (uniqueNames.includes("gpt-pro")) {
         log.info("direct GPT-Pro raw attachment parts forwarded", {
           phase: "consult-input",
@@ -895,9 +896,7 @@ export const layer = Layer.effect(
           buildConsultPromptFromParts(lastUserParts, name !== "gpt-pro").trim() ||
           "The user requested an external consultation. Review the project context and provide structured analysis."
         const gptProAttachmentParts =
-          name === "gpt-pro"
-            ? lastUserParts.filter((part): part is MessageV2.FilePart => part.type === "file")
-            : []
+          name === "gpt-pro" ? lastUserParts.filter((part): part is MessageV2.FilePart => part.type === "file") : []
         const toolArgs = {
           prompt: promptText,
           ...(name === "gpt-pro" && backgroundChoice?.type === "text"
@@ -905,23 +904,25 @@ export const layer = Layer.effect(
             : {}),
         }
 
-        let part: MessageV2.ToolPart = yield* sessions
-          .updatePart({
-            id: PartID.ascending(),
-            messageID: assistantMessage.id,
-            sessionID: assistantMessage.sessionID,
-            type: "tool",
-            callID: ulid(),
-            tool: mention.tool,
-            state: {
-              status: "running",
-              input: toolArgs,
-              time: { start: Date.now() },
-            },
-          })
+        let part: MessageV2.ToolPart = yield* sessions.updatePart({
+          id: PartID.ascending(),
+          messageID: assistantMessage.id,
+          sessionID: assistantMessage.sessionID,
+          type: "tool",
+          callID: ulid(),
+          tool: mention.tool,
+          state: {
+            status: "running",
+            input: toolArgs,
+            time: { start: Date.now() },
+          },
+        })
 
-        yield* plugin
-          .trigger("tool.execute.before", { tool: mention.tool, sessionID, callID: part.id }, { args: toolArgs })
+        yield* plugin.trigger(
+          "tool.execute.before",
+          { tool: mention.tool, sessionID, callID: part.id },
+          { args: toolArgs },
+        )
 
         let error: Error | undefined
         const consultAbort = new AbortController()
@@ -1779,9 +1780,7 @@ export const layer = Layer.effect(
       const hookSeparatedParts = separateHookInjectedText(beforeChatMessageHook, resolvedParts).map(assign)
 
       const parts = yield* Effect.forEach(hookSeparatedParts, (part) =>
-        part.type === "file" &&
-        !directGptProFileIDs?.has(part.id) &&
-        part.mime.startsWith("image/")
+        part.type === "file" && !directGptProFileIDs?.has(part.id) && part.mime.startsWith("image/")
           ? image.normalize(part).pipe(
               Effect.catchIf(
                 (error) => error instanceof Image.ResizerUnavailableError,
@@ -2895,7 +2894,7 @@ export const layer = Layer.effect(
           Effect.flatMap((result) =>
             Effect.gen(function* () {
               if (result.ack) yield* backgroundPro.acknowledge(event.properties.id).pipe(Effect.ignore)
-              if (result.wake) yield* requestDrain(result.wake)
+              if (result.wake) yield* requestDrain(result.wake).pipe(Effect.forkIn(scope, { startImmediately: true }))
             }),
           ),
           Effect.catch((error) =>

@@ -1,6 +1,8 @@
 import type { GptProIssueCode } from "./gpt-pro-error"
 
-export const GPT_PRO_PARTITION = "persist:consult-gpt-pro"
+// Credentials are persisted only by the encrypted vault, never Chromium's cookie database.
+export const GPT_PRO_PARTITION = "consult-gpt-pro-secure"
+export const GPT_PRO_LEGACY_PARTITION = "persist:consult-gpt-pro"
 export const GPT_PRO_URL = "https://chatgpt.com/"
 export const GPT_PRO_MAX_HTML_CHARS = 1_000_000
 
@@ -104,6 +106,7 @@ export type GptProProbeStatus = {
 export type GptProAPI = {
   open(): Promise<GptProProbeStatus>
   status(): Promise<GptProProbeStatus>
+  runtimeStatus?(): Promise<GptProRuntimeStatus>
   loginInBrowser(): Promise<GptProLoginStatus>
   loginStatus(): Promise<GptProLoginStatus>
   cancelLogin(): Promise<GptProLoginStatus>
@@ -210,11 +213,12 @@ export type GptProJob = {
   profileID?: string
   ownerPage?: { directory?: string; sessionID?: string }
   owner: string
+  accountID?: string
   requestID: string
   parentID?: string
   successorID?: string
   phase: GptProPhase
-  queueReason?: "capacity" | "owner_busy" | "page_capacity" | "login_import"
+  queueReason?: "capacity" | "owner_busy" | "page_capacity" | "login_import" | "disabled"
   queueOwnerConsultationID?: string
   prompt: string
   attachments?: GptProJobAttachment[]
@@ -271,6 +275,25 @@ export type GptProLoginStatus = {
   importedCookies?: number
   extensionDirectory?: string
   error?: string
+  errorCode?: GptProIssueCode
+}
+
+export type GptProRuntimeStatus = {
+  config: GptProConfig
+  login: GptProLoginStatus
+  authentication: {
+    phase: "authenticated" | "needs_login" | "verification" | "loading" | "unknown"
+    account?: string
+    accountID?: string
+    model?: string
+    detail?: string
+    checkedAt: number
+  }
+  credentials: { phase: "encrypted" | "unavailable"; error?: string }
+  bridge: { connected: boolean; url?: string }
+  importBlocked: boolean
+  blockers: Array<{ id: string; phase: GptProPhase; ownerPage?: GptProJob["ownerPage"] }>
+  jobs: GptProJob[]
 }
 
 export function isGptProOrigin(url: string) {

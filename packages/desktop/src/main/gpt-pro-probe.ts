@@ -5,10 +5,12 @@ import {
   isGptProLoginUrl,
   type GptProPageState,
   type GptProProbeStatus,
+  type GptProRuntimeStatus,
 } from "@opencode-ai/util/gpt-pro"
 import type { BrowserController } from "./browser"
 import type { BrowserCdp } from "./browser-cdp"
 import { CHATGPT_INSPECT_EXPRESSION } from "@opencode-ai/util/chatgpt-page"
+import { readGptProAuthentication } from "./gpt-pro-authentication"
 
 type ProbeBrowser = Pick<BrowserController, "has" | "open" | "getState" | "present"> & {
   openPage?: BrowserController["openPage"]
@@ -64,13 +66,54 @@ export class GptProProbe {
       this.log(`probe blocked kind=${page.error.kind}`)
       return result(page.error.kind === "verification" ? "needs_login" : "blocked", page.error.message, page)
     }
-    if (!page.composer)
-      return result("loading", "The ChatGPT composer is not visible yet; no message was sent.", page)
+    if (!page.composer) return result("loading", "The ChatGPT composer is not visible yet; no message was sent.", page)
     this.log(
       `probe model observation label=${JSON.stringify(page.model || "unknown")} policy=user-selected nonblocking=true`,
     )
     if (page.generating) return result("tracking", undefined, page)
     if (page.answer?.complete) return result("completed", undefined, page)
     return result("ready", undefined, page)
+  }
+  async authentication(): Promise<GptProRuntimeStatus["authentication"]> {
+    const views = this.browser.getState().filter((view) => (view.profileID ?? view.partition) === GPT_PRO_PARTITION)
+    let observed: GptProRuntimeStatus["authentication"] = {
+      phase: views.length ? "loading" : "unknown",
+      checkedAt: Date.now(),
+    }
+    for (const view of views) {
+      if (view.loading) continue
+      if (isGptProLoginUrl(view.url)) {
+        observed = { phase: "needs_login", checkedAt: Date.now() }
+        continue
+      }
+      if (!isGptProOrigin(view.url)) continue
+      const cdp = this.browser.cdp(view.pageID ?? view.partition)
+      if (!cdp) continue
+      try {
+        const [auth, page] = await Promise.all([
+          readGptProAuthentication(cdp),
+          cdp.evaluate<GptProPageState>(CHATGPT_INSPECT_EXPRESSION),
+        ])
+        const current = this.browser
+          .getState()
+          .find((current) => (current.pageID ?? current.partition) === (view.pageID ?? view.partition))
+        if (!current || current.epoch !== view.epoch || !isGptProOrigin(page.url)) continue
+        const result: GptProRuntimeStatus["authentication"] = {
+          ...auth,
+          phase: page.error?.kind === "verification" ? "verification" : auth.phase,
+          model: page.model || undefined,
+          detail: page.error?.message,
+          checkedAt: Date.now(),
+        }
+        this.log(
+          `runtime authentication inspected pageID=${view.pageID ?? view.partition} phase=${result.phase} composer=${page.composer}; identity omitted`,
+        )
+        if (result.phase === "authenticated" && page.composer) return result
+        observed = result
+      } catch {
+        this.log(`runtime authentication inspection unavailable pageID=${view.pageID ?? view.partition}`)
+      }
+    }
+    return observed
   }
 }

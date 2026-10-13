@@ -55,6 +55,37 @@ function fixture(input: { existing?: boolean; loading?: boolean; url?: string; p
 }
 
 describe("gpt-pro P0 diagnostics", () => {
+  test("runtime status uses a verified consultation even when the manual page is blocked", async () => {
+    const views = ["manual", "consultation"].map((id) => ({
+      pageID: id,
+      partition: id,
+      profileID: GPT_PRO_PARTITION,
+      url: GPT_PRO_URL,
+      title: "ChatGPT",
+      loading: false,
+      shared: false,
+      epoch: 1,
+    }))
+    const browser = {
+      has: () => true,
+      open: async () => views[0],
+      present: () => {},
+      getState: () => views,
+      cdp: (id: string) => ({
+        evaluate: async <T>(expression: string) =>
+          (expression.includes("/api/auth/session")
+            ? id === "manual"
+              ? { phase: "unknown" }
+              : { phase: "authenticated", identity: "synthetic-user" }
+            : id === "manual"
+              ? { ...page, composer: false, error: { kind: "verification", message: "Human check" } }
+              : page) as T,
+      }),
+    }
+    const probe = new GptProProbe(browser)
+    expect((await probe.authentication()).phase).toBe("authenticated")
+    expect((await probe.authentication()).model).toBe("GPT-6 Pro")
+  })
   test("rejects lookalike hosts and non-HTTPS origins", () => {
     expect(isGptProOrigin("https://chatgpt.com/c/123")).toBe(true)
     for (const url of ["http://chatgpt.com", "https://chatgpt.com.example.com", "https://auth.openai.com", "garbage"])

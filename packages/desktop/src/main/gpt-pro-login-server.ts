@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { GptProLoginStatus } from "@opencode-ai/util/gpt-pro"
 import { parseSessionCookies, type SessionCookie } from "./gpt-pro-session-cookies"
 import { renderLoginPage } from "./gpt-pro-login-page"
+import { GptProOperationError } from "@opencode-ai/util/gpt-pro-error"
 
 const MAX_BYTES = 256 * 1024
 const TTL_MS = 10 * 60_000
@@ -14,6 +15,7 @@ type Dependencies = {
   log: (message: string) => void
   extensionDirectory: string
   ttl?: number
+  operationWarningMs?: number
 }
 
 type Connection = { server: Server; token: Buffer; port: number; timer: ReturnType<typeof setTimeout> }
@@ -32,7 +34,10 @@ export class GptProLoginServer {
 
   start(): Promise<string> {
     if (this.starting) return this.starting
-    if (this.connection && ["waiting", "importing"].includes(this.state.phase)) {
+    if (
+      this.connection &&
+      (["waiting", "importing"].includes(this.state.phase) || this.state.errorCode === "login_import_busy")
+    ) {
       return Promise.resolve(this.url(this.connection))
     }
     this.starting = this.startOnce().finally(() => {
@@ -73,7 +78,13 @@ export class GptProLoginServer {
     const expiresAt = Date.now() + (this.deps.ttl ?? TTL_MS)
     const timer = setTimeout(() => {
       if (this.state.phase === "importing") return
-      if (this.state.phase === "waiting") this.state = { ...this.state, phase: "expired" }
+      if (this.state.phase === "waiting" || this.state.errorCode === "login_import_busy")
+        this.state = {
+          ...this.state,
+          phase: "expired",
+          errorCode: "login_expired",
+          error: "Connection expired. Open a new connection.",
+        }
       this.deps.log(`login-connection expired phase=${this.state.phase}`)
       this.close()
     }, this.deps.ttl ?? TTL_MS)
@@ -187,7 +198,10 @@ export class GptProLoginServer {
       this.reply(response, 410, { error: "Connection expired." })
       return
     }
-    if (this.state.phase !== "waiting") {
+    if (
+      this.state.phase !== "waiting" &&
+      !(this.state.phase === "failed" && this.state.errorCode === "login_import_busy")
+    ) {
       this.reply(response, 409, { error: "This connection is already in use. Check the import status in OpenCode." })
       return
     }
@@ -198,7 +212,19 @@ export class GptProLoginServer {
       this.reply(response, 400, { error: "Invalid session payload." })
       return
     }
-    this.state = { ...this.state, phase: "importing" }
+    this.state = { ...this.state, phase: "importing", error: undefined, errorCode: undefined }
+    this.deps.log("login-connection import accepted stage=read-payload")
+    const warning = setTimeout(() => {
+      if (this.state.phase !== "importing") return
+      this.state = {
+        ...this.state,
+        errorCode: "login_import_pending",
+        error:
+          "Import is still running. Do not retry or assume success; the shared profile remains locked until all writes settle.",
+      }
+      this.deps.log("login-connection operation slow; profile lock retained until writes settle")
+    }, this.deps.operationWarningMs ?? 30000)
+    warning.unref()
     const chunks: Buffer[] = []
     let body: Buffer | undefined
     try {
@@ -212,15 +238,20 @@ export class GptProLoginServer {
         }
         chunks.push(buffer)
       }
-      if (Date.now() >= this.state.expiresAt!) throw new Error("Connection expired")
+      if (Date.now() >= this.state.expiresAt!)
+        throw new GptProOperationError("login_expired", "Connection expired. Open a new connection.")
       body = Buffer.concat(chunks)
       let cookies: SessionCookie[]
       try {
         cookies = parseSessionCookies(JSON.parse(body.toString("utf8")))
       } catch {
         this.deps.log("login-connection rejected invalid cookie scope or payload; nothing imported")
-        throw new Error("The session payload is invalid or contains unsupported cookies. No cookies were imported.")
+        throw new GptProOperationError(
+          "login_invalid_session",
+          "The session payload is invalid or contains unsupported cookies. No cookies were imported.",
+        )
       }
+      this.deps.log(`login-connection stage=replace-session validatedCookies=${cookies.length}`)
       await this.deps.importCookies(cookies)
       this.deps.log(
         `login-connection import finished count=${cookies.length}; authentication must be checked in the embedded page`,
@@ -231,23 +262,43 @@ export class GptProLoginServer {
         this.state = {
           ...this.state,
           error: "Session imported, but the dedicated page could not be opened. Open gpt-pro to verify login.",
+          errorCode: "browser_open_failed",
         }
         this.deps.log("login-connection page reopening failed; no credential details logged")
       }
+      if (this.state.errorCode === "login_import_pending")
+        this.state = { ...this.state, error: undefined, errorCode: undefined }
       this.state = { ...this.state, phase: "imported", importedCookies: cookies.length }
       this.reply(response, 200, this.status())
-    } catch {
+    } catch (error) {
+      const known = error instanceof GptProOperationError
+      const code = known ? error.code : "login_import_failed"
+      const message = known
+        ? error.message
+        : "Session import failed. Check the dedicated browser; the previous login was restored when possible."
       this.state = {
         ...this.state,
         phase: "failed",
-        error:
-          "Session import failed. No success is assumed; check the dedicated browser or start a new login connection.",
+        error: message,
+        errorCode: code,
       }
-      this.deps.log("login-connection import failed; request body, token, and cookie values are omitted")
-      this.reply(response, 400, { error: this.state.error })
+      this.deps.log(`login-connection import rejected code=${code}; request body, token, and cookie values are omitted`)
+      this.reply(
+        response,
+        code === "login_import_busy"
+          ? 409
+          : code === "login_expired"
+            ? 410
+            : code === "login_invalid_session"
+              ? 400
+              : 503,
+        { error: message, code, retryable: code === "login_import_busy" },
+      )
     } finally {
+      clearTimeout(warning)
       body?.fill(0)
       for (const chunk of chunks) chunk.fill(0)
+      if (this.state.errorCode === "login_import_busy") return
       response.once("finish", () => this.close(connection))
       // finish may already have fired when a mocked response completes synchronously.
       if (response.writableFinished) this.close(connection)

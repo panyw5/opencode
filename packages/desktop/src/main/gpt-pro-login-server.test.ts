@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { request } from "node:http"
 import { GptProLoginServer } from "./gpt-pro-login-server"
 import { renderLoginPage, resolveLoginLocale } from "./gpt-pro-login-page"
+import { GptProOperationError } from "@opencode-ai/util/gpt-pro-error"
 
 const extensionOrigin = `chrome-extension://${"a".repeat(32)}`
 const cookie = {
@@ -31,13 +32,19 @@ function http(url: string, input: { method?: string; headers?: Record<string, st
 }
 
 async function fixture(
-  input: { ttl?: number; importCookies?: () => Promise<void>; imported?: () => Promise<void> } = {},
+  input: {
+    ttl?: number
+    operationWarningMs?: number
+    importCookies?: () => Promise<void>
+    imported?: () => Promise<void>
+  } = {},
 ) {
   const logs: string[] = []
   let imports = 0
   const server = new GptProLoginServer({
     extensionDirectory: "/tmp/test-extension",
     ttl: input.ttl,
+    operationWarningMs: input.operationWarningMs,
     importCookies: async () => {
       imports++
       await input.importCookies?.()
@@ -62,6 +69,72 @@ async function fixture(
 }
 
 describe("one-time loopback ChatGPT login connection", () => {
+  test("slow imports report pending without unlocking or claiming failure, then clear the warning", async () => {
+    let release!: () => void
+    let entered!: () => void
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const f = await fixture({
+      operationWarningMs: 1,
+      importCookies: async () => {
+        entered()
+        await gate
+      },
+    })
+    const pending = f.post()
+    await started
+    try {
+      const deadline = Date.now() + 1000
+      while (f.server.status().errorCode !== "login_import_pending" && Date.now() < deadline)
+        await new Promise((resolve) => setTimeout(resolve, 1))
+      expect(f.server.status()).toMatchObject({ phase: "importing", errorCode: "login_import_pending" })
+      expect(f.server.cancel().phase).toBe("importing")
+      release()
+      expect((await pending).status).toBe(200)
+      expect(f.server.status().errorCode).toBeUndefined()
+    } finally {
+      release()
+      await pending
+      f.server.cancel()
+    }
+  })
+  test("busy imports preserve their reason and reusable connection without touching credentials", async () => {
+    let busy = true
+    const f = await fixture({
+      importCookies: async () => {
+        if (busy)
+          throw new GptProOperationError("login_import_busy", "Running consultations protect the original login.")
+      },
+    })
+    try {
+      const rejected = await f.post()
+      expect(rejected.status).toBe(409)
+      expect(JSON.parse(rejected.body)).toMatchObject({ code: "login_import_busy", retryable: true })
+      expect(f.server.status().errorCode).toBe("login_import_busy")
+      expect(await f.server.start()).toBe(f.url.href)
+      busy = false
+      expect((await f.post()).status).toBe(200)
+      expect(f.server.status().phase).toBe("imported")
+      expect(f.logs.join("\n")).not.toContain(cookie.value)
+    } finally {
+      f.server.cancel()
+    }
+  })
+  test("storage failure is not misreported as invalid ChatGPT credentials", async () => {
+    const f = await fixture({
+      importCookies: async () => {
+        throw new GptProOperationError("credential_storage", "Secure storage unavailable")
+      },
+    })
+    const rejected = await f.post()
+    expect(rejected.status).toBe(503)
+    expect(JSON.parse(rejected.body).code).toBe("credential_storage")
+    expect(f.server.status().errorCode).toBe("credential_storage")
+  })
   test("serves an isolated instruction page without reflecting its token", async () => {
     const f = await fixture()
     try {

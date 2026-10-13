@@ -28,5 +28,5 @@ export function parseConnection(value) {
 }
 
 export function candidateNames() {
-  return SESSION_COOKIE_NAMES.flatMap((base) => [base, ...Array.from({ length: 16 }, (_, i) => `${base}.${i}`)])
+  return SESSION_COOKIE_NAMES.flatMap((base) => [base, ...Array.from({ length: 32 }, (_, i) => `${base}.${i}`)])
 }

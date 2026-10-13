@@ -51,6 +51,11 @@
   "errorImport": {
     "message": "インポート未確認です。OpenCode の GPT-Pro 設定ページを確認してください。"
   },
+  "errorBusy": {
+    "message": "相談または手動の下書きが使用中です。既存のログインは変更されていません。終了後にこの接続を再試行してください。再ログインは不要です。"
+  },
+  "errorStorage": { "message": "安全な認証情報の保存を利用できません。OpenCode の設定を確認してください。" },
+  "statusSessionFound": { "message": "セッション Cookie を検出（ログイン未検証）" },
   "errorInvalidSession": {
     "message": "ChatGPT セッションが無効または未対応です。Chrome で再ログインし、OpenCode から新しい接続ページを開いてください。"
   },

@@ -23,6 +23,7 @@ Consult GPT-6 Pro on complicated tasks through the embedded ChatGPT Chat browser
   - `intervene` may include explicitly selected `files`; it does not infer files from prompt text.
   - `send` submits the exact managed prompt during agent recovery; optional `uid` is the send button observed with browser_read. Never use this after a send attempt.
 - Always retain `consultation_id`
+- A parent session can use `status`/`read` on consultations created by its descendants in the same project and directory. This is a read-only result handoff: do not create a replacement, and leave recovery, stopping and browser mutations to the original owning session. Unrelated sessions cannot read the result.
 
 # BROWSER RECOVERY
 The fixed flow runs first. If its result or background notification contains `recovery`, do not create another consultation. Use the existing browser_read, browser_screenshot, browser_click, browser_type, browser_scroll, browser_navigate and browser_console tools with `consultation_id` to operate only this owned ChatGPT page. Inspect before acting; preserve unrelated drafts and the original conversation.

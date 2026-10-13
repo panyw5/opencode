@@ -29,6 +29,8 @@ async function until(predicate: () => boolean) {
 function fixture(
   options: {
     enabled?: boolean
+    account?: () => Promise<string | undefined>
+    save?: () => void
     open?: () => Promise<void>
     verify?: () => Promise<GptProPageState>
     loaded?: GptProJob[]
@@ -92,6 +94,7 @@ function fixture(
     ready: async () => structuredClone(page),
     page: async () => structuredClone(page),
     observeModel: options.verify ?? (async () => structuredClone(page)),
+    ...(options.account ? { account: options.account } : {}),
     fill: async (prompt) => {
       fills++
       page.draft = prompt
@@ -158,6 +161,7 @@ function fixture(
     {
       load: () => saved,
       save: (jobs) => {
+        options.save?.()
         saved = structuredClone(jobs)
       },
       config: () => config,
@@ -430,6 +434,155 @@ async function previewJob(
 }
 
 describe("gpt-pro consultation control", () => {
+  test("login import fences recovery send, resume and browser mutations but permits cached reads", async () => {
+    const job: GptProJob = {
+      id: "gpt_import_recovery",
+      owner: "/repo\nses_recovery",
+      requestID: "recovery",
+      phase: "paused",
+      prompt: "Original question",
+      url: GPT_PRO_URL,
+      createdAt: 1,
+      updatedAt: 1,
+      submitted: false,
+      revision: 0,
+      recovery: { stage: "submit", reason: "Send control unavailable" },
+    }
+    const f = fixture({
+      loaded: [job],
+      initialPage: {
+        url: GPT_PRO_URL,
+        model: "Pro",
+        targetModel: true,
+        composer: true,
+        draft: job.prompt,
+        generating: false,
+        revision: 0,
+        users: [],
+      },
+    })
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const importing = f.controller.importLogin(() => gate)
+    try {
+      await expect(f.controller.command({ action: "send", id: job.id }, job.owner)).rejects.toThrow(
+        "login_import_pending",
+      )
+      await expect(f.controller.command({ action: "resume", id: job.id }, job.owner)).rejects.toThrow(
+        "login_import_pending",
+      )
+      let mutations = 0
+      await expect(
+        f.controller.browserCommand(job.owner, job.id, "type", { uid: "composer", text: job.prompt }, async () => {
+          mutations++
+        }),
+      ).rejects.toThrow("login_import_pending")
+      expect((await f.controller.command({ action: "read", id: job.id }, job.owner)).prompt).toBe(job.prompt)
+      expect(f.counts().submits).toBe(0)
+      expect(mutations).toBe(0)
+    } finally {
+      release()
+      await importing
+      f.controller.dispose()
+    }
+  })
+  test("disabling blocks unsent queued work without cancelling submitted tracking", async () => {
+    const f = fixture()
+    let release!: () => void
+    const importing = f.controller.importLogin(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve
+        }),
+    )
+    try {
+      const job = await f.controller.command({ prompt: "Queued question" }, "/repo\nses_disable")
+      f.controller.setConfig({ enabled: false, timeoutMinutes: 30 })
+      release()
+      await importing
+      expect(f.opens).toHaveLength(0)
+      expect(f.counts().submits).toBe(0)
+      expect(await f.controller.command({ action: "read", id: job.id })).toMatchObject({
+        phase: "queued",
+        queueReason: "disabled",
+      })
+      f.controller.setConfig({ enabled: true, timeoutMinutes: 30 })
+      await until(() => f.counts().submits === 1)
+      f.controller.setConfig({ enabled: false, timeoutMinutes: 30 })
+      f.finish()
+      await until(() => f.saved()[0]?.phase === "completed")
+    } finally {
+      release?.()
+      f.controller.dispose()
+    }
+  })
+  test("account changes at the trusted send boundary prevent submission", async () => {
+    let identity = "original-account"
+    const f = fixture({
+      account: async () => identity,
+      submitGate: async () => {
+        identity = "different-account"
+      },
+    })
+    try {
+      const job = await f.controller.command({ prompt: "Protected question" })
+      await until(() => f.saved().find((item) => item.id === job.id)?.phase === "paused")
+      expect(f.counts().submits).toBe(0)
+      expect(f.saved()[0]?.errorCode).toBe("account_changed")
+      expect(f.logs.join("\n")).not.toContain("different-account")
+    } finally {
+      f.controller.dispose()
+    }
+  })
+  test("parent read grants cannot authorize mutation or unrelated reads", async () => {
+    const job: GptProJob = {
+      id: "gpt_child",
+      owner: "/repo\nses_child",
+      requestID: "child",
+      phase: "paused",
+      prompt: "Child question",
+      url: GPT_PRO_URL,
+      createdAt: 1,
+      updatedAt: 1,
+      submitted: false,
+      revision: 0,
+    }
+    const f = fixture({ loaded: [job] })
+    try {
+      expect((await f.controller.command({ action: "read", id: job.id }, "/repo\nses_parent", [job.owner])).owner).toBe(
+        job.owner,
+      )
+      await expect(f.controller.command({ action: "read", id: job.id }, "/repo\nses_other")).rejects.toThrow(
+        "not found",
+      )
+      await expect(
+        f.controller.command({ action: "stop", id: job.id }, "/repo\nses_parent", [job.owner]),
+      ).rejects.toThrow("not found")
+      expect(f.saved()[0]?.phase).toBe("paused")
+    } finally {
+      f.controller.dispose()
+    }
+  })
+  test("failed durable admission does not leave a phantom owner reservation", async () => {
+    let fail = false
+    const f = fixture({
+      save: () => {
+        if (fail) throw Error("synthetic disk failure")
+      },
+    })
+    try {
+      fail = true
+      await expect(f.controller.command({ prompt: "First attempt" }, "/repo\nses_disk")).rejects.toThrow("disk failure")
+      expect(f.controller.list()).toHaveLength(0)
+      fail = false
+      await f.controller.command({ prompt: "Authorized retry" }, "/repo\nses_disk")
+      await until(() => f.counts().submits === 1)
+    } finally {
+      f.controller.dispose()
+    }
+  })
   test("runs two owners concurrently on distinct pages sharing the GPT-Pro profile", async () => {
     const f = multiPageFixture(2)
     const ownerA = "/repo\nses_parallel_a"
@@ -815,38 +968,74 @@ describe("gpt-pro consultation control", () => {
     }
   })
   test("paused unsent login recovery can import login without cancelling or automatically sending", async () => {
-    const job: GptProJob = { id: "gpt_login_wait", owner: "/repo\nses_login_wait", requestID: "login-wait", phase: "paused",
-      prompt: "Original question", url: GPT_PRO_URL, createdAt: 1, updatedAt: 1, submitted: false, revision: 0,
-      recovery: { stage: "ready", reason: "Sign in to ChatGPT", needsHuman: true } }
+    const job: GptProJob = {
+      id: "gpt_login_wait",
+      owner: "/repo\nses_login_wait",
+      requestID: "login-wait",
+      phase: "paused",
+      prompt: "Original question",
+      url: GPT_PRO_URL,
+      createdAt: 1,
+      updatedAt: 1,
+      submitted: false,
+      revision: 0,
+      recovery: { stage: "ready", reason: "Sign in to ChatGPT", needsHuman: true },
+    }
     const f = fixture({ loaded: [job] })
     let imported = 0
     try {
-      await f.controller.importLogin(async () => { imported++ })
+      await f.controller.importLogin(async () => {
+        imported++
+      })
       expect(imported).toBe(1)
       expect(f.controller.list()[0].phase).toBe("paused")
       expect(f.controller.list()[0].prompt).toBe(job.prompt)
       expect(f.counts().submits).toBe(0)
-    } finally { f.controller.dispose() }
+    } finally {
+      f.controller.dispose()
+    }
   })
   test("already-sent paused jobs protect their shared account from replacement", async () => {
-    const job: GptProJob = { id: "gpt_login_sent", owner: "/repo\nses_login_sent", requestID: "login-sent", phase: "paused",
-      prompt: "Original question", url: GPT_PRO_URL, createdAt: 1, updatedAt: 1, submitted: true, userID: "user", revision: 0 }
+    const job: GptProJob = {
+      id: "gpt_login_sent",
+      owner: "/repo\nses_login_sent",
+      requestID: "login-sent",
+      phase: "paused",
+      prompt: "Original question",
+      url: GPT_PRO_URL,
+      createdAt: 1,
+      updatedAt: 1,
+      submitted: true,
+      userID: "user",
+      revision: 0,
+    }
     const f = fixture({ loaded: [job] })
     let imported = 0
     try {
-      await expect(f.controller.importLogin(async () => { imported++ })).rejects.toThrow("login_import_busy")
+      await expect(
+        f.controller.importLogin(async () => {
+          imported++
+        }),
+      ).rejects.toThrow("login_import_busy")
       expect(imported).toBe(0)
       expect(f.controller.list()[0].phase).toBe("paused")
-    } finally { f.controller.dispose() }
+    } finally {
+      f.controller.dispose()
+    }
   })
   test("new consultations cannot dispatch while cookie import is in progress", async () => {
     const f = fixture()
     let release!: () => void
     const gate = new Promise<void>((resolve) => (release = resolve))
-    const importing = f.controller.importLogin(async () => { await gate })
+    const importing = f.controller.importLogin(async () => {
+      await gate
+    })
     try {
       const job = await f.controller.command({ prompt: "Wait for import" }, "/repo\nses_import_queue")
-      expect(f.controller.list().find((item) => item.id === job.id)).toMatchObject({ phase: "queued", queueReason: "login_import" })
+      expect(f.controller.list().find((item) => item.id === job.id)).toMatchObject({
+        phase: "queued",
+        queueReason: "login_import",
+      })
       expect(f.opens).toHaveLength(0)
       expect(f.counts().submits).toBe(0)
       await expect(f.controller.importLogin(async () => {})).rejects.toThrow("login_import_busy")
@@ -854,17 +1043,27 @@ describe("gpt-pro consultation control", () => {
       await importing
       await until(() => f.page.generating)
       expect(f.counts().submits).toBe(1)
-    } finally { release(); await importing; f.controller.dispose() }
+    } finally {
+      release()
+      await importing
+      f.controller.dispose()
+    }
   })
   test("failed login import releases the scheduling lock", async () => {
     const f = fixture()
     try {
-      await expect(f.controller.importLogin(async () => { throw Error("Import failed") })).rejects.toThrow("Import failed")
+      await expect(
+        f.controller.importLogin(async () => {
+          throw Error("Import failed")
+        }),
+      ).rejects.toThrow("Import failed")
       await f.controller.importLogin(async () => {})
       await f.controller.command({ prompt: "Fresh question" }, "/repo\nses_import_unlock")
       await until(() => f.page.generating)
       expect(f.counts().submits).toBe(1)
-    } finally { f.controller.dispose() }
+    } finally {
+      f.controller.dispose()
+    }
   })
   test("native stop failure is persisted as a warning without undoing local cancellation", async () => {
     let release!: () => void
@@ -896,30 +1095,70 @@ describe("gpt-pro consultation control", () => {
   })
   test("restart does not leave cancelled consultations polling an unfinished native stop", () => {
     const job: GptProJob = {
-      id: "gpt_restart_stop", owner: "main", requestID: "restart-stop", phase: "cancelled",
-      prompt: "Stopped question", url: GPT_PRO_URL, createdAt: 1, updatedAt: 1,
-      submitted: true, userID: "user-original", revision: 1, stopPending: true,
+      id: "gpt_restart_stop",
+      owner: "main",
+      requestID: "restart-stop",
+      phase: "cancelled",
+      prompt: "Stopped question",
+      url: GPT_PRO_URL,
+      createdAt: 1,
+      updatedAt: 1,
+      submitted: true,
+      userID: "user-original",
+      revision: 1,
+      stopPending: true,
     }
     const f = fixture({ loaded: [job] })
     try {
-      expect(f.controller.list()[0]).toMatchObject({ phase: "cancelled", stopPending: false, errorCode: "stop_unconfirmed" })
+      expect(f.controller.list()[0]).toMatchObject({
+        phase: "cancelled",
+        stopPending: false,
+        errorCode: "stop_unconfirmed",
+      })
       expect(f.opens).toHaveLength(0)
       expect(f.counts().submits).toBe(0)
-    } finally { f.controller.dispose() }
+    } finally {
+      f.controller.dispose()
+    }
   })
   test("history retention keeps an old terminal job until its native stop settles", async () => {
     const resources = fakePageResources()
     const old: GptProJob = {
-      id: "gpt_stop_retention", owner: "main", requestID: "stop-retention", phase: "paused",
-      prompt: "Original question", url: GPT_PRO_URL, createdAt: 0, updatedAt: 0,
-      submitted: false, revision: 0,
+      id: "gpt_stop_retention",
+      owner: "main",
+      requestID: "stop-retention",
+      phase: "paused",
+      prompt: "Original question",
+      url: GPT_PRO_URL,
+      createdAt: 0,
+      updatedAt: 0,
+      submitted: false,
+      revision: 0,
     }
-    const completed = Array.from({ length: 31 }, (_, index) => ({ ...old, id: `gpt_stop_history_${index}`, phase: "completed" as const }))
-    resources.add({ pageID: `gpt-pro-page-${old.id}`, epoch: 1, lastActivity: 1, protected: false },
-      { url: GPT_PRO_URL, model: "", targetModel: false, composer: true, draft: "", generating: false, revision: 0, users: [] })
+    const completed = Array.from({ length: 31 }, (_, index) => ({
+      ...old,
+      id: `gpt_stop_history_${index}`,
+      phase: "completed" as const,
+    }))
+    resources.add(
+      { pageID: `gpt-pro-page-${old.id}`, epoch: 1, lastActivity: 1, protected: false },
+      {
+        url: GPT_PRO_URL,
+        model: "",
+        targetModel: false,
+        composer: true,
+        draft: "",
+        generating: false,
+        revision: 0,
+        users: [],
+      },
+    )
     let release!: () => void
     const gate = new Promise<void>((resolve) => (release = resolve))
-    resources.options.resources.stop = async () => { await gate; throw Error("Native stop unavailable") }
+    resources.options.resources.stop = async () => {
+      await gate
+      throw Error("Native stop unavailable")
+    }
     const f = fixture({ loaded: [old, ...completed], lifecycle: resources.options })
     try {
       await f.controller.command({ action: "stop", id: old.id })

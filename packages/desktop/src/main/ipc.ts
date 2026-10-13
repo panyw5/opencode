@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process"
 import { realpath, stat } from "node:fs/promises"
 import { basename, join } from "node:path"
-import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, session, shell, webContents } from "electron"
+import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, shell, webContents } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 
@@ -20,7 +20,10 @@ import { browserController } from "./browser"
 import { GptProProbe } from "./gpt-pro-probe"
 import { GptProLoginServer } from "./gpt-pro-login-server"
 import { launchGptProLogin } from "./gpt-pro-login-launcher"
-import { importSessionCookies } from "./gpt-pro-session-cookies"
+import { getGptProCredentials } from "./gpt-pro-credentials"
+import { gptProBridgeState } from "./gpt-pro-bridge-state"
+import { inspectGptProImportSafety } from "./gpt-pro-import-safety"
+import { GptProOperationError } from "@opencode-ai/util/gpt-pro-error"
 import { GPT_PRO_PARTITION, GPT_PRO_URL } from "@opencode-ai/util/gpt-pro"
 import type { GptProCommand, GptProConfig } from "@opencode-ai/util/gpt-pro"
 import { getGptProController } from "./gpt-pro-runtime"
@@ -95,15 +98,27 @@ let gptProLogin: GptProLoginServer | undefined
 function loginConnection() {
   if (gptProLogin) return gptProLogin
   gptProLogin = new GptProLoginServer({
-    extensionDirectory: app.isPackaged ? join(process.resourcesPath, "gpt-pro-login") : join(app.getAppPath(), "resources", "gpt-pro-login"),
+    extensionDirectory: app.isPackaged
+      ? join(process.resourcesPath, "gpt-pro-login")
+      : join(app.getAppPath(), "resources", "gpt-pro-login"),
     log: (message) => writeLog("gpt-pro", message),
-    importCookies: (cookies) => getGptProController().importLogin(() =>
-      importSessionCookies(session.fromPartition(GPT_PRO_PARTITION).cookies, cookies, (message) => writeLog("gpt-pro", message)),
-    ),
+    importCookies: (cookies) =>
+      getGptProController().importLogin(async () => {
+        await getGptProCredentials().ready()
+        const { pages, blockers } = await inspectGptProImportSafety(browserController, (message) =>
+          writeLog("gpt-pro", message),
+        )
+        if (blockers.length)
+          throw new GptProOperationError(
+            "login_import_busy",
+            "A shared ChatGPT page is loading, has a draft or attachment, or is generating. Existing login was not changed.",
+          )
+        await getGptProCredentials().replace(cookies)
+        for (const page of pages) browserController.cdp(page.pageID ?? page.partition)?.reload()
+        writeLog("gpt-pro", `login-import reload idle profile pages count=${pages.length}; dispatch lock still held`)
+      }),
     imported: async () => {
-      await browserController.open(GPT_PRO_PARTITION, GPT_PRO_URL)
-      browserController.cdp(GPT_PRO_PARTITION)?.reload()
-      browserController.present(GPT_PRO_PARTITION)
+      await gptProProbe.open()
     },
   })
   app.on("before-quit", () => gptProLogin?.cancel())
@@ -111,7 +126,11 @@ function loginConnection() {
 }
 
 async function openGptProLogin() {
-  return launchGptProLogin(loginConnection(), (url) => shell.openExternal(url), (message) => writeLog("gpt-pro", message))
+  return launchGptProLogin(
+    loginConnection(),
+    (url) => shell.openExternal(url),
+    (message) => writeLog("gpt-pro", message),
+  )
 }
 
 type Deps = {
@@ -153,11 +172,39 @@ export function registerIpcHandlers(deps: Deps) {
     getGptProController().attachmentPreview(input),
   )
   ipcMain.handle("gpt-pro-list", () => getGptProController().list())
-  ipcMain.handle("gpt-pro-open", () => gptProProbe.open())
+  ipcMain.handle("gpt-pro-open", async () => {
+    await getGptProCredentials().ready()
+    return gptProProbe.open()
+  })
   ipcMain.handle("gpt-pro-status", () => gptProProbe.status())
   ipcMain.handle("gpt-pro-login", () => openGptProLogin())
   ipcMain.handle("gpt-pro-login-status", () => loginConnection().status())
   ipcMain.handle("gpt-pro-login-cancel", () => loginConnection().cancel())
+  ipcMain.handle("gpt-pro-runtime-status", async () => {
+    const credentials = getGptProCredentials()
+    await credentials.ready().catch(() => {})
+    if (
+      credentials.status().phase === "encrypted" &&
+      !browserController.getState().some((view) => view.profileID === GPT_PRO_PARTITION)
+    )
+      await browserController
+        .openPage(GPT_PRO_PARTITION, GPT_PRO_PARTITION, GPT_PRO_URL, { kind: "login" })
+        .catch(() => {})
+    const controller = getGptProController()
+    const authentication = await gptProProbe.authentication()
+    const managed = controller.importStatus()
+    const manual = await inspectGptProImportSafety(browserController, (message) => writeLog("gpt-pro", message))
+    return {
+      config: controller.config(),
+      login: loginConnection().status(),
+      authentication,
+      credentials: credentials.status(),
+      bridge: gptProBridgeState(),
+      importBlocked: managed.importBlocked || !!manual.blockers.length,
+      blockers: [...managed.blockers, ...manual.blockers],
+      jobs: controller.list(),
+    }
+  })
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
   ipcMain.handle("browser-open", (_event: IpcMainInvokeEvent, pageID: string, url: string) =>
     browserController.open(pageID, url),

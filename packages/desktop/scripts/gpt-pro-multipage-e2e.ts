@@ -119,7 +119,7 @@ try {
         states.find((state) => (state.pageID ?? state.partition) === job.pageID),
       )
       if (pages.every(Boolean)) {
-        if (pages[0]!.profileID !== pages[1]!.profileID || pages[0]!.profileID !== "persist:consult-gpt-pro")
+        if (pages[0]!.profileID !== pages[1]!.profileID || pages[0]!.profileID !== "consult-gpt-pro-secure")
           throw new Error("Consultation pages did not share the intended ChatGPT login profile")
         if (first.submitted && second.submitted) independent = true
       }

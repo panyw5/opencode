@@ -90,10 +90,10 @@ export const browserConnectRoute = HttpRouter.use((router) =>
         yield* bridge.connect({ adapter, instance: instance ?? undefined })
 
         yield* socket
-          .runRaw((message) => decodeBridgeFrame(bridge, message))
+          .runRaw((message) => decodeBridgeFrame(bridge, message, adapter))
           .pipe(
             Effect.catchReason("SocketError", "SocketCloseError", () => Effect.void),
-            Effect.ensuring(Effect.sync(() => void bridge.disconnect())),
+            Effect.ensuring(bridge.disconnect(adapter)),
             Effect.orDie,
           )
         return HttpServerResponse.empty()
@@ -104,13 +104,17 @@ export const browserConnectRoute = HttpRouter.use((router) =>
 
 const inputDecoder = new TextDecoder("utf-8", { fatal: true })
 
-function decodeBridgeFrame(bridge: BrowserBridge.Interface, message: string | Uint8Array) {
-  if (typeof message === "string") return bridge.handleFrame(message)
+function decodeBridgeFrame(
+  bridge: BrowserBridge.Interface,
+  message: string | Uint8Array,
+  adapter: BrowserBridge.Adapter,
+) {
+  if (typeof message === "string") return bridge.handleFrame(message, adapter)
   return Effect.try({
     try: () => inputDecoder.decode(message),
     catch: () => new Error("invalid browser bridge websocket input"),
   }).pipe(
     Effect.catch(() => Effect.succeed(undefined)),
-    Effect.flatMap((decoded) => (decoded === undefined ? Effect.void : bridge.handleFrame(decoded))),
+    Effect.flatMap((decoded) => (decoded === undefined ? Effect.void : bridge.handleFrame(decoded, adapter))),
   )
 }

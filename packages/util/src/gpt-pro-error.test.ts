@@ -2,6 +2,16 @@ import { describe, expect, test } from "bun:test"
 import { gptProCanResume, gptProDiagnostic, gptProIssue } from "./gpt-pro-error"
 
 describe("GPT-Pro issue classification", () => {
+  test("structured import, account and storage errors are not mistaken for expired login", () => {
+    for (const code of [
+      "login_invalid_session",
+      "login_import_failed",
+      "credential_storage",
+      "account_changed",
+    ] as const)
+      expect(gptProIssue({ error: `${code}: Login operation needs attention` })?.code).toBe(code)
+    expect(gptProIssue({ queueReason: "disabled" })?.code).toBe("disabled")
+  })
   test.each([
     [
       "Error invoking remote method 'gpt-pro-command': Error: owner_page_busy: consultation gpt_a is still paused",
