@@ -894,8 +894,7 @@ export const ConfigChannelsDetail: Component<{
                                     scannerUserId={cfg().scannerUserId}
                                   />
                                   <TextField
-                                    label={language.t("config.channels.field.allowedUsers")}
-                                    description={language.t("config.channels.wechat.aclHint")}
+                                    label={language.t("config.channels.wechat.allowedUsers")}
                                     value={cfg().allowedUsers?.join("\n") ?? ""}
                                     onChange={(value) =>
                                       void patchChannel(row.name, { allowedUsers: parseUserList(value ?? "") })
@@ -1307,11 +1306,10 @@ export const ConfigChannelsDetail: Component<{
             </div>
 
             <TextField
-              label={language.t("config.channels.field.allowedUsers")}
-              description={language.t(
+              label={language.t(
                 props.platform === "wechat"
-                  ? "config.channels.wechat.aclHint"
-                  : "config.channels.field.allowedUsers.hint",
+                  ? "config.channels.wechat.allowedUsers"
+                  : "config.channels.field.allowedUsers",
               )}
               placeholder={props.platform === "feishu" ? "ou_xxx" : props.platform === "wechat" ? "" : "123456789"}
               value={form.allowedUsers}

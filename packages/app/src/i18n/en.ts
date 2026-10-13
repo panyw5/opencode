@@ -2106,6 +2106,8 @@ export const dict = {
   "config.channels.wechat.account": "Bound account",
   "config.channels.wechat.aclHint":
     "Allowed sender IDs, one per line. Leave empty to permit only the scanning user by default.",
+  "config.channels.wechat.allowedUsers":
+    "Allowed users (optional; one sender ID per line; leave empty to permit only the scanning user by default)",
   "config.channels.wechat.bind": "Scan to bind",
   "config.channels.wechat.rebind": "Refresh QR / rebind",
   "config.channels.wechat.check": "Check connection state",
@@ -2139,7 +2141,8 @@ export const dict = {
   "config.channels.field.directory": "Work folder",
   "config.channels.field.directory.hint": "Default: ~/.config/opencode/channels/{name}",
   "config.channels.field.directory.invalid": "Enter a valid path. ~ must be followed by / or \\.",
-  "config.channels.field.allowedUsers": "Allowed users (optional)",
+  "config.channels.field.allowedUsers":
+    "Allowed users (optional; one ID per line or comma-separated; leave empty or use * to allow all)",
   "config.channels.field.allowedUsers.hint":
     "One ID per line or comma-separated. Leave empty or use * for unrestricted access.",
   "config.channels.field.enabled": "Enabled",
