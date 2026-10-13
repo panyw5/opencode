@@ -2231,6 +2231,7 @@ export const dict = {
   "sidebar.im.meta.feishu": "Feishu",
   "sidebar.im.meta.discord": "Discord",
   "sidebar.im.meta.qq": "QQ",
+  "sidebar.im.meta.wechat": "WeChat",
   "sidebar.im.empty": "No sessions in this channel yet. Message the bot on Feishu/Discord and they will appear here.",
   "sidebar.im.toast.unavailable": "Channel unavailable",
   "sidebar.im.toast.configure": "Enable or configure this channel in Config page → Channels.",

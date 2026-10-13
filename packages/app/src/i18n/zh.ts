@@ -2149,6 +2149,7 @@ export const dict = {
   "sidebar.im.meta.feishu": "飞书",
   "sidebar.im.meta.discord": "Discord",
   "sidebar.im.meta.qq": "QQ",
+  "sidebar.im.meta.wechat": "微信",
   "sidebar.im.empty": "该通道尚无会话。在飞书/Discord 中给机器人发消息后会出现在此。",
   "sidebar.im.toast.unavailable": "通道不可用",
   "sidebar.im.toast.configure": "请在 配置页面 → 消息通道 中启用或配置该通道。",

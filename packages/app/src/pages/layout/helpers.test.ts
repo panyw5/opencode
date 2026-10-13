@@ -21,6 +21,7 @@ import {
   expandHomePath,
   filterImChannelSessions,
   findImChannelByDirectory,
+  imChannelMetaKey,
   hasProjectPermissions,
   imChannelProject,
   isInitialSessionLoad,
@@ -50,6 +51,35 @@ import {
 } from "./helpers"
 import { projectSelected } from "./sidebar-project-helpers"
 import type { Project } from "@opencode-ai/sdk/v2"
+import { dict as en } from "../../i18n/en"
+import { dict as zh } from "../../i18n/zh"
+
+describe("IM channel platform labels", () => {
+  test("maps every platform explicitly for the menu and session sidebar", () => {
+    for (const type of ["feishu", "discord", "qq", "wechat"]) {
+      expect(imChannelMetaKey(type)).toBe(`sidebar.im.meta.${type}`)
+    }
+  })
+
+  test("labels a WeChat channel as WeChat instead of Discord or Feishu", () => {
+    const channel = findImChannelByDirectory(
+      "/config/channels/Root",
+      { Root: { type: "wechat" } },
+      "/config",
+      "/home",
+    )!
+    expect(channel.type).toBe("wechat")
+    const key = imChannelMetaKey(channel.type)
+    expect(en[key]).toBe("WeChat")
+    expect(zh[key]).toBe("微信")
+    expect(`${zh[key]} | ${channel.name}`).toBe("微信 | Root")
+  })
+
+  test("does not misidentify unknown platforms as an existing platform", () => {
+    expect(imChannelMetaKey("unknown")).toBe("sidebar.im.title")
+    expect(imChannelMetaKey("toString")).toBe("sidebar.im.title")
+  })
+})
 
 const session = (input: Partial<Session> & Pick<Session, "id" | "directory">) =>
   ({

@@ -107,6 +107,7 @@ import {
   effectiveWorkspaceOrder,
   errorMessage,
   findImChannelByDirectory,
+  imChannelMetaKey,
   imChannelProject,
   isInitialSessionLoad,
   latestProjectSession,
@@ -2141,6 +2142,13 @@ export default function Layout(props: ParentProps) {
       },
     })
     await animateToSidebarStash(source)
+  }
+
+  function imChannelMeta(type: string) {
+    const key = imChannelMetaKey(type)
+    const label = language.t(key)
+    console.debug(`[layout] imChannelMeta type=${type} key=${key} label=${label}`)
+    return label
   }
 
   /** Resolve the channel's own work directory (not an OpenCode project). */
@@ -4460,11 +4468,8 @@ export default function Layout(props: ParentProps) {
               // the same selected domain.
               // with `!`, which throws when the memo goes undefined mid-update.
               channel={() => match().name}
-              channelMeta={() => {
-                if (match().type === "discord") return language.t("sidebar.im.meta.discord")
-                if (match().type === "qq") return language.t("sidebar.im.meta.qq")
-                return language.t("sidebar.im.meta.feishu")
-              }}
+              channelType={() => match().type}
+              channelMeta={() => imChannelMeta(match().type)}
               directory={() => match().directory}
               sortNow={sortNow}
               mobile={panelProps.mobile}
@@ -4572,12 +4577,7 @@ export default function Layout(props: ParentProps) {
           .filter(([, entry]) => entry.enabled !== false)
           .map(([name, entry]) => {
             const dir = resolveChannelDirectory(name, entry.directory, configDir, home)
-            const platform =
-              entry.type === "feishu"
-                ? language.t("sidebar.im.meta.feishu")
-                : entry.type === "qq"
-                  ? language.t("sidebar.im.meta.qq")
-                  : language.t("sidebar.im.meta.discord")
+            const platform = imChannelMeta(entry.type)
             return {
               id: name,
               // Platform first, then channel name: e.g. "飞书 | cc"

@@ -19,6 +19,7 @@ import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { sessionTabsTargetHref, useSessionTabs } from "@/context/session-tabs"
+import { ChannelBrandIcon } from "@/components/channel-brand-icon"
 import { extraAgentByDirectory, extraAgentDomain } from "./extra-agents"
 import { NewSessionItem, SessionItem, SessionGroupHeader, SessionSearchBar } from "./sidebar-items"
 import {
@@ -571,6 +572,7 @@ export const SortableWorkspace = (props: {
 export const ImChannelSidebar = (props: {
   ctx: WorkspaceSidebarContext
   channel: Accessor<string>
+  channelType: Accessor<string>
   channelMeta: Accessor<string>
   /** Resolved absolute work directory for this channel. */
   directory: Accessor<string>
@@ -649,8 +651,10 @@ export const ImChannelSidebar = (props: {
       <div class="shrink-0 pl-1 py-1">
         <div class="flex items-start justify-between gap-2 py-2 pl-2 pr-0">
           <div class="flex min-w-0 flex-col">
-            <div class="truncate text-14-medium text-text-strong">{props.channel()}</div>
-            <div class="truncate text-12-regular text-text-weak">{props.channelMeta()}</div>
+            <div data-component="im-channel-heading" class="flex min-w-0 items-center gap-2">
+              <ChannelBrandIcon platform={props.channelType()} size={20} label={props.channelMeta()} />
+              <div class="truncate text-14-medium text-text-strong">{props.channel()}</div>
+            </div>
             <Show when={directory()}>
               {(dir) => (
                 <div class="truncate font-mono text-12-regular text-text-weak">
@@ -661,7 +665,6 @@ export const ImChannelSidebar = (props: {
               )}
             </Show>
           </div>
-          <Icon name="speech-bubble" class="mt-1 size-5 shrink-0 text-icon-base" />
         </div>
       </div>
 

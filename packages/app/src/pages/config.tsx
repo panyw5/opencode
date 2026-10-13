@@ -19,9 +19,7 @@ import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { GptProSettings } from "@/components/gpt-pro-settings"
 import { DEFAULT_GPT_PRO_CONFIG } from "@opencode-ai/util/gpt-pro"
-import larkIcon from "../../../ui/src/assets/icons/channel/lark.png"
-import qqIcon from "../../../ui/src/assets/icons/channel/qq.png"
-import wechatIcon from "../../../ui/src/assets/icons/channel/wechat.png"
+import { ChannelBrandIcon } from "@/components/channel-brand-icon"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -1525,11 +1523,6 @@ function ConfigPaneTitle(props: { title: string; description?: string; icon: Ico
       </div>
     </div>
   )
-}
-
-function ChannelBrandIcon(props: { platform: "feishu" | "qq" | "wechat" | "discord" }) {
-  const src = props.platform === "feishu" ? larkIcon : props.platform === "qq" ? qqIcon : props.platform === "wechat" ? wechatIcon : undefined
-  return src ? <img src={src} width="38" height="38" alt="" aria-hidden="true" class="object-contain" /> : <Icon name="code" size="medium" />
 }
 
 function PluginListButton(props: {
