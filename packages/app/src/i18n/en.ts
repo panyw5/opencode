@@ -2222,7 +2222,7 @@ export const dict = {
   "config.channels.discord.hint":
     "Create a Discord application bot, enable Message Content Intent, then paste the bot token.",
   "config.channels.qq.hint":
-    "Create a bot on QQ Open Platform and enter its App ID and Client Secret. OpenCode will discover and connect to the official Gateway automatically.",
+    "Create a bot on QQ Open Platform (q.qq.com) and enter its App ID and Client Secret. OpenCode will discover and connect to the official Gateway automatically.",
 
   "sidebar.im.title": "IM Channels",
   "sidebar.im.meta.feishu": "Feishu",

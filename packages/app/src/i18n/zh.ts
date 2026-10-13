@@ -2142,7 +2142,7 @@ export const dict = {
   "config.channels.feishu.manual.hint": "在 open.feishu.cn 创建企业自建应用，开启机器人能力后粘贴凭证。",
   "config.channels.discord.hint": "创建 Discord 应用机器人，开启 Message Content Intent 后粘贴 Bot Token。",
   "config.channels.qq.hint":
-    "在 QQ 开放平台创建机器人，填写 AppID 和 Client Secret。OpenCode 会自动获取官方 Gateway 并连接。",
+    "在 QQ 开放平台（q.qq.com）创建机器人，填写 AppID 和 Client Secret。OpenCode 会自动获取官方 Gateway 并连接。",
 
   "sidebar.im.title": "IM 通道",
   "sidebar.im.meta.feishu": "飞书",
