@@ -2,6 +2,7 @@ import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCle
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
 import { Tabs } from "@opencode-ai/ui/tabs"
+import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
@@ -158,6 +159,10 @@ export function SessionSidePanel(props: {
     const state = file.tree.state("")
     if (!state?.loaded) return false
     return file.tree.children("").length === 0
+  })
+  const treeLoading = createMemo(() => {
+    const state = file.tree.state("")
+    return state?.loading === true && file.tree.children("").length === 0
   })
   const issue = createMemo(() => permissionNotice(file.tree.state("")?.error, language.t, "file"))
   const extraAgent = createMemo(() => extraAgentByIntegration(server.current?.integration))
@@ -500,6 +505,19 @@ export function SessionSidePanel(props: {
                       <Match when={fileListEmptyKey()}>{(key) => empty(language.t(key()))}</Match>
                       <Match when={issue()}>{empty(issue()!)}</Match>
                       <Match when={nofiles()}>{empty(language.t("session.files.empty"))}</Match>
+                      <Match when={treeLoading()}>
+                        <div
+                          role="status"
+                          aria-live="polite"
+                          class="h-full flex items-center justify-center gap-2 text-12-regular text-text-weak"
+                        >
+                          <Icon name="refresh" size="small" class="animate-spin" />
+                          <span>
+                            {language.t("common.loading")}
+                            {language.t("common.loading.ellipsis")}
+                          </span>
+                        </div>
+                      </Match>
                       <Match when={true}>
                         <FileTree
                           path=""
