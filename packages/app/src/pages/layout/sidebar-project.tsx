@@ -213,17 +213,16 @@ const ProjectTile = (props: {
       <ContextMenu.Portal>
         <ContextMenu.Content>
           <ContextMenu.Item
-            data-action="project-open-in-finder"
+            data-action="project-new-session"
             data-project={base64Encode(props.project.worktree)}
-            disabled={openInFileManagerDisabled()}
-            onSelect={openInFileManager}
+            onSelect={openNewSession}
           >
             <ContextMenu.Icon>
               <span class="flex shrink-0 text-icon-base">
-                <Icon name="folder" size="small" />
+                <Icon name="new-session" size="small" />
               </span>
             </ContextMenu.Icon>
-            <ContextMenu.ItemLabel>{openInFileManagerLabel()}</ContextMenu.ItemLabel>
+            <ContextMenu.ItemLabel>{props.language.t("command.session.new")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
           <ContextMenu.Item
             data-action="project-copy-path"
@@ -238,19 +237,25 @@ const ProjectTile = (props: {
             <ContextMenu.ItemLabel>{props.language.t("command.project.copyPath")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
           <ContextMenu.Item
-            data-action="project-new-session"
+            data-action="project-open-in-finder"
             data-project={base64Encode(props.project.worktree)}
-            onSelect={openNewSession}
+            disabled={openInFileManagerDisabled()}
+            onSelect={openInFileManager}
           >
             <ContextMenu.Icon>
               <span class="flex shrink-0 text-icon-base">
-                <Icon name="new-session" size="small" />
+                <Icon name="folder" size="small" />
               </span>
             </ContextMenu.Icon>
-            <ContextMenu.ItemLabel>{props.language.t("command.session.new")}</ContextMenu.ItemLabel>
+            <ContextMenu.ItemLabel>{openInFileManagerLabel()}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
           <ContextMenu.Separator />
           <ContextMenu.Item onSelect={() => props.showEditProjectDialog(props.project)}>
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="edit" size="small" />
+              </span>
+            </ContextMenu.Icon>
             <ContextMenu.ItemLabel>{props.language.t("common.edit")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
           <ContextMenu.Item
@@ -259,6 +264,11 @@ const ProjectTile = (props: {
             disabled={props.project.vcs !== "git" && !props.workspacesEnabled(props.project)}
             onSelect={() => props.toggleProjectWorkspaces(props.project)}
           >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="play" size="small" />
+              </span>
+            </ContextMenu.Icon>
             <ContextMenu.ItemLabel>
               {props.workspacesEnabled(props.project)
                 ? props.language.t("sidebar.workspaces.disable")
@@ -271,6 +281,11 @@ const ProjectTile = (props: {
             disabled={unseenCount() === 0}
             onSelect={clear}
           >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="bell-off" size="small" />
+              </span>
+            </ContextMenu.Icon>
             <ContextMenu.ItemLabel>{props.language.t("sidebar.project.clearNotifications")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
           <ContextMenu.Separator />
@@ -279,6 +294,11 @@ const ProjectTile = (props: {
             data-project={base64Encode(props.project.worktree)}
             onSelect={() => props.closeProject(props.project.worktree)}
           >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="close-small" size="small" />
+              </span>
+            </ContextMenu.Icon>
             <ContextMenu.ItemLabel>{props.language.t("common.close")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
         </ContextMenu.Content>
