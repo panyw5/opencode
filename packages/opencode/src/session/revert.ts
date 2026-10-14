@@ -73,6 +73,7 @@ export const layer = Layer.effect(
         log.warn("revert boundary not found", { ...input, messages: all.length })
         return session
       }
+      yield* summary.invalidate(input.sessionID)
 
       log.info("revert boundary resolved", {
         sessionID: input.sessionID,
@@ -115,6 +116,7 @@ export const layer = Layer.effect(
       yield* state.assertNotBusy(input.sessionID)
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       if (!session.revert) return session
+      yield* summary.invalidate(input.sessionID)
       if (session.revert.snapshot) yield* snap.restore(session.revert.snapshot)
       yield* sessions.clearRevert(input.sessionID)
       return yield* sessions.get(input.sessionID).pipe(Effect.orDie)
@@ -123,6 +125,7 @@ export const layer = Layer.effect(
     const cleanup = Effect.fn("SessionRevert.cleanup")(function* (session: Session.Info) {
       if (!session.revert) return
       const sessionID = session.id
+      yield* summary.invalidate(sessionID)
       const msgs = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
       const messageID = session.revert.messageID
       const remove = [] as MessageV2.WithParts[]

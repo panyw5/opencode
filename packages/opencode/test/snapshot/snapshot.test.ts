@@ -1,11 +1,13 @@
 import { afterEach, expect } from "bun:test"
 import { $ } from "bun"
+import { applyPatch } from "diff"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import fs from "fs/promises"
 import path from "path"
 import { Effect, Fiber, Layer } from "effect"
 import { Snapshot } from "../../src/snapshot"
+import { Log } from "@opencode-ai/core/util/log"
 import { disposeAllInstances, provideInstance, TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
@@ -18,6 +20,18 @@ const fwd = (...parts: string[]) => path.join(...parts).replaceAll("\\", "/")
 const SNAPSHOT_BATCH_BOUNDARY = 100
 const OVER_BATCH_COUNT = SNAPSHOT_BATCH_BOUNDARY + 1
 const MIXED_BATCH_GROUP_COUNT = Math.ceil(OVER_BATCH_COUNT / 4)
+
+const readLogs = (expected: string[]) =>
+  Effect.promise(async () => {
+    if (!Log.file()) throw new Error("log file path is empty")
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const text = await fs.readFile(Log.file(), "utf8").catch(() => "")
+      if (expected.every((item) => text.includes(item))) return text
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    }
+    const tail = await fs.readFile(Log.file(), "utf8").catch(() => "")
+    return `missing expected log entries; path=${Log.file()} tail=${tail.slice(-500)}`
+  })
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -934,6 +948,126 @@ it.instance(
       expect(diffs[0].patch).toContain("+modified content")
       expect(diffs[0].additions).toBeGreaterThan(0)
       expect(diffs[0].deletions).toBeGreaterThan(0)
+      expect(yield* snapshot.diffFull(before, after!)).toEqual(diffs)
+    }),
+  ),
+  { git: true },
+)
+
+it.instance(
+  "reuses unchanged file patches across distinct snapshot pairs",
+  withTrackedSnapshot(({ tmp, snapshot }) =>
+    Effect.gen(function* () {
+      yield* Effect.promise(() => Log.init({ print: false, dev: true, level: "INFO" }))
+      const file = `${tmp.path}/shared-patch.txt`
+      yield* write(file, "before\nshared\n")
+      const firstFrom = yield* snapshot.track()
+      yield* write(file, "after\nshared\n")
+      const firstTo = yield* snapshot.track()
+      const first = yield* snapshot.diffFull(firstFrom!, firstTo!)
+      expect(applyPatch("before\nshared\n", first[0]!.patch!)).toBe("after\nshared\n")
+
+      yield* write(file, "before\nshared\n")
+      yield* write(`${tmp.path}/unrelated.txt`, "base\n")
+      const secondFrom = yield* snapshot.track()
+      yield* write(file, "after\nshared\n")
+      yield* write(`${tmp.path}/unrelated.txt`, "changed\n")
+      const secondTo = yield* snapshot.track()
+      expect(secondFrom).not.toBe(firstFrom)
+      expect(secondTo).not.toBe(firstTo)
+      const second = yield* snapshot.diffFull(secondFrom!, secondTo!)
+      expect(second.find((item) => item.file === "shared-patch.txt")?.patch).toBe(first[0]!.patch)
+
+      const logs = yield* readLogs([`from=${secondFrom} to=${secondTo} files=1 cacheHits=1`])
+      expect(logs).toContain(`from=${secondFrom} to=${secondTo} files=1 cacheHits=1`)
+    }),
+  ),
+  { git: true },
+)
+
+it.instance(
+  "evicts old file patches after exceeding the bounded cache capacity",
+  withTrackedSnapshot(({ tmp, snapshot }) =>
+    Effect.gen(function* () {
+      yield* Effect.promise(() => Log.init({ print: false, dev: true, level: "INFO" }))
+      const count = 130
+      for (let i = 0; i < count; i++) {
+        const file = `${tmp.path}/cache-${String(i).padStart(3, "0")}.txt`
+        yield* write(file, `before-${i}\nshared\n`)
+      }
+      const from = yield* snapshot.track()
+      for (let i = 0; i < count; i++) {
+        const file = `${tmp.path}/cache-${String(i).padStart(3, "0")}.txt`
+        yield* write(file, `after-${i}\nshared\n`)
+      }
+      const to = yield* snapshot.track()
+      const first = yield* snapshot.diffFull(from!, to!)
+      expect(first).toHaveLength(count)
+      expect(applyPatch("before-0\nshared\n", first[0]!.patch!)).toBe("after-0\nshared\n")
+
+      const repeated = yield* snapshot.diffFull(from!, to!)
+      expect(repeated).toEqual(first)
+      const logs = yield* readLogs([
+        `from=${from} to=${to} files=2 cacheHits=0`,
+        `from=${from} to=${to} files=130 cacheHits=126`,
+      ])
+      expect(logs).toContain(`from=${from} to=${to} files=2 cacheHits=0`)
+      // Reinserted misses in the first 100-file batch evict two more entries
+      // from the later batch before that batch is processed.
+      expect(logs).toContain(`from=${from} to=${to} files=130 cacheHits=126`)
+    }),
+  ),
+  { git: true },
+)
+
+it.instance(
+  "diffFull filters workspace-owned absolute paths before reading file blobs",
+  withTrackedSnapshot(({ tmp, snapshot, before }) =>
+    Effect.gen(function* () {
+      yield* write(`${tmp.path}/a.txt`, "new a")
+      yield* write(`${tmp.path}/b.txt`, "new b")
+      const after = yield* snapshot.track()
+      expect(after).toBeTruthy()
+      const diffs = yield* snapshot.diffFull(before, after!, new Set([path.resolve(`${tmp.path}/b.txt`)]))
+      expect(diffs.map((item) => item.file)).toEqual(["b.txt"])
+      expect(diffs[0]!.patch).toContain("+new b")
+    }),
+  ),
+  { git: true },
+)
+
+it.instance(
+  "diffFull rechecks current ignore rules on snapshot-cache hits",
+  withTrackedSnapshot(({ tmp, snapshot, before }) =>
+    Effect.gen(function* () {
+      yield* write(`${tmp.path}/ignore-cache.txt`, "after")
+      const after = yield* snapshot.track()
+      expect(after).toBeTruthy()
+      const visible = yield* snapshot.diffFull(before, after!)
+      expect(visible.map((item) => item.file)).toContain("ignore-cache.txt")
+
+      yield* write(`${tmp.path}/.gitignore`, "ignore-cache.txt\n")
+      const filtered = yield* snapshot.diffFull(before, after!)
+      expect(filtered.map((item) => item.file)).not.toContain("ignore-cache.txt")
+    }),
+  ),
+  { git: true },
+)
+
+it.instance(
+  "diffFull invalidates cached patch text when current attributes change binary classification",
+  withTrackedSnapshot(({ tmp, snapshot, before }) =>
+    Effect.gen(function* () {
+      yield* write(`${tmp.path}/attribute-cache.txt`, "after")
+      const after = yield* snapshot.track()
+      expect(after).toBeTruthy()
+      const visible = yield* snapshot.diffFull(before, after!)
+      expect(visible[0]?.patch).toContain("+after")
+
+      yield* write(`${tmp.path}/.gitattributes`, "attribute-cache.txt binary\n")
+      const binary = yield* snapshot.diffFull(before, after!)
+      expect(binary[0]?.patch).toBe("")
+      expect(binary[0]?.additions).toBe(0)
     }),
   ),
   { git: true },
@@ -1067,6 +1201,56 @@ it.instance(
     expect(diffs.length).toBe(1)
     expect(diffs[0].file).toBe("whitespace.txt")
     expect(diffs[0].additions).toBeGreaterThan(0)
+  }),
+  { git: true },
+)
+
+it.instance(
+  "diffFull patches apply for special paths, empty files, and missing final newlines",
+  Effect.gen(function* () {
+    const tmp = yield* bootstrap()
+    const snapshot = yield* Snapshot.Service
+    const files = [
+      "space 中文.txt",
+      "tab\tname.txt",
+      'emoji🙂\t"quoted".txt',
+      "wild[abc]*.txt",
+      "colon:name.txt",
+      "line\nbreak.txt",
+      "empty-added.txt",
+      "empty-deleted.txt",
+    ]
+    const before = new Map<string, string>()
+    const after = new Map<string, string>()
+    for (const [index, name] of files.entries()) {
+      const file = path.join(tmp.path, name)
+      if (index !== files.length - 2) {
+        const content = index === files.length - 1 ? "" : `before-${index}\nno-final-newline-${index}`
+        before.set(name, content)
+        yield* write(file, content)
+      }
+    }
+    const from = yield* snapshot.track()
+    for (const [index, name] of files.entries()) {
+      const file = path.join(tmp.path, name)
+      if (index === files.length - 1) {
+        yield* rm(file)
+        continue
+      }
+      const content = index === files.length - 2 ? "" : `after-${index}\nno-final-newline-${index}`
+      after.set(name, content)
+      yield* write(file, content)
+    }
+    const to = yield* snapshot.track()
+    const diffs = yield* snapshot.diffFull(from!, to!)
+    expect(diffs).toHaveLength(files.length)
+    for (const item of diffs) {
+      const name = item.file!
+      const oldContent = before.get(name) ?? ""
+      const newContent = after.get(name) ?? ""
+      expect(item.patch).toBeDefined()
+      expect(applyPatch(oldContent, item.patch!)).toBe(newContent)
+    }
   }),
   { git: true },
 )

@@ -1,4 +1,4 @@
-import { Effect, Layer, Context, Schema } from "effect"
+import { Effect, Layer, Context, Schema, Semaphore } from "effect"
 import path from "path"
 import { Bus } from "@/bus"
 import { Snapshot } from "@/snapshot"
@@ -7,6 +7,7 @@ import * as Session from "./session"
 import { MessageV2 } from "./message-v2"
 import { SessionID, MessageID } from "./schema"
 import * as Log from "@opencode-ai/core/util/log"
+import { InstanceState } from "@/effect/instance-state"
 
 const log = Log.create({ service: "session.summary" })
 
@@ -68,6 +69,7 @@ function unquoteGitPath(input: string) {
 
 export interface Interface {
   readonly summarize: (input: { sessionID: SessionID; messageID: MessageID }) => Effect.Effect<void>
+  readonly invalidate: (sessionID: SessionID) => Effect.Effect<void>
   readonly diff: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Snapshot.FileDiff[]>
   readonly computeDiff: (input: {
     messages: MessageV2.WithParts[]
@@ -76,6 +78,18 @@ export interface Interface {
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionSummary") {}
+
+type SummaryState = {
+  closed: boolean
+  generation: number
+  invalidation: number
+  generations: Map<SessionID, number>
+  epochs: Map<SessionID, number>
+  pendingMessages: Map<SessionID, Map<MessageID, number>>
+  running: Set<SessionID>
+  dirty: Set<SessionID>
+  commitLock: Semaphore.Semaphore
+}
 
 function canonicalPath(file: string, root?: string) {
   const value = unquoteGitPath(file).replaceAll("\\", "/")
@@ -87,8 +101,8 @@ function addOwnedFile(files: Set<string>, value: unknown, root: string) {
   files.add(canonicalPath(value, root))
 }
 
-export function filterSessionDiffs(diffs: Snapshot.FileDiff[], files: ReadonlySet<string>) {
-  return diffs.filter((item) => item.file && files.has(canonicalPath(item.file)))
+export function filterSessionDiffs(diffs: Snapshot.FileDiff[], files: ReadonlySet<string>, root?: string) {
+  return diffs.filter((item) => item.file && files.has(canonicalPath(item.file, root)))
 }
 
 /** Returns files explicitly reported as written by tools in these messages. */
@@ -140,6 +154,30 @@ export const layer = Layer.effect(
     const snapshot = yield* Snapshot.Service
     const storage = yield* Storage.Service
     const bus = yield* Bus.Service
+    const state = yield* InstanceState.make<SummaryState>(() =>
+      Effect.gen(function* () {
+        const value: SummaryState = {
+          closed: false,
+          generation: 0,
+          invalidation: 0,
+          generations: new Map(),
+          epochs: new Map(),
+          pendingMessages: new Map(),
+          running: new Set(),
+          dirty: new Set(),
+          commitLock: Semaphore.makeUnsafe(1),
+        }
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            value.closed = true
+            value.dirty.clear()
+            value.pendingMessages.clear()
+            value.generations.clear()
+          }).pipe(Effect.andThen(value.commitLock.withPermits(1)(Effect.void))),
+        )
+        return value
+      }),
+    )
 
     const computeDiff = Effect.fn("SessionSummary.computeDiff")(function* (input: {
       messages: MessageV2.WithParts[]
@@ -163,10 +201,14 @@ export const layer = Layer.effect(
         }
       }
       if (from && to) {
-        const diffs = yield* snapshot.diffFull(from, to)
+        const diffs = yield* snapshot.diffFull(from, to, input.files)
         if (!input.files) return diffs
 
-        const filtered = filterSessionDiffs(diffs, input.files)
+        const root = input.messages.reduce<string | undefined>(
+          (value, item) => value ?? (item.info.role === "assistant" ? item.info.path.root : undefined),
+          undefined,
+        )
+        const filtered = filterSessionDiffs(diffs, input.files, root)
         log.info("filtered session snapshot diff", {
           sessionID: input.messages[0]?.info.sessionID ?? "",
           snapshotFiles: diffs.length,
@@ -182,37 +224,122 @@ export const layer = Layer.effect(
       sessionID: SessionID
       messageID: MessageID
     }) {
-      const all = yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
-      if (!all.length) return
-
-      const sessionFiles = collectSessionEditedFiles(all)
-      const diffs = yield* computeDiff({ messages: all, files: sessionFiles })
-      log.info("session summary ownership", {
+      const current = yield* InstanceState.get(state)
+      const generation = ++current.generation
+      current.generations.set(input.sessionID, generation)
+      let targets = current.pendingMessages.get(input.sessionID) ?? new Map<MessageID, number>()
+      targets.set(input.messageID, generation)
+      current.pendingMessages.set(input.sessionID, targets)
+      current.dirty.add(input.sessionID)
+      log.info("session summary job started", {
         sessionID: input.sessionID,
         messageID: input.messageID,
-        ownedFiles: sessionFiles.size,
-        diffFiles: diffs.length,
+        generation,
       })
-      yield* sessions.setSummary({
-        sessionID: input.sessionID,
-        summary: {
-          additions: diffs.reduce((sum, x) => sum + x.additions, 0),
-          deletions: diffs.reduce((sum, x) => sum + x.deletions, 0),
-          files: diffs.length,
-        },
-      })
-      yield* storage.write(["session_diff", input.sessionID], diffs).pipe(Effect.ignore)
-      yield* bus.publish(Session.Event.Diff, { sessionID: input.sessionID, diff: diffs })
+      if (current.running.has(input.sessionID)) {
+        log.info("session summary request coalesced", {
+          sessionID: input.sessionID,
+          messageID: input.messageID,
+          generation,
+          pendingMessages: targets.size,
+        })
+        return
+      }
 
-      const messages = all.filter(
-        (m) => m.info.id === input.messageID || (m.info.role === "assistant" && m.info.parentID === input.messageID),
+      current.running.add(input.sessionID)
+      yield* Effect.gen(function* () {
+        while (!current.closed && current.dirty.has(input.sessionID)) {
+          current.dirty.delete(input.sessionID)
+          targets = current.pendingMessages.get(input.sessionID) ?? new Map<MessageID, number>()
+          const latestGeneration = current.generations.get(input.sessionID)!
+          const epoch = current.epochs.get(input.sessionID) ?? 0
+          const messageTargets = [...targets]
+          const all = yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
+          if (!all.length) {
+            targets.clear()
+            break
+          }
+
+          const sessionFiles = collectSessionEditedFiles(all)
+          const diffs = yield* computeDiff({ messages: all, files: sessionFiles })
+          log.info("session summary ownership", {
+            sessionID: input.sessionID,
+            messageID: input.messageID,
+            generation: latestGeneration,
+            ownedFiles: sessionFiles.size,
+            diffFiles: diffs.length,
+          })
+          const committed = yield* current.commitLock.withPermits(1)(
+            Effect.gen(function* () {
+              if (current.closed || (current.epochs.get(input.sessionID) ?? 0) !== epoch) return false
+              yield* sessions.setSummary({
+                sessionID: input.sessionID,
+                summary: {
+                  additions: diffs.reduce((sum, x) => sum + x.additions, 0),
+                  deletions: diffs.reduce((sum, x) => sum + x.deletions, 0),
+                  files: diffs.length,
+                },
+              })
+              yield* storage.write(["session_diff", input.sessionID], diffs).pipe(Effect.ignore)
+              yield* bus.publish(Session.Event.Diff, { sessionID: input.sessionID, diff: diffs })
+              return true
+            }),
+          )
+          if (!committed) continue
+
+          for (const [messageID, requestedGeneration] of messageTargets) {
+            if (current.closed || (current.epochs.get(input.sessionID) ?? 0) !== epoch) break
+            const messages = all.filter(
+              (m) => m.info.id === messageID || (m.info.role === "assistant" && m.info.parentID === messageID),
+            )
+            const target = messages.find((m) => m.info.id === messageID)
+            if (!target || target.info.role !== "user") {
+              if (targets.get(messageID) === requestedGeneration) targets.delete(messageID)
+              continue
+            }
+            const msgFiles = collectSessionEditedFiles(messages)
+            const msgDiffs = yield* computeDiff({ messages, files: msgFiles })
+            if (current.closed || (current.epochs.get(input.sessionID) ?? 0) !== epoch) break
+            const targetInfo = target.info
+            const messageCommitted = yield* current.commitLock.withPermits(1)(
+              Effect.gen(function* () {
+                if (current.closed || (current.epochs.get(input.sessionID) ?? 0) !== epoch) return false
+                targetInfo.summary = { ...targetInfo.summary, diffs: msgDiffs }
+                yield* sessions.updateMessage(targetInfo)
+                return true
+              }),
+            )
+            if (!messageCommitted) break
+            if (targets.get(messageID) === requestedGeneration) targets.delete(messageID)
+          }
+          if (current.dirty.has(input.sessionID)) continue
+        }
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            current.running.delete(input.sessionID)
+            if (targets.size === 0 && !current.dirty.has(input.sessionID)) {
+              current.pendingMessages.delete(input.sessionID)
+              current.generations.delete(input.sessionID)
+            }
+          }),
+        ),
       )
-      const target = messages.find((m) => m.info.id === input.messageID)
-      if (!target || target.info.role !== "user") return
-      const msgFiles = collectSessionEditedFiles(messages)
-      const msgDiffs = yield* computeDiff({ messages, files: msgFiles })
-      target.info.summary = { ...target.info.summary, diffs: msgDiffs }
-      yield* sessions.updateMessage(target.info)
+    })
+
+    const invalidate = Effect.fn("SessionSummary.invalidate")(function* (sessionID: SessionID) {
+      const current = yield* InstanceState.get(state)
+      if (current.closed) return
+      yield* current.commitLock.withPermits(1)(
+        Effect.sync(() => {
+          const generation = ++current.invalidation
+          current.epochs.set(sessionID, generation)
+          current.generations.delete(sessionID)
+          current.pendingMessages.delete(sessionID)
+          current.dirty.delete(sessionID)
+          log.info("session summary invalidated", { sessionID, generation })
+        }),
+      )
     })
 
     const diff = Effect.fn("SessionSummary.diff")(function* (input: { sessionID: SessionID; messageID?: MessageID }) {
@@ -230,7 +357,7 @@ export const layer = Layer.effect(
       return next
     })
 
-    return Service.of({ summarize, diff, computeDiff })
+    return Service.of({ summarize, invalidate, diff, computeDiff })
   }),
 )
 

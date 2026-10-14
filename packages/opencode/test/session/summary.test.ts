@@ -66,3 +66,20 @@ test("keeps a diff for a file reported by the current session", () => {
 
   expect(filterSessionDiffs([diff], files)).toEqual([diff])
 })
+
+test("matches Git-relative diff paths against workspace-owned absolute paths", () => {
+  const files = collectSessionEditedFiles([assistant([tool("edit", {}, { filePath: `${root}/目录/owned file.md` })])])
+  const diff = { file: "目录/owned file.md", additions: 1, deletions: 1, status: "modified" as const }
+
+  expect(filterSessionDiffs([diff], files, root)).toEqual([diff])
+})
+
+test("resolves a nested session cwd against the workspace root", () => {
+  const nested = `${root}/packages/opencode`
+  const message = assistant([tool("edit", {}, { filePath: `${nested}/owned.ts` })])
+  message.info.path.cwd = nested
+  const files = collectSessionEditedFiles([message])
+  const diff = { file: "packages/opencode/owned.ts", additions: 1, deletions: 0, status: "added" as const }
+
+  expect(filterSessionDiffs([diff], files, root)).toEqual([diff])
+})
