@@ -3847,7 +3847,13 @@ function codexChatMessages(
         role: "system",
         kind: item.kind,
         label: item.kind,
-        title: item.kind === "command" ? item.title?.trim() : undefined,
+        title:
+          item.kind === "command"
+            ? item.title?.trim()
+            : text
+                .split("\n")
+                .find((line) => line.trim())
+                ?.slice(0, 120),
         text: item.kind === "command" ? item.text?.trim() ?? "" : text,
         status: item.status,
         streaming: running && item.status === "running",
@@ -4075,7 +4081,7 @@ function CodexSessionDialog(props: {
                     </div>
                     <div data-slot="codex-chat-bubble" data-role={item().role} data-kind={item().kind}>
                       <Show
-                        when={item().kind === "command"}
+                        when={item().role === "system"}
                         fallback={
                           <>
                             <div data-slot="codex-chat-label">
