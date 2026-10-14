@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test"
-import type { Config, Message, Part, PermissionRequest, Project, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import type {
+  Config,
+  Message,
+  Part,
+  PermissionRequest,
+  Project,
+  QuestionRequest,
+  Session,
+} from "@opencode-ai/sdk/v2/client"
 import { createStore } from "solid-js/store"
 import type { State } from "./types"
 import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } from "./event-reducer"
@@ -732,5 +740,44 @@ describe("applyDirectoryEvent", () => {
     expect(parts?.length).toBe(1)
     const text = (parts?.[0] as unknown as { text?: string })?.text
     expect(text).toBe("Hello World final")
+  })
+
+  test("streaming snapshot does not replay deltas already included in fetched text", () => {
+    const [store, setStore] = createStore(baseState())
+    const sessionID = "ses_snapshot"
+    const messageID = "msg_snapshot"
+    const partID = "prt_snapshot"
+    const apply = (event: { type: string; properties?: unknown }) =>
+      applyDirectoryEvent({
+        event,
+        store,
+        setStore,
+        push() {},
+        directory: "/tmp",
+        loadLsp() {},
+      })
+    apply({
+      type: "message.part.updated",
+      properties: {
+        part: { id: partID, sessionID, messageID, type: "text", text: "## Title\n\nAlready received" },
+      },
+    })
+    const delta = (offset: number, text: string) =>
+      apply({
+        type: "message.part.delta",
+        properties: {
+          sessionID,
+          messageID,
+          partID,
+          field: "text",
+          delta: text,
+          offset,
+        },
+      })
+    delta(0, "## Title\n\n")
+    delta(10, "Already ")
+    delta(18, "received and next")
+    delta(35, " paragraph")
+    expect((store.part[messageID]![0] as { text: string }).text).toBe("## Title\n\nAlready received and next paragraph")
   })
 })

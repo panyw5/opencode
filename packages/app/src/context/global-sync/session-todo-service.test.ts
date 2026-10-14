@@ -6,6 +6,26 @@ import { createSessionControllerHarness, deferred } from "./session-service-test
 const todo = (content: string): Todo => ({ content, status: "pending", priority: "high" })
 
 describe("session todo controller", () => {
+  test("repeated clear and reload never commits a canceled todo request", async () => {
+    const first = deferred<{ data: Todo[] }>()
+    const second = deferred<{ data: Todo[] }>()
+    let calls = 0
+    const harness = createSessionControllerHarness({ todo: () => (++calls === 1 ? first.promise : second.promise) })
+    const service = createSessionTodoService(harness.deps)
+    const old = service.refresh("/project", "session")
+    service.clear("/project", ["session"])
+    service.clear("/project", ["session"])
+    const fresh = service.refresh("/project", "session")
+    first.resolve({ data: [todo("deleted")] })
+    await old
+    expect(service.get("/project", "session")).toBeUndefined()
+    expect(service.refresh("/project", "session")).toBe(fresh)
+    second.resolve({ data: [todo("fresh")] })
+    await fresh
+    expect(service.get("/project", "session")).toEqual([todo("fresh")])
+    expect(service.inspect()).toEqual({ inflight: 0, revision: 0 })
+  })
+
   test("dedupes requests and drops a response older than todo.updated", async () => {
     const request = deferred<{ data?: Todo[] }>()
     let calls = 0
@@ -39,5 +59,4 @@ describe("session todo controller", () => {
     expect(service.get("/project", "session")).toBeUndefined()
     expect(service.inspect()).toEqual({ inflight: 0, revision: 0 })
   })
-
 })

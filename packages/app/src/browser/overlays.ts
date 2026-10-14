@@ -14,6 +14,8 @@ const selector = [
 
 export function browserOverlay(bounds: BrowserBounds, root: ParentNode = document): string | undefined {
   for (const element of root.querySelectorAll<HTMLElement>(selector)) {
+    // The enlarged browser dialog owns the native surface, not an overlay on it.
+    if (element.hasAttribute("data-browser-maximized")) continue
     if (element.hasAttribute("data-closed") || element.getAttribute("data-state") === "closed") continue
     const style = getComputedStyle(element)
     if (style.display === "none" || style.visibility === "hidden") continue

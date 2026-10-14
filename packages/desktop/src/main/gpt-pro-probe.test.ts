@@ -55,6 +55,37 @@ function fixture(input: { existing?: boolean; loading?: boolean; url?: string; p
 }
 
 describe("gpt-pro P0 diagnostics", () => {
+  test("runtime status uses a verified consultation even when the manual page is blocked", async () => {
+    const views = ["manual", "consultation"].map((id) => ({
+      pageID: id,
+      partition: id,
+      profileID: GPT_PRO_PARTITION,
+      url: GPT_PRO_URL,
+      title: "ChatGPT",
+      loading: false,
+      shared: false,
+      epoch: 1,
+    }))
+    const browser = {
+      has: () => true,
+      open: async () => views[0],
+      present: () => {},
+      getState: () => views,
+      cdp: (id: string) => ({
+        evaluate: async <T>(expression: string) =>
+          (expression.includes("/api/auth/session")
+            ? id === "manual"
+              ? { phase: "unknown" }
+              : { phase: "authenticated", identity: "synthetic-user" }
+            : id === "manual"
+              ? { ...page, composer: false, error: { kind: "verification", message: "Human check" } }
+              : page) as T,
+      }),
+    }
+    const probe = new GptProProbe(browser)
+    expect((await probe.authentication()).phase).toBe("authenticated")
+    expect((await probe.authentication()).model).toBe("GPT-6 Pro")
+  })
   test("rejects lookalike hosts and non-HTTPS origins", () => {
     expect(isGptProOrigin("https://chatgpt.com/c/123")).toBe(true)
     for (const url of ["http://chatgpt.com", "https://chatgpt.com.example.com", "https://auth.openai.com", "garbage"])
@@ -74,6 +105,29 @@ describe("gpt-pro P0 diagnostics", () => {
     expect((await f.probe.open()).phase).toBe("ready")
     expect(f.opened).toEqual([{ partition: GPT_PRO_PARTITION, url: GPT_PRO_URL }])
     expect(f.presented).toEqual([GPT_PRO_PARTITION])
+  })
+  test("keeps the manual login page on the legacy pageID and shared profile", async () => {
+    const opened: Array<{ pageID: string; profileID: string; url: string; kind?: string }> = []
+    let state: Record<string, unknown> | undefined
+    const browser = {
+      has: () => !!state,
+      getState: () => (state ? [state] : []),
+      open: async () => {
+        throw new Error("the probe must use explicit page/profile identity")
+      },
+      openPage: async (pageID: string, profileID: string, url: string, metadata: { kind?: string }) => {
+        opened.push({ pageID, profileID, url, kind: metadata.kind })
+        state = { pageID, partition: pageID, profileID, url, title: "ChatGPT", loading: false, shared: false, epoch: 1 }
+        return state
+      },
+      present: () => {},
+      cdp: () => ({ evaluate: async () => page }),
+    }
+    const probe = new GptProProbe(browser as never)
+    expect((await probe.open()).phase).toBe("ready")
+    expect(opened).toEqual([
+      { pageID: GPT_PRO_PARTITION, profileID: GPT_PRO_PARTITION, url: GPT_PRO_URL, kind: "login" },
+    ])
   })
 
   test("does not navigate an existing conversation or erase its draft", async () => {

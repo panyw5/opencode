@@ -3,6 +3,9 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "projectTask.status.open": "待開始",
+  "projectTask.status.inProgress": "進行中",
+  "projectTask.status.done": "已完成",
   "scheduled.schedule.every.interval": "每 {{count}} min",
   "command.category.suggested": "建議",
   "command.category.view": "檢視",
@@ -188,6 +191,7 @@ export const dict = {
   "provider.custom.field.name.label": "顯示名稱",
   "provider.custom.field.name.placeholder": "我的 AI 提供商",
   "provider.custom.field.baseURL.label": "基礎 URL",
+  "provider.custom.field.baseURL.autoV1": "無需填寫 /v1，應用程式會自動補上。",
   "provider.custom.field.baseURL.placeholder": "https://api.myprovider.com/v1",
   "provider.custom.field.apiKey.label": "API 金鑰",
   "provider.custom.field.apiKey.placeholder": "API 金鑰",

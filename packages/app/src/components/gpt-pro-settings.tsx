@@ -5,10 +5,22 @@ import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { Switch } from "@opencode-ai/ui/switch"
 import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
+import { handoffGptPro } from "@opencode-ai/ui/gpt-pro-handoff"
+import { resolveGptProView, type GptProCachedResult } from "@opencode-ai/ui/gpt-pro-result"
+import { GptProResultPreviewDialog, type GptProResultPreviewState } from "@opencode-ai/ui/gpt-pro-result-preview"
+import { GptProErrorNotice } from "@opencode-ai/ui/gpt-pro-error-notice"
+import type { GptProIssueCode } from "@opencode-ai/util/gpt-pro-error"
 import { getDirectory } from "@opencode-ai/core/util/path"
 import { usePlatform } from "@/context/platform"
 import { useLanguage } from "@/context/language"
-import { DEFAULT_GPT_PRO_CONFIG, type GptProConfig, type GptProJob } from "@opencode-ai/util/gpt-pro"
+import { createGptProRefreshFence } from "./gpt-pro-refresh-fence"
+import { GptProRuntimeCards } from "./gpt-pro-runtime-cards"
+import {
+  DEFAULT_GPT_PRO_CONFIG,
+  type GptProConfig,
+  type GptProJob,
+  type GptProRuntimeStatus,
+} from "@opencode-ai/util/gpt-pro"
 
 export function GptProSettings(props: { onConfig?: (config: GptProConfig) => void }) {
   const platform = usePlatform()
@@ -18,37 +30,73 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
   const [state, set] = createStore({
     config: { ...DEFAULT_GPT_PRO_CONFIG },
     login: "",
+    loginError: "",
+    loginErrorCode: undefined as GptProIssueCode | undefined,
+    runtime: undefined as GptProRuntimeStatus | undefined,
+    refreshError: "",
     extensionDirectory: "",
     jobs: [] as GptProJob[],
+    result: {
+      open: false,
+      loading: false,
+      opening: false,
+      error: "",
+      errorCode: undefined as GptProIssueCode | undefined,
+      originalURL: undefined as string | undefined,
+      jobID: undefined as string | undefined,
+      result: undefined as GptProCachedResult | undefined,
+    },
     error: "",
     busy: false,
   })
   let disposed = false
+  const refreshFence = createGptProRefreshFence()
+  let refreshing = false
   const refresh = async () => {
-    if (!api) return
+    if (!api || refreshing) return
+    const sequence = refreshFence.begin()
+    refreshing = true
     try {
-      const [config, login, jobs] = await Promise.all([api.getConfig(), api.loginStatus(), api.list()])
-      if (disposed) return
+      const runtime = await api.runtimeStatus?.()
+      const [config, login, jobs] = runtime
+        ? [runtime.config, runtime.login, runtime.jobs]
+        : await Promise.all([api.getConfig(), api.loginStatus(), api.list()])
+      if (disposed || !refreshFence.current(sequence)) return
       set({
+        runtime,
         config,
         login: login.phase,
+        loginError: login.error ?? "",
+        loginErrorCode: login.errorCode,
+        refreshError: "",
         extensionDirectory: login.extensionDirectory ?? "",
         jobs: jobs.slice().reverse().slice(0, 10),
       })
       props.onConfig?.(config)
+      console.debug(
+        `[gpt-pro-settings] runtime refreshed auth=${runtime?.authentication.phase ?? "unknown"} import=${login.phase} bridge=${runtime?.bridge.connected ?? false} blocked=${runtime?.importBlocked ?? false}`,
+      )
     } catch (error) {
-      if (!disposed) set("error", String(error))
+      console.warn(`[gpt-pro-settings] status refresh failed`)
+      if (!disposed && refreshFence.current(sequence)) set("refreshError", String(error))
+    } finally {
+      refreshing = false
     }
   }
   const run = async (action: () => Promise<unknown>) => {
+    if (state.busy || disposed) return
+    refreshFence.invalidate()
     set({ busy: true, error: "" })
     try {
       await action()
+      // An older poll may still be settling; its sequence was invalidated above.
+      while (refreshing && !disposed) await new Promise((resolve) => setTimeout(resolve, 10))
       await refresh()
     } catch (error) {
-      set("error", String(error))
+      console.warn(`[gpt-pro-settings] action failed`)
+      if (!disposed) set("error", String(error))
     } finally {
-      set("busy", false)
+      if (!disposed) set("busy", false)
     }
   }
   const save = (config: GptProConfig) =>
@@ -62,7 +110,94 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
   const importStatus = () => {
     if (state.login === "imported") return t("gptPro.importStatus.success")
     if (state.login === "failed") return t("gptPro.importStatus.failed")
+    if (state.login === "waiting") return t("gptPro.importStatus.waiting")
+    if (state.login === "importing") return t("gptPro.importStatus.importing")
+    if (state.login === "expired") return t("gptPro.importStatus.expired")
+    if (state.login === "cancelled") return t("gptPro.importStatus.cancelled")
     return t("gptPro.importStatus.notImported")
+  }
+  const viewHistory = async (job: GptProJob) => {
+    if (!api || state.busy) return
+    set("busy", true)
+    set("error", "")
+    set("result", {
+      open: false,
+      loading: false,
+      opening: false,
+      error: "",
+      originalURL: job.url,
+      jobID: job.id,
+      result: undefined,
+    })
+    console.debug(`[gpt-pro-settings] resolving history View id=${job.id} phase=${job.phase}`)
+    try {
+      const resolution = await resolveGptProView(api, job.id)
+      if (disposed) return
+      if (resolution.kind === "cached") {
+        set("busy", false)
+        set("result", {
+          open: true,
+          loading: false,
+          opening: false,
+          error: "",
+          originalURL: resolution.result.url || job.url,
+          jobID: resolution.result.id,
+          result: resolution.result,
+        })
+        return
+      }
+      if (resolution.kind === "unavailable") {
+        set("busy", false)
+        set("result", {
+          open: true,
+          loading: false,
+          opening: false,
+          error: resolution.error || t("gptPro.resultUnavailable"),
+          errorCode: resolution.errorCode,
+          originalURL: resolution.url || job.url,
+          jobID: resolution.id,
+          result: undefined,
+        })
+        return
+      }
+      set("result", {
+        open: false,
+        loading: false,
+        opening: false,
+        error: "",
+        originalURL: undefined,
+        jobID: undefined,
+        result: undefined,
+      })
+      await handoffGptPro(api, resolution.job.id)
+      set("busy", false)
+    } catch (error) {
+      if (!disposed) {
+        console.warn(`[gpt-pro-settings] history View failed id=${job.id} error=${String(error)}`)
+        set("busy", false)
+        set("result", {
+          open: true,
+          loading: false,
+          opening: false,
+          error: t("gptPro.resultUnavailable"),
+          originalURL: job.url,
+          jobID: job.id,
+          result: undefined,
+        })
+      }
+    }
+  }
+  const closeResult = () => {
+    if (disposed) return
+    set("result", {
+      open: false,
+      loading: false,
+      opening: false,
+      error: "",
+      originalURL: undefined,
+      jobID: undefined,
+      result: undefined,
+    })
   }
   onMount(() => {
     void refresh()
@@ -71,6 +206,7 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
     }, 3000)
     onCleanup(() => {
       disposed = true
+      refreshFence.invalidate()
       clearInterval(timer)
     })
   })
@@ -102,10 +238,7 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
       </div>
       <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
         <div class="flex w-full flex-col gap-6">
-          <section
-            class="rounded-2xl border border-border-weak-base bg-surface-base p-4"
-            data-section="gpt-pro-login"
-          >
+          <section class="rounded-2xl border border-border-weak-base bg-surface-base p-4" data-section="gpt-pro-login">
             <h3 class="text-14-medium text-text-strong">{t("gptPro.loginSection")}</h3>
             <div class="mt-4 flex flex-wrap items-center justify-start gap-2">
               <Button
@@ -138,7 +271,7 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
                   {t("gptPro.refresh")}
                 </Button>
               </div>
-              <Show when={state.login === "imported"}>
+              <Show when={api}>
                 <Button
                   size="small"
                   class="ml-auto"
@@ -149,10 +282,38 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
                 </Button>
               </Show>
             </div>
-            <Show when={state.error}>
-              <p class="text-12-regular text-text-critical-base" role="alert">
-                {state.error}
-              </p>
+            <GptProRuntimeCards runtime={state.runtime} t={t} />
+            <Show
+              when={
+                state.error ||
+                state.refreshError ||
+                state.loginError ||
+                state.runtime?.credentials.error ||
+                state.runtime?.authentication.detail
+              }
+            >
+              <GptProErrorNotice
+                error={
+                  state.error ||
+                  state.refreshError ||
+                  state.loginError ||
+                  state.runtime?.credentials.error ||
+                  state.runtime?.authentication.detail
+                }
+                code={
+                  state.error
+                    ? undefined
+                    : state.refreshError
+                      ? "connection"
+                      : (state.loginErrorCode ??
+                        (state.runtime?.credentials.error
+                          ? "credential_storage"
+                          : state.runtime?.authentication.phase === "verification"
+                            ? "verification"
+                            : undefined))
+                }
+                busy={state.busy}
+              />
             </Show>
             <div class="mt-4 border-t border-border-weak-base pt-4">
               <h4 class="text-13-medium text-text-strong">{t("gptPro.guide.title")}</h4>
@@ -273,6 +434,7 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
                   <input
                     aria-label={t("gptPro.timeout")}
                     type="number"
+                    disabled={state.busy}
                     min="1"
                     max="60"
                     class="h-8 w-20 rounded-lg border border-border-weak-base bg-background-base px-2.5 text-13-regular text-text-base"
@@ -289,12 +451,41 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
                 <input
                   aria-label={t("gptPro.progressInterval")}
                   type="number"
+                  disabled={state.busy}
                   min="10"
                   max="600"
                   class="h-8 w-20 rounded-lg border border-border-weak-base bg-background-base px-2.5 text-13-regular text-text-base"
                   value={state.config.progressIntervalSeconds ?? 60}
                   onChange={(event) =>
                     void save({ ...state.config, progressIntervalSeconds: Number(event.currentTarget.value) })
+                  }
+                />
+              </label>
+              <label class="flex items-center justify-between gap-4 text-13-regular">
+                {t("gptPro.maxConcurrent")}
+                <input
+                  aria-label={t("gptPro.maxConcurrent")}
+                  type="number"
+                  disabled={state.busy}
+                  min="1"
+                  max="8"
+                  class="h-8 w-20 rounded-lg border border-border-weak-base bg-background-base px-2.5 text-13-regular text-text-base"
+                  value={state.config.maxConcurrent ?? 4}
+                  onChange={(event) => void save({ ...state.config, maxConcurrent: Number(event.currentTarget.value) })}
+                />
+              </label>
+              <label class="flex items-center justify-between gap-4 text-13-regular">
+                {t("gptPro.maxResidentPages")}
+                <input
+                  aria-label={t("gptPro.maxResidentPages")}
+                  type="number"
+                  disabled={state.busy}
+                  min={state.config.maxConcurrent ?? 4}
+                  max="32"
+                  class="h-8 w-20 rounded-lg border border-border-weak-base bg-background-base px-2.5 text-13-regular text-text-base"
+                  value={state.config.maxResidentPages ?? 8}
+                  onChange={(event) =>
+                    void save({ ...state.config, maxResidentPages: Number(event.currentTarget.value) })
                   }
                 />
               </label>
@@ -319,19 +510,30 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
               {(job) => (
                 <button
                   type="button"
+                  aria-label={`${t("gptPro.viewResult")}: ${job.id}`}
                   class="rounded-lg border border-border-weak-base p-3 text-start hover:bg-surface-secondary"
-                  onClick={() => void run(() => api!.command({ action: "open", id: job.id }))}
+                  onClick={() => void viewHistory(job)}
                 >
                   <div class="text-12-medium">
-                    {job.phase} · {job.prompt.slice(0, 90)}
+                    {job.phase} · {job.ownerPage?.sessionID ?? "manual"} · page {job.pageID?.slice(-8) ?? "legacy"}
                   </div>
+                  <div class="mt-1 text-11-regular text-text-weak">{job.prompt.slice(0, 90)}</div>
                   <div class="mt-1 text-11-regular text-text-weak">{job.id}</div>
+                  <div class="mt-2 text-11-medium text-text-base">{t("gptPro.viewResult")}</div>
                 </button>
               )}
             </For>
           </div>
         </Collapsible.Content>
       </Collapsible>
+      <Show when={state.result.open}>
+        <GptProResultPreviewDialog
+          state={state.result as GptProResultPreviewState}
+          client={api!}
+          jobID={state.result.jobID}
+          onClose={closeResult}
+        />
+      </Show>
     </div>
   )
 }

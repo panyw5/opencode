@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync, unlinkSync } from "node:fs"
 import path from "node:path"
 import { Effect } from "effect"
 import { eq } from "drizzle-orm"
@@ -36,6 +36,42 @@ describe("ProjectTask service reads", () => {
       expect(progressContent).toContain("current session ID")
       expect(progressContent).toContain("## Progress")
       expect(progressContent).toContain("## Relevant files")
+      const detail = yield* service.detail(task.id)
+      expect(detail.progressPath).toBe(progressRelativePath(task.id))
+      expect(detail.progressContent).toBe(INITIAL_PROGRESS_CONTENT)
+    }),
+  )
+
+  it.instance("saves progress to its own file without changing the description or todo summary", () =>
+    Effect.gen(function* () {
+      const ctx = yield* InstanceState.context
+      const service = yield* ProjectTask.Service
+      const task = yield* service.create({ title: "Editable progress", description: "Original brief" })
+      const content = "# Progress\n\nSaved from the editor.\n"
+      const updated = yield* service.update(task.id, { progressContent: content })
+      expect(updated.description).toBe("Original brief")
+      expect(updated.progress).toEqual(task.progress)
+      expect(readFileSync(path.join(ctx.worktree, progressRelativePath(task.id)), "utf8")).toBe(content)
+      expect(readFileSync(path.join(ctx.worktree, descriptionRelativePath(task.id)), "utf8")).toBe("Original brief")
+      expect((yield* service.detail(task.id)).progressContent).toBe(content)
+      yield* service.update(task.id, { progressContent: "" })
+      expect((yield* service.detail(task.id)).progressContent).toBe("")
+      yield* service.update(task.id, { description: "Updated brief" })
+      expect(readFileSync(path.join(ctx.worktree, progressRelativePath(task.id)), "utf8")).toBe("")
+    }),
+  )
+
+  it.instance("reads legacy tasks with no progress file and creates it on save", () =>
+    Effect.gen(function* () {
+      const ctx = yield* InstanceState.context
+      const service = yield* ProjectTask.Service
+      const task = yield* service.create({ title: "Legacy progress", description: "Brief" })
+      const file = path.join(ctx.worktree, progressRelativePath(task.id))
+      unlinkSync(file)
+      expect((yield* service.detail(task.id)).progressContent).toBe("")
+      expect(existsSync(file)).toBe(false)
+      yield* service.update(task.id, { progressContent: "# First progress\n" })
+      expect(readFileSync(file, "utf8")).toBe("# First progress\n")
     }),
   )
 
@@ -69,7 +105,11 @@ describe("ProjectTask service reads", () => {
       expect(existsSync(absolute)).toBe(false)
       expect(
         Database.use((db) =>
-          db.select({ path: ProjectTaskTable.description_path }).from(ProjectTaskTable).where(eq(ProjectTaskTable.id, id)).get(),
+          db
+            .select({ path: ProjectTaskTable.description_path })
+            .from(ProjectTaskTable)
+            .where(eq(ProjectTaskTable.id, id))
+            .get(),
         )?.path,
       ).toBeNull()
 

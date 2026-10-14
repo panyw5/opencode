@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Cause, Effect, Exit, Layer } from "effect"
 import type * as Scope from "effect/Scope"
 import os from "os"
@@ -6,6 +6,8 @@ import path from "path"
 import { Config } from "@/config/config"
 import { Shell } from "../../src/shell/shell"
 import { ShellTool } from "../../src/tool/shell"
+import { ShellPrompt } from "../../src/tool/shell/prompt"
+import { decodeCmd, decodePowerShellPath } from "../../src/tool/shell"
 import { Filesystem } from "@/util/filesystem"
 import { provideInstance, tmpdirScoped } from "../fixture/fixture"
 import type { Permission } from "../../src/permission"
@@ -31,6 +33,40 @@ const shellLayer = Layer.mergeAll(
   BackgroundShell.defaultLayer,
 )
 const it = testEffect(shellLayer)
+
+let shellEnvHookCalls = 0
+const statefulShellEnvPlugin = Layer.mock(Plugin.Service)({
+  trigger: <Name extends string, Input, Output>(name: Name, _input: Input, output: Output) => {
+    if (name !== "shell.env") return Effect.succeed(output)
+    shellEnvHookCalls++
+    const prior = output as { env: Record<string, string> }
+    return Effect.succeed({
+      ...prior,
+      env: {
+        ...prior.env,
+        OPENCODE_SHELL_ENV_PROBE: `preflight-${shellEnvHookCalls}`,
+        TERM: "plugin-term",
+        OPENCODE_TERMINAL: "plugin-terminal",
+      },
+    })
+  },
+  list: () => Effect.succeed([]),
+  listHookControls: () => Effect.succeed([]),
+  setHookControl: () => Effect.succeed([]),
+  init: () => Effect.void,
+})
+const itWithStatefulShellEnv = testEffect(
+  Layer.mergeAll(
+    CrossSpawnSpawner.defaultLayer,
+    AppFileSystem.defaultLayer,
+    statefulShellEnvPlugin,
+    Truncate.defaultLayer,
+    Config.defaultLayer,
+    Agent.defaultLayer,
+    RuntimeFlags.defaultLayer,
+    BackgroundShell.defaultLayer,
+  ),
+)
 type ShellTestServices =
   | (typeof shellLayer extends Layer.Layer<infer ROut, infer _E, infer _RIn> ? ROut : never)
   | Scope.Scope
@@ -154,6 +190,15 @@ const each = (
   }
 }
 
+const eachPosix = (
+  name: string,
+  fn: (item: { label: string; shell: string }) => Effect.Effect<void, unknown, ShellTestServices>,
+) => {
+  for (const item of shells.filter((item) => Shell.posix(item.shell))) {
+    it.live(`${name} [${item.label}]`, () => withShell(item, fn(item)))
+  }
+}
+
 const capture = (requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">>, stop?: Error) => ({
   ...ctx,
   ask: (req: Omit<Permission.Request, "id" | "sessionID" | "tool">) =>
@@ -174,6 +219,101 @@ const mustTruncate = (result: {
 }
 
 describe("tool.shell", () => {
+  test("describes one-call shell execution and accepts literal multiline commands", () => {
+    const prompt = ShellPrompt.render("bash", "darwin", { maxLines: 100, maxBytes: 10_000 })
+    expect(prompt.description).toContain("fresh bash process for each call")
+    expect(prompt.description).toContain("literal newlines, multiline commands, and heredocs")
+    expect(prompt.description).not.toContain("DO NOT use newlines to separate commands")
+    const command = prompt.parameters.ast.propertySignatures.find((item) => item.name === "command")
+    expect(command?.type.annotations?.description).toContain("Raw command text")
+    expect(command?.type.annotations?.description).toContain("do not JSON-escape shell syntax")
+  })
+
+  test("keeps PowerShell single-quoted and escaped environment syntax literal", () => {
+    const env = { HOME: "C:/Users/with spaces", USERPROFILE: "C:/Users/with spaces" }
+    expect(decodePowerShellPath("'$env:HOME/private'", "C:/work", "C:/pwsh/pwsh.exe", env)).toMatchObject({
+      value: "$env:HOME/private",
+      dynamic: false,
+    })
+    expect(decodePowerShellPath("'a''$env:HOME'", "C:/work", "C:/pwsh/pwsh.exe", env)).toMatchObject({
+      value: "a'$env:HOME",
+      dynamic: false,
+    })
+    expect(decodePowerShellPath('"$env:HOME/private"', "C:/work", "C:/pwsh/pwsh.exe", env).value).toBe(
+      "C:/Users/with spaces/private",
+    )
+    expect(decodePowerShellPath('"`$env:HOME/private"', "C:/work", "C:/pwsh/pwsh.exe", env).value).toBe(
+      "$env:HOME/private",
+    )
+    expect(decodePowerShellPath("$env:HOME/private", "C:/work", "C:/pwsh/pwsh.exe", env).dynamic).toBe(true)
+    expect(decodePowerShellPath("~/private", "C:/work", "C:/pwsh/pwsh.exe", env).dynamic).toBe(true)
+    expect(decodeCmd("%TEMP%\\private", { TEMP: "C:/temp" }).dynamic).toBe(true)
+  })
+
+  for (const item of shells.filter((item) => Shell.posix(item.shell))) {
+    it.live(`passes multiline and heredoc text to the selected shell [${item.label}]`, () =>
+      withShell(
+        item,
+        runIn(
+          projectRoot,
+          Effect.gen(function* () {
+            const result = yield* run({
+              command: "cat <<'EOF'\nline $HOME\nEOF\nprintf '\\nsecond\\n'",
+              description: "Print a multiline heredoc",
+            })
+            expect(result.metadata.exit).toBe(0)
+            expect(result.output.replaceAll("\r\n", "\n")).toContain("line $HOME\n\nsecond\n")
+          }),
+        ),
+      ),
+    )
+
+    itWithStatefulShellEnv.live(`reuses the inspected shell.env values for the supervised PTY [${item.label}]`, () =>
+      withShell(
+        item,
+        Effect.gen(function* () {
+          const tmp = yield* tmpdirScoped()
+          shellEnvHookCalls = 0
+          yield* runIn(
+            tmp,
+            Effect.gen(function* () {
+              const result = yield* run({
+                command: 'printf "%s|%s|%s" "$OPENCODE_SHELL_ENV_PROBE" "$TERM" "$OPENCODE_TERMINAL"',
+                description: "Print resolved shell environment",
+              })
+              expect(result.metadata.exit).toBe(0)
+              expect(result.output).toContain("preflight-1|xterm-256color|1")
+              expect(shellEnvHookCalls).toBe(1)
+            }),
+          )
+        }),
+      ),
+    )
+
+    it.live(`direct background shell retains immediate PTY output [${item.label}]`, () =>
+      withShell(
+        item,
+        Effect.gen(function* () {
+          const tmp = yield* tmpdirScoped()
+          yield* runIn(
+            tmp,
+            Effect.gen(function* () {
+              const background = yield* BackgroundShell.Service
+              const info = yield* background.create({
+                sessionID: ctx.sessionID,
+                cwd: tmp,
+                command: "printf 'fast-output'; sleep 0.1",
+                description: "Print immediate PTY output",
+              })
+              const result = yield* background.wait(info.id)
+              expect(result.output).toContain("fast-output")
+            }),
+          )
+        }),
+      ),
+    )
+  }
+
   each("basic", () =>
     runIn(
       projectRoot,
@@ -335,8 +475,318 @@ describe("tool.shell permissions", () => {
           ),
         ).toMatchObject({ message: err.message })
         const extDirReq = requests.find((r) => r.permission === "external_directory")
-        expect(extDirReq).toBeDefined()
+        expect(extDirReq, JSON.stringify(requests)).toBeDefined()
         expect(extDirReq!.patterns).toContain(want)
+      }),
+    ),
+  )
+
+  eachPosix("recognizes quoted command names and escaped paths", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+          yield* run(
+            {
+              command: `"cat" \\../outside.txt`,
+              description: "Read escaped external path",
+            },
+            capture(requests),
+          )
+          const extDirReq = requests.find((r) => r.permission === "external_directory")
+          expect(extDirReq, JSON.stringify(requests)).toBeDefined()
+          expect(extDirReq!.patterns).toContain(path.join(path.dirname(tmp), "*"))
+          const bashReq = requests.find((r) => r.permission === "bash")
+          expect(bashReq).toBeDefined()
+        }),
+      )
+    }),
+  )
+
+  eachPosix("does not expand quoted tilde paths", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+          yield* run(
+            {
+              command: "cat '~/file'",
+              description: "Read literal tilde path",
+            },
+            capture(requests),
+          )
+          expect(
+            requests.filter((r) => r.permission === "external_directory"),
+            JSON.stringify(requests),
+          ).toHaveLength(0)
+        }),
+      )
+    }),
+  )
+
+  eachPosix("distinguishes quoted literal wildcard paths from shell globs", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const err = new Error("stop after permission")
+          const globRequests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+          expect(
+            yield* fail(
+              { command: "cat ../wild*/outside.txt", description: "Read wildcard path" },
+              capture(globRequests, err),
+            ),
+          ).toMatchObject({ message: err.message })
+          expect(globRequests[0]?.patterns).toContain(path.join(path.dirname(tmp), "*"))
+
+          const literalRequests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+          expect(
+            yield* fail(
+              { command: "cat '../wild*/outside.txt'", description: "Read literal wildcard path" },
+              capture(literalRequests, err),
+            ),
+          ).toMatchObject({ message: err.message })
+          expect(literalRequests[0]?.patterns).toContain(path.join(path.dirname(tmp), "wild*", "*"))
+        }),
+      )
+    }),
+  )
+
+  eachPosix("resolves simple environment variables and paths after --", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const err = new Error("stop after permission")
+          const envRequests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+          expect(
+            yield* fail(
+              {
+                command: 'cat "$HOME/.ssh/config"',
+                description: "Read home config",
+              },
+              capture(envRequests, err),
+            ),
+          ).toMatchObject({ message: err.message })
+          const homeReq = envRequests.find((r) => r.permission === "external_directory")
+          expect(homeReq).toBeDefined()
+          expect(homeReq!.patterns).toContain(path.join(os.homedir(), ".ssh", "**"))
+          expect(homeReq!.patterns).toContain(path.join(path.parse(tmp).root, "**"))
+
+          const unknownRequests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+          expect(
+            yield* fail(
+              {
+                command: 'cat "$OPENCODE_SHELL_UNKNOWN_PATH_7B31/file"',
+                description: "Read unresolved environment path",
+              },
+              capture(unknownRequests, err),
+            ),
+          ).toMatchObject({ message: err.message })
+          expect(unknownRequests[0]?.permission).toBe("external_directory")
+          expect(unknownRequests[0]?.patterns).toContain(path.join(path.parse(tmp).root, "**"))
+
+          const optionRequests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+          expect(
+            yield* fail(
+              {
+                command: "cat -- -/../../outside.txt",
+                description: "Read path after end-of-options marker",
+              },
+              capture(optionRequests, err),
+            ),
+          ).toMatchObject({ message: err.message })
+          expect(optionRequests.some((r) => r.permission === "external_directory")).toBe(true)
+        }),
+      )
+    }),
+  )
+
+  eachPosix("checks redirection-only paths before allowing filesystem mutation", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const file = `opencode-shell-redirection-${Math.random().toString(36).slice(2)}.txt`
+          const target = path.resolve(tmp, "..", file)
+          const err = new Error("deny external directory")
+          const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+          const denyCommand = {
+            ...ctx,
+            ask: (req: Omit<Permission.Request, "id" | "sessionID" | "tool">) =>
+              Effect.sync(() => {
+                requests.push(req)
+                if (req.permission === "bash") throw err
+              }),
+          }
+          expect(
+            yield* fail(
+              {
+                command: `> ../${file}`,
+                description: "Write external redirection target",
+              },
+              denyCommand,
+            ),
+          ).toMatchObject({ message: err.message })
+          expect(requests[0]?.permission).toBe("external_directory")
+          expect(requests[0]?.patterns).toContain(path.join(path.dirname(tmp), "*"))
+          expect(requests[1]?.permission).toBe("bash")
+          expect(requests[1]?.patterns).toContain(`> ../${file}`)
+          expect(yield* Effect.promise(() => Bun.file(target).exists())).toBe(false)
+        }),
+      )
+    }),
+  )
+
+  eachPosix("checks nested, input, append, and descriptor redirection paths", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const commands = [
+            "echo $(cat ../outside.txt)",
+            "cat <(cat ../outside.txt)",
+            "cat {../outside.txt,inside.txt}",
+            "> {../outside.txt,inside.txt}",
+            "cat < ../outside.txt",
+            "printf x >> ../outside.txt",
+            "echo x 2> ../outside.txt",
+            "echo x >& ../outside.txt",
+          ]
+          for (const command of commands) {
+            const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+            const err = new Error("stop after external directory approval")
+            expect(
+              yield* fail({ command, description: "Check redirected external path" }, capture(requests, err)),
+            ).toMatchObject({ message: err.message })
+            expect(requests[0]?.permission, command).toBe("external_directory")
+          }
+        }),
+      )
+    }),
+  )
+
+  eachPosix("treats numeric redirection destinations as filenames", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const err = new Error("stop after command approval")
+          const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+          expect(
+            yield* fail({ command: "> 123", description: "Write numeric filename" }, capture(requests, err)),
+          ).toMatchObject({ message: err.message })
+          expect(requests[0]?.permission).toBe("bash")
+          expect(requests[0]?.patterns).toContain("> 123")
+        }),
+      )
+    }),
+  )
+
+  eachPosix("falls back for unquoted environment values that may split into path arguments", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      const key = "OPENCODE_SHELL_SPLIT_PATH_7B31"
+      yield* Effect.acquireUseRelease(
+        Effect.sync(() => {
+          const previous = process.env[key]
+          process.env[key] = "./inside ../outside"
+          return previous
+        }),
+        () =>
+          runIn(
+            tmp,
+            Effect.gen(function* () {
+              const err = new Error("stop after external directory approval")
+              const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+              expect(
+                yield* fail(
+                  { command: `cat $${key}`, description: "Read split environment paths" },
+                  capture(requests, err),
+                ),
+              ).toMatchObject({ message: err.message })
+              expect(requests[0]?.permission).toBe("external_directory")
+              expect(requests[0]?.patterns).toContain(path.join(path.parse(tmp).root, "**"))
+            }),
+          ),
+        (previous) =>
+          Effect.sync(() => {
+            if (previous === undefined) delete process.env[key]
+            else process.env[key] = previous
+          }),
+      )
+    }),
+  )
+
+  eachPosix("uses broad approval for inline environment assignments and command wrappers", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          for (const command of ['HOME=/outside cat "$HOME/file"', "command cat ../outside.txt"]) {
+            const err = new Error("stop after external directory approval")
+            const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+            expect(
+              yield* fail({ command, description: "Check wrapped path command" }, capture(requests, err)),
+            ).toMatchObject({ message: err.message })
+            expect(requests[0]?.permission).toBe("external_directory")
+            expect(requests[0]?.patterns).toContain(path.join(path.parse(tmp).root, "**"))
+          }
+        }),
+      )
+    }),
+  )
+
+  eachPosix("keeps quoted environment syntax literal and avoids path fallback for data arguments", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+          yield* run(
+            {
+              command: "printf '%s' '$OPENCODE_SHELL_LITERAL_PATH_7B31'; cat '$OPENCODE_SHELL_LITERAL_PATH_7B31/file'",
+              description: "Use literal shell data",
+            },
+            capture(requests),
+          )
+          expect(requests.some((r) => r.permission === "external_directory")).toBe(false)
+        }),
+      )
+    }),
+  )
+
+  eachPosix("uses conservative approvals for incomplete syntax and cwd-changing commands", () =>
+    runIn(
+      projectRoot,
+      Effect.gen(function* () {
+        const err = new Error("stop after permission")
+        const malformed: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+        yield* run({ command: "cat (", description: "Incomplete shell syntax" }, capture(malformed))
+        expect(malformed[0]?.permission).toBe("external_directory")
+        expect(malformed[0]?.patterns).toContain(path.join(path.parse(projectRoot).root, "**"))
+        expect(malformed.some((r) => r.permission === "bash" && r.patterns.includes("cat ("))).toBe(true)
+
+        const cwdChange: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+        expect(
+          yield* fail(
+            { command: "cd /tmp && cat relative.txt", description: "Change directory then read" },
+            capture(cwdChange, err),
+          ),
+        ).toMatchObject({ message: err.message })
+        expect(cwdChange[0]?.permission).toBe("external_directory")
+        expect(cwdChange[0]?.patterns).toContain(path.join(path.parse(projectRoot).root, "**"))
       }),
     ),
   )
@@ -1065,18 +1515,21 @@ describe("tool.shell abort", () => {
   it.live(
     "terminates command on timeout",
     () =>
-      runIn(
-        projectRoot,
-        Effect.gen(function* () {
-          const result = yield* run({
-            command: `echo started && sleep 60`,
-            description: "Timeout test",
-            timeout: 500,
-          })
-          expect(result.output).toContain("started")
-          expect(result.output).toContain("shell tool terminated command after exceeding timeout")
-          expect(result.output).toContain("run it with background=true")
-        }),
+      withShell(
+        { label: "sh", shell: "/bin/sh" },
+        runIn(
+          projectRoot,
+          Effect.gen(function* () {
+            const result = yield* run({
+              command: `echo started && sleep 60`,
+              description: "Timeout test",
+              timeout: 500,
+            })
+            expect(result.output).toContain("started")
+            expect(result.output).toContain("shell tool terminated command after exceeding timeout")
+            expect(result.output).toContain("run it with background=true")
+          }),
+        ),
       ),
     15_000,
   )

@@ -137,6 +137,25 @@ describe("BrowserBridge service", () => {
       expect(fake.sent[0]).toBeDefined()
     }),
   )
+  it.live("stale socket finalizers and frames cannot disconnect or overwrite a replacement", () =>
+    Effect.gen(function* () {
+      const bridge = yield* BrowserBridge.Service
+      const first = fakeAdapter()
+      const second = fakeAdapter()
+      yield* bridge.connect({ adapter: first.adapter })
+      yield* bridge.connect({ adapter: second.adapter })
+      yield* Effect.void.pipe(Effect.ensuring(bridge.disconnect(first.adapter)))
+      yield* bridge.handleFrame(
+        JSON.stringify({ type: "hello", client: "stale", version: "stale", views: [viewState] }),
+        first.adapter,
+      )
+      const state = yield* bridge.state()
+      expect(state.status).toBe("connected")
+      if (state.status === "connected") expect(state.views).toEqual([])
+      yield* bridge.disconnect(second.adapter)
+      expect((yield* bridge.state()).status).toBe("absent")
+    }),
+  )
 
   it.live("isolates concurrent commands by id", () =>
     Effect.gen(function* () {
@@ -207,8 +226,30 @@ describe("BrowserBridge service", () => {
       expect(state.status === "connected" && state.views).toEqual([next])
     }),
   )
+  it.live("normalizes hello page IDs without conflating shared profiles", () =>
+    Effect.gen(function* () {
+      const bridge = yield* BrowserBridge.Service
+      const fake = fakeAdapter()
+      yield* bridge.connect({ adapter: fake.adapter })
+      const profileID = "persist:consult-gpt-pro"
+      const helloViews = ["consult:one", "consult:two"].map((pageID, index) => ({
+        ...viewState,
+        pageID,
+        partition: "old-wire-alias",
+        profileID,
+        kind: "consultation",
+        owner: { directory: "/repo", sessionID: `ses_${index}` },
+        epoch: 1,
+      }))
+      yield* bridge.handleFrame(JSON.stringify({ type: "hello", client: "desktop", version: "dev", views: helloViews }))
+      const state = yield* bridge.state()
+      expect(state.status === "connected" && state.views).toEqual(
+        helloViews.map((view) => ({ ...view, partition: view.pageID })),
+      )
+    }),
+  )
 
-  it.live("merges browser.updated per partition instead of replacing the list", () =>
+  it.live("merges browser.updated per pageID instead of replacing the list", () =>
     // Regression (F1): each desktop event describes ONE view; the old
     // `views = [decoded]` collapsed the copy to a single entry whenever the
     // desktop had more than one tab.
@@ -224,6 +265,60 @@ describe("BrowserBridge service", () => {
 
       const state = yield* bridge.state()
       expect(state.status === "connected" && state.views).toEqual([userUpdate, agent])
+    }),
+  )
+  it.live("keeps two pages on one profile distinct and fences stale close events", () =>
+    Effect.gen(function* () {
+      const bridge = yield* BrowserBridge.Service
+      const fake = fakeAdapter()
+      const profileID = "persist:consult-gpt-pro"
+      const first = {
+        ...viewState,
+        pageID: "consult:one",
+        partition: "consult:one",
+        profileID,
+        kind: "consultation" as const,
+        owner: { directory: "/repo", sessionID: "ses_one" },
+        epoch: 1,
+      }
+      const second = {
+        ...viewState,
+        pageID: "consult:two",
+        partition: "consult:two",
+        profileID,
+        kind: "consultation" as const,
+        owner: { directory: "/repo", sessionID: "ses_two" },
+        epoch: 1,
+      }
+      yield* bridge.connect({ adapter: fake.adapter, views: [first, second] })
+
+      const secondUpdate = { ...second, url: "https://two.test/", epoch: 2 }
+      yield* bridge.handleFrame(JSON.stringify({ type: "event", name: "browser.updated", properties: secondUpdate }))
+      yield* bridge.handleFrame(
+        JSON.stringify({
+          type: "event",
+          name: "browser.closed",
+          properties: { pageID: "consult:two", partition: "consult:two", profileID, epoch: 1 },
+        }),
+      )
+      let state = yield* bridge.state()
+      expect(state.status === "connected" && state.views).toEqual([first, secondUpdate])
+
+      yield* bridge.handleFrame(
+        JSON.stringify({
+          type: "event",
+          name: "browser.closed",
+          properties: { pageID: "consult:one", partition: "consult:one", profileID, epoch: 1 },
+        }),
+      )
+      yield* bridge.handleFrame(JSON.stringify({ type: "event", name: "browser.updated", properties: first }))
+      state = yield* bridge.state()
+      expect(state.status === "connected" && state.views).toEqual([secondUpdate])
+
+      const secondNext = { ...secondUpdate, epoch: 3, url: "https://two-new.test/" }
+      yield* bridge.handleFrame(JSON.stringify({ type: "event", name: "browser.updated", properties: secondNext }))
+      state = yield* bridge.state()
+      expect(state.status === "connected" && state.views).toEqual([secondNext])
     }),
   )
 
@@ -259,7 +354,7 @@ describe("BrowserBridge service", () => {
     }),
   )
 
-  it.live("buffers console event frames per partition", () =>
+  it.live("buffers console event frames per pageID", () =>
     Effect.gen(function* () {
       const bridge = yield* BrowserBridge.Service
       const fake = fakeAdapter()
@@ -279,6 +374,14 @@ describe("BrowserBridge service", () => {
       expect(all).toEqual([entry])
       const since = yield* bridge.console("persist:browse", 1234)
       expect(since).toEqual([])
+
+      const profileID = "persist:consult-gpt-pro"
+      const first = { ...entry, pageID: "consult:one", partition: "consult:one", profileID, at: 3000 }
+      const second = { ...entry, pageID: "consult:two", partition: "consult:two", profileID, at: 4000 }
+      yield* bridge.handleFrame(JSON.stringify({ type: "event", name: "browser.console", properties: first }))
+      yield* bridge.handleFrame(JSON.stringify({ type: "event", name: "browser.console", properties: second }))
+      expect(yield* bridge.console("consult:one")).toEqual([first])
+      expect(yield* bridge.console("consult:two")).toEqual([second])
     }),
   )
 
@@ -297,7 +400,7 @@ describe("BrowserBridge service", () => {
     }),
   )
 
-  it.live("publishes BrowserUpdated on the bus for browser.updated frames", () =>
+  it.live("publishes page metadata on BrowserUpdated bus events", () =>
     Effect.gen(function* () {
       const bridge = yield* BrowserBridge.Service
       const fake = fakeAdapter()
@@ -306,14 +409,23 @@ describe("BrowserBridge service", () => {
       const received: Array<{ id: string; type: string; properties: unknown }> = []
       const unsubscribe = Bus.subscribe(BrowserUpdated, (event) => received.push(event))
 
-      yield* bridge.handleFrame(JSON.stringify({ type: "event", name: "browser.updated", properties: viewState }))
+      const page = {
+        ...viewState,
+        pageID: "consult:one",
+        partition: "consult:one",
+        profileID: "persist:consult-gpt-pro",
+        owner: { directory: "/repo", sessionID: "ses_one" },
+        kind: "consultation",
+        epoch: 3,
+      }
+      yield* bridge.handleFrame(JSON.stringify({ type: "event", name: "browser.updated", properties: page }))
       // Bus.publish is fire-and-forget from the bridge; let the module runtime deliver.
       yield* Effect.sleep("200 millis")
       unsubscribe()
 
       const hit = received.find((event) => event.type === "browser.updated")
       expect(hit).toBeDefined()
-      expect(hit && hit.properties).toEqual(viewState)
+      expect(hit && hit.properties).toEqual(page)
     }).pipe(
       // Module-level Bus.subscribe reads InstanceRef from the calling fiber's
       // context; without it the subscribe dies before any event can arrive.

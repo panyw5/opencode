@@ -1,4 +1,7 @@
 export const dict = {
+  "projectTask.status.open": "Åben",
+  "projectTask.status.inProgress": "I gang",
+  "projectTask.status.done": "Færdig",
   "scheduled.schedule.every.interval": "Hver {{count}}. min",
   "command.category.suggested": "Foreslået",
   "command.category.view": "Vis",

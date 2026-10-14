@@ -1,14 +1,23 @@
 import {
   CHATGPT_INSPECT_EXPRESSION,
+  chatGptCaptureExpression,
   CHATGPT_COMPOSER_ATTACHMENT_TARGET_EXPRESSION,
   CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION,
   CHATGPT_ONBOARDING_DISMISS_EXPRESSION,
   CHATGPT_SEND_TARGET_EXPRESSION,
 } from "@opencode-ai/util/chatgpt-page"
-import { GPT_PRO_PARTITION, GPT_PRO_URL, isGptProOrigin, type GptProPageState } from "@opencode-ai/util/gpt-pro"
+import {
+  GPT_PRO_PARTITION,
+  GPT_PRO_URL,
+  isGptProOrigin,
+  isGptProLoginUrl,
+  type GptProPageState,
+} from "@opencode-ai/util/gpt-pro"
 import type { BrowserController } from "./browser"
 import type { BeforeTrustedClick } from "./browser-cdp"
 import { GptProPageError } from "./gpt-pro-page-error"
+import { readGptProAuthentication } from "./gpt-pro-authentication"
+import { GptProOperationError } from "@opencode-ai/util/gpt-pro-error"
 
 const editorSelector = '#prompt-textarea, [data-composer-markdown][role="textbox"][contenteditable="true"]'
 const attachmentInputSelector = 'input[type="file"][aria-label="Attach files"]'
@@ -16,12 +25,47 @@ const attachmentInputSelector = 'input[type="file"][aria-label="Attach files"]'
 export class GptProDriver {
   private observedCdp?: ReturnType<BrowserController["cdp"]>
   private stopObserving?: () => void
+  private pageEpoch?: number
+  private answerCapture?: {
+    userID: string
+    url: string
+    epoch: number
+    version: string
+    answer: NonNullable<GptProPageState["answers"]>[number]
+  }
+  private inspectionTail: Promise<void> = Promise.resolve()
   constructor(
     private readonly browser: BrowserController,
     private readonly log: (message: string) => void = () => {},
+    private readonly identity: {
+      pageID?: string
+      profileID?: string
+      owner?: { directory?: string; sessionID?: string }
+      prepare?: () => Promise<void>
+    } = {},
   ) {}
+  private get pageID() {
+    return this.identity.pageID ?? GPT_PRO_PARTITION
+  }
+  private get profileID() {
+    return this.identity.profileID ?? GPT_PRO_PARTITION
+  }
+  boundPageEpoch() {
+    return this.pageEpoch
+  }
+  private state() {
+    return this.browser.getState().find((view) => (view.pageID ?? view.partition) === this.pageID)
+  }
+  hasPage() {
+    return this.browser.has(this.pageID)
+  }
   private cdp() {
-    const cdp = this.browser.cdp(GPT_PRO_PARTITION)
+    const state = this.state()
+    if (!state || (this.pageEpoch !== undefined && state.epoch !== this.pageEpoch))
+      throw new Error(
+        "The consultation page generation changed. Reopen or recover explicitly; no automatic resend is allowed.",
+      )
+    const cdp = this.browser.cdp(this.pageID)
     if (!cdp)
       throw new Error("The gpt-pro browser was closed. Reopen the consultation; no automatic resend is allowed.")
     return cdp
@@ -31,77 +75,108 @@ export class GptProDriver {
     if (!error) return
     if (error.kind === "verification") return error
     if (error.kind === "request") {
-      this.log(`driver passing request diagnostic scope=${error.scope ?? "legacy"} to consultation owner; no driver-wide gate`)
+      this.log(
+        `driver passing request diagnostic scope=${error.scope ?? "legacy"} to consultation owner; no driver-wide gate`,
+      )
       return
     }
     return error
   }
   async open(url = GPT_PRO_URL, fresh = false) {
-    this.log(`driver open fresh=${fresh}`)
+    await this.identity.prepare?.()
+    this.log(`driver open pageID=${this.pageID} profileID=${this.profileID} fresh=${fresh} presentation=hidden`)
     if (
       !isGptProOrigin(url) ||
       !/^\/(?:c\/(?:[a-zA-Z0-9-]+|local-chatgpt:[a-zA-Z0-9-]+))?$/.test(decodeURIComponent(new URL(url).pathname))
     )
       throw new Error("Invalid Chat conversation URL")
-    const current = this.browser.getState().find((view) => view.partition === GPT_PRO_PARTITION)
-    if (fresh && current && isGptProOrigin(current.url)) {
+    const current = this.state()
+    if (current && isGptProOrigin(current.url)) {
+      this.pageEpoch = current.epoch
       const page = await this.page()
-      if (page.draft.trim() || page.attachments?.length)
+      if (fresh && (page.draft.trim() || page.attachments?.length))
         throw new Error("A manual draft or attachment is present. It will not be erased to start a consultation.")
-      if (page.generating)
+      if (fresh && page.generating)
         throw new Error(
           "A reply is being generated in the browser. It will not be interrupted to start another consultation.",
         )
+      if (!fresh && current.url === url) return
       if (current.url === url && page.composer && !page.generating && !page.users.length) {
-        this.browser.present(GPT_PRO_PARTITION)
         return
       }
+      if (current.url !== url) throw new Error("This consultation page is already bound to another conversation")
     }
-    if (fresh && current && isGptProOrigin(current.url)) {
-      const routed = await this.cdp().evaluate<boolean>(`(() => {
-        const el=[...document.querySelectorAll('button[aria-label="New chat"],a')].filter(e=>e.getClientRects().length&&!e.closest('[inert],[aria-hidden="true"]')).find(e=>e.getAttribute('aria-label')==='New chat'||e.textContent?.trim()==='New chat')
-        if(!el) return false
-        el.click(); return true
-      })()`)
-      if (routed) {
-        for (let i = 0; i < 40; i++) {
-          const page = await this.page()
-          if (
-            new URL(page.url).pathname === "/" &&
-            page.composer &&
-            !page.users.length &&
-            !page.draft.trim() &&
-            !page.attachments?.length
-          ) {
-            await this.show()
-            return
-          }
-          await new Promise((r) => setTimeout(r, 125))
-        }
-        throw new Error("New Chat navigation was not confirmed. No question was sent.")
-      }
-    }
-    await this.browser.open(GPT_PRO_PARTITION, url)
-    if (fresh && current?.url === url) await this.cdp().navigate(url)
-    this.browser.present(GPT_PRO_PARTITION)
+    const opened =
+      typeof (this.browser as BrowserController & { openPage?: BrowserController["openPage"] }).openPage === "function"
+        ? await this.browser.openPage(this.pageID, this.profileID, url, {
+            kind: "consultation",
+            owner: this.identity.owner,
+          })
+        : await this.browser.open(this.pageID, url)
+    this.pageEpoch = opened?.epoch
+    this.log(`driver page bound pageID=${this.pageID} profileID=${this.profileID} epoch=${this.pageEpoch ?? "missing"}`)
   }
   async show(url = GPT_PRO_URL) {
-    if (!this.browser.has(GPT_PRO_PARTITION)) {
-      this.log("driver restoring the closed consultation view without resubmitting")
+    if (!this.browser.has(this.pageID)) {
+      this.log(`driver explicit show restoring pageID=${this.pageID} without resubmitting`)
       await this.open(url)
-      return
+    } else {
+      const current = this.state()
+      if (current) this.pageEpoch = current.epoch
     }
-    this.browser.present(GPT_PRO_PARTITION)
+    this.browser.present(this.pageID)
   }
-  async page(): Promise<GptProPageState> {
-    const state = this.browser.getState().find((v) => v.partition === GPT_PRO_PARTITION)
-    if (!state) throw new Error("The gpt-pro browser view is unavailable. Reopen the dedicated browser view.")
+  async account() {
+    await this.identity.prepare?.()
+    const authentication = await readGptProAuthentication(this.cdp())
+    this.log(`driver authentication phase=${authentication.phase}; account and credentials omitted`)
+    if (authentication.phase === "needs_login")
+      throw new GptProOperationError("login", "Sign in to ChatGPT before sending. No message was dispatched.")
+    if (authentication.phase !== "authenticated")
+      throw new GptProOperationError(
+        "connection",
+        "The current ChatGPT account could not be verified. No message was dispatched; inspect the original page.",
+      )
+    return authentication.accountID
+  }
+  async page(options?: { userID: string; force?: boolean }): Promise<GptProPageState> {
+    const previous = this.inspectionTail
+    let release!: () => void
+    this.inspectionTail = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    await previous
+    try {
+      return await this.inspectPage(options)
+    } finally {
+      release()
+    }
+  }
+  private async inspectPage(options?: { userID: string; force?: boolean }): Promise<GptProPageState> {
+    const state = this.state()
+    if (!state)
+      throw new Error(`The consultation browser view is unavailable for page ${this.pageID}. Reopen explicitly.`)
+    if (this.pageEpoch !== undefined && state.epoch !== this.pageEpoch)
+      throw new Error("The consultation page generation changed; stale page evidence was discarded")
+    if (isGptProLoginUrl(state.url)) {
+      this.log(`driver login required pageID=${this.pageID} epoch=${state.epoch}; no input dispatched`)
+      throw new GptProPageError("Sign in to ChatGPT before continuing this consultation.", "login")
+    }
     if (!isGptProOrigin(state.url))
       throw new Error("The gpt-pro browser is on an unexpected origin. Navigate it to ChatGPT before continuing.")
     const cdp = this.cdp()
+    let force = options?.force
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        const page = await cdp.evaluate<GptProPageState>(CHATGPT_INSPECT_EXPRESSION)
+        const previous = this.answerCapture
+        const known =
+          previous?.userID === options?.userID && previous?.epoch === state.epoch && previous?.url === state.url
+            ? previous
+            : undefined
+        const expression = options
+          ? chatGptCaptureExpression({ ...options, force, knownVersion: known?.version })
+          : CHATGPT_INSPECT_EXPRESSION
+        const page = await cdp.evaluate<GptProPageState>(expression)
         const imageEvidence = await cdp.evaluate<{
           url: string
           composer: Array<{ name: string; kind: "image"; sha256?: string; status: "ready" | "unknown" }>
@@ -132,6 +207,36 @@ export class GptProDriver {
           return images.length ? { ...user, attachments: [...(user.attachments ?? []), ...images] } : user
         })
         if (attempt > 1) this.log(`driver page snapshot consistency restored attempt=${attempt}/3`)
+        const latest = this.state()
+        if (!latest || latest.epoch !== state.epoch || latest.url !== imageEvidence.url)
+          throw new Error("The consultation page changed during inspection; stale page evidence was discarded")
+        if (options && page.capture) {
+          const capture = page.capture
+          const answer = page.answers?.find((answer) => answer.userID === options.userID)
+          if (capture.userID !== options.userID || !answer) throw new Error("Captured answer owner mismatch")
+          if (capture.mode !== "snapshot") {
+            const base = capture.mode === "append" ? capture.baseVersion : capture.version
+            if (!known || known.version !== base || known.answer.id !== answer.id) {
+              force = true
+              throw new Error("Captured answer base changed; requesting a full snapshot")
+            }
+            answer.html = known.answer.html + (capture.mode === "append" ? answer.html : "")
+            answer.text = known.answer.text + (capture.mode === "append" ? answer.text : "")
+          }
+          this.answerCapture = {
+            userID: options.userID,
+            url: page.url,
+            epoch: state.epoch,
+            version: capture.version,
+            answer: { ...answer },
+          }
+          if (page.users.at(-1)?.id === options.userID) page.answer = { ...answer }
+          else delete page.answer
+          if (capture.mode !== "unchanged")
+            this.log(
+              `driver answer capture mode=${capture.mode} reads=${capture.reads} htmlChars=${answer.html.length}`,
+            )
+        } else if (options) this.answerCapture = undefined
         return page
       } catch {
         this.log(`driver page snapshot inspection unavailable attempt=${attempt}/3; retrying without dispatch`)
@@ -175,7 +280,9 @@ export class GptProDriver {
       if (await this.cdp().evaluate(CHATGPT_ONBOARDING_DISMISS_EXPRESSION))
         this.log("driver promo remains after best-effort dismissal; editor focus and send hit tests decide readiness")
     } catch {
-      this.log("driver promo state unavailable after best-effort dismissal; editor focus and send hit tests decide readiness")
+      this.log(
+        "driver promo state unavailable after best-effort dismissal; editor focus and send hit tests decide readiness",
+      )
     }
   }
   async ready() {
@@ -224,7 +331,9 @@ export class GptProDriver {
       }
       await new Promise((r) => setTimeout(r, 250))
     }
-    throw new Error("The ChatGPT composer did not become available. The page may still be loading or its interface may have changed. No message was sent.")
+    throw new Error(
+      "The ChatGPT composer did not become available. The page may still be loading or its interface may have changed. No message was sent.",
+    )
   }
   async observeModel() {
     this.log("driver observing current model without opening or changing the picker")
@@ -345,7 +454,9 @@ export class GptProDriver {
           readiness = state
         }
         if (page.attachments?.length)
-          throw new Error("Composer attachments appeared before this consultation uploaded files; no matching manual file was accepted")
+          throw new Error(
+            "Composer attachments appeared before this consultation uploaded files; no matching manual file was accepted",
+          )
         await new Promise((resolve) => setTimeout(resolve, 250))
         page = await this.page()
         const nextBlockingError = this.blockingPageError(page)
@@ -405,7 +516,18 @@ export class GptProDriver {
     }
   }
   recover() {
-    this.log("driver recovery acknowledged; rendered webpage state remains authoritative")
+    const current = this.state()
+    if (current) this.pageEpoch = current.epoch
+    this.log(
+      `driver explicit recovery adopted pageID=${this.pageID} epoch=${this.pageEpoch ?? "missing"}; rendered webpage state remains authoritative`,
+    )
+  }
+  dispose() {
+    this.answerCapture = undefined
+    this.stopObserving?.()
+    this.stopObserving = undefined
+    this.observedCdp = undefined
+    this.log(`driver disposed pageID=${this.pageID} epoch=${this.pageEpoch ?? "missing"}`)
   }
   async submit(beforeDispatch?: BeforeTrustedClick, uid?: string) {
     this.log("driver waiting for enabled Chat send control")
@@ -441,7 +563,7 @@ export class GptProDriver {
   }
   async stop() {
     this.log("driver checking generation before stop")
-    if (!this.browser.has(GPT_PRO_PARTITION)) {
+    if (!this.browser.has(this.pageID)) {
       this.log("driver stop: browser view already closed; no page action dispatched")
       return
     }

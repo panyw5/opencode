@@ -48,6 +48,7 @@ import { ModelSelectorPopover, useBoundModelState } from "@/components/dialog-se
 import { probeQQ } from "@/lib/qq-official"
 import { parseRetentionDays, rebaseChannelMap } from "./config-channel-helpers"
 import { WechatChannelAuth } from "@/components/wechat-channel-auth"
+import { Link } from "@/components/link"
 
 export type ChannelPlatform = "feishu" | "discord" | "qq" | "wechat"
 
@@ -97,6 +98,10 @@ type ChannelTestResult = {
 }
 
 const MODEL_AUTO = "auto"
+const CHANNEL_CREATION_LINKS: Record<string, string> = {
+  "open.feishu.cn": "https://open.feishu.cn/app",
+  "q.qq.com": "https://q.qq.com/",
+}
 
 /** Last channels write from this page — used to win races against global.config.updated. */
 let pendingChannelWrite: Record<string, ChannelConfig> | undefined
@@ -500,6 +505,14 @@ export const ConfigChannelsDetail: Component<{
 
   const formModelId = createMemo(() => modelIdFromConfig(form.model))
 
+  const creationHint = () => {
+    if (props.platform === "wechat") return language.t("config.channels.wechat.createHint")
+    if (props.platform === "qq") return language.t("config.channels.qq.hint")
+    if (props.platform === "feishu")
+      return language.t(form.mode === "qr" ? "config.channels.feishu.qr.hint" : "config.channels.feishu.manual.hint")
+    return ""
+  }
+
   /** Force store.channels to our written map (authority for this page). */
   const applyLocalChannels = (channels: Record<string, ChannelConfig>) => {
     globalSync.set("config", { ...globalSync.data.config, channels } as Config)
@@ -881,8 +894,7 @@ export const ConfigChannelsDetail: Component<{
                                     scannerUserId={cfg().scannerUserId}
                                   />
                                   <TextField
-                                    label={language.t("config.channels.field.allowedUsers")}
-                                    description={language.t("config.channels.wechat.aclHint")}
+                                    label={language.t("config.channels.wechat.allowedUsers")}
                                     value={cfg().allowedUsers?.join("\n") ?? ""}
                                     onChange={(value) =>
                                       void patchChannel(row.name, { allowedUsers: parseUserList(value ?? "") })
@@ -946,23 +958,25 @@ export const ConfigChannelsDetail: Component<{
                             <Show when={qq()}>
                               {(cfg) => (
                                 <>
-                                  <TextField
-                                    label={language.t("config.channels.field.appId")}
-                                    value={cfg().appId}
-                                    onChange={(v) =>
-                                      void patchChannel(row.name, { appId: v ?? "" } as Partial<ChannelQqConfig>)
-                                    }
-                                  />
-                                  <TextField
-                                    label={language.t("config.channels.field.clientSecret")}
-                                    type="password"
-                                    value={cfg().clientSecret}
-                                    onChange={(v) =>
-                                      void patchChannel(row.name, {
-                                        clientSecret: v ?? "",
-                                      } as Partial<ChannelQqConfig>)
-                                    }
-                                  />
+                                  <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                    <TextField
+                                      label={language.t("config.channels.field.appId")}
+                                      value={cfg().appId}
+                                      onChange={(v) =>
+                                        void patchChannel(row.name, { appId: v ?? "" } as Partial<ChannelQqConfig>)
+                                      }
+                                    />
+                                    <TextField
+                                      label={language.t("config.channels.field.clientSecret")}
+                                      type="password"
+                                      value={cfg().clientSecret}
+                                      onChange={(v) =>
+                                        void patchChannel(row.name, {
+                                          clientSecret: v ?? "",
+                                        } as Partial<ChannelQqConfig>)
+                                      }
+                                    />
+                                  </div>
                                   <TextField
                                     label={language.t("config.channels.field.apiBaseUrl")}
                                     value={cfg().apiBaseUrl ?? "https://api.bot.qq.com"}
@@ -1047,6 +1061,25 @@ export const ConfigChannelsDetail: Component<{
           <section class="flex flex-col gap-4 rounded-[14px] border border-border-weak-base bg-surface-base/40 p-4">
             <div class="text-14-medium text-text-strong">{language.t("config.channels.add.title")}</div>
 
+            <Show when={creationHint()}>
+              {(hint) => (
+                <div data-component="channel-create-notice">
+                  <span data-slot="notice-icon" aria-hidden="true">
+                    <Icon name="speech-bubble" size="small" />
+                  </span>
+                  <p>
+                    <For each={hint().split(/(open\.feishu\.cn|q\.qq\.com)/)}>
+                      {(part) => (
+                        <Show when={CHANNEL_CREATION_LINKS[part]} fallback={part}>
+                          {(href) => <Link href={href()}>{part}</Link>}
+                        </Show>
+                      )}
+                    </For>
+                  </p>
+                </div>
+              )}
+            </Show>
+
             <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(180px,0.65fr)_minmax(0,1.35fr)]">
               <TextField
                 label={language.t("config.channels.field.name")}
@@ -1104,8 +1137,6 @@ export const ConfigChannelsDetail: Component<{
 
                 <Show when={form.mode === "qr"}>
                   <div class="flex flex-col gap-3 rounded-lg border border-border-weak-base p-3 bg-background-base">
-                    <p class="text-12-regular text-text-weak">{language.t("config.channels.feishu.qr.hint")}</p>
-
                     <Show when={qrStatus() === "loading"}>
                       <p class="text-12-regular text-text-weak">{language.t("config.channels.feishu.qr.loading")}</p>
                     </Show>
@@ -1207,7 +1238,6 @@ export const ConfigChannelsDetail: Component<{
                 </Show>
 
                 <Show when={form.mode === "manual"}>
-                  <p class="text-12-regular text-text-weak">{language.t("config.channels.feishu.manual.hint")}</p>
                   <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <TextField
                       label={language.t("config.channels.field.appId")}
@@ -1244,24 +1274,22 @@ export const ConfigChannelsDetail: Component<{
                   onChange={(v) => setForm("proxy", v ?? "")}
                 />
               </Match>
-              <Match when={props.platform === "wechat"}>
-                <p class="text-12-regular text-text-weak">{language.t("config.channels.wechat.createHint")}</p>
-              </Match>
               <Match when={props.platform === "qq"}>
-                <p class="text-12-regular text-text-weak">{language.t("config.channels.qq.hint")}</p>
-                <TextField
-                  label={language.t("config.channels.field.appId")}
-                  placeholder="QQ Bot App ID"
-                  value={form.appId}
-                  onChange={(v) => setForm("appId", v ?? "")}
-                />
-                <TextField
-                  label={language.t("config.channels.field.clientSecret")}
-                  type="password"
-                  placeholder="QQ Bot Client Secret"
-                  value={form.appSecret}
-                  onChange={(v) => setForm("appSecret", v ?? "")}
-                />
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <TextField
+                    label={language.t("config.channels.field.appId")}
+                    placeholder="QQ Bot App ID"
+                    value={form.appId}
+                    onChange={(v) => setForm("appId", v ?? "")}
+                  />
+                  <TextField
+                    label={language.t("config.channels.field.clientSecret")}
+                    type="password"
+                    placeholder="QQ Bot Client Secret"
+                    value={form.appSecret}
+                    onChange={(v) => setForm("appSecret", v ?? "")}
+                  />
+                </div>
                 <TextField
                   label={language.t("config.channels.field.apiBaseUrl")}
                   placeholder="https://api.bot.qq.com"
@@ -1278,11 +1306,10 @@ export const ConfigChannelsDetail: Component<{
             </div>
 
             <TextField
-              label={language.t("config.channels.field.allowedUsers")}
-              description={language.t(
+              label={language.t(
                 props.platform === "wechat"
-                  ? "config.channels.wechat.aclHint"
-                  : "config.channels.field.allowedUsers.hint",
+                  ? "config.channels.wechat.allowedUsers"
+                  : "config.channels.field.allowedUsers",
               )}
               placeholder={props.platform === "feishu" ? "ou_xxx" : props.platform === "wechat" ? "" : "123456789"}
               value={form.allowedUsers}

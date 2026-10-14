@@ -3,6 +3,9 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "projectTask.status.open": "Açık",
+  "projectTask.status.inProgress": "Devam ediyor",
+  "projectTask.status.done": "Tamamlandı",
   "scheduled.schedule.every.interval": "Her {{count}} dk",
   "command.category.suggested": "Önerilen",
   "command.category.view": "Görünüm",

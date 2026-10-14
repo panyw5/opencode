@@ -2,6 +2,9 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "projectTask.status.open": "Åpen",
+  "projectTask.status.inProgress": "Pågår",
+  "projectTask.status.done": "Ferdig",
   "scheduled.schedule.every.interval": "Hvert {{count}}. min",
   "command.category.suggested": "Foreslått",
   "command.category.view": "Visning",

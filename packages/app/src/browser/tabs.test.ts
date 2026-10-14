@@ -150,6 +150,44 @@ describe("shared browser tabs", () => {
     expect(f.service.active()).toBe("persist:consult-gpt-pro")
     f.service.dispose()
   })
+  test("keeps pages sharing a profile distinct and fences stale page events", () => {
+    const f = fixture()
+    const profileID = "persist:consult-gpt-pro"
+    const first = {
+      ...view("consult:one", 1),
+      pageID: "consult:one",
+      profileID,
+      kind: "consultation" as const,
+      owner: { directory: "/repo", sessionID: "ses_one" },
+    }
+    const second = {
+      ...view("consult:two", 1),
+      pageID: "consult:two",
+      profileID,
+      kind: "consultation" as const,
+      owner: { directory: "/repo", sessionID: "ses_two" },
+    }
+    f.updated(first)
+    f.updated(second)
+    expect(f.service.tabs()).toHaveLength(2)
+    expect(f.service.tabs().map((tab) => [tab.pageID, tab.profileID, tab.agent])).toEqual([
+      ["consult:one", profileID, true],
+      ["consult:two", profileID, true],
+    ])
+    expect(f.reveals()).toBe(0)
+    f.service.activate("consult:two")
+    expect(f.service.activeAgent()).toBe(true)
+
+    f.close("consult:one", 1)
+    f.updated(first)
+    expect(f.service.tabs().map((tab) => tab.pageID)).toEqual(["consult:two"])
+    f.close("consult:two", 1)
+    f.updated({ ...second, epoch: 2, url: "https://two.test/" })
+    f.close("consult:two", 1)
+    expect(f.service.tabs()).toHaveLength(1)
+    expect(f.service.tabs()[0].state?.url).toBe("https://two.test/")
+    f.service.dispose()
+  })
   test("late navigation never reactivates or displays an inactive tab", async () => {
     const f = fixture()
     const first = f.service.addUserTab()!

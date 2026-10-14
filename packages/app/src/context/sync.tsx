@@ -1,5 +1,5 @@
 import { batch, createEffect, createMemo, onCleanup } from "solid-js"
-import { createStore, produce, reconcile } from "solid-js/store"
+import { createStore, produce } from "solid-js/store"
 import { Binary } from "@opencode-ai/core/util/binary"
 import { Path } from "@opencode-ai/core/util/path"
 import { createSimpleContext } from "@opencode-ai/ui/context"
@@ -12,24 +12,39 @@ import {
 import { markSessionProfile } from "@/utils/session-profile"
 import { useGlobalSync } from "./global-sync"
 import { useSDK } from "./sdk"
-import type { Message, Part, Session, UserMessageIndexItem } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client"
 import type { SessionHistoryMeta } from "./global-sync/types"
 import { SESSION_CACHE_LIMIT, dropSessionCaches, pickSessionCacheEvictions } from "./global-sync/session-cache"
+import { createSessionUserMessageIndex } from "./global-sync/session-user-message-index"
+import { createFreshRequestQueue } from "@/utils/fresh-request-queue"
 
-function runInflight(map: Map<string, Promise<void>>, key: string, task: () => Promise<void>) {
+function runInflight(
+  map: Map<string, Promise<void>>,
+  key: string,
+  task: () => Promise<void>,
+  refresh?: {
+    queue: ReturnType<typeof createFreshRequestQueue<void>>
+    current(): boolean
+  },
+): Promise<void> {
   const pending = map.get(key)
   if (pending) {
+    if (refresh)
+      return refresh.queue.enqueue(
+        key,
+        pending,
+        () => (refresh.current() ? runInflight(map, key, task) : Promise.resolve()),
+        () => undefined,
+      )
     console.debug(`[sync] inflight-dedupe key=${key}`)
     return pending
   }
   const promise = task().finally(() => {
-    map.delete(key)
+    if (map.get(key) === promise) map.delete(key)
   })
   map.set(key, promise)
   return promise
 }
-
-const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
 export function shown(input: { cached: number; show?: number; page: number }) {
   if (input.cached <= 0) return 0
@@ -68,6 +83,8 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     // Keep history pages modest: large steps + a failed top pin used to dump the whole session at once.
     const historyMessagePageSize = 40
     const inflight = new Map<string, Promise<void>>()
+    const syncRefreshes = createFreshRequestQueue<void>()
+    onCleanup(() => syncRefreshes.clearAll())
     const maxDirs = 30
     // The map key is an identity key, while the entry retains a logical path
     // for all SDK/global-sync/IO calls. Never use the identity key as a path.
@@ -77,31 +94,63 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       cursor: {} as Record<string, string | undefined>,
       complete: {} as Record<string, boolean>,
     })
-    const [userMessageIndex, setUserMessageIndex] = createStore({
-      items: {} as Record<string, UserMessageIndexItem[] | undefined>,
-      loading: {} as Record<string, boolean>,
-      failed: {} as Record<string, boolean>,
+    const userMessageIndex = createSessionUserMessageIndex({
+      key: keyFor,
+      version: () => globalSync.version,
+      current: (directory) => sdk.directory === directory,
+      load: (directory, sessionID) => sdk.client.session.userMessageIndex({ sessionID, directory }),
     })
+    onCleanup(() => userMessageIndex.clearAll("provider-dispose"))
     let syncVersion = globalSync.version
     createEffect(() => {
       const next = globalSync.version
       if (next === syncVersion) return
       syncVersion = next
       inflight.clear()
+      syncRefreshes.clearAll()
       seen.clear()
       setMeta({ show: {}, cursor: {}, complete: {} })
-      setUserMessageIndex({ items: {}, loading: {}, failed: {} })
+      userMessageIndex.clearAll("backend-reset")
+    })
+    createEffect(() => {
+      const directory = sdk.directory
+      const prefix = `${identity(directory)}\n`
+      const histories = Object.entries(current()[0].session_history ?? {}).map(([id, history]) => ({
+        key: keyFor(directory, id),
+        cursor: history.cursor,
+        complete: history.complete,
+        show: history.show,
+      }))
+      const keep = new Set(histories.map((history) => history.key))
+      setMeta(
+        produce((draft) => {
+          for (const field of ["show", "cursor", "complete"] as const) {
+            for (const key of Object.keys(draft[field]))
+              if (key.startsWith(prefix) && !keep.has(key)) delete draft[field][key]
+          }
+          for (const history of histories) {
+            draft.cursor[history.key] = history.cursor
+            draft.complete[history.key] = history.complete
+            draft.show[history.key] = history.show
+          }
+        }),
+      )
     })
     const unsubscribeMessageRemoved = sdk.event.on("message.removed", (event) => {
       const props = event.properties
-      const key = keyFor(sdk.directory, props.sessionID)
-      if (!userMessageIndex.items[key]) return
-      setUserMessageIndex("items", key, (items) => items?.filter((item) => item.id !== props.messageID))
-      console.debug(
-        `[sync] user-message-index remove directory=${sdk.directory} sid=${props.sessionID} message=${props.messageID}`,
-      )
+      userMessageIndex.remove(sdk.directory, props.sessionID, props.messageID)
     })
     onCleanup(unsubscribeMessageRemoved)
+    onCleanup(
+      sdk.event.on("session.deleted", (event) => {
+        userMessageIndex.clear(sdk.directory, [event.properties.info.id])
+      }),
+    )
+    onCleanup(
+      sdk.event.on("session.updated", (event) => {
+        if (event.properties.info.time.archived) userMessageIndex.clear(sdk.directory, [event.properties.info.id])
+      }),
+    )
 
     const getSession = (sessionID: string) => {
       return globalSync.session.info.get(sdk.directory, sessionID)
@@ -157,22 +206,15 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         produce((draft) => {
           for (const sessionID of sessionIDs) {
             const key = keyFor(directory, sessionID)
+            syncRefreshes.clear(key)
+            inflight.delete(key)
             delete draft.show[key]
             delete draft.cursor[key]
             delete draft.complete[key]
           }
         }),
       )
-      setUserMessageIndex(
-        produce((draft) => {
-          for (const sessionID of sessionIDs) {
-            const key = keyFor(directory, sessionID)
-            delete draft.items[key]
-            delete draft.loading[key]
-            delete draft.failed[key]
-          }
-        }),
-      )
+      userMessageIndex.clear(directory, sessionIDs)
     }
 
     const evict = (directory: string, setStore: Setter, sessionIDs: string[]) => {
@@ -214,6 +256,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       limit: number
       before?: string
       mode?: "replace" | "prepend"
+      authoritative?: boolean
     }) => {
       const key = keyFor(input.directory, input.sessionID)
       console.debug(
@@ -328,6 +371,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         },
         async sync(sessionID: string, opts?: { force?: boolean }) {
           const directory = sdk.directory
+          const version = globalSync.version
           markSessionHot(directory, sessionID)
           const [store, setStore] = globalSync.child(directory)
           const key = keyFor(directory, sessionID)
@@ -367,73 +411,81 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
             )
           }
 
-          return runInflight(inflight, key, async () => {
-            const pending = getSessionPrefetchPromise(directory, sessionID)
-            if (pending) {
-              markSessionProfile(sessionID, "prefetch-wait-start")
-              // Prefetch is an optimization — if it fails or hangs, fall through
-              // to a direct fetch instead of blocking the session view forever.
-              await Promise.race([pending, new Promise((r) => setTimeout(r, 5000))]).catch(() => {})
-              markSessionProfile(sessionID, "prefetch-wait-end")
-              const seeded = getSessionPrefetch(directory, sessionID)
-              if (seeded && store.message[sessionID] !== undefined && meta.complete[key] === undefined) {
-                batch(() => {
-                  setMeta("cursor", key, seeded.cursor)
-                  setMeta("complete", key, seeded.complete)
-                })
-              }
-            }
-
-            const hasSession = Binary.search(store.session, sessionID, (s) => s.id).found
-            const cached = store.message[sessionID] !== undefined && meta.complete[key] !== undefined
-            const currentLength = store.message[sessionID]?.length ?? 0
-            const currentShow = view(directory, sessionID)
-            if (cached && hasSession && !opts?.force) {
-              markSessionProfile(sessionID, "sync-cache-hit")
-              console.debug(
-                `[sync] messages cache-hit directory=${directory} sid=${sessionID} identity=${identity(directory)} count=${String(currentLength)}`,
-              )
-              return
-            }
-
-            console.debug(
-              `[sync] messages cache-miss directory=${directory} sid=${sessionID} identity=${identity(directory)} force=${String(!!opts?.force)} hasSession=${String(hasSession)} cached=${String(cached)}`,
-            )
-
-            const limit = Math.max(view(directory, sessionID), initialMessagePageSize)
-            console.debug(
-              `[sync] sync-fetch directory=${directory} sid=${sessionID} force=${String(!!opts?.force)} hasSession=${String(hasSession)} cached=${String(cached)} current=${String(currentLength)} view=${String(currentShow)} limit=${String(limit)}`,
-            )
-            const sessionReq =
-              hasSession && !opts?.force
-                ? Promise.resolve()
-                : opts?.force
-                  ? globalSync.session.info.refresh(directory, sessionID)
-                  : globalSync.session.info.ensure(directory, sessionID)
-
-            const messagesReq =
-              cached && !opts?.force
-                ? Promise.resolve()
-                : loadMessages({
-                    directory,
-                    sessionID,
-                    limit,
-                    mode: store.message[sessionID] !== undefined ? "prepend" : "replace",
+          return runInflight(
+            inflight,
+            key,
+            async () => {
+              const pending = getSessionPrefetchPromise(directory, sessionID)
+              if (pending) {
+                markSessionProfile(sessionID, "prefetch-wait-start")
+                // Prefetch is an optimization — if it fails or hangs, fall through
+                // to a direct fetch instead of blocking the session view forever.
+                await Promise.race([pending, new Promise((r) => setTimeout(r, 5000))]).catch(() => {})
+                markSessionProfile(sessionID, "prefetch-wait-end")
+                const seeded = getSessionPrefetch(directory, sessionID)
+                if (seeded && store.message[sessionID] !== undefined && meta.complete[key] === undefined) {
+                  batch(() => {
+                    setMeta("cursor", key, seeded.cursor)
+                    setMeta("complete", key, seeded.complete)
                   })
+                }
+              }
 
-            await Promise.all([sessionReq, messagesReq]).catch((error) => {
-              markSessionProfile(
-                sessionID,
-                "sync-error",
-                `force=${String(!!opts?.force)} error=${error instanceof Error ? error.name : "unknown"}`,
+              const hasSession = Binary.search(store.session, sessionID, (s) => s.id).found
+              const cached = store.message[sessionID] !== undefined && meta.complete[key] !== undefined
+              const currentLength = store.message[sessionID]?.length ?? 0
+              const currentShow = view(directory, sessionID)
+              if (cached && hasSession && !opts?.force) {
+                markSessionProfile(sessionID, "sync-cache-hit")
+                console.debug(
+                  `[sync] messages cache-hit directory=${directory} sid=${sessionID} identity=${identity(directory)} count=${String(currentLength)}`,
+                )
+                return
+              }
+
+              console.debug(
+                `[sync] messages cache-miss directory=${directory} sid=${sessionID} identity=${identity(directory)} force=${String(!!opts?.force)} hasSession=${String(hasSession)} cached=${String(cached)}`,
               )
-              throw error
-            })
-            console.debug(
-              `[sync] sync-end directory=${directory} sid=${sessionID} force=${String(!!opts?.force)} messages=${String(store.message[sessionID]?.length ?? 0)} complete=${String(meta.complete[key] ?? "none")} cursor=${String(!!meta.cursor[key])}`,
-            )
-            markSessionProfile(sessionID, "sync-end", `force=${String(!!opts?.force)}`)
-          })
+
+              const limit = Math.max(view(directory, sessionID), initialMessagePageSize)
+              console.debug(
+                `[sync] sync-fetch directory=${directory} sid=${sessionID} force=${String(!!opts?.force)} hasSession=${String(hasSession)} cached=${String(cached)} current=${String(currentLength)} view=${String(currentShow)} limit=${String(limit)}`,
+              )
+              const sessionReq =
+                hasSession && !opts?.force
+                  ? Promise.resolve()
+                  : opts?.force
+                    ? globalSync.session.info.refresh(directory, sessionID)
+                    : globalSync.session.info.ensure(directory, sessionID)
+
+              const messagesReq =
+                cached && !opts?.force
+                  ? Promise.resolve()
+                  : loadMessages({
+                      directory,
+                      sessionID,
+                      limit,
+                      mode: opts?.force ? "replace" : store.message[sessionID] !== undefined ? "prepend" : "replace",
+                      authoritative: opts?.force,
+                    })
+
+              await Promise.all([sessionReq, messagesReq]).catch((error) => {
+                markSessionProfile(
+                  sessionID,
+                  "sync-error",
+                  `force=${String(!!opts?.force)} error=${error instanceof Error ? error.name : "unknown"}`,
+                )
+                throw error
+              })
+              console.debug(
+                `[sync] sync-end directory=${directory} sid=${sessionID} force=${String(!!opts?.force)} messages=${String(store.message[sessionID]?.length ?? 0)} complete=${String(meta.complete[key] ?? "none")} cursor=${String(!!meta.cursor[key])}`,
+              )
+              markSessionProfile(sessionID, "sync-end", `force=${String(!!opts?.force)}`)
+            },
+            opts?.force
+              ? { queue: syncRefreshes, current: () => globalSync.version === version && sdk.directory === directory }
+              : undefined,
+          )
         },
         async diff(sessionID: string, opts?: { force?: boolean }) {
           const directory = sdk.directory
@@ -535,42 +587,16 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         },
         userMessageIndex: {
           get(sessionID: string) {
-            return userMessageIndex.items[keyFor(sdk.directory, sessionID)]
+            return userMessageIndex.get(sdk.directory, sessionID)
           },
           loading(sessionID: string) {
-            return userMessageIndex.loading[keyFor(sdk.directory, sessionID)] ?? false
+            return userMessageIndex.loading(sdk.directory, sessionID)
           },
           failed(sessionID: string) {
-            return userMessageIndex.failed[keyFor(sdk.directory, sessionID)] ?? false
+            return userMessageIndex.failed(sdk.directory, sessionID)
           },
-          async ensure(sessionID: string, opts?: { force?: boolean }) {
-            const directory = sdk.directory
-            const key = keyFor(directory, sessionID)
-            if (!opts?.force && userMessageIndex.items[key] !== undefined) return
-            return runInflight(inflight, `user-message-index\n${key}`, async () => {
-              setUserMessageIndex("loading", key, true)
-              setUserMessageIndex("failed", key, false)
-              console.debug(
-                `[sync] user-message-index load-start directory=${directory} sid=${sessionID} force=${String(!!opts?.force)}`,
-              )
-              try {
-                const response = await sdk.client.session.userMessageIndex({ sessionID, directory })
-                if (sdk.directory !== directory) return
-                const items = response.data ?? []
-                setUserMessageIndex("items", key, items)
-                console.debug(
-                  `[sync] user-message-index load-end directory=${directory} sid=${sessionID} count=${String(items.length)}`,
-                )
-              } catch (error) {
-                setUserMessageIndex("failed", key, true)
-                console.debug(
-                  `[sync] user-message-index load-error directory=${directory} sid=${sessionID} error=${error instanceof Error ? error.message : String(error)}`,
-                )
-                throw error
-              } finally {
-                setUserMessageIndex("loading", key, false)
-              }
-            })
+          ensure(sessionID: string, opts?: { force?: boolean }) {
+            return userMessageIndex.ensure(sdk.directory, sessionID, opts)
           },
         },
         evict(sessionID: string, directory = sdk.directory) {
@@ -580,16 +606,9 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         },
         fetch: async (count = 10) => {
           const directory = sdk.directory
-          const client = sdk.client
-          const [store, setStore] = globalSync.child(directory)
+          const [, setStore] = globalSync.child(directory)
           setStore("limit", (x) => x + count)
-          await client.session.list().then((x) => {
-            const sessions = (x.data ?? [])
-              .filter((s) => !!s?.id)
-              .sort((a, b) => cmp(a.id, b.id))
-              .slice(0, store.limit)
-            setStore("session", reconcile(sessions, { key: "id" }))
-          })
+          await globalSync.project.loadSessions(directory, { force: true })
         },
         more: createMemo(() => current()[0].session.length >= current()[0].limit),
         archive: async (sessionID: string) => {

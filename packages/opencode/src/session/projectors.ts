@@ -11,6 +11,7 @@ import { WorkspaceTable } from "@/control-plane/workspace.sql"
 import { Log } from "@opencode-ai/core/util/log"
 import nextProjectors from "./projectors-next"
 import { SessionContentSearch } from "./content-search"
+import { clearStreamingText } from "./streaming-text"
 
 const log = Log.create({ service: "session.projector" })
 
@@ -125,6 +126,7 @@ export default [
   SyncEvent.project(Session.Event.Deleted, (db, data) => {
     SessionContentSearch.clearSession(db, data.sessionID)
     db.delete(SessionTable).where(eq(SessionTable.id, data.sessionID)).run()
+    clearStreamingText(data)
   }),
 
   SyncEvent.project(MessageV2.Event.Updated, (db, data) => {
@@ -164,6 +166,7 @@ export default [
     db.delete(MessageTable)
       .where(and(eq(MessageTable.id, data.messageID), eq(MessageTable.session_id, data.sessionID)))
       .run()
+    clearStreamingText(data)
   }),
 
   SyncEvent.project(MessageV2.Event.PartRemoved, (db, data) => {
@@ -179,6 +182,7 @@ export default [
     db.delete(PartTable)
       .where(and(eq(PartTable.id, data.partID), eq(PartTable.session_id, data.sessionID)))
       .run()
+    clearStreamingText(data)
   }),
 
   SyncEvent.project(MessageV2.Event.PartUpdated, (db, data) => {
@@ -196,6 +200,7 @@ export default [
         })
         .onConflictDoUpdate({ target: PartTable.id, set: { data: rest } })
         .run()
+      clearStreamingText({ sessionID, partID: id })
       if (row) SessionContentSearch.upsert(db, data.part)
       else SessionContentSearch.insertNew(db, data.part)
       const previous = row && usage(row.data)

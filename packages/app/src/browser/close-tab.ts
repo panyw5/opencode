@@ -3,12 +3,9 @@ import type { CommandSource } from "@/context/command"
 export const CLOSE_BROWSER_TAB_COMMAND = "browserTabs.close"
 
 export function browserPanelHasFocus(doc: Document = document) {
-  const panel = doc.getElementById("browser-panel")
-  return (
-    !!panel &&
-    panel.getAttribute("aria-hidden") !== "true" &&
-    !panel.hasAttribute("inert") &&
-    panel.contains(doc.activeElement)
+  return [...doc.querySelectorAll<HTMLElement>("#browser-panel, [data-browser-maximized]")].some(
+    (panel) =>
+      panel.getAttribute("aria-hidden") !== "true" && !panel.hasAttribute("inert") && panel.contains(doc.activeElement),
   )
 }
 

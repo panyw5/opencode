@@ -27,11 +27,16 @@ export function createSessionTodoService(deps: SessionControllerDeps) {
     if (pending) return pending
     const directoryRevision = deps.revision(directory)
     const eventRevision = rev(directory, sessionID)
+    console.debug(`[session-todo] load-start directory=${directory} sid=${sessionID} revision=${eventRevision}`)
     const promise = retry(() => deps.sdk(directory).session.todo({ sessionID }))
       .then((response) => {
-        if (!deps.current(directory, child, directoryRevision)) return
+        if (inflight.get(key) !== promise || !deps.current(directory, child, directoryRevision)) {
+          console.debug(`[session-todo] discard directory=${directory} sid=${sessionID} reason=invalidated-request`)
+          return
+        }
         if (rev(directory, sessionID) !== eventRevision) return child[0].todo[sessionID]
         const list = response.data ?? []
+        console.debug(`[session-todo] commit directory=${directory} sid=${sessionID} count=${list.length}`)
         child[1]("todo", sessionID, reconcile(list, { key: "id" }))
         return list
       })
@@ -61,6 +66,7 @@ export function createSessionTodoService(deps: SessionControllerDeps) {
       for (const sessionID of sessionIDs) {
         const key = keyFor(directory, sessionID)
         const pending = inflight.get(key)
+        console.debug(`[session-todo] clear directory=${directory} sid=${sessionID} pending=${!!pending}`)
         bump(directory, sessionID)
         inflight.delete(key)
         if (!pending) revision.delete(key)

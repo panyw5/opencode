@@ -1,13 +1,10 @@
 import { describe, expect, test } from "bun:test"
+import { spawnSync } from "child_process"
+import { existsSync } from "fs"
+import os from "os"
+import path from "path"
 import type { SshTarget } from "./exec"
-import {
-  parseDirectoryListing,
-  parseSshTarget,
-  remotePath,
-  shellEscape,
-  sshArgs,
-  sshDestination,
-} from "./exec"
+import { parseDirectoryListing, parseSshTarget, remotePath, shellEscape, sshArgs, sshDestination } from "./exec"
 
 describe("parseSshTarget", () => {
   test("parses user@host:port", () => {
@@ -96,8 +93,35 @@ describe("shellEscape / remotePath", () => {
   })
 
   test("keeps ~ and $HOME expansion working", () => {
-    expect(remotePath("~")).toBe("$HOME")
-    expect(remotePath("~/projects")).toBe("$HOME/'projects'")
+    expect(remotePath("~")).toBe('"$HOME"')
+    expect(remotePath("~/projects")).toBe("\"$HOME\"/'projects'")
+  })
+
+  test("round-trips quoted home and literal path characters in /bin/sh", () => {
+    if (process.platform === "win32") return
+    const marker = path.join(os.tmpdir(), `opencode-ssh-path-${process.pid}-${Date.now()}`)
+    const home = `${os.tmpdir()}/home with spaces/it's $HOME *; touch ${marker}`
+    const inputs = [
+      { source: "~", expected: home },
+      {
+        source: "~/projects/it's $value *; touch " + marker,
+        expected: `${home}/projects/it's $value *; touch ${marker}`,
+      },
+      {
+        source: "/remote path/it's $value *; touch " + marker,
+        expected: "/remote path/it's $value *; touch " + marker,
+      },
+    ]
+
+    for (const item of inputs) {
+      const result = spawnSync("/bin/sh", ["-c", `printf '%s' ${remotePath(item.source)}`], {
+        env: { ...process.env, HOME: home },
+        encoding: "utf8",
+      })
+      expect(result.status).toBe(0)
+      expect(result.stdout).toBe(item.expected)
+    }
+    expect(existsSync(marker)).toBe(false)
   })
 
   test("escapes absolute paths fully", () => {

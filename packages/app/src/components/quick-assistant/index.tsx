@@ -51,7 +51,7 @@ import { emptyQuickPrompt, quickPromptText, recoverQuickPrompt } from "./editor-
 import { buildRequestParts } from "../prompt-input/build-request-parts"
 import { promptText } from "../prompt-input/prompt-text"
 import { clonePromptParts } from "../prompt-input/history"
-import { appendSelectionToPrompt, QUICK_ASSISTANT_SELECTION_EVENT } from "@/utils/selection-prompt"
+import { QUICK_ASSISTANT_SELECTION_EVENT, appendSelectionToPrompt } from "@/utils/selection-prompt"
 
 function errorName(err: unknown) {
   if (!err || typeof err !== "object") return undefined
@@ -532,6 +532,27 @@ export function QuickAssistant() {
 
   onCleanup(clearTimers)
 
+  onMount(() => {
+    const onSelection = (event: Event) => {
+      const text = (event as CustomEvent<unknown>).detail
+      if (typeof text !== "string" || !text.trim()) {
+        console.warn(`[session-selection] quick assistant ignored invalid selection type=${typeof text}`)
+        return
+      }
+      console.debug(`[session-selection] quick assistant received length=${text.length}`)
+      const next = appendSelectionToPrompt(state.prompt, text)
+      setState("prompt", reconcile(next.prompt))
+      setSaved("open", true)
+      console.debug(`[session-selection] quick assistant prompt updated cursor=${next.cursor}`)
+    }
+    window.addEventListener(QUICK_ASSISTANT_SELECTION_EVENT, onSelection)
+    console.debug("[session-selection] quick assistant listener enabled")
+    onCleanup(() => {
+      window.removeEventListener(QUICK_ASSISTANT_SELECTION_EVENT, onSelection)
+      console.debug("[session-selection] quick assistant listener disabled")
+    })
+  })
+
   const ensureSession = async (
     client: ReturnType<typeof globalSDK.createClient>,
     setStore: SetStoreFunction<State>,
@@ -562,20 +583,6 @@ export function QuickAssistant() {
     console.debug("[quick-assistant] panel opened")
     setSaved("open", true)
   }
-
-  onMount(() => {
-    const receive = (event: Event) => {
-      const text = (event as CustomEvent<unknown>).detail
-      if (!enabled() || typeof text !== "string" || !text.trim()) return
-      const next = appendSelectionToPrompt(state.prompt, text)
-      setState("prompt", next.prompt)
-      console.debug(`[session-selection] assistant draft appended length=${text.length} cursor=${next.cursor}`)
-      open()
-      requestAnimationFrame(() => input?.focus())
-    }
-    window.addEventListener(QUICK_ASSISTANT_SELECTION_EVENT, receive)
-    onCleanup(() => window.removeEventListener(QUICK_ASSISTANT_SELECTION_EVENT, receive))
-  })
 
   const close = () => {
     console.debug("[quick-assistant] panel closed")

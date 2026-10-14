@@ -3,9 +3,10 @@ import type { BrowserViewState, ElectronAPI, InitStep, SqliteMigrationProgress }
 
 const api: ElectronAPI = {
   gptPro: {
+    runtimeStatus: () => ipcRenderer.invoke("gpt-pro-runtime-status"),
     getConfig: () => ipcRenderer.invoke("gpt-pro-config"),
-    setConfig: config => ipcRenderer.invoke("gpt-pro-set-config", config),
-    command: input => ipcRenderer.invoke("gpt-pro-command", input),
+    setConfig: (config) => ipcRenderer.invoke("gpt-pro-set-config", config),
+    command: (input) => ipcRenderer.invoke("gpt-pro-command", input),
     attachmentPreview: (input) => ipcRenderer.invoke("gpt-pro-attachment-preview", input),
     list: () => ipcRenderer.invoke("gpt-pro-list"),
     open: () => ipcRenderer.invoke("gpt-pro-open"),
@@ -16,11 +17,11 @@ const api: ElectronAPI = {
   },
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
   browser: {
-    capturePreview: (partition) => ipcRenderer.invoke("browser-capture-preview", partition),
+    capturePreview: (pageID) => ipcRenderer.invoke("browser-capture-preview", pageID),
     getDisplayState: () => ipcRenderer.invoke("browser-display-state"),
     acquireDisplay: () => ipcRenderer.invoke("browser-acquire-display"),
-    updateDisplay: frame => ipcRenderer.invoke("browser-update-display", frame),
-    releaseDisplay: lease => ipcRenderer.invoke("browser-release-display", lease),
+    updateDisplay: (frame) => ipcRenderer.invoke("browser-update-display", frame),
+    releaseDisplay: (lease) => ipcRenderer.invoke("browser-release-display", lease),
     getPresentation: () => ipcRenderer.invoke("browser-get-presentation"),
     acknowledgePresentation: (id) => ipcRenderer.invoke("browser-ack-presentation", id),
     onPresented: (cb) => {
@@ -28,12 +29,12 @@ const api: ElectronAPI = {
       ipcRenderer.on("browser-presented", handler)
       return () => ipcRenderer.removeListener("browser-presented", handler)
     },
-    open: (partition, url) => ipcRenderer.invoke("browser-open", partition, url),
-    setBounds: (partition, bounds) => ipcRenderer.invoke("browser-set-bounds", partition, bounds),
-    setVisible: (partition, visible) => ipcRenderer.invoke("browser-set-visible", partition, visible),
-    close: (partition) => ipcRenderer.invoke("browser-close", partition),
-    navigate: (partition, action) => ipcRenderer.invoke("browser-navigate", partition, action),
-    setShared: (partition, shared) => ipcRenderer.invoke("browser-set-shared", partition, shared),
+    open: (pageID, url) => ipcRenderer.invoke("browser-open", pageID, url),
+    setBounds: (pageID, bounds) => ipcRenderer.invoke("browser-set-bounds", pageID, bounds),
+    setVisible: (pageID, visible) => ipcRenderer.invoke("browser-set-visible", pageID, visible),
+    close: (pageID) => ipcRenderer.invoke("browser-close", pageID),
+    navigate: (pageID, action) => ipcRenderer.invoke("browser-navigate", pageID, action),
+    setShared: (pageID, shared) => ipcRenderer.invoke("browser-set-shared", pageID, shared),
     getState: () => ipcRenderer.invoke("browser-get-state"),
     onUpdated: (cb) => {
       const handler = (_: unknown, state: BrowserViewState) => cb(state)
@@ -43,7 +44,7 @@ const api: ElectronAPI = {
       }
     },
     onClosed: (cb) => {
-      const handler = (_: unknown, partition: string, epoch: number) => cb(partition, epoch)
+      const handler = (_: unknown, pageID: string, epoch: number, profileID?: string) => cb(pageID, epoch, profileID)
       ipcRenderer.on("browser-closed", handler)
       return () => {
         ipcRenderer.removeListener("browser-closed", handler)

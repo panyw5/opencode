@@ -2,6 +2,7 @@ export type SessionDataMutation = {
   sessionID: string
   kind: "messages" | "todo" | "diff"
   strategy: "merge" | "discard"
+  removedMessageID?: string
 }
 
 export function sessionDataMutation(
@@ -33,7 +34,14 @@ export function sessionDataMutation(
     const sessionID = props.sessionID
     if (typeof sessionID === "string") {
       const strategy = event.type === "message.part.delta" ? "merge" : "discard"
-      return { sessionID, kind: "messages", strategy }
+      return {
+        sessionID,
+        kind: "messages",
+        strategy,
+        ...(event.type === "message.removed" && typeof props.messageID === "string"
+          ? { removedMessageID: props.messageID }
+          : {}),
+      }
     }
   }
   if (event.type === "message.part.removed" || event.type === "message.part.delta") {

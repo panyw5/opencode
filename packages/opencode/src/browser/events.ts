@@ -4,6 +4,12 @@ import { Schema } from "effect"
 export const Updated = BusEvent.define(
   "browser.updated",
   Schema.Struct({
+    pageID: Schema.optional(Schema.String),
+    profileID: Schema.optional(Schema.String),
+    owner: Schema.optional(
+      Schema.Struct({ directory: Schema.optional(Schema.String), sessionID: Schema.optional(Schema.String) }),
+    ),
+    kind: Schema.optional(Schema.Literals(["user", "agent", "consultation", "login"])),
     partition: Schema.String,
     url: Schema.String,
     title: Schema.String,
@@ -19,7 +25,9 @@ export const Updated = BusEvent.define(
 export const Closed = BusEvent.define(
   "browser.closed",
   Schema.Struct({
+    pageID: Schema.optional(Schema.String),
     partition: Schema.String,
+    profileID: Schema.optional(Schema.String),
     epoch: Schema.optional(Schema.Number),
   }),
 )

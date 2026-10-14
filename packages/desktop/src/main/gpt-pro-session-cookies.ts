@@ -1,5 +1,6 @@
 import { sessionCookieFamily } from "../../resources/gpt-pro-login/common.js"
 import type { Cookie, Cookies } from "electron"
+import { GptProOperationError } from "@opencode-ai/util/gpt-pro-error"
 
 export type SessionCookie = {
   name: string
@@ -34,7 +35,7 @@ export function parseSessionCookies(input: unknown, nowSeconds = Date.now() / 10
     if (
       typeof cookie.name !== "string" ||
       !sessionCookieFamily(cookie.name) ||
-      seen.has(cookie.name) ||
+      seen.has(`${cookie.domain}:${cookie.name}`) ||
       typeof cookie.value !== "string" ||
       !cookie.value.length ||
       cookie.value.length > 8192 ||
@@ -55,7 +56,7 @@ export function parseSessionCookies(input: unknown, nowSeconds = Date.now() / 10
       (cookie.session ? cookie.expirationDate !== undefined : cookie.expirationDate === undefined)
     )
       throw invalid()
-    seen.add(cookie.name)
+    seen.add(`${cookie.domain}:${cookie.name}`)
     cookies.push({
       name: cookie.name,
       value: cookie.value,
@@ -69,8 +70,9 @@ export function parseSessionCookies(input: unknown, nowSeconds = Date.now() / 10
       ...(cookie.expirationDate === undefined ? {} : { expirationDate: cookie.expirationDate as number }),
     })
   }
-  for (const family of new Set(cookies.map((cookie) => sessionCookieFamily(cookie.name)!))) {
-    const pieces = cookies.filter((cookie) => sessionCookieFamily(cookie.name) === family)
+  for (const key of new Set(cookies.map((cookie) => `${cookie.domain}:${sessionCookieFamily(cookie.name)!}`))) {
+    const pieces = cookies.filter((cookie) => `${cookie.domain}:${sessionCookieFamily(cookie.name)!}` === key)
+    const family = sessionCookieFamily(pieces[0].name)!
     if (pieces.some((cookie) => cookie.name === family)) {
       if (pieces.length !== 1) throw invalid()
       continue
@@ -83,7 +85,12 @@ export function parseSessionCookies(input: unknown, nowSeconds = Date.now() / 10
 
 export type CookieJar = Pick<Cookies, "get" | "remove" | "set" | "flushStore">
 
-export async function importSessionCookies(jar: CookieJar, cookies: SessionCookie[], log: (message: string) => void) {
+export async function importSessionCookies(
+  jar: CookieJar,
+  cookies: SessionCookie[],
+  log: (message: string) => void,
+  persist?: () => Promise<void>,
+) {
   // Keep a bounded in-memory rollback snapshot; never serialize credentials.
   const old = (await jar.get({ domain: "chatgpt.com" })).filter(
     (cookie) =>
@@ -111,13 +118,15 @@ export async function importSessionCookies(jar: CookieJar, cookies: SessionCooki
     await remove(old)
     for (const cookie of cookies) await set(cookie)
     await jar.flushStore()
+    await persist?.()
     log(`session-import persisted count=${cookies.length}; page authentication remains unverified`)
-  } catch {
+  } catch (error) {
     log("session-import write failed; rolling back without logging credential details")
     try {
       await remove(cookies)
       for (const cookie of old) await set(cookie)
       await jar.flushStore()
+      await persist?.()
       log("session-import rollback completed")
     } catch {
       log("session-import rollback failed; dedicated profile requires manual login recovery")
@@ -125,6 +134,7 @@ export async function importSessionCookies(jar: CookieJar, cookies: SessionCooki
         "Session import failed and rollback could not finish. The dedicated browser needs login recovery.",
       )
     }
+    if (error instanceof GptProOperationError) throw error
     throw new Error("Session import failed. The previous dedicated-browser session was restored.")
   }
 }

@@ -29,6 +29,12 @@ export type ClientInfo = {
 }
 
 export const ViewState = Schema.Struct({
+  pageID: Schema.optional(Schema.String),
+  profileID: Schema.optional(Schema.String),
+  owner: Schema.optional(
+    Schema.Struct({ directory: Schema.optional(Schema.String), sessionID: Schema.optional(Schema.String) }),
+  ),
+  kind: Schema.optional(Schema.Literals(["user", "agent", "consultation", "login"])),
   partition: Schema.String,
   url: Schema.String,
   title: Schema.String,
@@ -40,6 +46,8 @@ export const ViewState = Schema.Struct({
 export type ViewState = typeof ViewState.Type
 
 export const ConsoleEntry = Schema.Struct({
+  pageID: Schema.optional(Schema.String),
+  profileID: Schema.optional(Schema.String),
   partition: Schema.String,
   level: Schema.Literals(["log", "info", "warn", "error"]),
   text: Schema.String,
@@ -80,7 +88,7 @@ export interface Interface {
     readonly views?: readonly ViewState[]
     readonly instance?: InstanceContext
   }) => Effect.Effect<void>
-  readonly disconnect: () => Effect.Effect<void>
+  readonly disconnect: (expected?: Adapter) => Effect.Effect<void>
   readonly state: () => Effect.Effect<State>
   /** Send a command to the connected desktop client and await its response. */
   readonly command: <T = unknown>(
@@ -89,9 +97,9 @@ export interface Interface {
     options?: { readonly timeout?: Duration.Input },
   ) => Effect.Effect<T, CommandError>
   /** Feed one raw text frame coming from the desktop client. */
-  readonly handleFrame: (text: string) => Effect.Effect<void>
+  readonly handleFrame: (text: string, expected?: Adapter) => Effect.Effect<void>
   /** Buffered console entries captured from `browser.console` event frames. */
-  readonly console: (partition: string, since?: number) => Effect.Effect<ConsoleEntry[]>
+  readonly console: (pageID: string, since?: number) => Effect.Effect<ConsoleEntry[]>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/BrowserBridge") {}
@@ -103,8 +111,11 @@ export const layer = Layer.effect(
     let client: ClientInfo | undefined
     let instance: InstanceContext | undefined
     let views: readonly ViewState[] = []
+    const closedEpochs = new Map<string, number>()
     const pending = new Map<string, Pending>()
     const consoleBuffer: ConsoleEntry[] = []
+
+    const normalizeView = (view: ViewState) => (view.pageID === undefined ? view : { ...view, partition: view.pageID })
 
     const failPending = (error: CommandError) => {
       for (const [id, entry] of pending) {
@@ -120,30 +131,48 @@ export const layer = Layer.effect(
       try {
         if (name === "browser.updated") {
           const decoded = Schema.decodeUnknownSync(ViewState)(properties)
-          // Merge by partition: each desktop event describes ONE view, so
-          // replacing the whole list collapsed this copy to a single entry.
+          const pageID = decoded.pageID ?? decoded.partition
+          const normalized = decoded.pageID === undefined ? decoded : { ...decoded, partition: pageID }
+          // Merge by pageID: several independent pages can share one profile.
+          // Each desktop event describes one view, so replacing the whole list
+          // would collapse the server's view of the browser.
           // Stale events (epoch older than the stored view's) are dropped.
-          const stored = views.find((view) => view.partition === decoded.partition)
-          if (stored && (decoded.epoch ?? 0) < (stored.epoch ?? 0)) return
+          const closedEpoch = closedEpochs.get(pageID) ?? -1
+          if ((normalized.epoch ?? 0) <= closedEpoch) return
+          const stored = views.find((view) => (view.pageID ?? view.partition) === pageID)
+          if (stored && (normalized.epoch ?? 0) < (stored.epoch ?? 0)) return
+          closedEpochs.delete(pageID)
           views = stored
-            ? views.map((view) => (view.partition === decoded.partition ? decoded : view))
-            : [...views, decoded]
+            ? views.map((view) => ((view.pageID ?? view.partition) === pageID ? normalized : view))
+            : [...views, normalized]
           if (!instance) return
           void Bus.publish(instance, BrowserUpdated, {
-            partition: decoded.partition,
-            url: decoded.url,
-            title: decoded.title,
-            loading: decoded.loading,
-            shared: decoded.shared,
+            ...normalized,
           }).catch((cause) => log.error("bus publish failed", { cause: String(cause) }))
           return
         }
         if (name === "browser.closed") {
-          const decoded = Schema.decodeUnknownSync(Schema.Struct({ partition: Schema.String }))(properties)
-          views = views.filter((view) => view.partition !== decoded.partition)
+          const decoded = Schema.decodeUnknownSync(
+            Schema.Struct({
+              pageID: Schema.optional(Schema.String),
+              partition: Schema.String,
+              profileID: Schema.optional(Schema.String),
+              epoch: Schema.optional(Schema.Number),
+            }),
+          )(properties)
+          const pageID = decoded.pageID ?? decoded.partition
+          const current = views.find((view) => (view.pageID ?? view.partition) === pageID)
+          const epoch = decoded.epoch ?? 0
+          if (current && (current.epoch ?? 0) > epoch) return
+          if (epoch <= (closedEpochs.get(pageID) ?? -1)) return
+          closedEpochs.set(pageID, epoch)
+          views = views.filter((view) => (view.pageID ?? view.partition) !== pageID)
           if (!instance) return
           void Bus.publish(instance, BrowserClosed, {
-            partition: decoded.partition,
+            pageID,
+            partition: pageID,
+            profileID: decoded.profileID,
+            epoch,
           }).catch((cause) => log.error("bus publish failed", { cause: String(cause) }))
           return
         }
@@ -183,16 +212,19 @@ export const layer = Layer.effect(
           adapter = input.adapter
           client = input.client
           instance = input.instance
-          views = input.views ?? []
+          views = input.views?.map(normalizeView) ?? []
+          closedEpochs.clear()
           log.info("client connected", { client: client?.kind, version: client?.version, views: views.length })
         }),
 
-      disconnect: () =>
+      disconnect: (expected) =>
         Effect.sync(() => {
+          if (expected && adapter !== expected) return
           if (!adapter) return
           adapter = undefined
           client = undefined
           views = []
+          closedEpochs.clear()
           failPending(new AbsentError({ message: "bridge client disconnected" }))
           log.info("client disconnected")
         }),
@@ -227,8 +259,9 @@ export const layer = Layer.effect(
             ),
           ) as Effect.Effect<T, CommandError>
         }),
-      handleFrame: (text) =>
+      handleFrame: (text, expected) =>
         Effect.gen(function* () {
+          if (expected && adapter !== expected) return
           let frame: Record<string, unknown>
           try {
             frame = JSON.parse(text)
@@ -242,7 +275,8 @@ export const layer = Layer.effect(
               version: typeof frame.version === "string" ? frame.version : "unknown",
             }
             try {
-              views = Schema.decodeUnknownSync(Schema.Array(ViewState))(frame.views ?? [])
+              views = Schema.decodeUnknownSync(Schema.Array(ViewState))(frame.views ?? []).map(normalizeView)
+              closedEpochs.clear()
             } catch (cause) {
               log.warn("dropping invalid hello views", { cause: String(cause) })
               views = []
@@ -279,9 +313,11 @@ export const layer = Layer.effect(
           log.warn("unknown frame type", { type: String(frame.type) })
         }),
 
-      console: (partition, since) =>
+      console: (pageID, since) =>
         Effect.sync(() =>
-          consoleBuffer.filter((entry) => entry.partition === partition && (since === undefined || entry.at > since)),
+          consoleBuffer.filter(
+            (entry) => (entry.pageID ?? entry.partition) === pageID && (since === undefined || entry.at > since),
+          ),
         ),
     })
   }),

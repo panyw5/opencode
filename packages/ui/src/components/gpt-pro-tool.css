@@ -112,7 +112,45 @@
   .gpt-pro-attachment-chip[data-attachment-status="failed"] .gpt-pro-attachment-chip__status::before {
     background: var(--icon-critical-base);
   }
+}
 
+[data-component="gpt-pro-error-notice"] {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-weak-base);
+  border-left: 3px solid var(--icon-warning-base);
+  border-radius: 8px;
+  background: var(--surface-raised-base);
+  color: var(--text-base);
+  font-size: 12px;
+  line-height: 1.5;
+
+  &[data-tone="info"] {
+    border-left-color: var(--icon-base);
+  }
+  &[data-tone="error"] {
+    border-left-color: var(--icon-critical-base);
+  }
+  .gpt-pro-error-notice__title {
+    font-weight: 600;
+  }
+  .gpt-pro-error-notice__hint {
+    margin: 3px 0 8px;
+    color: var(--text-weak);
+  }
+  summary {
+    margin-top: 8px;
+    color: var(--text-weak);
+    cursor: pointer;
+  }
+  pre {
+    max-height: 140px;
+    overflow: auto;
+    margin-top: 6px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 11px;
+  }
 }
 
 .gpt-pro-attachment-preview {

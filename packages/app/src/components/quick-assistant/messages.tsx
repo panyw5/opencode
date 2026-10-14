@@ -5,7 +5,12 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { render, splitInjectedSessionContext } from "./helpers"
-import { createBottomFollow } from "./bottom-follow"
+import {
+  bindBottomFollowWheel,
+  createBottomFollow,
+  observeBottomFollowTargets,
+  replaceBottomFollowContent,
+} from "./bottom-follow"
 
 type Props = {
   list: Message[]
@@ -72,6 +77,21 @@ export function QuickAssistantMessages(props: Props) {
   let frame: number | undefined
   let observer: ResizeObserver | undefined
   let content: HTMLDivElement | undefined
+  let removeWheelListener: (() => void) | undefined
+
+  const detachViewport = (clearContent = true) => {
+    if (viewport) console.debug("[quick-assistant] bottom-follow viewport detached")
+    removeWheelListener?.()
+    removeWheelListener = undefined
+    observer?.disconnect()
+    observer = undefined
+    if (frame !== undefined) {
+      cancelAnimationFrame(frame)
+      frame = undefined
+    }
+    viewport = undefined
+    if (clearContent) content = undefined
+  }
 
   const scrollKey = createMemo(() =>
     props.list
@@ -94,29 +114,31 @@ export function QuickAssistantMessages(props: Props) {
   }
 
   createEffect(() => {
-    if (props.list.length === 0) follow.reset()
+    if (props.list.length === 0) {
+      follow.reset()
+      detachViewport()
+    }
     scrollKey()
     props.busy
     scheduleBottomFollow()
   })
 
-  onCleanup(() => {
-    if (frame !== undefined) cancelAnimationFrame(frame)
-    observer?.disconnect()
-  })
+  onCleanup(detachViewport)
 
   return (
     <Show when={props.list.length > 0}>
       <div
         ref={(node) => {
+          detachViewport(false)
           viewport = node
           follow.reset()
-          observer?.disconnect()
           observer = new ResizeObserver(() => {
             scheduleBottomFollow()
           })
-          observer.observe(node)
-          if (content) observer.observe(content)
+          observeBottomFollowTargets(observer, node, content)
+          removeWheelListener = bindBottomFollowWheel(node, follow, () => {
+            console.debug("[quick-assistant] bottom-follow paused wheel-up")
+          })
           console.debug("[quick-assistant] bottom-follow mounted")
           scheduleBottomFollow()
         }}
@@ -134,16 +156,10 @@ export function QuickAssistantMessages(props: Props) {
             console.debug(`[quick-assistant] bottom-follow ${follow.following() ? "resumed" : "paused"}`)
           }
         }}
-        onWheel={(event) => {
-          if (event.deltaY >= 0) return
-          follow.pause()
-          console.debug("[quick-assistant] bottom-follow paused wheel-up")
-        }}
       >
         <div
           ref={(node) => {
-            content = node
-            observer?.observe(node)
+            content = replaceBottomFollowContent(observer, content, node)
           }}
           class="flex flex-col gap-3"
         >
@@ -183,7 +199,7 @@ export function QuickAssistantMessages(props: Props) {
                             class="text-icon-weak transition-transform group-open:rotate-180"
                           />
                         </summary>
-                        <div class="max-h-64 overflow-y-auto border-t border-border-weak-base px-3.5 py-3 font-mono text-12-regular leading-5 whitespace-pre-wrap break-all text-text-weak">
+                        <div class="max-h-64 overflow-y-auto border-t border-border-weak-base px-3.5 py-3 font-mono text-12-regular leading-5 whitespace-pre-wrap break-all text-text-weak select-text">
                           {context()}
                         </div>
                       </details>
@@ -198,7 +214,7 @@ export function QuickAssistantMessages(props: Props) {
                         item.role === "assistant",
                     }}
                   >
-                    <div class="quick-assistant-markdown break-words text-[15px] leading-7 text-text-base">
+                    <div class="quick-assistant-markdown break-words text-[15px] leading-7 text-text-base select-text">
                       <Markdown
                         text={display().message || (item.role === "assistant" && props.busy ? "Thinking..." : "")}
                         math={item.role === "user" ? "full" : "defer"}

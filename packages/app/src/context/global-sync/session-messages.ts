@@ -39,24 +39,6 @@ export function mergeSessionItems<T extends { id: string }>(a: readonly T[], b: 
   return [...map.values()].sort((x, y) => compareSessionItemID(x.id, y.id))
 }
 
-const hasParts = (parts: Part[] | undefined, want: Part[]) => {
-  if (!parts) return want.length === 0
-  return want.every((part) => Binary.search(parts, part.id, (item) => item.id).found)
-}
-
-const mergeParts = (parts: Part[] | undefined, want: Part[]) => {
-  if (!parts) return sortSessionParts(want)
-  const next = [...parts]
-  let changed = false
-  for (const part of want) {
-    const result = Binary.search(next, part.id, (item) => item.id)
-    if (result.found) continue
-    next.splice(result.index, 0, part)
-    changed = true
-  }
-  return changed ? next : parts
-}
-
 export function mergeFetchedSessionParts(fetched: Part[], cached: Part[] | undefined) {
   if (!cached?.length) return fetched
   const current = new Map(cached.map((part) => [part.id, part] as const))
@@ -85,14 +67,14 @@ export function mergeOptimisticSessionPage(page: SessionMessagePage, items: Sess
   const confirmed: string[] = []
   for (const item of items) {
     const result = Binary.search(session, item.message.id, (message) => message.id)
-    const found = result.found
-    if (!found) session.splice(result.index, 0, item.message)
-    const current = part.get(item.message.id)
-    if (found && hasParts(current, item.parts)) {
+    // The backend can replace attachment parts while resolving a prompt.
+    // A persisted message ID confirms delivery, not identical input part IDs.
+    if (result.found) {
       confirmed.push(item.message.id)
       continue
     }
-    part.set(item.message.id, mergeParts(current, item.parts))
+    session.splice(result.index, 0, item.message)
+    part.set(item.message.id, sortSessionParts(item.parts))
   }
 
   return {

@@ -219,18 +219,9 @@ export function PresentedTaskCard(props: PresentedTaskCardProps): JSX.Element {
                 size="normal"
                 class="presented-task-card__icon"
               />
-              <div class="presented-task-card__heading">
-                <span class="presented-task-card__kind">
-                  {i18n.t(
-                    value().kind === "project_task"
-                      ? "ui.presentedTask.kind.project"
-                      : "ui.presentedTask.kind.scheduled",
-                  )}
-                </span>
-                <strong class="presented-task-card__title" title={value().title}>
-                  {value().title}
-                </strong>
-              </div>
+              <strong class="presented-task-card__title" title={value().title}>
+                {value().title}
+              </strong>
             </div>
             <span class="presented-task-card__status">{presentedTaskStatusLabel(value(), i18n.t)}</span>
           </header>
@@ -239,14 +230,9 @@ export function PresentedTaskCard(props: PresentedTaskCardProps): JSX.Element {
             {(item) => (
               <>
                 <Show when={item().prdExcerpt}>
-                  <pre class="presented-task-card__excerpt">{item().prdExcerpt}</pre>
-                </Show>
-                <Show when={item().descriptionPath}>
-                  <footer class="presented-task-card__footer">
-                    <span class="presented-task-card__path" title={item().descriptionPath}>
-                      {item().descriptionPath}
-                    </span>
-                  </footer>
+                  <div class="presented-task-card__excerpt">
+                    <pre class="presented-task-card__excerpt-text">{item().prdExcerpt}</pre>
+                  </div>
                 </Show>
                 <div class="presented-task-card__metrics">
                   <div
@@ -286,37 +272,47 @@ export function PresentedTaskCard(props: PresentedTaskCardProps): JSX.Element {
           <Show when={scheduled()}>
             {(item) => (
               <>
-                <Show when={item().promptExcerpt}>
-                  <pre class="presented-task-card__excerpt">{item().promptExcerpt}</pre>
-                </Show>
-                <footer class="presented-task-card__footer">
-                  <Show when={item().agent}>
-                    <span class="presented-task-card__path">{item().agent}</span>
-                  </Show>
-                  <Show when={item().model?.modelID}>
-                    <span class="presented-task-card__path">
-                      {`${item().model!.providerID}/${item().model!.modelID}`}
+                <div class="presented-task-card__footer presented-task-card__footer--scheduled">
+                  <div class="presented-task-card__metadata">
+                    <Show when={item().agent}>
+                      <span class="presented-task-card__path" title={item().agent}>
+                        {item().agent}
+                      </span>
+                    </Show>
+                    <Show when={item().model?.modelID}>
+                      <span
+                        class="presented-task-card__path"
+                        title={`${item().model!.providerID}/${item().model!.modelID}`}
+                      >
+                        {`${item().model!.providerID}/${item().model!.modelID}`}
+                      </span>
+                    </Show>
+                    <Show when={!item().enabled}>
+                      <span class="presented-task-card__path">{i18n.t("ui.presentedTask.status.disabled")}</span>
+                    </Show>
+                  </div>
+                  <div class="presented-task-card__metrics presented-task-card__metrics--scheduled">
+                    <span class="presented-task-card__metric presented-task-card__schedule">
+                      <Icon name="alarm-clock-check" size="small" />
+                      {formatPresentedTaskSchedule(item().schedule, i18n.t)}
                     </span>
-                  </Show>
-                  <Show when={!item().enabled}>
-                    <span class="presented-task-card__path">{i18n.t("ui.presentedTask.status.disabled")}</span>
-                  </Show>
-                </footer>
-                <div class="presented-task-card__metrics">
-                  <span class="presented-task-card__metric">
-                    {formatPresentedTaskSchedule(item().schedule, i18n.t)}
-                  </span>
-                  <Show when={item().enabled && item().nextRunAt}>
-                    <span class="presented-task-card__metric">
-                      {`${i18n.t("ui.presentedTask.nextRun")} ${date(item().nextRunAt)}`}
-                    </span>
-                  </Show>
-                  <Show when={item().lastRunAt}>
-                    <span class="presented-task-card__metric">
-                      {`${i18n.t("ui.presentedTask.lastRun")} ${date(item().lastRunAt)}`}
-                    </span>
-                  </Show>
+                    <Show when={item().enabled && item().nextRunAt}>
+                      <span class="presented-task-card__metric">
+                        {`${i18n.t("ui.presentedTask.nextRun")} ${date(item().nextRunAt)}`}
+                      </span>
+                    </Show>
+                    <Show when={item().lastRunAt}>
+                      <span class="presented-task-card__metric">
+                        {`${i18n.t("ui.presentedTask.lastRun")} ${date(item().lastRunAt)}`}
+                      </span>
+                    </Show>
+                  </div>
                 </div>
+                <Show when={item().promptExcerpt}>
+                  <div class="presented-task-card__excerpt">
+                    <pre class="presented-task-card__excerpt-text">{item().promptExcerpt}</pre>
+                  </div>
+                </Show>
               </>
             )}
           </Show>

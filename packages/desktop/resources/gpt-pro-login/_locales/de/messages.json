@@ -55,6 +55,11 @@
   "errorImport": {
     "message": "Import nicht bestätigt. Prüfen Sie die GPT-Pro-Konfiguration in OpenCode."
   },
+  "errorBusy": {
+    "message": "Beratungen oder manuelle Entwürfe sind aktiv. Die Anmeldung bleibt unverändert. Danach diese Verbindung erneut versuchen; eine neue Anmeldung ist nicht nötig."
+  },
+  "errorStorage": { "message": "Sichere Speicherung ist nicht verfügbar. Die OpenCode-Konfiguration prüfen." },
+  "statusSessionFound": { "message": "Sitzungs-Cookies gefunden (Anmeldung noch nicht geprüft)" },
   "errorInvalidSession": {
     "message": "Die ChatGPT-Sitzung ist ungültig oder wird nicht unterstützt. Melden Sie sich in Chrome erneut an und öffnen Sie in OpenCode eine neue Verbindung."
   },

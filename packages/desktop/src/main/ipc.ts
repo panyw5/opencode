@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process"
 import { realpath, stat } from "node:fs/promises"
 import { basename, join } from "node:path"
-import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, session, shell, webContents } from "electron"
+import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, shell, webContents } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 
@@ -19,7 +19,11 @@ import type { BrowserBounds } from "../preload/types"
 import { browserController } from "./browser"
 import { GptProProbe } from "./gpt-pro-probe"
 import { GptProLoginServer } from "./gpt-pro-login-server"
-import { importSessionCookies } from "./gpt-pro-session-cookies"
+import { launchGptProLogin } from "./gpt-pro-login-launcher"
+import { getGptProCredentials } from "./gpt-pro-credentials"
+import { gptProBridgeState } from "./gpt-pro-bridge-state"
+import { inspectGptProImportSafety } from "./gpt-pro-import-safety"
+import { GptProOperationError } from "@opencode-ai/util/gpt-pro-error"
 import { GPT_PRO_PARTITION, GPT_PRO_URL } from "@opencode-ai/util/gpt-pro"
 import type { GptProCommand, GptProConfig } from "@opencode-ai/util/gpt-pro"
 import { getGptProController } from "./gpt-pro-runtime"
@@ -94,16 +98,27 @@ let gptProLogin: GptProLoginServer | undefined
 function loginConnection() {
   if (gptProLogin) return gptProLogin
   gptProLogin = new GptProLoginServer({
-    extensionDirectory: app.isPackaged ? join(process.resourcesPath, "gpt-pro-login") : join(app.getAppPath(), "resources", "gpt-pro-login"),
+    extensionDirectory: app.isPackaged
+      ? join(process.resourcesPath, "gpt-pro-login")
+      : join(app.getAppPath(), "resources", "gpt-pro-login"),
     log: (message) => writeLog("gpt-pro", message),
-    importCookies: (cookies) => {
-      if (getGptProController().busy()) throw new Error("Stop the active consultation before replacing its login session.")
-      return importSessionCookies(session.fromPartition(GPT_PRO_PARTITION).cookies, cookies, (message) => writeLog("gpt-pro", message))
-    },
+    importCookies: (cookies) =>
+      getGptProController().importLogin(async () => {
+        await getGptProCredentials().ready()
+        const { pages, blockers } = await inspectGptProImportSafety(browserController, (message) =>
+          writeLog("gpt-pro", message),
+        )
+        if (blockers.length)
+          throw new GptProOperationError(
+            "login_import_busy",
+            "A shared ChatGPT page is loading, has a draft or attachment, or is generating. Existing login was not changed.",
+          )
+        await getGptProCredentials().replace(cookies)
+        for (const page of pages) browserController.cdp(page.pageID ?? page.partition)?.reload()
+        writeLog("gpt-pro", `login-import reload idle profile pages count=${pages.length}; dispatch lock still held`)
+      }),
     imported: async () => {
-      await browserController.open(GPT_PRO_PARTITION, GPT_PRO_URL)
-      browserController.cdp(GPT_PRO_PARTITION)?.reload()
-      browserController.present(GPT_PRO_PARTITION)
+      await gptProProbe.open()
     },
   })
   app.on("before-quit", () => gptProLogin?.cancel())
@@ -111,11 +126,11 @@ function loginConnection() {
 }
 
 async function openGptProLogin() {
-  if (getGptProController().busy()) throw new Error("Stop active gpt-pro consultations before opening a new login connection.")
-  const login = loginConnection()
-  const url = await login.start()
-  try { await shell.openExternal(url) } catch { login.cancel(); throw new Error("Could not open the default browser for login.") }
-  return login.status()
+  return launchGptProLogin(
+    loginConnection(),
+    (url) => shell.openExternal(url),
+    (message) => writeLog("gpt-pro", message),
+  )
 }
 
 type Deps = {
@@ -157,41 +172,69 @@ export function registerIpcHandlers(deps: Deps) {
     getGptProController().attachmentPreview(input),
   )
   ipcMain.handle("gpt-pro-list", () => getGptProController().list())
-  ipcMain.handle("gpt-pro-open", () => gptProProbe.open())
+  ipcMain.handle("gpt-pro-open", async () => {
+    await getGptProCredentials().ready()
+    return gptProProbe.open()
+  })
   ipcMain.handle("gpt-pro-status", () => gptProProbe.status())
   ipcMain.handle("gpt-pro-login", () => openGptProLogin())
   ipcMain.handle("gpt-pro-login-status", () => loginConnection().status())
   ipcMain.handle("gpt-pro-login-cancel", () => loginConnection().cancel())
+  ipcMain.handle("gpt-pro-runtime-status", async () => {
+    const credentials = getGptProCredentials()
+    await credentials.ready().catch(() => {})
+    if (
+      credentials.status().phase === "encrypted" &&
+      !browserController.getState().some((view) => view.profileID === GPT_PRO_PARTITION)
+    )
+      await browserController
+        .openPage(GPT_PRO_PARTITION, GPT_PRO_PARTITION, GPT_PRO_URL, { kind: "login" })
+        .catch(() => {})
+    const controller = getGptProController()
+    const authentication = await gptProProbe.authentication()
+    const managed = controller.importStatus()
+    const manual = await inspectGptProImportSafety(browserController, (message) => writeLog("gpt-pro", message))
+    return {
+      config: controller.config(),
+      login: loginConnection().status(),
+      authentication,
+      credentials: credentials.status(),
+      bridge: gptProBridgeState(),
+      importBlocked: managed.importBlocked || !!manual.blockers.length,
+      blockers: [...managed.blockers, ...manual.blockers],
+      jobs: controller.list(),
+    }
+  })
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
-  ipcMain.handle("browser-open", (_event: IpcMainInvokeEvent, partition: string, url: string) =>
-    browserController.open(partition, url),
+  ipcMain.handle("browser-open", (_event: IpcMainInvokeEvent, pageID: string, url: string) =>
+    browserController.open(pageID, url),
   )
   ipcMain.handle("browser-acquire-display", () => browserController.acquireDisplay())
   ipcMain.handle("browser-display-state", () => browserController.getDisplayState())
-  ipcMain.handle("browser-capture-preview", (_event, partition: string) => browserController.capturePreview(partition))
+  ipcMain.handle("browser-capture-preview", (_event, pageID: string) => browserController.capturePreview(pageID))
   ipcMain.handle("browser-update-display", (_event, frame) => browserController.updateDisplay(frame))
   ipcMain.handle("browser-release-display", (_event, lease: number) => browserController.releaseDisplay(lease))
-  ipcMain.handle("browser-set-bounds", (_event: IpcMainInvokeEvent, partition: string, bounds: BrowserBounds | null) =>
-    browserController.setBounds(partition, bounds),
+  ipcMain.handle("browser-set-bounds", (_event: IpcMainInvokeEvent, pageID: string, bounds: BrowserBounds | null) =>
+    browserController.setBounds(pageID, bounds),
   )
-  ipcMain.handle("browser-set-visible", (_event: IpcMainInvokeEvent, partition: string, visible: boolean) =>
-    browserController.setVisible(partition, visible),
+  ipcMain.handle("browser-set-visible", (_event: IpcMainInvokeEvent, pageID: string, visible: boolean) =>
+    browserController.setVisible(pageID, visible),
   )
-  ipcMain.handle("browser-close", (_event: IpcMainInvokeEvent, partition: string) => browserController.close(partition))
+  ipcMain.handle("browser-close", (_event: IpcMainInvokeEvent, pageID: string) => browserController.close(pageID))
   ipcMain.handle(
     "browser-navigate",
-    (_event: IpcMainInvokeEvent, partition: string, action: "back" | "forward" | "reload") => {
+    (_event: IpcMainInvokeEvent, pageID: string, action: "back" | "forward" | "reload") => {
       // No ensure-create: navigating a missing view (tab closed, render crash)
       // must be a no-op, not a silently created blank view nobody drives.
-      const cdp = browserController.cdp(partition)
+      const cdp = browserController.cdp(pageID)
       if (!cdp) return
       if (action === "back") cdp.back()
       else if (action === "forward") cdp.forward()
       else cdp.reload()
     },
   )
-  ipcMain.handle("browser-set-shared", (_event: IpcMainInvokeEvent, partition: string, shared: boolean) =>
-    browserController.setShared(partition, shared),
+  ipcMain.handle("browser-set-shared", (_event: IpcMainInvokeEvent, pageID: string, shared: boolean) =>
+    browserController.setShared(pageID, shared),
   )
   ipcMain.handle("browser-get-state", () => browserController.getState())
   ipcMain.handle("browser-get-presentation", () => browserController.getPresentation())
@@ -206,9 +249,9 @@ export function registerIpcHandlers(deps: Deps) {
       if (!win.isDestroyed()) win.webContents.send("browser-updated", state)
     }
   })
-  browserController.onViewClosed((partition, epoch) => {
+  browserController.onViewClosed((pageID, epoch, profileID) => {
     for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) win.webContents.send("browser-closed", partition, epoch)
+      if (!win.isDestroyed()) win.webContents.send("browser-closed", pageID, epoch, profileID)
     }
   })
   ipcMain.handle("install-cli", () => installCli())

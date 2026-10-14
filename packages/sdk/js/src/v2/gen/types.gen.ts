@@ -491,6 +491,7 @@ export type ProjectTask = {
   descriptionPath: string
   status: ProjectTaskStatus
   sessionCount: number
+  lastSessionAt?: number
   progress: ProjectTaskProgress
   sessionDirectories: Array<string>
   time: {
@@ -2307,12 +2308,15 @@ export type ProjectTaskDetail = {
     archived?: number
   }
   sessions: Array<ProjectTaskSessionTodos>
+  progressContent?: string
+  progressPath?: string
   workspaceDirectory?: string
 }
 
 export type ProjectTaskUpdateInput = {
   title?: string
   description?: string
+  progressContent?: string
   status?: ProjectTaskStatus
 }
 
@@ -3187,6 +3191,7 @@ export type EventMessagePartDelta = {
     partID: string
     field: string
     delta: string
+    offset?: number
   }
 }
 

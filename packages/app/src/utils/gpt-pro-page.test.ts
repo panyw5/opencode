@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import {
   inspectChatGptPage,
   CHATGPT_INSPECT_EXPRESSION,
+  chatGptCaptureExpression,
   CHATGPT_SEND_TARGET_EXPRESSION,
   CHATGPT_COMPOSER_ATTACHMENT_TARGET_EXPRESSION,
   CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION,
@@ -141,7 +142,8 @@ describe("ChatGPT reply HTML extraction", () => {
     expect(inspectChatGptPage(10000).attachmentInput).toBe(false)
   })
   test("rejects file inputs when no composer editor is visible", () => {
-    document.body.innerHTML = '<style>.inactive-composer { display: none; }</style><div class="inactive-composer"><div id="prompt-textarea" contenteditable="true"></div><input type="file" aria-label="Attach files"></div>'
+    document.body.innerHTML =
+      '<style>.inactive-composer { display: none; }</style><div class="inactive-composer"><div id="prompt-textarea" contenteditable="true"></div><input type="file" aria-label="Attach files"></div>'
     const target = window.eval(CHATGPT_COMPOSER_ATTACHMENT_TARGET_EXPRESSION)
     expect(target.editorCount).toBe(0)
     expect(target.globalInputCount).toBe(1)
@@ -449,20 +451,21 @@ describe("ChatGPT reply HTML extraction", () => {
   })
   test("does not treat a lone copy button as completion evidence", () => {
     conversation("<p>Static response</p>", false)
-    document.querySelectorAll("article")[1]!.insertAdjacentHTML(
-      "beforeend",
-      '<button data-testid="copy-turn-action-button">Copy</button>',
-    )
+    document
+      .querySelectorAll("article")[1]!
+      .insertAdjacentHTML("beforeend", '<button data-testid="copy-turn-action-button">Copy</button>')
     const answer = inspectChatGptPage(10000).answer
     expect(answer?.completionEvidence).toBe("unknown")
     expect(answer?.complete).toBe(false)
   })
   test("accepts a response action group without a Copy or Regenerate control", () => {
     conversation("<p>Settled through response actions</p>", false)
-    document.querySelectorAll("article")[1]!.insertAdjacentHTML(
-      "beforeend",
-      '<div role="group"><button aria-label="Good response"></button><button aria-label="Bad response"></button><button aria-label="Share"></button></div>',
-    )
+    document
+      .querySelectorAll("article")[1]!
+      .insertAdjacentHTML(
+        "beforeend",
+        '<div role="group"><button aria-label="Good response"></button><button aria-label="Bad response"></button><button aria-label="Share"></button></div>',
+      )
     const answer = inspectChatGptPage(10000).answer
     expect(answer?.completionEvidence).toBe("response-actions")
     expect(answer?.complete).toBe(true)
@@ -726,5 +729,111 @@ describe("ChatGPT reply HTML extraction", () => {
     const second = inspectChatGptPage(10000)
     expect(second.revision).toBeGreaterThan(first.revision)
     expect(second.answer?.id).toBe(first.answer?.id)
+  })
+
+  const scoped = (knownVersion?: string, force = false, userID = "u1") =>
+    inspectChatGptPage(10000, undefined, undefined, undefined, undefined, { userID, knownVersion, force })
+
+  test("unchanged owned answer is not cloned or returned again", () => {
+    conversation("<p>Partial</p>", false)
+    const first = scoped()
+    expect(first.capture?.mode).toBe("snapshot")
+    for (let i = 0; i < 20; i++) {
+      const next = scoped(first.capture!.version)
+      expect(next.capture?.mode).toBe("unchanged")
+      expect(next.capture?.reads).toBe(1)
+      expect(next.answers?.[0].html).toBe("")
+      expect(next.answers?.[0].text).toBe("")
+    }
+  })
+
+  test("unrelated page changes do not invalidate the owned answer", () => {
+    conversation("<p>Partial</p>", false)
+    const first = scoped()
+    document.getElementById("prompt-textarea")!.textContent = "Other draft"
+    document.body.append(document.createElement("aside"))
+    const next = scoped(first.capture!.version)
+    expect(next.capture?.mode).toBe("unchanged")
+    expect(next.capture?.reads).toBe(1)
+  })
+
+  test("only the owned answer is extracted, not later answers", () => {
+    conversation("<p>Owned</p>", false)
+    document
+      .querySelector("main")!
+      .insertAdjacentHTML(
+        "beforeend",
+        '<article><div data-message-author-role="user" data-message-id="u2">Later</div></article><article><div data-message-author-role="assistant" data-message-id="a2"><div class="markdown">Later answer</div></div></article>',
+      )
+    const next = scoped()
+    expect(next.answers).toHaveLength(1)
+    expect(next.answers?.[0].userID).toBe("u1")
+    expect(next.answer).toBeUndefined()
+    expect(next.users).toHaveLength(2)
+  })
+
+  test("pure append sends only suffixes with an explicit base version", () => {
+    conversation("<p>Partial</p>", false)
+    const first = scoped()
+    document.querySelector(".markdown")!.insertAdjacentHTML("beforeend", "<p>More</p>")
+    const next = scoped(first.capture!.version)
+    expect(next.capture?.mode).toBe("append")
+    expect(next.capture?.baseVersion).toBe(first.capture!.version)
+    expect(next.answers?.[0].html).toBe("<p>More</p>")
+    expect(next.capture?.reads).toBe(2)
+  })
+
+  test("same-length rewrites are detected and sent as sanitized snapshots", () => {
+    conversation("<p>Partial</p>", false)
+    const first = scoped()
+    document.querySelector(".markdown")!.innerHTML = '<p onclick="bad()">Changed</p>'
+    const next = scoped(first.capture!.version)
+    expect(next.capture?.mode).toBe("snapshot")
+    expect(next.answers?.[0].html).toBe("<p>Changed</p>")
+    expect(next.capture?.version).not.toBe(first.capture!.version)
+  })
+
+  test("completion forces a fresh body capture even without a body mutation", () => {
+    conversation("<p>Partial</p>", false)
+    const first = scoped()
+    document.querySelector('[data-message-id="a1"]')!.setAttribute("data-is-streaming", "false")
+    const complete = scoped(first.capture!.version)
+    expect(complete.capture?.mode).toBe("snapshot")
+    expect(complete.capture?.reads).toBe(2)
+    expect(complete.answers?.[0].complete).toBe(true)
+    expect(scoped(complete.capture!.version).capture?.mode).toBe("unchanged")
+  })
+
+  test("node replacement and missing targets cannot reuse stale bodies", () => {
+    conversation("<p>Partial</p>", false)
+    const first = scoped()
+    document.querySelector(".markdown")!.outerHTML = '<div class="markdown"><p>Replacement</p></div>'
+    const replaced = scoped(first.capture!.version)
+    expect(replaced.capture?.mode).toBe("snapshot")
+    expect(replaced.capture?.version).not.toBe(first.capture!.version)
+    const missing = scoped(replaced.capture!.version, false, "missing")
+    expect(missing.answers).toEqual([])
+    expect(missing.capture).toBeUndefined()
+    expect((window as any).__opencodeGptProTracking.capture).toBeUndefined()
+  })
+
+  test("low-frequency fallback, forced capture and stale clients request full snapshots", () => {
+    conversation("<p>Partial</p>", false)
+    const first = scoped()
+    expect(scoped("stale").capture?.mode).toBe("snapshot")
+    expect(scoped("stale").capture?.reads).toBe(1)
+    const forced = scoped(first.capture!.version, true)
+    expect(forced.capture?.reads).toBe(2)
+    ;(window as any).__opencodeGptProTracking.capture.at = Date.now() - 10001
+    const fallback = scoped(forced.capture!.version)
+    expect(fallback.capture?.mode).toBe("snapshot")
+    expect(fallback.capture?.reads).toBe(3)
+  })
+
+  test("scoped serialized inspector stays self-contained and escapes user ids", () => {
+    conversation("<p>Partial</p>", false)
+    const expression = chatGptCaptureExpression({ userID: "u1" })
+    expect(eval(expression).capture.mode).toBe("snapshot")
+    expect(eval(chatGptCaptureExpression({ userID: 'u1\";throw Error(\"injected\")//' })).answers).toEqual([])
   })
 })

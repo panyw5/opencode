@@ -33,6 +33,7 @@ const cache = new Map<string, Meta>()
 const inflight = new Map<string, Promise<Meta | undefined>>()
 const rev = new Map<string, number>()
 const cold = new Set<string>()
+let sequence = 0
 
 const version = (id: string) => rev.get(id) ?? 0
 
@@ -76,7 +77,10 @@ export function runSessionPrefetch(input: {
   const pending = inflight.get(id)
   if (pending) return pending
 
-  const value = version(id)
+  // Request tokens must never be reused after revision bookkeeping is pruned.
+  const value = ++sequence
+  rev.set(id, value)
+  console.debug(`[session-prefetch] start directory=${input.directory} sid=${input.sessionID} token=${value}`)
 
   const promise = input.task(value).finally(() => {
     const current = inflight.get(id)
@@ -118,6 +122,7 @@ export function clearSessionPrefetch(directory: string, sessionIDs: Iterable<str
     if (!sessionID) continue
     const id = key(directory, sessionID)
     const pending = inflight.get(id)
+    console.debug(`[session-prefetch] clear directory=${directory} sid=${sessionID} pending=${!!pending}`)
     rev.set(id, version(id) + 1)
     cache.delete(id)
     inflight.delete(id)

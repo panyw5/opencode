@@ -41,7 +41,10 @@ export const Info = Schema.Struct({
    */
   descriptionPath: Schema.String,
   status: Status,
+  /** Number of directly mounted primary (parentless) sessions, including archived ones. */
   sessionCount: NonNegativeInt,
+  /** Maximum updated time of currently mounted sessions, including archived sessions as in sessionCount. */
+  lastSessionAt: optionalOmitUndefined(NonNegativeInt),
   progress: Progress,
   /**
    * Unique session directories currently mounting this task (worktree / sandbox roots).
@@ -73,7 +76,11 @@ export type SessionTodoBundle = Types.DeepMutable<Schema.Schema.Type<typeof Sess
 
 export const Detail = Schema.Struct({
   ...Info.fields,
+  /** All direct associations, including child sessions needed for unmount/archive operations. */
   sessions: Schema.Array(SessionTodoBundle),
+  /** Editable progress record, separate from the aggregated session-todo progress. */
+  progressContent: Schema.optional(Schema.String),
+  progressPath: Schema.optional(Schema.String),
   /**
    * Absolute directory `descriptionPath` resolves against (git worktree root;
    * instance directory for non-git projects). Lets clients build correct
@@ -95,6 +102,8 @@ export const UpdateInput = Schema.Struct({
   title: Schema.optional(Schema.String),
   /** When set, overwrites the description file at `descriptionPath`. */
   description: Schema.optional(Schema.String),
+  /** When set, overwrites `.project-tasks/<taskID>/progress.md`. */
+  progressContent: Schema.optional(Schema.String),
   status: Schema.optional(Status),
 }).annotate({ identifier: "ProjectTaskUpdateInput" })
 export type UpdateInput = Types.DeepMutable<Schema.Schema.Type<typeof UpdateInput>>

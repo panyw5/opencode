@@ -1,6 +1,15 @@
 [data-component="input"] {
   width: 100%;
 
+  [data-slot="input-suffix"] {
+    flex-shrink: 0;
+    align-self: center;
+    padding-right: 12px;
+    color: var(--text-weak);
+    font-size: var(--font-size-base);
+    user-select: none;
+  }
+
   [data-slot="input-input"] {
     width: 100%;
     color: var(--text-strong);

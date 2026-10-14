@@ -27,11 +27,16 @@ export function createSessionDiffService(deps: SessionControllerDeps) {
     if (pending) return pending
     const directoryRevision = deps.revision(directory)
     const eventRevision = rev(directory, sessionID)
+    console.debug(`[session-diff] load-start directory=${directory} sid=${sessionID} revision=${eventRevision}`)
     const promise = retry(() => deps.sdk(directory).session.diff({ sessionID }))
       .then((response) => {
-        if (!deps.current(directory, child, directoryRevision)) return
+        if (inflight.get(key) !== promise || !deps.current(directory, child, directoryRevision)) {
+          console.debug(`[session-diff] discard directory=${directory} sid=${sessionID} reason=invalidated-request`)
+          return
+        }
         if (rev(directory, sessionID) !== eventRevision) return child[0].session_diff[sessionID]
         const list = response.data ?? []
+        console.debug(`[session-diff] commit directory=${directory} sid=${sessionID} count=${list.length}`)
         child[1]("session_diff", sessionID, reconcile(list, { key: "file" }))
         loadedAt.set(keyFor(directory, sessionID), Date.now())
         return list
@@ -62,6 +67,7 @@ export function createSessionDiffService(deps: SessionControllerDeps) {
       for (const sessionID of sessionIDs) {
         const key = keyFor(directory, sessionID)
         const pending = inflight.get(key)
+        console.debug(`[session-diff] clear directory=${directory} sid=${sessionID} pending=${!!pending}`)
         bump(directory, sessionID)
         inflight.delete(key)
         loadedAt.delete(key)

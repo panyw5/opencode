@@ -94,13 +94,11 @@ export function shellEscape(value: string) {
 }
 
 /**
- * Remote shell path that keeps `~` and `$HOME` expansion working: single
- * quotes suppress tilde expansion, so a leading `~` must stay unquoted and
- * only the remainder is escaped.
+ * Keep the home expansion quoted as data, and shell-escape the literal suffix.
  */
 export function remotePath(path: string) {
-  if (path === "~") return "$HOME"
-  if (path.startsWith("~/")) return `$HOME/${shellEscape(path.slice(2))}`
+  if (path === "~") return '"$HOME"'
+  if (path.startsWith("~/")) return `"$HOME"/${shellEscape(path.slice(2))}`
   return shellEscape(path)
 }
 
@@ -159,7 +157,10 @@ export function summarize(value: string) {
     .join("\n")
 }
 
-export async function probeSshHost(target: SshTarget, opts?: RunSshOptions): Promise<{ reachable: boolean; error: string | null }> {
+export async function probeSshHost(
+  target: SshTarget,
+  opts?: RunSshOptions,
+): Promise<{ reachable: boolean; error: string | null }> {
   const result = await runSsh(target, "true && printf ok", opts).catch((error) => ({
     code: 1,
     signal: null,
@@ -240,7 +241,11 @@ export function parseDirectoryListing(stdout: string, basePath: string) {
 
 const DIRECTORY_NOT_FOUND_CODE = 3
 
-export async function validateRemoteDirectory(target: SshTarget, path: string, opts?: RunSshOptions): Promise<string | null> {
+export async function validateRemoteDirectory(
+  target: SshTarget,
+  path: string,
+  opts?: RunSshOptions,
+): Promise<string | null> {
   const escaped = remotePath(path)
   const script = `if [ -d ${escaped} ]; then cd ${escaped} && pwd -P; else exit ${DIRECTORY_NOT_FOUND_CODE}; fi`
   const result = await runSsh(target, script, opts)

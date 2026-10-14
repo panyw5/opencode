@@ -55,6 +55,7 @@ import { useSync } from "@/context/sync"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { markSessionProfile } from "@/utils/session-profile"
 import { useComponentMountProfile } from "@/utils/component-mount-profile"
+import { SessionSelectionToolbar } from "@/components/session-selection-toolbar"
 import { timelineMessageScrollTop } from "./scroll-owner"
 import {
   captureVirtualViewportAnchor,
@@ -90,11 +91,9 @@ import { timelineRowCache } from "./row-cache"
 import { DEFAULT_TIMELINE_OVERSCAN, timelineOverscan } from "./windows-performance"
 import { createSessionFind } from "./session-find"
 import { createLiveBottomFollow } from "./live-bottom"
+import { isLongMathText, pickIdlePrewarmRow } from "./idle-prewarm"
 import { FileSearchBar } from "@opencode-ai/ui/file-search"
-import {
-  isInjectionTextPart,
-  splitMathInitializationPrompt,
-} from "@opencode-ai/ui/injected-prompt-model"
+import { isInjectionTextPart, splitMathInitializationPrompt } from "@opencode-ai/ui/injected-prompt-model"
 import { atPhysicalBottom, physicalScrollGap } from "../use-session-scroll-utils"
 import type {
   FindNavigationTarget,
@@ -104,7 +103,6 @@ import type {
 } from "../message-navigation"
 import { createScrollLedger, type ScrollOrigin, type ScrollRuntime } from "./scroll-ledger"
 import type { HistoryInput } from "../history-edge"
-import { SessionSelectionToolbar } from "@/components/session-selection-toolbar"
 
 const emptyMessages: MessageType[] = []
 const emptyParts: PartType[] = []
@@ -203,8 +201,7 @@ function TimelineDiffSummaryRow(props: {
     }
   })
 
-  const resolvedSize = (diff: SummaryDiff) =>
-    typeof diff.size === "number" ? diff.size : statSizes[diff.file]
+  const resolvedSize = (diff: SummaryDiff) => (typeof diff.size === "number" ? diff.size : statSizes[diff.file])
 
   onMount(() => {
     if (!grid) return
@@ -281,7 +278,6 @@ export type MessageTimelineViewport = {
 export function MessageTimeline(props: {
   actions?: UserActions
   onSendQueued?: () => void
-  onSelectionToPrompt: (text: string) => void
   onBackgroundShell?: MessageProps["onBackgroundShell"]
   onBackgroundTask?: MessageProps["onBackgroundTask"]
   scroll: { overflow: boolean; bottom: boolean }
@@ -310,6 +306,7 @@ export function MessageTimeline(props: {
   onViewportTurnChange?: (userMessageID: string | undefined) => void
   onReviewTurnDiff?: (input: { userMessageID: string; file: string }) => void
   onReviewTurnAll?: (userMessageID: string) => void
+  onSelectionToPrompt: (text: string) => void
 }) {
   const sync = useSync()
   const settings = useSettings()
@@ -317,6 +314,7 @@ export function MessageTimeline(props: {
   const { params, sessionKey } = useSessionKey()
   const ownerSessionKey = sessionKey()
   const [listRoot, setListRoot] = createSignal<HTMLDivElement>()
+  const [prewarm, setPrewarm] = createStore<{ key?: string }>({})
 
   const sessionID = createMemo(() => params.id)
   useComponentMountProfile(() => ({
@@ -1062,9 +1060,69 @@ export function MessageTimeline(props: {
       const end = instance.range?.endIndex ?? -1
       if (visibleRange.start === start && visibleRange.end === end) return
       setVisibleRange({ start, end })
+      // Wheel-driven range changes only mount rows; their ResizeObserver will
+      // request a batch if a measured height actually changes. Avoid reading
+      // scrollTop against a freshly dirtied long Markdown subtree here.
+      if (instance.isScrolling) return
       measurementBatchPending = true
       queueMeasurementPass()
     },
+  })
+  let prewarmTimer: number | undefined
+  let cancelPrewarmIdle: (() => void) | undefined
+  let lastWheelAt = -Infinity
+  let prewarmRetry = 0
+  const schedulePrewarm = () => {
+    if (prewarmTimer !== undefined || cancelPrewarmIdle) return
+    prewarmTimer = window.setTimeout(() => {
+      prewarmTimer = undefined
+      const run = () => {
+        cancelPrewarmIdle = undefined
+        if (!mounted) return
+        if (performance.now() - lastWheelAt < 300) return schedulePrewarm()
+        const root = listRoot()
+        if (!root?.isConnected || activeNavigation()) return
+        const top = root.scrollTop
+        const limit = listSize().height * 5
+        let pending = false
+        const candidate = pickIdlePrewarmRow(virtualizer.getVirtualItems(), top, limit, (item) => {
+          const row = timelineRows()[item.index]
+          if (row?._tag !== "AssistantPart" || row.group.type !== "part") return false
+          const part = getMessagePart(row.group.ref.messageID, row.group.ref.partID)
+          if (part?.type !== "text" || timelinePartIsLive(part) || !isLongMathText(part.text)) return false
+          const element = root.querySelector<HTMLElement>(`[data-index="${item.index}"]`)
+          if (!element) return false
+          if (!element.querySelector('[data-markdown-rendered-stage="full"]')) {
+            pending = true
+            return false
+          }
+          return true
+        })
+        if (!candidate) {
+          if (pending && prewarmRetry++ < 3) schedulePrewarm()
+          return
+        }
+        prewarmRetry = 0
+        const key = String(candidate.key)
+        if (prewarm.key === key) return
+        if (lagging()) timelineLag("prewarm", `index=${candidate.index} key=${key}`)
+        setPrewarm("key", key)
+      }
+      if (typeof window.requestIdleCallback === "function") {
+        const id = window.requestIdleCallback(run, { timeout: 1_000 })
+        cancelPrewarmIdle = () => window.cancelIdleCallback(id)
+      } else {
+        const id = window.setTimeout(run, 0)
+        cancelPrewarmIdle = () => window.clearTimeout(id)
+      }
+    }, 400)
+  }
+  onMount(() => {
+    schedulePrewarm()
+    onCleanup(() => {
+      if (prewarmTimer !== undefined) window.clearTimeout(prewarmTimer)
+      cancelPrewarmIdle?.()
+    })
   })
   const resizeItem = virtualizer.resizeItem
   // The turn owning the topmost visible row: every timeline row is tagged with
@@ -1140,8 +1198,9 @@ export function MessageTimeline(props: {
   createEffect(() => {
     timelineRows().length
     listSize()
-    virtualSnapshot().keys.length
     props.navigationState().generation
+    // Range-only mounts do not change virtual geometry; measured height
+    // changes schedule their own post-batch pass from handleRowHeight.
     measurementBatchPending = true
     queueMeasurementPass()
   })
@@ -1900,6 +1959,7 @@ export function MessageTimeline(props: {
     // scroll, leaving a visible long Markdown row blank until the user
     // scrolls. Only offscreen overscan rows may skip subtree layout/paint.
     const rowVisibility = createMemo(() => {
+      if (prewarm.key === input.rowKey) return "visible"
       const current = item()
       return timelineRowContentVisibility({
         index: current.index,
@@ -2157,8 +2217,12 @@ export function MessageTimeline(props: {
             deltaMode: event.deltaMode,
             rootHeight: listSize().height,
           })
-          if (delta && markBoundaryGesture(event.currentTarget, event.target, delta))
+          if (delta && markBoundaryGesture(event.currentTarget, event.target, delta)) {
             inputProvenance = { kind: "wheel", direction: delta < 0 ? "up" : "down" }
+            lastWheelAt = performance.now()
+            prewarmRetry = 0
+            schedulePrewarm()
+          }
           if (lagging()) {
             timelineLag(
               "wheel-input",
@@ -2228,7 +2292,7 @@ export function MessageTimeline(props: {
           </Show>
         </div>
       </ScrollView>
-      <SessionSelectionToolbar root={listRoot} onPrompt={props.onSelectionToPrompt} />
+      <SessionSelectionToolbar root={() => listRoot()} onPrompt={props.onSelectionToPrompt} />
       <Show when={sessionFind.open()}>
         <FileSearchBar
           pos={sessionFind.pos}

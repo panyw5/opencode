@@ -12,6 +12,8 @@ import { PtyID } from "./schema"
 import { Effect, Exit, Fiber, Layer, Context, Schema, Scope, Types } from "effect"
 import { LocationLifecycle } from "@/project/location-lifecycle"
 import { NonNegativeInt, PositiveInt } from "@opencode-ai/core/schema"
+import { createHash } from "node:crypto"
+import { Env as PtyEnv } from "./env"
 
 const log = Log.create({ service: "pty" })
 
@@ -112,7 +114,7 @@ export interface Interface {
   readonly list: () => Effect.Effect<Info[]>
   readonly get: (id: PtyID) => Effect.Effect<Info, NotFoundError>
   readonly snapshot: (id: PtyID) => Effect.Effect<{ info: Info; output: string; cursor: number }, NotFoundError>
-  readonly create: (input: CreateInput) => Effect.Effect<Info>
+  readonly create: (input: CreateInput, options?: { shellEnvResolved?: true }) => Effect.Effect<Info>
   readonly update: (id: PtyID, input: UpdateInput) => Effect.Effect<Info, NotFoundError>
   readonly remove: (id: PtyID) => Effect.Effect<void, NotFoundError>
   readonly resize: (id: PtyID, cols: number, rows: number) => Effect.Effect<void, NotFoundError>
@@ -205,7 +207,7 @@ export const layer = Layer.effect(
       }
     })
 
-    const create = Effect.fn("Pty.create")(function* (input: CreateInput) {
+    const create = Effect.fn("Pty.create")(function* (input: CreateInput, options?: { shellEnvResolved?: true }) {
       const s = yield* InstanceState.get(state)
       const bridge = yield* EffectBridge.make()
       const cfg = yield* config.get()
@@ -217,21 +219,18 @@ export const layer = Layer.effect(
       }
 
       const cwd = input.cwd || s.dir
-      const shell = yield* plugin.trigger("shell.env", { cwd }, { env: {} })
-      const env = {
-        ...process.env,
-        ...input.env,
-        ...shell.env,
-        TERM: "xterm-256color",
-        OPENCODE_TERMINAL: "1",
-      } as Record<string, string>
-
-      if (process.platform === "win32") {
-        env.LC_ALL = "C.UTF-8"
-        env.LC_CTYPE = "C.UTF-8"
-        env.LANG = "C.UTF-8"
-      }
-      log.info("creating session", { id, cmd: command, args, cwd })
+      const shell = options?.shellEnvResolved ? { env: {} } : yield* plugin.trigger("shell.env", { cwd }, { env: {} })
+      const env = PtyEnv.prepare({ env: input.env, plugin: shell.env, inherit: !options?.shellEnvResolved })
+      const argv = [command, ...args]
+      log.info("pty spawn prepared", {
+        ptyID: id,
+        shell: Shell.name(command),
+        argc: args.length,
+        argvLength: argv.reduce((length, arg) => length + arg.length, 0),
+        argvFingerprint: createHash("sha256").update(JSON.stringify(argv)).digest("hex").slice(0, 12),
+        envEntryCount: Object.keys(env).length,
+        shellEnvResolved: options?.shellEnvResolved === true,
+      })
 
       // Take the location lease before spawning and hold it until terminal
       // settlement: `remove` (explicit delete or process exit) interrupts the
@@ -244,6 +243,7 @@ export const layer = Layer.effect(
       )
       const spawnAttempt = yield* Effect.gen(function* () {
         const { spawn } = yield* Effect.promise(() => pty())
+        log.info("pty process spawn requested", { ptyID: id, shell: Shell.name(command), argc: args.length })
         return yield* Effect.sync(() =>
           spawn(command, args, {
             name: "xterm-256color",
@@ -253,12 +253,18 @@ export const layer = Layer.effect(
         )
       }).pipe(Effect.exit)
       if (Exit.isFailure(spawnAttempt)) {
+        log.warn("pty process spawn failed", {
+          ptyID: id,
+          shell: Shell.name(command),
+          argc: args.length,
+        })
         // Nothing holds the lease yet: undo the pre-taken admission so a failed
         // spawn cannot pin the location with a phantom pty lease.
         yield* Fiber.interrupt(lease)
         return yield* Effect.failCause(spawnAttempt.cause)
       }
       const proc = spawnAttempt.value
+      log.info("pty process spawned", { ptyID: id, pid: proc.pid })
 
       const info = {
         id,
@@ -306,7 +312,7 @@ export const layer = Layer.effect(
       })
       proc.onExit(({ exitCode }) => {
         if (session.info.status === "exited") return
-        log.info("session exited", { id, exitCode })
+        log.info("pty session exited", { ptyID: id, exitCode })
         session.info.status = "exited"
         bridge.fork(bus.publish(Event.Exited, { id, exitCode, output: session.buffer }))
         bridge.fork(remove(id))

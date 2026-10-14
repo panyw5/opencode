@@ -6,6 +6,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { gptProTerminal, type GptProJob } from "@opencode-ai/util/gpt-pro"
 import * as Log from "@opencode-ai/core/util/log"
 import { prepareGptProAttachments } from "./gpt-pro-attachments"
+import { AppFileSystem } from "@opencode-ai/core/filesystem"
 
 const log = Log.create({ service: "tool.gpt_pro_consult" })
 const Parameters = Schema.Struct({
@@ -60,7 +61,7 @@ export const GptProConsultTool = Tool.define(
         return Effect.scoped(
           Effect.gen(function* () {
             const action = params.action ?? "consult"
-            const directory = (yield* InstanceState.context).directory
+            const directory = AppFileSystem.resolve((yield* InstanceState.context).directory)
             const owner = `${directory}\n${ctx.sessionID}`
             const directParts = ctx.extra?.gptProAttachmentParts as readonly unknown[] | undefined
             if ((params.files?.length || directParts?.length) && action !== "consult" && action !== "intervene") {
@@ -86,12 +87,21 @@ export const GptProConsultTool = Tool.define(
             })
             const metadata = (job: GptProJob) => ({
               consultation_id: job.id,
+              origin_session_id: job.owner.slice(job.owner.lastIndexOf("\n") + 1),
+              read_only_handoff: job.owner !== owner,
               phase: job.phase,
+              queue_reason: job.queueReason,
+              queue_owner_consultation_id: job.queueOwnerConsultationID,
               url: job.url,
               model: job.model,
               preview: job.prompt.slice(0, 160),
               revision: job.revision,
               error: job.error,
+              error_code: job.errorCode,
+              send_attempted: job.sendAttempted === true || job.submitted,
+              user_id: job.userID,
+              submitted: job.submitted,
+              stop_pending: job.stopPending === true,
               text: job.text,
               background: job.background === true,
               recovery: job.recovery,
@@ -107,7 +117,8 @@ export const GptProConsultTool = Tool.define(
               uid: params.uid,
               attachments: attachments.length ? attachments : undefined,
             })
-            active = { owner, id: job.id, background: job.background === true }
+            if (["consult", "intervene", "resume"].includes(action))
+              active = { owner, id: job.id, background: job.background === true }
             const shouldWait =
               ["consult", "intervene", "resume"].includes(action) ||
               (action === "status" && params.wait_ms !== undefined)
@@ -127,18 +138,27 @@ export const GptProConsultTool = Tool.define(
               }
               yield* Effect.sleep("1 second")
               job = yield* browser.gptPro(owner, { action: "status", id: job.id })
-              active.id = job.id
-              active.background = job.background === true
+              if (active) {
+                active.id = job.id
+                active.background = job.background === true
+              }
             }
-            if (job.phase === "completed") job = yield* browser.gptPro(owner, { action: "read", id: job.id })
+            if (job.phase === "completed" && action !== "read")
+              job = yield* browser.gptPro(owner, { action: "read", id: job.id })
             yield* ctx.metadata({ title: "GPT-6 Pro", metadata: metadata(job) })
             const output = JSON.stringify({
               consultation_id: job.id,
+              origin_session_id: job.owner.slice(job.owner.lastIndexOf("\n") + 1),
+              read_only_handoff: job.owner !== owner,
               phase: job.phase,
+              queue_reason: job.queueReason,
+              queue_owner_consultation_id: job.queueOwnerConsultationID,
               url: job.url,
               model: job.model,
               error: job.error,
+              error_code: job.errorCode,
               background: job.background === true,
+              stop_pending: job.stopPending === true,
               recovery: job.recovery,
               attachments: job.attachments ?? attachmentSummary,
               ...(job.recovery
@@ -148,13 +168,17 @@ export const GptProConsultTool = Tool.define(
                 ? { text: job.text, html: job.html }
                 : {
                     partial_text: job.text,
-                    instruction: job.recovery
-                      ? `The fixed flow failed at ${job.recovery.stage}. Use the existing browser_* tools with consultation_id=${job.id} to inspect and repair this consultation's page, then resume this same ID. Never create a replacement or resend an attempted question. The program owns managed prompt submission and tracking. ${job.recovery.needsHuman ? "Human browser verification is required; do not automate the challenge." : "You may use action=send after verifying the exact managed prompt and GPT-6 Pro; send is guarded against duplicates."}`
-                      : gptProTerminal(job.phase) && job.phase !== "paused"
-                        ? "The consultation did not complete. Report its error, do not claim an answer, and do not automatically resubmit. Resolve browser verification, login or network access before a new explicit consultation."
-                        : job.background && job.phase !== "paused"
-                          ? "The consultation is running independently. Progress and completion are injected automatically. Continue your own exploration; do not sleep, poll or resend. Partial output is not final."
-                          : "Use status with consultation_id to wait or read. Do not resubmit. Paused/partial output is not a final answer.",
+                    instruction: job.stopPending
+                      ? "This consultation is cancelled locally. Website generation stop is still being confirmed; do not claim the webpage has stopped. Inspect the original page or read this same consultation's status. Never resend."
+                      : job.owner !== owner
+                        ? "This is a read-only handoff from a descendant session. Read this same consultation ID for its result; do not create a duplicate, stop, resume or mutate it from the parent. Recovery and cancellation belong to its original session."
+                        : job.recovery
+                          ? `The fixed flow failed at ${job.recovery.stage}. Use the existing browser_* tools with consultation_id=${job.id} to inspect and repair this consultation's page, then resume this same ID. Never create a replacement or resend an attempted question. The program owns managed prompt submission and tracking. ${job.recovery.needsHuman ? (job.errorCode === "login" ? "Human ChatGPT login is required; ask the user to reconnect their login before continuing." : "Human browser verification is required; do not automate the challenge.") : "You may use action=send after verifying the exact managed prompt and GPT-6 Pro; send is guarded against duplicates."}`
+                          : gptProTerminal(job.phase) && job.phase !== "paused"
+                            ? "The consultation did not complete. Report its error, do not claim an answer, and do not automatically resubmit. Resolve browser verification, login or network access before a new explicit consultation."
+                            : job.background && job.phase !== "paused"
+                              ? "The consultation is running independently. Progress and completion are injected automatically. Continue your own exploration; do not sleep, poll or resend. Partial output is not final."
+                              : "Use status with consultation_id to wait or read. Do not resubmit. Paused/partial output is not a final answer.",
                   }),
             })
             log.info("gpt-pro command result", {

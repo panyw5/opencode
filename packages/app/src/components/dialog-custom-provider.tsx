@@ -22,6 +22,8 @@ import {
   validateCustomProvider,
 } from "./dialog-custom-provider-form"
 import { DialogSelectProvider } from "./dialog-select-provider"
+import { ProviderBaseURLField } from "./provider-base-url-field"
+import { resolveProviderBaseURL } from "./provider-base-url"
 
 type Props = {
   back?: "providers" | "close"
@@ -249,9 +251,10 @@ export function DialogCustomProvider(props: Props) {
               validationState={form.err.name ? "invalid" : undefined}
               error={form.err.name}
             />
-            <TextField
+            <ProviderBaseURLField
               label={language.t("provider.custom.field.baseURL.label")}
-              placeholder={language.t("provider.custom.field.baseURL.placeholder")}
+              placeholder="https://api.myprovider.com"
+              npm={form.npm}
               value={form.baseURL}
               onChange={(v) => setField("baseURL", v)}
               validationState={form.err.baseURL ? "invalid" : undefined}
@@ -333,7 +336,7 @@ export function DialogCustomProvider(props: Props) {
               {language.t("provider.custom.models.add")}
             </Button>
             <FetchProviderModels
-              baseURL={form.baseURL}
+              baseURL={resolveProviderBaseURL(form.baseURL, form.npm)}
               apiKey={form.apiKey}
               npm={form.npm}
               headers={form.headers}

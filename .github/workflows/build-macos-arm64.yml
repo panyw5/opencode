@@ -1,0 +1,22 @@
+name: Build macOS arm64 Desktop
+run-name: "Build macOS arm64 Desktop (${{ inputs.version || 'VERSION' }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional semver version (defaults to committed VERSION)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.repository == 'panyw5/opencode'
+    uses: ./.github/workflows/build-macos-desktop.yml
+    with:
+      arch: arm64
+      version: ${{ inputs.version }}
+    secrets: inherit

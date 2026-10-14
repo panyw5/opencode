@@ -22,11 +22,30 @@ describe("session messages", () => {
 
   test("keeps an optimistic message missing from the fetched page", () => {
     const optimistic = message("optimistic")
-    const result = mergeOptimisticSessionPage(
-      { session: [], part: [], complete: true },
-      [{ message: optimistic, parts: [] }],
-    )
+    const result = mergeOptimisticSessionPage({ session: [], part: [], complete: true }, [
+      { message: optimistic, parts: [] },
+    ])
     expect(result.session).toEqual([optimistic])
     expect(result.confirmed).toEqual([])
+  })
+
+  test("confirms persisted attachment messages even when the backend replaces their parts", () => {
+    const persisted = message("message")
+    const attachment = {
+      id: "pdf-input",
+      sessionID: "session",
+      messageID: persisted.id,
+      type: "file",
+      mime: "application/pdf",
+      filename: "slides.pdf",
+      url: "file:///tmp/slides.pdf",
+    } as Part
+    const fetched = [text("Extracted PDF content")]
+    const result = mergeOptimisticSessionPage(
+      { session: [persisted], part: [{ id: persisted.id, part: fetched }], complete: true },
+      [{ message: persisted, parts: [attachment] }],
+    )
+    expect(result.confirmed).toEqual([persisted.id])
+    expect(result.part).toEqual([{ id: persisted.id, part: fetched }])
   })
 })

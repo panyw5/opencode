@@ -56,7 +56,8 @@ export function createSessionService(deps: SessionControllerDeps) {
       status: statusApi,
     },
     event(directory: string, mutation: SessionDataMutation) {
-      if (mutation.kind === "messages") messageEvent(directory, mutation.sessionID, mutation.strategy)
+      if (mutation.kind === "messages")
+        messageEvent(directory, mutation.sessionID, mutation.strategy, mutation.removedMessageID)
       if (mutation.kind === "todo") todoEvent(directory, mutation.sessionID)
       if (mutation.kind === "diff") diffEvent(directory, mutation.sessionID)
     },

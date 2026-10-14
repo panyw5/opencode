@@ -1,5 +1,11 @@
 export type BrowserBounds = { x: number; y: number; width: number; height: number }
 export type BrowserViewState = {
+  /** Unique WebContents identity. Older clients may omit it; use partition then. */
+  pageID?: string
+  /** Electron session identity; `partition` remains the legacy page-routing alias. */
+  profileID?: string
+  owner?: { directory?: string; sessionID?: string }
+  kind?: "user" | "agent" | "consultation" | "login"
   partition: string
   url: string
   title: string
@@ -12,15 +18,20 @@ export type BrowserDisplayFrame = {
   lease: number
   revision: number
   partition: string | null
+  /** Preferred display target; legacy frames target `partition`. */
+  pageID?: string | null
+  /** Selected page protected from cleanup even while an overlay hides it. */
+  protectedPageID?: string | null
   bounds: BrowserBounds | null
 }
 export type BrowserDisplayState = {
   lease: number
   revision: number
-  views: { partition: string; visible: boolean; bounds: BrowserBounds }[]
+  protectedPageID?: string
+  views: { pageID?: string; profileID?: string; partition: string; visible: boolean; bounds: BrowserBounds }[]
 }
 export type WindowBrowserApi = {
-  capturePreview: (partition: string) => Promise<string | undefined>
+  capturePreview: (pageID: string) => Promise<string | undefined>
   getDisplayState: () => Promise<BrowserDisplayState>
   acquireDisplay: () => Promise<number>
   updateDisplay: (frame: BrowserDisplayFrame) => Promise<boolean>
@@ -28,15 +39,15 @@ export type WindowBrowserApi = {
   getPresentation: () => Promise<BrowserPresentation | undefined>
   acknowledgePresentation: (id: number) => Promise<void>
   onPresented: (cb: (request: BrowserPresentation) => void) => () => void
-  open: (partition: string, url: string) => Promise<BrowserViewState | undefined>
-  setBounds: (partition: string, bounds: BrowserBounds | null) => Promise<void>
-  setVisible: (partition: string, visible: boolean) => Promise<void>
-  close: (partition: string) => Promise<void>
-  navigate: (partition: string, action: "back" | "forward" | "reload") => Promise<void>
-  setShared: (partition: string, shared: boolean) => Promise<void>
+  open: (pageID: string, url: string) => Promise<BrowserViewState | undefined>
+  setBounds: (pageID: string, bounds: BrowserBounds | null) => Promise<void>
+  setVisible: (pageID: string, visible: boolean) => Promise<void>
+  close: (pageID: string) => Promise<void>
+  navigate: (pageID: string, action: "back" | "forward" | "reload") => Promise<void>
+  setShared: (pageID: string, shared: boolean) => Promise<void>
   getState: () => Promise<BrowserViewState[]>
   onUpdated: (cb: (state: BrowserViewState) => void) => () => void
-  onClosed: (cb: (partition: string, epoch: number) => void) => () => void
+  onClosed: (cb: (pageID: string, epoch: number, profileID?: string) => void) => () => void
 }
 
 export function browserApi(): WindowBrowserApi | undefined {

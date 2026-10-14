@@ -2,7 +2,7 @@
 export class GptProPageError extends Error {
   constructor(
     message: string,
-    readonly kind?: "verification" | "request",
+    readonly kind?: "verification" | "request" | "login",
   ) {
     super(message)
   }

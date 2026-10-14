@@ -1,7 +1,8 @@
 import { candidateNames, parseConnection } from "./common.js"
 
 const fallback = {
-  statusLoggedIn: "Logged in (session found)",
+  statusLoggedIn: "Session cookies found (login not yet verified)",
+  statusSessionFound: "Session cookies found (login not yet verified)",
   statusLoggedOut: "Not logged in",
   statusUnknown: "Unable to check",
   statusReading: "Reading session…",
@@ -17,6 +18,10 @@ const fallback = {
   errorUnauthorized: "Connection authorization failed. Open a new connection from OpenCode.",
   errorInUse: "This connection is already in use. Check OpenCode; do not repeatedly resend.",
   errorExpired: "The connection has expired. Open a new connection from OpenCode.",
+  errorBusy:
+    "Consultations are running. The existing login is unchanged. Finish or stop them, then retry this connection; signing in again is not required.",
+  errorStorage:
+    "Secure credential storage is unavailable. Check the OpenCode configuration page. No successful import is assumed.",
 }
 const t = (key) => {
   const message = chrome.i18n.getMessage(key)
@@ -85,7 +90,7 @@ async function refreshLoginStatus() {
   try {
     const { store } = await activeProfile()
     const cookies = await readSessionCookies(store.id)
-    loginState.textContent = t(cookies.length ? "statusLoggedIn" : "statusLoggedOut")
+    loginState.textContent = t(cookies.length ? "statusSessionFound" : "statusLoggedOut")
   } catch (error) {
     console.warn("[gpt-pro-extension] could not check ChatGPT login status", error)
     loginState.textContent = t("statusUnknown")
@@ -112,7 +117,12 @@ button.addEventListener("click", async () => {
     } catch {
       throw new ConnectorError("errorTab")
     }
-    const { store } = await activeProfile()
+    const { tab, store } = await activeProfile()
+    if (
+      parseConnection(tab.url ?? "").origin !== connection.origin ||
+      parseConnection(tab.url ?? "").token !== connection.token
+    )
+      throw new ConnectorError("errorTab")
     const cookies = await readSessionCookies(store.id)
     if (!cookies.length) throw new ConnectorError("errorNoSession")
     status.textContent = t("statusImporting")
@@ -128,7 +138,21 @@ button.addEventListener("click", async () => {
     const result = await response.json()
     if (!response.ok || result.phase !== "imported") {
       const errors = { 400: "errorInvalidSession", 403: "errorUnauthorized", 409: "errorInUse", 410: "errorExpired" }
-      throw new ConnectorError(errors[response.status] ?? "errorImport")
+      const codes = {
+        login_import_busy: "errorBusy",
+        credential_storage: "errorStorage",
+        login_invalid_session: "errorInvalidSession",
+        login_expired: "errorExpired",
+        login_import_failed: "errorImport",
+      }
+      console.debug(
+        `[gpt-pro-extension] import rejected status=${response.status} code=${Object.hasOwn(codes, result.code) ? result.code : "unknown"}; credentials omitted`,
+      )
+      throw new ConnectorError(
+        (Object.hasOwn(codes, result.code) ? codes[result.code] : undefined) ??
+          errors[response.status] ??
+          "errorImport",
+      )
     }
     status.textContent = t("statusImported")
   } catch (error) {

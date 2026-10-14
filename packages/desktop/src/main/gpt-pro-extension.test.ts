@@ -38,6 +38,7 @@ function popup(
     missingMessages?: boolean
     stores?: unknown[]
     responseStatus?: number
+    responseCode?: string
     networkFailure?: boolean
   } = {},
 ) {
@@ -124,6 +125,7 @@ function popup(
         status: responseStatus,
         json: async () => ({
           phase: responseStatus === 200 ? "imported" : "failed",
+          code: input.responseCode,
           importedCookies: 1,
           error: `PRIVATE_SERVER_ERROR ${cookie.value}`,
         }),
@@ -161,7 +163,7 @@ describe("ChatGPT session connector explicit approval", () => {
       for (const [key, node] of Object.entries(p.localized))
         expect(node.textContent).toBe(catalogs[locale][key].message)
       await p.settle()
-      expect(p.loginState.textContent).toBe(catalogs[locale].statusLoggedIn.message)
+      expect(p.loginState.textContent).toBe(catalogs[locale].statusSessionFound.message)
       expect(p.root.lang).toBe(locale.replaceAll("_", "-"))
       expect(p.root.dir).toBe("ltr")
       expect(p.button.disabled).toBe(true)
@@ -182,7 +184,7 @@ describe("ChatGPT session connector explicit approval", () => {
     expect(p.localized.connect.textContent).toBe(catalogs.en.connect.message)
     expect(p.status.textContent).toBe(catalogs.en.statusApproval.message)
     await p.settle()
-    expect(p.loginState.textContent).toBe("Logged in (session found)")
+    expect(p.loginState.textContent).toBe("Session cookies found (login not yet verified)")
     p.approve()
     await p.click()
     expect(p.status.textContent).toBe(catalogs.en.statusImported.message)
@@ -191,7 +193,7 @@ describe("ChatGPT session connector explicit approval", () => {
   test("Chinese approval, success and errors remain localized and never expose raw credentials", async () => {
     const success = popup({ locale: "zh_CN" })
     await success.settle()
-    expect(success.loginState.textContent).toBe(catalogs.zh_CN.statusLoggedIn.message)
+    expect(success.loginState.textContent).toBe(catalogs.zh_CN.statusSessionFound.message)
     expect(success.status.textContent).toBe(catalogs.zh_CN.statusApproval.message)
     success.approve()
     await success.click()
@@ -228,12 +230,26 @@ describe("ChatGPT session connector explicit approval", () => {
   test("shows login status without sending cookies before approval", async () => {
     const p = popup()
     await p.settle()
-    expect(p.loginState.textContent).toBe(catalogs.en.statusLoggedIn.message)
+    expect(p.loginState.textContent).toBe(catalogs.en.statusSessionFound.message)
     expect(p.queries).toHaveLength(candidateNames().length)
     expect(p.requests).toHaveLength(0)
     await p.click()
     expect(p.queries).toHaveLength(candidateNames().length)
     expect(p.requests).toHaveLength(0)
+  })
+  test("busy and secure-storage rejection preserve localized actionable reasons without server secrets", async () => {
+    for (const [code, status, key] of [
+      ["login_import_busy", 409, "errorBusy"],
+      ["credential_storage", 503, "errorStorage"],
+    ] as const) {
+      const p = popup({ locale: "zh_CN", responseStatus: status, responseCode: code })
+      await p.settle()
+      p.approve()
+      await p.click()
+      expect(p.status.textContent).toBe(catalogs.zh_CN[key].message)
+      expect(p.status.textContent).not.toContain("PRIVATE_SERVER_ERROR")
+      expect(p.status.textContent).not.toContain(cookie.value)
+    }
   })
   test("shows not logged in when the active Chrome profile has no supported session", async () => {
     const p = popup({ cookies: [] })
@@ -257,7 +273,7 @@ describe("ChatGPT session connector explicit approval", () => {
     p.queries.length = 0
     p.approve()
     await p.click()
-    expect(p.queries).toHaveLength(34)
+    expect(p.queries).toHaveLength(66)
     expect(
       p.queries.every(
         (q) =>

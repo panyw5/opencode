@@ -25,6 +25,7 @@ import { useServer } from "@/context/server"
 import { usePlatform } from "@/context/platform"
 import { workspacePathContext } from "@/pages/layout/helpers"
 import { createFileTreeStore } from "./file/tree-store"
+import { createFileContentLoader } from "./file/content-loader"
 import { createWatcherInvalidator } from "./file/watcher"
 import {
   selectionFromLines,
@@ -68,7 +69,6 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
     const path = createPathHelpers(scope)
     const tabs = layout.tabs(() => `${params.dir}${params.id ? "/" + params.id : ""}`)
 
-    const inflight = new Map<string, Promise<void>>()
     const [store, setStore] = createStore<{
       file: Record<string, FileState>
     }>({
@@ -95,16 +95,6 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
         )
       })
     }
-
-    createEffect(() => {
-      scope()
-      inflight.clear()
-      resetFileContentLru()
-      batch(() => {
-        setStore("file", reconcile({}))
-        tree.reset()
-      })
-    })
 
     const viewCache = createFileViewCache(
       workspacePathContext({ os: platform.os, isLocal: !!server.isLocal(), directory: scope() }),
@@ -147,8 +137,11 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
         produce((draft) => {
           draft.loading = false
           draft.error = message
+          draft.loaded = false
+          draft.content = undefined
         }),
       )
+      removeFileContentBytes(file)
       showToast({
         variant: "error",
         title: language.t("toast.file.loadFailed.title"),
@@ -156,44 +149,37 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       })
     }
 
-    const load = (input: string, options?: { force?: boolean }) => {
-      const file = path.normalize(input)
-      if (!file) return Promise.resolve()
-
-      const directory = scope()
-      const key = `${directory}\n${file}`
-      ensure(file)
-
-      const current = store.file[file]
-      if (!options?.force && current?.loaded) return Promise.resolve()
-
-      const pending = inflight.get(key)
-      if (pending) return pending
-
-      setLoading(file)
-
-      const promise = sdk.client.file
-        .read({ path: file })
-        .then((x) => {
-          if (scope() !== directory) return
-          const content = x.data
-          setLoaded(file, content)
-
-          if (!content) return
-          touchFileContent(file, approxBytes(content))
-          evictContent(new Set([file]))
-        })
-        .catch((e) => {
-          if (scope() !== directory) return
-          setLoadError(file, errorMessage(e, language.t("error.chain.unknown")))
-        })
-        .finally(() => {
-          inflight.delete(key)
-        })
-
-      inflight.set(key, promise)
-      return promise
-    }
+    const loader = createFileContentLoader({
+      scope,
+      normalize: path.normalize,
+      loaded: (file) => store.file[file]?.loaded === true,
+      read: (file) => sdk.client.file.read({ path: file }),
+      onLoading: (file) => {
+        ensure(file)
+        setLoading(file)
+      },
+      onContent: (file, content) => {
+        setLoaded(file, content)
+        if (!content) {
+          removeFileContentBytes(file)
+          return
+        }
+        touchFileContent(file, approxBytes(content))
+        evictContent(new Set([file]))
+      },
+      onError: (file, error) => setLoadError(file, errorMessage(error, language.t("error.chain.unknown"))),
+    })
+    const load = loader.load
+    createEffect(() => {
+      scope()
+      sdk.client
+      loader.reset()
+      resetFileContentLru()
+      batch(() => {
+        setStore("file", reconcile({}))
+        tree.reset()
+      })
+    })
 
     const search = (query: string, dirs: "true" | "false") =>
       sdk.client.find.files({ query, dirs }).then(
@@ -251,6 +237,8 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
 
     onCleanup(() => {
       stop()
+      loader.reset()
+      tree.reset()
       invalidator.dispose()
       viewCache.clear()
     })

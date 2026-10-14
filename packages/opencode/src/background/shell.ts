@@ -11,6 +11,7 @@ import { Deferred, Effect, Layer, Context, Schema, Scope, Stream, Types } from "
 import { NonNegativeInt } from "@opencode-ai/core/schema"
 import * as Log from "@opencode-ai/core/util/log"
 import path from "path"
+import { createHash } from "node:crypto"
 
 const log = Log.create({ service: "background-shell" })
 const OUTPUT_LIMIT = 30_000
@@ -84,7 +85,7 @@ export type WaitResult = {
 export interface Interface {
   readonly list: (input?: { sessionID?: SessionID }) => Effect.Effect<Info[]>
   readonly get: (id: string) => Effect.Effect<Info | undefined>
-  readonly create: (input: CreateInput) => Effect.Effect<Info>
+  readonly create: (input: CreateInput, options?: { shellEnvResolved?: true }) => Effect.Effect<Info>
   readonly setBackground: (id: string) => Effect.Effect<Info | undefined>
   readonly wait: (id: string) => Effect.Effect<WaitResult>
   readonly stop: (id: string) => Effect.Effect<Info | undefined>
@@ -153,11 +154,16 @@ export const layer = Layer.effect(
         endedAt: Date.now(),
         outputTail: tail(event.properties.output),
       }
-      log.info("background shell exited", { id: next.id, exitCode: next.exitCode })
+      log.info("background shell exited", {
+        sessionID: next.sessionID,
+        messageID: next.messageID,
+        callID: next.callID,
+        jobID: next.id,
+        ptyID: next.ptyID,
+        exitCode: next.exitCode,
+      })
       match.info = next
-      yield* Deferred.succeed(match.done, { info: copy(next), output: event.properties.output }).pipe(
-        Effect.ignore,
-      )
+      yield* Deferred.succeed(match.done, { info: copy(next), output: event.properties.output }).pipe(Effect.ignore)
       yield* publishUpdate(match)
     })
 
@@ -187,7 +193,7 @@ export const layer = Layer.effect(
       return copy(yield* refresh(active))
     })
 
-    const create: Interface["create"] = Effect.fn("BackgroundShell.create")(function* (input) {
+    const create: Interface["create"] = Effect.fn("BackgroundShell.create")(function* (input, options) {
       yield* ensureSubscribed()
       const ctx = yield* InstanceState.context
       const cfg = yield* config.get()
@@ -197,15 +203,31 @@ export const layer = Layer.effect(
           ? input.cwd
           : path.resolve(ctx.directory, input.cwd)
         : ctx.directory
-      const info = yield* pty.create({
-        command: sh,
-        args: Shell.args(sh, input.command, cwd),
-        cwd,
-        title: input.description ?? input.command,
-        env: input.env ? { ...input.env } : undefined,
+      const shellID = Identifier.ascending("job")
+      log.info("background shell create requested", {
+        id: shellID,
+        sessionID: input.sessionID,
+        messageID: input.messageID,
+        callID: input.callID,
+        commandFingerprint: createHash("sha256").update(input.command).digest("hex").slice(0, 12),
+        commandLength: input.command.length,
+        commandLines: input.command.split("\n").length,
+        envEntryCount: Object.keys(input.env ?? {}).length,
+        background: input.background === true,
+        shellEnvResolved: options?.shellEnvResolved === true,
       })
+      const info = yield* pty.create(
+        {
+          command: sh,
+          args: Shell.args(sh, input.command, cwd),
+          cwd,
+          title: input.description ?? input.command,
+          env: input.env ? { ...input.env } : undefined,
+        },
+        { shellEnvResolved: options?.shellEnvResolved },
+      )
       const shell: Info = {
-        id: Identifier.ascending("job"),
+        id: shellID,
         sessionID: input.sessionID,
         ...(input.messageID ? { messageID: input.messageID } : {}),
         ...(input.callID ? { callID: input.callID } : {}),
@@ -217,6 +239,13 @@ export const layer = Layer.effect(
         status: "running",
         startedAt: Date.now(),
       }
+      log.info("background shell pty prepared", {
+        id: shell.id,
+        ptyID: shell.ptyID,
+        sessionID: shell.sessionID,
+        messageID: shell.messageID,
+        callID: shell.callID,
+      })
       const active: Active = {
         info: shell,
         done: yield* Deferred.make<{ info: Info; output?: string }>(),

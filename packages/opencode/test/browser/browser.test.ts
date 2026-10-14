@@ -95,7 +95,8 @@ describe("Browser facade", () => {
       yield* Effect.yieldNow
       const frame = JSON.parse(fake.sent[0])
       expect(frame.name).toBe("navigate")
-      expect(frame.args.partition).toBe("agent-browser-ses_1")
+      expect(frame.args.pageID).toBe("agent-browser-ses_1")
+      expect(frame.args.partition).toBeUndefined()
       expect(frame.args.url).toBe("https://example.com/")
 
       // A second session maps to a different partition.
@@ -103,8 +104,8 @@ describe("Browser facade", () => {
       yield* Effect.yieldNow
       const frame2 = JSON.parse(fake.sent[1])
       expect(frame2.name).toBe("snapshot")
-      expect(frame2.args.partition).toBe("agent-browser-ses_2")
-      expect(frame2.args.partition).not.toBe(frame.args.partition)
+      expect(frame2.args.pageID).toBe("agent-browser-ses_2")
+      expect(frame2.args.pageID).not.toBe(frame.args.pageID)
 
       yield* bridge.handleFrame(JSON.stringify({ type: "resp", id: frame.id, ok: true, result: { state: viewState } }))
       const state = yield* Fiber.join(fiber)
@@ -120,6 +121,24 @@ describe("Browser facade", () => {
       )
       const snapshot = yield* Fiber.join(fiber2)
       expect(snapshot.nodes).toEqual([])
+    }),
+  )
+  it.instance("sends internal owner cancellation with an explicit session identity", () =>
+    Effect.gen(function* () {
+      const browser = yield* Browser.Service
+      const bridge = yield* BrowserBridge.Service
+      const { directory } = yield* InstanceState.context
+      const fake = fakeAdapter()
+      yield* bridge.connect({ adapter: fake.adapter })
+      const fiber = yield* browser.cancelGptProOwner(directory, "ses_cancel").pipe(Effect.forkChild)
+      yield* Effect.yieldNow
+      const frame = JSON.parse(fake.sent[0])
+      expect(frame.name).toBe("gpt-pro-cancel-owner")
+      expect(frame.args).toEqual({ directory, sessionID: "ses_cancel" })
+      yield* bridge.handleFrame(
+        JSON.stringify({ type: "resp", id: frame.id, ok: true, result: { cancelled: 2 } }),
+      )
+      expect(yield* Fiber.join(fiber)).toBe(2)
     }),
   )
 
@@ -192,6 +211,33 @@ describe("Browser facade", () => {
       )
       const other = yield* browser.console("ses_2")
       expect(other).toHaveLength(1)
+    }),
+  )
+  it.instance("routes consultation console reads to the owner-verified pageID", () =>
+    Effect.gen(function* () {
+      const browser = yield* Browser.Service
+      const bridge = yield* BrowserBridge.Service
+      const { directory } = yield* InstanceState.context
+      const fake = fakeAdapter()
+      yield* bridge.connect({ adapter: fake.adapter })
+      const pageID = "gpt-pro-page-gpt_console"
+      const entry = { pageID, partition: pageID, profileID: "persist:consult-gpt-pro", level: "log", text: "answer", at: 200 }
+      yield* bridge.handleFrame(JSON.stringify({ type: "event", name: "browser.console", properties: entry }))
+
+      const fiber = yield* browser.console("ses_owner", { consultationID: "gpt_console" }).pipe(Effect.forkChild)
+      yield* Effect.yieldNow
+      const frame = JSON.parse(fake.sent[0])
+      expect(frame.name).toBe("gpt-pro-browser")
+      expect(frame.args.owner).toBe(`${directory}\nses_owner`)
+      yield* bridge.handleFrame(
+        JSON.stringify({
+          type: "resp",
+          id: frame.id,
+          ok: true,
+          result: { state: { ...viewState, pageID, partition: pageID }, consultationCreatedAt: 150 },
+        }),
+      )
+      expect(yield* Fiber.join(fiber)).toEqual([entry])
     }),
   )
 })

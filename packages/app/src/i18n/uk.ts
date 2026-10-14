@@ -1,4 +1,7 @@
 export const dict = {
+  "projectTask.status.open": "Не розпочато",
+  "projectTask.status.inProgress": "У процесі",
+  "projectTask.status.done": "Завершено",
   "command.category.suggested": "Рекомендовані",
   "command.category.view": "Вигляд",
   "command.category.project": "Проєкт",

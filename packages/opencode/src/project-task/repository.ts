@@ -49,7 +49,7 @@ export function accumulateTodo(progress: Progress, status: string): void {
   else progress.pending += 1
 }
 
-type TaskAggregates = { sessionCount: number; progress: Progress; directories: string[] }
+type TaskAggregates = { sessionCount: number; lastSessionAt?: number; progress: Progress; directories: string[] }
 
 function emptyAggregates(): TaskAggregates {
   return { sessionCount: 0, progress: emptyProgress(), directories: [] }
@@ -69,7 +69,7 @@ function pushUniqueDirectory(directories: string[], seen: Set<string>, directory
 }
 
 /** Row → Info shell. `description` is filled later from the file (or legacy column during migrate). */
-function taskBaseFromRow(row: TaskRow, descriptionContent: string): Omit<Info, "sessionCount" | "progress" | "sessionDirectories"> {
+function taskBaseFromRow(row: TaskRow, descriptionContent: string): Omit<Info, "sessionCount" | "lastSessionAt" | "progress" | "sessionDirectories"> {
   const descriptionPath =
     (typeof row.description_path === "string" && row.description_path.trim()) || descriptionRelativePath(row.id)
   return {
@@ -98,11 +98,12 @@ export type TaskRowMeta = {
   legacyDescription: string
   time: Info["time"]
   sessionCount: number
+  lastSessionAt?: number
   progress: Progress
   sessionDirectories: string[]
 }
 
-function rowMeta(row: TaskRow, sessionCount: number, progress: Progress, sessionDirectories: string[]): TaskRowMeta {
+function rowMeta(row: TaskRow, sessionCount: number, progress: Progress, sessionDirectories: string[], lastSessionAt?: number): TaskRowMeta {
   return {
     id: row.id,
     projectID: row.project_id,
@@ -116,6 +117,7 @@ function rowMeta(row: TaskRow, sessionCount: number, progress: Progress, session
       ...(row.time_archived != null ? { archived: row.time_archived } : {}),
     },
     sessionCount,
+    ...(lastSessionAt !== undefined ? { lastSessionAt } : {}),
     progress,
     sessionDirectories,
   }
@@ -131,6 +133,7 @@ export function toInfo(meta: TaskRowMeta, descriptionContent: string): Info {
     descriptionPath,
     status: meta.status,
     sessionCount: meta.sessionCount,
+    ...(meta.lastSessionAt !== undefined ? { lastSessionAt: meta.lastSessionAt } : {}),
     progress: meta.progress,
     sessionDirectories: meta.sessionDirectories,
     time: meta.time,
@@ -172,7 +175,7 @@ export function getRow(id: ProjectTaskID): Effect.Effect<TaskRowMeta | undefined
     if (!row) return undefined
     const aggregates = aggregatesForTasks([id])
     const agg = aggregates.get(id) ?? emptyAggregates()
-    return rowMeta(row, agg.sessionCount, agg.progress, agg.directories)
+    return rowMeta(row, agg.sessionCount, agg.progress, agg.directories, agg.lastSessionAt)
   })
 }
 
@@ -187,6 +190,7 @@ export function get(id: ProjectTaskID): Effect.Effect<Info | undefined> {
     return {
       ...taskBaseFromRow(row, row.description ?? ""),
       sessionCount: agg.sessionCount,
+      ...(agg.lastSessionAt !== undefined ? { lastSessionAt: agg.lastSessionAt } : {}),
       progress: agg.progress,
       sessionDirectories: agg.directories,
     }
@@ -213,7 +217,7 @@ export function listRows(input: {
     const aggregates = aggregatesForTasks(rows.map((row) => row.id))
     return rows.map((row) => {
       const agg = aggregates.get(row.id) ?? emptyAggregates()
-      return rowMeta(row, agg.sessionCount, agg.progress, agg.directories)
+      return rowMeta(row, agg.sessionCount, agg.progress, agg.directories, agg.lastSessionAt)
     })
   })
 }
@@ -263,6 +267,7 @@ export function update(
       return {
         ...taskBaseFromRow(row, input.description ?? row.description ?? ""),
         sessionCount: agg.sessionCount,
+        ...(agg.lastSessionAt !== undefined ? { lastSessionAt: agg.lastSessionAt } : {}),
         progress: agg.progress,
         sessionDirectories: agg.directories,
       }
@@ -393,7 +398,13 @@ export function detailRow(id: ProjectTaskID): Effect.Effect<(TaskRowMeta & { ses
     }
 
     return {
-      ...rowMeta(row, bundles.length, progress, sessionDirectories),
+      ...rowMeta(
+        row,
+        bundles.filter((session) => !session.parentID).length,
+        progress,
+        sessionDirectories,
+        sessions[0]?.time_updated,
+      ),
       sessions: bundles,
     }
   })
@@ -420,7 +431,9 @@ function aggregatesForTasks(taskIDs: ProjectTaskID[]): Map<ProjectTaskID, TaskAg
       .select({
         id: SessionTable.id,
         mounted_task_id: SessionTable.mounted_task_id,
+        parent_id: SessionTable.parent_id,
         directory: SessionTable.directory,
+        time_updated: SessionTable.time_updated,
       })
       .from(SessionTable)
       .where(and(inArray(SessionTable.mounted_task_id, taskIDs), isNotNull(SessionTable.mounted_task_id)))
@@ -434,7 +447,8 @@ function aggregatesForTasks(taskIDs: ProjectTaskID[]): Map<ProjectTaskID, TaskAg
     sessionToTask.set(session.id, session.mounted_task_id)
     const entry = result.get(session.mounted_task_id)
     if (!entry) continue
-    entry.sessionCount += 1
+    if (!session.parent_id) entry.sessionCount += 1
+    entry.lastSessionAt = Math.max(entry.lastSessionAt ?? session.time_updated, session.time_updated)
     pushUniqueDirectory(entry.directories, entry.seen, session.directory)
   }
 

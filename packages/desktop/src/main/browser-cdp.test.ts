@@ -18,6 +18,7 @@ function fixture(
   } = {},
 ) {
   const calls: Array<{ method: string; params: Record<string, unknown> }> = []
+  let focusCount = 0
   let attached = false
   let resolverRun = 0
   let resolvedTargetRun = 0
@@ -118,13 +119,29 @@ function fixture(
     debugger: debuggerAPI,
     getURL: () => "https://chatgpt.com/",
     getTitle: () => "ChatGPT",
-    focus: () => {},
+    focus: () => {
+      focusCount++
+    },
     isLoading: () => false,
   } as never)
-  return { browser, calls }
+  return { browser, calls, focusCount: () => focusCount }
 }
 
 describe("CDP file attachment", () => {
+  test("applies an explicit non-mobile layout viewport without focusing the page", async () => {
+    const f = fixture()
+    await f.browser.setViewport(1280, 800)
+    const metrics = f.calls.find((call) => call.method === "Emulation.setDeviceMetricsOverride")
+    expect(metrics?.params).toEqual({ width: 1280, height: 800, deviceScaleFactor: 1, mobile: false })
+    const metricsIndex = f.calls.findIndex((call) => call.method === "Emulation.setDeviceMetricsOverride")
+    const focusEmulationIndex = f.calls.findIndex((call) => call.method === "Emulation.setFocusEmulationEnabled")
+    expect(focusEmulationIndex).toBe(metricsIndex + 1)
+    expect(f.calls[focusEmulationIndex].params).toEqual({ enabled: true })
+    expect(f.calls.findIndex((call) => call.method === "Runtime.enable")).toBeLessThan(metricsIndex)
+    expect(f.focusCount()).toBe(0)
+    await expect(f.browser.setViewport(0, 800)).rejects.toThrow("positive integers")
+  })
+
   test("clicks the exact resolver button only after stable backend identity and hit tests", async () => {
     const f = fixture({ resolvedBackendNodeIds: [31, 31] })
     let prepared = 0
@@ -148,6 +165,7 @@ describe("CDP file attachment", () => {
       "mousePressed",
       "mouseReleased",
     ])
+    expect(f.focusCount()).toBe(0)
   })
   test("rejects covered or replaced resolver buttons without mouse dispatch", async () => {
     const covered = fixture({ resolvedHitResults: [false] })

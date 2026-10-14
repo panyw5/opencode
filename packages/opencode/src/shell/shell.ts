@@ -5,6 +5,10 @@ import { which } from "@/util/which"
 import path from "path"
 import { spawn, type ChildProcess } from "child_process"
 import { setTimeout as sleep } from "node:timers/promises"
+import { createHash } from "node:crypto"
+import * as Log from "@opencode-ai/core/util/log"
+
+const log = Log.create({ service: "shell" })
 
 const SIGKILL_TIMEOUT_MS = 200
 const META: Record<string, { deny?: boolean; login?: boolean; posix?: boolean; ps?: boolean }> = {
@@ -158,38 +162,62 @@ function info(file: string): Item {
 
 export function args(file: string, command: string, cwd: string) {
   const n = name(file)
-  if (n === "nu" || n === "fish") return ["-c", command]
+  const fingerprint = createHash("sha256").update(command).digest("hex").slice(0, 12)
+  const metadata = { shell: n, fingerprint, length: command.length, lines: command.split("\n").length }
+  log.debug("shell command received", metadata)
+  if (command.includes("\0")) {
+    log.warn("shell command rejected", { ...metadata, reason: "NUL byte" })
+    throw new TypeError("Shell command cannot contain a NUL byte")
+  }
+  if (n === "nu" || n === "fish") {
+    log.debug("shell command prepared", { ...metadata, transport: "command argument" })
+    return ["-c", command]
+  }
   if (n === "zsh") {
-    return [
+    const result = [
       "-l",
       "-c",
       `
-        [[ -f ~/.zshenv ]] && source ~/.zshenv >/dev/null 2>&1 || true
-        [[ -f "\${ZDOTDIR:-$HOME}/.zshrc" ]] && source "\${ZDOTDIR:-$HOME}/.zshrc" >/dev/null 2>&1 || true
-        cd -- "$1"
-        eval ${JSON.stringify(command)}
+        _opencode_shell_run() {
+          local -r _opencode_shell_cwd="$1" _opencode_shell_command="$2"
+          [[ -f ~/.zshenv ]] && source ~/.zshenv >/dev/null 2>&1 || true
+          [[ -f "\${ZDOTDIR:-$HOME}/.zshrc" ]] && source "\${ZDOTDIR:-$HOME}/.zshrc" >/dev/null 2>&1 || true
+          cd -- "$_opencode_shell_cwd" || return $?
+          eval -- "$_opencode_shell_command"
+        }
+        _opencode_shell_run "$@"
       `,
       "opencode",
       cwd,
+      command,
     ]
+    log.debug("shell command prepared", { ...metadata, transport: "positional argument" })
+    return result
   }
   if (n === "bash") {
-    return [
+    const result = [
       "-l",
       "-c",
       `
         shopt -s expand_aliases
-        [[ -f ~/.bashrc ]] && source ~/.bashrc >/dev/null 2>&1 || true
-        cd -- "$1"
-        eval ${JSON.stringify(command)}
+        _opencode_shell_run() {
+          local -r _opencode_shell_cwd="$1" _opencode_shell_command="$2"
+          [[ -f ~/.bashrc ]] && source ~/.bashrc >/dev/null 2>&1 || true
+          cd -- "$_opencode_shell_cwd" || return $?
+          eval -- "$_opencode_shell_command"
+        }
+        _opencode_shell_run "$@"
       `,
       "opencode",
       cwd,
+      command,
     ]
+    log.debug("shell command prepared", { ...metadata, transport: "positional argument" })
+    return result
   }
-  if (n === "cmd") return ["/c", command]
-  if (ps(file)) return ["-NoProfile", "-Command", command]
-  return ["-c", command]
+  const result = n === "cmd" ? ["/c", command] : ps(file) ? ["-NoProfile", "-Command", command] : ["-c", command]
+  log.debug("shell command prepared", { ...metadata, transport: "command argument" })
+  return result
 }
 
 const defaultPreferred = lazy(() => select(process.env.SHELL))

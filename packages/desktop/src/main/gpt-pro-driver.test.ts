@@ -25,6 +25,10 @@ function fixture(
     focusAccepted?: boolean
     sendUidMatches?: boolean
     afterInspect?: (page: GptProPageState, count: number) => void
+    capture?: (
+      options: { userID: string; knownVersion?: string; force?: boolean },
+      page: GptProPageState,
+    ) => GptProPageState
   } = {},
 ) {
   const page: GptProPageState = {
@@ -62,6 +66,11 @@ function fixture(
   const cdp = {
     evaluate: async (expression: string) => {
       reads++
+      const captureMarker = "attachmentTarget,sendTarget,"
+      if (options.capture && expression.includes(captureMarker)) {
+        const input = JSON.parse(expression.slice(expression.lastIndexOf(captureMarker) + captureMarker.length, -5))
+        return options.capture(input, structuredClone(page))
+      }
       if (expression === CHATGPT_INSPECT_EXPRESSION) {
         const snapshot = structuredClone(page)
         options.afterInspect?.(page, ++inspectCount)
@@ -183,6 +192,174 @@ function fixture(
 }
 
 describe("gpt-pro trusted submission", () => {
+  test("scoped capture reconstructs unchanged and append payloads without changing ownership", async () => {
+    let step = 0
+    const options: Array<{ userID: string; knownVersion?: string }> = []
+    const f = fixture({
+      capture: (input, page) => {
+        options.push(input)
+        const modes = ["snapshot", "unchanged", "append", "snapshot"] as const
+        const mode = modes[step]!
+        const versions = ["v1", "v1", "v2", "v3"]
+        page.answers = [
+          {
+            id: "a1",
+            userID: "u1",
+            html: step === 0 ? "<p>One</p>" : step === 2 ? "<p>Two</p>" : step === 3 ? "<p>Rewritten</p>" : "",
+            text: step === 0 ? "One" : step === 2 ? "Two" : step === 3 ? "Rewritten" : "",
+            complete: step === 3,
+            truncated: false,
+            generating: step !== 3,
+            completionEvidence: step === 3 ? "settled-marker" : "unknown",
+          },
+        ]
+        page.answer = { ...page.answers[0]! }
+        page.capture = {
+          userID: "u1",
+          version: versions[step]!,
+          mode,
+          reads: step + 1,
+          ...(mode === "append" ? { baseVersion: "v1" } : {}),
+        }
+        step++
+        return page
+      },
+    })
+    f.page.users = [{ id: "u1", text: "Question" }]
+    try {
+      expect((await f.driver.page({ userID: "u1" })).answer?.html).toBe("<p>One</p>")
+      expect((await f.driver.page({ userID: "u1" })).answer?.html).toBe("<p>One</p>")
+      const appended = await f.driver.page({ userID: "u1" })
+      expect(appended.answer?.html).toBe("<p>One</p><p>Two</p>")
+      expect(appended.answer?.text).toBe("OneTwo")
+      expect((await f.driver.page({ userID: "u1" })).answer?.html).toBe("<p>Rewritten</p>")
+      expect(options.map((input) => input.knownVersion)).toEqual([undefined, "v1", "v1", "v2"])
+      expect(f.clicks).toHaveLength(0)
+    } finally {
+      f.driver.dispose()
+    }
+  })
+
+  test("missing incremental base forces a full capture instead of accepting partial output", async () => {
+    const inputs: Array<{ force?: boolean }> = []
+    const f = fixture({
+      capture: (input, page) => {
+        inputs.push(input)
+        page.answers = [
+          {
+            id: "a1",
+            userID: "u1",
+            html: input.force ? "<p>Full</p>" : "<p>Suffix</p>",
+            text: input.force ? "Full" : "Suffix",
+            complete: false,
+            truncated: false,
+            generating: true,
+            completionEvidence: "unknown",
+          },
+        ]
+        page.capture = {
+          userID: "u1",
+          version: "v2",
+          mode: input.force ? "snapshot" : "append",
+          baseVersion: "missing",
+          reads: 1,
+        }
+        return page
+      },
+    })
+    f.page.users = [{ id: "u1", text: "Question" }]
+    try {
+      expect((await f.driver.page({ userID: "u1" })).answers?.[0].html).toBe("<p>Full</p>")
+      expect(inputs).toHaveLength(2)
+      expect(inputs[1]?.force).toBe(true)
+      expect(f.clicks).toHaveLength(0)
+    } finally {
+      f.driver.dispose()
+    }
+  })
+  test("login redirects are detected without waiting for or operating a composer", async () => {
+    const f = fixture()
+    f.page.url = "https://auth.openai.com/log-in"
+    await expect(f.driver.ready()).rejects.toMatchObject({ kind: "login" })
+    expect(f.reads()).toBe(0)
+    expect(f.clicks).toHaveLength(0)
+    expect(f.inserted).toHaveLength(0)
+    expect(f.logs.some((line) => line.includes("login required"))).toBe(true)
+  })
+  test("binds hidden pages to distinct WebContents identities on the shared GPT profile", async () => {
+    const pages = new Map<
+      string,
+      { pageID: string; partition: string; profileID: string; url: string; epoch: number }
+    >()
+    const opened: Array<{ pageID: string; profileID: string; url: string; kind?: string; owner?: unknown }> = []
+    const presented: string[] = []
+    const browser = {
+      getState: () => [...pages.values()],
+      openPage: async (
+        pageID: string,
+        profileID: string,
+        url: string,
+        metadata: { kind?: string; owner?: unknown },
+      ) => {
+        opened.push({ pageID, profileID, url, ...metadata })
+        const state = { pageID, partition: pageID, profileID, url, epoch: 1 }
+        pages.set(pageID, state)
+        return state
+      },
+      cdp: () => ({
+        evaluate: async (expression: string) =>
+          expression === CHATGPT_INSPECT_EXPRESSION
+            ? {
+                url: GPT_PRO_URL,
+                model: "Website selection",
+                targetModel: false,
+                composer: true,
+                draft: "",
+                generating: false,
+                revision: 0,
+                users: [],
+              }
+            : { url: GPT_PRO_URL, composer: [], users: [] },
+      }),
+      present: (pageID: string) => presented.push(pageID),
+      has: (pageID: string) => pages.has(pageID),
+    }
+    const ownerA = { directory: "/repo", sessionID: "ses_a" }
+    const ownerB = { directory: "/repo", sessionID: "ses_b" }
+    const first = new GptProDriver(browser as never, () => {}, {
+      pageID: "gpt-pro-page-one",
+      profileID: GPT_PRO_PARTITION,
+      owner: ownerA,
+    })
+    const second = new GptProDriver(browser as never, () => {}, {
+      pageID: "gpt-pro-page-two",
+      profileID: GPT_PRO_PARTITION,
+      owner: ownerB,
+    })
+    await first.open(GPT_PRO_URL, true)
+    await second.open(GPT_PRO_URL, true)
+    expect(opened).toEqual([
+      {
+        pageID: "gpt-pro-page-one",
+        profileID: GPT_PRO_PARTITION,
+        url: GPT_PRO_URL,
+        kind: "consultation",
+        owner: ownerA,
+      },
+      {
+        pageID: "gpt-pro-page-two",
+        profileID: GPT_PRO_PARTITION,
+        url: GPT_PRO_URL,
+        kind: "consultation",
+        owner: ownerB,
+      },
+    ])
+    expect(presented).toEqual([])
+    expect(await first.page()).toMatchObject({ composer: true, users: [] })
+    pages.set("gpt-pro-page-one", { ...pages.get("gpt-pro-page-one")!, epoch: 2 })
+    await expect(first.page()).rejects.toThrow("generation changed")
+    expect(await second.page()).toMatchObject({ composer: true, users: [] })
+  })
   test("a covered send control hands off before recording any send attempt", async () => {
     const f = fixture()
     f.cover()

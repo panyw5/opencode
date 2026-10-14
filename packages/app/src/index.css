@@ -9,6 +9,86 @@
 }
 
 @layer components {
+  [data-component="channel-create-notice"] {
+    --channel-notice-accent: #72927e;
+
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid color-mix(in srgb, var(--channel-notice-accent) 35%, var(--border-weak-base));
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--channel-notice-accent) 10%, var(--background-base));
+    color: light-dark(#405e4c, #bdcfc2);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.7;
+
+    [data-slot="notice-icon"] {
+      display: flex;
+      flex: none;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: var(--channel-notice-accent);
+      color: #fff;
+
+      [data-component="icon"] {
+        color: inherit;
+      }
+    }
+
+    p {
+      min-width: 0;
+      margin: 3px 0;
+      overflow-wrap: anywhere;
+    }
+
+    a {
+      color: inherit;
+      text-underline-offset: 3px;
+      border-radius: 2px;
+
+      &:focus-visible {
+        outline: 2px solid var(--border-focus-base);
+        outline-offset: 3px;
+      }
+    }
+  }
+
+  [data-component="provider-base-url"] {
+    min-width: 0;
+
+    [data-component="input"][data-variant="normal"] [data-slot="input-wrapper"] {
+      width: fit-content;
+      max-width: min(100%, 560px);
+    }
+
+    [data-component="input"][data-variant="normal"] [data-slot="input-input"] {
+      field-sizing: content;
+      width: auto;
+      min-width: 6ch;
+      flex: 0 1 auto;
+      padding-right: 4px;
+    }
+
+    [data-slot="input-suffix"] {
+      display: flex;
+      padding-right: 4px;
+    }
+
+    [data-slot="provider-base-url-suffix"] {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: var(--surface-hover);
+      line-height: 20px;
+    }
+  }
+
   .config-scrollbar {
     scrollbar-color: transparent transparent;
     scrollbar-width: thin;
@@ -1301,6 +1381,16 @@ html[data-platform="desktop"][data-color-scheme="dark"] [data-component="collaps
 
 #session-side-panel .session-review-panel-pop {
   animation: session-review-panel-spring-in 420ms cubic-bezier(0.22, 1.32, 0.36, 1) both;
+}
+
+[data-component="browser-floating-overlay"] {
+  background: light-dark(rgb(20 24 30 / 0.22), rgb(0 0 0 / 0.42));
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+[data-browser-maximized] {
+  box-shadow: 0 12px 32px light-dark(rgb(0 0 0 / 0.2), rgb(0 0 0 / 0.4));
 }
 
 /* Each toast receives its exact offset to the bell center from the renderer. */

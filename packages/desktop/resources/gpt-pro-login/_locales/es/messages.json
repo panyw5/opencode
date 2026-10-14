@@ -53,6 +53,11 @@
   "errorImport": {
     "message": "Importación no confirmada. Comprueba la configuración de GPT-Pro en OpenCode."
   },
+  "errorBusy": {
+    "message": "Hay consultas o borradores activos. El inicio existente no cambió. Reintente después; no es necesario iniciar sesión de nuevo."
+  },
+  "errorStorage": { "message": "El almacenamiento seguro no está disponible. Revise la configuración de OpenCode." },
+  "statusSessionFound": { "message": "Cookies de sesión detectadas (inicio no verificado)" },
   "errorInvalidSession": {
     "message": "La sesión de ChatGPT no es válida o no es compatible. Inicia sesión de nuevo en Chrome y abre una nueva conexión desde OpenCode."
   },

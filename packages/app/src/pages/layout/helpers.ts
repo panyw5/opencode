@@ -301,6 +301,21 @@ export type ImChannelMatch = {
   directory: string
 }
 
+export function imChannelMetaKey(type: string) {
+  switch (type) {
+    case "feishu":
+      return "sidebar.im.meta.feishu"
+    case "discord":
+      return "sidebar.im.meta.discord"
+    case "qq":
+      return "sidebar.im.meta.qq"
+    case "wechat":
+      return "sidebar.im.meta.wechat"
+    default:
+      return "sidebar.im.title"
+  }
+}
+
 /**
  * Map a route/work directory back to an IM channel config entry.
  * Used so channel session lists are first-class domains (like extra agents),

@@ -33,6 +33,9 @@
   "errorNoSession": { "message": "未找到受支持的 ChatGPT 登录会话。请在当前 Chrome 配置中登录 ChatGPT 后重试。" },
   "errorConnection": { "message": "连接失败。请从 OpenCode 打开新的连接页。" },
   "errorImport": { "message": "导入未确认，请检查 OpenCode 的 GPT-Pro 配置页。" },
+  "errorBusy": { "message": "咨询或手动草稿正在使用登录，现有登录未改变。结束后重试本连接即可，不需要重新登录。" },
+  "errorStorage": { "message": "安全凭据存储不可用。请查看 OpenCode 配置页，不能假定导入成功。" },
+  "statusSessionFound": { "message": "检测到会话 Cookie（尚未核验登录）" },
   "errorInvalidSession": {
     "message": "ChatGPT 会话无效或不受支持。请在 Chrome 重新登录，再从 OpenCode 打开新的连接页。"
   },

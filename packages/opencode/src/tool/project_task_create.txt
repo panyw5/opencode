@@ -1,15 +1,8 @@
+# PURPOSE
 Create a NEW persisting project-level task for the current workspace.
 
 A project task can be **mounted** onto one or more sessions.
 A project task is different from per-session checklists `todowrite`.
-
-## [MANDATORY] Before creating
-Use question tool to ask user if creation of project task is needed.
-
-## File structure
-Task description in `.project-tasks/<taskID>/prd.md`
-Maintain progress record in `.project-tasks/<taskID>/progress.md`
-Put other task-related files in `.project-tasks/<taskID>/`
 
 ## When to use
 - User explicitly wants a NEW project-scoped work item
@@ -18,15 +11,26 @@ Put other task-related files in `.project-tasks/<taskID>/`
 
 ## When NOT to use
 - NEVER create a project-task for simple, short-horizon task
-- Update/Edit/Record progress for/End currently mounted task for the session → use `project_task_update` / `todowrite`
-- Simple, short-horizon task, short todo checklist (3-5 coding steps) → use `todowrite`
+- Simple, short-horizon task, short todo checklist (3-5 coding steps): use `todowrite`
+- Update/Edit/Record progress for/End currently mounted task for the session: use `project_task_update` / `todowrite`
 - NEVER create a duplicate project-task with near identical goal
 
+# GUIDELINES
+
+## [MANDATORY] Before creating
+- Use `question` tool to ask user if a project task is needed.
+
+## File structure
+Task description in `.project-tasks/<taskID>/prd.md`
+Maintain progress record in `.project-tasks/<taskID>/progress.md`
+Put other task-related files in `.project-tasks/<taskID>/`
 
 ## Rules
-- Use concise titles
+- Use CONCISE titles
+- DECOMPOSE the task into smaller, achievable subtasks in the task description
+- Write `Description` in standard markdown, with chapter/section/bullet-point for readability
 
-## WORKFLOW
+## PROJECT-TASK WORKFLOW
 1. `project_task_list` — avoid duplicates
 2. `project_task_create` — only if truly new
 3. `project_task_mount` — attach task to current session when working on the task

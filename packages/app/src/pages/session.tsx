@@ -34,6 +34,7 @@ import { base64Encode, checksum } from "@opencode-ai/core/util/encode"
 import { useLocation, useNavigate, useSearchParams } from "@solidjs/router"
 import { setCursorPosition } from "@/components/prompt-input/editor-dom"
 import { promptLength } from "@/components/prompt-input/history"
+import { appendSelectionToPrompt } from "@/utils/selection-prompt"
 import { NewSessionView, SessionHeader } from "@/components/session"
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
@@ -92,7 +93,6 @@ import {
   shouldFocusTerminalOnKeyDown,
 } from "@/pages/session/helpers"
 import { MessageTimeline, type MessageTimelineViewport } from "@/pages/session/timeline/message-timeline"
-import { appendSelectionToPrompt } from "@/utils/selection-prompt"
 import { PRESENTATION_SOURCE_EVENT, type PresentationSourceRequest } from "@/pages/session/presentation-source"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
@@ -1722,6 +1722,17 @@ export default function Page() {
       }
       input.focus()
       setCursorPosition(input, promptLength(prompt.current()))
+    })
+  }
+  const appendSelectionToPromptInput = (text: string) => {
+    console.debug(`[session-selection] append prompt start length=${text.length}`)
+    const next = appendSelectionToPrompt(prompt.current(), text)
+    prompt.set(next.prompt, next.cursor)
+    requestAnimationFrame(() => {
+      if (!inputRef?.isConnected) return
+      inputRef.focus()
+      setCursorPosition(inputRef, next.cursor)
+      console.debug(`[session-selection] append prompt focused cursor=${next.cursor}`)
     })
   }
   const openChildAgent = (entry: SessionChildAgentEntry): void => {
@@ -3496,16 +3507,6 @@ export default function Page() {
                     >
                       <MessageTimeline
                         actions={actions}
-                        onSelectionToPrompt={(text) => {
-                          const next = appendSelectionToPrompt(prompt.current(), text)
-                          prompt.set(next.prompt, next.cursor)
-                          console.debug(`[session-selection] main draft appended length=${text.length} cursor=${next.cursor}`)
-                          requestAnimationFrame(() => {
-                            if (!inputRef?.isConnected) return
-                            inputRef.focus()
-                            setCursorPosition(inputRef, next.cursor)
-                          })
-                        }}
                         onSendQueued={composer.blocked() ? undefined : flushQueued}
                         onBackgroundShell={backgroundShell}
                         onBackgroundTask={backgroundTask}
@@ -3516,6 +3517,7 @@ export default function Page() {
                         onMarkScrollGesture={markScrollGesture}
                         onUserScroll={markUserScroll}
                         onReadingTakeover={takeoverReading}
+                        onSelectionToPrompt={appendSelectionToPromptInput}
                         onUserMotion={observeUserMotion}
                         onFindNavigate={scrollToFind}
                         onFindRelease={(reason) => {

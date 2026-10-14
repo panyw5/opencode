@@ -49,6 +49,11 @@
   "errorImport": {
     "message": "가져오기가 확인되지 않았습니다. OpenCode GPT-Pro 설정 페이지를 확인하세요."
   },
+  "errorBusy": {
+    "message": "상담이나 수동 초안이 사용 중입니다. 기존 로그인은 변경되지 않았습니다. 종료 후 이 연결을 다시 시도하세요. 다시 로그인할 필요는 없습니다."
+  },
+  "errorStorage": { "message": "안전한 자격 증명 저장소를 사용할 수 없습니다. OpenCode 설정을 확인하세요." },
+  "statusSessionFound": { "message": "세션 쿠키 발견(로그인 미검증)" },
   "errorInvalidSession": {
     "message": "ChatGPT 세션이 유효하지 않거나 지원되지 않습니다. Chrome에서 다시 로그인하고 OpenCode에서 새 연결 페이지를 여세요."
   },

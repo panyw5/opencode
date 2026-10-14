@@ -6,6 +6,26 @@ import { createSessionControllerHarness, deferred } from "./session-service-test
 const diff = (file: string) => ({ file, before: "", after: file, additions: 1, deletions: 0 }) as SnapshotFileDiff
 
 describe("session diff controller", () => {
+  test("repeated clear and reload never commits a canceled diff request", async () => {
+    const first = deferred<{ data: SnapshotFileDiff[] }>()
+    const second = deferred<{ data: SnapshotFileDiff[] }>()
+    let calls = 0
+    const harness = createSessionControllerHarness({ diff: () => (++calls === 1 ? first.promise : second.promise) })
+    const service = createSessionDiffService(harness.deps)
+    const old = service.refresh("/project", "session")
+    service.clear("/project", ["session"])
+    service.clear("/project", ["session"])
+    const fresh = service.refresh("/project", "session")
+    first.resolve({ data: [diff("deleted")] })
+    await old
+    expect(service.get("/project", "session")).toBeUndefined()
+    expect(service.refresh("/project", "session")).toBe(fresh)
+    second.resolve({ data: [diff("fresh")] })
+    await fresh
+    expect(service.get("/project", "session")).toEqual([diff("fresh")])
+    expect(service.inspect()).toEqual({ inflight: 0, revision: 0 })
+  })
+
   test("dedupes requests and drops a response older than session.diff", async () => {
     const request = deferred<{ data?: SnapshotFileDiff[] }>()
     let calls = 0

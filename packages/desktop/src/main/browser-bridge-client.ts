@@ -2,6 +2,7 @@ import { BrowserController, USER_PARTITION, type ViewState } from "./browser"
 import { write as writeLog } from "./logging"
 import { getGptProController } from "./gpt-pro-runtime"
 import type { GptProCommand, GptProBrowserCommand } from "@opencode-ai/util/gpt-pro"
+import { setGptProBridgeState } from "./gpt-pro-bridge-state"
 
 // P1-D-03: connects the opencode server to the in-app browser. Main process
 // acts as the WS client; the server sends commands, we execute them against
@@ -32,12 +33,18 @@ export class BridgeClient {
   constructor(private readonly controller: BrowserController) {}
 
   start(info: ServerInfo) {
+    const generation = ++this.generation
+    this.ws?.close()
+    this.ws = undefined
+    setGptProBridgeState(false, info.url)
     this.info = info
     this.stopped = false
     this.unsubscribeController()
     this.unsubs.push(
       this.controller.onViewState((state) => this.sendEvent("browser.updated", state)),
-      this.controller.onViewClosed((partition, epoch) => this.sendEvent("browser.closed", { partition, epoch })),
+      this.controller.onViewClosed((pageID, epoch, profileID) =>
+        this.sendEvent("browser.closed", { pageID, partition: pageID, profileID, epoch }),
+      ),
     )
     this.controller.events.onConsole = (entry) => this.sendEvent("browser.console", entry)
     const timer = setInterval(() => {
@@ -45,7 +52,7 @@ export class BridgeClient {
       for (const event of getGptProController().notifications()) this.sendEvent("gpt-pro.notification", event)
     }, 2000)
     this.unsubs.push(() => clearInterval(timer))
-    void this.connectLoop(++this.generation, 0)
+    void this.connectLoop(generation, 0)
   }
 
   stop() {
@@ -53,6 +60,7 @@ export class BridgeClient {
     this.generation++
     this.ws?.close()
     this.ws = undefined
+    setGptProBridgeState(false, this.info?.url)
     this.unsubscribeController()
   }
 
@@ -64,8 +72,8 @@ export class BridgeClient {
   private async connectLoop(generation: number, attempt: number) {
     if (this.stopped || generation !== this.generation || !this.info) return
     try {
-      await this.connectOnce()
-      log("connect", "connected")
+      await this.connectOnce(generation)
+      log("connect", "socket created; waiting for open")
       return // connected; close handler schedules the next loop
     } catch (error) {
       const next = attempt + 1
@@ -76,8 +84,7 @@ export class BridgeClient {
     }
   }
 
-  private async ticket(): Promise<string> {
-    const info = this.info!
+  private async ticket(info: ServerInfo): Promise<string> {
     const headers: Record<string, string> = { "x-opencode-ticket": "1" }
     if (info.username && info.password) {
       headers.Authorization = `Basic ${Buffer.from(`${info.username}:${info.password}`).toString("base64")}`
@@ -91,20 +98,22 @@ export class BridgeClient {
     return body.ticket
   }
 
-  private async connectOnce() {
+  private async connectOnce(generation: number) {
     const info = this.info
     if (!info) throw new Error("no server info")
-    const ticket = await this.ticket()
+    const ticket = await this.ticket(info)
+    if (this.stopped || generation !== this.generation) return
     const wsUrl = `${info.url.replace(/^http/, "ws")}/browser/bridge?ticket=${encodeURIComponent(ticket)}`
     const ws = new WebSocket(wsUrl)
     this.ws = ws
 
-    const generation = this.generation
     ws.addEventListener("open", () => {
       if (generation !== this.generation) {
         ws.close()
         return
       }
+      setGptProBridgeState(true, info.url)
+      log("connect", "open generation accepted")
       this.send({
         type: "hello",
         client: "desktop",
@@ -114,11 +123,12 @@ export class BridgeClient {
     })
 
     ws.addEventListener("message", (event) => {
-      void this.handleFrame(String(event.data))
+      if (generation === this.generation && ws === this.ws) void this.handleFrame(String(event.data), ws)
     })
 
     ws.addEventListener("close", () => {
       if (generation !== this.generation || this.stopped) return
+      setGptProBridgeState(false, info.url)
       log("connect", "socket closed, reconnecting")
       void this.connectLoop(generation, 0)
     })
@@ -137,7 +147,7 @@ export class BridgeClient {
     this.send({ type: "event", name, properties })
   }
 
-  private async handleFrame(text: string) {
+  private async handleFrame(text: string, source = this.ws) {
     let frame: Record<string, unknown>
     try {
       frame = JSON.parse(text)
@@ -157,23 +167,28 @@ export class BridgeClient {
     const args = (frame.args ?? {}) as Record<string, unknown>
     try {
       const result = await this.execute(name, args)
-      this.send({ type: "resp", id, ok: true, result })
+      if (source === this.ws) this.send({ type: "resp", id, ok: true, result })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       log("cmd", `${name} failed`, { error: message })
-      this.send({ type: "resp", id, ok: false, error: message })
+      if (source === this.ws) this.send({ type: "resp", id, ok: false, error: message })
     }
   }
 
   private async execute(name: string, args: Record<string, unknown>): Promise<unknown> {
-    const partition = typeof args.partition === "string" && args.partition ? args.partition : USER_PARTITION
+    const pageID =
+      typeof args.pageID === "string" && args.pageID
+        ? args.pageID
+        : typeof args.partition === "string" && args.partition
+          ? args.partition
+          : USER_PARTITION
     const controller = this.controller
     // cdp() no longer ensure-creates views: commands against a missing view
     // must fail loudly (the tool surfaces the error) instead of silently
     // materializing a blank view nobody navigates.
     const requireCdp = () => {
-      const cdp = controller.cdp(partition)
-      if (!cdp) throw new Error(`no browser view open for partition ${partition} (navigate first)`)
+      const cdp = controller.cdp(pageID)
+      if (!cdp) throw new Error(`no browser view open for page ${pageID} (navigate first)`)
       return cdp
     }
     switch (name) {
@@ -186,7 +201,7 @@ export class BridgeClient {
           args.id,
           args.name as GptProBrowserCommand,
           operationArgs,
-          (partition) => this.execute(args.name as string, { ...operationArgs, partition }),
+          (pageID) => this.execute(args.name as string, { ...operationArgs, partition: pageID, pageID }),
         )
       }
       case "gpt-pro-notifications": {
@@ -203,15 +218,33 @@ export class BridgeClient {
         getGptProController().acknowledge(args.directory, args.ids as string[])
         return true
       }
+      case "gpt-pro-cancel-owner": {
+        if (
+          typeof args.directory !== "string" ||
+          !args.directory ||
+          typeof args.sessionID !== "string" ||
+          !args.sessionID
+        )
+          throw new Error("Missing stored session owner identity")
+        const owner = `${args.directory}\n${args.sessionID}`
+        const cancelled = getGptProController().cancelOwner(owner)
+        return { cancelled }
+      }
       case "gpt-pro": {
         if (typeof args.owner !== "string" || !args.owner || args.owner.length > 4096)
           throw new Error("Missing consultation owner")
-        return getGptProController().command(args as GptProCommand, args.owner)
+        const readOwners =
+          Array.isArray(args.readOwners) &&
+          args.readOwners.length <= 512 &&
+          args.readOwners.every((owner) => typeof owner === "string")
+            ? (args.readOwners as string[])
+            : []
+        return getGptProController().command(args as GptProCommand, args.owner, readOwners)
       }
       case "navigate": {
         const url = String(args.url ?? "")
         if (!url) throw new Error("navigate requires url")
-        const state = await controller.open(partition, url)
+        const state = await controller.open(pageID, url)
         return { state }
       }
       case "snapshot": {
@@ -219,7 +252,7 @@ export class BridgeClient {
         return { snapshot }
       }
       case "screenshot": {
-        const data = await controller.captureScreenshot(partition, args.fullPage === true)
+        const data = await controller.captureScreenshot(pageID, args.fullPage === true)
         return { data, mime: "image/png" }
       }
       case "click": {
@@ -228,7 +261,7 @@ export class BridgeClient {
         const position =
           args.position && typeof args.position === "object" ? (args.position as { x: number; y: number }) : undefined
         const point = await requireCdp().click(uid, position)
-        return { point, state: controller.getState().find((s) => s.partition === partition) }
+        return { point, state: controller.getState().find((s) => s.pageID === pageID || s.partition === pageID) }
       }
       case "type": {
         const uid = String(args.uid ?? "")
@@ -238,14 +271,14 @@ export class BridgeClient {
           clear: args.clear !== false,
           submit: args.submit === true,
         })
-        return { ...result, state: controller.getState().find((s) => s.partition === partition) }
+        return { ...result, state: controller.getState().find((s) => s.pageID === pageID || s.partition === pageID) }
       }
       case "scroll": {
         const uid = typeof args.uid === "string" && args.uid ? args.uid : undefined
         const direction = args.direction === "up" ? ("up" as const) : ("down" as const)
         const amount = typeof args.amount === "number" && args.amount > 0 ? args.amount : undefined
         await requireCdp().scroll({ uid, direction, amount })
-        return { state: controller.getState().find((s) => s.partition === partition) }
+        return { state: controller.getState().find((s) => s.pageID === pageID || s.partition === pageID) }
       }
       case "back":
         requireCdp().back()
@@ -257,11 +290,11 @@ export class BridgeClient {
         requireCdp().reload()
         return {}
       case "state": {
-        const state = controller.getState().find((s) => s.partition === partition)
+        const state = controller.getState().find((s) => s.pageID === pageID || s.partition === pageID)
         return { state }
       }
       case "close": {
-        controller.close(partition)
+        controller.close(pageID)
         return {}
       }
       default:

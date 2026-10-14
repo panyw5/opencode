@@ -1,6 +1,6 @@
 import { TextField as Kobalte } from "@kobalte/core/text-field"
 import { createSignal, Show, splitProps } from "solid-js"
-import type { ComponentProps } from "solid-js"
+import type { ComponentProps, JSX } from "solid-js"
 import { useI18n } from "../context/i18n"
 import { IconButton } from "./icon-button"
 import { Tooltip } from "./tooltip"
@@ -29,6 +29,7 @@ export interface TextFieldProps
   copyable?: boolean
   copyKind?: "clipboard" | "link"
   multiline?: boolean
+  suffix?: JSX.Element
 }
 
 export function TextField(props: TextFieldProps) {
@@ -53,6 +54,7 @@ export function TextField(props: TextFieldProps) {
     "copyKind",
     "multiline",
     "autofocus",
+    "suffix",
   ])
   const [copied, setCopied] = createSignal(false)
 
@@ -118,6 +120,9 @@ export function TextField(props: TextFieldProps) {
             data-slot="input-input"
             class={local.class}
           />
+        </Show>
+        <Show when={local.suffix}>
+          <div data-slot="input-suffix">{local.suffix}</div>
         </Show>
         <Show when={local.copyable}>
           <Tooltip value={label()} placement="top" gutter={4} forceOpen={copied()} skipDelayDuration={0}>
