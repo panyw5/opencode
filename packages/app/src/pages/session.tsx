@@ -2387,17 +2387,16 @@ export default function Page() {
     ),
   )
 
-  let treeDir: string | undefined
   createEffect(() => {
     const dir = sdk.directory
-    if (!isDesktop()) return
-    if (!layout.fileTree.opened()) return
+    const visible = isDesktop() && layout.fileTree.opened()
+    if (!visible) return
+    const releaseDemand = file.tree.acquireDemand()
+    onCleanup(releaseDemand)
     if (sync.status === "loading") return
 
     fileTreeTab()
-    const refresh = treeDir !== dir
-    treeDir = dir
-    void (refresh ? file.tree.refresh("") : file.tree.list(""))
+    void untrack(() => file.tree.list(""))
   })
 
   createEffect(

@@ -506,6 +506,10 @@ function DialogSelectFileWithSessionContext(props: {
   const globalSync = useGlobalSync()
   const { params, tabs, view } = useSessionLayout()
   const filesOnly = () => props.mode === "files"
+  if (filesOnly()) {
+    const releaseDemand = file.tree.acquireDemand("picker")
+    onCleanup(releaseDemand)
+  }
   const state = { cleanup: undefined as (() => void) | void, committed: false }
   const [grouped, setGrouped] = createSignal(false)
   const commandEntries = createCommandEntries({ filesOnly, commandsOnly: () => false, command, language })
@@ -548,9 +552,16 @@ function DialogSelectFileWithSessionContext(props: {
     setGrouped(query.length > 0)
 
     if (!query && filesOnly()) {
-      const loaded = file.tree.state("")?.loaded
+      const treeState = file.tree.state("")
+      const loaded = treeState?.loaded && !treeState.dirty && !treeState.loading
+      const dirty = treeState?.dirty === true || treeState?.loading === true
       const pending = loaded ? Promise.resolve() : file.tree.list("")
       const next = uniqueEntries([...fileEntries.recent(), ...fileEntries.root()])
+
+      if (dirty) {
+        await pending
+        return uniqueEntries([...fileEntries.recent(), ...fileEntries.root()])
+      }
 
       if (loaded || next.length > 0) {
         void pending

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createWatcherInvalidator, invalidateFromWatcher } from "./watcher"
+import { createWatcherInvalidator, createWorkspaceTreeWatcher, invalidateFromWatcher } from "./watcher"
 
 describe("file watcher invalidation", () => {
   test("reloads open files and refreshes loaded parent on add", () => {
@@ -198,5 +198,31 @@ describe("file watcher invalidation", () => {
     expect(refresh).toEqual(["src"])
 
     invalidator.dispose()
+  })
+
+  test("workspace watcher dirties parent dirs once and ignore changes dirty loaded tree", async () => {
+    const dirty: string[] = []
+    let all = 0
+    const watcher = createWorkspaceTreeWatcher({
+      normalize: (input) => input,
+      node: () => undefined,
+      isDirLoaded: (path) => path === "src" || path === "",
+      dirtyDir: (path) => dirty.push(path),
+      dirtyAll: () => all++,
+    }, 1)
+    watcher.handle({ type: "file.watcher.updated", properties: { file: "src/new.ts", event: "add" } })
+    watcher.handle({ type: "file.watcher.updated", properties: { file: "src/old.ts", event: "unlink" } })
+    await Bun.sleep(10)
+    expect(dirty).toEqual(["src"])
+    watcher.handle({ type: "file.watcher.updated", properties: { file: ".gitignore", event: "change" } })
+    await Bun.sleep(10)
+    expect(all).toBe(1)
+    watcher.handle({ type: "file.watcher.updated", properties: { file: "src/.ignore", event: "add" } })
+    await Bun.sleep(10)
+    expect(all).toBe(2)
+    watcher.handle({ type: "file.watcher.updated", properties: { file: "src/.ignore", event: "unlink" } })
+    await Bun.sleep(10)
+    expect(all).toBe(3)
+    watcher.dispose()
   })
 })

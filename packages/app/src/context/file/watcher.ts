@@ -105,3 +105,60 @@ export function createWatcherInvalidator(ops: WatcherOps, flushMs = INVALIDATE_F
     },
   }
 }
+
+type WorkspaceTreeWatcherOps = Pick<WatcherOps, "normalize" | "node" | "isDirLoaded"> & {
+  dirtyDir: (path: string) => void
+  dirtyAll: () => void
+}
+
+export function createWorkspaceTreeWatcher(ops: WorkspaceTreeWatcherOps, flushMs = INVALIDATE_FLUSH_MS) {
+  const dirs = new Set<string>()
+  let allDirty = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const flush = () => {
+    timer = undefined
+    if (allDirty) ops.dirtyAll()
+    else for (const dir of dirs) ops.dirtyDir(dir)
+    if (allDirty || dirs.size) console.debug(`[file-tree] watcher-invalidate dirs=${allDirty ? "all" : dirs.size}`)
+    allDirty = false
+    dirs.clear()
+  }
+  const schedule = () => {
+    if (timer) return
+    timer = setTimeout(flush, flushMs)
+  }
+  return {
+    handle(event: WatcherEvent) {
+      if (event.type !== "file.watcher.updated") return
+      const props = typeof event.properties === "object" && event.properties ? event.properties as Record<string, unknown> : undefined
+      const rawPath = typeof props?.file === "string" ? props.file : undefined
+      const kind = typeof props?.event === "string" ? props.event : undefined
+      if (!rawPath || !kind) return
+      const path = ops.normalize(rawPath)
+      if (!path || path.startsWith(".git/")) return
+      if (["change", "add", "unlink", "rename"].includes(kind) && [".gitignore", ".ignore"].includes(path.split("/").at(-1) ?? "")) {
+        allDirty = true
+        schedule()
+        return
+      }
+      if (kind === "change") {
+        if (ops.node(path)?.type === "directory" && ops.isDirLoaded(path)) {
+          dirs.add(path)
+          schedule()
+        }
+        return
+      }
+      if (kind !== "add" && kind !== "unlink" && kind !== "rename") return
+      const parent = path.split("/").slice(0, -1).join("/")
+      if (!ops.isDirLoaded(parent)) return
+      dirs.add(parent)
+      schedule()
+    },
+    dispose() {
+      if (timer) clearTimeout(timer)
+      timer = undefined
+      dirs.clear()
+      allDirty = false
+    },
+  }
+}
