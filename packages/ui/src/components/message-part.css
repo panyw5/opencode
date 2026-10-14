@@ -59,6 +59,8 @@
   }
 
   &[data-queued] {
+    padding-top: 14px;
+
     [data-slot="user-message-attachment"] {
       border-style: dashed;
       opacity: 0.68;
