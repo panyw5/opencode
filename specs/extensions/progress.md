@@ -1,14 +1,40 @@
 # Extensions 实施进度
 
-更新时间：2026-09-27
+更新时间：2026-10-14
 
-## 当前状态
+## 当前状态（权威摘要）
 
-- 总体状态：**P0 已完成并验证，待提交**。
-- 工作分支：`claude/extensions-p0`
-- 工作目录：`.claude/worktrees/extensions-p0`
-- 设计文档：[`design.md`](design.md)
-- 下一阶段：P1（web 扩展加载链路）。
+- **P0/P1 已完成；P2 核心实现、配置入口迁移和启停管理已提交，集成收尾待完成。** 不再以历史章节中的“待提交”“进行中”判断当前状态。
+- 工作分支：`claude/extensions-p2-design`；工作目录：`.claude/worktrees/extensions-p0`。设计文档：`specs/extensions/design.md`。
+- P2 交付提交：`eeac7a5adc`（2026-10-07，125 个文件，包含源码、测试、SDK、示例产物和任务记录）；JPEG 转换契约测试修复：`660c95bdd3`（2026-10-10）。
+- 当前验证基线：`c6e6629773`，已合并当时的本地 dev `9e1aa02c57`。2026-10-14 核对时本地 dev 已前进至 `967c1d4703`，远端跟踪引用 fork/dev 为 `620a327482`；本轮未 fetch/合并，不能称扩展分支已包含最新 dev。
+- **尚未合入 dev；本轮不暂存、不提交、不推送、不发布。** 当前已有未提交改动为三个扩展包版本和模型目录快照，本轮保留，不混入文档交付。
+- 后续顺序：P2 文档/版本/产物核对 → 最新交付基线自动化与实机验收 → 合入前审查 → 明确授权后集成。P3 分发、市场和 P4 首批业务扩展尚未完成。
+
+### 本轮验证（2026-10-14）
+
+| 检查 | 实际结果 |
+| --- | --- |
+| App 全量 unit suite | 1671 pass / 0 fail，205 文件 |
+| UI 全量 suite | 268 pass / 0 fail，32 文件 |
+| opencode extension + 选定 HTTP/鉴权/UI tests | 150 pass / 0 fail，13 文件 |
+| 扩展相关 browser-condition tests | 22 pass / 0 fail，6 文件；计数按本轮 runner 汇总，不与历史隔离契约计数叠加 |
+| extension-kit browser-condition tests | 17 pass / 0 fail，3 文件 |
+| hello-viewer tests | 14 pass / 0 fail，2 文件 |
+| App / opencode / extension-kit / hello-viewer typecheck | 4 项通过 |
+
+本轮未重新构建 SDK/示例/生产 UI/内嵌二进制，未运行全仓 opencode suite、完整 workspace typecheck 或最新 GUI 矩阵。测试通过不等于所有运行形态发布验收完成。历史 Web/Electron/内嵌验收仍按原日期、产物和范围保留。
+
+### P2 收尾边界
+
+- 仅支持本地 path-link；npm/归档安装、升级、卸载、市场、项目级安装、自定义设置页和运行时 i18n 不在本轮。
+- 扩展代码与宿主同进程，permissions 为声明信息，不是沙箱/逐项权限强制隔离；只加载可信扩展。secret 在本地注册表明文存储（0600），API 掩码不等于加密。
+- 文件标签保活/保存桥不保证跨会话、刷新、重启草稿持久化；面板状态仅内存，面板不参与文件标签 keepalive，公开 panels API 仅 register、无 open。
+- 保留 CSS/Portal 样式边界、CLI 跨进程启停 SSE 边界及页面内部 settings 更新与管理页锁的既有边界。
+- 待验收：最新版本完整 Electron/Vite/内嵌生产 Web 核心矩阵，以及管理页启用恢复后的 RPC、dirty/saving 门禁、真实多服务器切换。曾被环境拒绝的操作不得绕过；未执行项保持“未验证”。
+- 收尾任务见 `specs/extensions/p2-tasks.md`；交付核对见 `specs/extensions/p2-delivery.md`。以下章节为历史实施与验收记录，原结果、旧限制和当时操作授权不覆盖本摘要。
+- 产物修复（2026-10-14）：锁文件版本元数据已对齐（integrity 保留、frozen 通过）；SDK v2 扩展契约经重生成确认一致；hello-viewer 产物可复现且与原产物等价；`openapi.json` 确认为 dev 整体漂移，按用户决定随扩展分支更新为完整重新生成结果。详见 `p2-delivery.md`。
+- 本轮只读产物核对发现：三个包 manifest 当前 1.18.57，但 bun.lock 对应版本元数据滞后；追踪的 `packages/sdk/openapi.json` 缺六项扩展操作及 `extension.status`/`extension.event`。示例/kit 入口及夹具已追踪，SDK v2 契约存在，不等于完整生成一致性；本轮不重建/生成，缺项列为交付前检查门槛。
 
 ## P0：宿主改造
 
@@ -90,7 +116,7 @@
 
 ## P1：web 扩展加载链路
 
-状态：**已完成并验证，待提交**
+状态：**已完成并提交（2026-09-27）；下列验证结果为历史记录。**
 
 已完成：
 
@@ -153,7 +179,7 @@
 - CSS 自动 selector scope、运行时 i18n、viewer 偏好持久化和 crash-strike 自动安全模式尚未实现。
 - Desktop onboarding 隔离模式会产生既有 quick-assistant 目录缺失日志，但扩展链路无相关错误。
 
-## P2：server 扩展运行时与 Web 桥（进行中）
+## P2：server 扩展运行时与 Web 桥（核心实现已提交，历史验收记录）
 
 - 已落盘：server-only/Web+Server manifest 与独立内容指纹、`extension-kit/server` 契约、进程级激活和实例 Hooks、RPC/自定义事件、设置校验与掩码、tool/panel/command 前端贡献点、路径链接目录 watcher、hello-viewer 双端示例。
 - 运行时 server module 复制到内容指纹目录，禁用/热更新时清理服务与缓存；Web/编辑型 viewer、Electron 和内嵌 Web 核心链路已有实机证据。token-only 入口、草稿路径别名门控及内嵌编译二进制 Child ping 已于 2026-10-04 修复并完成对应实机验证；完整组合回归与两路最终审查的确认缺陷修复已完成；最终产物内嵌 Web 核心链路已于 2026-10-05 实机复验；完整 Electron/Vite GUI 矩阵未重跑，不应把定向验收等同于全仓无已知问题。

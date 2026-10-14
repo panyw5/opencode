@@ -1,10 +1,44 @@
 # P2 交付清单
 
-核对日期：2026-10-05。工作树：`.claude/worktrees/extensions-p0`，分支：`claude/extensions-p2-design`。
+更新时间：2026-10-14。工作树 `.claude/worktrees/extensions-p0`，分支 `claude/extensions-p2-design`。
 
-**仅整理清单，不暂存、不提交、不推送、不合入 dev。** 本文路径均相对扩展工作树根。
+## 当前交付说明（权威摘要）
 
-## 核对结果
+**P2 已提交，不再是未跟踪候选清单。** `eeac7a5adc`（2026-10-07）交付 125 个文件，包含服务端运行时/RPC/设置/watcher、Web 宿主/贡献点/保存桥、配置页入口和启停管理、测试夹具、SDK v2 与 hello-viewer 产物，以及历史任务记录。P0/P1 已此前提交；`660c95bdd3` 为独立 JPEG 测试修复。
+
+- 当前核对/测试基线：`c6e6629773`，包含当时 dev `9e1aa02c57`；本地 dev 本轮已到 `967c1d4703`，fork/dev 跟踪引用为 `620a327482`，未重新获取或合并。
+- **尚未合入 dev。** 本轮仅更新文档及只读核对，不改版本、不重建、不暂存、不提交、不推送。
+- 与当前 dev 的 merge-base 比较有 167 个已追踪交付差异文件（含 P0/P1 和后续修复）；不是 P2 提交本身的文件数，不包含未提交变化。
+- 本轮开始时已有三个包版本及 `packages/opencode/src/provider/models-snapshot.js` 未提交变化。版本现值、锁文件和产物缺口见下表；模型快照独立处理，不能混入扩展功能提交。
+- 下方原清单与附录保留为 **2026-10-05/06 历史范围记录**。`M/NEW`、候选数和“不提交”描述均属于当时状态，不代表当前 Git 状态。
+
+### 版本与生成产物核对（只读）
+
+| 对象 | 已确认 | 待处理 / 未证明 |
+| --- | --- | --- |
+| 统一版本规则 | `script/sync-version.ts` 按 `VERSION` 更新 packages/sdks 中的 package.json，包含嵌套 fixture；本工作树 VERSION 为 1.18.57 | 当前三个包从已提交 1.18.49 变为未提交 1.18.57；本轮不执行同步脚本或版本提交 |
+| 锁文件 | bun.lock 追踪 extension-kit、hello-viewer 及应用 workspace 条目；同步脚本不更新锁文件 | extension-kit/hello-viewer 元数据仍为 1.18.49，App/opencode 为 1.18.56；需按仓库流程重新核对/更新，不等同当前 manifest 版本 |
+| hello-viewer | package exports 的 dist/web/index.js、index.css、dist/server.js 均已追踪，build 同时构建 Web/Server | 未重建或逐字节比较产物，不能据静态存在宣称与源码构建一致 |
+| extension-kit / fixture | Web/Server/Vite 导出目标及 fixture package/TS/CSS 均已追踪 | 最新版本变更后仍需在确定的交付基线复核生成/测试契约 |
+| SDK v2 | sdk.gen.ts/types.gen.ts 已追踪，含管理、settings PATCH、RPC 与 extension.status/event 静态契约 | 未执行完整生成流程，不保证全量生成一致性 |
+| 追踪 OpenAPI 快照 | `script/generate.ts` 除 JS SDK build 外另生成 packages/sdk/openapi.json | **快照缺 6 项扩展操作及 2 个事件定义，交付前需补齐/复核**；临时 packages/sdk/js/openapi.json 与该追踪文件不是同一产物 |
+
+**产物修复结果（2026-10-14，Bun 1.3.9，隔离 XDG/OPENCODE_TEST_HOME、关闭模型拉取）：** 锁文件已更新 21 处版本元数据并保留 integrity；SDK v2 重生成对扩展类型零差异（契约一致），dev 漂移已恢复；hello-viewer Web 产物逐字节一致，server.js 仅打包器辅助代码不同，保留原产物；OpenAPI 与 hello-viewer 各两次生成均一致。`openapi.json` 为 dev 整体漂移，按用户决定随扩展分支更新为完整重新生成结果（含大量非扩展接口变化）；SDK v2 非扩展漂移仍属 dev 侧待办。回归：extension-kit 17/0、hello-viewer 14/0、扩展服务端/HTTP 122/0；SDK、opencode、kit、示例、App 5 项 typecheck 通过。
+
+缺失的 OpenAPI 操作：GET `/global/extension`、GET `/global/extension/{id}`、POST `/global/extension/{id}/enable`、POST `/global/extension/{id}/disable`、PATCH `/global/extension/{id}/settings`、POST `/extension/{id}/rpc/{method}`；事件为 `extension.status`、`extension.event`。本轮只读取 JSON 验证缺项，没有生成或手改快照。
+
+### 当前自动化与验收状态
+
+- 本轮当前基线：App 全量 1671/0、UI 全量 268/0、扩展服务端/选定 HTTP 150/0、扩展 browser-condition 22/0、extension-kit 17/0、hello-viewer 14/0；App/opencode/kit/示例 4 项 typecheck 通过。
+- 未运行最新生产构建、全仓 opencode suite、完整 workspace typecheck、完整 Electron/Vite/内嵌 GUI 矩阵；不将旧构建或旧截图计为当前验收。
+- 管理页恢复后 RPC、dirty/saving 门禁、真实 A→B→A 多服务器切换仍未实机验收。不得绕过历史环境拒绝；无法执行项保持未验证。
+- 发布边界与收尾门槛见 `specs/extensions/progress.md`、`specs/extensions/p2-tasks.md`。npm/归档分发、升级/卸载、市场和 P4 业务扩展不在本轮。
+
+## 历史交付范围记录（2026-10-05/06）
+
+原核对日期：2026-10-05。下方描述仅记录当时清单整理工作，不是当前暂存授权；后续提交必须重新核对范围。
+
+## 历史核对结果
 
 - 清单生成前：59 个已跟踪修改文件、42 个未跟踪文件，共 101 个。
 - `packages/opencode/src/provider/models-snapshot.js` 为构建重新生成的模型目录快照，建议与 P2 功能交付分离；未回退或删除该变化。
