@@ -36,6 +36,7 @@ const summary = Layer.succeed(
   SessionSummary.Service,
   SessionSummary.Service.of({
     summarize: () => Effect.void,
+    invalidate: () => Effect.void,
     diff: () => Effect.succeed([]),
     computeDiff: () => Effect.succeed([]),
   }),

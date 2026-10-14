@@ -135,7 +135,7 @@ const infrastructure = Layer.mergeAll(NodeFileSystem.layer, CrossSpawnSpawner.de
 const bus = Bus.defaultLayer
 const status = SessionStatus.layer.pipe(Layer.provideMerge(bus))
 const runState = SessionRunState.layer.pipe(Layer.provide(status))
-const summary = Layer.succeed(SessionSummary.Service, SessionSummary.Service.of({ summarize: () => Effect.void, diff: () => Effect.succeed([]), computeDiff: () => Effect.succeed([]) }))
+const summary = Layer.succeed(SessionSummary.Service, SessionSummary.Service.of({ summarize: () => Effect.void, invalidate: () => Effect.void, diff: () => Effect.succeed([]), computeDiff: () => Effect.succeed([]) }))
 
 const dependencies = Layer.mergeAll(
   Session.defaultLayer, Snapshot.defaultLayer, LLM.defaultLayer, Env.defaultLayer, Agent.defaultLayer, Command.defaultLayer,

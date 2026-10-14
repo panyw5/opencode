@@ -17,7 +17,7 @@ export function SessionSelectionToolbar(props: {
   const language = useLanguage()
   const platform = usePlatform()
   const settings = useSettings()
-  const [state, setState] = createStore({ visible: false, left: 0, top: 0, below: false, copied: false })
+  const [state, setState] = createStore({ visible: false, measured: false, left: 0, top: 0, below: false, copied: false })
   let toolbar: HTMLDivElement | undefined
   let range: Range | undefined
   let dragging = false
@@ -32,7 +32,7 @@ export function SessionSelectionToolbar(props: {
     if (toolbar) toolbarObserver?.unobserve(toolbar)
     toolbar = undefined
     toolbarSize = undefined
-    setState({ visible: false, copied: false })
+    setState({ visible: false, measured: false, copied: false })
   }
   const hide = () => {
     scheduler.cancel()
@@ -64,13 +64,18 @@ export function SessionSelectionToolbar(props: {
     }
     // Keep tracking an offscreen selection so scrolling it back reveals the toolbar.
     if (!rect) return hideVisible()
-    if (!state.visible) console.debug(`[session-selection] toolbar shown length=${selectionLength}`)
+    // Gate the first paint on a real ResizeObserver measurement: the estimated
+    // 440x40 box is only used for the hidden mount layout, so the toolbar is
+    // never painted at a mispositioned frame before jumping into place.
+    const measured = !!toolbar && !!toolbarSize
+    if (!state.visible) console.debug(`[session-selection] toolbar shown length=${selectionLength} measured=${measured}`)
     const width = toolbarSize?.width || Math.min(440, window.innerWidth - 16)
     const height = toolbarSize?.height || 40
     const top = Math.max(bounds.top, rect.top)
     const below = top - height - 8 < Math.max(8, bounds.top)
     setState({
       visible: true,
+      measured,
       left: Math.max(8, Math.min(rect.left + rect.width / 2 - width / 2, window.innerWidth - width - 8)),
       top: below ? Math.min(rect.bottom + 8, window.innerHeight - height - 8) : top - 8,
       below,
@@ -113,9 +118,14 @@ export function SessionSelectionToolbar(props: {
       if (!entry) return
       const box = entry.borderBoxSize[0]
       if (!box || !box.inlineSize || !box.blockSize) return
-      if (toolbarSize?.width === box.inlineSize && toolbarSize.height === box.blockSize) return
-      toolbarSize = { width: box.inlineSize, height: box.blockSize }
-      scheduler.schedule()
+      const changed = toolbarSize?.width !== box.inlineSize || toolbarSize.height !== box.blockSize
+      if (changed) {
+        toolbarSize = { width: box.inlineSize, height: box.blockSize }
+        console.debug(`[session-selection] toolbar measured width=${box.inlineSize} height=${box.blockSize}`)
+      }
+      // Re-measuring with the same size still needs one pass to reveal a
+      // toolbar that is waiting (visibility hidden) for its first measurement.
+      if (changed || !state.measured) scheduler.schedule()
     })
     toolbarObserver.observe(node)
   }
@@ -192,6 +202,7 @@ export function SessionSelectionToolbar(props: {
             left: `${state.left}px`,
             top: `${state.top}px`,
             transform: state.below ? undefined : "translateY(-100%)",
+            visibility: state.measured ? "visible" : "hidden",
             "background-color": "var(--surface-raised-stronger-non-alpha, var(--background-base))",
             isolation: "isolate",
           }}
