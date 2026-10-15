@@ -1,5 +1,6 @@
 import type { ColorValue, DesktopTheme, HexColor, ResolvedTheme, ThemeVariant } from "./types"
 import { blend, generateNeutralScale, generateScale, hexToOklch, hexToRgb, shift, withAlpha } from "./color"
+import { enforceThemeContrast, opaqueColor } from "./contrast"
 
 export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): ResolvedTheme {
   const colors = getColors(variant)
@@ -114,6 +115,18 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
     const dark = "#000000" as HexColor
     return hit(light, fill) > hit(dark, fill) ? light : dark
   }
+  const onFloat = (surface: ColorValue, fallback: ColorValue): ColorValue => {
+    const fill = opaqueColor(surface, tokens, background)
+    if (!fill) return fallback
+    const candidates = [
+      tokens["text-strong"],
+      tokens["text-base"],
+      tokens["text-invert-strong"],
+      tokens["text-invert-base"],
+    ].filter((value): value is HexColor => value.startsWith("#") && /^#(?:[\da-f]{3}|[\da-f]{6})$/i.test(value))
+
+    return candidates.find((candidate) => hit(candidate, fill) >= 4.5) ?? on(fill)
+  }
 
   const tokens: ResolvedTheme = {}
 
@@ -212,6 +225,10 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
   tokens["text-invert-weaker"] = isDark ? neutral[7] : neutral[3]
   tokens["text-invert-strong"] = isDark ? neutral[11] : neutral[0]
   tokens["text-interactive-base"] = interactive[isDark ? 10 : 9]
+  tokens["text-success-base"] = content(colors.success, success)
+  tokens["text-warning-base"] = content(colors.warning, warning)
+  tokens["text-critical-base"] = content(colors.error, error)
+  tokens["text-info-base"] = content(colors.info, info)
   tokens["text-on-brand-base"] = on(brandb)
   tokens["text-on-interactive-base"] = on(interb)
   tokens["text-on-interactive-weak"] = on(interb)
@@ -440,6 +457,13 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
     tokens[key] = value
   }
 
+  if (!("text-on-float-base" in overrides)) {
+    tokens["text-on-float-base"] = onFloat(tokens["surface-float-base"], tokens["text-invert-strong"])
+  }
+  if (!("text-on-float-base-hover" in overrides)) {
+    tokens["text-on-float-base-hover"] = onFloat(tokens["surface-float-base-hover"], tokens["text-on-float-base"])
+  }
+
   // Brand foreground tokens must follow overridden brand surfaces.
   const resolvedBrandBase = getHex(tokens["surface-brand-base"]) ?? brandb
   const resolvedBrandHover = getHex(tokens["surface-brand-hover"]) ?? brandh
@@ -521,6 +545,7 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
     tokens["text-stronger"] = tokens["text-strong"]
   }
 
+  enforceThemeContrast(tokens, isDark)
   return tokens
 }
 

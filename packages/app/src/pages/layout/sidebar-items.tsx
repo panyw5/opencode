@@ -198,7 +198,7 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
             ? getAvatarColors(props.project.icon?.color)
             : {
                 background: "var(--color-surface-base-hover)",
-                foreground: "var(--color-text-weak)",
+                foreground: "var(--color-text-base)",
               })}
           class="size-full rounded-full"
         />
@@ -1077,7 +1077,7 @@ export const NewSessionItem = (props: {
 
 export const SessionGroupHeader = (props: { label: string }): JSX.Element => (
   <div class="px-4 pt-3 pb-1 first:pt-1 flex justify-end">
-    <span class="text-[11px] font-medium uppercase tracking-wider text-text-weak opacity-60">{props.label}</span>
+    <span class="text-[11px] font-medium uppercase tracking-wider text-text-weak">{props.label}</span>
   </div>
 )
 

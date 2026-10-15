@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
 import { DEFAULT_THEMES } from "./default-themes"
 import { hexToOklch, hexToRgb } from "./color"
 import { resolveThemeVariant } from "./resolve"
+import { opaqueColor } from "./contrast"
 import type { HexColor } from "./types"
 
 function luminance(hex: HexColor) {
@@ -56,5 +58,82 @@ describe("primary button interaction colors", () => {
         expect(contrast(active, text), `${label} active contrast`).toBeGreaterThanOrEqual(4.5)
       }
     }
+  })
+})
+
+describe("floating surface foreground colors", () => {
+  test("theme-native foregrounds are preferred when they meet contrast", () => {
+    const tokens = resolveThemeVariant(DEFAULT_THEMES.gruvbox.light, false)
+
+    expect(tokens["text-on-float-base"]).toBe(tokens["text-invert-strong"])
+    expect(tokens["text-on-float-base-hover"]).toBe(tokens["text-invert-strong"])
+  })
+
+  test("Tailwind utilities expose both floating foreground tokens", () => {
+    const css = readFileSync(new URL("../styles/tailwind/colors.css", import.meta.url), "utf8")
+
+    expect(css).toContain("--color-text-on-float-base: var(--text-on-float-base);")
+    expect(css).toContain("--color-text-on-float-base-hover: var(--text-on-float-base-hover);")
+  })
+
+  test("all bundled theme tooltips keep readable foreground contrast", () => {
+    for (const [id, theme] of Object.entries(DEFAULT_THEMES)) {
+      for (const mode of ["light", "dark"] as const) {
+        const tokens = resolveThemeVariant(theme[mode], mode === "dark")
+        const label = `${id} ${mode}`
+
+        expect(
+          contrast(tokens["text-on-float-base"] as HexColor, tokens["surface-float-base"] as HexColor),
+          `${label} tooltip contrast`,
+        ).toBeGreaterThanOrEqual(4.5)
+        expect(
+          contrast(tokens["text-on-float-base-hover"] as HexColor, tokens["surface-float-base-hover"] as HexColor),
+          `${label} project tooltip contrast`,
+        ).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  })
+
+  test("translucent and variable surface overrides use their composited background", () => {
+    const theme = DEFAULT_THEMES.opencode
+    const translucent = resolveThemeVariant(
+      {
+        ...theme.light,
+        overrides: { ...theme.light.overrides, "surface-float-base": "#11111180" },
+      },
+      false,
+    )
+    const variable = resolveThemeVariant(
+      {
+        ...theme.light,
+        overrides: { ...theme.light.overrides, "surface-float-base-hover": "var(--surface-base)" },
+      },
+      false,
+    )
+
+    for (const [tokens, surface, foreground] of [
+      [translucent, "surface-float-base", "text-on-float-base"],
+      [variable, "surface-float-base-hover", "text-on-float-base-hover"],
+    ] as const) {
+      const fill = opaqueColor(tokens[surface], tokens, tokens["background-base"] as HexColor)!
+      expect(contrast(tokens[foreground] as HexColor, fill)).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  test("shortcut text inherits scoped tooltip foreground overrides", () => {
+    const css = readFileSync(new URL("../components/tooltip.css", import.meta.url), "utf8")
+    expect(css).toMatch(/\[data-slot="tooltip-keybind-key"\]\s*\{\s*color: inherit;/)
+  })
+
+  test("unknown custom surface expressions retain the fallback foreground", () => {
+    const theme = DEFAULT_THEMES.opencode
+    const tokens = resolveThemeVariant(
+      {
+        ...theme.light,
+        overrides: { ...theme.light.overrides, "surface-float-base": "var(--external-surface)" },
+      },
+      false,
+    )
+    expect(tokens["text-on-float-base"]).toBe(tokens["text-invert-strong"])
   })
 })

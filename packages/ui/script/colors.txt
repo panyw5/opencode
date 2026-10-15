@@ -74,6 +74,8 @@
 --text-strong: var(--smoke-light-12);
 --text-interactive-base: var(--cobalt-light-9);
 --text-on-brand-base: var(--smoke-light-alpha-11);
+--text-on-float-base: var(--text-invert-strong);
+--text-on-float-base-hover: var(--text-invert-strong);
 --text-on-interactive-base: var(--smoke-light-1);
 --text-on-interactive-weak: var(--smoke-dark-alpha-11);
 --text-on-success-base: var(--apple-light-10);

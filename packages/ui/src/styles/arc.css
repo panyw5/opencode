@@ -259,6 +259,18 @@ html[data-theme="arc"][data-color-scheme="light"] [data-component="sidebar-panel
   border: none !important;
 }
 
+/* Sidebar keycaps intentionally retain a light face on the mauve panel, so
+   they need a local dark text token instead of inheriting the chrome's light
+   secondary text. */
+html[data-theme="arc"][data-color-scheme="light"]
+  [data-component="sidebar-panel"]
+  [data-component="keybind"] {
+  --surface-base: #f6f1fa;
+  --color-surface-base: #f6f1fa;
+  --text-weak: #352d3c;
+  --color-text-weak: #352d3c;
+}
+
 /* ───────────────────────────────────────────────────────────── */
 /* Layout: floating three-pane visual treatment                  */
 /* ───────────────────────────────────────────────────────────── */
@@ -408,23 +420,36 @@ html[data-theme="arc"] main {
 }
 
 /* Dark-mode sidebar text/icon contrast boost.
-   The sidebar sits on #4a3d47, a warm purple-gray that is brighter than
-   the previous deep-violet (#1b1826). The default dark-theme text tokens
-   (text-strong #E8E0F0, text-base #C8BED4) have enough contrast, but
-   text-weak (#9C8FA8) and icon-weak (#9C8FA8) are too close to the
-   brighter sidebar surface. Scope-override with lighter values so
-   secondary text and icons remain legible. Two-pronged: raw --token +
-   --color-* alias, same as the light-mode sidebar overrides above. */
+   The rendered panel is #584e62 (the runtime --color-border-base), while
+   session hover, pending-avatar, and button faces reach #645a6d. Keep the
+   full muted text ramp above 4.5:1 and weak icons above 3:1 on those actual
+   fills. Raw tokens and Tailwind aliases stay paired. */
 html[data-theme="arc"][data-color-scheme="dark"] [data-component="sidebar-rail"],
 html[data-theme="arc"][data-color-scheme="dark"] [data-component="sidebar-nav-desktop"],
 html[data-theme="arc"][data-color-scheme="dark"] [data-component="sidebar-nav-mobile"],
 html[data-theme="arc"][data-color-scheme="dark"] [data-component="sidebar-panel"],
 html[data-theme="arc"][data-color-scheme="dark"] [data-component="titlebar"] {
-  --text-weak: #b5a8be;
-  --color-text-weak: #b5a8be;
-  --icon-weak-base: #b5a8be;
-  --color-icon-weak-base: #b5a8be;
-  --color-icon-weak: #b5a8be;
+  --text-strong: #ffffff;
+  --color-text-strong: #ffffff;
+  --text-stronger: #ffffff;
+  --color-text-stronger: #ffffff;
+  --text-base: #e8e0f0;
+  --color-text-base: #e8e0f0;
+  --text-weak: #e1d4eb;
+  --color-text-weak: #e1d4eb;
+  --text-weaker: #e0d3e8;
+  --color-text-weaker: #e0d3e8;
+  --icon-base: #bfb3cc;
+  --color-icon-base: #bfb3cc;
+  --icon-weak-base: #bfb3cc;
+  --color-icon-weak-base: #bfb3cc;
+  --color-icon-weak: #bfb3cc;
+  --icon-weak-active: #bfb3cc;
+  --color-icon-weak-active: #bfb3cc;
+  --icon-weak-selected: #bfb3cc;
+  --color-icon-weak-selected: #bfb3cc;
+  --icon-weak-focus: #bfb3cc;
+  --color-icon-weak-focus: #bfb3cc;
 
   --surface-base-hover: #554750;
   --color-surface-base-hover: #554750;

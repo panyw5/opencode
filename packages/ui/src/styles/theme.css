@@ -175,6 +175,8 @@
   --text-invert-weak: var(--smoke-dark-alpha-9);
   --text-invert-weaker: var(--smoke-dark-alpha-8);
   --text-invert-strong: var(--smoke-dark-alpha-12);
+  --text-on-float-base: var(--text-invert-strong);
+  --text-on-float-base-hover: var(--text-invert-strong);
   --text-interactive-base: var(--cobalt-light-9);
   --text-on-brand-base: var(--smoke-light-alpha-11);
   --text-on-interactive-base: var(--smoke-light-1);
@@ -438,6 +440,8 @@
     --text-invert-weak: #707070;
     --text-invert-weaker: #505050;
     --text-invert-strong: #ededed;
+    --text-on-float-base: var(--text-invert-strong);
+    --text-on-float-base-hover: var(--text-invert-strong);
     --text-interactive-base: #9dbefe;
     --text-on-brand-base: rgba(255, 255, 255, 0.603);
     --text-on-interactive-base: #ededed;

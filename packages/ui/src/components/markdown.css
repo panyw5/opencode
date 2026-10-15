@@ -58,7 +58,7 @@
   }
 
   a[data-file-link] {
-    --file-link-accent: #9b6cff;
+    --file-link-accent: var(--markdown-link, var(--text-interactive-base));
     color: var(--file-link-accent);
     display: inline-flex;
     align-items: center;
@@ -66,7 +66,7 @@
     padding: 0 0.4375em 0 0.25em;
     border: 1px solid color-mix(in srgb, var(--file-link-accent) 20%, transparent);
     border-radius: 9999px;
-    background: color-mix(in srgb, var(--file-link-accent) 8%, transparent);
+    background: var(--surface-base);
     line-height: 1.35;
     vertical-align: -0.125em;
     white-space: nowrap;
@@ -88,14 +88,14 @@
   }
 
   a[data-file-link]:hover {
-    color: #b28cff;
-    background: color-mix(in srgb, var(--file-link-accent) 13%, transparent);
+    color: var(--file-link-accent);
+    background: var(--surface-base-hover);
     border-color: color-mix(in srgb, var(--file-link-accent) 32%, transparent);
     text-decoration: none;
   }
 
   a[data-file-link]:active {
-    background: color-mix(in srgb, var(--file-link-accent) 18%, transparent);
+    background: var(--surface-base-active);
   }
 
   a[data-file-link]:focus-visible {

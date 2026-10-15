@@ -141,6 +141,20 @@ function applyThemeCss(theme: DesktopTheme, themeId: string, mode: "light" | "da
   const isDark = mode === "dark"
   const variant = isDark ? theme.dark : theme.light
   const tokens = resolveThemeVariant(variant, isDark)
+  console.debug(
+    "[theme-applied]",
+    JSON.stringify({
+      themeId,
+      mode,
+      tooltipBackground: tokens["surface-float-base"],
+      tooltipText: tokens["text-on-float-base"],
+      railTooltipBackground: tokens["surface-float-base-hover"],
+      railTooltipText: tokens["text-on-float-base-hover"],
+      iconBase: tokens["icon-base"],
+      textStrong: tokens["text-strong"],
+      textSuccess: tokens["text-success-base"],
+    }),
+  )
   const css = themeToCss(tokens)
 
   if (themeId !== "oc-2") {
