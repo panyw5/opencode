@@ -952,6 +952,11 @@ export const dict = {
   "error.chain.configInvalidWithMessage": "Config file at {{path}} is invalid: {{message}}",
 
   "quickAssistant.waiting.permission": "Waiting for permission confirmation",
+  "quickAssistant.tools": "Tool calls",
+  "quickAssistant.tool.pending": "Pending",
+  "quickAssistant.tool.running": "Running",
+  "quickAssistant.tool.completed": "Completed",
+  "quickAssistant.tool.error": "Failed",
   "quickAssistant.context.enable": "Include current session context",
   "quickAssistant.context.disable": "Stop including current session context",
   "quickAssistant.context.attached": "Current session context",

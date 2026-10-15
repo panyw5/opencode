@@ -1,16 +1,20 @@
 import { describe, expect, test } from "bun:test"
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part, PermissionRequest, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import { sessionPermissionRequests, sessionQuestionRequests } from "@/pages/session/composer/session-request-tree"
 import {
   collectSessionContext,
   context,
   fullSessionContextMessages,
   isSessionNotFoundError,
+  loadQuickRequestSessions,
   mergeMessages,
   patchAgentQuestionDeny,
   prompt,
   quickQuestionAnswers,
+  quickAssistantMessageContent,
   quickRequestNotFound,
   removeQuickRequest,
+  resolveQuickSession,
   splitInjectedSessionContext,
 } from "./quick-assistant/helpers"
 import { quickAssistantMessageText } from "./quick-assistant/messages"
@@ -160,6 +164,43 @@ describe("quick assistant message copy", () => {
   })
 })
 
+describe("quick assistant tool capsules", () => {
+  test("separates structured tools from markdown while preserving their order and state", () => {
+    const parts = [
+      { type: "text", text: "Answer" },
+      { id: "tool_1", type: "tool", tool: "read", state: { status: "completed", title: "Read notes" } },
+      { type: "text", text: "More details" },
+      { id: "tool_2", type: "tool", tool: "task", state: { status: "running" } },
+    ] as Part[]
+    const result = quickAssistantMessageContent(parts)
+    expect(result.text).toBe("Answer\nMore details")
+    expect(result.tools.map((tool) => [tool.id, tool.tool, tool.state.status])).toEqual([
+      ["tool_1", "read", "completed"],
+      ["tool_2", "task", "running"],
+    ])
+    expect(quickAssistantMessageText(parts)).toContain("[tool] task")
+  })
+
+  test("tool-only messages have no empty markdown bubble content", () => {
+    const result = quickAssistantMessageContent([
+      { type: "tool", tool: "question", state: { status: "pending" } },
+    ] as Part[])
+    expect(result.text).toBe("")
+    expect(result.tools).toHaveLength(1)
+    expect(quickAssistantMessageContent(undefined)).toEqual({ text: "", tools: [] })
+  })
+
+  test("does not rewrite literal tool text or hide attachments and reasoning", () => {
+    const result = quickAssistantMessageContent([
+      { type: "text", text: "The literal marker [tool] read" },
+      { type: "reasoning", text: "Thinking" },
+      { type: "file", filename: "notes.md", url: "file:///tmp/notes.md" },
+    ] as Part[])
+    expect(result.text).toBe("The literal marker [tool] read\nThinking\n[file] notes.md")
+    expect(result.tools).toEqual([])
+  })
+})
+
 describe("quick assistant session error handling", () => {
   test("recognizes generated SDK throwOnError not-found errors", () => {
     const err = new Error("Session not found: ses_missing", {
@@ -232,6 +273,69 @@ describe("quick assistant question answers", () => {
   })
 })
 
+describe("quick assistant session lifecycle", () => {
+  const session = (id: string, archived?: number) => ({ id, time: { created: 1, updated: 1, archived } }) as Session
+
+  test("reuses an active session without creating or clearing it", async () => {
+    const active = session("active")
+    const result = await resolveQuickSession({
+      sessionID: active.id,
+      load: async () => active,
+      create: async () => {
+        throw new Error("must not create")
+      },
+      unavailable: () => {
+        throw new Error("must not clear")
+      },
+    })
+    expect(result).toEqual({ session: active, created: false })
+  })
+
+  test("replaces an archived session before sending rather than silently dropping the prompt", async () => {
+    const calls: string[] = []
+    const replacement = session("replacement")
+    const result = await resolveQuickSession({
+      sessionID: "archived",
+      load: async () => session("archived", 123),
+      unavailable: (id, reason) => {
+        calls.push(`${id}:${reason}`)
+      },
+      create: async () => {
+        calls.push("create")
+        return replacement
+      },
+    })
+    expect(calls).toEqual(["archived:archived", "create"])
+    expect(result).toEqual({ session: replacement, created: true })
+  })
+
+  test("replaces a missing session but does not hide transport failures", async () => {
+    const calls: string[] = []
+    const input = {
+      sessionID: "missing",
+      load: async (): Promise<Session | undefined> => {
+        throw { name: "SessionNotFoundError" }
+      },
+      unavailable: (id: string, reason: string) => {
+        calls.push(`${id}:${reason}`)
+      },
+      create: async () => session("replacement"),
+    }
+    expect((await resolveQuickSession(input)).session?.id).toBe("replacement")
+    expect(calls).toEqual(["missing:missing"])
+    calls.length = 0
+    await expect(
+      resolveQuickSession({
+        ...input,
+        load: async () => {
+          throw new Error("offline")
+        },
+      }),
+    ).rejects.toThrow("offline")
+    expect(calls).toEqual([])
+  })
+})
+
 describe("quick assistant expired requests", () => {
   test("cleanup tolerates a list already removed by the backend event", () => {
     expect(removeQuickRequest(undefined, "old")).toEqual([])
@@ -247,5 +351,51 @@ describe("quick assistant expired requests", () => {
     const error: { cause?: unknown; status: number } = { status: 500 }
     error.cause = error
     expect(quickRequestNotFound(error)).toBe(false)
+  })
+})
+
+describe("quick assistant task requests", () => {
+  const session = (id: string, parentID?: string) => ({ id, parentID }) as Session
+  const sessions = [session("grandchild", "child"), session("child", "quick"), session("other", "elsewhere")]
+
+  test("surfaces permissions and questions from nested tasks without mixing other conversations", () => {
+    const permission = (id: string) => ({ id: `per_${id}`, sessionID: id }) as PermissionRequest
+    const question = (id: string) => ({ id: `que_${id}`, sessionID: id }) as QuestionRequest
+    const permissions = Object.fromEntries(
+      ["quick", "child", "grandchild", "other"].map((id) => [id, [permission(id)]]),
+    )
+    const questions = Object.fromEntries(["child", "grandchild", "other"].map((id) => [id, [question(id)]]))
+    expect(sessionPermissionRequests(sessions, permissions, "quick").map((item) => item.sessionID)).toEqual([
+      "quick",
+      "child",
+      "grandchild",
+    ])
+    expect(sessionQuestionRequests(sessions, questions, "quick").map((item) => item.sessionID)).toEqual([
+      "child",
+      "grandchild",
+    ])
+    expect(sessionPermissionRequests(sessions, permissions)).toEqual([])
+  })
+
+  test("restores missing task ancestry from pending requests after reconnect", async () => {
+    const loaded: string[] = []
+    const result = await loadQuickRequestSessions(["grandchild", "child", "missing"], async (id) => {
+      loaded.push(id)
+      return [...sessions, session("quick")].find((item) => item.id === id)
+    })
+    expect(loaded).toEqual(["grandchild", "child", "quick", "missing"])
+    expect(result.map((item) => item.id)).toEqual(["grandchild", "child", "quick"])
+  })
+
+  test("ancestry lookup terminates on malformed cycles", async () => {
+    const result = await loadQuickRequestSessions(["a"], async (id) => session(id, id === "a" ? "b" : "a"))
+    expect(result.map((item) => item.id)).toEqual(["a", "b"])
+  })
+
+  test("responding to a child request removes only that request", () => {
+    const first = { id: "first", sessionID: "child" } as PermissionRequest
+    const next = { id: "next", sessionID: "grandchild" } as PermissionRequest
+    const requests = { child: removeQuickRequest([first], first.id), grandchild: [next] }
+    expect(sessionPermissionRequests(sessions, requests, "quick")).toEqual([next])
   })
 })

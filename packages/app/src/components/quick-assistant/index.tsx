@@ -26,6 +26,11 @@ import { Identifier } from "@/utils/id"
 import { Persist, persisted } from "@/utils/persist"
 import { working } from "@/pages/session/session-working"
 import {
+  sessionPermissionRequests,
+  sessionQuestionRequests,
+  sessionTreeIDs,
+} from "@/pages/session/composer/session-request-tree"
+import {
   domainFromDirectory,
   extraAgentCapabilities,
   mainDomain,
@@ -37,10 +42,12 @@ import {
   context,
   fullSessionContextMessages,
   isSessionNotFoundError,
+  loadQuickRequestSessions,
   mergeMessages,
   patchAgentQuestionDeny,
   prompt,
   removeQuickRequest,
+  resolveQuickSession,
   splitInjectedSessionContext,
 } from "./helpers"
 import { QuickAssistantInput } from "./input"
@@ -308,12 +315,45 @@ export function QuickAssistant() {
     return working(data()?.session_status[id], list())
   })
   const permissions = createMemo(() => {
-    const id = sessionID()
-    return id ? (data()?.permission[id] ?? []) : []
+    const store = data()
+    return sessionPermissionRequests(store?.session ?? [], store?.permission ?? {}, sessionID())
   })
   const questions = createMemo(() => {
-    const id = sessionID()
-    return id ? (data()?.question[id] ?? []) : []
+    const store = data()
+    return sessionQuestionRequests(store?.session ?? [], store?.question ?? {}, sessionID())
+  })
+  createEffect(() => {
+    const current = root()
+    const store = data()
+    if (!current || !sessionID() || !store) return
+    const requests = [...Object.values(store.permission).flat(), ...Object.values(store.question).flat()]
+    const known = new Map(store.session.map((session) => [session.id, session]))
+    const missing = new Set<string>()
+    for (const request of requests) {
+      let id: string | undefined = request?.sessionID
+      const seen = new Set<string>()
+      while (id && !seen.has(id)) {
+        seen.add(id)
+        const session = known.get(id)
+        if (!session) {
+          missing.add(id)
+          break
+        }
+        id = session.parentID
+      }
+    }
+    if (!missing.size) return
+    console.debug(`[quick-assistant] request ancestry load count=${missing.size}`)
+    void loadQuickRequestSessions([...missing], (id) => globalSync.session.info.ensure(current, id)).catch((error) =>
+      console.error("[quick-assistant] request ancestry load failed", error),
+    )
+  })
+  createEffect(() => {
+    console.debug("[quick-assistant] pending tree requests", {
+      sessionID: sessionID(),
+      permissions: permissions().map((request) => ({ id: request.id, sessionID: request.sessionID })),
+      questions: questions().map((request) => ({ id: request.id, sessionID: request.sessionID })),
+    })
   })
   const waiting = createMemo(() => permissions().length > 0 || questions().length > 0)
   const interacting = createMemo(() => busy() || waiting())
@@ -436,6 +476,16 @@ export function QuickAssistant() {
     if (statusResult.status === "rejected" && isSessionNotFoundError(statusResult.reason)) throw statusResult.reason
     if (messageResult.status === "rejected" && isSessionNotFoundError(messageResult.reason)) throw messageResult.reason
 
+    const pendingPermissions = permissionResult.status === "fulfilled" ? (permissionResult.value.data ?? []) : []
+    const pendingQuestions = questionResult.status === "fulfilled" ? (questionResult.value.data ?? []) : []
+    // Reloaded windows may have missed session.created for a blocked subagent.
+    await loadQuickRequestSessions(
+      [...pendingPermissions, ...pendingQuestions].map((request) => request.sessionID),
+      (sessionID) => globalSync.session.info.ensure(root(), sessionID),
+    )
+    const tree = sessionTreeIDs(data()?.session ?? [], id)
+    console.debug(`[quick-assistant] requests refreshed session=${id} tree=${tree.length}`)
+
     batch(() => {
       if (statusResult.status === "fulfilled") {
         const next = statusResult.value.data?.[id] ?? { type: "idle" as const }
@@ -451,10 +501,20 @@ export function QuickAssistant() {
         }
       }
       if (permissionResult.status === "fulfilled") {
-        setStore("permission", id, permissionResult.value.data?.filter((item) => item.sessionID === id) ?? [])
+        for (const sessionID of tree)
+          setStore(
+            "permission",
+            sessionID,
+            pendingPermissions.filter((item) => item.sessionID === sessionID),
+          )
       }
       if (questionResult.status === "fulfilled") {
-        setStore("question", id, questionResult.value.data?.filter((item) => item.sessionID === id) ?? [])
+        for (const sessionID of tree)
+          setStore(
+            "question",
+            sessionID,
+            pendingQuestions.filter((item) => item.sessionID === sessionID),
+          )
       }
     })
   }
@@ -557,21 +617,20 @@ export function QuickAssistant() {
     client: ReturnType<typeof globalSDK.createClient>,
     setStore: SetStoreFunction<State>,
   ) => {
-    const current = sessionID()
-    if (current) {
-      const existing = await client.session
-        .get({ sessionID: current })
-        .then((result) => result.data)
-        .catch((err: unknown) => {
-          if (!isSessionNotFoundError(err)) throw err
-          clearSession()
-          return undefined
-        })
-      if (existing) return existing.id
-    }
-
-    const created = await client.session.create().then((result) => result.data ?? undefined)
+    console.debug(`[quick-assistant] session validation start session=${sessionID() ?? "none"}`)
+    const resolved = await resolveQuickSession({
+      sessionID: sessionID(),
+      load: (id) => client.session.get({ sessionID: id }).then((result) => result.data),
+      create: () => client.session.create().then((result) => result.data),
+      unavailable: (id, reason) => {
+        console.warn(`[quick-assistant] session unavailable session=${id} reason=${reason}; replacing`)
+        clearSession()
+      },
+    })
+    const created = resolved.session
     if (!created) return
+    console.debug(`[quick-assistant] session validated session=${created.id} created=${resolved.created ? 1 : 0}`)
+    if (!resolved.created) return created.id
     seed(setStore, created)
     patchSession(setStore, created.id, { title: "Quick Assistant" })
     setSaved("session", key(), created.id)

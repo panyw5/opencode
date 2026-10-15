@@ -4,7 +4,8 @@ import { Markdown } from "@opencode-ai/ui/markdown"
 import { showToast } from "@opencode-ai/ui/toast"
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
-import { render, splitInjectedSessionContext } from "./helpers"
+import { quickAssistantMessageContent, render, splitInjectedSessionContext } from "./helpers"
+import { quickAssistantToolName } from "./tool-label"
 import {
   bindBottomFollowWheel,
   createBottomFollow,
@@ -166,9 +167,23 @@ export function QuickAssistantMessages(props: Props) {
           <For each={props.list}>
             {(item) => {
               const text = createMemo(() => quickAssistantMessageText(props.parts?.[item.id]))
+              const content = createMemo(() => quickAssistantMessageContent(props.parts?.[item.id]))
               const display = createMemo(() =>
-                item.role === "user" ? splitInjectedSessionContext(text()) : { message: text() },
+                item.role === "user" ? splitInjectedSessionContext(content().text) : { message: content().text },
               )
+              const toolLogKey = createMemo(() =>
+                content()
+                  .tools.map((tool) => `${tool.id}:${tool.tool}:${tool.state.status}`)
+                  .join("|"),
+              )
+              createEffect(() => {
+                const tools = toolLogKey()
+                if (!tools) return
+                console.debug("[quick-assistant] tool capsules render", {
+                  messageID: item.id,
+                  tools,
+                })
+              })
               createEffect(() => {
                 if (item.role !== "user") return
                 console.debug("[quick-assistant] user markdown render", {
@@ -205,25 +220,79 @@ export function QuickAssistantMessages(props: Props) {
                       </details>
                     )}
                   </Show>
-                  <div
-                    data-slot="quick-assistant-bubble"
-                    classList={{
-                      "group/message relative px-3.5 py-3 pr-11": true,
-                      "ml-10 rounded-[18px] border border-border-weak-base bg-surface-panel": item.role === "user",
-                      "mr-10 rounded-[20px] border border-border-weaker-base bg-background-stronger":
-                        item.role === "assistant",
-                    }}
-                  >
-                    <div class="quick-assistant-markdown break-words text-[15px] leading-7 text-text-base select-text">
-                      <Markdown
-                        text={display().message || (item.role === "assistant" && props.busy ? "Thinking..." : "")}
-                        math={item.role === "user" ? "full" : "defer"}
-                      />
+                  <Show when={display().message || content().tools.length === 0}>
+                    <div
+                      data-slot="quick-assistant-bubble"
+                      classList={{
+                        "group/message relative px-3.5 py-3 pr-11": true,
+                        "ml-10 rounded-[18px] border border-border-weak-base bg-surface-panel": item.role === "user",
+                        "mr-10 rounded-[20px] border border-border-weaker-base bg-background-stronger":
+                          item.role === "assistant",
+                      }}
+                    >
+                      <div class="quick-assistant-markdown break-words text-[15px] leading-7 text-text-base select-text">
+                        <Markdown
+                          text={display().message || (item.role === "assistant" && props.busy ? "Thinking..." : "")}
+                          math={item.role === "user" ? "full" : "defer"}
+                        />
+                      </div>
+                      <Show when={text().length > 0}>
+                        <CopyMessageButton text={text()} />
+                      </Show>
                     </div>
-                    <Show when={text().length > 0}>
-                      <CopyMessageButton text={text()} />
-                    </Show>
-                  </div>
+                  </Show>
+                  <Show when={content().tools.length > 0}>
+                    <div
+                      data-component="quick-assistant-tools"
+                      role="list"
+                      aria-label={language.t("quickAssistant.tools")}
+                      class="flex min-w-0 flex-wrap items-center gap-1.5 px-1"
+                      classList={{ "mr-10": item.role === "assistant", "ml-10": item.role === "user" }}
+                    >
+                      <For each={content().tools}>
+                        {(tool) => {
+                          const name = () => quickAssistantToolName(tool.tool, language.t)
+                          const status = () => language.t(`quickAssistant.tool.${tool.state.status}`)
+                          const detail = () =>
+                            tool.state.status === "error"
+                              ? tool.state.error
+                              : "title" in tool.state
+                                ? tool.state.title
+                                : undefined
+                          return (
+                            <span
+                              data-slot="quick-assistant-tool"
+                              data-status={tool.state.status}
+                              role="listitem"
+                              aria-label={`${name()}: ${status()}`}
+                              title={[`${name()}: ${status()}`, detail()].filter(Boolean).join("\n")}
+                              class="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border bg-surface-panel/70 px-2.5 py-1 text-12-medium"
+                              classList={{
+                                "border-border-weak-base text-text-weak": tool.state.status !== "error",
+                                "border-border-critical-base text-text-critical-base": tool.state.status === "error",
+                              }}
+                            >
+                              <Icon
+                                name={
+                                  tool.state.status === "completed"
+                                    ? "check-small"
+                                    : tool.state.status === "error"
+                                      ? "circle-x"
+                                      : "arrow-sync"
+                                }
+                                size="small"
+                                classList={{
+                                  "motion-safe:animate-spin": tool.state.status === "running",
+                                  "text-icon-success-base": tool.state.status === "completed",
+                                }}
+                              />
+                              <span class="min-w-0 truncate">{name()}</span>
+                            </span>
+                          )
+                        }}
+                      </For>
+                    </div>
+                  </Show>
                 </div>
               )
             }}
