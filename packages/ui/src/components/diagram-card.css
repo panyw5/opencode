@@ -33,6 +33,11 @@
   display: flex;
   align-items: flex-start;
   justify-content: flex-start;
+  cursor: grab;
+  user-select: none;
+}
+[data-component="diagram-card"][data-diagram-panning="true"] .diagram-card__preview {
+  cursor: grabbing;
 }
 .diagram-card__canvas {
   flex: none;
