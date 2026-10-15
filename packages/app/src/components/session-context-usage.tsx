@@ -78,7 +78,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
     const last = [...all].reverse().find((msg) => msg.role === "assistant")
     const used = context()?.message
     console.debug(
-      `[session-context] sid=${id} n=${String(all.length)} last=${last && last.role === "assistant" ? last.id : "none"} used=${used?.id ?? "none"} total=${String(context()?.total ?? 0)} usage=${String(context()?.usage ?? "null")}`,
+      `[session-context] sid=${id} loadedMessages=${String(all.length)} sessionCost=${String(session()?.cost ?? 0)} last=${last && last.role === "assistant" ? last.id : "none"} used=${used?.id ?? "none"} total=${String(context()?.total ?? 0)} usage=${String(context()?.usage ?? "null")}`,
     )
   })
   const cost = createMemo(() => usd().format(metrics().totalCost))

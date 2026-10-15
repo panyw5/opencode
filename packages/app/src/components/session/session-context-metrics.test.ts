@@ -58,9 +58,9 @@ describe("getSessionContextMetrics", () => {
       },
     ]
 
-    const metrics = getSessionContextMetrics(messages, providers)
+    const metrics = getSessionContextMetrics(messages, providers, { cost: 12.5 })
 
-    expect(metrics.totalCost).toBe(1.75)
+    expect(metrics.totalCost).toBe(12.5)
     expect(metrics.context?.message?.id).toBe("a2")
     expect(metrics.context?.total).toBe(500)
     expect(metrics.context?.usage).toBe(50)
@@ -121,13 +121,15 @@ describe("getSessionContextMetrics", () => {
     const messages = [assistant("a1", { input: 10, output: 10, reasoning: 10, read: 10, write: 10 }, 0.25)]
     const providers = [{ id: "openai", models: {} }]
 
-    const one = getSessionContextMetrics(messages, providers)
+    const session = { cost: 2.25 }
+    const one = getSessionContextMetrics(messages, providers, session)
     messages.push(assistant("a2", { input: 100, output: 20, reasoning: 0, read: 0, write: 0 }, 0.75))
-    const two = getSessionContextMetrics(messages, providers)
+    const two = getSessionContextMetrics(messages, providers, session)
 
     expect(one.context?.message?.id).toBe("a1")
     expect(two.context?.message?.id).toBe("a2")
-    expect(two.totalCost).toBe(1)
+    expect(one.totalCost).toBe(2.25)
+    expect(two.totalCost).toBe(2.25)
   })
 
   test("returns empty metrics when inputs are undefined", () => {
@@ -135,6 +137,14 @@ describe("getSessionContextMetrics", () => {
 
     expect(metrics.totalCost).toBe(0)
     expect(metrics.context).toBeUndefined()
+  })
+
+  test("does not treat the loaded message page as session cost", () => {
+    const messages = [assistant("a1", { input: 10, output: 10, reasoning: 0, read: 0, write: 0 }, 99)]
+
+    const metrics = getSessionContextMetrics(messages, [], { cost: 4.5 })
+
+    expect(metrics.totalCost).toBe(4.5)
   })
 
   test("falls back to session model and referenced limit when tokens are missing", () => {
