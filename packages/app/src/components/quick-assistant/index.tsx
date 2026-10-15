@@ -1028,7 +1028,7 @@ export function QuickAssistant() {
       <Show when={saved.open}>
         <div
           data-component="quick-assistant-panel"
-          class="fixed right-5 bottom-5 z-40 pointer-events-auto max-h-[calc(100dvh-72px)] rounded-[calc(var(--radius-4xl)+0.75rem+1px)]"
+          class="fixed right-5 bottom-5 z-40 pointer-events-auto max-h-[calc(100dvh-72px)] rounded-[calc(var(--radius-4xl)+0.75rem+1px)] transition-[width] duration-[180ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
           ref={(element) =>
             requestAnimationFrame(() => {
               if (!element.isConnected) return
