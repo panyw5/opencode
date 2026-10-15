@@ -16,7 +16,7 @@ const typeIcon = (type: BellToast["type"]) =>
       ? "question-mark"
       : type === "permission"
         ? "shield-check"
-        : "check-small"
+        : "circle-check"
 
 const BELL_SIZE = 40
 const TOAST_ENTER_MS = 600
