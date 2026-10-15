@@ -39,16 +39,42 @@ export function NotificationBell() {
   const frames = new Set<number>()
 
   const updateToastPosition = () => {
-    if (!bellElement || !toastLayer) return
+    if (!bellElement) return
+    const toastRegion = document.querySelector<HTMLElement>('[data-component="toast-v2-region"]')
+    if (!toastRegion) return
     const bell = bellElement.getBoundingClientRect()
-    const width = toastLayer.offsetWidth
-    const centered = bell.left + (bell.width - width) / 2
-    const left = Math.max(VIEWPORT_GAP, Math.min(centered, window.innerWidth - width - VIEWPORT_GAP))
+    const hasRegularToast = toastRegion.querySelector('[data-component="toast-v2"]') !== null
     const bottom = window.innerHeight - bell.top + TOAST_GAP
-    toastLayer.style.left = `${left}px`
+    if (!hasRegularToast) {
+      toastRegion.style.visibility = "hidden"
+      console.debug("[notification-bell] regular toast position deferred", { reason: "region-empty" })
+    } else if (bell.width === 0 || bell.height === 0) {
+      toastRegion.style.left = "auto"
+      toastRegion.style.right = `${VIEWPORT_GAP}px`
+      toastRegion.style.bottom = `${BELL_SIZE + TOAST_GAP + 24}px`
+      toastRegion.style.visibility = "visible"
+      console.debug("[notification-bell] regular toast fallback position", { reason: "bell-hidden" })
+    } else {
+      const width = toastRegion.offsetWidth
+      const centered = bell.left + (bell.width - width) / 2
+      const left = Math.max(VIEWPORT_GAP, Math.min(centered, window.innerWidth - width - VIEWPORT_GAP))
+      toastRegion.style.left = `${left}px`
+      toastRegion.style.right = "auto"
+      toastRegion.style.bottom = `${bottom}px`
+      toastRegion.style.visibility = "visible"
+      console.debug("[notification-bell] regular toast positioned", { left, bottom, width, bell: [bell.left, bell.top] })
+    }
+
+    if (!toastLayer) return
+    const bellToastWidth = toastLayer.offsetWidth
+    const bellToastCentered = bell.left + (bell.width - bellToastWidth) / 2
+    const bellToastLeft = Math.max(
+      VIEWPORT_GAP,
+      Math.min(bellToastCentered, window.innerWidth - bellToastWidth - VIEWPORT_GAP),
+    )
+    toastLayer.style.left = `${bellToastLeft}px`
     toastLayer.style.bottom = `${bottom}px`
     toastLayer.style.visibility = "visible"
-
     const layer = toastLayer.getBoundingClientRect()
     for (const toast of toastLayer.querySelectorAll<HTMLElement>('[data-component="notification-bell-toast"]')) {
       const dx = bell.left + bell.width / 2 - layer.left - toast.offsetLeft - toast.offsetWidth / 2
@@ -57,7 +83,7 @@ export function NotificationBell() {
       toast.style.setProperty("--bell-dy", `${dy}px`)
       console.debug("[notification-bell] toast origin", { session: toast.dataset.session, dx, dy })
     }
-    console.debug("[notification-bell] positioned toasts", { left, bottom, bell: [bell.left, bell.top] })
+    console.debug("[notification-bell] positioned toasts", { left: bellToastLeft, bottom, bell: [bell.left, bell.top] })
   }
 
   const animateToast = (element: HTMLButtonElement, toast: BellToast) => {
@@ -76,6 +102,16 @@ export function NotificationBell() {
     updateToastPosition()
     const observer = new ResizeObserver(updateToastPosition)
     if (bellElement) observer.observe(bellElement)
+    const toastRegion = document.querySelector<HTMLElement>('[data-component="toast-v2-region"]')
+    if (toastRegion) {
+      observer.observe(toastRegion)
+      const mutationObserver = new MutationObserver(() => {
+        console.debug("[notification-bell] toast region changed; positioning before paint")
+        updateToastPosition()
+      })
+      mutationObserver.observe(toastRegion, { childList: true, subtree: true })
+      onCleanup(() => mutationObserver.disconnect())
+    }
     const actions = bellElement?.closest('[data-component="floating-actions"]')
     if (actions) observer.observe(actions)
     if (toastLayer) observer.observe(toastLayer)

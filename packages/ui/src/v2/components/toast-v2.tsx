@@ -4,6 +4,7 @@ import type { ComponentProps, JSX } from "solid-js"
 import { Show, children } from "solid-js"
 import { Portal } from "solid-js/web"
 import { ButtonV2 } from "./button-v2"
+import { useI18n } from "../../context/i18n"
 import "./toast-v2.css"
 
 export interface ToastV2RegionProps extends ComponentProps<typeof Kobalte.Region> {}
@@ -57,9 +58,18 @@ function ToastV2Actions(props: ComponentProps<"div">) {
   return <div data-slot="toast-v2-actions" {...props} />
 }
 
-function ToastV2CloseButton(props: ToastCloseButtonProps & ComponentProps<"button">) {
+function ToastV2Countdown() {
   return (
-    <Kobalte.CloseButton data-slot="toast-v2-close-button" aria-label="Dismiss" {...props}>
+    <Kobalte.ProgressTrack data-slot="toast-v2-countdown" aria-hidden="true">
+      <Kobalte.ProgressFill data-slot="toast-v2-countdown-fill" />
+    </Kobalte.ProgressTrack>
+  )
+}
+
+function ToastV2CloseButton(props: ToastCloseButtonProps & ComponentProps<"button">) {
+  const i18n = useI18n()
+  return (
+    <Kobalte.CloseButton data-slot="toast-v2-close-button" aria-label={i18n.t("ui.common.dismiss")} {...props}>
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <path d="M4.25 11.75L11.75 4.25" stroke="#FAFAFA" />
         <path d="M11.75 11.75L4.25 4.25" stroke="#FAFAFA" />
@@ -75,6 +85,7 @@ export const ToastV2 = Object.assign(ToastV2Root, {
   Title: ToastV2Title,
   Description: ToastV2Description,
   Actions: ToastV2Actions,
+  Countdown: ToastV2Countdown,
   CloseButton: ToastV2CloseButton,
 })
 
@@ -90,6 +101,7 @@ export interface ToastV2Options {
   title?: string
   description?: string
   icon?: JSX.Element
+  variant?: "default" | "success" | "error" | "loading"
   duration?: number
   persistent?: boolean
   actions?: ToastV2Action[]
@@ -98,8 +110,14 @@ export interface ToastV2Options {
 export function showToastV2(options: ToastV2Options | string) {
   const opts = typeof options === "string" ? { description: options } : options
   const resolvedIcon = children(() => opts.icon)
+  const hasCountdown = opts.persistent !== true && opts.duration !== 0
   return toaster.show((props) => (
-    <ToastV2 toastId={props.toastId} duration={opts.duration} persistent={opts.persistent}>
+    <ToastV2
+      toastId={props.toastId}
+      duration={opts.duration}
+      persistent={opts.persistent}
+      data-variant={opts.variant ?? "default"}
+    >
       <div data-slot="toast-v2-header">
         <Show when={resolvedIcon()}>
           <ToastV2.Icon>{resolvedIcon()}</ToastV2.Icon>
@@ -112,7 +130,12 @@ export function showToastV2(options: ToastV2Options | string) {
             <ToastV2.Description>{opts.description}</ToastV2.Description>
           </Show>
         </ToastV2.Content>
-        <ToastV2.CloseButton />
+        <div data-slot="toast-v2-controls">
+          <Show when={hasCountdown}>
+            <ToastV2.Countdown />
+          </Show>
+          <ToastV2.CloseButton />
+        </div>
       </div>
       <Show when={opts.actions?.length}>
         <ToastV2.Actions>

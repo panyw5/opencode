@@ -2,21 +2,15 @@ import { Toast as Kobalte, toaster } from "@kobalte/core/toast"
 import type { ToastRootProps, ToastCloseButtonProps, ToastTitleProps, ToastDescriptionProps } from "@kobalte/core/toast"
 import type { ComponentProps, JSX } from "solid-js"
 import { Show } from "solid-js"
-import { Portal } from "solid-js/web"
 import { useI18n } from "../context/i18n"
 import { Icon, type IconProps } from "./icon"
 import { IconButton } from "./icon-button"
+import { ToastV2, showToastV2 } from "../v2/components/toast-v2"
 
 export interface ToastRegionProps extends ComponentProps<typeof Kobalte.Region> {}
 
 function ToastRegion(props: ToastRegionProps) {
-  return (
-    <Portal>
-      <Kobalte.Region data-component="toast-region" {...props}>
-        <Kobalte.List data-slot="toast-list" />
-      </Kobalte.Region>
-    </Portal>
-  )
+  return <ToastV2.Region {...props} />
 }
 
 export interface ToastRootComponentProps extends ToastRootProps {
@@ -126,50 +120,18 @@ export interface ToastOptions {
 
 export function showToast(options: ToastOptions | string) {
   const opts = typeof options === "string" ? { description: options } : options
-  const hasCountdown = opts.persistent !== true && opts.duration !== 0
-  return toaster.show((props) => (
-    <Toast
-      toastId={props.toastId}
-      duration={opts.duration}
-      persistent={opts.persistent}
-      data-variant={opts.variant ?? "default"}
-    >
-      <Show when={opts.icon}>
-        <Toast.Icon name={opts.icon!} />
-      </Show>
-      <Toast.Content>
-        <div data-slot="toast-controls">
-          <Show when={hasCountdown}>
-            <Toast.Countdown />
-          </Show>
-          <Toast.CloseButton />
-        </div>
-        <Show when={opts.title}>
-          <Toast.Title>{opts.title}</Toast.Title>
-        </Show>
-        <Show when={opts.description}>
-          <Toast.Description>{opts.description}</Toast.Description>
-        </Show>
-        <Show when={opts.actions?.length}>
-          <Toast.Actions>
-            {opts.actions!.map((action) => (
-              <button
-                data-slot="toast-action"
-                onClick={() => {
-                  if (typeof action.onClick === "function") {
-                    action.onClick()
-                  }
-                  toaster.dismiss(props.toastId)
-                }}
-              >
-                {action.label}
-              </button>
-            ))}
-          </Toast.Actions>
-        </Show>
-      </Toast.Content>
-    </Toast>
-  ))
+  const icon =
+    opts.icon ??
+    (opts.variant === "success" ? "check-small" : opts.variant === "error" ? "circle-exclamation" : undefined)
+  return showToastV2({
+    title: opts.title,
+    description: opts.description,
+    variant: opts.variant,
+    duration: opts.duration,
+    persistent: opts.persistent,
+    icon: icon ? <Icon name={icon} /> : undefined,
+    actions: opts.actions?.map((action) => ({ ...action, variant: "primary" as const })),
+  })
 }
 
 export interface CompactToastOptions {
@@ -238,23 +200,36 @@ export function showPromiseToast<T, U = unknown>(
   options: ToastPromiseOptions<T, U>,
 ) {
   return toaster.promise(promise, (props) => (
-    <Toast
+    <ToastV2
       toastId={props.toastId}
       data-variant={props.state === "pending" ? "loading" : props.state === "fulfilled" ? "success" : "error"}
     >
-      <Toast.Content>
-        <div data-slot="toast-controls">
+      <div data-slot="toast-v2-header">
+        <ToastV2.Icon>
+          <Icon
+            name={
+              props.state === "pending"
+                ? "arrow-sync"
+                : props.state === "fulfilled"
+                  ? "check-small"
+                  : "circle-exclamation"
+            }
+          />
+        </ToastV2.Icon>
+        <ToastV2.Content>
+          <ToastV2.Description>
+            {props.state === "pending" && options.loading}
+            {props.state === "fulfilled" && options.success?.(props.data!)}
+            {props.state === "rejected" && options.error?.(props.error)}
+          </ToastV2.Description>
+        </ToastV2.Content>
+        <div data-slot="toast-v2-controls">
           <Show when={props.state !== "pending"}>
-            <Toast.Countdown />
+            <ToastV2.Countdown />
           </Show>
-          <Toast.CloseButton />
+          <ToastV2.CloseButton />
         </div>
-        <Toast.Description>
-          {props.state === "pending" && options.loading}
-          {props.state === "fulfilled" && options.success?.(props.data!)}
-          {props.state === "rejected" && options.error?.(props.error)}
-        </Toast.Description>
-      </Toast.Content>
-    </Toast>
+      </div>
+    </ToastV2>
   ))
 }
