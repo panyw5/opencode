@@ -578,6 +578,7 @@ export const dict = {
   "session.review.loadingChanges": "正在載入變更...",
   "session.review.empty": "此工作階段暫無變更",
   "session.review.noChanges": "沒有變更",
+  "session.panel.collapse": "收合側邊面板",
   "session.review.noVcs": "未偵測到 Git 版本控制系統，無法顯示變更",
   "session.review.noSnapshot": "設定中已停用快照追蹤，因此無法使用工作階段變更",
   "session.files.selectToOpen": "選取要開啟的檔案",

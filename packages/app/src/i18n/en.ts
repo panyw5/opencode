@@ -289,6 +289,7 @@ export const dict = {
   "command.browser.toggle": "Toggle browser",
   "panel.browser.tab": "Browser",
   "panel.browser.newTab": "New tab",
+  "session.panel.collapse": "Collapse panel",
   "panel.browser.closeTab": "Close tab",
   "panel.browser.agentTab": "Agent",
   "panel.browser.back": "Back",

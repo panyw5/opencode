@@ -30,6 +30,7 @@ import { createFileTabListSync } from "@/pages/session/file-tab-scroll"
 import { extraAgentByIntegration } from "@/pages/layout/extra-agents"
 import { FileTabContent } from "@/pages/session/file-tabs"
 import { BrowserPanel } from "@/pages/session/browser-panel"
+import { PanelCollapseButton } from "@/pages/session/panel-collapse-button"
 import type { ChangeTreeEntry } from "@/pages/session/change-tree-model"
 import { createOpenSessionFileTab, createSessionTabs, getTabReorderIndex, type Sizing } from "@/pages/session/helpers"
 import { setSessionHandoff } from "@/pages/session/handoff"
@@ -356,6 +357,10 @@ export function SessionSidePanel(props: {
                               aria-label={language.t("command.file.open")}
                             />
                           </TooltipKeybind>
+                        </div>
+                        <div class="flex-1" />
+                        <div class="h-full shrink-0 flex items-center px-2">
+                          <PanelCollapseButton panel="filePreview" />
                         </div>
                       </Show>
                     </Tabs.List>
