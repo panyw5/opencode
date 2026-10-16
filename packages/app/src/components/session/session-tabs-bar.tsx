@@ -85,6 +85,7 @@ export function SessionTabsBar() {
 
   const [state, setState] = createStore({
     activeDraggable: undefined as string | undefined,
+    activeDraggableWidth: undefined as number | undefined,
   })
   let tabsViewport: HTMLDivElement | undefined
   let revealFrame: number | undefined
@@ -506,7 +507,12 @@ export function SessionTabsBar() {
   const handleDragStart = (event: unknown) => {
     const id = getDraggableId(event)
     if (!id) return
-    setState("activeDraggable", id)
+    const tab = Array.from(
+      tabsViewport?.querySelectorAll<HTMLElement>('[data-component="session-tab"]') ?? [],
+    ).find((element) => element.dataset.sessionId === id)
+    const width = tab?.getBoundingClientRect().width
+    setState({ activeDraggable: id, activeDraggableWidth: width })
+    console.debug(`[session-tabs] drag start id=${id} width=${width ?? "unavailable"}`)
   }
 
   const handleDragOver = (event: DragEvent) => {
@@ -518,8 +524,10 @@ export function SessionTabsBar() {
     )
   }
 
-  const handleDragEnd = () => {
-    setState("activeDraggable", undefined)
+  const handleDragEnd = (event: unknown) => {
+    const id = getDraggableId(event) ?? state.activeDraggable ?? "unknown"
+    console.debug(`[session-tabs] drag end id=${id} width=${state.activeDraggableWidth ?? "unavailable"}`)
+    setState({ activeDraggable: undefined, activeDraggableWidth: undefined })
   }
 
   return (
@@ -625,7 +633,13 @@ export function SessionTabsBar() {
                 {(key) => {
                   const title = () => tabs().find((item) => sessionBarKey(item) === key)?.title
                   return (
-                    <div data-component="tabs-drag-preview">
+                    <div
+                      data-component="tabs-drag-preview"
+                      style={{
+                        width: state.activeDraggableWidth ? `${state.activeDraggableWidth}px` : undefined,
+                        "flex-shrink": 0,
+                      }}
+                    >
                       <span class="truncate px-2 text-13-medium">{title() ?? ""}</span>
                     </div>
                   )
