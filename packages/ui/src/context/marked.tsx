@@ -586,7 +586,20 @@ function protectDisplayMath(markdown: string, display: RegExp, empty: string, tr
 
   while ((match = display.exec(markdown))) {
     const math = match[1] ?? ""
-    const clean = math.trim()
+    const lineStart = markdown.lastIndexOf("\n", match.index - 1) + 1
+    const linePrefix = markdown.slice(lineStart, match.index)
+    const quoteDepth = /^(?:[ \t]{0,3}>[ \t]?)+[ \t]*$/.test(linePrefix) ? linePrefix.split(">").length - 1 : 0
+    // Strip only the enclosing Markdown containers on subsequent source lines.
+    // A further leading '>' (or any comparison inside the formula) is TeX.
+    const quote = new RegExp(`^(?:[ \\t]{0,3}>[ \\t]?){${quoteDepth}}`)
+    const clean = (
+      quoteDepth
+        ? math
+            .split("\n")
+            .map((line, i) => (i === 0 ? line : line.replace(quote, "")))
+            .join("\n")
+        : math
+    ).trim()
     if (!clean) {
       const verbatim = markdown.slice(from, match.index)
       account(verbatim)
@@ -595,12 +608,10 @@ function protectDisplayMath(markdown: string, display: RegExp, empty: string, tr
       continue
     }
 
-    const lineStart = markdown.lastIndexOf("\n", match.index - 1) + 1
-    const linePrefix = markdown.slice(lineStart, match.index)
     const indented = /^[ \t]+$/.test(linePrefix)
     const placeholder = mathPlaceholder(clean, "display")
 
-    if (indented) {
+    if (indented || quoteDepth) {
       // Keep list and blockquote indentation on the placeholder. Removing it
       // makes the following indented prose become an unrelated code block.
       const verbatim = markdown.slice(from, lineStart)
@@ -616,11 +627,13 @@ function protectDisplayMath(markdown: string, display: RegExp, empty: string, tr
       const lineEnd = tail.indexOf("\n")
       const restOfLine = lineEnd === -1 ? tail : tail.slice(0, lineEnd)
       if (/^[ \t]*$/.test(restOfLine)) {
-        out += "\n"
+        out += `\n${quoteDepth ? linePrefix.trimEnd() : ""}`
         if (track) track.emitted += 1
       }
       if (track) track.consumed += countNewlines(markdown.slice(lineStart, match.index + match[0].length))
-      console.debug(`[markdown] protect display math indent=${linePrefix.length} tex=${clean.length}`)
+      console.debug(
+        `[markdown] protect display math indent=${linePrefix.length} quoteDepth=${quoteDepth} source=${math.length} tex=${clean.length}`,
+      )
     } else {
       const verbatim = markdown.slice(from, match.index)
       account(verbatim)

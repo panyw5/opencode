@@ -17,6 +17,7 @@ import {
   normalizeCodeLanguage,
   preserveCodeLanguage,
   prepareMarkdown,
+  prepareMarkdownTracked,
   protectBareAutolinks,
   protectMathExpressions,
   renderMathExpressions,
@@ -335,6 +336,46 @@ $$
     expect(texes).toEqual(["x<y", "a>0", "i<n"])
     expect(html).not.toContain("$x<y$")
     expect(html).not.toContain("$a>0$")
+  })
+
+  test("keeps blockquote markers out of display math and preserves following markdown", async () => {
+    const tex = String.raw`e^{3\pi ia}L+e^{2\pi ia}A+e^{\pi ia}B+C=0.`
+    for (const [open, close] of [
+      ["$$", "$$"],
+      ["\\[", "\\]"],
+    ]) {
+      for (const prefix of ["> ", "> > ", "   > "]) {
+        const markdown = `${prefix}Contour\n${prefix}${open}\n${prefix}${tex}\n${prefix}${close}\n${prefix}**After** [link](https://example.com)\n\nOutside`
+        const prepared = prepareMarkdown(markdown)
+        for (const parse of [(text: string) => new Marked().parse(text), parseNativeMarkdown]) {
+          const html = renderMathExpressions(await parse(prepared), "html")
+          expect(html).toContain("<blockquote>")
+          expect(html).toContain("<strong>After</strong>")
+          expect(html).toContain('<a href="https://example.com"')
+          expect(html).toContain(`data-opencode-math-tex="${tex.replace(/\\/g, "&#92;")}"`)
+          expect(html).not.toContain("katex-error")
+          expect(html).not.toContain("&gt;")
+          expect(html).not.toContain("&lt;div")
+        }
+        const tracked = prepareMarkdownTracked(markdown)
+        const outside = tracked.text.split("\n").indexOf("Outside")
+        expect(tracked.originLineOf(outside)).toBe(markdown.split("\n").indexOf("Outside"))
+      }
+    }
+  })
+
+  test("removes only the enclosing quote depth, never genuine math comparisons", async () => {
+    for (const markdown of [
+      "> $$\n> x>0,\\quad y<1\n> >0\n> $$",
+      "> > $$\n> > x>0,\\quad y<1\n> > >0\n> > $$",
+      "$$\nx>0,\\quad y<1\n>0\n$$",
+    ]) {
+      const html = renderMathExpressions(await parseNativeMarkdown(prepareMarkdown(markdown)), "html")
+      expect(html).toContain('data-opencode-math-tex="x&gt;0,&#92;quad y&lt;1&#10;&gt;0"')
+      expect(html).not.toContain("katex-error")
+    }
+    const fenced = "> ```tex\n> $$\n> x>0\n> $$\n> ```"
+    expect(protectMathExpressions(fenced)).toBe(fenced)
   })
 
   test("does not expose inline math placeholders in indented list items", async () => {
