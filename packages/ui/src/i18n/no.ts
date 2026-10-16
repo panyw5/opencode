@@ -2,6 +2,10 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict: Record<Keys, string> = {
+  "ui.tool.gptPro.openOriginal": "Åpne opprinnelig nettside",
+  "ui.tool.gptPro.resultOpening": "Åpner opprinnelig nettside…",
+  "ui.tool.gptPro.resultMaximize": "Maksimer forhåndsvisning",
+  "ui.tool.gptPro.resultRestore": "Gjenopprett forhåndsvisning",
   "ui.sessionReview.title": "Sesjonsendringer",
   "ui.sessionReview.title.lastTurn": "Endringer i siste tur",
   "ui.sessionReview.diffStyle.unified": "Samlet",

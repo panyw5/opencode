@@ -30,6 +30,23 @@ function fixture(initial: Record<string, unknown>) {
 }
 
 describe("GPT Pro config persistence", () => {
+  test("archive write failures never roll back a durably saved terminal job", () => {
+    const saved: unknown[] = []
+    const logs: string[] = []
+    const persistence = createGptProPersistence(
+      { get: () => undefined, set: (_key, value) => saved.push(value) },
+      (s) => logs.push(s),
+      {
+        save: () => {
+          throw new Error("archive unavailable")
+        },
+        read: () => undefined,
+      },
+    )
+    expect(() => persistence.save([])).not.toThrow()
+    expect(saved).toEqual([[]])
+    expect(logs.some((s) => s.includes("result archive save failed"))).toBe(true)
+  })
   test("configuration reads never reparse history after initialization", () => {
     const f = fixture({
       config: { ...DEFAULT_GPT_PRO_CONFIG, enabled: false },

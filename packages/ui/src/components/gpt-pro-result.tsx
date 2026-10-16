@@ -6,6 +6,7 @@ export type GptProCachedResult = {
   phase: "completed" | "cancelled" | "failed"
   url: string
   text?: string
+  html?: string
   error?: string
   errorCode?: GptProIssueCode
   source: "read" | "output"
@@ -26,6 +27,7 @@ function resultFromJob(job: GptProJob): GptProCachedResult {
     phase: job.phase as GptProCachedResult["phase"],
     url: job.url,
     text: job.text,
+    html: job.html,
     error: job.error,
     errorCode: job.errorCode,
     source: "read",
@@ -49,6 +51,7 @@ export function parseGptProOutputFallback(output: string | undefined, expectedID
             ? value.partial_text
             : undefined,
       error: typeof value.error === "string" ? value.error : undefined,
+      html: typeof value.html === "string" ? value.html : undefined,
       source: "output",
     }
   } catch {

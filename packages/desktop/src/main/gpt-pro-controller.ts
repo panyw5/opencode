@@ -53,6 +53,8 @@ type Persistence = {
   config(): GptProConfig
   setConfig(config: GptProConfig): void
   stagingRoot?(): string
+  readResult?(id: string, owners?: string[]): GptProJob | undefined
+  openResult?(job: GptProJob): Promise<void>
 }
 export type GptProManagedPage = {
   pageID: string
@@ -1605,6 +1607,25 @@ export class GptProController {
       ["read", "status"].includes(action) && owner !== undefined
         ? (this.jobs.find((job) => job.id === input.id && readOwners.includes(job.owner))?.owner ?? owner)
         : owner
+    // Foreign archived answers must never enter this controller's scheduler.
+    const local = this.jobs.find((job) => job.id === input.id && (readOwner === undefined || job.owner === readOwner))
+    if (!local && input.id && ["read", "status", "open"].includes(action)) {
+      const archived = this.persistence.readResult?.(
+        input.id,
+        owner === undefined ? undefined : [owner, ...(["read", "status"].includes(action) ? readOwners : [])],
+      )
+      if (archived) {
+        this.log(`consult archived result id=${archived.id} action=${action}; no execution imported`)
+        if (action === "open") {
+          if (!this.persistence.openResult) throw new Error("Archived consultation webpage opening is unavailable")
+          await this.persistence.openResult(archived)
+          return this.publicJob(archived)
+        }
+        if (action === "read") return this.publicJob(archived)
+        const { html, ...status } = this.publicJob(archived)
+        return { ...status, text: status.text?.slice(0, 20000) }
+      }
+    }
     const job = this.get(input.id, readOwner)
     if (readOwner !== owner)
       this.log(`consult descendant read id=${job.id} action=${action}; mutation authority unchanged`)

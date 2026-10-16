@@ -50,6 +50,8 @@ export const dict = {
   "ui.tool.gptPro.resultNoText": "此结果没有可用的已保存回答文本。",
   "ui.tool.gptPro.resultOpening": "正在打开原网页…",
   "ui.tool.gptPro.openOriginal": "打开原网页",
+  "ui.tool.gptPro.resultMaximize": "最大化预览",
+  "ui.tool.gptPro.resultRestore": "还原预览",
   "ui.tool.gptPro.stop": "停止",
   "ui.tool.gptPro.intervene": "介入",
   "ui.tool.gptPro.resume": "继续咨询",

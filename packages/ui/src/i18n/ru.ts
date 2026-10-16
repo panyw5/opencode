@@ -1,4 +1,8 @@
 export const dict = {
+  "ui.tool.gptPro.openOriginal": "Открыть исходную страницу",
+  "ui.tool.gptPro.resultOpening": "Открытие исходной страницы…",
+  "ui.tool.gptPro.resultMaximize": "Развернуть предпросмотр",
+  "ui.tool.gptPro.resultRestore": "Восстановить предпросмотр",
   "ui.sessionReview.title": "Изменения сессии",
   "ui.sessionReview.title.lastTurn": "Изменения последнего хода",
   "ui.sessionReview.diffStyle.unified": "Объединённый",

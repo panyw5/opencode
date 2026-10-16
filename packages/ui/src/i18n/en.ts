@@ -48,6 +48,8 @@ export const dict: Record<string, string> = {
   "ui.tool.gptPro.resultNoText": "No saved answer text is available for this result.",
   "ui.tool.gptPro.resultOpening": "Opening original page…",
   "ui.tool.gptPro.openOriginal": "Open original webpage",
+  "ui.tool.gptPro.resultMaximize": "Maximize preview",
+  "ui.tool.gptPro.resultRestore": "Restore preview",
   "ui.tool.gptPro.stop": "Stop",
   "ui.tool.gptPro.intervene": "Intervene",
   "ui.tool.gptPro.resume": "Continue consultation",

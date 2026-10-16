@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { GptProCommand, GptProJob } from "@opencode-ai/util/gpt-pro"
 import { parseGptProOutputFallback, resolveGptProView } from "./gpt-pro-result"
-import { closeDialogIfCurrent } from "./gpt-pro-result-preview"
+import { closeDialogIfCurrent } from "./gpt-pro-handoff"
 
 const job = (id: string, phase: GptProJob["phase"], extra: Partial<GptProJob> = {}): GptProJob => ({
   id,
@@ -42,6 +42,7 @@ describe("GPT-Pro cached result view", () => {
     if (result.kind !== "cached") return
     expect(result.result.id).toBe("gpt_current")
     expect(result.result.text).toBe(full)
+    expect(result.result.html).toBe("<script>unsafe</script>")
     expect(result.result.source).toBe("read")
     expect(f.calls.map((call) => call.action)).toEqual(["read"])
     expect(f.calls.some((call) => call.action === "open" || call.action === "send")).toBe(false)
@@ -63,6 +64,7 @@ describe("GPT-Pro cached result view", () => {
     expect(result.kind).toBe("cached")
     if (result.kind !== "cached") return
     expect(result.result.text).toBe("Saved fallback answer")
+    expect(result.result.html).toBe("<img src=x onerror=alert(1)>")
     expect(result.result.source).toBe("output")
     expect(parseGptProOutputFallback(output, "gpt_parent")).toBeUndefined()
     expect(f.calls.map((call) => call.action)).toEqual(["read", "status"])
