@@ -211,6 +211,7 @@ function requestRegistration(directory: string, project: Project.Interface) {
 }
 
 export function canUseLightweightInstanceContext(input: { readonly group: string; readonly endpoint: string }) {
+  if (input.group === "file") return input.endpoint === "watch"
   if (input.group === "project") return ["list", "current", "open"].includes(input.endpoint)
   if (input.group === "session") {
     return ["list", "get", "children", "todo", "diff", "messages", "message"].includes(input.endpoint)

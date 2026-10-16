@@ -32,6 +32,23 @@ afterEach(async () => {
 })
 
 describe("file HttpApi", () => {
+  test("visible-file event stream starts without retaining the full runtime", async () => {
+    await using tmp = await tmpdir()
+    await Bun.write(path.join(tmp.path, "hello.txt"), "hello")
+    const response = await request(FilePaths.watch, tmp.path, { path: "hello.txt" })
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("text/event-stream")
+    const reader = response.body!.getReader()
+    try {
+      const first = await reader.read()
+      const text = new TextDecoder().decode(first.value)
+      expect(text).toContain("file.watcher.updated")
+      expect(text).toContain("hello.txt")
+    } finally {
+      await reader.cancel()
+    }
+  })
+
   test("serves read endpoints", async () => {
     await using tmp = await tmpdir({ git: true })
     await Bun.write(path.join(tmp.path, "hello.txt"), "hello")

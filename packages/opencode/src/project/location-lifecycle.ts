@@ -262,6 +262,7 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
         for (const directory of directories) {
           const result = yield* Effect.promise(() => runDisposers(directory))
           if (result.ok) {
+            yield* store.evict(directory)
             entry.executionDirectories.delete(directory)
           } else {
             failures.push({ directory, count: result.failures.length })
@@ -302,7 +303,10 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
     const claimIdleDisposal = (entry: Entry, generation: number) =>
       SynchronizedRef.modify(entry.ref, (s): readonly [boolean, EntryState] => {
         const eligible =
-          s.generation === generation && s.lifecycle === "available" && s.runtime.tag === "running" && s.runtime.leases === 0
+          s.generation === generation &&
+          s.lifecycle === "available" &&
+          s.runtime.tag === "running" &&
+          s.runtime.leases === 0
         return eligible ? [true, { ...s, runtime: { tag: "stopping" } }] : [false, s]
       })
 
@@ -628,7 +632,8 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
             if (config.deleteFenceHook) yield* Effect.promise(config.deleteFenceHook)
             const updated = yield* Effect.try({
               try: () => ProjectLocation.markDeleting({ directory, operationID }),
-              catch: (error) => new LocationDeleteFailed({ directory, operation: "delete", message: errorMessage(error) }),
+              catch: (error) =>
+                new LocationDeleteFailed({ directory, operation: "delete", message: errorMessage(error) }),
             }).pipe(
               Effect.catchTag("LocationLifecycle.LocationDeleteFailed", (error) =>
                 // Fence is already up; undo it (only if nobody else moved the

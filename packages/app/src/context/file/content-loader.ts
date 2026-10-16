@@ -14,6 +14,7 @@ type ContentLoaderDeps = {
 export function createFileContentLoader(deps: ContentLoaderDeps) {
   const inflight = new Map<string, Promise<void>>()
   const revisions = new Map<string, number>()
+  const dirty = new Set<string>()
   const refreshes = createFreshRequestQueue<void>()
   let epoch = 0
   const load = (input: string, options?: { force?: boolean }): Promise<void> => {
@@ -21,7 +22,7 @@ export function createFileContentLoader(deps: ContentLoaderDeps) {
     if (!file) return Promise.resolve()
     const scope = deps.scope()
     const key = `${scope}\n${file}`
-    if (!options?.force && deps.loaded(file)) return Promise.resolve()
+    if (!options?.force && deps.loaded(file) && !dirty.has(file)) return Promise.resolve()
     const pending = inflight.get(key)
     if (pending) {
       if (!options?.force) return pending
@@ -51,6 +52,7 @@ export function createFileContentLoader(deps: ContentLoaderDeps) {
           return
         }
         console.debug(`[file-content] commit scope=${scope} file=${file} bytes=${response.data?.content.length ?? 0}`)
+        dirty.delete(file)
         deps.onContent(file, response.data)
       })
       .catch((error) => {
@@ -70,11 +72,19 @@ export function createFileContentLoader(deps: ContentLoaderDeps) {
   }
   return {
     load,
+    invalidate(input: string) {
+      const file = deps.normalize(input)
+      if (!file) return
+      dirty.add(file)
+      const key = `${deps.scope()}\n${file}`
+      if (inflight.has(key)) revisions.set(key, (revisions.get(key) ?? 0) + 1)
+    },
     reset() {
       epoch++
       console.debug(`[file-content] reset epoch=${epoch} pending=${inflight.size}`)
       inflight.clear()
       revisions.clear()
+      dirty.clear()
       refreshes.clearAll()
     },
   }

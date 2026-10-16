@@ -2,6 +2,43 @@ import { describe, expect, test } from "bun:test"
 import { createWatcherInvalidator, createWorkspaceTreeWatcher, invalidateFromWatcher } from "./watcher"
 
 describe("file watcher invalidation", () => {
+  test("a scope invalidation reaches every cached file without scanning disk", () => {
+    const loaded: string[] = []
+    invalidateFromWatcher(
+      { type: "file.watcher.invalidated", properties: { directory: "/repo/output" } },
+      {
+        normalize: (path) => path.replace("/repo/", ""),
+        hasFile: () => true,
+        files: () => ["output/1.svg", "output/2001.svg", "output-other/skip.svg"],
+        loadFile: (path) => loaded.push(path),
+        node: () => undefined,
+        isDirLoaded: () => false,
+        refreshDir: () => {},
+      },
+    )
+    expect(loaded).toEqual(["output/1.svg", "output/2001.svg"])
+  })
+
+  test("root invalidation dirties the workspace tree once", () => {
+    let dirty = 0
+    const watcher = createWorkspaceTreeWatcher({
+      normalize: (p) => p,
+      node: () => undefined,
+      isDirLoaded: () => true,
+      dirtyDir: () => {
+        throw new Error("expected whole-tree dirty")
+      },
+      dirtyAll: () => {
+        dirty++
+      },
+    })
+    for (let i = 0; i < 100; i++)
+      watcher.handle({ type: "file.watcher.invalidated", properties: { directory: "/repo" } })
+    watcher.flush()
+    expect(dirty).toBe(1)
+    watcher.dispose()
+  })
+
   test("reloads open files and refreshes loaded parent on add", () => {
     const loads: string[] = []
     const refresh: string[] = []
@@ -203,13 +240,16 @@ describe("file watcher invalidation", () => {
   test("workspace watcher dirties parent dirs once and ignore changes dirty loaded tree", async () => {
     const dirty: string[] = []
     let all = 0
-    const watcher = createWorkspaceTreeWatcher({
-      normalize: (input) => input,
-      node: () => undefined,
-      isDirLoaded: (path) => path === "src" || path === "",
-      dirtyDir: (path) => dirty.push(path),
-      dirtyAll: () => all++,
-    }, 1)
+    const watcher = createWorkspaceTreeWatcher(
+      {
+        normalize: (input) => input,
+        node: () => undefined,
+        isDirLoaded: (path) => path === "src" || path === "",
+        dirtyDir: (path) => dirty.push(path),
+        dirtyAll: () => all++,
+      },
+      1,
+    )
     watcher.handle({ type: "file.watcher.updated", properties: { file: "src/new.ts", event: "add" } })
     watcher.handle({ type: "file.watcher.updated", properties: { file: "src/old.ts", event: "unlink" } })
     await Bun.sleep(10)

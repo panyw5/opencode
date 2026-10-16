@@ -7,6 +7,7 @@ export type ClientOptions = {
 export type Event =
   | EventServerInstanceDisposed
   | EventFileEdited
+  | EventFileWatcherInvalidated
   | EventFileWatcherUpdated
   | EventMcpToolsChanged
   | EventMcpBrowserOpenFailed
@@ -1388,6 +1389,7 @@ export type GlobalEvent = {
   payload:
     | EventServerInstanceDisposed
     | EventFileEdited
+    | EventFileWatcherInvalidated
     | EventFileWatcherUpdated
     | EventMcpToolsChanged
     | EventMcpBrowserOpenFailed
@@ -2967,6 +2969,14 @@ export type EventFileEdited = {
   type: "file.edited"
   properties: {
     file: string
+  }
+}
+
+export type EventFileWatcherInvalidated = {
+  id: string
+  type: "file.watcher.invalidated"
+  properties: {
+    directory: string
   }
 }
 
@@ -5638,6 +5648,41 @@ export type FileReadResponses = {
 }
 
 export type FileReadResponse = FileReadResponses[keyof FileReadResponses]
+
+export type FileWatchData = {
+  body?: never
+  path?: never
+  query: {
+    directory?: string
+    workspace?: string
+    path: string
+  }
+  url: "/file/watch"
+}
+
+export type FileWatchErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type FileWatchError = FileWatchErrors[keyof FileWatchErrors]
+
+export type FileWatchResponses = {
+  /**
+   * Event stream
+   */
+  200: {
+    type: "file.watcher.updated"
+    properties: {
+      file: string
+      event: "change"
+    }
+  }
+}
+
+export type FileWatchResponse = FileWatchResponses[keyof FileWatchResponses]
 
 export type FileStatusData = {
   body?: never

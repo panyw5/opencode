@@ -1,6 +1,7 @@
 import { File } from "@/file"
 import { Ripgrep } from "@/file/ripgrep"
 import { LSP } from "@/lsp/lsp"
+import { Change } from "@/file/preview-watcher"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { Authorization } from "../middleware/authorization"
@@ -44,6 +45,7 @@ export const FilePaths = {
   list: "/file",
   content: "/file/content",
   status: "/file/status",
+  watch: "/file/watch",
 } as const
 
 export const FileApi = HttpApi.make("file")
@@ -98,6 +100,17 @@ export const FileApi = HttpApi.make("file")
             identifier: "file.read",
             summary: "Read file",
             description: "Read the content of a specified file.",
+          }),
+        ),
+        HttpApiEndpoint.get("watch", FilePaths.watch, {
+          query: FileQuery,
+          success: Change,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "file.watch",
+            summary: "Watch a visible file",
+            description:
+              "Subscribe to visible file invalidations using server-sent events without retaining the project runtime.",
           }),
         ),
         HttpApiEndpoint.get("status", FilePaths.status, {

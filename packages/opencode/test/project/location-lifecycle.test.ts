@@ -358,6 +358,12 @@ describe("LocationLifecycle", () => {
       // Use a very short idle period for testing
       const original = LocationLifecycle.config.idleDisposalMs
       LocationLifecycle.config.idleDisposalMs = 50
+      let boots = 0
+      yield* setBootstrap(
+        Effect.sync(() => {
+          boots++
+        }),
+      )
 
       try {
         const started = yield* Deferred.make<LocationID>()
@@ -384,6 +390,8 @@ describe("LocationLifecycle", () => {
 
         snap = yield* lifecycle.snapshot(locationID)
         expect(snap.runtime.tag).toBe("stopped")
+        yield* lifecycle.provide({ directory: dir, purpose: "http-request" }, Effect.void)
+        expect(boots).toBe(2)
       } finally {
         LocationLifecycle.config.idleDisposalMs = original
       }
@@ -589,7 +597,10 @@ describe("LocationLifecycle", () => {
                 inFlight--
               }),
             )
-            .pipe(Effect.catchTag("LocationLifecycle.LocationUnavailable", () => Effect.void), Effect.forkChild)
+            .pipe(
+              Effect.catchTag("LocationLifecycle.LocationUnavailable", () => Effect.void),
+              Effect.forkChild,
+            )
           yield* Fiber.join(work)
         }
         expect(disposedWhileBusy).toBe(0)
@@ -616,7 +627,9 @@ describe("LocationLifecycle", () => {
       try {
         const deleting = yield* lifecycle.delete({ directory: dir, operationID: "op-fence" }).pipe(Effect.forkChild)
         yield* Deferred.await(deleteFenceHit)
-        const error = yield* lifecycle.provide({ directory: dir, purpose: "http-request" }, Effect.void).pipe(Effect.flip)
+        const error = yield* lifecycle
+          .provide({ directory: dir, purpose: "http-request" }, Effect.void)
+          .pipe(Effect.flip)
         expect(error).toBeInstanceOf(LocationLifecycle.LocationDeleting)
         yield* Deferred.succeed(releaseHook, undefined)
         yield* Fiber.join(deleting)

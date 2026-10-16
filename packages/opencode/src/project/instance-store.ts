@@ -26,6 +26,8 @@ export interface Interface {
   readonly reload: (input: LoadInput) => Effect.Effect<InstanceContext>
   readonly dispose: (ctx: InstanceContext) => Effect.Effect<void>
   readonly disposeAll: () => Effect.Effect<void>
+  /** Forget a context only after its per-instance resources have been disposed. */
+  readonly evict: (directory: string) => Effect.Effect<void>
   readonly provide: <A, E, R>(input: LoadInput, effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
 }
 
@@ -292,6 +294,12 @@ export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootst
       reload,
       dispose,
       disposeAll,
+      evict: (directory) =>
+        Effect.gen(function* () {
+          const key = normalizeDirectory(AppFileSystem.resolve(directory)).identity
+          cache.delete(key)
+          yield* Effect.logInfo(`instance-cache-evicted directory=${directory}`)
+        }),
       provide,
     })
   }),

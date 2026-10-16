@@ -27,6 +27,10 @@ import { workspacePathContext } from "@/pages/layout/helpers"
 import { useWorkspaceTree } from "./file/workspace-tree"
 import { createFileContentLoader } from "./file/content-loader"
 import { createWatcherInvalidator } from "./file/watcher"
+import { createFileRevalidation } from "./file/revalidation"
+import { watchVisibleFile } from "./file/visible-watch"
+import { useGlobalSDK } from "./global-sdk"
+import { domainFromDirectory } from "@/pages/layout/extra-agents"
 import {
   selectionFromLines,
   type FileState,
@@ -58,6 +62,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
   gate: false,
   init: () => {
     const sdk = useSDK()
+    const globalSDK = useGlobalSDK()
     useSync()
     const params = useParams()
     const server = useServer()
@@ -71,8 +76,12 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
 
     const [store, setStore] = createStore<{
       file: Record<string, FileState>
+      visible: Record<string, number>
+      foreground: boolean
     }>({
       file: {},
+      visible: {},
+      foreground: typeof document === "undefined" || document.visibilityState !== "hidden",
     })
 
     const tree = useWorkspaceTree()
@@ -165,10 +174,18 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       onError: (file, error) => setLoadError(file, errorMessage(error, language.t("error.chain.unknown"))),
     })
     const load = loader.load
+    const visible = () => (store.foreground ? Object.keys(store.visible).filter((file) => store.visible[file] > 0) : [])
+    const revalidation = createFileRevalidation({
+      visible,
+      stale: loader.invalidate,
+      load: (file) => load(file, { force: true }),
+    })
     createEffect(() => {
       scope()
       sdk.client
       loader.reset()
+      revalidation.reset()
+      invalidator.dispose()
       resetFileContentLru()
       batch(() => {
         setStore("file", reconcile({}))
@@ -186,8 +203,9 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       hasFile: (file) => Boolean(store.file[file]),
       isOpen: (file) => tabs.all().some((tab) => path.pathFromTab(tab) === file),
       loadFile: (file) => {
-        void load(file, { force: true })
+        revalidation.invalidate(file, "watcher")
       },
+      files: () => [...new Set([...Object.keys(store.file), ...visible()])],
       node: () => undefined,
       isDirLoaded: () => false,
       refreshDir: () => {},
@@ -196,6 +214,52 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
     const stop = sdk.event.listen((e) => {
       invalidator.handle(e.details)
     })
+    const stopReconnect = globalSDK.listenAll((e) => {
+      if (e.domain !== domainFromDirectory(scope())) return
+      if (e.name !== "global" || e.details.type !== "server.connected") return
+      revalidation.visible("reconnect")
+    })
+
+    const streams = new Set<ReturnType<typeof watchVisibleFile>>()
+    createEffect(() => {
+      const paths = visible()
+      sdk.client
+      if (!paths.length) return
+      // Match the global event stream's native-fetch policy; desktop buffered
+      // IPC fetches must not be used for a local streaming response.
+      const url = new URL(sdk.url)
+      const loopback = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(url.hostname)
+      const client = sdk.client
+      const streamFetch =
+        url.protocol === "http:" && !loopback && platform.fetch ? platform.fetch : globalThis.fetch.bind(globalThis)
+      for (const target of paths) {
+        console.debug(`[file-preview] watch start path=${target}`)
+        const stream = watchVisibleFile({
+          subscribe: (signal) =>
+            client.file.watch({ path: target }, { fetch: streamFetch, signal, sseMaxRetryAttempts: 1 }),
+          change: (event) => invalidator.handle({ type: event.type, properties: event.properties }),
+        })
+        streams.add(stream)
+        onCleanup(() => {
+          stream.dispose()
+          streams.delete(stream)
+          console.debug(`[file-preview] watch stop path=${target}`)
+        })
+      }
+    })
+
+    const foreground = (event: Event) => {
+      const active = document.visibilityState !== "hidden"
+      setStore("foreground", active)
+      if (!active) return
+      revalidation.visible(event.type === "online" ? "online" : "foreground")
+      for (const stream of streams) stream.reconnect()
+    }
+    if (typeof window !== "undefined") {
+      window.addEventListener("focus", foreground)
+      window.addEventListener("online", foreground)
+      document.addEventListener("visibilitychange", foreground)
+    }
 
     const get = (input: string) => {
       const file = path.normalize(input)
@@ -229,6 +293,13 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
 
     onCleanup(() => {
       stop()
+      stopReconnect()
+      revalidation.reset()
+      if (typeof window !== "undefined") {
+        window.removeEventListener("focus", foreground)
+        window.removeEventListener("online", foreground)
+        document.removeEventListener("visibilitychange", foreground)
+      }
       loader.reset()
       invalidator.dispose()
       viewCache.clear()
@@ -258,6 +329,12 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       },
       get,
       load,
+      refresh: (input: string) => revalidation.refresh(path.normalize(input)),
+      watch(input: string) {
+        const file = path.normalize(input)
+        setStore("visible", file, (count = 0) => count + 1)
+        return () => setStore("visible", file, (count = 0) => Math.max(0, count - 1))
+      },
       scrollTop,
       scrollLeft,
       setScrollTop,

@@ -5,6 +5,57 @@ import { createFileContentLoader } from "./content-loader"
 
 const content = (value: string) => ({ type: "text", content: value }) as FileContent
 describe("file content requests", () => {
+  test("hidden invalidation prevents cached reuse and an in-flight stale commit", async () => {
+    const old = deferred<{ data: FileContent }>()
+    let reads = 0
+    const commits: string[] = []
+    const loader = createFileContentLoader({
+      scope: () => "/repo",
+      normalize: (p) => p,
+      loaded: () => true,
+      read: () => (++reads === 1 ? old.promise : Promise.resolve({ data: content("fresh") })),
+      onLoading: () => {},
+      onContent: (_, value) => {
+        commits.push(value!.content)
+      },
+      onError: () => {},
+    })
+    const loading = loader.load("a", { force: true })
+    loader.invalidate("a")
+    old.resolve({ data: content("stale") })
+    await loading
+    expect(commits).toEqual([])
+    await loader.load("a")
+    expect(commits).toEqual(["fresh"])
+    await loader.load("a")
+    expect(reads).toBe(2)
+  })
+
+  test("manual refresh bypasses loaded content without background reads", async () => {
+    let calls = 0
+    let value: FileContent | undefined
+    const loader = createFileContentLoader({
+      scope: () => "/project",
+      normalize: (path) => path,
+      loaded: () => !!value,
+      read: async () => ({ data: content(++calls === 1 ? "old preview" : "updated preview") }),
+      onLoading: () => {},
+      onContent: (_, next) => {
+        value = next
+      },
+      onError: (_, error) => {
+        throw error
+      },
+    })
+    await loader.load("image.svg")
+    await loader.load("image.svg")
+    expect(calls).toBe(1)
+    expect(value?.content).toBe("old preview")
+    await loader.load("image.svg", { force: true })
+    expect(calls).toBe(2)
+    expect(value?.content).toBe("updated preview")
+  })
+
   test("coalesces watcher refreshes but never reuses the old response", async () => {
     const first = deferred<{ data: FileContent }>()
     const second = deferred<{ data: FileContent }>()

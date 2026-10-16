@@ -76,6 +76,8 @@ import type {
   FileReadResponses,
   FileStatusErrors,
   FileStatusResponses,
+  FileWatchErrors,
+  FileWatchResponses,
   FindFilesErrors,
   FindFilesResponses,
   FindSymbolsErrors,
@@ -2098,6 +2100,38 @@ export class File extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<FileReadResponses, FileReadErrors, ThrowOnError>({
       url: "/file/content",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Watch a visible file
+   *
+   * Subscribe to visible file invalidations using server-sent events without retaining the project runtime.
+   */
+  public watch<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      path: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "path" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).sse.get<FileWatchResponses, FileWatchErrors, ThrowOnError>({
+      url: "/file/watch",
       ...options,
       ...params,
     })

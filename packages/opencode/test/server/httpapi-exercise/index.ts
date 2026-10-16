@@ -401,6 +401,12 @@ const scenarios: Scenario[] = [
     }),
   http.protected.get("/file/status", "file.status").json(200, array),
   http.protected
+    .get("/file/watch", "file.watch")
+    .seeded((ctx) => ctx.file("hello.txt", "hello\n"))
+    .at((ctx) => ({ path: `/file/watch?${new URLSearchParams({ path: "hello.txt" })}`, headers: ctx.headers() }))
+    .stream()
+    .status(200),
+  http.protected
     .get("/find", "find.text")
     .seeded((ctx) => ctx.file("hello.txt", "hello\n"))
     .at((ctx) => ({ path: `/find?${new URLSearchParams({ pattern: "hello" })}`, headers: ctx.headers() }))

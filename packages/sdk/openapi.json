@@ -4702,6 +4702,102 @@
         ]
       }
     },
+    "/file/watch": {
+      "get": {
+        "tags": [
+          "file"
+        ],
+        "operationId": "file.watch",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "file.watcher.updated"
+                      ]
+                    },
+                    "properties": {
+                      "type": "object",
+                      "properties": {
+                        "file": {
+                          "type": "string"
+                        },
+                        "event": {
+                          "type": "string",
+                          "enum": [
+                            "change"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "file",
+                        "event"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "properties"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Subscribe to visible file invalidations using server-sent events without retaining the project runtime.",
+        "summary": "Watch a visible file",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.file.watch({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/file/content": {
       "get": {
         "tags": ["file"],
@@ -13426,6 +13522,9 @@
             "$ref": "#/components/schemas/EventFileEdited"
           },
           {
+            "$ref": "#/components/schemas/EventFileWatcherInvalidated"
+          },
+          {
             "$ref": "#/components/schemas/EventFileWatcherUpdated"
           },
           {
@@ -21289,6 +21388,38 @@
           }
         },
         "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventFileWatcherInvalidated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "file.watcher.invalidated"
+            ]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "directory": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "directory"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "properties"
+        ],
         "additionalProperties": false
       },
       "EventFileWatcherUpdated": {
