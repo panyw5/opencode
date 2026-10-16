@@ -580,7 +580,6 @@
   [data-slot="text-part-meta"] {
     user-select: none;
     color: var(--text-weaker);
-    opacity: 0.48;
   }
 
   [data-slot="text-part-copy-wrapper"][data-interrupted] {

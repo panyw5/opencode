@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { nextDiagramZoom, readDiagramMetadata } from "./diagram-card"
+import { diagramZoomScrollPosition, nextDiagramZoom, readDiagramMetadata } from "./diagram-card"
 import { mixDiagramColor, renderDiagramSvg, svgAspectRatio } from "./diagram-render"
 
 describe("diagram card", () => {
@@ -14,6 +14,13 @@ describe("diagram card", () => {
     expect(nextDiagramZoom(3, "in")).toBe(3)
     expect(nextDiagramZoom(0.25, "in")).toBe(0.5)
     expect(nextDiagramZoom(3, "out")).toBe(2.75)
+  })
+
+  test("keeps the pointer position anchored while zooming", () => {
+    expect(diagramZoomScrollPosition({ scrollLeft: 100, scrollTop: 50 }, 20, 30, 1, 2)).toEqual({
+      left: 220,
+      top: 130,
+    })
   })
 
   test("reads Mermaid source from the tool input", () => {

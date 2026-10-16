@@ -37,7 +37,10 @@ type Metrics = {
   context: Context | undefined
 }
 
-type SessionLike = Pick<Session, "model"> | { model?: { id?: string; providerID?: string } } | undefined
+type SessionLike =
+  | Pick<Session, "model" | "cost">
+  | { model?: { id?: string; providerID?: string }; cost?: number }
+  | undefined
 
 const emptyTokens = {
   input: 0,
@@ -129,7 +132,7 @@ const resolveLimit = (model: Model | undefined, modelID: string | undefined, pro
 }
 
 const build = (messages: Message[] = [], providers: Provider[] = [], session?: SessionLike): Metrics => {
-  const totalCost = messages.reduce((sum, msg) => sum + (msg.role === "assistant" ? msg.cost : 0), 0)
+  const totalCost = session?.cost ?? 0
   const identity = resolveIdentity(messages, session)
   if (!identity) return { totalCost, context: undefined }
 

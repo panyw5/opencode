@@ -93,6 +93,13 @@
       min-height: 0;
       align-items: flex-start;
       justify-content: flex-start;
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
+
+      &:active {
+        cursor: grabbing;
+      }
     }
 
     [data-slot="image-preview-canvas"] {

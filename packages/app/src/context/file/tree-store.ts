@@ -1,4 +1,5 @@
 import { createStore, produce, reconcile } from "solid-js/store"
+import { untrack } from "solid-js"
 import type { FileNode } from "@opencode-ai/sdk/v2"
 import { createFreshRequestQueue } from "@/utils/fresh-request-queue"
 
@@ -7,6 +8,7 @@ type DirectoryState = {
   loaded?: boolean
   loading?: boolean
   error?: string
+  dirty?: boolean
   children?: string[]
 }
 
@@ -29,6 +31,7 @@ export function createFileTreeStore(options: TreeStoreOptions) {
   const inflight = new Map<string, Promise<void>>()
   const refreshes = createFreshRequestQueue<void>()
   const revisions = new Map<string, number>()
+  const [demands, setDemands] = createStore({ tree: 0, picker: 0 })
   let epoch = 0
 
   const reset = () => {
@@ -39,7 +42,7 @@ export function createFileTreeStore(options: TreeStoreOptions) {
     refreshes.clearAll()
     setTree("node", reconcile({}))
     setTree("dir", reconcile({}))
-    setTree("dir", "", { expanded: true })
+    setTree("dir", "", { expanded: true, dirty: true })
   }
 
   const ensureDir = (path: string) => {
@@ -52,11 +55,11 @@ export function createFileTreeStore(options: TreeStoreOptions) {
     ensureDir(dir)
 
     const current = tree.dir[dir]
-    if (!opts?.force && current?.loaded) return Promise.resolve()
+    if (!opts?.force && current?.loaded && !current?.dirty && !current?.loading) return Promise.resolve()
 
     const pending = inflight.get(dir)
     if (pending) {
-      if (!opts?.force) return pending
+      if (!opts?.force && !current?.dirty) return pending
       revisions.set(dir, (revisions.get(dir) ?? 0) + 1)
       const mark = epoch
       const scope = options.scope()
@@ -74,6 +77,7 @@ export function createFileTreeStore(options: TreeStoreOptions) {
       produce((draft) => {
         draft.loading = true
         draft.error = undefined
+        draft.dirty = false
       }),
     )
 
@@ -161,8 +165,10 @@ export function createFileTreeStore(options: TreeStoreOptions) {
           produce((draft) => {
             draft.loading = false
             draft.error = msg
+            draft.dirty = true
           }),
         )
+        console.debug(`[file-tree] load-error scope=${directory} dir=${dir} epoch=${mark} message=${msg}`)
         options.onError(msg)
       })
       .finally(() => {
@@ -186,6 +192,51 @@ export function createFileTreeStore(options: TreeStoreOptions) {
     const dir = options.normalizeDir(input)
     ensureDir(dir)
     setTree("dir", dir, "expanded", false)
+  }
+
+  const markDirty = (input: string) => {
+    const dir = options.normalizeDir(input)
+    if (!tree.dir[dir]) return
+    setTree(
+      "dir",
+      dir,
+      produce((draft) => {
+        draft.dirty = true
+        draft.error = undefined
+      }),
+    )
+    if ((dir === "" && (demands.tree > 0 || demands.picker > 0)) || (demands.tree > 0 && tree.dir[dir]?.expanded)) {
+      void listDir(dir)
+    }
+  }
+
+  const markAllDirty = () => {
+    for (const dir of Object.keys(tree.dir)) markDirty(dir)
+  }
+
+  const refreshDemanded = () => {
+    untrack(() => {
+      for (const dir of Object.keys(tree.dir)) {
+        const state = tree.dir[dir]
+        if (!state?.dirty || (dir !== "" && (!state.expanded || demands.tree === 0))) continue
+        if (dir === "" && demands.tree === 0 && demands.picker === 0) continue
+        void listDir(dir)
+      }
+    })
+  }
+
+  const acquireDemand = (kind: "tree" | "picker" = "tree") => {
+    return untrack(() => {
+      const wasUndemanded = demands.tree === 0 && demands.picker === 0
+      setDemands(kind, (value) => value + 1)
+      if (wasUndemanded) refreshDemanded()
+      let released = false
+      return () => {
+        if (released) return
+        released = true
+        setDemands(kind, (value) => Math.max(0, value - 1))
+      }
+    })
   }
 
   const dirState = (input: string) => {
@@ -212,7 +263,12 @@ export function createFileTreeStore(options: TreeStoreOptions) {
     dirState,
     children,
     node: (path: string) => tree.node[path],
-    isLoaded: (path: string) => Boolean(tree.dir[path]?.loaded),
+    isLoaded: (path: string) => Boolean(tree.dir[path]?.loaded || inflight.has(options.normalizeDir(path))),
+    markDirty,
+    markAllDirty,
+    demanded: () => demands.tree > 0,
+    acquireDemand,
+    refreshDemanded,
     reset,
   }
 }

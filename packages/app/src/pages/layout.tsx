@@ -4204,7 +4204,7 @@ export default function Layout(props: ParentProps) {
                             transform: "translate3d(52px, 0, 0)",
                           }}
                         >
-                          <span class="block min-w-0 truncate select-text text-12-mono text-text-weaker opacity-70">
+                          <span class="block min-w-0 truncate select-text text-12-mono text-text-weaker">
                             {worktree().replace(homedir(), "~")}
                           </span>
                         </Tooltip>

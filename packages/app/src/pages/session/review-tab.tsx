@@ -1,6 +1,7 @@
 import { createEffect, onCleanup, type JSX } from "solid-js"
 import type { SnapshotFileDiff as FileDiff } from "@opencode-ai/sdk/v2"
 import { SessionReview } from "@opencode-ai/ui/session-review"
+import { PanelCollapseButton } from "@/pages/session/panel-collapse-button"
 import type {
   SessionReviewCommentActions,
   SessionReviewCommentDelete,
@@ -149,6 +150,7 @@ export function SessionReviewTab(props: SessionReviewTabProps) {
         header: props.classes?.header ?? "px-3",
         container: props.classes?.container ?? "pl-3",
       }}
+      actions={<PanelCollapseButton panel="review" />}
       diffs={props.diffs()}
       diffStyle={props.diffStyle}
       onDiffStyleChange={props.onDiffStyleChange}

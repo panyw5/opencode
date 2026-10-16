@@ -15,6 +15,7 @@ import { useServer } from "@/context/server"
 import { getAvatarColors, useLayout } from "@/context/layout"
 import { LocalProvider } from "@/context/local"
 import { SDKProvider, useSDK } from "@/context/sdk"
+import { WorkspaceFileTreeProvider } from "@/context/file/workspace-tree"
 import { SkillsProvider } from "@/context/skills"
 import { sessionTabsTargetHref, useSessionTabs } from "@/context/session-tabs"
 import { SyncProvider, useSync } from "@/context/sync"
@@ -206,14 +207,16 @@ function DirectoryProviders(
 
   return (
     <SDKProvider directory={directory}>
-      <SyncProvider>
-        <SkillsProvider>
-          <ProjectStatusPortal directory={directory} />
-          <DirectoryDataProvider directory={directory} identity={props.identity} setDirectory={setDirectory}>
-            {props.children}
-          </DirectoryDataProvider>
-        </SkillsProvider>
-      </SyncProvider>
+      <WorkspaceFileTreeProvider identity={props.identity}>
+        <SyncProvider>
+          <SkillsProvider>
+            <ProjectStatusPortal directory={directory} />
+            <DirectoryDataProvider directory={directory} identity={props.identity} setDirectory={setDirectory}>
+              {props.children}
+            </DirectoryDataProvider>
+          </SkillsProvider>
+        </SyncProvider>
+      </WorkspaceFileTreeProvider>
     </SDKProvider>
   )
 }

@@ -1,5 +1,40 @@
 import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client"
 
+export async function resolveQuickSession(input: {
+  sessionID?: string
+  load: (id: string) => Promise<Session | undefined>
+  create: () => Promise<Session | undefined>
+  unavailable: (id: string, reason: "missing" | "archived") => void
+}) {
+  if (input.sessionID) {
+    const existing = await input.load(input.sessionID).catch((error: unknown) => {
+      if (!isSessionNotFoundError(error)) throw error
+      return undefined
+    })
+    if (existing && !existing.time.archived) return { session: existing, created: false }
+    input.unavailable(input.sessionID, existing ? "archived" : "missing")
+  }
+  return { session: await input.create(), created: true }
+}
+
+export async function loadQuickRequestSessions(
+  sessionIDs: string[],
+  load: (id: string) => Promise<Session | undefined>,
+) {
+  const seen = new Set<string>()
+  const sessions: Session[] = []
+  for (let id of sessionIDs) {
+    while (id && !seen.has(id)) {
+      seen.add(id)
+      const session = await load(id)
+      if (!session) break
+      sessions.push(session)
+      id = session.parentID ?? ""
+    }
+  }
+  return sessions
+}
+
 export function removeQuickRequest<T extends { id: string }>(items: T[] | undefined, id: string): T[] {
   return (items ?? []).filter((item) => item.id !== id)
 }
@@ -57,6 +92,13 @@ export function render(parts: Part[] | undefined) {
     .filter(Boolean)
     .join("\n")
     .trim()
+}
+
+export function quickAssistantMessageContent(parts: Part[] | undefined) {
+  return {
+    text: render(parts?.filter((part) => part.type !== "tool")),
+    tools: (parts ?? []).filter((part): part is Extract<Part, { type: "tool" }> => part.type === "tool"),
+  }
 }
 
 export function mergeMessages(a: Message[] | undefined, b: Message[]) {

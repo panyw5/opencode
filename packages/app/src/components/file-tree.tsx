@@ -33,10 +33,14 @@ type Filter = {
   dirs: Set<string>
 }
 
-export function shouldListRoot(input: { level: number; dir?: { loaded?: boolean; loading?: boolean } }) {
-  if (input.level !== 0) return false
-  if (input.dir?.loaded) return false
+export function shouldListRoot(input: {
+  level: number
+  dir?: { expanded?: boolean; loaded?: boolean; loading?: boolean; dirty?: boolean; error?: string }
+}) {
+  if (input.level !== 0 && !input.dir?.expanded) return false
+  if (input.dir?.loaded && !input.dir?.dirty) return false
   if (input.dir?.loading) return false
+  if (input.dir?.error) return false
   return true
 }
 
@@ -315,8 +319,12 @@ export default function FileTree(props: {
 
   createEffect(
     on(
-      () => props.path,
-      (path) => {
+      () => {
+        const state = file.tree.state(props.path)
+        return [props.path, state?.dirty, state?.loading, state?.loaded, state?.error, file.tree.demanded()] as const
+      },
+      ([path]) => {
+        if (!file.tree.demanded()) return
         const dir = untrack(() => file.tree.state(path))
         if (!shouldListRoot({ level, dir })) return
         void file.tree.list(path)

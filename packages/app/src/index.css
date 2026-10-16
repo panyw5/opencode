@@ -657,15 +657,13 @@
     color: var(--icon-disabled);
   }
 
-  /* Primary action ("new session" / "new workspace") reads as a brand chip so
-     the row has a clear entry point. Icon colors use the on-brand tokens so
-     contrast holds across themes in both schemes. */
+  /* The resting chip is translucent, unlike the solid brand surface on hover. */
   [data-component="icon-button"].sidebar-action-button-primary[data-variant="ghost"] {
     background-color: color-mix(in oklab, var(--surface-brand-base) 42%, transparent);
   }
 
   [data-component="icon-button"].sidebar-action-button-primary[data-variant="ghost"] [data-slot="icon-svg"] {
-    color: var(--icon-on-brand-base);
+    color: var(--text-strong);
   }
 
   [data-component="icon-button"].sidebar-action-button-primary[data-variant="ghost"]:is(:hover, :focus-visible):not(:disabled) {
@@ -878,12 +876,7 @@
   }
 
   [data-component="prompt-input"] + [data-slot="prompt-placeholder"] {
-    color: color-mix(in srgb, var(--text-weaker) 72%, transparent);
-    opacity: 0.86;
-  }
-
-  html[data-platform="desktop"] [data-component="prompt-input"] + [data-slot="prompt-placeholder"] {
-    color: light-dark(rgba(0, 0, 0, 0.28), rgba(255, 255, 255, 0.24));
+    color: var(--text-weaker);
   }
 
   [data-slot="prompt-placeholder-text"] {

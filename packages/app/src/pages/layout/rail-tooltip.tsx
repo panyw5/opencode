@@ -44,7 +44,7 @@ function releasePointerArmListeners() {
 
 function RailKeybind(props: { value: string }) {
   return (
-    <span class="inline-flex items-center gap-px text-14-medium text-text-weak">
+    <span class="inline-flex items-center gap-px text-14-medium">
       <For each={Array.from(props.value)}>
         {(ch) => (
           <span
@@ -140,7 +140,7 @@ export function RailTooltip(props: {
           {(p) => (
             <div
               data-component="project-rail-label"
-              class="pointer-events-none fixed z-[100] flex items-center gap-2 whitespace-nowrap rounded-lg border border-border-strong-base bg-surface-float-base-hover px-3 py-1.5 text-14-medium text-text-strong shadow-lg"
+              class="pointer-events-none fixed z-[100] flex items-center gap-2 whitespace-nowrap rounded-lg border border-border-strong-base bg-surface-float-base-hover px-3 py-1.5 text-14-medium text-text-on-float-base-hover shadow-lg"
               style={{
                 left: `${p().left}px`,
                 top: `${p().top}px`,

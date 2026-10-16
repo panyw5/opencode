@@ -1,4 +1,4 @@
-import { batch, createEffect, createMemo, onCleanup } from "solid-js"
+import { batch, createEffect, createMemo, onCleanup, untrack } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -24,7 +24,7 @@ import { createFileViewCache } from "./file/view-cache"
 import { useServer } from "@/context/server"
 import { usePlatform } from "@/context/platform"
 import { workspacePathContext } from "@/pages/layout/helpers"
-import { createFileTreeStore } from "./file/tree-store"
+import { useWorkspaceTree } from "./file/workspace-tree"
 import { createFileContentLoader } from "./file/content-loader"
 import { createWatcherInvalidator } from "./file/watcher"
 import {
@@ -75,12 +75,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       file: {},
     })
 
-    const tree = createFileTreeStore({
-      scope,
-      normalizeDir: path.normalizeDir,
-      list: (dir) => sdk.client.file.list({ path: dir }).then((x) => x.data ?? []),
-      onError: () => {},
-    })
+    const tree = useWorkspaceTree()
 
     const evictContent = (keep?: Set<string>) => {
       evictContentLru(keep, (target) => {
@@ -177,7 +172,6 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       resetFileContentLru()
       batch(() => {
         setStore("file", reconcile({}))
-        tree.reset()
       })
     })
 
@@ -194,11 +188,9 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       loadFile: (file) => {
         void load(file, { force: true })
       },
-      node: tree.node,
-      isDirLoaded: tree.isLoaded,
-      refreshDir: (dir) => {
-        void tree.listDir(dir, { force: true })
-      },
+      node: () => undefined,
+      isDirLoaded: () => false,
+      refreshDir: () => {},
     })
 
     const stop = sdk.event.listen((e) => {
@@ -238,7 +230,6 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
     onCleanup(() => {
       stop()
       loader.reset()
-      tree.reset()
       invalidator.dispose()
       viewCache.clear()
     })
@@ -249,18 +240,20 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       tab: path.tab,
       pathFromTab: path.pathFromTab,
       tree: {
-        list: tree.listDir,
-        refresh: (input: string) => tree.listDir(input, { force: true }),
+        list: (input: string, opts?: { force?: boolean }) => untrack(() => tree.listDir(input, opts)),
+        refresh: (input: string) => untrack(() => tree.listDir(input, { force: true })),
         state: tree.dirState,
         children: tree.children,
-        expand: tree.expandDir,
-        collapse: tree.collapseDir,
+        demanded: tree.demanded,
+        acquireDemand: (kind?: "tree" | "picker") => tree.acquireDemand(kind),
+        expand: (input: string) => untrack(() => tree.expandDir(input)),
+        collapse: (input: string) => untrack(() => tree.collapseDir(input)),
         toggle(input: string) {
           if (tree.dirState(input)?.expanded) {
-            tree.collapseDir(input)
+            untrack(() => tree.collapseDir(input))
             return
           }
-          tree.expandDir(input)
+          untrack(() => tree.expandDir(input))
         },
       },
       get,

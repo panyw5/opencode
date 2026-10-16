@@ -15,6 +15,7 @@ import { OPEN_TAB_EVENT, type BrowserTab } from "@/browser/tabs"
 import { createBrowserDisplay } from "@/browser/display"
 import { browserOverlay } from "@/browser/overlays"
 import { CLOSE_BROWSER_TAB_COMMAND } from "@/browser/close-tab"
+import { PanelCollapseButton } from "@/pages/session/panel-collapse-button"
 
 export { browserApi } from "@/browser/types"
 export type { WindowBrowserApi, BrowserBounds, BrowserPresentation, BrowserViewState } from "@/browser/types"
@@ -468,6 +469,8 @@ export function BrowserPanel(props: { class?: string }) {
               onClick={() => addUserTab()}
               aria-label={language.t("panel.browser.newTab")}
             />
+            <div class="flex-1" />
+            <PanelCollapseButton panel="browser" />
           </div>
           <Toolbar />
           <div class="flex-1 min-h-0 relative">

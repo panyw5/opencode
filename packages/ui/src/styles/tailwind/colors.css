@@ -79,6 +79,8 @@
   --color-text-strong: var(--text-strong);
   --color-text-interactive-base: var(--text-interactive-base);
   --color-text-on-brand-base: var(--text-on-brand-base);
+  --color-text-on-float-base: var(--text-on-float-base);
+  --color-text-on-float-base-hover: var(--text-on-float-base-hover);
   --color-text-on-interactive-base: var(--text-on-interactive-base);
   --color-text-on-interactive-weak: var(--text-on-interactive-weak);
   --color-text-on-success-base: var(--text-on-success-base);

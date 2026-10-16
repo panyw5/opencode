@@ -61,12 +61,61 @@ export function readDiagramMetadata(input: DiagramCardProps["input"], metadata: 
 function DiagramLightbox(props: { svg: string; title: string; tall: boolean }): JSX.Element {
   const [zoom, setZoom] = createSignal(1)
   const url = URL.createObjectURL(new Blob([props.svg], { type: "image/svg+xml" }))
+  let drag: { pointerID: number; x: number; y: number; left: number; top: number } | undefined
   onCleanup(() => URL.revokeObjectURL(url))
   const scale = (direction: "in" | "out") => {
     const previous = zoom()
     const next = nextDiagramZoom(previous, direction)
     setZoom(next)
     console.debug(`[diagram] lightbox scale title=${props.title} direction=${direction} from=${previous} to=${next}`)
+  }
+  const wheel = (event: WheelEvent & { currentTarget: HTMLDivElement }) => {
+    event.preventDefault()
+    const previous = zoom()
+    const next = nextDiagramZoom(previous, event.deltaY < 0 ? "in" : "out")
+    if (next === previous) return
+    const viewport = event.currentTarget
+    const bounds = viewport.getBoundingClientRect()
+    const style = getComputedStyle(viewport)
+    const anchorX = event.clientX - bounds.left - viewport.clientLeft - Number.parseFloat(style.paddingLeft)
+    const anchorY = event.clientY - bounds.top - viewport.clientTop - Number.parseFloat(style.paddingTop)
+    const scroll = diagramZoomScrollPosition(viewport, anchorX, anchorY, previous, next)
+    setZoom(next)
+    requestAnimationFrame(() => {
+      viewport.scrollLeft = scroll.left
+      viewport.scrollTop = scroll.top
+    })
+    console.debug(
+      `[diagram] lightbox wheel title=${props.title} delta=${event.deltaY} from=${previous} to=${next} anchor=${anchorX},${anchorY}`,
+    )
+  }
+  const pointerDown = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
+    if (event.button !== 0) return
+    const target = event.currentTarget
+    drag = {
+      pointerID: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      left: target.scrollLeft,
+      top: target.scrollTop,
+    }
+    target.setPointerCapture(event.pointerId)
+    console.debug(`[diagram] lightbox pan start title=${props.title} pointer=${event.pointerId}`)
+  }
+  const pointerMove = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
+    if (!drag || drag.pointerID !== event.pointerId) return
+    event.preventDefault()
+    event.currentTarget.scrollLeft = drag.left - (event.clientX - drag.x)
+    event.currentTarget.scrollTop = drag.top - (event.clientY - drag.y)
+    console.debug(
+      `[diagram] lightbox pan move title=${props.title} pointer=${event.pointerId} left=${event.currentTarget.scrollLeft} top=${event.currentTarget.scrollTop}`,
+    )
+  }
+  const pointerEnd = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
+    if (!drag || drag.pointerID !== event.pointerId) return
+    drag = undefined
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    console.debug(`[diagram] lightbox pan end title=${props.title} pointer=${event.pointerId}`)
   }
   return (
     <ImagePreview
@@ -75,12 +124,31 @@ function DiagramLightbox(props: { svg: string; title: string; tall: boolean }): 
       fit={props.tall ? "width" : "contain"}
       zoom={zoom()}
       toolbar={<DiagramZoomControls zoom={zoom()} onZoom={scale} />}
+      onWheel={wheel}
+      onPointerDown={pointerDown}
+      onPointerMove={pointerMove}
+      onPointerUp={pointerEnd}
+      onPointerCancel={pointerEnd}
     />
   )
 }
 
 export function nextDiagramZoom(current: number, direction: "in" | "out") {
   return Math.min(3, Math.max(0.25, current + (direction === "in" ? 0.25 : -0.25)))
+}
+
+export function diagramZoomScrollPosition(
+  viewport: Pick<HTMLDivElement, "scrollLeft" | "scrollTop">,
+  anchorX: number,
+  anchorY: number,
+  previous: number,
+  next: number,
+) {
+  const ratio = next / previous
+  return {
+    left: (viewport.scrollLeft + anchorX) * ratio - anchorX,
+    top: (viewport.scrollTop + anchorY) * ratio - anchorY,
+  }
 }
 
 function DiagramZoomControls(props: { zoom: number; onZoom: (direction: "in" | "out") => void }) {
@@ -116,11 +184,13 @@ export function DiagramCard(props: DiagramCardProps): JSX.Element {
   const [rendering, setRendering] = createSignal(false)
   const [tall, setTall] = createSignal(false)
   const [zoom, setZoom] = createSignal(1)
+  const [panning, setPanning] = createSignal(false)
   const [palette, setPalette] = createSignal(currentDiagramPalette())
   const diagram = () => readDiagramMetadata(props.input, props.metadata)
   let element: HTMLElement | undefined
   let activeID: string | undefined
   let generation = 0
+  let drag: { pointerID: number; x: number; y: number; left: number; top: number } | undefined
 
   onMount(() => {
     const observer = new MutationObserver(() => setPalette(currentDiagramPalette()))
@@ -219,6 +289,40 @@ export function DiagramCard(props: DiagramCardProps): JSX.Element {
     )
   }
 
+  const panStart = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    const target = event.currentTarget
+    drag = {
+      pointerID: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      left: target.scrollLeft,
+      top: target.scrollTop,
+    }
+    target.setPointerCapture(event.pointerId)
+    setPanning(true)
+    console.debug(`[diagram] card pan start session=${props.sessionID} part=${props.partID} pointer=${event.pointerId}`)
+  }
+
+  const panMove = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
+    if (!drag || drag.pointerID !== event.pointerId) return
+    event.preventDefault()
+    event.currentTarget.scrollLeft = drag.left - (event.clientX - drag.x)
+    event.currentTarget.scrollTop = drag.top - (event.clientY - drag.y)
+    console.debug(
+      `[diagram] card pan move session=${props.sessionID} part=${props.partID} pointer=${event.pointerId} left=${event.currentTarget.scrollLeft} top=${event.currentTarget.scrollTop}`,
+    )
+  }
+
+  const panEnd = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
+    if (!drag || drag.pointerID !== event.pointerId) return
+    drag = undefined
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    setPanning(false)
+    console.debug(`[diagram] card pan end session=${props.sessionID} part=${props.partID} pointer=${event.pointerId}`)
+  }
+
   const imageError = (event: Event & { currentTarget: HTMLImageElement }) => {
     const current = url()
     if (!current || event.currentTarget.src !== current) return
@@ -243,6 +347,7 @@ export function DiagramCard(props: DiagramCardProps): JSX.Element {
       data-diagram-syntax={diagram()?.syntax}
       data-diagram-layout={tall() ? "tall" : "normal"}
       data-diagram-zoom={zoom()}
+      data-diagram-panning={panning() ? "true" : undefined}
     >
       <div
         class="diagram-card__preview"
@@ -250,6 +355,11 @@ export function DiagramCard(props: DiagramCardProps): JSX.Element {
         role="region"
         aria-label={title()}
         tabIndex={tall() || zoom() > 1 ? 0 : undefined}
+        onPointerDown={panStart}
+        onPointerMove={panMove}
+        onPointerUp={panEnd}
+        onPointerCancel={panEnd}
+        onDragStart={(event) => event.preventDefault()}
       >
         <Show
           when={url()}
@@ -271,6 +381,7 @@ export function DiagramCard(props: DiagramCardProps): JSX.Element {
                 alt={title()}
                 loading="lazy"
                 decoding="async"
+                draggable={false}
                 onLoad={(event) =>
                   console.debug(
                     `[diagram] image loaded session=${props.sessionID} part=${props.partID} width=${event.currentTarget.naturalWidth} height=${event.currentTarget.naturalHeight}`,

@@ -1,6 +1,6 @@
 import type { PermissionRequest, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
 
-function sessionTreeIDs(session: Session[], sessionID?: string): string[] {
+export function sessionTreeIDs(session: Session[], sessionID?: string): string[] {
   if (!sessionID) return []
   const map = session.reduce((acc, item) => {
     if (!item.parentID) return acc
@@ -56,6 +56,14 @@ export function sessionPermissionRequest(
   include?: (item: PermissionRequest) => boolean,
 ): PermissionRequest | undefined {
   return sessionTreeRequest(session, request, sessionID, include)
+}
+
+export function sessionPermissionRequests(
+  session: Session[],
+  request: Record<string, PermissionRequest[] | undefined>,
+  sessionID?: string,
+): PermissionRequest[] {
+  return sessionTreeRequests(session, request, sessionID)
 }
 
 export function sessionQuestionRequest(
