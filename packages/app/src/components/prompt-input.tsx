@@ -883,7 +883,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (store.mode !== "normal") return
     const createTempMarkdownAttachment = platform.createTempMarkdownAttachment
     if (!createTempMarkdownAttachment) return
-    dialog.show(() => (
+    dialog.showForOwner(() => (
       <DialogPromptEditor
         text=""
         placeholder={placeholder()}
@@ -1970,7 +1970,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const expand = () => {
     const base = prompt.current()
-    dialog.show(() => (
+    dialog.showForOwner(() => (
       <DialogPromptEditor text={value(base)} placeholder={placeholder()} save={(text) => apply(text, base)} />
     ))
   }
@@ -2455,7 +2455,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           <PromptImageAttachments
             attachments={imageAttachments()}
             onOpen={(attachment) =>
-              dialog.show(() => <ImagePreview src={attachment.dataUrl} alt={attachment.filename} />)
+              dialog.showForOwner(() => <ImagePreview src={attachment.dataUrl} alt={attachment.filename} />)
             }
             onRemove={removeAttachment}
             removeLabel={language.t("prompt.attachment.remove")}
@@ -2764,7 +2764,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                               onBlur={trace ? () => logPromptHover("model-selector-unpaid", "blur") : undefined}
                               onClick={(e: MouseEvent) => {
                                 logPromptHover("model-selector-unpaid", "click", e)
-                                dialog.show(() => <DialogSelectModelUnpaid />)
+                                dialog.showForOwner(() => <DialogSelectModelUnpaid />)
                               }}
                             >
                               <Show when={local.model.current()?.provider?.id}>

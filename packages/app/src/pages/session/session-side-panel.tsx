@@ -352,7 +352,7 @@ export function SessionSidePanel(props: {
                               iconSize="large"
                               class="file-preview-open-button !rounded-md h-12 w-14 !aspect-auto"
                               onClick={() =>
-                                dialog.show(() => <DialogSelectFile mode="files" onOpenFile={showAllFiles} />)
+                                dialog.showForOwner(() => <DialogSelectFile mode="files" onOpenFile={showAllFiles} />)
                               }
                               aria-label={language.t("command.file.open")}
                             />

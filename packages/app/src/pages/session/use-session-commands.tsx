@@ -292,7 +292,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         keybind: "mod+p",
         slash: "open",
         onSelect: () =>
-          dialog.show(() => <DialogSelectFile mode="files" onOpenFile={showAllFiles} />, undefined, {
+          dialog.showForOwner(() => <DialogSelectFile mode="files" onOpenFile={showAllFiles} />, {
             modal: false,
             preventScroll: false,
           }),
@@ -444,7 +444,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         keywords: kw("command.model.choose", "command.model.choose.description"),
         keybind: "mod+'",
         slash: "model",
-        onSelect: () => dialog.show(() => <DialogSelectModel model={local.model} />),
+        onSelect: () => dialog.showForOwner(() => <DialogSelectModel model={local.model} />),
       }),
       mcpCommand({
         id: "mcp.toggle",
@@ -453,7 +453,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         keywords: kw("command.mcp.toggle", "command.mcp.toggle.description"),
         keybind: "mod+;",
         slash: "mcp",
-        onSelect: () => dialog.show(() => <DialogSelectMcp />),
+        onSelect: () => dialog.showForOwner(() => <DialogSelectMcp />),
       }),
       withCategory(language.t("command.category.skill"))({
         id: "skill.list",
@@ -461,7 +461,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         description: language.t("command.skill.list.description"),
         keywords: kw("command.skill.list", "command.skill.list.description"),
         keybind: "mod+shift+;",
-        onSelect: () => dialog.show(() => <DialogSelectSkill />),
+        onSelect: () => dialog.showForOwner(() => <DialogSelectSkill />),
       }),
       agentCommand({
         id: "agent.cycle",
@@ -648,7 +648,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         keywords: kw("command.session.fork", "command.session.fork.description"),
         slash: "fork",
         disabled: !params.id || userMessages().length === 0,
-        onSelect: () => dialog.show(() => <DialogFork />),
+        onSelect: () => dialog.showForOwner(() => <DialogFork />),
       }),
       ...share,
     ]

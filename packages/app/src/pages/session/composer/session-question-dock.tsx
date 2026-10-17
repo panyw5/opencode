@@ -675,7 +675,9 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
                 >
                   <PromptImageAttachments
                     attachments={attachments()}
-                    onOpen={(file) => dialog.show(() => <ImagePreview src={file.dataUrl} alt={file.filename} />)}
+                    onOpen={(file) =>
+                      dialog.showForOwner(() => <ImagePreview src={file.dataUrl} alt={file.filename} />)
+                    }
                     onRemove={removeImage}
                     removeLabel={language.t("prompt.attachment.remove")}
                     class="px-0 pt-2"
@@ -755,7 +757,9 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
               />
               <PromptImageAttachments
                 attachments={attachments()}
-                onOpen={(file) => dialog.show(() => <ImagePreview src={file.dataUrl} alt={file.filename} />)}
+                onOpen={(file) =>
+                  dialog.showForOwner(() => <ImagePreview src={file.dataUrl} alt={file.filename} />)
+                }
                 onRemove={removeImage}
                 removeLabel={language.t("prompt.attachment.remove")}
                 class="px-0 pt-2"

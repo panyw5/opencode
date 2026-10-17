@@ -240,6 +240,10 @@ export default function Page() {
         console.debug(
           `[session] session-key from=${previous ?? "none"} to=${key} ready=${String(sync.data.message[params.id ?? ""] !== undefined)}`,
         )
+        if (previous !== undefined && previous !== key) {
+          console.debug(`[session] close session-bound dialog from=${previous} to=${key}`)
+          dialog.closeOwnerBound()
+        }
       },
       { defer: true },
     ),
@@ -1749,7 +1753,8 @@ export default function Page() {
   const openMathInitialize = () => {
     const current = local.model.current()
     const defaultModel = current ? `${current.provider.id}/${current.id}` : ""
-    dialog.show(() => (
+    console.debug(`[math-initialize] open session=${params.id ?? "draft"}`)
+    dialog.showForOwner(() => (
       <SessionMathInitializeDialog
         defaultModel={defaultModel}
         defaultVerifierModel={mathSwarm.workers[0]?.verifierModel ?? defaultModel}

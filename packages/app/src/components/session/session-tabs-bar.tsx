@@ -1082,7 +1082,7 @@ function SessionTab(props: {
 
   const editTitle = () => {
     console.debug(`[session-tab] edit title open id=${props.tab.id} dir=${props.tab.directory}`)
-    dialog.show(() => (
+    dialog.showForOwner(() => (
       <DialogEditSessionTitle directory={props.tab.directory} sessionID={props.tab.id} initialTitle={title()} />
     ))
   }

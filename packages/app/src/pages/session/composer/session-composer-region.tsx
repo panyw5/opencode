@@ -802,7 +802,7 @@ export function SessionComposerRegion(props: {
     })
 
   const openBackgroundShell = (entry: BackgroundShellInfo) => {
-    dialog.show(() => (
+    dialog.showForOwner(() => (
       <SessionBackgroundShellDialog entry={entry} load={loadBackgroundShell} stop={stopSessionBackgroundShell} />
     ))
   }
@@ -829,7 +829,7 @@ export function SessionComposerRegion(props: {
   })
 
   const openSkippedQuestions = () => {
-    dialog.show(() => (
+    dialog.showForOwner(() => (
       <SessionSkippedQuestionsDialog
         requests={props.state.skippedQuestionRequests}
         invalidation={props.state.skippedQuestionInvalidation}

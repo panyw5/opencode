@@ -23,6 +23,7 @@ type DialogOptions = {
   modal?: boolean
   preventScroll?: boolean
   isolate?: boolean
+  ownerBound?: boolean
   suspenseFallback?: JSX.Element
   errorFallback?: JSX.Element | ((err: any, reset: () => void) => JSX.Element)
 }
@@ -32,6 +33,8 @@ type Active = {
   node: JSX.Element
   dispose: () => void
   owner: Owner
+  lifetimeOwner: Owner
+  ownerBound: boolean
   onClose?: () => void
   setClosing: (closing: boolean) => void
 }
@@ -108,6 +111,12 @@ function init() {
     // Prefer the outer dialog's owner when replacing so the new root stays
     // under a stable parent even after the nested caller is torn down.
     const rootOwner = previous?.owner ?? owner
+    const ownerBound = opts?.ownerBound ?? previous?.ownerBound ?? false
+    const lifetimeOwner = ownerBound
+      ? previous?.ownerBound
+        ? previous.lifetimeOwner
+        : owner
+      : owner
 
     const node = runWithOwner(rootOwner, () =>
       createRoot((d: () => void) => {
@@ -151,7 +160,18 @@ function init() {
 
     if (!dispose || !setClosing) return
 
-    setActive({ id, node, dispose, owner: rootOwner, onClose, setClosing })
+    setActive({ id, node, dispose, owner: rootOwner, lifetimeOwner, ownerBound, onClose, setClosing })
+
+    if (ownerBound) {
+      console.debug(`[dialog] owner-bound show id=${id}`)
+      runWithOwner(lifetimeOwner, () =>
+        onCleanup(() => {
+          if (active()?.id !== id) return
+          console.debug(`[dialog] owner-bound close id=${id} reason=owner-disposed`)
+          close()
+        }),
+      )
+    }
 
     if (previous) {
       previous.dispose()
@@ -161,6 +181,10 @@ function init() {
   return {
     get active() {
       return active()
+    },
+    closeOwnerBound() {
+      if (!active()?.ownerBound) return
+      close()
     },
     close,
     show,
@@ -192,8 +216,14 @@ export function useDialog() {
     get active() {
       return ctx.active
     },
+    closeOwnerBound() {
+      ctx.closeOwnerBound()
+    },
     show(element: DialogElement, onClose?: () => void, opts?: DialogOptions) {
       ctx.show(element, owner, onClose, opts)
+    },
+    showForOwner(element: DialogElement, opts?: DialogOptions) {
+      ctx.show(element, owner, undefined, { ...opts, ownerBound: true })
     },
     close() {
       ctx.close()
