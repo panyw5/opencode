@@ -90,10 +90,25 @@ export const Manifest = Schema.Struct({
 }).annotate({ identifier: "ExtensionManifest" })
 export type Manifest = Types.DeepMutable<Schema.Schema.Type<typeof Manifest>>
 
-export const Source = Schema.Struct({
+export const PathSource = Schema.Struct({
   type: Schema.Literal("path"),
   path: Schema.String,
 }).annotate({ identifier: "ExtensionPathSource" })
+
+export const NpmSource = Schema.Struct({
+  type: Schema.Literal("npm"),
+  spec: Schema.String,
+  registry: Schema.String,
+  integrity: Schema.String,
+}).annotate({ identifier: "ExtensionNpmSource" })
+
+export const ArchiveSource = Schema.Struct({
+  type: Schema.Literal("archive"),
+  location: Schema.String,
+  sha256: Schema.String,
+}).annotate({ identifier: "ExtensionArchiveSource" })
+
+export const Source = Schema.Union([PathSource, NpmSource, ArchiveSource])
 export type Source = Types.DeepMutable<Schema.Schema.Type<typeof Source>>
 
 export const RegistryRow = Schema.Struct({
@@ -104,12 +119,46 @@ export const RegistryRow = Schema.Struct({
   enabled: Schema.Boolean,
   installedAt: Schema.Number,
   settings: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
+  revision: Schema.optional(Schema.Number),
+  installId: Schema.optional(Schema.String),
+  updatedAt: Schema.optional(Schema.Number),
+  secretKeys: Schema.optional(Schema.Array(Schema.String)),
 }).annotate({ identifier: "ExtensionRegistryRow" })
 export type RegistryRow = Types.DeepMutable<Schema.Schema.Type<typeof RegistryRow>>
 
+export const OperationReceipt = Schema.Struct({
+  id: Schema.String,
+  kind: Schema.Literals(["install", "update", "uninstall"]),
+  extensionID: ExtensionID,
+  tokenHash: Schema.String,
+  committedAt: Schema.Number,
+  installId: Schema.optional(Schema.String),
+  cleanupPending: Schema.Boolean,
+  purgeData: Schema.optional(Schema.Boolean),
+  purgeCompleted: Schema.optional(Schema.Boolean),
+  previousInstallId: Schema.optional(Schema.String),
+  retainedRevision: Schema.optional(Schema.Number),
+}).annotate({ identifier: "ExtensionOperationReceipt" })
+export type OperationReceipt = Types.DeepMutable<Schema.Schema.Type<typeof OperationReceipt>>
+
+export const RetainedData = Schema.Struct({
+  name: Schema.String,
+  source: Source,
+  settings: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
+  secretKeys: Schema.Array(Schema.String),
+  revision: Schema.Number,
+  purging: Schema.optional(Schema.Boolean),
+  purgeRevision: Schema.optional(Schema.Number),
+  purgedAt: Schema.optional(Schema.Number),
+}).annotate({ identifier: "ExtensionRetainedData" })
+export type RetainedData = Types.DeepMutable<Schema.Schema.Type<typeof RetainedData>>
+
 export const RegistryStore = Schema.Struct({
-  version: Schema.Literal(1),
+  version: Schema.Literals([1, 2]),
   extensions: Schema.Record(ExtensionID, RegistryRow),
+  revision: Schema.optional(Schema.Number),
+  receipts: Schema.optional(Schema.Record(Schema.String, OperationReceipt)),
+  retained: Schema.optional(Schema.Record(ExtensionID, RetainedData)),
 }).annotate({ identifier: "ExtensionRegistry" })
 export type RegistryStore = Types.DeepMutable<Schema.Schema.Type<typeof RegistryStore>>
 
@@ -144,13 +193,15 @@ export const Info = Schema.Struct({
   activation: Schema.Array(Schema.String),
   contributes: Contributes,
   permissions: Schema.Array(Schema.String),
+  revision: Schema.optional(Schema.Number),
+  installId: Schema.optional(Schema.String),
   settings: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
   server: Schema.optional(ServerInfo),
   web: Schema.optional(WebInfo),
 }).annotate({ identifier: "ExtensionInfo" })
 export type Info = Types.DeepMutable<Schema.Schema.Type<typeof Info>>
 
-export const StatusState = Schema.Literals(["installed", "enabled", "disabled", "error", "changed"])
+export const StatusState = Schema.Literals(["installed", "enabled", "disabled", "error", "changed", "removed"])
 export const StatusProperties = Schema.Struct({
   id: ExtensionID,
   version: Schema.String,

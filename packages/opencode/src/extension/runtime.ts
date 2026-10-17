@@ -14,7 +14,10 @@ import type {
 } from "@opencode-ai/extension-kit/server"
 import { GlobalBus } from "@/bus/global"
 import { Hash } from "@/util/hash"
-import { ExtensionRegistry, NotFoundError } from "./registry"
+import { ExtensionRegistry, NotFoundError, registryFile } from "./registry"
+import { ExtensionLeases } from "./leases"
+import { provisionData } from "./data"
+import { assertDevelopmentDirectory, ownedGeneration } from "./paths"
 import { publishError } from "./event"
 import { ExtensionID, type Info, type RegistryRow } from "./schema"
 import type { Loaded } from "./manifest"
@@ -69,6 +72,18 @@ export class ExtensionRpcAbortedError extends Error {
     readonly method: string,
   ) {
     super(`Extension RPC aborted: ${id}.${method}`)
+  }
+}
+
+/** Installation cannot run concurrently with runtime work or another mutation. */
+export class ExtensionMutationError extends Error {
+  override readonly name = "ExtensionMutationError"
+
+  constructor(
+    readonly id: string,
+    readonly needsRestart = false,
+  ) {
+    super(needsRestart ? `Extension requires restart: ${id}` : `Extension mutation in progress: ${id}`)
   }
 }
 
@@ -352,6 +367,42 @@ async function defaultImporter(source: string, fingerprint: string | undefined, 
 
 let importer: Importer = defaultImporter
 
+type Lease = Awaited<ReturnType<typeof ExtensionLeases.acquire>>
+type LeaseDriver = Pick<typeof ExtensionLeases, "acquire" | "acquireData">
+let leaseDriver: LeaseDriver = ExtensionLeases
+// Imported code can retain unmanaged timers/raw closures after dispose. Pin
+// every imported managed generation until process exit, not merely strict stop.
+const generationPins = new Map<string, Lease>()
+const dataPins = new Map<string, Lease>()
+const retainedTestPins = new Set<Lease>()
+
+function pinKey(registry: string, identity: string) {
+  return JSON.stringify([registry, identity])
+}
+
+async function acquirePin(
+  pins: Map<string, Lease>,
+  key: string,
+  acquire: () => Promise<Lease>,
+  available: () => boolean,
+) {
+  if (pins.has(key)) return available()
+  const lease = await acquire()
+  if (!available() || pins.has(key)) {
+    // No code has used this handle; an existing pin, if any, stays owned.
+    try {
+      await lease.release()
+    } catch (error) {
+      // Unconfirmed release is conservatively retained for process lifetime.
+      if (!pins.has(key)) pins.set(key, lease)
+      throw error
+    }
+    return available()
+  }
+  pins.set(key, lease)
+  return true
+}
+
 const DISPOSE_TIMEOUT_MS = 10_000
 
 async function withTimeout(promise: Promise<unknown>, timeoutMs: number | undefined) {
@@ -370,16 +421,24 @@ async function withTimeout(promise: Promise<unknown>, timeoutMs: number | undefi
 
 async function disposeService(id: string, service: ExtensionService | undefined, timeoutMs?: number) {
   if (!service?.dispose) return
-  try {
-    await withTimeout(
-      Promise.resolve(service.dispose()).catch((error) => {
-        log.error("extension dispose failed", { extension: id, error })
-      }),
-      timeoutMs,
+  let disposal = serviceDisposals.get(service)
+  if (!disposal) {
+    disposal = track(
+      id,
+      Promise.resolve()
+        .then(() => service.dispose!())
+        .then(
+          () => true,
+          (error) => {
+            failedDisposals.add(id)
+            log.error("extension dispose failed", { extension: id, error })
+            return false
+          },
+        ),
     )
-  } catch (error) {
-    log.error("extension dispose failed", { extension: id, error })
+    serviceDisposals.set(service, disposal)
   }
+  await withTimeout(disposal, timeoutMs)
 }
 
 function duckTypedRpcError(error: unknown) {
@@ -415,8 +474,12 @@ function resolveSettings(manifest: Loaded, stored: Record<string, unknown> | und
  * newer values. Falls back to the caller's row when the registry is
  * unreadable or the extension was unlinked in the meantime.
  */
-async function currentSettings(id: ExtensionID, fallback: RegistryRow): Promise<Record<string, unknown> | undefined> {
-  const linked = await ExtensionRegistry.linked(id).catch(() => undefined)
+async function currentSettings(
+  id: ExtensionID,
+  fallback: RegistryRow,
+  registry = registryFile(),
+): Promise<Record<string, unknown> | undefined> {
+  const linked = await ExtensionRegistry.linked(id, registry).catch(() => undefined)
   return (linked?.row ?? fallback).settings
 }
 
@@ -487,6 +550,97 @@ async function invalidateHooks() {
 
 const entries = new Map<string, Entry>()
 const loading = new Map<string, Promise<Entry | undefined>>()
+const fences = new Set<string>()
+const quiescing = new Set<string>()
+const blockers = new Set<string>()
+const mutationEpochs = new Map<string, number>()
+// Keep work observable even after disable/reload drops its entry and requests.
+const pending = new Map<string, Set<Promise<unknown>>>()
+const activeRequests = new Map<string, Set<AbortController>>()
+const liveHooks = new Map<string, Set<ExtensionHooks>>()
+const failedDisposals = new Set<string>()
+let serviceDisposals = new WeakMap<ExtensionService, Promise<boolean>>()
+let hookDisposals = new WeakMap<ExtensionHooks, Promise<boolean>>()
+let hookFinalizers = new WeakMap<ExtensionHooks, () => unknown>()
+
+function gated(id: string) {
+  return fences.has(id) || quiescing.has(id) || blockers.has(id)
+}
+
+function assertAvailable(id: string) {
+  if (gated(id)) throw new ExtensionMutationError(id, blockers.has(id))
+}
+
+function beginMutation(id: string): () => void {
+  assertAvailable(id)
+  fences.add(id)
+  // Also invalidate pre-registry/pre-import callers crossing an await, even if
+  // the caller releases the fence before those callers resume.
+  invalidate(id)
+  mutationEpochs.set(id, (mutationEpochs.get(id) ?? 0) + 1)
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    fences.delete(id)
+  }
+}
+
+function track<T>(id: string, promise: Promise<T>): Promise<T> {
+  let work = pending.get(id)
+  if (!work) pending.set(id, (work = new Set()))
+  work.add(promise)
+  const settled = () => {
+    work.delete(promise)
+    if (!work.size && pending.get(id) === work) pending.delete(id)
+  }
+  void promise.then(settled, settled)
+  return promise
+}
+
+/** Strict installation teardown; unlike disable/reload, uncertainty is sticky. */
+async function quiesce(
+  id: string,
+  options: { timeoutMs?: number } = {},
+): Promise<{
+  stopped: boolean
+  needsRestart: boolean
+}> {
+  if (quiescing.has(id)) throw new ExtensionMutationError(id, blockers.has(id))
+  quiescing.add(id)
+  mutationEpochs.set(id, (mutationEpochs.get(id) ?? 0) + 1)
+  invalidate(id)
+  const entry = entries.get(id)
+  entries.delete(id)
+  loading.delete(id)
+  entry?.settingsListeners.clear()
+  for (const request of activeRequests.get(id) ?? []) request.abort(new Error(`Extension mutation: ${id}`))
+  // Existing instance finalizers belong to Plugin/Instance invalidation. Do
+  // not invoke them a second time; their completion is observed below.
+  const stopped = (async () => {
+    await disposeService(id, entry?.service, options.timeoutMs)
+    // Tasks can create late disposal tasks while settling, so drain to idle,
+    // rather than waiting on only the first snapshot.
+    while (pending.get(id)?.size) await Promise.allSettled([...pending.get(id)!])
+  })()
+  let complete = false
+  try {
+    await withTimeout(
+      stopped.then(() => {
+        complete = true
+      }),
+      options.timeoutMs,
+    )
+    if (!complete || failedDisposals.has(id) || liveHooks.get(id)?.size) blockers.add(id)
+    return { stopped: complete && !blockers.has(id), needsRestart: blockers.has(id) }
+  } catch (error) {
+    log.error("extension quiesce failed", { extension: id, error })
+    blockers.add(id)
+    return { stopped: false, needsRestart: true }
+  } finally {
+    quiescing.delete(id)
+  }
+}
 
 /**
  * Monotonic per-extension epoch. `disable` and `reload` bump it so work that
@@ -536,8 +690,16 @@ async function importEntry(manifest: Loaded, source: string): Promise<Entry> {
  * fingerprint change clears it. Returns undefined when the entry was disabled
  * or replaced while the import was in flight.
  */
-async function ensureEntry(manifest: Loaded, row: RegistryRow, serverUrl: URL | undefined): Promise<Entry | undefined> {
+async function ensureEntry(
+  manifest: Loaded,
+  row: RegistryRow,
+  serverUrl: URL | undefined,
+  registry: string,
+): Promise<Entry | undefined> {
   const id = manifest.id
+  let gen = generationOf(id)
+  const epoch = mutationEpochs.get(id) ?? 0
+  if (gated(id)) return
   const source = sourceOf(manifest)
   if (!source) return
 
@@ -546,14 +708,16 @@ async function ensureEntry(manifest: Loaded, row: RegistryRow, serverUrl: URL | 
     const changed = existing.fingerprint !== manifest.serverFingerprint || existing.source !== source
     if (changed) {
       await reload(id)
+      if (gated(id) || (mutationEpochs.get(id) ?? 0) !== epoch) return
+      gen = generationOf(id)
     } else if (existing.status === "error") {
       return
     } else if (existing.module) {
       // Re-read the registry so a row snapshot taken before a concurrent
       // settings update cannot clobber the newer values it holds.
-      const stored = await currentSettings(id, row)
+      const stored = await currentSettings(id, row, registry)
       // The entry can be disabled or reloaded while the settings were read.
-      if (entries.get(id) !== existing) return
+      if (gated(id) || generationOf(id) !== gen || entries.get(id) !== existing) return
       existing.settings = resolveSettings(manifest, stored)
       if (serverUrl) existing.serverUrl = serverUrl
       return existing
@@ -563,24 +727,59 @@ async function ensureEntry(manifest: Loaded, row: RegistryRow, serverUrl: URL | 
   const inflight = loading.get(id)
   if (inflight) {
     const entry = await inflight
-    if (entries.get(id) !== entry) return
+    if (gated(id) || generationOf(id) !== gen || entries.get(id) !== entry) return
     return entry
   }
 
-  const gen = generationOf(id)
-  const load = importEntry(manifest, source).then(async (entry) => {
-    // Re-read so a settings update landing during the import is not lost.
-    const stored = await currentSettings(id, row)
-    entry.settings = resolveSettings(manifest, stored)
-    if (serverUrl) entry.serverUrl = serverUrl
-    // A disable/reload during the import must not resurrect the entry.
-    if (generationOf(id) === gen) entries.set(id, entry)
-    return entry
-  })
+  const load = track(
+    id,
+    Promise.resolve().then(async () => {
+      // Acquisition itself is tracked and deduplicated before the first await;
+      // quiesce cannot report idle while a lease/import is arriving late.
+      const available = () => !gated(id) && generationOf(id) === gen
+      if (!available()) return
+      if (row.source.type === "path") await assertDevelopmentDirectory(manifest.dir)
+      if (!(await acquirePin(dataPins, pinKey(registry, id), () => leaseDriver.acquireData(registry, id), available)))
+        return
+      if (row.source.type !== "path" && row.installId) {
+        if (
+          !(await acquirePin(
+            generationPins,
+            pinKey(registry, row.installId),
+            () => leaseDriver.acquire(registry, row.installId!),
+            available,
+          ))
+        )
+          return
+        // acquire may precede installer materialization. Revalidate ownership
+        // and registry identity only after the collector can no longer remove it.
+        await ownedGeneration(registry, row)
+        const current = await ExtensionRegistry.linked(manifest.id, registry)
+        if (
+          !current?.row.enabled ||
+          current.row.installId !== row.installId ||
+          current.row.dir !== row.dir ||
+          current.manifest.serverFingerprint !== manifest.serverFingerprint
+        )
+          return
+      }
+      if (!available()) return
+      await provisionData({ id, name: row.name, source: row.source })
+      if (!available()) return
+      const entry = await importEntry(manifest, source)
+      // Re-read so a settings update landing during the import is not lost.
+      const stored = await currentSettings(id, row, registry)
+      entry.settings = resolveSettings(manifest, stored)
+      if (serverUrl) entry.serverUrl = serverUrl
+      // A disable/reload during the import must not resurrect the entry.
+      if (!gated(id) && generationOf(id) === gen) entries.set(id, entry)
+      return entry
+    }),
+  )
   loading.set(id, load)
   try {
     const entry = await load
-    if (generationOf(id) !== gen || entries.get(id) !== entry) return
+    if (gated(id) || generationOf(id) !== gen || entries.get(id) !== entry) return
     return entry
   } finally {
     if (loading.get(id) === load) loading.delete(id)
@@ -594,27 +793,37 @@ async function ensureEntry(manifest: Loaded, row: RegistryRow, serverUrl: URL | 
  * service is disposed immediately instead of being cached on a stale entry.
  */
 async function ensureService(entry: Entry, manifest: Loaded, serverUrl: URL | undefined) {
-  if (entry.status === "ready") return entry.service
-  if (entry.status === "error") return
-  if (entry.activating) return entry.activating
-
   const id = entry.id
   const gen = generationOf(id)
-  const activation = (async () => {
-    const host = createHost(entry, manifest, serverUrl)
-    const service = ((await entry.module?.activate?.(host)) ?? {}) as ExtensionService
-    if (generationOf(id) !== gen) {
-      await disposeService(id, service, 0)
-      return undefined
-    }
-    entry.service = service
-    entry.status = "ready"
+  if (gated(id) || entries.get(id) !== entry) return
+  if (entry.status === "ready") return entry.service
+  if (entry.status === "error") return
+  if (entry.activating) {
+    const service = await entry.activating
+    if (gated(id) || generationOf(id) !== gen || entries.get(id) !== entry) return
     return service
-  })()
+  }
+
+  const activation = track(
+    id,
+    (async () => {
+      const host = createHost(entry, manifest, serverUrl)
+      const service = ((await entry.module?.activate?.(host)) ?? {}) as ExtensionService
+      if (gated(id) || generationOf(id) !== gen || entries.get(id) !== entry) {
+        await disposeService(id, service, 0)
+        return undefined
+      }
+      entry.service = service
+      entry.status = "ready"
+      return service
+    })(),
+  )
 
   entry.activating = activation
   try {
-    return await activation
+    const service = await activation
+    if (gated(id) || generationOf(id) !== gen || entries.get(id) !== entry) return
+    return service
   } catch (error) {
     entry.status = "error"
     entry.error = error instanceof Error ? error.message : String(error)
@@ -631,21 +840,102 @@ async function ensureService(entry: Entry, manifest: Loaded, serverUrl: URL | un
  * disposal: the runtime dropped ownership, so a hanging extension dispose
  * must not stall the caller.
  */
+function finalizeHooks(id: string, hooks: ExtensionHooks, dispose: () => unknown) {
+  const existing = hookDisposals.get(hooks)
+  if (existing) return existing
+  const disposal = track(
+    id,
+    Promise.resolve()
+      .then(dispose)
+      .then(
+        () => {
+          liveHooks.get(id)?.delete(hooks)
+          return true
+        },
+        (error) => {
+          failedDisposals.add(id)
+          log.error("extension instance dispose failed", { extension: id, error })
+          throw error
+        },
+      ),
+  )
+  hookDisposals.set(hooks, disposal)
+  return disposal
+}
+
 async function disposeHooks(id: string, hooks: ExtensionHooks | undefined) {
-  if (!hooks?.dispose) return
+  if (!hooks) return
   try {
     await withTimeout(
-      Promise.resolve(hooks.dispose()).catch((error) => {
-        log.error("extension instance dispose failed", { extension: id, error })
-      }),
+      finalizeHooks(id, hooks, hookFinalizers.get(hooks) ?? (() => hooks.dispose?.())),
       DISPOSE_TIMEOUT_MS,
     )
-  } catch (error) {
-    log.error("extension instance dispose failed", { extension: id, error })
+  } catch {
+    // finalizeHooks records the failure; legacy callers remain best-effort.
   }
 }
 
-async function callServer(entry: Entry, manifest: Loaded, input: PluginInput) {
+/** Calls retained by Plugin/ToolRegistry remain generation-bound, even after a
+ * cache entry is invalidated. Track their actual work, not just server(). */
+function bindHook<T extends (...args: any[]) => any>(id: string, gen: number, fn: T, tool = false): T {
+  return function (this: unknown, ...args: Parameters<T>) {
+    assertAvailable(id)
+    if (generationOf(id) !== gen) throw new ExtensionMutationError(id, blockers.has(id))
+    let request: AbortController | undefined
+    let requests: Set<AbortController> | undefined
+    if (tool) {
+      request = new AbortController()
+      requests = activeRequests.get(id)
+      if (!requests) activeRequests.set(id, (requests = new Set()))
+      requests.add(request)
+      const context = args[1]
+      args[1] = {
+        ...context,
+        abort: context?.abort ? AbortSignal.any([context.abort, request.signal]) : request.signal,
+      }
+    }
+    const cleanup = () => {
+      if (!request || !requests) return
+      requests.delete(request)
+      if (!requests.size && activeRequests.get(id) === requests) activeRequests.delete(id)
+    }
+    try {
+      const result = fn.apply(this, args)
+      if (result && typeof result.then === "function") {
+        return track(id, Promise.resolve(result).finally(cleanup))
+      }
+      cleanup()
+      return result
+    } catch (error) {
+      cleanup()
+      throw error
+    }
+  } as T
+}
+
+function bindHooks(id: string, gen: number, hooks: ExtensionHooks) {
+  for (const key of Object.keys(hooks) as Array<keyof ExtensionHooks>) {
+    const value = hooks[key]
+    if (key !== "dispose" && typeof value === "function") {
+      Object.assign(hooks, { [key]: bindHook(id, gen, value) })
+    }
+  }
+  for (const definition of Object.values(hooks.tool ?? {})) {
+    definition.execute = bindHook(id, gen, definition.execute, true)
+  }
+  if (hooks.auth?.loader) hooks.auth.loader = bindHook(id, gen, hooks.auth.loader)
+  for (const method of hooks.auth?.methods ?? []) {
+    if (method.authorize) method.authorize = bindHook(id, gen, method.authorize)
+  }
+  if (hooks.provider?.models) hooks.provider.models = bindHook(id, gen, hooks.provider.models)
+}
+
+function callServer(entry: Entry, manifest: Loaded, input: PluginInput) {
+  return track(entry.id, callServerInternal(entry, manifest, input))
+}
+
+async function callServerInternal(entry: Entry, manifest: Loaded, input: PluginInput) {
+  if (gated(entry.id) || entries.get(entry.id) !== entry) return
   const server = entry.module?.server
   if (!server) return
   const id = entry.id
@@ -656,56 +946,86 @@ async function callServer(entry: Entry, manifest: Loaded, input: PluginInput) {
   // A disable/reload while server() was running means the runtime no longer
   // owns the instance: the late hooks are disposed (bounded) instead of being
   // registered on a dead entry.
-  if (generationOf(id) !== gen || entries.get(id) !== entry) {
+  if (gated(id) || generationOf(id) !== gen || entries.get(id) !== entry) {
     await disposeHooks(id, hooks)
     return
   }
   const directory = input.directory
+  bindHooks(id, gen, hooks)
   const original = hooks.dispose
+  hookFinalizers.set(hooks, () => original?.call(hooks))
   // Instance finalizers run through the plugin dispose path, which the runtime
   // does not own; wrapping the hook keeps the rpc instance map in sync even
   // when the process-level stop is never reached.
   hooks.dispose = async () => {
     if (entry.instances.get(directory) === hooks) entry.instances.delete(directory)
-    await original?.call(hooks)
+    await finalizeHooks(id, hooks, () => original?.call(hooks))
   }
+  let owned = liveHooks.get(id)
+  if (!owned) liveHooks.set(id, (owned = new Set()))
+  owned.add(hooks)
   entry.instances.set(directory, hooks)
   return hooks
 }
 
 async function instanceHooks(input: PluginInput, options: { disabled?: boolean } = {}): Promise<InstanceHookEntry[]> {
   if (options.disabled) return []
+  const registry = registryFile()
+  const epochs = new Map(mutationEpochs)
   let list: Info[]
   try {
-    list = await ExtensionRegistry.list(() => "")
+    list = await ExtensionRegistry.list(() => "", registry)
   } catch (error) {
     // A corrupt registry file must not break Plugin.state for every instance.
     log.error("extension registry list failed", { error })
     return []
   }
   const result: InstanceHookEntry[] = []
-  for (const info of list) {
-    if (!info.enabled || info.state !== "ready") continue
-    try {
-      const linked = await ExtensionRegistry.linked(info.id)
-      if (!linked) continue
-      const { row, manifest } = linked
-      if (!row.enabled || !manifest.serverEntry) continue
-      const entry = await ensureEntry(manifest, row, input.serverUrl)
-      if (!entry?.module) continue
-      const service = await ensureService(entry, manifest, input.serverUrl)
-      if (!service) continue
-      if (entries.get(manifest.id) !== entry) continue
-      const hooks = await callServer(entry, manifest, input)
-      // A disable/reload that landed while the hooks were being produced must
-      // not surface them for the fresh instance.
-      if (!hooks || entries.get(manifest.id) !== entry) continue
-      result.push({ id: manifest.id, hooks })
-    } catch (error) {
-      log.error("extension instance hooks failed", { extension: info.id, error })
+  const eligible = list.filter((info) => info.enabled && info.state === "ready")
+  const available = (id: string) => {
+    assertAvailable(id)
+    if ((mutationEpochs.get(id) ?? 0) !== (epochs.get(id) ?? 0)) {
+      throw new ExtensionMutationError(id, blockers.has(id))
     }
   }
-  return result
+  try {
+    for (const info of eligible) {
+      available(info.id)
+      try {
+        const linked = await ExtensionRegistry.linked(info.id, registry)
+        available(info.id)
+        if (!linked) continue
+        const { row, manifest } = linked
+        if (!row.enabled || !manifest.serverEntry) continue
+        const entry = await ensureEntry(manifest, row, input.serverUrl, registry)
+        available(info.id)
+        if (!entry?.module) continue
+        const service = await ensureService(entry, manifest, input.serverUrl)
+        available(info.id)
+        if (!service || entries.get(manifest.id) !== entry) continue
+        const hooks = await callServer(entry, manifest, input)
+        // Keep ownership of produced hooks before checking a mutation that may
+        // have started while server() was settling, so failure can dispose them.
+        if (hooks) result.push({ id: manifest.id, hooks })
+        available(info.id)
+        if (hooks && entries.get(manifest.id) !== entry) {
+          result.pop()
+          await disposeHooks(manifest.id, hooks)
+        }
+      } catch (error) {
+        if (error instanceof ExtensionMutationError || error instanceof ExtensionLeases.LeaseError) throw error
+        log.error("extension instance hooks failed", { extension: info.id, error })
+      }
+    }
+    // Returning [] successfully during a fence poisons the enclosing infinite
+    // Plugin/ToolRegistry cache. A failed initializer has TTL zero and retries
+    // after release; disabled and ordinary reload paths keep their old behavior.
+    for (const info of eligible) available(info.id)
+    return result
+  } catch (error) {
+    await Promise.all(result.map(({ id, hooks }) => disposeHooks(id, hooks)))
+    throw error
+  }
 }
 
 async function rpc(call: ExtensionRpcCall): Promise<unknown> {
@@ -714,17 +1034,27 @@ async function rpc(call: ExtensionRpcCall): Promise<unknown> {
   if (signal?.aborted) throw aborted()
 
   const id = ExtensionID.make(call.id)
-  const linked = await ExtensionRegistry.linked(id)
+  const registry = registryFile()
+  const epoch = mutationEpochs.get(id) ?? 0
+  const available = () => {
+    assertAvailable(id)
+    if ((mutationEpochs.get(id) ?? 0) !== epoch) throw new ExtensionMutationError(id, blockers.has(id))
+  }
+  available()
+  const linked = await ExtensionRegistry.linked(id, registry)
+  available()
   if (signal?.aborted) throw aborted()
   if (!linked) throw new NotFoundError(id)
   const { row, manifest } = linked
   if (!row.enabled || !manifest.serverEntry) throw new ExtensionRpcNotFoundError(call.id, call.method)
 
-  const entry = await ensureEntry(manifest, row, undefined)
+  const entry = await ensureEntry(manifest, row, undefined, registry)
+  available()
   if (signal?.aborted) throw aborted()
   // The entry can be replaced or removed while the import was in flight.
   if (!entry?.module || entries.get(manifest.id) !== entry) throw new ExtensionRpcNotFoundError(call.id, call.method)
   const service = await ensureService(entry, manifest, undefined)
+  available()
   if (signal?.aborted) throw aborted()
   if (!service || entries.get(manifest.id) !== entry) throw new ExtensionRpcNotFoundError(call.id, call.method)
 
@@ -732,27 +1062,40 @@ async function rpc(call: ExtensionRpcCall): Promise<unknown> {
   const handler: RpcHandler | undefined = instanceHandler ?? service.rpc?.[call.method]
   if (!handler) throw new ExtensionRpcNotFoundError(call.id, call.method)
 
+  available()
   const request = new AbortController()
   const cancel = () => request.abort(signal?.reason)
   if (signal?.aborted) cancel()
   else signal?.addEventListener("abort", cancel, { once: true })
   entry.requests.add(request)
+  let requests = activeRequests.get(id)
+  if (!requests) activeRequests.set(id, (requests = new Set()))
+  requests.add(request)
   if (request.signal.aborted) {
     entry.requests.delete(request)
+    requests.delete(request)
     signal?.removeEventListener("abort", cancel)
     throw aborted()
   }
   try {
-    return await handler(call.input, {
-      directory: call.directory,
-      signal: request.signal,
-    })
+    const result = await track(
+      id,
+      Promise.resolve().then(() => {
+        available()
+        if (request.signal.aborted) throw aborted()
+        return handler(call.input, { directory: call.directory, signal: request.signal })
+      }),
+    )
+    available()
+    return result
   } catch (error) {
     const normalized = duckTypedRpcError(error)
     if (normalized) throw normalized
     throw error
   } finally {
     entry.requests.delete(request)
+    requests.delete(request)
+    if (!requests.size && activeRequests.get(id) === requests) activeRequests.delete(id)
     signal?.removeEventListener("abort", cancel)
   }
 }
@@ -839,6 +1182,8 @@ function describe(id: string) {
 export const ExtensionRuntime = {
   instanceHooks,
   rpc,
+  beginMutation,
+  quiesce,
   disable,
   reload,
   notifySettings,
@@ -850,9 +1195,36 @@ export const ExtensionRuntime = {
     setImporter(next: Importer | undefined) {
       importer = next ?? defaultImporter
     },
+    setLeaseDriver(next: LeaseDriver | undefined) {
+      leaseDriver = next ?? ExtensionLeases
+    },
     async reset() {
       await disposeAll({ timeoutMs: 100 })
+      const canReleasePins =
+        !pending.size &&
+        !activeRequests.size &&
+        ![...liveHooks.values()].some((hooks) => hooks.size) &&
+        !failedDisposals.size
       loading.clear()
+      fences.clear()
+      quiescing.clear()
+      blockers.clear()
+      mutationEpochs.clear()
+      pending.clear()
+      activeRequests.clear()
+      liveHooks.clear()
+      failedDisposals.clear()
+      serviceDisposals = new WeakMap()
+      hookDisposals = new WeakMap()
+      hookFinalizers = new WeakMap()
+      // Explicit test isolation only. Production teardown never drops pins,
+      // even after successful strict quiesce: imported raw closures may live.
+      const pins = [...generationPins.values(), ...dataPins.values()]
+      if (canReleasePins) await Promise.all(pins.map((lease) => lease.release()))
+      else for (const lease of pins) retainedTestPins.add(lease)
+      generationPins.clear()
+      dataPins.clear()
+      leaseDriver = ExtensionLeases
       importer = defaultImporter
     },
   },

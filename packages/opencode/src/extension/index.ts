@@ -3,7 +3,7 @@ import { Context, Effect, Layer } from "effect"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import type { Loaded } from "./manifest"
 import { ExtensionRegistry } from "./registry"
-import { ExtensionID, type Info } from "./schema"
+import { ExtensionID, type Info, type Source } from "./schema"
 import { ExtensionRuntime } from "./runtime"
 import type { ExtensionWatcher as Watcher } from "./watch"
 
@@ -24,7 +24,7 @@ export type Asset = {
   id: ExtensionID
   version: string
   webRoot: string
-  source: "path"
+  source: Source["type"]
 }
 
 export interface Interface {
@@ -69,13 +69,19 @@ export const layer = Layer.effect(
     const disabled = () => flags.pure || flags.disableExtensions
     const watcher: Watcher | undefined = disabled()
       ? undefined
-      : (yield* Effect.promise(async () => (await import("./watch")).ExtensionWatcher.start({
-          invalidateInstances: ExtensionRuntime.invalidateHooks,
-          reloadExtension: (id) => ExtensionRuntime.reload(id),
-        })))
+      : yield* Effect.promise(async () =>
+          (await import("./watch")).ExtensionWatcher.start({
+            invalidateInstances: ExtensionRuntime.invalidateHooks,
+            reloadExtension: (id) => ExtensionRuntime.reload(id),
+          }),
+        )
     if (watcher) {
       const release = acquireLease(watcher)
       yield* Effect.addFinalizer(() => Effect.promise(() => release()))
+      const stopObserving = yield* Effect.promise(async () =>
+        (await import("./install-service")).observeInstallations(),
+      )
+      yield* Effect.addFinalizer(() => Effect.promise(stopObserving))
     }
     const refreshWatcher = () => watcher?.refresh().catch(() => undefined)
     const list = () =>
@@ -124,7 +130,7 @@ export const layer = Layer.effect(
               id,
               version,
               webRoot: linked.manifest.webRoot,
-              source: "path" as const,
+              source: linked.row.source.type,
             }
           })
 

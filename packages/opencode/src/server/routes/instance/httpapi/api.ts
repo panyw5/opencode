@@ -8,6 +8,7 @@ import { ConfigApi } from "./groups/config"
 import { ControlApi } from "./groups/control"
 import { EventApi } from "./groups/event"
 import { ExtensionApi } from "./groups/extension"
+import { ExtensionInstallApi } from "./groups/extension-install"
 import { ExtensionRpcApi } from "./groups/extension-rpc"
 import { ExperimentalApi } from "./groups/experimental"
 import { FileApi } from "./groups/file"
@@ -37,6 +38,7 @@ const SyncEventSchemas = SyncEvent.effectPayloads()
 export const RootHttpApi = HttpApi.make("opencode-root")
   .addHttpApi(ControlApi)
   .addHttpApi(ExtensionApi)
+  .addHttpApi(ExtensionInstallApi)
   .addHttpApi(ExtensionRpcApi)
   .addHttpApi(GlobalApi)
   .middleware(SchemaErrorMiddleware)

@@ -102,9 +102,9 @@ const defaultSubscribe: SubscribeFn = (dir, callback, ignore) => {
 }
 
 const defaultTargets = async (): Promise<Target[]> =>
-  (await ExtensionRegistry.list(() => ""))
-    .filter((info) => info.enabled && info.source.type === "path")
-    .map((info) => ({ id: info.id, dir: info.source.path }))
+  (await ExtensionRegistry.list(() => "")).flatMap((info) =>
+    info.enabled && info.source.type === "path" ? [{ id: info.id, dir: info.source.path }] : [],
+  )
 
 // Runs before reload: plugin instance finalizers must observe the OLD modules.
 // Failing invalidation aborts the reload so the old runtime stays usable.
@@ -417,6 +417,10 @@ export function start(options: ExtensionWatcherOptions = {}): ExtensionWatcher {
     log.error("extension watcher initial scan failed", { error: String(error) })
   })
   return watcher
+}
+
+export async function refresh() {
+  await active?.refresh()
 }
 
 export async function resetForTesting() {

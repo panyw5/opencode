@@ -141,6 +141,7 @@ import {
 import { ConfigIM } from "./config-im"
 import { useExtensionHost } from "@/extensions/host"
 import { ConfigExtensionDetail } from "./config-extension-detail"
+import { ConfigExtensionInstallActions } from "./config-extension-install-actions"
 import { extensionPick, extensionSelection, extensionSelectionKey, parseExtensionPick } from "./config-extensions"
 
 const CORE_SECTIONS = [
@@ -3488,7 +3489,8 @@ function CustomEditor(props: {
                       "min(32rem, calc(var(--kb-popper-content-available-height, 100dvh) - 10px))",
                   }}
                   onOpenChange={(open) => {
-                    if (open) console.info(`[config] provider SDK menu opened options=${npmOptions().length} maxHeight=32rem`)
+                    if (open)
+                      console.info(`[config] provider SDK menu opened options=${npmOptions().length} maxHeight=32rem`)
                   }}
                   triggerStyle={{ width: "100%", "justify-content": "space-between", transform: "none" }}
                   triggerProps={{ "aria-label": language.t("config.custom.field.npm") }}
@@ -5621,7 +5623,13 @@ export default function ConfigPage() {
   })
 
   const [gptProConfig, setGptProConfig] = createStore({ ...DEFAULT_GPT_PRO_CONFIG })
-  createEffect(() => { if (state.section === "claws" && platform.gptPro) void platform.gptPro.getConfig().then(config => setGptProConfig(config)).catch(() => {}) })
+  createEffect(() => {
+    if (state.section === "claws" && platform.gptPro)
+      void platform.gptPro
+        .getConfig()
+        .then((config) => setGptProConfig(config))
+        .catch(() => {})
+  })
   const claws = createMemo<ClawItem[]>(() => {
     if (platform.platform !== "desktop") return []
     const items: ClawItem[] = extraAgents.map((agent) => {
@@ -5657,7 +5665,15 @@ export default function ConfigPage() {
         enabled: cfg?.enabled ?? false,
       }
     })
-    if (platform.gptPro) items.push({ id: "claw:gpt-pro", label: "GPT-6 Pro", note: t("gptPro.description"), meta: "ChatGPT Chat · browser", sourceUrl: "https://chatgpt.com", enabled: gptProConfig.enabled })
+    if (platform.gptPro)
+      items.push({
+        id: "claw:gpt-pro",
+        label: "GPT-6 Pro",
+        note: t("gptPro.description"),
+        meta: "ChatGPT Chat · browser",
+        sourceUrl: "https://chatgpt.com",
+        enabled: gptProConfig.enabled,
+      })
     for (const agent of cliAgentDescriptors()) {
       const config = cliAgentConfigs[agent.id]
       const info = cliAgentInfo[agent.id]
@@ -7739,7 +7755,9 @@ export default function ConfigPage() {
       return
     }
     const updated = upsertAgentMarkdownVariant(state.text, next)
-    console.info(`[config] agent draft variant from=${current ?? ""} to=${next ?? ""} changed=${String(updated !== state.text)}`)
+    console.info(
+      `[config] agent draft variant from=${current ?? ""} to=${next ?? ""} changed=${String(updated !== state.text)}`,
+    )
     if (updated === state.text) return
     setState("text", updated)
     setState("saved", updated)
@@ -8444,6 +8462,15 @@ export default function ConfigPage() {
                       description={t("config.extensions.header")}
                       icon={sectionIcon("extensions")}
                     />
+                    <div class="mt-4">
+                      <ConfigExtensionInstallActions
+                        operations={extensionHost}
+                        language={language}
+                        connection={() => globalSDK.client}
+                        enabled={extensionHost.enabled()}
+                        busy={extensionHost.mutating("@installation")}
+                      />
+                    </div>
                   </Match>
                   <Match when={state.section === "plugins"}>
                     <ConfigPaneTitle
@@ -9311,7 +9338,9 @@ export default function ConfigPage() {
                       />
                     }
                   >
-                    <Match when={selectedClaw()?.id === "claw:gpt-pro"}><GptProSettings onConfig={config => setGptProConfig(config)}/></Match>
+                    <Match when={selectedClaw()?.id === "claw:gpt-pro"}>
+                      <GptProSettings onConfig={(config) => setGptProConfig(config)} />
+                    </Match>
                     <Match when={selectedClaw()?.id === "claw:hermes"}>
                       <HermesEditor
                         item={selectedClaw()}

@@ -1,12 +1,19 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
+import { createHash } from "node:crypto"
 import { lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm } from "node:fs/promises"
 import type { PluginInput } from "@opencode-ai/plugin"
 import { Global } from "@opencode-ai/core/global"
 import { GlobalBus } from "../../src/bus/global"
-import { ExtensionRegistry } from "../../src/extension/registry"
+import { ExtensionRegistry, registryFile } from "../../src/extension/registry"
+import { ExtensionLeases } from "../../src/extension/leases"
+import { Effect, Exit } from "effect"
+import { InstanceState } from "../../src/effect/instance-state"
+import { InstanceRef } from "../../src/effect/instance-ref"
+import type { InstanceContext } from "../../src/project/instance-context"
 import {
+  ExtensionMutationError,
   ExtensionRpcAbortedError,
   ExtensionRpcError,
   ExtensionRpcNotFoundError,
@@ -118,6 +125,14 @@ const registry = path.join(root, "registry.json")
 
 const directories = [path.join(root, "instance-a"), path.join(root, "instance-b")]
 let nextDirectory = 0
+
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
 
 function counters(): Record<string, any> {
   return (globalThis as Record<string, any>).__runtimeFixture ?? {}
@@ -241,6 +256,621 @@ afterEach(async () => {
 afterAll(async () => {
   delete process.env.OPENCODE_EXTENSION_REGISTRY_FILE
   await rm(root, { recursive: true, force: true })
+})
+
+describe("extension mutation gate", () => {
+  beforeEach(async () => {
+    await link("test.srv", path.join(root, "test-srv"))
+  })
+
+  test("rejects duplicate mutations and RPC without importing, then loads after release", async () => {
+    let imports = 0
+    ExtensionRuntime.testing.setImporter(async () => {
+      imports++
+      return { activate: async () => ({ rpc: { ping: () => "new" } }) }
+    })
+    const release = ExtensionRuntime.beginMutation("test.srv")
+    expect(() => ExtensionRuntime.beginMutation("test.srv")).toThrow(ExtensionMutationError)
+    await expect(ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })).rejects.toThrow(ExtensionMutationError)
+    await expect(ExtensionRuntime.instanceHooks(pluginInput())).rejects.toThrow(ExtensionMutationError)
+    expect(imports).toBe(0)
+    expect(await ExtensionRuntime.quiesce("test.srv", { timeoutMs: 50 })).toEqual({
+      stopped: true,
+      needsRestart: false,
+    })
+    release()
+    release()
+    expect(await ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })).toBe("new")
+    expect(imports).toBe(1)
+  })
+
+  test("mutation failures are not cached by the production InstanceState helper", async () => {
+    ExtensionRuntime.testing.setImporter(async () => ({
+      activate: async () => ({}),
+      server: async () => ({ tool: { example: { description: "example", args: {}, execute: async () => "new" } } }),
+    }))
+    const input = pluginInput()
+    const context = { directory: input.directory, directoryKey: input.directory } as InstanceContext
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          let attempts = 0
+          const state = yield* InstanceState.make(() =>
+            Effect.acquireRelease(
+              Effect.tryPromise({
+                try: () => {
+                  attempts++
+                  return ExtensionRuntime.instanceHooks(input)
+                },
+                catch: (error) => error,
+              }),
+              (entries) =>
+                Effect.promise(async () => {
+                  for (const entry of entries) await entry.hooks.dispose?.()
+                }),
+            ),
+          )
+          const get = InstanceState.get(state).pipe(Effect.provideService(InstanceRef, context))
+          const release = ExtensionRuntime.beginMutation("test.srv")
+          try {
+            expect(Exit.isFailure(yield* Effect.exit(get))).toBe(true)
+          } finally {
+            release()
+          }
+          const entries = yield* get
+          expect(entries).toHaveLength(1)
+          expect(entries[0]!.hooks.tool?.example).toBeDefined()
+          expect(yield* get).toBe(entries)
+          expect(attempts).toBe(2)
+        }),
+      ),
+    )
+  })
+
+  test.each(["tool", "chat", "event"] as const)(
+    "quiesce drains %s calls and rejects retained old-generation hooks",
+    async (kind) => {
+      const started = deferred()
+      const gate = deferred()
+      let receiver: unknown
+      ExtensionRuntime.testing.setImporter(async () => ({
+        activate: async () => ({}),
+        server: async () => {
+          async function run(this: unknown) {
+            receiver = this
+            started.resolve()
+            await gate.promise
+            return "done"
+          }
+          return {
+            tool: { example: { description: "example", args: {}, execute: run } },
+            "chat.message": run,
+            event: run,
+            dispose: async () => {},
+          }
+        },
+      }))
+      const [entry] = await ExtensionRuntime.instanceHooks(pluginInput())
+      const hooks = entry!.hooks
+      const invoke = () =>
+        kind === "tool"
+          ? hooks.tool!.example!.execute({}, {} as never)
+          : kind === "chat"
+            ? hooks["chat.message"]!({} as never, {} as never)
+            : hooks.event!({} as never)
+      const running = invoke()
+      expect(running).toBeInstanceOf(Promise)
+      await started.promise
+      expect(receiver).toBe(kind === "tool" ? hooks.tool!.example : hooks)
+      const release = ExtensionRuntime.beginMutation("test.srv")
+      await hooks.dispose!()
+      let finished = false
+      const stopping = ExtensionRuntime.quiesce("test.srv", { timeoutMs: 100 }).then((result) => {
+        finished = true
+        return result
+      })
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      expect(finished).toBe(false)
+      gate.resolve()
+      await running
+      expect(await stopping).toEqual({ stopped: true, needsRestart: false })
+      release()
+      expect(invoke).toThrow(ExtensionMutationError)
+    },
+  )
+
+  test("tool calls receive a mutation abort signal without altering the caller's context", async () => {
+    let received: AbortSignal | undefined
+    let syncThis: unknown
+    ExtensionRuntime.testing.setImporter(async () => ({
+      activate: async () => ({}),
+      server: async () => ({
+        tool: {
+          cooperative: {
+            description: "cooperative",
+            args: {},
+            execute: (_args, context) =>
+              new Promise((resolve) => {
+                received = context.abort
+                context.abort.addEventListener("abort", () => resolve("aborted"), { once: true })
+              }),
+          },
+          synchronous: {
+            description: "synchronous",
+            args: {},
+            execute: function () {
+              syncThis = this
+              return "sync" as never
+            },
+          },
+        },
+      }),
+    }))
+    const [entry] = await ExtensionRuntime.instanceHooks(pluginInput())
+    const tools = entry!.hooks.tool!
+    expect(tools.synchronous!.execute({}, {} as never) as unknown).toBe("sync")
+    expect(syncThis).toBe(tools.synchronous)
+    const caller = new AbortController()
+    const context = { abort: caller.signal }
+    const running = tools.cooperative!.execute({}, context as never)
+    expect(context.abort).toBe(caller.signal)
+    const release = ExtensionRuntime.beginMutation("test.srv")
+    await entry!.hooks.dispose!()
+    expect(await ExtensionRuntime.quiesce("test.srv", { timeoutMs: 100 })).toEqual({
+      stopped: true,
+      needsRestart: false,
+    })
+    expect(await running).toBe("aborted")
+    expect(received?.aborted).toBe(true)
+    expect(caller.signal.aborted).toBe(false)
+    release()
+  })
+
+  test("noncooperative tool work blocks strict replacement even after its hooks dispose", async () => {
+    const gate = deferred()
+    ExtensionRuntime.testing.setImporter(async () => ({
+      activate: async () => ({}),
+      server: async () => ({
+        tool: {
+          example: {
+            description: "example",
+            args: {},
+            execute: async () => {
+              await gate.promise
+              return "late"
+            },
+          },
+        },
+      }),
+    }))
+    const [entry] = await ExtensionRuntime.instanceHooks(pluginInput())
+    const running = entry!.hooks.tool!.example!.execute({}, {} as never)
+    const release = ExtensionRuntime.beginMutation("test.srv")
+    await entry!.hooks.dispose!()
+    expect(await ExtensionRuntime.quiesce("test.srv", { timeoutMs: 10 })).toEqual({
+      stopped: false,
+      needsRestart: true,
+    })
+    release()
+    gate.resolve()
+    await running
+    expect(() => entry!.hooks.tool!.example!.execute({}, {} as never)).toThrow(ExtensionMutationError)
+  })
+
+  test("drains a late import without resurrecting it or invoking RPC", async () => {
+    const started = deferred()
+    const gate = deferred()
+    let calls = 0
+    ExtensionRuntime.testing.setImporter(async () => {
+      started.resolve()
+      await gate.promise
+      return {
+        activate: async () => ({
+          rpc: {
+            ping: () => {
+              calls++
+              return "late"
+            },
+          },
+        }),
+      }
+    })
+    const pending = ExtensionRuntime.rpc({ id: "test.srv", method: "ping" }).catch((error) => error)
+    await started.promise
+    const release = ExtensionRuntime.beginMutation("test.srv")
+    const stopped = ExtensionRuntime.quiesce("test.srv", { timeoutMs: 100 })
+    gate.resolve()
+    expect(await stopped).toEqual({ stopped: true, needsRestart: false })
+    release()
+    expect(await pending).toBeInstanceOf(ExtensionMutationError)
+    expect(calls).toBe(0)
+    expect(ExtensionRuntime.describe("test.srv")).toBeUndefined()
+  })
+
+  test("disposes a late activation exactly once before allowing a new generation", async () => {
+    const started = deferred()
+    const gate = deferred()
+    let disposed = 0
+    let activated = 0
+    let calls = 0
+    ExtensionRuntime.testing.setImporter(async () => ({
+      activate: async () => {
+        if (++activated === 1) {
+          started.resolve()
+          await gate.promise
+        }
+        return {
+          rpc: {
+            ping: () => {
+              calls++
+              return activated
+            },
+          },
+          dispose: () => {
+            disposed++
+          },
+        }
+      },
+    }))
+    const pending = ExtensionRuntime.rpc({ id: "test.srv", method: "ping" }).catch((error) => error)
+    await started.promise
+    const release = ExtensionRuntime.beginMutation("test.srv")
+    const stopped = ExtensionRuntime.quiesce("test.srv", { timeoutMs: 100 })
+    gate.resolve()
+    expect(await stopped).toEqual({ stopped: true, needsRestart: false })
+    expect(await pending).toBeInstanceOf(ExtensionMutationError)
+    expect(disposed).toBe(1)
+    expect(calls).toBe(0)
+    release()
+    expect(await ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })).toBe(2)
+  })
+
+  test("bounds hanging dispose and preserves needsRestart across release and reload", async () => {
+    const hang = deferred()
+    let disposed = 0
+    ExtensionRuntime.testing.setImporter(async () => ({
+      activate: async () => ({
+        rpc: { ping: () => "ok" },
+        dispose: () => {
+          disposed++
+          return hang.promise
+        },
+      }),
+    }))
+    await ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })
+    const release = ExtensionRuntime.beginMutation("test.srv")
+    const time = Date.now()
+    expect(await ExtensionRuntime.quiesce("test.srv", { timeoutMs: 10 })).toEqual({
+      stopped: false,
+      needsRestart: true,
+    })
+    expect(Date.now() - time).toBeLessThan(1000)
+    release()
+    hang.resolve()
+    await ExtensionRuntime.reload("test.srv")
+    await expect(ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })).rejects.toThrow(ExtensionMutationError)
+    expect(() => ExtensionRuntime.beginMutation("test.srv")).toThrow(ExtensionMutationError)
+    expect(disposed).toBe(1)
+  })
+
+  test("marks throwing disposal blocked instead of reporting a clean stop", async () => {
+    ExtensionRuntime.testing.setImporter(async () => ({
+      activate: async () => ({
+        rpc: { ping: () => "ok" },
+        dispose: () => {
+          throw new Error("dispose failed")
+        },
+      }),
+    }))
+    await ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })
+    const release = ExtensionRuntime.beginMutation("test.srv")
+    expect(await ExtensionRuntime.quiesce("test.srv", { timeoutMs: 50 })).toEqual({
+      stopped: false,
+      needsRestart: true,
+    })
+    release()
+    const error = await ExtensionRuntime.rpc({ id: "test.srv", method: "ping" }).catch((error) => error)
+    expect(error).toBeInstanceOf(ExtensionMutationError)
+    expect(error.needsRestart).toBe(true)
+  })
+
+  test("tracks noncooperative requests even after legacy disable clears the entry", async () => {
+    const started = deferred()
+    const gate = deferred()
+    let signal: AbortSignal | undefined
+    ExtensionRuntime.testing.setImporter(async () => ({
+      activate: async () => ({
+        rpc: {
+          wait: async (_input, ctx) => {
+            signal = ctx.signal
+            started.resolve()
+            await gate.promise
+            return "late"
+          },
+        },
+      }),
+    }))
+    const pending = ExtensionRuntime.rpc({ id: "test.srv", method: "wait" }).catch((error) => error)
+    await started.promise
+    await ExtensionRuntime.disable("test.srv")
+    const release = ExtensionRuntime.beginMutation("test.srv")
+    expect(await ExtensionRuntime.quiesce("test.srv", { timeoutMs: 10 })).toEqual({
+      stopped: false,
+      needsRestart: true,
+    })
+    expect(signal?.aborted).toBe(true)
+    gate.resolve()
+    expect(await pending).toBeInstanceOf(ExtensionMutationError)
+    release()
+    expect(() => ExtensionRuntime.beginMutation("test.srv")).toThrow(ExtensionMutationError)
+  })
+
+  test("drains cooperative abort and reloads only after release", async () => {
+    const started = deferred()
+    let activations = 0
+    ExtensionRuntime.testing.setImporter(async () => ({
+      activate: async () => {
+        const version = ++activations
+        return {
+          rpc: {
+            ping: () => version,
+            wait: (_input, ctx) =>
+              new Promise((resolve) => {
+                ctx.signal.addEventListener("abort", () => resolve("aborted"), { once: true })
+                started.resolve()
+              }),
+          },
+        }
+      },
+    }))
+    const pending = ExtensionRuntime.rpc({ id: "test.srv", method: "wait" }).catch((error) => error)
+    await started.promise
+    const release = ExtensionRuntime.beginMutation("test.srv")
+    expect(await ExtensionRuntime.quiesce("test.srv", { timeoutMs: 100 })).toEqual({
+      stopped: true,
+      needsRestart: false,
+    })
+    expect(await pending).toBeInstanceOf(ExtensionMutationError)
+    await expect(ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })).rejects.toThrow(ExtensionMutationError)
+    release()
+    expect(await ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })).toBe(2)
+  })
+
+  test("disposes late hooks once but conservatively blocks live externally owned hooks", async () => {
+    const started = deferred()
+    const gate = deferred()
+    let disposed = 0
+    let servers = 0
+    ExtensionRuntime.testing.setImporter(async () => ({
+      activate: async () => ({}),
+      server: async () => {
+        if (++servers === 1) {
+          started.resolve()
+          await gate.promise
+        }
+        return {
+          dispose: () => {
+            disposed++
+          },
+        }
+      },
+    }))
+    const pending = ExtensionRuntime.instanceHooks(pluginInput()).catch((error) => error)
+    await started.promise
+    let release = ExtensionRuntime.beginMutation("test.srv")
+    const stopped = ExtensionRuntime.quiesce("test.srv", { timeoutMs: 100 })
+    gate.resolve()
+    expect(await stopped).toEqual({ stopped: true, needsRestart: false })
+    expect(await pending).toBeInstanceOf(ExtensionMutationError)
+    expect(disposed).toBe(1)
+    release()
+    const [instance] = await ExtensionRuntime.instanceHooks(pluginInput())
+    release = ExtensionRuntime.beginMutation("test.srv")
+    expect(await ExtensionRuntime.quiesce("test.srv", { timeoutMs: 100 })).toEqual({
+      stopped: false,
+      needsRestart: true,
+    })
+    expect(disposed).toBe(1)
+    await Promise.all([instance!.hooks.dispose!(), instance!.hooks.dispose!()])
+    expect(disposed).toBe(2)
+    release()
+    expect(() => ExtensionRuntime.beginMutation("test.srv")).toThrow(ExtensionMutationError)
+  })
+})
+
+describe("extension runtime process pins", () => {
+  const installId = "f2cf8c3b-4cb8-4a91-8449-2b655bda0df1"
+
+  afterEach(async () => {
+    await ExtensionRuntime.testing.reset()
+    // This fixture alone switches test.srv between managed and path sources.
+    // Remove only its verified metadata; never touch extension data or cache.
+    const owner = path.join(Global.Path.data, "extensions", "data-ownership", "test.srv.json")
+    const record = await Bun.file(owner)
+      .json()
+      .catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return undefined
+        throw error
+      })
+    if (!record) return
+    expect(record.owner).toBe("opencode.extension-data")
+    expect(record.id).toBe("test.srv")
+    expect(record.name).toBe("test-srv")
+    expect(record.sourceHash).toBe(createHash("sha256").update("archive:fixture.zip").digest("hex"))
+    await rm(owner)
+  })
+
+  async function managed(id = installId) {
+    const dir = await writeServerPackage("test.srv", SERVER_SOURCE)
+    await link("test.srv", dir)
+    const packageDir = path.join(path.dirname(registryFile()), "packages", id, "package")
+    await mkdir(path.join(packageDir, "dist"), { recursive: true })
+    await Bun.write(path.join(packageDir, "package.json"), await Bun.file(path.join(dir, "package.json")).text())
+    await Bun.write(path.join(packageDir, "dist/server.js"), TEST_SERVER_SOURCE)
+    const store = await Bun.file(registry).json()
+    Object.assign(store.extensions["test.srv"], {
+      name: "test-srv",
+      dir: packageDir,
+      installId: id,
+      source: { type: "archive", location: "fixture.zip", sha256: "0".repeat(64) },
+    })
+    await Bun.write(registry, JSON.stringify(store))
+  }
+
+  function driver(proof: "flock" | "unsupported" = "flock") {
+    const events: string[] = []
+    const lease = (kind: string) => {
+      events.push(`acquire:${kind}`)
+      const release = async () => {
+        events.push(`release:${kind}`)
+      }
+      return { proof, release, [Symbol.asyncDispose]: release }
+    }
+    ExtensionRuntime.testing.setLeaseDriver({
+      acquire: async (target, id) => {
+        expect(target).toBe(registryFile())
+        return lease(id)
+      },
+      acquireData: async (target, id) => {
+        expect(target).toBe(registryFile())
+        return lease(`data:${id}`)
+      },
+    })
+    ExtensionRuntime.testing.setImporter(async () => {
+      events.push("import")
+      return { activate: async () => ({ rpc: { ping: () => "ok" } }) }
+    })
+    return { events, lease }
+  }
+
+  test("acquires data and managed generation before import and pins through strict teardown", async () => {
+    await managed()
+    const { events } = driver()
+    expect(await ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })).toBe("ok")
+    expect(events).toEqual(["acquire:data:test.srv", `acquire:${installId}`, "import"])
+    await ExtensionRuntime.disable("test.srv")
+    await ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })
+    await ExtensionRuntime.reload("test.srv")
+    await ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })
+    const release = ExtensionRuntime.beginMutation("test.srv")
+    expect(await ExtensionRuntime.quiesce("test.srv")).toEqual({ stopped: true, needsRestart: false })
+    release()
+    expect(events.filter((value) => value.startsWith("release:"))).toEqual([])
+    expect(events.filter((value) => value.startsWith("acquire:"))).toHaveLength(2)
+    await ExtensionRuntime.testing.reset()
+    expect(events.filter((value) => value.startsWith("release:"))).toHaveLength(2)
+  })
+
+  test("path extensions pin data but do not acquire package generations", async () => {
+    await link("test.srv", path.join(root, "test-srv"))
+    const { events } = driver()
+    await ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })
+    await ExtensionRuntime.disposeAll()
+    expect(events).toEqual(["acquire:data:test.srv", "import"])
+  })
+
+  test("tracks an acquisition across quiesce and releases only never-imported handles", async () => {
+    await managed()
+    const { events, lease } = driver()
+    const started = deferred()
+    const gate = deferred()
+    ExtensionRuntime.testing.setLeaseDriver({
+      acquireData: async () => lease("data:test.srv"),
+      acquire: async () => {
+        started.resolve()
+        await gate.promise
+        return lease(installId)
+      },
+    })
+    const pending = ExtensionRuntime.rpc({ id: "test.srv", method: "ping" }).catch((error) => error)
+    await started.promise
+    const release = ExtensionRuntime.beginMutation("test.srv")
+    let settled = false
+    const stop = ExtensionRuntime.quiesce("test.srv", { timeoutMs: 100 }).then((value) => {
+      settled = true
+      return value
+    })
+    await Bun.sleep(1)
+    expect(settled).toBe(false)
+    gate.resolve()
+    expect(await stop).toEqual({ stopped: true, needsRestart: false })
+    expect(await pending).toBeInstanceOf(ExtensionMutationError)
+    expect(events).not.toContain("import")
+    expect(events).toContain(`release:${installId}`)
+    release()
+  })
+
+  test("retains imported pins after uncertain stop even when old work later settles", async () => {
+    await managed()
+    const { events } = driver()
+    const started = deferred()
+    const gate = deferred()
+    ExtensionRuntime.testing.setImporter(async () => ({
+      activate: async () => ({
+        rpc: {
+          wait: async () => {
+            started.resolve()
+            await gate.promise
+            return "done"
+          },
+        },
+      }),
+    }))
+    const pending = ExtensionRuntime.rpc({ id: "test.srv", method: "wait" }).catch((error) => error)
+    await started.promise
+    const release = ExtensionRuntime.beginMutation("test.srv")
+    expect(await ExtensionRuntime.quiesce("test.srv", { timeoutMs: 5 })).toEqual({ stopped: false, needsRestart: true })
+    gate.resolve()
+    await pending
+    release()
+    await ExtensionRuntime.reload("test.srv")
+    expect(events.filter((value) => value.startsWith("release:"))).toEqual([])
+  })
+
+  test("keeps every imported generation pinned and accepts unsupported proof", async () => {
+    await managed()
+    const { events } = driver("unsupported")
+    await ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })
+    const next = "80917ce0-afdd-419f-8304-91971f3f389f"
+    await managed(next)
+    await ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })
+    expect(events).toEqual(["acquire:data:test.srv", `acquire:${installId}`, "import", `acquire:${next}`, "import"])
+    expect(await ExtensionRuntime.quiesce("test.srv")).toEqual({ stopped: true, needsRestart: false })
+    expect(events.filter((value) => value.startsWith("release:"))).toEqual([])
+  })
+
+  test("revalidates managed ownership after acquisition before importing", async () => {
+    await managed()
+    const { events, lease } = driver()
+    ExtensionRuntime.testing.setLeaseDriver({
+      acquireData: async () => lease("data:test.srv"),
+      acquire: async () => {
+        await rm(path.join(path.dirname(registryFile()), "packages", installId), { recursive: true, force: true })
+        return lease(installId)
+      },
+    })
+    await expect(ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })).rejects.toThrow("owned installation")
+    expect(events).not.toContain("import")
+  })
+
+  test("does not import when generation acquisition fails and can retry safely", async () => {
+    await managed()
+    const { events, lease } = driver()
+    let busy = true
+    ExtensionRuntime.testing.setLeaseDriver({
+      acquireData: async () => lease("data:test.srv"),
+      acquire: async () => {
+        if (busy) throw new ExtensionLeases.LeaseError("busy", "lease busy")
+        return lease(installId)
+      },
+    })
+    await expect(ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })).rejects.toThrow("lease busy")
+    await expect(ExtensionRuntime.instanceHooks(pluginInput())).rejects.toThrow("lease busy")
+    expect(events).not.toContain("import")
+    busy = false
+    expect(await ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })).toBe("ok")
+    expect(events.filter((value) => value === "acquire:data:test.srv")).toHaveLength(1)
+  })
 })
 
 describe("extension runtime", () => {

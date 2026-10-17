@@ -1,8 +1,22 @@
 # Extensions 实施进度
 
-更新时间：2026-10-14
+更新时间：2026-10-17
 
-## 当前状态（权威摘要）
+## P3a 当前实施摘要（优先于下方历史状态）
+
+- 基线 `3a0d101b22`（dev 1.18.58）；P3a 正在实施，**尚未提交、未合入 dev、未推送，不标记完整交付**。P3b 市场留后续。
+- npm/自包含tgz获取、registry v2/revision/receipt、prepare/confirm/commit、runtime fence/quiesce、registry观察器与安装服务、HTTP/SDK/CLI、配置页安装/更新/移除确认已实现并接通。
+- 审查收敛：8个候选中7项修复；npm祖先自身peer解析保留fail closed（原可解析前提不普遍成立，不宣称已支持）。补齐工具/普通hooks在途与旧闭包代际跟踪、真实缓存失效重试/首装空缓存、retained来源隔离、broken安装修复、CLI开发链接热重载、committed状态恢复strict sync与path unlink入口。
+- 审查后主线程回归：服务端扩展/安装/鉴权/snapshot组合449 pass、1 skip、0 fail（22文件）；App全量1710/0、UI全量282/0、browser-condition63/0（安装wrapper内部11项），App/opencode typecheck和生产App构建通过（大chunk警告）。SDK契约未改变；审查前opencode/App/SDK/UI/kit/示例typecheck通过，OpenAPI两次生成一致。
+- 审查前隔离Vite实机：生产CLI安装本地tgz后UI无刷新同步、默认停用；页面启用后RPC回显成功；页面卸载确认后列表移除、RPC404且明确cleanupPending。截图已查看，专用浏览器/API/Vite清理完成。审查后未重跑真实浏览器；Electron与内嵌二进制本轮未验收，不借用旧截图。
+- 清理恢复阶段：进程生命周期generation/data引用、真实内核锁活性证明、受管ownership、引用与registry双门禁GC、显式purge隔离日志及回执恢复已接通。后续清理审查修复精确trash回执、path保留设置恢复、空目录owner来源保护；用户明确选择拒绝受管副本开发链接。最终组合513 pass、1 skip、0 fail（25文件），App/opencode typecheck、browser63/0通过；App1710/0、UI282/0与生产构建为此前阶段结果。未重做实机。
+- 清理门闩阻塞已修：检查与隔离目录后释放namespace gate，递归删除由精确UUID的quarantine claim独占，其他ID引用不再被慢删除阻塞。新增并发/崩溃claim回归通过，完整组合516 pass、1 skip、0 fail（25文件），后端typecheck通过；定向只读复核无新确认问题。
+- 实机验收（2026-10-17，清理门闩修复后当前代码）：Vite 源码形态完成安装→启用→RPC→升级→移除→重启恢复全链路，进程存活时旧代包/数据保留（进程 pin 生效）、重启后恢复清理完成；Electron 桌面（当前 Node sidecar 构建）安装/列表/RPC/移除通过，Node 运行时 purge 按设计延后（unsupported 标记）；内嵌生产 Web（当前编译二进制）安装/RPC/移除通过，HTML 与本地构建逐字节一致。模型快照哈希构建前后未变。公网 npm/HTTPS、多服务器矩阵、故障全场景未验收。详见 `specs/extensions/p3a-tasks.md`。
+- 保留限制：Node/Windows/无FFI仍可使用扩展，但持久unsupported证明会使GC/purge延后；遗留gate/未知trash/legacy无来源数据不猜测删除，Linux/Windows未本机验收；archive换URL升级受来源身份约束；npm循环/alias/Git/file/workspace/自动peer不支持。secret存储和同进程信任边界不变。详情见 `specs/extensions/p3a-tasks.md`。
+
+下方为截至2026-10-14的P2收尾历史摘要，旧工作区/提交/产物待办不代表当前状态。
+
+## 当前状态（2026-10-14历史摘要）
 
 - **P0/P1 已完成；P2 核心实现、配置入口迁移和启停管理已提交，集成收尾待完成。** 不再以历史章节中的“待提交”“进行中”判断当前状态。
 - 工作分支：`claude/extensions-p2-design`；工作目录：`.claude/worktrees/extensions-p0`。设计文档：`specs/extensions/design.md`。

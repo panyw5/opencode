@@ -74,8 +74,21 @@ import type {
   ExtensionEnableResponses,
   ExtensionGetErrors,
   ExtensionGetResponses,
+  ExtensionInstallationCancelErrors,
+  ExtensionInstallationCancelResponses,
+  ExtensionInstallationInstallErrors,
+  ExtensionInstallationInstallResponses,
+  ExtensionInstallationPrepareErrors,
+  ExtensionInstallationPrepareResponses,
+  ExtensionInstallationStatusErrors,
+  ExtensionInstallationStatusResponses,
+  ExtensionInstallationUninstallErrors,
+  ExtensionInstallationUninstallResponses,
+  ExtensionInstallationUpdateErrors,
+  ExtensionInstallationUpdateResponses,
   ExtensionListErrors,
   ExtensionListResponses,
+  ExtensionPrepareInput,
   ExtensionRpcErrors,
   ExtensionRpcResponses,
   ExtensionSettingsPatch,
@@ -753,6 +766,215 @@ export class Extension extends HeyApiClient {
   private _settings?: Settings
   get settings(): Settings {
     return (this._settings ??= new Settings({ client: this.client }))
+  }
+}
+
+export class ExtensionInstallation extends HeyApiClient {
+  /**
+   * Confirm extension removal
+   */
+  public uninstall<ThrowOnError extends boolean = false>(
+    parameters: {
+      "x-opencode-extension-token": string
+      id: string
+      operationId?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "headers", key: "x-opencode-extension-token" },
+            { in: "path", key: "id" },
+            { in: "body", key: "operationId" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<
+      ExtensionInstallationUninstallResponses,
+      ExtensionInstallationUninstallErrors,
+      ThrowOnError
+    >({
+      url: "/global/extension/{id}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Prepare an extension installation operation
+   */
+  public prepare<ThrowOnError extends boolean = false>(
+    parameters?: {
+      extensionPrepareInput?: ExtensionPrepareInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "extensionPrepareInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<
+      ExtensionInstallationPrepareResponses,
+      ExtensionInstallationPrepareErrors,
+      ThrowOnError
+    >({
+      url: "/global/extension/prepare",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Confirm extension installation
+   */
+  public install<ThrowOnError extends boolean = false>(
+    parameters: {
+      "x-opencode-extension-token": string
+      operationId?: string
+      enable?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "headers", key: "x-opencode-extension-token" },
+            { in: "body", key: "operationId" },
+            { in: "body", key: "enable" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ExtensionInstallationInstallResponses,
+      ExtensionInstallationInstallErrors,
+      ThrowOnError
+    >({
+      url: "/global/extension/install",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Confirm extension update
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      "x-opencode-extension-token": string
+      id: string
+      operationId?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "headers", key: "x-opencode-extension-token" },
+            { in: "path", key: "id" },
+            { in: "body", key: "operationId" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ExtensionInstallationUpdateResponses,
+      ExtensionInstallationUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/global/extension/{id}/update",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Cancel an uncommitted extension operation
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      "x-opencode-extension-token": string
+      operationId: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "headers", key: "x-opencode-extension-token" },
+            { in: "path", key: "operationId" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<
+      ExtensionInstallationCancelResponses,
+      ExtensionInstallationCancelErrors,
+      ThrowOnError
+    >({
+      url: "/global/extension/operation/{operationId}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Read extension operation status
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters: {
+      "x-opencode-extension-token": string
+      operationId: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "headers", key: "x-opencode-extension-token" },
+            { in: "path", key: "operationId" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      ExtensionInstallationStatusResponses,
+      ExtensionInstallationStatusErrors,
+      ThrowOnError
+    >({
+      url: "/global/extension/operation/{operationId}",
+      ...options,
+      ...params,
+    })
   }
 }
 
@@ -6986,6 +7208,11 @@ export class OpencodeClient extends HeyApiClient {
   private _extension?: Extension
   get extension(): Extension {
     return (this._extension ??= new Extension({ client: this.client }))
+  }
+
+  private _extensionInstallation?: ExtensionInstallation
+  get extensionInstallation(): ExtensionInstallation {
+    return (this._extensionInstallation ??= new ExtensionInstallation({ client: this.client }))
   }
 
   private _global?: Global

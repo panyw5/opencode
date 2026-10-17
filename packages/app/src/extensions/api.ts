@@ -34,6 +34,7 @@ function normalizeAssetURL(value: string, serverURL: string) {
 function normalize(input: SdkExtensionInfo, serverURL: string): ExtensionInfo {
   return {
     ...input,
+    revision: typeof input.revision === "number" && Number.isFinite(input.revision) ? input.revision : undefined,
     contributes: input.contributes as ExtensionInfo["contributes"],
     web: input.web
       ? {

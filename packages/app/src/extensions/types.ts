@@ -39,6 +39,14 @@ export type ExtensionInfo = {
   id: string
   version: string
   displayName: string
+  name?: string
+  source?:
+    | { type: "path"; path: string }
+    | { type: "npm"; spec: string; registry: string; integrity: string }
+    | { type: "archive"; location: string; sha256: string }
+  permissions?: string[]
+  revision?: number
+  installId?: string
   enabled: boolean
   state: "ready" | "disabled" | "error" | "incompatible"
   error?: string
@@ -61,7 +69,7 @@ export type ExtensionStatusEvent = {
   properties: {
     id: string
     version: string
-    state: "installed" | "enabled" | "disabled" | "error" | "changed"
+    state: "installed" | "enabled" | "disabled" | "error" | "changed" | "removed"
     error?: string
   }
 }

@@ -27,6 +27,14 @@ import { authTokenFromCredentials } from "@/utils/server"
 import { registerToolHeightEstimator } from "@/pages/session/timeline/tool-height"
 import { Persist, persisted } from "@/utils/persist"
 import { createExtensionApi, createExtensionBridge, listenExtensionEvents } from "./api"
+import {
+  createInstallationApi,
+  synchronizeInstallation,
+  type InstallationRequest,
+  type PreparedInstallation,
+  type InstallationResult,
+  type InstallationStatus,
+} from "./install-api"
 import { addExtensionStyle, ExtensionActivationManager, importExtensionModule } from "./activation"
 import { extensionDefinition } from "./definition"
 import {
@@ -64,6 +72,10 @@ export type ExtensionHost = {
   // Reactive busy flag for state-changing operations (enable/disable and
   // settings updates) on the extension, so the UI can block re-entry.
   mutating(id: string): boolean
+  prepareInstallation(request: InstallationRequest): Promise<PreparedInstallation>
+  commitInstallation(prepared: PreparedInstallation, input?: { enable?: boolean }): Promise<InstallationResult>
+  installationStatus(prepared: PreparedInstallation): Promise<InstallationStatus>
+  cancelInstallation(prepared: PreparedInstallation): Promise<InstallationResult>
 }
 
 const ExtensionHostContext = createContext<ExtensionHost>()
@@ -91,6 +103,7 @@ export function ExtensionHostProvider(props: ParentProps) {
   const server = useServer()
   const location = useLocation()
   const api = createExtensionApi({ globalSDK })
+  const installationApi = createInstallationApi(globalSDK)
   // Authenticated transport for the extension server bridge (P2). Credentials
   // come from the current server connection, matching how the SDK client and
   // the raw file fetch authorize; platform.fetch keeps Desktop proxying intact.
@@ -656,6 +669,62 @@ export function ExtensionHostProvider(props: ParentProps) {
     }
   }
 
+  const preparedConnections = new WeakMap<PreparedInstallation, { url: string; client: typeof globalSDK.client }>()
+  const requireInstallationConnection = (prepared: PreparedInstallation) => {
+    const connection = preparedConnections.get(prepared)
+    if (disposed || !connection || globalSDK.url !== connection.url || globalSDK.client !== connection.client) {
+      throw new ExtensionMutationStaleError("Extension installation belongs to another connection")
+    }
+    return connection
+  }
+  const prepareInstallation = async (request: InstallationRequest) => {
+    if (mode().disabled) throw new Error("Extension installation is unavailable in safe mode")
+    const connection = { url: globalSDK.url, client: globalSDK.client }
+    const release = beginMutation("id" in request ? request.id : "@installation", connection.url)
+    try {
+      const prepared = await installationApi.prepare(request)
+      if (disposed || globalSDK.url !== connection.url || globalSDK.client !== connection.client) {
+        await createInstallationApi({ client: connection.client })
+          .cancel(prepared)
+          .catch(() => {})
+        throw new ExtensionMutationStaleError("Extension server changed during installation preparation")
+      }
+      preparedConnections.set(prepared, connection)
+      return prepared
+    } finally {
+      release()
+    }
+  }
+  const commitInstallation = async (prepared: PreparedInstallation, input: { enable?: boolean } = {}) => {
+    if (mode().disabled) throw new Error("Extension installation is unavailable in safe mode")
+    const connection = requireInstallationConnection(prepared)
+    const release = beginMutation(prepared.id, connection.url)
+    try {
+      const result = await installationApi.commit(prepared, input)
+      requireInstallationConnection(prepared)
+      await synchronizeInstallation(result, () => refresh({ strict: true }))
+      requireInstallationConnection(prepared)
+      return result
+    } finally {
+      release()
+    }
+  }
+  const installationStatus = async (prepared: PreparedInstallation) => {
+    requireInstallationConnection(prepared)
+    const status = await installationApi.status(prepared)
+    requireInstallationConnection(prepared)
+    await synchronizeInstallation(status, () => refresh({ strict: true }))
+    requireInstallationConnection(prepared)
+    return status
+  }
+  const cancelInstallation = async (prepared: PreparedInstallation) => {
+    const connection = preparedConnections.get(prepared)
+    if (!connection) throw new ExtensionMutationStaleError("Unknown extension preparation")
+    // Closing a preview after switching servers must cancel on its original
+    // client, never redirect the capability to the newly connected server.
+    return createInstallationApi({ client: connection.client }).cancel(prepared)
+  }
+
   const value: ExtensionHost = {
     activate,
     refresh,
@@ -664,6 +733,10 @@ export function ExtensionHostProvider(props: ParentProps) {
     updateSettings: updateSettingsByID,
     setEnabled: setEnabledByID,
     mutating: (id) => mutatingIDs().has(id),
+    prepareInstallation,
+    commitInstallation,
+    installationStatus,
+    cancelInstallation,
   }
   return <ExtensionHostContext.Provider value={value}>{props.children}</ExtensionHostContext.Provider>
 }

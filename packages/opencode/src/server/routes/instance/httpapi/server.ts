@@ -80,6 +80,7 @@ import { configHandlers } from "./handlers/config"
 import { controlHandlers } from "./handlers/control"
 import { extensionAssetRoute } from "./handlers/extension-asset"
 import { extensionHandlers } from "./handlers/extension"
+import { extensionInstallHandlers } from "./handlers/extension-install"
 import { extensionRpcHandlers } from "./handlers/extension-rpc"
 import { experimentalHandlers } from "./handlers/experimental"
 import { fileHandlers } from "./handlers/file"
@@ -129,7 +130,7 @@ const authOnlyRouterLayer = authorizationRouterMiddleware.layer.pipe(Layer.provi
 const httpApiAuthLayer = authorizationLayer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
 const v2HttpApiAuthLayer = v2AuthorizationLayer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
 const rootApiRoutes = HttpApiBuilder.layer(RootHttpApi).pipe(
-  Layer.provide([controlHandlers, extensionHandlers, extensionRpcHandlers, globalHandlers]),
+  Layer.provide([controlHandlers, extensionHandlers, extensionInstallHandlers, extensionRpcHandlers, globalHandlers]),
   Layer.provide(schemaErrorLayer),
   Layer.provide(httpApiAuthLayer),
   Layer.provide(workspaceRoutingLayer.pipe(Layer.provide(Socket.layerWebSocketConstructorGlobal))),
@@ -170,9 +171,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
   ]),
 )
 
-const rawInstanceRoutes = Layer.mergeAll(ptyConnectRoute, browserConnectRoute).pipe(
-  Layer.provide(instanceRouterLayer),
-)
+const rawInstanceRoutes = Layer.mergeAll(ptyConnectRoute, browserConnectRoute).pipe(Layer.provide(instanceRouterLayer))
 const instanceRoutes = Layer.mergeAll(rawInstanceRoutes, instanceApiRoutes).pipe(
   Layer.provide([
     httpApiAuthLayer,

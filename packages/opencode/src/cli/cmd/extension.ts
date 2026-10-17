@@ -1,10 +1,16 @@
 import path from "node:path"
+import * as prompts from "@clack/prompts"
+import npa from "npm-package-arg"
+import semver from "semver"
 import { Effect, Schema } from "effect"
 import { cmd } from "./cmd"
 import { effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"
 import { Extension } from "@/extension"
-import { ExtensionID, type Info } from "@/extension/schema"
+import { installation } from "@/extension/install-service"
+import type { InstallRequest, InstallPreview, InstallResult, InstallSource } from "@/extension/install"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+import { ExtensionID, type Info, type Source } from "@/extension/schema"
 import { errorMessage } from "@/util/error"
 
 function extensionID(value: unknown) {
@@ -15,14 +21,271 @@ function orFail<A>(effect: Effect.Effect<A, Error>) {
   return effect.pipe(Effect.catch((error) => fail(errorMessage(error))))
 }
 
+// Only render the public preview, never the process-local capability or raw request URL.
+function text(value: string) {
+  return value.replace(/[\x00-\x1f\x7f-\x9f]/g, "")
+}
+
+function location(value: string) {
+  const url = URL.parse(value)
+  if (!url) return text(value)
+  url.username = ""
+  url.password = ""
+  url.search = ""
+  url.hash = ""
+  return text(url.href)
+}
+
+function sourceLabel(source: Source) {
+  if (source.type === "path") return text(source.path)
+  if (source.type === "npm") return `npm:${text(source.spec)} (${location(source.registry)})`
+  return `${location(source.location)} (sha256:${text(source.sha256)})`
+}
+
 export function formatExtensionList(items: Info[]) {
   return items
-    .map((item) => {
-      const source = item.source.type === "path" ? item.source.path : ""
-      return `${item.id}\t${item.version}\t${item.state}\t${source}`
-    })
+    .map((item) => `${text(item.id)}\t${text(item.version)}\t${item.state}\t${sourceLabel(item.source)}`)
     .join("\n")
 }
+
+export function extensionInstallSource(value: string, sha256?: string, archiveOnly = false): InstallSource {
+  if (!value || /[\s\\\x00-\x1f\x7f]/.test(value)) {
+    // Spaces are valid in local filenames, but never in a registry spec or URL.
+    if (!value || /[\x00-\x1f\x7f]/.test(value) || !/\.tgz$/i.test(value) || /^\w+:/.test(value))
+      throw new Error("Use a registry npm spec, HTTPS .tgz URL or local .tgz file")
+  }
+  if (/\.zip(?:$|[?#])/i.test(value)) throw new Error("ZIP archives are unsupported; use a prebuilt .tgz archive")
+  const url = URL.parse(value)
+  if (url?.protocol === "https:") {
+    if (!/^https:\/\//i.test(value) || url.username || url.password || !/\.tgz$/i.test(url.pathname))
+      throw new Error("A credential-free HTTPS .tgz URL is required")
+    if (!sha256 || !/^[a-f0-9]{64}$/i.test(sha256))
+      throw new Error("Archive sources require --sha256 with 64 hexadecimal digits")
+    return { type: "archive", url: value, sha256: sha256.toLowerCase() }
+  }
+  if (/\.tgz$/i.test(value) && !/^\w+:/.test(value)) {
+    if (!sha256 || !/^[a-f0-9]{64}$/i.test(sha256))
+      throw new Error("Archive sources require --sha256 with 64 hexadecimal digits")
+    return { type: "local", path: path.resolve(value), sha256: sha256.toLowerCase() }
+  }
+  if (archiveOnly) throw new Error("Updates require --version for npm or --source with an HTTPS/local .tgz archive")
+  if (sha256 !== undefined) throw new Error("--sha256 is only supported for .tgz archives")
+  let parsed: ReturnType<typeof npa>
+  try {
+    parsed = npa(value)
+  } catch {
+    throw new Error("A registry-only npm package spec is required")
+  }
+  if (
+    !parsed.registry ||
+    !parsed.name ||
+    !["version", "range", "tag"].includes(parsed.type) ||
+    !/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(parsed.name) ||
+    parsed.name.split("/").some((part) => part === "." || part === ".." || part === "node_modules")
+  )
+    throw new Error("A registry-only npm package spec is required; git, aliases and ZIP are unsupported")
+  return { type: "npm", spec: value }
+}
+
+export function formatInstallPreview(preview: InstallPreview, enable = false, purgeData = false) {
+  const lines = [
+    `Extension ${preview.kind} preview (no extension code has run)`,
+    `ID: ${text(preview.id)}`,
+    `Name: ${text(preview.name)}`,
+    `Version: ${preview.oldVersion ? `${text(preview.oldVersion)} -> ` : ""}${text(preview.version)}`,
+    `Source: ${sourceLabel(preview.source)}`,
+    `Permissions: ${preview.permissions.map(text).join(", ") || "none"}`,
+    `Permissions added: ${preview.permissionsAdded.map(text).join(", ") || "none"}`,
+    `Permissions removed: ${preview.permissionsRemoved.map(text).join(", ") || "none"}`,
+  ]
+  if (preview.versionChange) lines.push(`Version change: ${preview.versionChange}`)
+  if (preview.kind === "uninstall")
+    lines.push(
+      purgeData
+        ? "Data purge requested; safe cleanup may be deferred."
+        : "Settings and extension data will be retained.",
+    )
+  else {
+    lines.push("Trust warning: extensions execute trusted code; declared permissions are not a security sandbox.")
+    lines.push(
+      preview.kind === "install"
+        ? enable
+          ? "Enable explicitly requested (--enable)."
+          : "New extensions are disabled by default; use --enable to opt in."
+        : `Existing enabled state will be preserved (${preview.enable ? "enabled" : "disabled"}).`,
+    )
+  }
+  return lines.join("\n")
+}
+
+export function formatInstallResult(result: InstallResult) {
+  return [
+    `${text(result.id)}: state=${result.state} committed=${result.committed === undefined ? "unknown" : result.committed} synced=${result.synced} cleanupPending=${result.cleanupPending}`,
+    ...(result.synced ? [] : ["Runtime synchronization is not confirmed; refresh/restart may be required."]),
+    ...(result.cleanupPending ? ["Cleanup is pending; managed files and retained data may remain."] : []),
+    ...(result.warnings.length
+      ? ["The installation service reported warnings; synchronization/cleanup may need attention."]
+      : []),
+  ].join("\n")
+}
+
+function installFailure(error: unknown) {
+  const code = error && typeof error === "object" && "code" in error ? error.code : undefined
+  // Never forward arbitrary transport/runtime errors: they may contain signed URLs or credentials.
+  const messages: Record<string, string> = {
+    invalid: "Invalid extension operation or source; verify the archive hash, manifest and requested version",
+    unauthorized: "Extension operation authorization failed; prepare it again",
+    busy: "Too many pending extension operations; retry later",
+    expired: "Extension operation expired; prepare it again",
+    conflict: "Extension changed or cannot be replaced safely; prepare again or restart the server",
+    failed: "Extension installation failed; no registry change was confirmed",
+  }
+  return typeof code === "string" && Object.hasOwn(messages, code)
+    ? messages[code]!
+    : "Extension operation failed; check its status before retrying"
+}
+
+function installAttempt<A>(run: () => Promise<A>) {
+  return Effect.tryPromise({ try: run, catch: installFailure }).pipe(Effect.catch((message) => fail(message)))
+}
+
+const mutationsAllowed = Effect.gen(function* () {
+  const flags = yield* RuntimeFlags.Service
+  if (flags.pure || flags.disableExtensions)
+    return yield* fail("Extensions are disabled; extension mutations are not allowed")
+})
+
+function applyInstallation(request: InstallRequest, yes: boolean, enable = false) {
+  return Effect.gen(function* () {
+    yield* mutationsAllowed
+    // Hold the same process-wide observer/runtime lease as the HTTP service. Do not create a separate runtime.
+    yield* Extension.Service
+    const installer = installation()
+    const preview = yield* installAttempt(() => installer.prepare(request))
+    UI.println(formatInstallPreview(preview, enable, request.kind === "uninstall" && !!request.purgeData))
+    let confirmed = yes
+    if (!confirmed && process.stdin.isTTY && process.stdout.isTTY) {
+      const answer = yield* Effect.tryPromise({
+        try: () => prompts.confirm({ message: `Confirm extension ${request.kind}?`, initialValue: false }),
+        catch: () => "Extension confirmation failed",
+      }).pipe(
+        Effect.catch((message) =>
+          installAttempt(() => installer.cancel(preview.operationId, preview.token)).pipe(
+            Effect.andThen(fail(message)),
+          ),
+        ),
+      )
+      confirmed = !prompts.isCancel(answer) && answer === true
+    }
+    if (!confirmed) {
+      const result = yield* installAttempt(() => installer.cancel(preview.operationId, preview.token))
+      if (!yes && !process.stdin.isTTY)
+        UI.println("Non-interactive input: use --yes to confirm after reviewing the preview.")
+      UI.println(formatInstallResult(result))
+      return
+    }
+    const result = yield* installAttempt(() => installer.commit(preview.operationId, preview.token, { enable }))
+    UI.println(formatInstallResult(result))
+    if (result.committed !== true) return yield* fail("Extension change was not confirmed committed")
+  })
+}
+
+const InstallCommand = effectCmd({
+  command: "install <source>",
+  describe: "install an npm package or verified .tgz archive",
+  instance: false,
+  builder: (yargs) =>
+    yargs
+      .positional("source", {
+        type: "string",
+        demandOption: true,
+        describe: "npm spec, HTTPS .tgz URL or local .tgz file",
+      })
+      .option("sha256", { type: "string", describe: "required SHA-256 for archives" })
+      .option("yes", {
+        type: "boolean",
+        default: false,
+        describe: "explicitly confirm the preview (validation is still required)",
+      })
+      .option("enable", {
+        type: "boolean",
+        default: false,
+        describe: "explicitly enable the newly installed extension",
+      }),
+  handler: Effect.fn("Cli.extension.install")(function* (args) {
+    yield* mutationsAllowed
+    let source: InstallSource
+    try {
+      source = extensionInstallSource(String(args.source), args.sha256)
+    } catch (error) {
+      return yield* fail(errorMessage(error))
+    }
+    yield* applyInstallation({ kind: "install", source }, args.yes, args.enable)
+  }),
+})
+
+const UpdateCommand = effectCmd({
+  command: "update <id>",
+  describe: "update an extension to an exact npm version or verified archive",
+  instance: false,
+  builder: (yargs) =>
+    yargs
+      .positional("id", { type: "string", demandOption: true, describe: "extension id" })
+      .option("version", { type: "string", describe: "exact npm version" })
+      .option("source", { type: "string", describe: "replacement HTTPS/local .tgz archive" })
+      .option("sha256", { type: "string", describe: "required SHA-256 for replacement archives" })
+      .option("yes", { type: "boolean", default: false, describe: "explicitly confirm the preview" }),
+  handler: Effect.fn("Cli.extension.update")(function* (args) {
+    yield* mutationsAllowed
+    let id: ExtensionID
+    try {
+      id = extensionID(args.id)
+    } catch {
+      return yield* fail("Invalid extension id")
+    }
+    let request: InstallRequest
+    try {
+      if ((args.version === undefined) === (args.source === undefined))
+        throw new Error("Specify exactly one of --version or --source")
+      if (args.source !== undefined)
+        request = { kind: "update", id, source: extensionInstallSource(args.source, args.sha256, true) }
+      else {
+        if (args.sha256 !== undefined) throw new Error("--sha256 requires --source")
+        if (!args.version || semver.valid(args.version) !== args.version)
+          throw new Error("--version must be an exact semantic version")
+        request = { kind: "update", id, version: args.version }
+      }
+    } catch (error) {
+      return yield* fail(errorMessage(error))
+    }
+    yield* applyInstallation(request, args.yes)
+  }),
+})
+
+const UninstallCommand = effectCmd({
+  command: "uninstall <id>",
+  describe: "uninstall an extension, retaining data unless explicitly requested",
+  instance: false,
+  builder: (yargs) =>
+    yargs
+      .positional("id", { type: "string", demandOption: true, describe: "extension id" })
+      .option("purge-data", {
+        type: "boolean",
+        default: false,
+        describe: "request safe removal of retained settings/data (may be deferred)",
+      })
+      .option("yes", { type: "boolean", default: false, describe: "explicitly confirm the preview" }),
+  handler: Effect.fn("Cli.extension.uninstall")(function* (args) {
+    yield* mutationsAllowed
+    let id: ExtensionID
+    try {
+      id = extensionID(args.id)
+    } catch {
+      return yield* fail("Invalid extension id")
+    }
+    yield* applyInstallation({ kind: "uninstall", id, purgeData: args.purgeData }, args.yes)
+  }),
+})
 
 const LinkCommand = effectCmd({
   command: "link <directory>",
@@ -35,6 +298,7 @@ const LinkCommand = effectCmd({
       describe: "extension package directory",
     }),
   handler: Effect.fn("Cli.extension.link")(function* (args) {
+    yield* mutationsAllowed
     const directory = path.resolve(String(args.directory))
     const extension = yield* Extension.Service
     const item = yield* orFail(extension.link(directory))
@@ -45,7 +309,7 @@ const LinkCommand = effectCmd({
 const ListCommand = effectCmd({
   command: "list",
   aliases: ["ls"],
-  describe: "list linked extensions",
+  describe: "list installed and linked extensions",
   instance: false,
   builder: (yargs) =>
     yargs.option("json", {
@@ -57,11 +321,20 @@ const ListCommand = effectCmd({
     const extension = yield* Extension.Service
     const items = yield* orFail(extension.list())
     if (args.json) {
-      process.stdout.write(`${JSON.stringify(items, null, 2)}\n`)
+      const safe = items.map((item) => ({
+        ...item,
+        source:
+          item.source.type === "archive"
+            ? { ...item.source, location: location(item.source.location) }
+            : item.source.type === "npm"
+              ? { ...item.source, registry: location(item.source.registry) }
+              : item.source,
+      }))
+      process.stdout.write(`${JSON.stringify(safe, null, 2)}\n`)
       return
     }
     if (!items.length) {
-      UI.println("No linked extensions")
+      UI.println("No extensions installed or linked")
       return
     }
     UI.println(formatExtensionList(items))
@@ -71,7 +344,7 @@ const ListCommand = effectCmd({
 function setEnabledCommand(enabled: boolean) {
   return effectCmd({
     command: `${enabled ? "enable" : "disable"} <id>`,
-    describe: `${enabled ? "enable" : "disable"} a linked extension`,
+    describe: `${enabled ? "enable" : "disable"} an extension`,
     instance: false,
     builder: (yargs) =>
       yargs.positional("id", {
@@ -80,6 +353,7 @@ function setEnabledCommand(enabled: boolean) {
         describe: "extension id",
       }),
     handler: Effect.fn(`Cli.extension.${enabled ? "enable" : "disable"}`)(function* (args) {
+      yield* mutationsAllowed
       let id: ExtensionID
       try {
         id = extensionID(args.id)
@@ -102,6 +376,9 @@ export const ExtensionCommand = cmd({
   builder: (yargs) =>
     yargs
       .command(LinkCommand)
+      .command(InstallCommand)
+      .command(UpdateCommand)
+      .command(UninstallCommand)
       .command(ListCommand)
       .command(setEnabledCommand(true))
       .command(setEnabledCommand(false))

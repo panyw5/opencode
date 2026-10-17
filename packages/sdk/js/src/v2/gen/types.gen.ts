@@ -16,7 +16,7 @@ export type Event =
   | EventProjectUpdated
   | EventLspClientDiagnostics
   | EventLspUpdated
-  | EventMessagePartDelta
+  | EventMessagePartDelta1
   | EventTodoUpdated
   | EventSessionDiff
   | EventSessionError
@@ -38,6 +38,9 @@ export type Event =
   | EventBackgroundShellCreated
   | EventBackgroundShellUpdated
   | EventBackgroundShellExited
+  | EventBrowserUpdated1
+  | EventBrowserClosed1
+  | EventGptProNotification1
   | EventScheduledTaskCreated
   | EventScheduledTaskUpdated
   | EventScheduledTaskDeleted
@@ -84,7 +87,6 @@ export type Event =
   | EventSessionNextCompactionStarted
   | EventSessionNextCompactionDelta
   | EventSessionNextCompactionEnded
-  | EventBrowserUpdated
   | EventServerConnected
   | EventGlobalDisposed
   | EventGlobalConfigUpdated
@@ -133,6 +135,19 @@ export type InvalidRequestError = {
 export type ExtensionPathSource = {
   type: "path"
   path: string
+}
+
+export type ExtensionNpmSource = {
+  type: "npm"
+  spec: string
+  registry: string
+  integrity: string
+}
+
+export type ExtensionArchiveSource = {
+  type: "archive"
+  location: string
+  sha256: string
 }
 
 export type ExtensionFileViewerContribution = {
@@ -201,13 +216,15 @@ export type ExtensionInfo = {
   displayName: string
   description?: string
   icon?: string
-  source: ExtensionPathSource
+  source: ExtensionPathSource | ExtensionNpmSource | ExtensionArchiveSource
   enabled: boolean
   state: "ready" | "disabled" | "error" | "incompatible"
   error?: string
   activation: Array<string>
   contributes: ExtensionContributes
   permissions: Array<string>
+  revision?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  installId?: string
   settings?: {
     [key: string]: unknown
   }
@@ -218,6 +235,128 @@ export type ExtensionInfo = {
 export type ExtensionSettingsPatch = {
   [key: string]: unknown
 }
+
+export type ExtensionPrepareInput =
+  | {
+      kind: "install"
+      source:
+        | {
+            type: "npm"
+            spec: string
+          }
+        | {
+            type: "archive"
+            url: string
+            sha256: string
+          }
+    }
+  | {
+      kind: "update"
+      id: string
+      source:
+        | {
+            type: "npm"
+            spec: string
+          }
+        | {
+            type: "archive"
+            url: string
+            sha256: string
+          }
+    }
+  | {
+      kind: "update"
+      id: string
+      version: string
+    }
+  | {
+      kind: "uninstall"
+      id: string
+      purgeData?: boolean
+    }
+
+export type ExtensionPreparedOperation = {
+  operationId: string
+  expiresAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  kind: "install" | "update" | "uninstall"
+  id: string
+  name: string
+  oldVersion?: string
+  version: string
+  versionChange?: "upgrade" | "same-version" | "downgrade"
+  sameVersion?: boolean
+  downgrade?: boolean
+  permissions: Array<string>
+  permissionsAdded: Array<string>
+  permissionsRemoved: Array<string>
+  contributes: ExtensionContributes
+  source: ExtensionPathSource | ExtensionNpmSource | ExtensionArchiveSource
+  expectedRevision?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  hasServer: boolean
+  enable: boolean
+  installId?: string
+  token: string
+}
+
+export type ForbiddenError = {
+  _tag: "ForbiddenError"
+  message: string
+}
+
+export type ConflictError = {
+  _tag: "ConflictError"
+  message: string
+  resource?: string
+}
+
+export type EffectHttpApiErrorGone = {
+  _tag: "Gone"
+}
+
+export type UpstreamError = {
+  _tag: "UpstreamError"
+  message: string
+  service?: string
+  status?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type ExtensionInstallResult = {
+  operationId: string
+  kind: "install" | "update" | "uninstall"
+  id: string
+  installId?: string
+  state: "committed" | "cancelled" | "expired" | "failed" | "unknown"
+  committed?: boolean
+  synced: boolean
+  cleanupPending: boolean
+  warnings: Array<string>
+}
+
+export type ExtensionOperationStatus =
+  | {
+      operationId: string
+      expiresAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      kind: "install" | "update" | "uninstall"
+      id: string
+      name: string
+      oldVersion?: string
+      version: string
+      versionChange?: "upgrade" | "same-version" | "downgrade"
+      sameVersion?: boolean
+      downgrade?: boolean
+      permissions: Array<string>
+      permissionsAdded: Array<string>
+      permissionsRemoved: Array<string>
+      contributes: ExtensionContributes
+      source: ExtensionPathSource | ExtensionNpmSource | ExtensionArchiveSource
+      expectedRevision?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      hasServer: boolean
+      enable: boolean
+      installId?: string
+      state: "prepared"
+      committed: false
+    }
+  | ExtensionInstallResult
 
 export type ExtensionRpcResult = {
   result: unknown
@@ -377,7 +516,7 @@ export type ApiError = {
 export type ExtensionStatusProperties = {
   id: string
   version: string
-  state: "installed" | "enabled" | "disabled" | "error" | "changed"
+  state: "installed" | "enabled" | "disabled" | "error" | "changed" | "removed"
   error?: string
 }
 
@@ -1086,6 +1225,7 @@ export type PermissionConfig =
       claude_consult?: PermissionActionConfig
       grok_consult?: PermissionActionConfig
       dsh_consult?: PermissionActionConfig
+      gpt_pro_consult?: PermissionActionConfig
       repo_clone?: PermissionRuleConfig
       repo_overview?: PermissionRuleConfig
       lsp?: PermissionRuleConfig
@@ -1484,6 +1624,9 @@ export type Config = {
   tools?: {
     [key: string]: boolean
   }
+  browser?: {
+    enabled?: boolean
+  }
   attachment?: AttachmentConfig
   enterprise?: {
     url?: string
@@ -1551,6 +1694,9 @@ export type GlobalEvent = {
     | EventBackgroundShellCreated
     | EventBackgroundShellUpdated
     | EventBackgroundShellExited
+    | EventBrowserUpdated
+    | EventBrowserClosed
+    | EventGptProNotification
     | EventScheduledTaskCreated
     | EventScheduledTaskUpdated
     | EventScheduledTaskDeleted
@@ -1597,7 +1743,6 @@ export type GlobalEvent = {
     | EventSessionNextCompactionStarted
     | EventSessionNextCompactionDelta
     | EventSessionNextCompactionEnded
-    | EventBrowserUpdated
     | EventServerConnected
     | EventGlobalDisposed
     | EventGlobalConfigUpdated
@@ -2019,12 +2164,6 @@ export type FormatterStatus = {
   enabled: boolean
 }
 
-export type ConflictError = {
-  _tag: "ConflictError"
-  message: string
-  resource?: string
-}
-
 export type NotFoundError = {
   name: "NotFoundError"
   data: {
@@ -2300,6 +2439,7 @@ export type ProjectTaskDetail = {
   descriptionPath: string
   status: ProjectTaskStatus
   sessionCount: number
+  lastSessionAt?: number
   progress: ProjectTaskProgress
   sessionDirectories: Array<string>
   time: {
@@ -2525,6 +2665,9 @@ export type Config7 = {
   permission?: PermissionConfig
   tools?: {
     [key: string]: boolean
+  }
+  browser?: {
+    enabled?: boolean
   }
   attachment?: AttachmentConfig
   enterprise?: {
@@ -3191,7 +3334,7 @@ export type EventMessagePartDelta = {
     partID: string
     field: string
     delta: string
-    offset?: number
+    offset?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   }
 }
 
@@ -3359,6 +3502,71 @@ export type EventBackgroundShellExited = {
   type: "background.shell.exited"
   properties: {
     info: BackgroundShell
+  }
+}
+
+export type EventBrowserUpdated = {
+  id: string
+  type: "browser.updated"
+  properties: {
+    pageID?: string
+    profileID?: string
+    owner?: {
+      directory?: string
+      sessionID?: string
+    }
+    kind?: "user" | "agent" | "consultation" | "login"
+    partition: string
+    url: string
+    title: string
+    loading: boolean
+    shared: boolean
+    epoch?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type EventBrowserClosed = {
+  id: string
+  type: "browser.closed"
+  properties: {
+    pageID?: string
+    partition: string
+    profileID?: string
+    epoch?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type EventGptProNotification = {
+  id: string
+  type: "gpt-pro.notification"
+  properties: {
+    id: string
+    consultationID: string
+    owner: string
+    phase:
+      | "queued"
+      | "preparing"
+      | "sending"
+      | "generating"
+      | "completed"
+      | "paused"
+      | "cancelled"
+      | "failed"
+      | "interrupted"
+      | "send_uncertain"
+    revision: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    url: string
+    kind: "progress" | "completed" | "state"
+    format: "append" | "snapshot"
+    text: string
+    truncated: boolean
+    error?: string
+    recovery?: {
+      stage: "open" | "ready" | "model" | "compose" | "submit" | "track"
+      reason: string
+      needsHuman?: boolean
+    }
   }
 }
 
@@ -3915,18 +4123,6 @@ export type EventSessionNextCompactionEnded = {
   }
 }
 
-export type EventBrowserUpdated = {
-  id: string
-  type: "browser.updated"
-  properties: {
-    partition: string
-    url: string
-    title: string
-    loading: boolean
-    shared: boolean
-  }
-}
-
 export type EventServerConnected = {
   id: string
   type: "server.connected"
@@ -4415,6 +4611,84 @@ export type ProviderV2Info = {
   }
 }
 
+export type EventMessagePartDelta1 = {
+  id: string
+  type: "message.part.delta"
+  properties: {
+    sessionID: string
+    messageID: string
+    partID: string
+    field: string
+    delta: string
+    offset?: number | "NaN" | "Infinity" | "-Infinity"
+  }
+}
+
+export type EventBrowserUpdated1 = {
+  id: string
+  type: "browser.updated"
+  properties: {
+    pageID?: string
+    profileID?: string
+    owner?: {
+      directory?: string
+      sessionID?: string
+    }
+    kind?: "user" | "agent" | "consultation" | "login"
+    partition: string
+    url: string
+    title: string
+    loading: boolean
+    shared: boolean
+    epoch?: number | "NaN" | "Infinity" | "-Infinity"
+  }
+}
+
+export type EventBrowserClosed1 = {
+  id: string
+  type: "browser.closed"
+  properties: {
+    pageID?: string
+    partition: string
+    profileID?: string
+    epoch?: number | "NaN" | "Infinity" | "-Infinity"
+  }
+}
+
+export type EventGptProNotification1 = {
+  id: string
+  type: "gpt-pro.notification"
+  properties: {
+    id: string
+    consultationID: string
+    owner: string
+    phase:
+      | "queued"
+      | "preparing"
+      | "sending"
+      | "generating"
+      | "completed"
+      | "paused"
+      | "cancelled"
+      | "failed"
+      | "interrupted"
+      | "send_uncertain"
+    revision: number | "NaN" | "Infinity" | "-Infinity"
+    at: number | "NaN" | "Infinity" | "-Infinity"
+    url: string
+    kind: "progress" | "completed" | "state"
+    format: "append" | "snapshot"
+    text: string
+    truncated: boolean
+    error?: string
+    recovery?: {
+      stage: "open" | "ready" | "model" | "compose" | "submit" | "track"
+      reason: string
+      needsHuman?: boolean
+    }
+  }
+}
+
 export type EventMathWorkerStatus1 = {
   id: string
   type: "math.worker.status"
@@ -4659,6 +4933,56 @@ export type ExtensionListResponses = {
 
 export type ExtensionListResponse = ExtensionListResponses[keyof ExtensionListResponses]
 
+export type ExtensionInstallationUninstallData = {
+  body?: {
+    operationId: string
+  }
+  headers: {
+    "x-opencode-extension-token": string
+  }
+  path: {
+    id: string
+  }
+  query?: never
+  url: "/global/extension/{id}"
+}
+
+export type ExtensionInstallationUninstallErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * Gone
+   */
+  410: EffectHttpApiErrorGone
+  /**
+   * UpstreamError
+   */
+  502: UpstreamError
+}
+
+export type ExtensionInstallationUninstallError =
+  ExtensionInstallationUninstallErrors[keyof ExtensionInstallationUninstallErrors]
+
+export type ExtensionInstallationUninstallResponses = {
+  /**
+   * Removal commit result
+   */
+  200: ExtensionInstallResult
+}
+
+export type ExtensionInstallationUninstallResponse =
+  ExtensionInstallationUninstallResponses[keyof ExtensionInstallationUninstallResponses]
+
 export type ExtensionGetData = {
   body?: never
   path: {
@@ -4782,6 +5106,244 @@ export type ExtensionSettingsUpdateResponses = {
 }
 
 export type ExtensionSettingsUpdateResponse = ExtensionSettingsUpdateResponses[keyof ExtensionSettingsUpdateResponses]
+
+export type ExtensionInstallationPrepareData = {
+  body?: ExtensionPrepareInput
+  path?: never
+  query?: never
+  url: "/global/extension/prepare"
+}
+
+export type ExtensionInstallationPrepareErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * Gone
+   */
+  410: EffectHttpApiErrorGone
+  /**
+   * UpstreamError
+   */
+  502: UpstreamError
+}
+
+export type ExtensionInstallationPrepareError =
+  ExtensionInstallationPrepareErrors[keyof ExtensionInstallationPrepareErrors]
+
+export type ExtensionInstallationPrepareResponses = {
+  /**
+   * Prepared extension operation; confirmation required
+   */
+  200: ExtensionPreparedOperation
+}
+
+export type ExtensionInstallationPrepareResponse =
+  ExtensionInstallationPrepareResponses[keyof ExtensionInstallationPrepareResponses]
+
+export type ExtensionInstallationInstallData = {
+  body?: {
+    operationId: string
+    enable?: boolean
+  }
+  headers: {
+    "x-opencode-extension-token": string
+  }
+  path?: never
+  query?: never
+  url: "/global/extension/install"
+}
+
+export type ExtensionInstallationInstallErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * Gone
+   */
+  410: EffectHttpApiErrorGone
+  /**
+   * UpstreamError
+   */
+  502: UpstreamError
+}
+
+export type ExtensionInstallationInstallError =
+  ExtensionInstallationInstallErrors[keyof ExtensionInstallationInstallErrors]
+
+export type ExtensionInstallationInstallResponses = {
+  /**
+   * Installation commit result
+   */
+  200: ExtensionInstallResult
+}
+
+export type ExtensionInstallationInstallResponse =
+  ExtensionInstallationInstallResponses[keyof ExtensionInstallationInstallResponses]
+
+export type ExtensionInstallationUpdateData = {
+  body?: {
+    operationId: string
+  }
+  headers: {
+    "x-opencode-extension-token": string
+  }
+  path: {
+    id: string
+  }
+  query?: never
+  url: "/global/extension/{id}/update"
+}
+
+export type ExtensionInstallationUpdateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * Gone
+   */
+  410: EffectHttpApiErrorGone
+  /**
+   * UpstreamError
+   */
+  502: UpstreamError
+}
+
+export type ExtensionInstallationUpdateError =
+  ExtensionInstallationUpdateErrors[keyof ExtensionInstallationUpdateErrors]
+
+export type ExtensionInstallationUpdateResponses = {
+  /**
+   * Update commit result
+   */
+  200: ExtensionInstallResult
+}
+
+export type ExtensionInstallationUpdateResponse =
+  ExtensionInstallationUpdateResponses[keyof ExtensionInstallationUpdateResponses]
+
+export type ExtensionInstallationCancelData = {
+  body?: never
+  headers: {
+    "x-opencode-extension-token": string
+  }
+  path: {
+    operationId: string
+  }
+  query?: never
+  url: "/global/extension/operation/{operationId}"
+}
+
+export type ExtensionInstallationCancelErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * Gone
+   */
+  410: EffectHttpApiErrorGone
+  /**
+   * UpstreamError
+   */
+  502: UpstreamError
+}
+
+export type ExtensionInstallationCancelError =
+  ExtensionInstallationCancelErrors[keyof ExtensionInstallationCancelErrors]
+
+export type ExtensionInstallationCancelResponses = {
+  /**
+   * Cancellation or already committed result
+   */
+  200: ExtensionInstallResult
+}
+
+export type ExtensionInstallationCancelResponse =
+  ExtensionInstallationCancelResponses[keyof ExtensionInstallationCancelResponses]
+
+export type ExtensionInstallationStatusData = {
+  body?: never
+  headers: {
+    "x-opencode-extension-token": string
+  }
+  path: {
+    operationId: string
+  }
+  query?: never
+  url: "/global/extension/operation/{operationId}"
+}
+
+export type ExtensionInstallationStatusErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * Gone
+   */
+  410: EffectHttpApiErrorGone
+  /**
+   * UpstreamError
+   */
+  502: UpstreamError
+}
+
+export type ExtensionInstallationStatusError =
+  ExtensionInstallationStatusErrors[keyof ExtensionInstallationStatusErrors]
+
+export type ExtensionInstallationStatusResponses = {
+  /**
+   * Prepared or terminal operation status
+   */
+  200: ExtensionOperationStatus
+}
+
+export type ExtensionInstallationStatusResponse =
+  ExtensionInstallationStatusResponses[keyof ExtensionInstallationStatusResponses]
 
 export type ExtensionRpcData = {
   body?: {
