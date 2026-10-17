@@ -16,16 +16,35 @@
 
   [data-slot="file-markdown-actions-inner"] {
     pointer-events: auto;
+    gap: 0;
+    transition: gap 140ms ease-in;
+  }
+
+  &[data-expanded="true"] [data-slot="file-markdown-actions-inner"] {
+    gap: 8px;
   }
 
   [data-slot="file-markdown-actions-content"] {
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 0;
+    width: 0;
+    flex: 0 0 auto;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateX(4px);
+    white-space: nowrap;
+    transition:
+      width 300ms cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 180ms ease,
+      transform 180ms ease;
+  }
 
-    &[hidden] {
-      display: none;
-    }
+  &[data-expanded="true"] [data-slot="file-markdown-actions-content"] {
+    width: var(--file-actions-expanded-width, 0px);
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 
