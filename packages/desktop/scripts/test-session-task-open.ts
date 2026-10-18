@@ -44,7 +44,7 @@ await withCdp(async (cdp, target) => {
     await cdp.evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`)
   }
   const navigate = (dir: string, sessionID?: string) =>
-    cdp.evaluate(`(async () => {
+    cdp.evaluate(`window.__sessionTaskOpenNavigation = (async () => {
       const { handleNotificationClick } = await import(${JSON.stringify(`${source}/utils/notification-click.ts`)});
       handleNotificationClick(${JSON.stringify(`/${Buffer.from(dir).toString("base64url")}/session/${sessionID ?? ""}`)});
     })()`)
@@ -108,14 +108,22 @@ await withCdp(async (cdp, target) => {
         `document.querySelector('${panel} [data-slot="dropdown-menu-trigger"]')?.textContent.includes('QA mounted task detail') === true`,
       ),
     )
-    const geometry = await cdp.evaluate<{ right: boolean; sameRow: boolean; label: string }>(`(() => {
+    const geometry = await cdp.evaluate<{
+      right: boolean
+      sameRow: boolean
+      balancedHeight: boolean
+      square: boolean
+      label: string
+    }>(`(() => {
       const button = document.querySelector('${openButton}');
       const trigger = document.querySelector('${panel} [data-slot="dropdown-menu-trigger"]');
       const a = button.getBoundingClientRect(), b = trigger.getBoundingClientRect();
       return { right: a.left >= b.right, sameRow: Math.abs((a.top+a.bottom-b.top-b.bottom)/2)<2,
+        balancedHeight: Math.abs(b.height-a.height-2)<1, square: Math.abs(a.height-a.width)<1,
         label: button.getAttribute('aria-label') };
     })()`)
     assert.ok(geometry.right && geometry.sameRow)
+    assert.ok(geometry.balancedHeight && geometry.square, "square detail button is 2px shorter to balance its shadow")
     assert.ok(geometry.label)
     await cdp.call("Page.captureScreenshot").then(async (shot: any) => {
       await Bun.write("/tmp/opencode-session-task-open.png", Buffer.from(shot.data, "base64"))
@@ -154,7 +162,14 @@ await withCdp(async (cdp, target) => {
     await closeDialog()
     log("PASS new session pending selection opens details")
   } finally {
+    log("cleaning test UI")
     await closeDialog()
+    await cdp.evaluate(`(() => {
+      for (const tab of document.querySelectorAll('[data-component="session-tab"]')) {
+        if (tab.getAttribute('data-directory') !== ${JSON.stringify(directory)} || tab.hasAttribute('data-session-id')) continue;
+        tab.querySelector('[data-action="session-tab-close"]')?.click();
+      }
+    })()`)
     await cdp.evaluate(`(async () => {
       const { setPendingProjectTaskMount } = await import(${JSON.stringify(`${source}/components/session/pending-project-task-mount.ts`)});
       setPendingProjectTaskMount(${JSON.stringify(directory)}, { taskID: undefined });
@@ -172,10 +187,14 @@ await withCdp(async (cdp, target) => {
         `document.querySelector(${JSON.stringify(closeProject)}).dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerType: "mouse", button: 0 }))`,
       )
     }
-    if (sessionID) await request(`/session/${sessionID}`, "DELETE")
-    if (taskID) await request(`/project-task/${taskID}`, "DELETE")
-    if (previous?.directory && previous.sessionID) await navigate(previous.directory, previous.sessionID)
-    await rm(directory, { recursive: true, force: true })
+    try {
+      if (sessionID) await request(`/session/${sessionID}`, "DELETE")
+      if (taskID) await request(`/project-task/${taskID}`, "DELETE")
+      log("test session and task deleted; restoring previous session")
+      if (previous?.directory && previous.sessionID) await navigate(previous.directory, previous.sessionID)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
     log("test data cleaned and previous session restored")
   }
 })
