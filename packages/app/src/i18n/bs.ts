@@ -282,6 +282,7 @@ export const dict = {
   "prompt.dropzone.file.label": "Spusti za @spominjanje datoteke",
   "prompt.slash.badge.custom": "prilagođeno",
   "prompt.slash.badge.skill": "skill",
+  "prompt.skill.pill": "Vještina: {{name}}",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.active": "aktivno",
   "prompt.context.includeActiveFile": "Uključi aktivnu datoteku",

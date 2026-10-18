@@ -267,6 +267,7 @@ export const dict = {
   "prompt.dropzone.file.label": "Ablegen zum @Erwähnen der Datei",
   "prompt.slash.badge.custom": "benutzerdefiniert",
   "prompt.slash.badge.skill": "Skill",
+  "prompt.skill.pill": "Fähigkeit: {{name}}",
   "prompt.slash.badge.mcp": "MCP",
   "prompt.context.active": "aktiv",
   "prompt.context.includeActiveFile": "Aktive Datei einbeziehen",

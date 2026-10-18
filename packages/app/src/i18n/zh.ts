@@ -612,6 +612,7 @@ export const dict = {
   "prompt.dropzone.file.label": "拖放以 @提及文件",
   "prompt.slash.badge.custom": "自定义",
   "prompt.slash.badge.skill": "技能",
+  "prompt.skill.pill": "技能：{{name}}",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.at.badge.consult": "参谋",
   "prompt.at.im": "IM 渠道",

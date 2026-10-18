@@ -26,6 +26,7 @@ import {
   AgentPart,
   FileAttachmentPart,
   ImPart,
+  SkillPart,
 } from "@/context/prompt"
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
@@ -1331,7 +1332,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     onSelect: handleSlashSelect,
   })
 
-  const createPill = (part: FileAttachmentPart | AgentPart | ImPart) => {
+  const createPill = (part: FileAttachmentPart | AgentPart | ImPart | SkillPart) => {
     const pill = document.createElement("span")
     pill.setAttribute("data-type", part.type)
     if (part.type === "im") {
@@ -1355,6 +1356,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       const label = document.createElement("span")
       label.textContent = part.channelName ? `${part.channelName}${part.botName ? ` · ${part.botName}` : ""}` : "IM"
       pill.append(icon, label)
+    } else if (part.type === "skill") {
+      pill.dataset.name = part.name
+      pill.dataset.content = part.content
+      pill.className =
+        "inline-flex items-center gap-1 rounded-full border border-border-weak-base bg-surface-raised-base px-2 text-syntax-keyword"
+      pill.textContent = language.t("prompt.skill.pill", { name: part.name })
     } else {
       pill.textContent = part.content
     }
@@ -1383,6 +1390,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       if (el.dataset.type === "file") return true
       if (el.dataset.type === "agent") return true
       if (el.dataset.type === "im") return true
+      if (el.dataset.type === "skill") return true
       return el.tagName === "BR"
     })
 
@@ -1393,7 +1401,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         editorRef.appendChild(createTextFragment(part.content))
         continue
       }
-      if (part.type === "file" || part.type === "agent" || part.type === "im") {
+      if (part.type === "file" || part.type === "agent" || part.type === "im" || part.type === "skill") {
         editorRef.appendChild(createPill(part))
       }
     }
@@ -1556,6 +1564,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       position += content.length
     }
 
+    const pushSkill = (skill: HTMLElement) => {
+      const content = skill.dataset.content ?? skill.textContent ?? ""
+      parts.push({
+        type: "skill",
+        name: skill.dataset.name!,
+        content,
+        start: position,
+        end: position + content.length,
+      })
+      position += content.length
+    }
+
     const visit = (node: Node) => {
       if (node.nodeType === Node.TEXT_NODE) {
         buffer += node.textContent ?? ""
@@ -1577,6 +1597,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       if (el.dataset.type === "im") {
         flushText()
         pushIm(el)
+        return
+      }
+      if (el.dataset.type === "skill") {
+        flushText()
+        pushSkill(el)
         return
       }
       if (el.tagName === "BR") {
@@ -1674,7 +1699,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const range = selection.getRangeAt(0)
     if (!editorRef.contains(range.startContainer)) return false
 
-    if (part.type === "file" || part.type === "agent" || part.type === "im") {
+    if (part.type === "file" || part.type === "agent" || part.type === "im" || part.type === "skill") {
       const cursorPosition = getCursorPosition(editorRef)
       const rawText = prompt
         .current()
@@ -1741,7 +1766,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     // Chromium loses IME tracking when contenteditable DOM is modified
     // with non-editable elements (pills) via Range API.
     // Blur/refocus forces the browser to reinitialize IME handling.
-    if (part.type === "file" || part.type === "agent" || part.type === "im") {
+    if (part.type === "file" || part.type === "agent" || part.type === "im" || part.type === "skill") {
       const cursorPos = getCursorPosition(editorRef)
       requestAnimationFrame(() => {
         if (!mayFocusComposer(editorRef)) return
@@ -2505,6 +2530,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   "[&_[data-type=file]]:text-syntax-property": true,
                   "[&_[data-type=agent]]:text-syntax-type": true,
                   "[&_[data-type=im]]:text-syntax-property": true,
+                  "[&_[data-type=skill]]:text-syntax-keyword": true,
                   "font-mono!": true,
                 }}
               />

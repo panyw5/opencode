@@ -606,6 +606,7 @@ export const dict = {
   "prompt.dropzone.file.label": "Drop to @mention file",
   "prompt.slash.badge.custom": "custom",
   "prompt.slash.badge.skill": "skill",
+  "prompt.skill.pill": "Skill: {{name}}",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.at.badge.consult": "consult",
   "prompt.at.im": "IM channel",

@@ -58,6 +58,13 @@ describe("i18n parity", () => {
     }
   })
 
+  test("non-English locales translate the skill pill label", () => {
+    for (const locale of [...locales, uk]) {
+      expect(locale["prompt.skill.pill"]).toBeDefined()
+      expect(locale["prompt.skill.pill"]).not.toBe(en["prompt.skill.pill"])
+    }
+  })
+
   test("non-English locales translate global search settings", () => {
     for (const locale of locales) {
       for (const key of searchIndexKeys) {

@@ -129,4 +129,16 @@ describe("prompt-input editor dom", () => {
     expect(serialize(container)).toBe("@IM")
     expect(getTextLength(container)).toBe(3)
   })
+
+  test("serialize treats a skill pill as its visible token and cursor length", () => {
+    const container = document.createElement("div")
+    const pill = document.createElement("span")
+    pill.dataset.type = "skill"
+    pill.dataset.content = "/review"
+    pill.textContent = "/review"
+    container.append(pill)
+
+    expect(serialize(container)).toBe("/review")
+    expect(getTextLength(container)).toBe(7)
+  })
 })

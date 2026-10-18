@@ -261,6 +261,7 @@ export const dict = {
   "prompt.dropzone.file.label": "ドロップして@メンションファイルを追加",
   "prompt.slash.badge.custom": "カスタム",
   "prompt.slash.badge.skill": "スキル",
+  "prompt.skill.pill": "スキル：{{name}}",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.active": "アクティブ",
   "prompt.context.includeActiveFile": "アクティブなファイルを含める",

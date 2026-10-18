@@ -37,6 +37,7 @@ export function clonePromptParts(prompt: Prompt): Prompt {
     if (part.type === "image") return { ...part }
     if (part.type === "agent") return { ...part }
     if (part.type === "im") return { ...part }
+    if (part.type === "skill") return { ...part }
     return {
       ...part,
       selection: part.selection ? { ...part.selection } : undefined,

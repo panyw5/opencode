@@ -281,6 +281,7 @@ export const dict = {
   "prompt.dropzone.file.label": "Отпустите для @упоминания файла",
   "prompt.slash.badge.custom": "своё",
   "prompt.slash.badge.skill": "навык",
+  "prompt.skill.pill": "Навык: {{name}}",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.active": "активно",
   "prompt.context.includeActiveFile": "Включить активный файл",

@@ -1,7 +1,9 @@
 import type { Prompt } from "@/context/prompt"
 
 export function promptText(prompt: Prompt) {
-  const text = prompt.map((part) => ("content" in part ? part.content : "")).join("")
+  const text = prompt
+    .map((part) => (part.type === "skill" ? `Use the ${part.name} skill.` : "content" in part ? part.content : ""))
+    .join("")
   const im = prompt.find((part) => part.type === "im")
   if (!im || im.type !== "im") return text
   const target = im.channelName

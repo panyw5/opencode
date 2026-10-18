@@ -332,6 +332,7 @@ export const dict = {
   "prompt.dropzone.file.label": "拖放以 @提及檔案",
   "prompt.slash.badge.custom": "自訂",
   "prompt.slash.badge.skill": "技能",
+  "prompt.skill.pill": "技能：{{name}}",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.active": "作用中",
   "prompt.context.includeActiveFile": "包含作用中檔案",
