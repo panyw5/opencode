@@ -670,6 +670,10 @@ export const dict = {
   "dialog.skill.title": "Skills",
   "dialog.skill.description": "{{count}} loaded",
   "dialog.skill.empty": "No skills loaded",
+  "dialog.skill.group.project": "Project skills",
+  "dialog.skill.group.global": "Global skills",
+  "dialog.skill.group.plugin": "Plugin-injected skills",
+  "dialog.skill.group.builtin": "Built-in skills",
 
   "dialog.lsp.empty": "LSPs auto-detected from file types",
   "dialog.plugins.empty": "Plugins configured in opencode.json",

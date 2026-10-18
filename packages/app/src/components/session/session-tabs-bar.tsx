@@ -72,6 +72,7 @@ const apiErrorStatus = (error: unknown) => {
  */
 export function SessionTabsBar() {
   const layout = useLayout()
+  const dialog = useDialog()
   const settings = useSettings()
   const globalSync = useGlobalSync()
   const globalSDK = useGlobalSDK()
@@ -358,6 +359,10 @@ export function SessionTabsBar() {
   }
 
   const close = (tab: SessionBarTab) => {
+    if (isActive(tab)) {
+      console.debug(`[session-tabs] close active dialog session=${tab.id}`)
+      dialog.closeOwnerBound()
+    }
     void sessionTabs.requestClose(tab)
   }
 
@@ -369,6 +374,10 @@ export function SessionTabsBar() {
 
   const closeDraft = (draft = activeDraft()) => {
     if (!draft) return
+    if (activeDraft()?.id === draft.id) {
+      console.debug(`[session-tabs] close active dialog draft=${draft.id}`)
+      dialog.closeOwnerBound()
+    }
     console.debug(`[session-tabs] draft close delegated id=${draft.id} directory=${draft.directory}`)
     void sessionTabs.requestCloseDraft(draft)
   }
