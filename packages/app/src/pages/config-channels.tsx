@@ -1039,7 +1039,6 @@ export const ConfigChannelsDetail: Component<{
                               </div>
                               <TextField
                                 label={language.t("config.channels.field.retentionDays")}
-                                description={language.t("config.channels.field.retentionDays.hint")}
                                 type="number"
                                 min={1}
                                 max={3650}
@@ -1329,7 +1328,6 @@ export const ConfigChannelsDetail: Component<{
               </div>
               <TextField
                 label={language.t("config.channels.field.retentionDays")}
-                description={language.t("config.channels.field.retentionDays.hint")}
                 type="number"
                 min={1}
                 max={3650}

@@ -2190,9 +2190,7 @@ export const dict = {
   "config.channels.field.enabled": "Enabled",
   "config.channels.field.autoReply": "Legacy automatic replies",
   "config.channels.field.autoReply.hint": "Reply automatically only when no project subscription matches.",
-  "config.channels.field.retentionDays": "Message retention (days)",
-  "config.channels.field.retentionDays.hint":
-    "Optional. Leave empty to retain indefinitely. Pending and unknown sends are never cleaned up.",
+  "config.channels.field.retentionDays": "Message retention (days, optional; blank means retain indefinitely)",
   "config.channels.field.retentionDays.invalid": "Enter a whole number from 1 to 3650, or leave empty.",
   "config.channels.field.model": "Conversation model",
   "config.channels.field.model.hint": "Model used when replying on this IM channel. Auto uses the default model.",
