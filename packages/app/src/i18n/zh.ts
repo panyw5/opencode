@@ -107,6 +107,7 @@ export const dict = {
   "projectTask.mount.mounted": "已关联：{{title}}",
   "projectTask.mount.empty": "暂无开放的项目任务。请在侧边栏创建。",
   "projectTask.mount.unmount": "取消关联",
+  "projectTask.mount.openDetails": "打开项目任务详情",
   "projectTask.inject.title": "每轮注入任务上下文",
   "projectTask.inject.hint": "开启后，每轮 LLM 调用会收到已关联任务的描述、关联会话与待办。默认开启。",
   "projectTask.done.title": "已完成 ({{count}})",

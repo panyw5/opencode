@@ -1,6 +1,7 @@
 import type { ProjectTask, Session } from "@opencode-ai/sdk/v2/client"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
+import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { showToast } from "@opencode-ai/ui/toast"
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
@@ -10,15 +11,14 @@ import { useSDK } from "@/context/sdk"
 import { useLanguage } from "@/context/language"
 import { useSync } from "@/context/sync"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import {
-  pendingProjectTaskMount,
-  setPendingProjectTaskMount,
-} from "@/components/session/pending-project-task-mount"
+import { openPresentedTask } from "@/pages/layout/open-task"
+import { pendingProjectTaskMount, setPendingProjectTaskMount } from "@/components/session/pending-project-task-mount"
 import { Binary } from "@opencode-ai/core/util/binary"
 
 export function SessionProjectTaskMount(props: {
   /** Compact icon trigger (header) vs full row for status panel. */
   variant?: "icon" | "panel"
+  onOpenTask?: () => void
 }) {
   const variant = () => props.variant ?? "icon"
   // Directory-bound client so project-task APIs resolve the same project as the session.
@@ -65,6 +65,16 @@ export function SessionProjectTaskMount(props: {
     if (!id) return undefined
     return state.tasks.find((task) => task.id === id)?.title
   })
+
+  function openMountedTask() {
+    const taskID = mountedID()
+    if (!taskID) return
+    const id = sessionID() ?? ""
+    console.debug(`[project-task-mount] open-detail task=${taskID} session=${id} directory=${directory()}`)
+    setState("open", false)
+    props.onOpenTask?.()
+    openPresentedTask({ sessionID: id, kind: "project_task", taskID })
+  }
 
   /** Optimistic local patch so the checkbox reflects mount/inject without waiting for SSE. */
   const patchSession = (sessionID: string, patch: Partial<Session>) => {
@@ -118,7 +128,11 @@ export function SessionProjectTaskMount(props: {
         : undefined
     const sameProject = !properties?.projectID || properties.projectID === session()?.projectID
     const sameSession = !properties?.info?.id || properties.info.id === sessionID()
-    if ((type.startsWith("project-task.") && sameProject) || (type === "session.updated" && sameSession) || type === "sync") {
+    if (
+      (type.startsWith("project-task.") && sameProject) ||
+      (type === "session.updated" && sameSession) ||
+      type === "sync"
+    ) {
       void loadTasks({ silent: true })
     }
   })
@@ -241,9 +255,7 @@ export function SessionProjectTaskMount(props: {
       >
         <span class="flex min-w-0 items-center gap-2">
           <Icon name="checklist" size="small" class={mountedID() ? "text-icon-brand-base" : "text-icon-weak"} />
-          <span class="min-w-0 truncate">
-            {mountedTitle() ?? language.t("projectTask.mount.none")}
-          </span>
+          <span class="min-w-0 truncate">{mountedTitle() ?? language.t("projectTask.mount.none")}</span>
         </span>
         <Icon name="chevron-down" size="small" class="shrink-0 text-icon-weak" />
       </DropdownMenu.Trigger>
@@ -282,9 +294,7 @@ export function SessionProjectTaskMount(props: {
                   <div class="min-w-0 flex-1">
                     <DropdownMenu.ItemLabel class="truncate">{task.title}</DropdownMenu.ItemLabel>
                     <div class="truncate text-11-regular text-text-weaker">
-                      {task.progress.total > 0
-                        ? `${task.progress.completed}/${task.progress.total}`
-                        : task.status}
+                      {task.progress.total > 0 ? `${task.progress.completed}/${task.progress.total}` : task.status}
                     </div>
                   </div>
                 </DropdownMenu.Item>
@@ -307,7 +317,21 @@ export function SessionProjectTaskMount(props: {
     <Show when={variant() === "panel"} fallback={menu}>
       <div data-component="session-project-task-mount" class="flex flex-col gap-2 px-3 py-3">
         <div class="text-13-medium text-text-strong">{language.t("projectTask.mount.sectionTitle")}</div>
-        {menu}
+        <div class="flex items-center gap-2">
+          <div class="min-w-0 flex-1">{menu}</div>
+          <Show when={mountedID()}>
+            <IconButton
+              data-action="session-project-task-open"
+              icon="square-arrow-top-right"
+              size="normal"
+              variant="secondary"
+              class="shrink-0"
+              aria-label={language.t("projectTask.mount.openDetails")}
+              title={language.t("projectTask.mount.openDetails")}
+              onClick={openMountedTask}
+            />
+          </Show>
+        </div>
         <label class="mt-1 flex cursor-pointer items-start gap-2 rounded-lg border border-border-weak-base bg-background-base px-3 py-2">
           <input
             type="checkbox"

@@ -129,6 +129,7 @@ export const dict = {
   "projectTask.mount.mounted": "Mounted: {{title}}",
   "projectTask.mount.empty": "No open project tasks. Create one from the sidebar.",
   "projectTask.mount.unmount": "Unmount project task",
+  "projectTask.mount.openDetails": "Open project task details",
   "projectTask.inject.title": "Inject task context each turn",
   "projectTask.inject.hint":
     "When enabled, each LLM turn receives the mounted task description, linked sessions, and open todos. Default is on.",

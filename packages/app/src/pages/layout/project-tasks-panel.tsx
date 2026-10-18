@@ -1082,7 +1082,11 @@ export function ProjectTasksPanel(props: {
   let focusOpened: string | undefined
   createEffect(() => {
     const taskID = props.focusTaskID?.()
-    if (!taskID || focusOpened === taskID) return
+    if (!taskID) {
+      focusOpened = undefined
+      return
+    }
+    if (focusOpened === taskID) return
     const task = state.tasks.find((item) => item.id === taskID)
     if (!task) return
     focusOpened = taskID
