@@ -283,7 +283,8 @@ export function TestProviderModelButton(props: Props) {
             </span>
           </Show>
           <Show when={phase() === "idle"}>
-            <span class="inline-flex items-center leading-none text-text-weak">
+            <span class="inline-flex items-center gap-1.5 leading-none text-text-weak">
+              <Icon name="link" size="small" />
               {language.t("config.custom.models.test")}
             </span>
           </Show>
