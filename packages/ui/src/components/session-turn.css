@@ -305,7 +305,7 @@
     max-width: 360px;
     min-height: 52px;
     gap: 10px;
-    padding: 10px 13px;
+    padding: 12px 15px;
     overflow: hidden;
     border: 1px solid var(--border-weak-base);
     border-radius: var(--radius-xl);
@@ -313,6 +313,28 @@
     color: inherit;
     text-align: left;
     cursor: pointer;
+
+    [data-slot="session-turn-diff-filename"] {
+      font-size: calc(var(--font-size-base) - 2px);
+      line-height: 20px;
+    }
+
+    [data-slot="session-turn-diff-meta"] {
+      font-family: var(--font-family-mono);
+      font-feature-settings: var(--font-family-mono--font-feature-settings);
+      font-size: calc(var(--font-size-base) - 2px);
+      line-height: 20px;
+      font-variant-numeric: tabular-nums;
+
+      [data-slot="diff-changes-additions"],
+      [data-slot="diff-changes-deletions"],
+      [data-slot="session-turn-diff-status"] {
+        font-family: inherit;
+        font-feature-settings: inherit;
+        font-size: inherit;
+        line-height: inherit;
+      }
+    }
 
     &:hover,
     &:focus-visible {

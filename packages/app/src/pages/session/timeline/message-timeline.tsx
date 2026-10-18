@@ -232,7 +232,7 @@ function TimelineDiffSummaryRow(props: {
               title={diff.file}
               onClick={() => props.onReviewDiff?.(diff.file)}
             >
-              <FileIcon node={{ path: diff.file, type: "file" }} class="size-7 shrink-0" />
+              <FileIcon node={{ path: diff.file, type: "file" }} class="size-8 shrink-0" />
               <span data-slot="session-turn-diff-details">
                 <span data-slot="session-turn-diff-filename">{getFilename(diff.file)}</span>
                 <span data-slot="session-turn-diff-meta">
@@ -254,7 +254,7 @@ function TimelineDiffSummaryRow(props: {
                   </Show>
                 </span>
               </span>
-              <Icon name="chevron-right" size="small" />
+              <Icon name="chevron-right" size="normal" />
             </button>
           )}
         </For>
