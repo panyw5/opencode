@@ -90,6 +90,92 @@ try {
       await selected(files[0])
       log("PASS keyboard navigation uses the surrounding tabs collection")
 
+      const drag = async (from: (typeof files)[number], to: (typeof files)[number]) => {
+        await cdp.evaluate(
+          `document.querySelector(${JSON.stringify(tab(from.path))}).scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'})`,
+        )
+        await Bun.sleep(150)
+        const points = await cdp.evaluate<{ start: { x: number; y: number }; end: { x: number; y: number } }>(`(() => {
+          const center = query => {
+            const el = document.querySelector(query);
+            const rect = el.getBoundingClientRect();
+            const point = {x:rect.x+rect.width/2,y:rect.y+rect.height/2};
+            if (!el.contains(document.elementFromPoint(point.x,point.y))) throw Error('Drag target is clipped or covered');
+            return point;
+          };
+          return {start:center(${JSON.stringify(tab(from.path))}),end:center(${JSON.stringify(tab(to.path))})};
+        })()`)
+        log(`drag start path=${from.path} target=${to.path}`)
+        await cdp.call("Input.dispatchMouseEvent", { type: "mouseMoved", ...points.start })
+        await cdp.call("Input.dispatchMouseEvent", {
+          type: "mousePressed",
+          ...points.start,
+          button: "left",
+          clickCount: 1,
+        })
+        try {
+          await Bun.sleep(350)
+          await cdp.call("Input.dispatchMouseEvent", {
+            type: "mouseMoved",
+            x: points.start.x + 12,
+            y: points.start.y,
+            button: "left",
+            buttons: 1,
+          })
+          await wait(`!!document.querySelector('[data-component="tabs-drag-preview"]')`, "drag preview mounted")
+          const preview = await cdp.evaluate<{
+            text: string
+            z: number
+            pointer: string
+            width: number
+            height: number
+          }>(`(() => {
+            const el = document.querySelector('[data-component="tabs-drag-preview"]');
+            const label = el.querySelector('span');
+            const style = getComputedStyle(el.parentElement);
+            const rect = label.getBoundingClientRect();
+            return {text:label.textContent,z:Number(style.zIndex),pointer:style.pointerEvents,width:rect.width,height:rect.height};
+          })()`)
+          assert.equal(preview.text, from.path.split("/").at(-1))
+          assert.ok(preview.z > 0 && preview.z < 50, "drag label paints above the composited page but below dialogs")
+          assert.equal(preview.pointer, "none", "drag overlay must not intercept pointer input")
+          assert.ok(preview.width > 0 && preview.height > 0, "drag label retains visible dimensions")
+          const shot = await cdp.call<{ data: string }>("Page.captureScreenshot", { format: "png" })
+          await Bun.write("/tmp/opencode-file-tab-drag.png", Buffer.from(shot.data, "base64"))
+          for (let step = 1; step <= 8; step++) {
+            await cdp.call("Input.dispatchMouseEvent", {
+              type: "mouseMoved",
+              x: points.start.x + ((points.end.x - points.start.x) * step) / 8,
+              y: points.end.y,
+              button: "left",
+              buttons: 1,
+            })
+          }
+        } finally {
+          await cdp.call("Input.dispatchMouseEvent", {
+            type: "mouseReleased",
+            ...points.end,
+            button: "left",
+            clickCount: 1,
+          })
+        }
+        await wait(
+          `!document.querySelector('[data-component="tabs-drag-preview"]')`,
+          "drag preview removed after release",
+        )
+        assert.equal(await cdp.evaluate(`document.querySelectorAll('#session-side-panel .opacity-0').length`), 0)
+        const order = await cdp.evaluate<string[]>(
+          `[...document.querySelectorAll('.session-file-tab-trigger')].map(el=>el.getAttribute('data-value')).filter(value=>value.includes(${JSON.stringify(folder)}))`,
+        )
+        assert.deepEqual(
+          order,
+          (points.start.x < points.end.x ? [to, from] : [from, to]).map((file) => `file://${file.path}`),
+        )
+        log("PASS drag label remains visible, tab reorders and release restores the source label")
+      }
+      await drag(files[0], files[1])
+      await drag(files[0], files[1])
+
       log("open file context menu")
       // Avoid the macOS native context-menu input acknowledgement blocking CDP.
       await cdp.evaluate(`(() => {

@@ -222,7 +222,11 @@ export function SessionSidePanel(props: {
 
   const handleDragStart = (event: unknown) => {
     const id = getDraggableId(event)
-    if (!id) return
+    if (!id) {
+      console.debug("[file-preview] tab drag start skipped reason=missing-id")
+      return
+    }
+    console.debug(`[file-preview] tab drag start tab=${id}`)
     setStore("activeDraggable", id)
   }
 
@@ -233,10 +237,12 @@ export function SessionSidePanel(props: {
     const currentTabs = tabs().all()
     const toIndex = getTabReorderIndex(currentTabs, draggable.id.toString(), droppable.id.toString())
     if (toIndex === undefined) return
+    console.debug(`[file-preview] tab drag reorder tab=${draggable.id} target=${droppable.id} index=${toIndex}`)
     tabs().move(draggable.id.toString(), toIndex)
   }
 
   const handleDragEnd = () => {
+    console.debug(`[file-preview] tab drag end tab=${store.activeDraggable ?? "none"}`)
     setStore("activeDraggable", undefined)
   }
 
@@ -422,7 +428,8 @@ export function SessionSidePanel(props: {
                     </Show>
                   </Show>
                 </Tabs>
-                <DragOverlay>
+                {/* Keep the portaled preview above the composited panel, but below dialogs. */}
+                <DragOverlay style={{ "z-index": 40, "pointer-events": "none" }}>
                   <Show when={store.activeDraggable} keyed>
                     {(tab) => {
                       const path = file.pathFromTab(tab)
