@@ -1,5 +1,5 @@
-import { Component, Show, createSignal, onCleanup, onMount } from "solid-js"
-import { createStore } from "solid-js/store"
+import { Component, For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js"
+import { createStore, reconcile } from "solid-js/store"
 import QRCode from "qrcode"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -9,9 +9,11 @@ import { usePlatform } from "@/context/platform"
 import type { RemoteAccessStatus, RemoteDevice, RemotePairing } from "@/remote/types"
 import {
   createPairingOperationController,
+  deviceActivityAt,
   pairingRemainingSeconds,
   revokeAfterConfirmation,
   shouldClearPairing,
+  sortRemoteDevices,
 } from "@/remote/access-ui"
 
 export const SettingsRemote: Component = () => {
@@ -26,7 +28,9 @@ export const SettingsRemote: Component = () => {
     pairingBusy: false,
     disabling: false,
     error: "",
+    deviceSort: "activity" as "activity" | "paired",
   })
+  const devices = createMemo(() => sortRemoteDevices(store.devices, store.deviceSort))
   const [remaining, setRemaining] = createSignal(0)
   let generation = 0
   let eventGeneration = 0
@@ -55,7 +59,8 @@ export const SettingsRemote: Component = () => {
         invalidatePairing()
       }
       lastUrl = status.url
-      setStore({ status, devices, error: "" })
+      setStore("devices", reconcile(devices, { key: "id" }))
+      setStore({ status, error: "" })
     } catch (error) {
       if (disposed || current !== generation || currentEvent !== eventGeneration) return
       setStore("error", error instanceof Error ? error.message : String(error))
@@ -75,7 +80,9 @@ export const SettingsRemote: Component = () => {
       void refresh()
     })
     void refresh()
+    let ticks = 0
     timer = setInterval(() => {
+      if (++ticks % 5 === 0 && !store.busy) void refresh()
       const expiresAt = store.pairing?.expiresAt
       if (!expiresAt) return
       const value = pairingRemainingSeconds(expiresAt)
@@ -184,10 +191,21 @@ export const SettingsRemote: Component = () => {
     void act(() => api.reset())
   }
 
-  const date = (value: number) => new Date(value).toLocaleDateString()
+  const date = (value: number) =>
+    new Date(value).toLocaleString(language.locale(), {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    })
+  const connectionState = (device: RemoteDevice) =>
+    store.status.phase === "online" ? (device.connection?.state ?? "unknown") : "offline"
 
   return (
-    <div class="flex flex-col gap-6 px-6 py-5">
+    <div data-component="settings-remote" class="flex flex-col gap-6 px-6 py-5">
       <header class="flex flex-col gap-1">
         <h2 class="text-18-semibold">{language.t("settings.remote.title")}</h2>
         <p class="text-14-regular text-text-weak">{language.t("settings.remote.description")}</p>
@@ -216,12 +234,9 @@ export const SettingsRemote: Component = () => {
         <Show when={store.status.enabled || store.busy}>
           <Show when={store.status.url}>
             {(url) => (
-              <div class="flex flex-col items-start gap-2">
-                <span class="select-text text-13-regular text-text-base break-all">{url()}</span>
-                <Button size="small" variant="ghost" onClick={() => platform.openLink(url())}>
-                  {language.t("settings.remote.openUrl")}
-                </Button>
-              </div>
+              <span data-slot="remote-public-address" class="select-text text-13-regular text-text-base break-all">
+                {url()}
+              </span>
             )}
           </Show>
           <div class="flex flex-wrap gap-2">
@@ -257,30 +272,74 @@ export const SettingsRemote: Component = () => {
         )}
       </Show>
       <section class="flex flex-col gap-3">
-        <div class="flex items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center justify-between gap-3">
           <h3 class="text-14-medium">{language.t("settings.remote.devices")}</h3>
+          <select
+            data-slot="remote-device-sort"
+            aria-label={language.t("settings.remote.sort")}
+            class="ml-auto rounded-md border border-border-base bg-background-base px-2 py-1 text-12-regular"
+            value={store.deviceSort}
+            onChange={(event) => setStore("deviceSort", event.currentTarget.value === "paired" ? "paired" : "activity")}
+          >
+            <option value="activity">{language.t("settings.remote.sort.activity")}</option>
+            <option value="paired">{language.t("settings.remote.sort.paired")}</option>
+          </select>
           <Button size="small" variant="ghost" disabled={store.busy} onClick={reset}>
             {language.t("settings.remote.reset")}
           </Button>
         </div>
+        <p class="text-12-regular text-text-weak">{language.t("settings.remote.presenceHint")}</p>
         <Show
           when={store.devices.length > 0}
           fallback={<p class="text-13-regular text-text-weak">{language.t("settings.remote.devicesEmpty")}</p>}
         >
           <div class="rounded-lg border border-border-base bg-surface-base divide-y divide-border-base">
-            {store.devices.map((device) => (
-              <div class="flex items-center justify-between gap-3 p-3">
-                <div class="min-w-0 flex flex-col gap-1">
-                  <span class="text-14-medium truncate">{device.name}</span>
-                  <span class="text-12-regular text-text-weak">
-                    {language.t("settings.remote.deviceSeen", { date: date(device.lastSeenAt) })}
-                  </span>
+            <For each={devices()}>
+              {(device) => (
+                <div
+                  data-slot="remote-device"
+                  data-device-id={device.id}
+                  class="flex items-center justify-between gap-3 p-3"
+                >
+                  <div class="min-w-0 flex flex-col gap-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="text-14-medium truncate">{device.name}</span>
+                      <span
+                        data-slot="remote-device-state"
+                        data-state={connectionState(device)}
+                        class="rounded-full border border-border-base px-2 py-0.5 text-11-regular"
+                        classList={{ "text-text-success-base": connectionState(device) === "active" }}
+                      >
+                        {language.t(`settings.remote.connection.${connectionState(device)}`)}
+                      </span>
+                      <code class="text-11-regular text-text-weak">#{device.id.slice(0, 8)}</code>
+                    </div>
+                    <span data-slot="remote-device-paired" class="text-12-regular text-text-weak">
+                      {language.t("settings.remote.devicePaired", { date: date(device.createdAt) })}
+                    </span>
+                    <span data-slot="remote-device-seen" class="text-12-regular text-text-weak">
+                      {language.t("settings.remote.deviceSeen", { date: date(deviceActivityAt(device)) })}
+                    </span>
+                    <Show when={store.status.phase === "online"}>
+                      <For each={device.connection?.pages ?? []}>
+                        {(page) => (
+                          <span data-slot="remote-device-page" class="break-all text-12-regular text-text-base">
+                            {language.t("settings.remote.currentPage")}：
+                            {language.t(`settings.remote.page.${page.kind}`)}
+                            {page.project ? ` · ${page.project}` : ""}
+                            {page.sessionID ? ` · #${page.sessionID.slice(-8)}` : ""}
+                            {!page.visible ? ` · ${language.t("settings.remote.connection.background")}` : ""}
+                          </span>
+                        )}
+                      </For>
+                    </Show>
+                  </div>
+                  <Button size="small" variant="ghost" disabled={store.busy} onClick={() => revoke(device)}>
+                    {language.t("settings.remote.revoke")}
+                  </Button>
                 </div>
-                <Button size="small" variant="ghost" disabled={store.busy} onClick={() => revoke(device)}>
-                  {language.t("settings.remote.revoke")}
-                </Button>
-              </div>
-            ))}
+              )}
+            </For>
           </div>
         </Show>
       </section>

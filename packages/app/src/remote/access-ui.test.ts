@@ -2,9 +2,11 @@ import { describe, expect, test } from "bun:test"
 import QRCode from "qrcode"
 import {
   createPairingOperationController,
+  deviceActivityAt,
   pairingRemainingSeconds,
   revokeAfterConfirmation,
   shouldClearPairing,
+  sortRemoteDevices,
 } from "./access-ui"
 import type { RemoteAccessStatus, RemoteDevice } from "./types"
 
@@ -18,6 +20,21 @@ const device: RemoteDevice = {
 }
 
 describe("remote access settings behavior", () => {
+  test("sorts same-named devices by actual recent activity or pairing time without mutating input", () => {
+    const older = {
+      ...device,
+      id: "older",
+      createdAt: 1,
+      lastSeenAt: 2,
+      connection: { state: "active" as const, lastActivityAt: 10, pages: [] },
+    }
+    const newer = { ...device, id: "newer", createdAt: 5, lastSeenAt: 6 }
+    const input = [newer, older]
+    expect(deviceActivityAt(older)).toBe(10)
+    expect(sortRemoteDevices(input).map((d) => d.id)).toEqual(["older", "newer"])
+    expect(sortRemoteDevices(input, "paired").map((d) => d.id)).toEqual(["newer", "older"])
+    expect(input[0]).toBe(newer)
+  })
   test("generates a real QR matrix locally for the pairing link", () => {
     expect(QRCode.create("https://relay.invalid/remote/connect#one-use-code").modules.size).toBeGreaterThan(0)
   })

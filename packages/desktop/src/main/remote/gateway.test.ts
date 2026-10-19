@@ -172,6 +172,85 @@ async function pair(base: string, gateway: Awaited<ReturnType<typeof createRemot
 }
 
 describe("remote gateway", () => {
+  test("authenticates presence locally with Origin/CSRF, isolates devices and never persists page metadata", async () => {
+    const upstreamCalls: string[] = []
+    const logs: string[] = []
+    const { gateway, getSaved } = await fixture(() => {}, {
+      onRequest: (path) => upstreamCalls.push(path),
+      onLog: (line) => logs.push(line),
+    })
+    const payload = {
+      clientID: "browser-tab-000001",
+      sequence: 1,
+      visible: true,
+      page: { kind: "session", project: "QA", sessionID: "ses_example" },
+    }
+    const endpoint = `${gateway.url}/remote/api/presence`
+    const first = await pair(gateway.url, gateway)
+    await pair(gateway.url, gateway)
+    const session = (await fetch(`${gateway.url}/remote/api/session`, { headers: { Cookie: first.cookie! } }).then(
+      (r) => r.json(),
+    )) as { csrfToken: string; capabilities: { presence: boolean } }
+    expect(session.capabilities.presence).toBe(true)
+    const headers = {
+      Cookie: first.cookie!,
+      Origin: "https://remote.example",
+      "Content-Type": "application/json",
+      "x-opencode-csrf": session.csrfToken,
+    }
+    expect((await fetch(endpoint, { method: "POST", body: JSON.stringify(payload) })).status).toBe(401)
+    expect(
+      (
+        await fetch(endpoint, {
+          method: "POST",
+          headers: { ...headers, Origin: "https://evil.example" },
+          body: JSON.stringify(payload),
+        })
+      ).status,
+    ).toBe(403)
+    expect(
+      (
+        await fetch(endpoint, {
+          method: "POST",
+          headers: { ...headers, "x-opencode-csrf": "" },
+          body: JSON.stringify(payload),
+        })
+      ).status,
+    ).toBe(403)
+    expect((await fetch(endpoint, { method: "GET", headers })).status).toBe(405)
+    expect(
+      (
+        await fetch(endpoint, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ ...payload, page: { kind: "invalid" } }),
+        })
+      ).status,
+    ).toBe(400)
+    const response = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(payload) })
+    expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toBe("no-store")
+    const devices = gateway.devices()
+    expect(devices[0].connection?.state).toBe("active")
+    expect(devices[0].connection?.pages[0].sessionID).toBe("ses_example")
+    expect(devices[1].connection?.state).toBe("unknown")
+    expect(upstreamCalls).toEqual([])
+    expect(JSON.stringify(getSaved())).not.toMatch(/connection|pages|ses_example|browser-tab/)
+    expect(logs.join("\n")).not.toMatch(/ses_example|browser-tab|QA/)
+    expect(
+      (
+        await fetch(endpoint, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ ...payload, sequence: 2, closed: true }),
+        })
+      ).status,
+    ).toBe(200)
+    expect(gateway.devices()[0].connection?.state).toBe("offline")
+    await gateway.revoke(devices[0].id)
+    expect((await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(payload) })).status).toBe(401)
+  })
+
   test("supports the frontend session-scoped permission reply without weakening authentication or CSRF", async () => {
     const path = "/session/session-1/permissions/permission-1"
     const replies: unknown[] = []

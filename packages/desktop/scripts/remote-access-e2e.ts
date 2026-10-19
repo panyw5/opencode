@@ -12,6 +12,7 @@ import { createRemoteGateway } from "../src/main/remote/gateway"
 const marker = "REMOTE_ACCESS_SIDECAR_OK"
 const responsiveFixture = process.argv.includes("--responsive")
 const taskCardsFixture = process.argv.includes("--task-cards")
+const presenceFixture = process.argv.includes("--presence")
 const permissionFixture = process.argv.includes("--permission")
 const permissionMarker = "REMOTE_PERMISSION_TOOL_OK"
 const delayFlag = process.argv.find((arg) => arg.startsWith("--completion-delay="))
@@ -524,6 +525,7 @@ async function run() {
           directory: createdSession.directory ?? project,
           sessionId: id,
           permission: permissionFixture,
+          presence: presenceFixture,
           pid: process.pid,
         }),
         { mode: 0o600 },
@@ -531,6 +533,18 @@ async function run() {
       await rename(temporary, join(root, "browser-invite.json"))
     }
     await refreshInvite()
+    let snapshotWrite = Promise.resolve()
+    const snapshots = presenceFixture
+      ? setInterval(() => {
+          snapshotWrite = snapshotWrite
+            .then(async () => {
+              const temporary = join(root, "browser-devices.tmp")
+              await writeFile(temporary, JSON.stringify(gateway!.devices()), { mode: 0o600 })
+              await rename(temporary, join(root, "browser-devices.json"))
+            })
+            .catch(() => {})
+        }, 500)
+      : undefined
     const refresh = setInterval(() => {
       void refreshInvite().catch(() => {})
     }, 30_000)
@@ -540,6 +554,8 @@ async function run() {
       process.once("SIGTERM", resolve)
     })
     clearInterval(refresh)
+    if (snapshots) clearInterval(snapshots)
+    await snapshotWrite
   }
   await bridge?.close()
   bridge = undefined

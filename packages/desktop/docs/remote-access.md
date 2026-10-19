@@ -38,6 +38,16 @@ Run the isolated harness with `--permission --hold` to exercise a real permissio
 
 Model catalogs have a separate 32 MiB encoded and decoded JSON budget; regular configuration responses retain a 2 MiB budget. Oversized responses fail before their body is exposed, and gateway errors remove the upstream length and encoding headers. Diagnostic logs contain route names, byte counts, status and reason codes, not credentials, query values, or response bodies.
 
+## Device Activity And Pages
+
+The host settings show pairing time, last activity (to seconds), a short authorization ID, and activity/pairing sort options. Duplicate display names are independent authorizations; sorting does not merge or revoke them.
+
+New remote clients use `POST /remote/api/presence` only when the authenticated session advertises the `presence` capability. The endpoint requires the device cookie, the exact public Origin, and CSRF, and is handled by the gateway rather than forwarded to the sidecar. Each browser tab uses a random in-memory ID and monotonic sequence numbers to prevent out-of-order heartbeats from reviving a closed page. The host accepts at most eight tab leases per authorization.
+
+Clients check page changes every five seconds and send an unchanged heartbeat every twenty seconds. Pagehide closes the tab lease; a missing heartbeat expires after sixty seconds. Foreground browsing, background pages, no active pages, and unknown (legacy or not-yet-reported) status are distinct. Browser-reported page state is informational, not proof that a physical device is connected or a security signal.
+
+Page metadata includes only page kind, project basename, optional session ID, visibility, and server receive time. It never includes full project paths, URL query/fragment values, session titles, or message contents. Page state is memory-only and is cleared on revoke, logout, reset, or gateway shutdown; it is not written to the authorization vault. Existing remote clients need a refresh to start reporting. The settings poll while their remote-access tab is open.
+
 `bun packages/desktop/scripts/remote-models-cdp.ts <project-directory> [second-directory]` checks the current desktop backend through a separate authenticated loopback gateway. It verifies real provider/model counts and visible mobile model options without sending a model request or editing an existing session. This is read-only with respect to the host's user data; the QA browser is temporary.
 
 Run desktop unit tests from `packages/desktop` with `bun test src/main/remote src/main/relaunch.test.ts`. Run the focused web tests from `packages/app` with `bun test --preload ./happydom.ts src/remote`.

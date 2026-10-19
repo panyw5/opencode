@@ -12,6 +12,7 @@ import pkg from "../package.json"
 import { ServerConnection } from "./context/server"
 import { bootstrapRemoteSession, createRemoteFetch, RemoteSessionError } from "./remote/bootstrap"
 import { installWebViewport } from "./utils/web-viewport"
+import { installRemotePresence } from "./remote/presence"
 
 const disposeViewport = installWebViewport()
 if (import.meta.hot) import.meta.hot.dispose(disposeViewport)
@@ -128,6 +129,8 @@ const clearAuthToken = () => {
 }
 
 let remoteCsrfToken: string | undefined
+let disposePresence: (() => void) | undefined
+if (import.meta.hot) import.meta.hot.dispose(() => disposePresence?.())
 const remoteFetch = createRemoteFetch(() => remoteCsrfToken, location.origin)
 
 const platform: Platform = {
@@ -199,6 +202,10 @@ if (root instanceof HTMLElement) {
       try {
         const session = await bootstrapRemoteSession()
         remoteCsrfToken = session.csrfToken
+        if (session.capabilities?.presence) {
+          disposePresence?.()
+          disposePresence = installRemotePresence(remoteFetch as typeof fetch)
+        }
       } catch (error) {
         showRemoteBootstrapError(error, () => void start())
         return

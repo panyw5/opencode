@@ -1,5 +1,18 @@
 import type { RemoteAccessStatus, RemoteDevice } from "./types"
 
+export function deviceActivityAt(device: RemoteDevice) {
+  return Math.max(device.lastSeenAt, device.connection?.lastActivityAt ?? 0)
+}
+
+export function sortRemoteDevices(devices: RemoteDevice[], order: "activity" | "paired" = "activity") {
+  return [...devices].sort(
+    (a, b) =>
+      (order === "activity" ? deviceActivityAt(b) - deviceActivityAt(a) : b.createdAt - a.createdAt) ||
+      b.createdAt - a.createdAt ||
+      a.id.localeCompare(b.id),
+  )
+}
+
 export function createPairingOperationController() {
   let generation = 0
   let busy = false

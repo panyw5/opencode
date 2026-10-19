@@ -20,6 +20,17 @@ export type RemoteDevice = {
   createdAt: number
   lastSeenAt: number
   expiresAt: number
+  connection?: {
+    state: "active" | "background" | "offline" | "unknown"
+    lastActivityAt?: number
+    pages: Array<RemotePage & { visible: boolean; updatedAt: number }>
+  }
+}
+
+export type RemotePage = {
+  kind: "home" | "session" | "project-tasks" | "scheduled-tasks" | "settings" | "config" | "workspace" | "other"
+  project?: string
+  sessionID?: string
 }
 
 export type RemotePairing = {

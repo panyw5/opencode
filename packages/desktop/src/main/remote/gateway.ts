@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { Socket } from "node:net"
 import { RemoteAuth, type RemoteAuthSnapshot, type RemoteDevice } from "./auth"
 import { RemoteConnections } from "./connections"
+import { RemotePresence } from "./presence"
 import { routePolicy } from "./policy"
 import { proxy } from "./proxy"
 import {
@@ -39,6 +40,7 @@ export async function createRemoteGateway(options: {
 }> {
   const auth = new RemoteAuth(options.saveAuth, options.initialAuth)
   const connections = new RemoteConnections()
+  const presence = new RemotePresence()
   let publicOrigin: string | undefined
   let pairAttempts = 0
   let pairWindow = Date.now()
@@ -90,8 +92,39 @@ export async function createRemoteGateway(options: {
         authenticated: true,
         device,
         csrfToken: digest(`csrf:${token}`),
-        capabilities: { remote: true, sse: true },
+        capabilities: { remote: true, sse: true, presence: true },
       })
+    }
+    if (path === "/remote/api/presence") {
+      noStore(response)
+      options.log("remote-presence request-start")
+      if (request.method !== "POST") return replyJson(response, 405, { error: "Method not allowed" })
+      const token = cookies(request).get(COOKIE_NAME)
+      const device = auth.authenticate(token)
+      if (!device) {
+        options.log("remote-presence rejected reason=authentication")
+        return replyJson(response, 401, { error: "Unauthenticated" })
+      }
+      if (!trustedWrite(request) || !csrfValid(request, token)) {
+        options.log("remote-presence rejected reason=origin-or-csrf")
+        return replyJson(response, 403, { error: "Forbidden" })
+      }
+      if (!request.headers["content-type"]?.toLowerCase().startsWith("application/json"))
+        return replyJson(response, 415, { error: "JSON required" })
+      let body: unknown
+      try {
+        body = await readJson(request)
+      } catch {
+        options.log("remote-presence rejected reason=invalid-json")
+        return replyJson(response, 400, { error: "Invalid request" })
+      }
+      presence.retain(auth.devices().map((device) => device.id))
+      if (!presence.update(device.id, body)) {
+        options.log("remote-presence rejected reason=invalid-presence")
+        return replyJson(response, 400, { error: "Invalid presence" })
+      }
+      options.log("remote-presence updated")
+      return replyJson(response, 200, { ok: true })
     }
     if (path === "/remote/api/logout" && request.method === "POST") {
       noStore(response)
@@ -101,6 +134,7 @@ export async function createRemoteGateway(options: {
       if (!device) return replyJson(response, 401, { error: "Unauthenticated" })
       if (!csrfValid(request, token)) return replyJson(response, 403, { error: "Forbidden" })
       connections.closeDevice(device.id)
+      presence.remove(device.id)
       try {
         await auth.revoke(device.id)
       } catch {
@@ -232,20 +266,27 @@ export async function createRemoteGateway(options: {
       options.log("remote-gateway pairing-created expiresInMs=300000")
       return { url: `${origin}/remote/connect#${pairing.code}`, expiresAt: pairing.expiresAt }
     },
-    devices: () => auth.devices(),
+    devices: () => {
+      const devices = auth.devices()
+      presence.retain(devices.map((device) => device.id))
+      return devices.map((device) => ({ ...device, connection: presence.connection(device.id) }))
+    },
     async revoke(id) {
       connections.closeDevice(id)
+      presence.remove(id)
       await auth.revoke(id)
       options.log("remote-gateway device-revoked")
     },
     async reset() {
       connections.closeAll()
+      presence.clear()
       await auth.reset()
       options.log("remote-gateway auth-reset")
     },
     async close() {
       if (closePromise) return closePromise
       connections.closeAll()
+      presence.clear()
       closePromise = new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()))
         server.closeAllConnections()

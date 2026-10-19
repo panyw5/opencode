@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 import { readFile, writeFile } from "node:fs/promises"
+import { dirname, join } from "node:path"
+import type { RemoteDevice, RemotePage } from "@opencode-ai/app/remote/types"
 import { CdpClient, connectCdp, listTargets } from "./cdp"
 
 const path = process.argv[2]
@@ -9,6 +11,7 @@ const invite = JSON.parse(await readFile(path, "utf8")) as {
   directory: string
   sessionId: string
   permission?: boolean
+  presence?: boolean
 }
 const origin = new URL(invite.url).origin
 const pageId = `remote-access-qa-${Date.now()}`
@@ -20,9 +23,11 @@ const taskCardsTest = process.argv.includes("--task-cards")
 const sidebarActionsTest = process.argv.includes("--sidebar-actions") || taskCardsTest
 const modelOnlyTest = process.argv.includes("--model-only")
 const toolbarSizingTest = process.argv.includes("--toolbar-sizing")
+const presenceTest = invite.presence || process.argv.includes("--presence")
 const locale = process.argv.find((arg) => arg.startsWith("--locale="))?.slice("--locale=".length)
 const { client: desktop } = await connectCdp()
 let browser: CdpClient | undefined
+let presenceDeviceID: string | undefined
 
 async function waitFor<T>(read: () => Promise<T | undefined>, description: string, milliseconds = 45_000): Promise<T> {
   const deadline = Date.now() + milliseconds
@@ -178,12 +183,33 @@ async function checkSidebarSessionActions() {
     })()`)
     if (!fits) throw new Error(`${name} panel did not fill reclaimed rail space`)
     console.log(`[sidebar-rail-qa] panel=${name} fillsAvailableWidth=true`)
+    if (presenceTest) await checkPresencePage(name === "project-tasks" ? "project-tasks" : "scheduled-tasks")
     if (taskCardsTest) await checkTaskCardIcons(name === "project-tasks" ? "project-task-item" : "scheduled-task-card")
     await browser!.evaluate(
       `document.querySelector('[data-component="sidebar-nav-mobile"] [data-panel="${name}"] [data-icon="arrow-left"]').click()`,
     )
   }
   await browser!.evaluate(`document.querySelector('[data-component="titlebar"] button[aria-expanded]').click()`)
+}
+
+async function presenceDevices(): Promise<RemoteDevice[]> {
+  return JSON.parse(await readFile(join(dirname(path), "browser-devices.json"), "utf8"))
+}
+
+async function checkPresencePage(kind: RemotePage["kind"]) {
+  await waitFor(
+    async () => {
+      const device = (await presenceDevices()).find((d) => d.id === presenceDeviceID)
+      return device?.connection?.pages.some(
+        (p) => p.kind === kind && (kind !== "session" || p.sessionID === invite.sessionId),
+      )
+        ? true
+        : undefined
+    },
+    `authenticated browser presence reports ${kind}`,
+    20_000,
+  )
+  console.log(`[remote-presence-qa] browser page=${kind} heartbeat verified`)
 }
 
 async function checkTaskCardIcons(component: string) {
@@ -580,6 +606,12 @@ try {
     await writeFile("/private/tmp/opencode-remote-session-qa.png", Buffer.from(sessionShot.data, "base64"))
   }
   if (!historyVisible) throw new Error("Remote session history did not render; see diagnostic state and screenshot")
+  if (presenceTest) {
+    presenceDeviceID = await browser.evaluate<string>(
+      `fetch('/remote/api/session').then(r=>r.json()).then(s=>s.device.id)`,
+    )
+    await checkPresencePage("session")
+  }
   if (sidebarActionsTest) await checkSidebarSessionActions()
   if (toolbarSizingTest) await checkToolbarSizing()
   if (modelOnlyTest) await checkModelOnlyTrigger()
@@ -701,6 +733,37 @@ try {
   if (state.errors.length || sessionState.errors.length) throw new Error("Remote web UI raised browser errors")
   if (state.failed.length || sessionState.failed.length)
     throw new Error("Remote web UI issued rejected bootstrap requests")
+  if (presenceTest) {
+    await browser.evaluate(
+      `document.querySelector('[data-component="sidebar-nav-mobile"] [data-icon="settings-gear"]').click()`,
+    )
+    await checkPresencePage("settings")
+    await browser.call("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: "Escape",
+      code: "Escape",
+      windowsVirtualKeyCode: 27,
+    })
+    await browser.call("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: "Escape",
+      code: "Escape",
+      windowsVirtualKeyCode: 27,
+    })
+    await checkPresencePage("session")
+    await browser.evaluate(`dispatchEvent(new PageTransitionEvent('pagehide'))`)
+    await waitFor(
+      async () => {
+        const device = (await presenceDevices()).find((d) => d.id === presenceDeviceID)
+        return device?.connection?.state === "offline" ? true : undefined
+      },
+      "pagehide clears authenticated page presence",
+      10_000,
+    )
+    await browser.evaluate(`dispatchEvent(new PageTransitionEvent('pageshow'))`)
+    await checkPresencePage("session")
+    console.log("[remote-presence-qa] settings navigation, pagehide disconnect and pageshow reconnect verified")
+  }
   console.log(
     skipScreenshots
       ? "[remote-cdp] PASS layout and interaction checks; screenshots skipped"

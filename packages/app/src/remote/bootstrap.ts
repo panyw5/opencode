@@ -1,7 +1,7 @@
 export type RemoteSession = {
   authenticated: true
   csrfToken: string
-  capabilities?: { remote?: boolean }
+  capabilities?: { remote?: boolean; presence?: boolean }
 }
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
