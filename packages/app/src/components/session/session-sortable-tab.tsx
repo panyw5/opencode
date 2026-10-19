@@ -99,35 +99,39 @@ export function SortableTab(props: { tab: string; onTabClose: (tab: string) => v
     console.debug(`[file-preview] tab mention-file path=${value}`)
     prompt.context.add({ type: "file", path: value })
   }
+  // Register with the surrounding tabs collection, not the context menu's collection.
+  const trigger = (
+    <Tabs.Trigger
+      class="session-file-tab-trigger"
+      value={props.tab}
+      closeButton={
+        <TooltipKeybind
+          title={language.t("common.closeTab")}
+          keybind={command.keybind("tab.close")}
+          placement="bottom"
+          gutter={10}
+        >
+          <IconButton
+            icon="close-small"
+            variant="ghost"
+            class="h-5 w-5"
+            onClick={() => props.onTabClose(props.tab)}
+            aria-label={language.t("common.closeTab")}
+          />
+        </TooltipKeybind>
+      }
+      hideCloseButton
+      onMiddleClick={() => props.onTabClose(props.tab)}
+    >
+      <Show when={content()}>{(value) => value()}</Show>
+    </Tabs.Trigger>
+  )
   return (
     <div use:sortable class="h-full flex items-center" classList={{ "opacity-0": sortable.isActiveDraggable }}>
       <div class="relative h-full">
         <ContextMenu>
           <ContextMenu.Trigger as="div" class="h-full">
-            <Tabs.Trigger
-              class="session-file-tab-trigger"
-              value={props.tab}
-              closeButton={
-                <TooltipKeybind
-                  title={language.t("common.closeTab")}
-                  keybind={command.keybind("tab.close")}
-                  placement="bottom"
-                  gutter={10}
-                >
-                  <IconButton
-                    icon="close-small"
-                    variant="ghost"
-                    class="h-5 w-5"
-                    onClick={() => props.onTabClose(props.tab)}
-                    aria-label={language.t("common.closeTab")}
-                  />
-                </TooltipKeybind>
-              }
-              hideCloseButton
-              onMiddleClick={() => props.onTabClose(props.tab)}
-            >
-              <Show when={content()}>{(value) => value()}</Show>
-            </Tabs.Trigger>
+            {trigger}
           </ContextMenu.Trigger>
           <ContextMenu.Portal>
             <ContextMenu.Content>

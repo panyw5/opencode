@@ -150,14 +150,20 @@ export const createOpenSessionFileTab = (input: {
 }) => {
   return (value: string) => {
     const next = input.normalizeTab(value)
+    console.debug(`[file-preview] tab select requested value=${value} normalized=${next}`)
     input.openTab(next)
 
     const path = input.pathFromTab(next)
-    if (!path) return
+    if (!path) {
+      console.debug(`[file-preview] tab select completed tab=${next} kind=non-file`)
+      return
+    }
 
+    console.debug(`[file-preview] tab select load path=${path}`)
     input.loadFile(path)
     input.openReviewPanel()
     input.setActive(next)
+    console.debug(`[file-preview] tab select activated tab=${next}`)
   }
 }
 
