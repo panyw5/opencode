@@ -10,6 +10,7 @@ import { usePermission } from "@/context/permission"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { usePlatform } from "@/context/platform"
 import { sessionTabsTargetHref, useSessionTabs } from "@/context/session-tabs"
 import { useTerminal } from "@/context/terminal"
 import { DialogSelectFile } from "@/components/dialog-select-file"
@@ -58,6 +59,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const prompt = usePrompt()
   const sdk = useSDK()
   const sync = useSync()
+  const platform = usePlatform()
   const terminal = useTerminal()
   const layout = useLayout()
   const navigate = useNavigate()
@@ -265,7 +267,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
             }),
           ]
 
-    return [
+    const commands = [
       sessionCommand({
         id: "session.new",
         title: language.t("command.session.new"),
@@ -652,5 +654,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       }),
       ...share,
     ]
+    if (!platform.remoteMode) return commands
+    return commands.filter((item) => !["terminal.toggle", "terminal.new", "browser.toggle"].includes(item.id))
   })
 }

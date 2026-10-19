@@ -4,6 +4,7 @@ import type { Accessor } from "solid-js"
 import { ServerConnection } from "./server"
 import type { WslServersPlatform } from "../wsl/types"
 import type { SshDirectoryEntry, SshServersPlatform } from "../ssh/types"
+import type { RemoteAccessApi } from "../remote/types"
 
 type PickerPaths = string | string[] | null
 type OpenDirectoryPickerOptions = { title?: string; multiple?: boolean }
@@ -238,6 +239,12 @@ export type ExtraAgentInfo = {
 export type Platform = {
   /** Platform discriminator */
   platform: "web" | "desktop"
+
+  /** Remote access management (desktop only). */
+  remoteAccess?: RemoteAccessApi
+
+  /** True when this web app is hosted by a remote OpenCode gateway. */
+  remoteMode?: boolean
 
   /** Desktop OS (Tauri only) */
   os?: "macos" | "windows" | "linux"

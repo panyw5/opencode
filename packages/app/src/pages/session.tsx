@@ -302,7 +302,7 @@ export default function Page() {
     ),
   )
 
-  const isDesktop = createMediaQuery("(min-width: 768px)")
+  const isDesktop = createMediaQuery(platform.platform === "web" ? "(min-width: 1024px)" : "(min-width: 768px)")
   const size = createSizing()
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const desktopFilePreviewOpen = createMemo(() => isDesktop() && view().filePreview.opened())
@@ -2946,6 +2946,12 @@ export default function Page() {
     cwd?: string
     description?: string
   }) => {
+    if (platform.remoteMode) {
+      console.info("[background-shell] action rejected reason=remote-mode")
+      const error = new Error("Background shells are unavailable in remote sessions")
+      fail(error)
+      throw error
+    }
     const currentSessionID = params.id
     console.info("[background-shell] request", {
       currentSessionID,
@@ -3445,6 +3451,7 @@ export default function Page() {
         root = el
       }}
       data-component="session-page"
+      data-mobile-tab={store.mobileTab}
       data-session-id={params.id}
       data-render-phase={sessionRenderState().phase}
       onClick={handleFileLinkClick}
@@ -3453,9 +3460,9 @@ export default function Page() {
       class="relative bg-background-stronger size-full overflow-hidden flex flex-col"
     >
       <SessionHeader />
-      <div class="flex-1 min-h-0 flex flex-col md:flex-row">
+      <div data-slot="session-workspace" class="flex-1 min-h-0 flex flex-col md:flex-row">
         <Show when={!isDesktop() && !!params.id}>
-          <Tabs value={store.mobileTab} class="h-auto">
+          <Tabs value={store.mobileTab} class="h-auto" data-slot="session-mobile-tabs">
             <Tabs.List>
               <Tabs.Trigger
                 value="session"
@@ -3481,6 +3488,7 @@ export default function Page() {
 
         {/* Session panel */}
         <div
+          data-slot="session-main-panel"
           classList={{
             "@container relative shrink-0 flex flex-col min-h-0 h-full bg-background-stronger flex-1 md:flex-none": true,
             "will-change-[width]": !size.active(),
@@ -3512,7 +3520,7 @@ export default function Page() {
                       <MessageTimeline
                         actions={actions}
                         onSendQueued={composer.blocked() ? undefined : flushQueued}
-                        onBackgroundShell={backgroundShell}
+                        onBackgroundShell={platform.remoteMode ? undefined : backgroundShell}
                         onBackgroundTask={backgroundTask}
                         scroll={ui.scroll}
                         onResumeScroll={resumeScroll}
@@ -3788,7 +3796,9 @@ export default function Page() {
         />
       </div>
 
-      <TerminalPanel />
+      <Show when={!platform.remoteMode}>
+        <TerminalPanel />
+      </Show>
 
       <DropdownMenu
         modal={false}

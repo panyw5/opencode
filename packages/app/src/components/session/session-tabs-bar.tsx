@@ -516,9 +516,9 @@ export function SessionTabsBar() {
   const handleDragStart = (event: unknown) => {
     const id = getDraggableId(event)
     if (!id) return
-    const tab = Array.from(
-      tabsViewport?.querySelectorAll<HTMLElement>('[data-component="session-tab"]') ?? [],
-    ).find((element) => element.dataset.sessionId === id)
+    const tab = Array.from(tabsViewport?.querySelectorAll<HTMLElement>('[data-component="session-tab"]') ?? []).find(
+      (element) => element.dataset.sessionId === id,
+    )
     const width = tab?.getBoundingClientRect().width
     setState({ activeDraggable: id, activeDraggableWidth: width })
     console.debug(`[session-tabs] drag start id=${id} width=${width ?? "unavailable"}`)
@@ -548,21 +548,23 @@ export function SessionTabsBar() {
       style={{ "--tabs-bar-height": "36px" }}
     >
       <Show when={onSessionRoute()}>
-        <div class="relative flex min-w-0 flex-1 items-center xl:hidden">
-          <div class="pointer-events-none absolute inset-x-0 flex min-w-0 items-center justify-center px-12">
-            <span class="max-w-[48%] truncate text-13-medium text-text-strong">{currentSessionTitle()}</span>
-          </div>
+        <div data-slot="compact-session-heading" class="relative flex min-w-0 flex-1 items-center xl:hidden">
           <DropdownMenu gutter={4} placement="bottom-start">
-            <div class="ml-auto flex min-w-0 max-w-[48%] items-center gap-1 rounded-md px-2">
-              <span class="min-w-0 truncate text-11-regular text-text-weak">{projectName(routeDir())}</span>
-              <DropdownMenu.Trigger
-                as={IconButton}
-                icon="chevron-down"
-                variant="ghost"
-                class="titlebar-icon size-7 shrink-0 rounded-md p-0 text-icon-weak hover:text-icon-base data-[expanded]:bg-surface-base-active"
-                aria-label={language.t("session.tabs.bar.label")}
-              />
-            </div>
+            <DropdownMenu.Trigger
+              data-action="compact-session-switch"
+              class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left hover:bg-surface-base-hover"
+              aria-label={`${currentSessionTitle()} · ${language.t("session.tabs.bar.label")}`}
+            >
+              <span class="flex min-w-0 flex-1 flex-col">
+                <span data-slot="compact-session-title" class="truncate text-13-medium text-text-strong">
+                  {currentSessionTitle()}
+                </span>
+                <span data-slot="compact-session-project" class="truncate text-11-regular text-text-weak">
+                  {projectName(routeDir())}
+                </span>
+              </span>
+              <Icon name="chevron-down" size="small" class="shrink-0 text-icon-weak" />
+            </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
               <DropdownMenu.Content
                 class="session-child-agent-scrollbar w-[520px] max-w-[calc(100vw-32px)]"
@@ -573,6 +575,9 @@ export function SessionTabsBar() {
                 }}
               >
                 <DropdownMenu.Group>
+                  <DropdownMenu.GroupLabel class="whitespace-normal break-words px-2 py-3 text-13-medium text-text-strong">
+                    {currentSessionTitle()}
+                  </DropdownMenu.GroupLabel>
                   <For each={orderedTabs()}>{(tab) => compactSessionItem(tab)}</For>
                   <For each={visibleDrafts()}>
                     {(draft) => (

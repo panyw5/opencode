@@ -752,6 +752,13 @@ export function SessionComposerRegion(props: {
   })
 
   const refreshBackgroundShells = () => {
+    if (platform.remoteMode) {
+      backgroundRequest++
+      setBackgroundShells([])
+      setBackgroundShellsLoading(false)
+      console.info("[background-shell] refresh skipped reason=remote-mode")
+      return
+    }
     const sessionID = route.params.id
     if (!sessionID) {
       setBackgroundShells([])
@@ -779,6 +786,7 @@ export function SessionComposerRegion(props: {
   }
 
   const loadBackgroundShell = async (id: string) => {
+    if (platform.remoteMode) throw new Error("Background shells are unavailable in remote sessions")
     const sessionID = route.params.id
     if (!sessionID) throw new Error("Background shell session is not available")
     const items = await listBackgroundShells({
@@ -793,13 +801,15 @@ export function SessionComposerRegion(props: {
     return info
   }
 
-  const stopSessionBackgroundShell = (id: string) =>
-    stopBackgroundShell({
+  const stopSessionBackgroundShell = (id: string) => {
+    if (platform.remoteMode) return Promise.reject(new Error("Background shells are unavailable in remote sessions"))
+    return stopBackgroundShell({
       sdk,
       platform,
       auth: server.currentFor(domainFromDirectory(sdk.directory))?.http,
       id,
     })
+  }
 
   const openBackgroundShell = (entry: BackgroundShellInfo) => {
     dialog.showForOwner(() => (

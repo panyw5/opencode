@@ -8,6 +8,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { createEffect, createMemo, For, onCleanup, Show } from "solid-js"
 import { createStore } from "solid-js/store"
+import { createMediaQuery } from "@solid-primitives/media"
 import { Portal } from "solid-js/web"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
@@ -50,6 +51,8 @@ export function SessionHeader() {
   const command = useCommand()
   const server = useServer()
   const platform = usePlatform()
+  const tabletWidth = createMediaQuery("(max-width: 1439px)")
+  const singlePanel = () => platform.platform === "web" && tabletWidth()
   const language = useLanguage()
   const sync = useSync()
   const terminal = useTerminal()
@@ -339,41 +342,43 @@ export function SessionHeader() {
                 <StatusPopover />
               </Tooltip>
               <div class="flex items-center gap-1">
-                <TooltipKeybind
-                  title={language.t("command.terminal.toggle")}
-                  keybind={command.keybind("terminal.toggle")}
-                >
-                  <Button
-                    variant="ghost"
-                    class="group/terminal-toggle titlebar-icon w-8 h-8 p-0 box-border shrink-0"
-                    onClick={toggleTerminal}
-                    aria-label={language.t("command.terminal.toggle")}
-                    aria-expanded={view().terminal.opened()}
-                    aria-controls="terminal-panel"
-                  >
-                    <Icon size="normal" name={view().terminal.opened() ? "terminal-active" : "terminal"} />
-                  </Button>
-                </TooltipKeybind>
-
-                <Show when={browserApi()}>
+                <Show when={!platform.remoteMode}>
                   <TooltipKeybind
-                    title={language.t("command.browser.toggle")}
-                    keybind={command.keybind("browser.toggle")}
+                    title={language.t("command.terminal.toggle")}
+                    keybind={command.keybind("terminal.toggle")}
                   >
                     <Button
                       variant="ghost"
-                      class="group/browser-toggle titlebar-icon w-8 h-8 p-0 box-border shrink-0"
-                      onClick={() => view().browser.toggle()}
-                      aria-label={language.t("command.browser.toggle")}
-                      aria-expanded={view().browser.opened()}
-                      aria-controls="browser-panel"
+                      class="group/terminal-toggle titlebar-icon w-8 h-8 p-0 box-border shrink-0"
+                      onClick={toggleTerminal}
+                      aria-label={language.t("command.terminal.toggle")}
+                      aria-expanded={view().terminal.opened()}
+                      aria-controls="terminal-panel"
                     >
-                      <Icon size="normal" name={view().browser.opened() ? "globe-active" : "globe"} />
+                      <Icon size="normal" name={view().terminal.opened() ? "terminal-active" : "terminal"} />
                     </Button>
                   </TooltipKeybind>
+
+                  <Show when={browserApi()}>
+                    <TooltipKeybind
+                      title={language.t("command.browser.toggle")}
+                      keybind={command.keybind("browser.toggle")}
+                    >
+                      <Button
+                        variant="ghost"
+                        class="group/browser-toggle titlebar-icon w-8 h-8 p-0 box-border shrink-0"
+                        onClick={() => view().browser.toggle()}
+                        aria-label={language.t("command.browser.toggle")}
+                        aria-expanded={view().browser.opened()}
+                        aria-controls="browser-panel"
+                      >
+                        <Icon size="normal" name={view().browser.opened() ? "globe-active" : "globe"} />
+                      </Button>
+                    </TooltipKeybind>
+                  </Show>
                 </Show>
 
-                <div class="hidden md:flex items-center gap-1 shrink-0">
+                <div data-slot="session-panel-actions" class="hidden md:flex items-center gap-1 shrink-0">
                   <TooltipKeybind
                     title={language.t("command.review.toggle")}
                     keybind={command.keybind("review.toggle")}
@@ -381,6 +386,7 @@ export function SessionHeader() {
                     <Button
                       variant="ghost"
                       class="group/review-toggle titlebar-icon w-8 h-8 p-0 box-border"
+                      data-action="session-review-toggle"
                       onClick={() => view().reviewPanel.toggle()}
                       aria-label={language.t("command.review.toggle")}
                       aria-expanded={view().reviewPanel.opened()}
@@ -410,9 +416,16 @@ export function SessionHeader() {
                     <Button
                       variant="ghost"
                       class="titlebar-icon w-8 h-8 p-0 box-border"
-                      onClick={() => layout.fileTree.toggle()}
+                      onClick={() => {
+                        if (singlePanel() && layout.rightPanel.wide()) {
+                          layout.rightPanel.select("none")
+                          layout.fileTree.open()
+                          return
+                        }
+                        layout.fileTree.toggle()
+                      }}
                       aria-label={language.t("command.fileTree.toggle")}
-                      aria-expanded={layout.fileTree.opened()}
+                      aria-expanded={layout.fileTree.opened() && !(singlePanel() && layout.rightPanel.wide())}
                       aria-controls="file-tree-panel"
                     >
                       <div class="relative flex items-center justify-center size-5">

@@ -10,6 +10,11 @@ import { handleNotificationClick } from "@/utils/notification-click"
 import { authFromToken } from "@/utils/server"
 import pkg from "../package.json"
 import { ServerConnection } from "./context/server"
+import { bootstrapRemoteSession, createRemoteFetch, RemoteSessionError } from "./remote/bootstrap"
+import { installWebViewport } from "./utils/web-viewport"
+
+const disposeViewport = installWebViewport()
+if (import.meta.hot) import.meta.hot.dispose(disposeViewport)
 
 const DEFAULT_SERVER_URL_KEY = "opencode.settings.dat:defaultServerUrl"
 
@@ -100,6 +105,7 @@ if (!(root instanceof HTMLElement) && import.meta.env.DEV) {
 }
 
 const getCurrentUrl = () => {
+  if (import.meta.env.VITE_OPENCODE_REMOTE === "true") return location.origin
   if (location.hostname.includes("opencode.ai")) return "http://localhost:4096"
   if (import.meta.env.DEV)
     return `http://${import.meta.env.VITE_OPENCODE_SERVER_HOST ?? "localhost"}:${import.meta.env.VITE_OPENCODE_SERVER_PORT ?? "4096"}`
@@ -112,6 +118,8 @@ const getDefaultUrl = () => {
   return getCurrentUrl()
 }
 
+const remoteMode = import.meta.env.VITE_OPENCODE_REMOTE === "true"
+
 const clearAuthToken = () => {
   const params = new URLSearchParams(location.search)
   if (!params.has("auth_token")) return
@@ -119,8 +127,13 @@ const clearAuthToken = () => {
   history.replaceState(null, "", location.pathname + (params.size ? `?${params}` : "") + location.hash)
 }
 
+let remoteCsrfToken: string | undefined
+const remoteFetch = createRemoteFetch(() => remoteCsrfToken, location.origin)
+
 const platform: Platform = {
   platform: "web",
+  remoteMode,
+  fetch: remoteMode ? (remoteFetch as typeof fetch) : undefined,
   version: pkg.version,
   openLink,
   back,
@@ -128,13 +141,38 @@ const platform: Platform = {
   restart,
   notify,
   getDefaultServer: async () => {
+    if (remoteMode) return null
     const stored = readDefaultServerUrl()
     return stored ? ServerConnection.Key.make(stored) : null
   },
-  setDefaultServer: writeDefaultServerUrl,
+  setDefaultServer: remoteMode ? () => {} : writeDefaultServerUrl,
 }
 
-if (import.meta.env.VITE_SENTRY_DSN) {
+const showRemoteBootstrapError = (error: unknown, retry: () => void) => {
+  if (!(root instanceof HTMLElement)) return
+  const locale = getLocale()
+  const expired = error instanceof RemoteSessionError && error.kind === "unauthenticated"
+  const message = document.createElement("p")
+  message.textContent =
+    locale === "zh"
+      ? expired
+        ? zh["error.remote.sessionExpired"]
+        : zh["error.remote.sessionUnavailable"]
+      : expired
+        ? en["error.remote.sessionExpired"]
+        : en["error.remote.sessionUnavailable"]
+  const button = document.createElement("button")
+  button.type = "button"
+  button.textContent = locale === "zh" ? zh["error.remote.retry"] : en["error.remote.retry"]
+  button.addEventListener("click", () => {
+    button.disabled = true
+    root.textContent = locale === "zh" ? zh["error.remote.retrying"] : en["error.remote.retrying"]
+    retry()
+  })
+  root.replaceChildren(message, button)
+}
+
+if (import.meta.env.VITE_SENTRY_DSN && !remoteMode) {
   Sentry.init({
     dsn: import.meta.env.VITE_SENTRY_DSN,
     environment: import.meta.env.VITE_SENTRY_ENVIRONMENT ?? import.meta.env.MODE,
@@ -154,28 +192,43 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 }
 
 if (root instanceof HTMLElement) {
-  const auth = authFromToken(new URLSearchParams(location.search).get("auth_token"))
-  clearAuthToken()
-  const server: ServerConnection.Http = {
-    type: "http",
-    authToken: !!auth,
-    http: {
-      url: getCurrentUrl(),
-      ...auth,
-    },
+  const start = async () => {
+    let auth: ReturnType<typeof authFromToken> = undefined
+    if (remoteMode) {
+      clearAuthToken()
+      try {
+        const session = await bootstrapRemoteSession()
+        remoteCsrfToken = session.csrfToken
+      } catch (error) {
+        showRemoteBootstrapError(error, () => void start())
+        return
+      }
+    } else {
+      auth = authFromToken(new URLSearchParams(location.search).get("auth_token"))
+      clearAuthToken()
+    }
+    const server: ServerConnection.Http = {
+      type: "http",
+      authToken: !!auth,
+      http: {
+        url: getCurrentUrl(),
+        ...auth,
+      },
+    }
+    render(
+      () => (
+        <PlatformProvider value={platform}>
+          <AppBaseProviders>
+            <AppInterface
+              defaultServer={ServerConnection.Key.make(remoteMode ? location.origin : getDefaultUrl())}
+              servers={[server]}
+              disableHealthCheck
+            />
+          </AppBaseProviders>
+        </PlatformProvider>
+      ),
+      root,
+    )
   }
-  render(
-    () => (
-      <PlatformProvider value={platform}>
-        <AppBaseProviders>
-          <AppInterface
-            defaultServer={ServerConnection.Key.make(getDefaultUrl())}
-            servers={[server]}
-            disableHealthCheck
-          />
-        </AppBaseProviders>
-      </PlatformProvider>
-    ),
-    root,
-  )
+  void start()
 }

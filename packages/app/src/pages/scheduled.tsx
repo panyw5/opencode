@@ -23,6 +23,7 @@ import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useModels } from "@/context/models"
+import { usePlatform } from "@/context/platform"
 import { decode64 } from "@/utils/base64"
 import { CronExpressionField } from "@/components/cron-expression-field"
 import { TimezoneSelectField } from "@/components/timezone-select-field"
@@ -83,6 +84,7 @@ export default function Scheduled() {
   const sync = useGlobalSync()
   const layout = useLayout()
   const models = useModels()
+  const platform = usePlatform()
   const language = useLanguage()
   const navigate = useNavigate()
   const location = useLocation()
@@ -299,7 +301,10 @@ export default function Scheduled() {
       scheduleKind: task?.schedule.kind ?? "every",
       at:
         task?.schedule.kind === "at"
-          ? formatDateTimeLocal(task.schedule.at, task.schedule.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone)
+          ? formatDateTimeLocal(
+              task.schedule.at,
+              task.schedule.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+            )
           : "",
       intervalMinutes: task?.schedule.kind === "every" ? String(task.schedule.interval / 60_000) : "60",
       cron: task?.schedule.kind === "cron" ? task.schedule.expression : "0 9 * * 1-5",
@@ -349,6 +354,10 @@ export default function Scheduled() {
 
   async function save(event: SubmitEvent) {
     event.preventDefault()
+    if (platform.remoteMode) {
+      setState("error", language.t("scheduled.remoteReadOnly"))
+      return
+    }
     const nextSchedule = schedule()
     if (
       !nextSchedule ||
@@ -420,17 +429,20 @@ export default function Scheduled() {
   }
 
   async function toggle(task: ScheduledTask) {
+    if (platform.remoteMode) return
     await sdk.client.scheduledTask.update({ taskID: task.id, scheduledTaskUpdateInput: { enabled: !task.enabled } })
     await load()
   }
 
   async function runNow(task: ScheduledTask) {
+    if (platform.remoteMode) return
     await sdk.client.scheduledTask.runNow({ taskID: task.id })
     await loadRuns(task.id)
     await load()
   }
 
   async function remove(task: ScheduledTask) {
+    if (platform.remoteMode) return
     if (!window.confirm(language.t("scheduled.delete.confirm", { name: task.name }))) return
     await sdk.client.scheduledTask.remove({ taskID: task.id })
     setState({ selectedID: undefined, formOpen: false })
@@ -469,9 +481,11 @@ export default function Scheduled() {
             <h1 class="truncate text-18-medium text-text-strong">{language.t("scheduled.title")}</h1>
           </div>
         </div>
-        <Button icon="plus" variant="primary" onClick={() => resetForm()}>
-          {language.t("scheduled.create")}
-        </Button>
+        <Show when={!platform.remoteMode}>
+          <Button icon="plus" variant="primary" onClick={() => resetForm()}>
+            {language.t("scheduled.create")}
+          </Button>
+        </Show>
       </header>
 
       <div class="grid h-[calc(100%-3.5rem)] min-h-0 grid-cols-1 lg:grid-cols-[340px_minmax(0,1fr)]">
@@ -535,11 +549,41 @@ export default function Scheduled() {
 
         <main class="flex min-h-0 flex-col overflow-hidden">
           <Show
-            when={state.formOpen}
+            when={!platform.remoteMode && state.formOpen}
             fallback={
-              <div class="flex h-full items-center justify-center p-8 text-13-regular text-text-weak">
-                {language.t("scheduled.select")}
-              </div>
+              <Show
+                when={platform.remoteMode && selected()}
+                fallback={
+                  <div class="flex h-full items-center justify-center p-8 text-13-regular text-text-weak">
+                    {language.t("scheduled.select")}
+                  </div>
+                }
+              >
+                {(task) => (
+                  <div class="config-scrollbar flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-5 md:p-8">
+                    <header class="flex flex-col gap-2 border-b border-border-weak-base pb-4">
+                      <h2 class="text-20-medium text-text-strong">{task().name}</h2>
+                      <p class="text-12-regular text-text-weak">{language.t("scheduled.remoteReadOnly")}</p>
+                    </header>
+                    <div class="grid gap-2 text-13-regular">
+                      <div>{task().projectName || task().directory}</div>
+                      <div>{scheduleLabel(task().schedule, language.t)}</div>
+                      <div>{task().enabled ? language.t("scheduled.enabled") : language.t("scheduled.disabled")}</div>
+                      <Show when={task().nextRunAt}>
+                        {(at) => (
+                          <div>
+                            {language.t("scheduled.nextRun")} {formatDate(at())}
+                          </div>
+                        )}
+                      </Show>
+                    </div>
+                    <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
+                      <h3 class="mb-2 text-13-medium text-text-strong">{language.t("scheduled.prompt")}</h3>
+                      <p class="whitespace-pre-wrap text-13-regular text-text-weak">{task().prompt}</p>
+                    </section>
+                  </div>
+                )}
+              </Show>
             }
           >
             <form onSubmit={save} class="flex min-h-0 w-full flex-1 flex-col overflow-hidden p-5 md:p-8">

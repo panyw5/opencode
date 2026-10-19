@@ -22,6 +22,7 @@ import { SessionContextTab, SortableTab, FileVisual } from "@/components/session
 import { useCommand } from "@/context/command"
 import { useFile, type SelectedLineRange } from "@/context/file"
 import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
 import { useServer } from "@/context/server"
@@ -52,19 +53,23 @@ export function SessionSidePanel(props: {
   const layout = useLayout()
   const file = useFile()
   const language = useLanguage()
+  const platform = usePlatform()
   const sdk = useSDK()
   const server = useServer()
   const command = useCommand()
   const dialog = useDialog()
   const { sessionKey, tabs, view } = useSessionLayout()
 
-  const isDesktop = createMediaQuery("(min-width: 768px)")
+  const isDesktop = createMediaQuery(platform.platform === "web" ? "(min-width: 1024px)" : "(min-width: 768px)")
+  const tabletWidth = createMediaQuery("(max-width: 1439px)")
 
   const reviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const filePreviewOpen = createMemo(() => isDesktop() && view().filePreview.opened())
-  const browserOpen = createMemo(() => isDesktop() && view().browser.opened())
-  const fileOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
+  const browserOpen = createMemo(() => !platform.remoteMode && isDesktop() && view().browser.opened())
   const wideOpen = createMemo(() => isDesktop() && layout.rightPanel.wide())
+  const fileOpen = createMemo(
+    () => isDesktop() && layout.fileTree.opened() && !(platform.platform === "web" && tabletWidth() && wideOpen()),
+  )
   const open = createMemo(() => isDesktop() && layout.rightPanel.opened())
   const reviewTab = reviewOpen
   const panelWidth = createMemo(() => {
@@ -281,6 +286,7 @@ export function SessionSidePanel(props: {
       >
         <div class="size-full flex border-l border-border-weaker-base">
           <div
+            data-slot="session-wide-panel"
             aria-hidden={!wideOpen()}
             inert={!wideOpen()}
             class="relative min-w-0 h-full flex-1 overflow-hidden bg-background-base"
@@ -434,7 +440,9 @@ export function SessionSidePanel(props: {
                 mounted while hidden so its IPC listeners keep tracking
                 agent-driven tabs and can auto-reveal the panel. */}
             <div class="size-full min-w-0 h-full bg-background-base" classList={{ hidden: !browserOpen() }}>
-              <BrowserPanel />
+              <Show when={!platform.remoteMode}>
+                <BrowserPanel />
+              </Show>
             </div>
           </div>
 

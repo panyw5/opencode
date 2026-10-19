@@ -1,0 +1,259 @@
+/* Touch layouts share the existing theme, but not the desktop's space budget. */
+html[data-web-layout] {
+  --app-header-height: 56px;
+  overflow: hidden;
+}
+
+html[data-web-layout] #root {
+  position: fixed;
+  top: var(--app-viewport-top, 0px);
+  right: 0;
+  left: 0;
+  height: var(--app-viewport-height, 100dvh);
+  min-width: 0;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px);
+}
+
+html[data-web-layout] [data-prompt-kind="main"][data-compact="true"] {
+  --dock-shell-radius: 20px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: 20px;
+  background: var(--background-base);
+  box-shadow: 0 3px 16px rgb(0 0 0 / 0.05);
+
+  [data-dock-surface="shell"][data-slot="prompt-shell"] {
+    border: 0;
+    border-radius: 20px 20px 0 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  [data-slot="prompt-editor-scroll"] {
+    max-height: min(160px, calc(var(--app-viewport-height, 100dvh) * 0.26));
+  }
+
+  [data-component="prompt-input"] {
+    min-height: 64px;
+    padding: 12px 14px 4px;
+    font-family: var(--font-family-sans);
+    font-size: 16px;
+    line-height: 24px;
+  }
+
+  [data-slot="prompt-placeholder"] {
+    padding: 12px 14px 4px;
+    font-size: 16px;
+    line-height: 24px;
+  }
+
+  [data-dock-surface="tray"] {
+    margin: 0;
+    overflow: visible;
+    border: 0;
+    border-radius: 0 0 20px 20px;
+    background: transparent;
+  }
+
+  [data-slot="prompt-toolbar"] {
+    gap: 4px;
+    padding: 2px 6px 6px;
+  }
+
+  [data-action="prompt-mobile-model"] {
+    min-height: 44px;
+  }
+
+  [data-action="prompt-mobile-attach"],
+  [data-action="prompt-mobile-options"] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  [data-slot="prompt-send-actions"] {
+    gap: 4px;
+  }
+
+  [data-action="prompt-submit"],
+  [data-slot="prompt-primary-action"] {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (max-width: 1439px) {
+  html[data-web-layout] {
+    [data-component="titlebar"] {
+      height: var(--app-header-height);
+      padding-right: 56px;
+      border-bottom: 1px solid var(--border-weaker-base);
+    }
+
+    [data-component="titlebar"] .titlebar-icon {
+      width: 44px;
+      height: 44px;
+    }
+
+    [data-slot="compact-session-heading"] {
+      width: 100%;
+    }
+
+    [data-action="compact-session-switch"] {
+      min-height: 44px;
+      overflow: hidden;
+    }
+
+    [data-slot="compact-session-title"] {
+      font-size: 14px;
+      line-height: 20px;
+    }
+
+    [data-slot="compact-session-project"] {
+      font-size: 11px;
+      line-height: 16px;
+    }
+
+    [data-component="floating-actions"] {
+      top: 8px;
+      right: 10px;
+      bottom: auto;
+      z-index: 35;
+    }
+
+    [data-action="notification-bell"] {
+      width: 40px !important;
+      height: 40px !important;
+      border-color: transparent;
+      box-shadow: none;
+      background: transparent !important;
+    }
+
+    [data-component="sidebar-nav-mobile"],
+    [data-component="sidebar-mobile-backdrop"] {
+      top: calc(var(--app-viewport-top, 0px) + var(--app-header-height) + env(safe-area-inset-top, 0px));
+      bottom: auto;
+      height: calc(var(--app-viewport-height, 100dvh) - var(--app-header-height) - env(safe-area-inset-top, 0px));
+    }
+
+    [data-component="sidebar-mobile-backdrop"] {
+      background: rgb(0 0 0 / 0.16);
+    }
+
+    [data-component="sidebar-nav-mobile"] {
+      max-width: min(380px, calc(100vw - 36px));
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      box-shadow: 12px 0 36px rgb(0 0 0 / 0.12);
+    }
+
+    [data-component="session-prompt-dock"] {
+      padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+    }
+
+    [data-component="dialog"] {
+      top: var(--app-viewport-top, 0px);
+      bottom: auto;
+      height: var(--app-viewport-height, 100dvh);
+    }
+
+    [data-component="dialog"] [data-slot="dialog-container"] {
+      max-height: calc(var(--app-viewport-height, 100dvh) - 24px);
+      width: min(640px, calc(100vw - 24px));
+    }
+
+    [data-component="popover-content"],
+    [data-model-selector-popover-content],
+    [data-component="select-content"] {
+      max-width: calc(100vw - 24px);
+      max-height: calc(var(--app-viewport-height, 100dvh) - 88px);
+    }
+
+    .mobile-composer-options {
+      [data-slot="select-select-trigger"],
+      [data-component="button"] {
+        min-height: 44px;
+      }
+    }
+  }
+}
+
+@media (max-width: 1023px) {
+  html[data-web-layout] {
+    [data-slot="session-panel-actions"] {
+      display: none;
+    }
+
+    [data-slot="session-workspace"] {
+      flex-direction: column;
+    }
+
+    [data-slot="session-main-panel"] {
+      height: auto;
+      min-width: 0;
+      flex: 1 1 0%;
+    }
+
+    [data-slot="session-mobile-tabs"] {
+      flex: 0 0 auto;
+      padding: 6px 12px;
+      background: var(--background-stronger);
+
+      [data-slot="tabs-list"] {
+        height: 36px;
+        padding: 3px;
+        border: 0;
+        border-radius: 12px;
+        background: var(--surface-base);
+      }
+
+      [data-slot="tabs-trigger"] {
+        height: 30px;
+        min-height: 30px;
+        border: 0;
+        border-radius: 9px;
+      }
+
+      [data-slot="tabs-trigger-wrapper"] {
+        border: 0;
+      }
+    }
+
+    [data-component="session-page"][data-mobile-tab="changes"] [data-component="session-prompt-dock"] {
+      display: none;
+    }
+
+    [data-component="markdown"] {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    [data-component="markdown"] pre,
+    [data-component="markdown"] table {
+      max-width: 100%;
+      overflow-x: auto;
+    }
+  }
+}
+
+@media (max-width: 599px) {
+  html[data-web-layout] {
+    [data-component="dialog"] {
+      align-items: flex-end;
+      padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    }
+
+    [data-component="dialog"] [data-slot="dialog-container"] {
+      height: auto;
+      min-height: 0;
+    }
+
+    [data-component="dialog"] [data-slot="dialog-content"] {
+      min-height: 0;
+      max-height: calc(var(--app-viewport-height, 100dvh) - 32px - env(safe-area-inset-bottom, 0px));
+      border-radius: 24px;
+    }
+
+    [data-component="dialog"] input,
+    [data-component="dialog"] textarea {
+      font-size: 16px;
+    }
+  }
+}

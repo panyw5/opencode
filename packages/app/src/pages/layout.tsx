@@ -1880,7 +1880,8 @@ export default function Layout(props: ParentProps) {
       })
     }
 
-    return commands
+    if (!platform.remoteMode) return commands
+    return commands.filter((item) => !["provider.connect", "server.switch", "server.reloadBackend"].includes(item.id))
   })
 
   function connectProvider() {
@@ -4791,6 +4792,7 @@ export default function Layout(props: ParentProps) {
               <Show when={!desktopSidebar()}>
                 <div>
                   <div
+                    data-component="sidebar-mobile-backdrop"
                     classList={{
                       "fixed inset-x-0 top-10 bottom-0 z-40 transition-opacity duration-200": true,
                       "opacity-100 pointer-events-auto": layout.mobileSidebar.opened(),

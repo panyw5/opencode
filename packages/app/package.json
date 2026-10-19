@@ -9,6 +9,7 @@
     "./browser/types": "./src/browser/types.ts",
     "./wsl/types": "./src/wsl/types.ts",
     "./ssh/types": "./src/ssh/types.ts",
+    "./remote/types": "./src/remote/types.ts",
     "./vite": "./vite.js",
     "./index.css": "./src/index.css"
   },
@@ -43,7 +44,8 @@
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plugin-icons-spritesheet": "3.0.1",
-    "vite-plugin-solid": "catalog:"
+    "vite-plugin-solid": "catalog:",
+    "@types/qrcode": "1.5.6"
   },
   "dependencies": {
     "@opencode-ai/util": "workspace:*",
@@ -84,6 +86,7 @@
     "tailwindcss": "catalog:",
     "turndown": "7.2.0",
     "virtua": "catalog:",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "qrcode": "1.5.4"
   }
 }

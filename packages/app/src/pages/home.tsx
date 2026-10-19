@@ -560,15 +560,17 @@ export default function Home() {
             <Logo class="home-logo h-auto w-36 opacity-70" />
             <h1 class="sr-only">{language.t("home.title")}</h1>
           </div>
-          <Button
-            size="normal"
-            variant="ghost"
-            class="home-server shrink-0 text-12-regular text-text-weak"
-            onClick={() => dialog.show(() => <DialogSelectServer />)}
-          >
-            <span class={`size-2 rounded-full ${serverDotClass()}`} aria-hidden="true" />
-            {server.name}
-          </Button>
+          <Show when={!platform.remoteMode}>
+            <Button
+              size="normal"
+              variant="ghost"
+              class="home-server shrink-0 text-12-regular text-text-weak"
+              onClick={() => dialog.show(() => <DialogSelectServer />)}
+            >
+              <span class={`size-2 rounded-full ${serverDotClass()}`} aria-hidden="true" />
+              {server.name}
+            </Button>
+          </Show>
         </header>
 
         <section class="home-command-deck relative z-10 mt-8 rounded-2xl border border-border-weak-base bg-surface-raised-base p-4 shadow-sm sm:p-5">
