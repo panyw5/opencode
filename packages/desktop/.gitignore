@@ -17,6 +17,7 @@ resources/icons/*
 !resources/icons/icon.ico
 !resources/icons/windows.ico
 resources/sidecars
+resources/remote-web
 resources/*.metainfo.xml
 src-tauri/sidecars
 src-tauri/target

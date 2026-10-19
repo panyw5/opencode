@@ -1,7 +1,22 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
 import type { BrowserViewState, ElectronAPI, InitStep, SqliteMigrationProgress } from "./types"
+import type { RemoteAccessStatus } from "@opencode-ai/app/remote/types"
 
 const api: ElectronAPI = {
+  remoteAccess: {
+    status: () => ipcRenderer.invoke("remote-access-status"),
+    enable: () => ipcRenderer.invoke("remote-access-enable"),
+    disable: () => ipcRenderer.invoke("remote-access-disable"),
+    pair: () => ipcRenderer.invoke("remote-access-pair"),
+    devices: () => ipcRenderer.invoke("remote-access-devices"),
+    revoke: (id) => ipcRenderer.invoke("remote-access-revoke", id),
+    reset: () => ipcRenderer.invoke("remote-access-reset"),
+    onStatus: (listener) => {
+      const handler = (_: unknown, status: RemoteAccessStatus) => listener(status)
+      ipcRenderer.on("remote-access-status-changed", handler)
+      return () => ipcRenderer.removeListener("remote-access-status-changed", handler)
+    },
+  },
   gptPro: {
     runtimeStatus: () => ipcRenderer.invoke("gpt-pro-runtime-status"),
     getConfig: () => ipcRenderer.invoke("gpt-pro-config"),

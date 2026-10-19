@@ -30,14 +30,15 @@
   "dependencies": {
     "@opencode-ai/core": "workspace:*",
     "@opencode-ai/util": "workspace:*",
+    "@opencode-ai/remote-tunnel": "workspace:*",
     "@zip.js/zip.js": "2.7.62",
+    "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "electron-context-menu": "4.1.2",
     "electron-log": "^5",
     "electron-store": "^10",
     "electron-updater": "^6",
     "electron-window-state": "^5.0.3",
-    "drizzle-orm": "catalog:",
     "marked": "^15"
   },
   "devDependencies": {

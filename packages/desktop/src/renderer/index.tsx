@@ -193,6 +193,7 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
 
   return {
     platform: "desktop",
+    remoteAccess: desktopApi.remoteAccess,
     os,
     version: pkg.version,
 

@@ -13,7 +13,9 @@ const signScript = path.join(rootDir, "script", "sign-windows.ps1")
 // Custom signer so electron-builder still runs rcedit (icon + version metadata).
 // `signAndEditExecutable: false` skips both signing AND icon embedding.
 async function signWindows(configuration: { path: string }) {
-  console.log(`[desktop] windows sign hook path=${configuration.path} platform=${process.platform} gha=${process.env.GITHUB_ACTIONS ?? ""}`)
+  console.log(
+    `[desktop] windows sign hook path=${configuration.path} platform=${process.platform} gha=${process.env.GITHUB_ACTIONS ?? ""}`,
+  )
   if (process.platform !== "win32") return
   if (process.env.GITHUB_ACTIONS !== "true") return
 
@@ -57,6 +59,11 @@ const getBase = (appId: string): Configuration => ({
     {
       from: "resources/sidecars",
       to: "sidecars",
+      filter: ["**/*"],
+    },
+    {
+      from: "resources/remote-web",
+      to: "remote-web",
       filter: ["**/*"],
     },
   ],
@@ -128,8 +135,7 @@ function getConfig() {
         appId,
         productName: "OpenCode Beta",
         protocols: { name: "OpenCode Beta", schemes: ["opencode"] },
-        // TODO: Update owner/repo to the fork's beta release repository
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode-beta", channel: "latest" },
+        publish: { provider: "github", owner: "panyw5", repo: "opencode", channel: "latest" },
         rpm: { packageName: "opencode-beta" },
       }
     }

@@ -85,6 +85,7 @@ import {
   testCliAgent,
 } from "./cli-agents"
 import { write as writeLog } from "./logging"
+import { relaunchApp } from "./relaunch"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -548,8 +549,24 @@ export function registerIpcHandlers(deps: Deps) {
   })
 
   ipcMain.on("relaunch", () => {
-    app.relaunch()
-    app.exit(0)
+    writeLog("lifecycle", "renderer relaunch cleanup started")
+    let completed = false
+    const finish = (reason: "complete" | "deadline" | "failed") => {
+      if (completed) return
+      completed = true
+      clearTimeout(deadline)
+      if (reason === "deadline") writeLog("lifecycle", "renderer relaunch cleanup deadline reached", undefined, "warn")
+      if (reason === "failed") writeLog("lifecycle", "renderer relaunch cleanup failed", undefined, "warn")
+      relaunchApp(app)
+      app.exit(0)
+    }
+    const deadline = setTimeout(() => finish("deadline"), 15_000)
+    void Promise.resolve()
+      .then(() => deps.killSidecar())
+      .catch(() => {
+        finish("failed")
+      })
+      .then(() => finish("complete"))
   })
 
   ipcMain.handle("get-zoom-factor", (event: IpcMainInvokeEvent) => event.sender.getZoomFactor())

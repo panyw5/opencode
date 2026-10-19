@@ -7,7 +7,7 @@ import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app, BrowserWindow } from "electron"
+import { app, BrowserWindow, powerMonitor } from "electron"
 
 import contextMenu from "electron-context-menu"
 
@@ -52,6 +52,9 @@ import { getStore } from "./store"
 import { checkUpdate, checkForUpdates, installUpdate, setupAutoUpdater, getUpdaterController } from "./updater"
 import { Deferred, Effect, Fiber } from "effect"
 import { bundledCliPath } from "./native"
+import { createRemoteAccessController } from "./remote/controller"
+import { registerRemoteIpc } from "./remote/ipc"
+import { relaunchApp } from "./relaunch"
 
 const APP_NAMES: Record<string, string> = {
   dev: "OpenCode Dev",
@@ -72,6 +75,10 @@ let mainWindow: BrowserWindow | null = null
 let server: SidecarListener | null = null
 let isQuitting = false
 let sidecarGeneration = 0
+let remoteUpstream: { url: string; username: string; password: string } | undefined
+let remoteAccessController: ReturnType<typeof createRemoteAccessController> | undefined
+let quitCleanupComplete = false
+let quitCleanup: Promise<void> | undefined
 
 const initEmitter = new EventEmitter()
 let initStep: InitStep = { phase: "server_waiting" }
@@ -106,6 +113,8 @@ function setInitStep(step: InitStep) {
 }
 
 async function killSidecar() {
+  remoteUpstream = undefined
+  await remoteAccessController?.setUpstream(undefined)
   if (!server) return
   const current = server
   server = null
@@ -113,6 +122,7 @@ async function killSidecar() {
 }
 
 async function killBackends() {
+  await remoteAccessController?.close()
   await Promise.all([killSidecar(), reloadExtraAgents()])
 }
 
@@ -171,6 +181,16 @@ const main = Effect.gen(function* () {
   if (onboardingTestRoot) app.setPath("sessionData", join(onboardingTestRoot, "session"))
   const startupPaths = resolveDesktopStartupPaths({ userDataPath: app.getPath("userData") })
   logger = initLogging({ sidecarDataHome: startupPaths.sidecarDataHome })
+  remoteAccessController = createRemoteAccessController({
+    workerPath: join(import.meta.dirname, "remote-worker.js"),
+    webRoot: app.isPackaged
+      ? join(process.resourcesPath, "remote-web")
+      : join(app.getAppPath(), "resources", "remote-web"),
+    getUpstream: () => remoteUpstream,
+    getEnabled: () => getStore().get("remote-access.enabled") === true,
+    setEnabled: (enabled) => getStore().set("remote-access.enabled", enabled),
+    log: (message) => writeLog("remote", message),
+  })
   initCrashReporter()
 
   try {
@@ -229,14 +249,23 @@ const main = Effect.gen(function* () {
     emitDeepLinks([url])
   })
 
-  app.on("before-quit", () => {
+  app.on("before-quit", (event) => {
+    if (quitCleanupComplete) return
+    event.preventDefault()
+    if (quitCleanup) return
     isQuitting = true
-    void killBackends()
+    quitCleanup = killBackends()
+      .catch(() => {
+        writeLog("lifecycle", "quit cleanup failed", undefined, "warn")
+      })
+      .finally(() => {
+        quitCleanupComplete = true
+        app.quit()
+      })
   })
 
   app.on("will-quit", () => {
     isQuitting = true
-    void killBackends()
   })
 
   app.on("child-process-gone", (_event, details) => {
@@ -250,7 +279,7 @@ const main = Effect.gen(function* () {
   setRelaunchHandler(() => {
     isQuitting = true
     void killBackends().finally(() => {
-      app.relaunch()
+      relaunchApp(app)
       app.exit(0)
     })
   })
@@ -319,6 +348,7 @@ const main = Effect.gen(function* () {
     exportDebugLogs: () => exportDebugLogs(),
     recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
   })
+  registerRemoteIpc(remoteAccessController, () => mainWindow)
 
   const wslController: WslServersController = createWslServersController(app.getVersion(), (distro) =>
     spawnWslSidecar(distro, {
@@ -337,6 +367,14 @@ const main = Effect.gen(function* () {
   app.on("before-quit", () => sshController.stopAll())
 
   yield* Effect.promise(() => app.whenReady())
+
+  powerMonitor.on("resume", () => {
+    if (isQuitting || getStore().get("remote-access.enabled") !== true || !remoteUpstream) return
+    writeLog("remote", "remote-controller resume-reconnect-requested")
+    void remoteAccessController?.setUpstream(remoteUpstream).catch(() => {
+      writeLog("remote", "remote-controller resume-reconnect-failed", undefined, "warn")
+    })
+  })
 
   if (!TEST_ONBOARDING) migrate()
   app.setAsDefaultProtocolClient("opencode")
@@ -440,6 +478,11 @@ const main = Effect.gen(function* () {
     }
 
     await health.wait
+
+    remoteUpstream = { url, username: "opencode", password }
+    void remoteAccessController?.setUpstream(remoteUpstream).catch(() => {
+      writeLog("remote", "remote-controller sidecar-reattach-failed", undefined, "warn")
+    })
 
     logger.log("loading task finished", { mode, generation })
   }
@@ -554,7 +597,7 @@ const main = Effect.gen(function* () {
       },
       relaunch: () => {
         void killBackends().finally(() => {
-          app.relaunch()
+          relaunchApp(app)
           app.exit(0)
         })
       },

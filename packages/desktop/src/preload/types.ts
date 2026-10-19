@@ -1,4 +1,5 @@
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
+import type { RemoteAccessApi } from "@opencode-ai/app/remote/types"
 
 export type InitStep = { phase: "server_waiting" } | { phase: "sqlite_waiting" } | { phase: "done" }
 
@@ -288,6 +289,7 @@ export type BrowserViewState = import("@opencode-ai/app/browser/types").BrowserV
 export type BrowserAPI = import("@opencode-ai/app/browser/types").WindowBrowserApi
 
 export type ElectronAPI = {
+  remoteAccess: RemoteAccessApi
   gptPro: import("@opencode-ai/util/gpt-pro").GptProAPI
   killSidecar: () => Promise<void>
   browser: BrowserAPI

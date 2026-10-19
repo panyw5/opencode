@@ -65,7 +65,11 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
-        input: { index: "src/main/index.ts", sidecar: "src/main/sidecar.ts" },
+        input: {
+          index: "src/main/index.ts",
+          sidecar: "src/main/sidecar.ts",
+          "remote-worker": "src/main/remote-worker.ts",
+        },
         // Keep this identical to electron-vite's Node 20.11+ shim. Its regex insertion can
         // corrupt bundled TypeScript, while a Rollup banner places the shim safely.
         output: {
@@ -82,7 +86,16 @@ const require = __cjs_mod__.createRequire(import.meta.url);
       // exports map points at `.ts` files. If it is externalized (it is a
       // declared dependency), the packaged main process crashes on startup
       // trying to `import`/`require` TypeScript, so force-bundle it instead.
-      externalizeDeps: { include: [nodePtyPkg], exclude: ["@opencode-ai/util"] },
+      externalizeDeps: {
+        include: [nodePtyPkg],
+        exclude: [
+          "@opencode-ai/util",
+          "@opencode-ai/remote-tunnel",
+          "@opentunnel/client",
+          "@opentunnel/protocol",
+          "effect",
+        ],
+      },
     },
     plugins: [
       {
