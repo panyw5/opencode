@@ -122,7 +122,9 @@ export function TaskPanelShell(props: {
         </div>
         {props.toolbar}
       </div>
-      <div class="flex-1 min-h-0 overflow-y-auto no-scrollbar px-1 pb-4">{props.children}</div>
+      <div data-slot="task-panel-list" class="flex-1 min-h-0 overflow-y-auto no-scrollbar px-1 pb-4">
+        {props.children}
+      </div>
     </div>
   )
 }
@@ -182,12 +184,13 @@ export function TaskCardShell(props: {
     >
       <div class="flex items-start gap-3">
         <div
+          data-slot="task-card-icon"
           class="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg border border-border-weak-base bg-background-base"
           classList={{ [iconColor()]: true, "text-icon-brand-base": !!props.active }}
         >
           <Icon name={icon()} size="small" />
         </div>
-        <div class="min-w-0 flex-1">
+        <div data-slot="task-card-content" class="min-w-0 flex-1">
           <div class="flex items-center gap-2">
             <div class="min-w-0 truncate text-14-medium text-text-strong">{props.title}</div>
             <For each={props.badges ?? []}>

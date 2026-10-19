@@ -16,6 +16,10 @@ const keepPage = process.argv.includes("--keep")
 const responsive = process.argv.includes("--responsive")
 const skipScreenshots = process.argv.includes("--no-screenshots")
 const permissionTest = invite.permission || process.argv.includes("--permission")
+const taskCardsTest = process.argv.includes("--task-cards")
+const sidebarActionsTest = process.argv.includes("--sidebar-actions") || taskCardsTest
+const modelOnlyTest = process.argv.includes("--model-only")
+const toolbarSizingTest = process.argv.includes("--toolbar-sizing")
 const locale = process.argv.find((arg) => arg.startsWith("--locale="))?.slice("--locale=".length)
 const { client: desktop } = await connectCdp()
 let browser: CdpClient | undefined
@@ -64,6 +68,252 @@ async function resizeViewport(width: number, height: number) {
   })()`)
 }
 
+async function checkSidebarSessionActions() {
+  await browser!.evaluate(`document.querySelector('[data-component="titlebar"] button[aria-expanded]').click()`)
+  await waitFor(
+    async () =>
+      (await browser!.evaluate<boolean>(
+        `!!document.querySelector('[data-component="sidebar-nav-mobile"] [data-component="sidebar-session"] [data-slot="session-trailing"]')`,
+      ))
+        ? true
+        : undefined,
+    "real sidebar session row",
+  )
+  for (const width of [320, 390, 767, 768, 1024]) {
+    await resizeViewport(width, 844)
+    await Bun.sleep(200)
+    const railActions = await browser!.evaluate<{
+      config: number
+      settings: number
+      help: number
+      emptyIm: number
+    }>(`(() => {
+      const rail=document.querySelector('[data-component="sidebar-nav-mobile"] [data-component="sidebar-rail"]');
+      return {config:rail.querySelectorAll('[data-action="config-open"]').length,settings:rail.querySelectorAll('[data-icon="settings-gear"]').length,help:rail.querySelectorAll('[data-icon="help"]').length,emptyIm:rail.querySelectorAll('[data-icon="speech-bubble"]').length};
+    })()`)
+    if (railActions.config !== 0 || railActions.settings !== 1 || railActions.help !== 1 || railActions.emptyIm !== 0)
+      throw new Error(`Remote rail actions mismatch at ${width}: ${JSON.stringify(railActions)}`)
+    console.log(`[remote-rail-qa] width=${width} actions=${JSON.stringify(railActions)}`)
+    const result = await browser!.evaluate<{ hidden: boolean; visibleButtons: number; titleGain: number }>(`(() => {
+      const row=document.querySelector('[data-component="sidebar-nav-mobile"] [data-component="sidebar-session"]');
+      const trailing=row.querySelector('[data-slot="session-trailing"]');
+      const title=row.querySelector('[data-slot="session-title"]');
+      const hidden=getComputedStyle(trailing).display==='none';
+      const visibleButtons=[...trailing.querySelectorAll('button')].filter(e=>e.getBoundingClientRect().width>0&&e.getBoundingClientRect().height>0).length;
+      let titleGain=0;
+      if(innerWidth===390){
+        const before=title.getBoundingClientRect().width;
+        const previous=trailing.getAttribute('style');
+        trailing.style.setProperty('display','block','important');
+        titleGain=before-title.getBoundingClientRect().width;
+        if(previous===null)trailing.removeAttribute('style');else trailing.setAttribute('style',previous);
+      }
+      return {hidden,visibleButtons,titleGain};
+    })()`)
+    if (result.hidden !== width < 768 || result.visibleButtons !== (width < 768 ? 0 : 4))
+      throw new Error(`Sidebar action visibility mismatch at ${width}: ${JSON.stringify(result)}`)
+    if (width === 390 && result.titleGain < 100)
+      throw new Error(`Phone title did not reclaim action space: ${result.titleGain}`)
+    console.log(
+      `[sidebar-actions-qa] width=${width} hidden=${result.hidden} visibleButtons=${result.visibleButtons} titleGain=${result.titleGain}`,
+    )
+    const rail = await browser!.evaluate<{
+      width: number
+      projectSize: number
+      avatarSize: number
+      panelGain: number
+      fits: boolean
+    }>(`(() => {
+      const nav=document.querySelector('[data-component="sidebar-nav-mobile"]');
+      const rail=nav.querySelector('[data-component="sidebar-rail"]');
+      const project=rail.querySelector('[data-action="project-switch"]');
+      const avatar=project.querySelector('[data-slot="project-icon"]');
+      const panel=nav.querySelector('[data-slot="sidebar-panel"]');
+      const rect=rail.getBoundingClientRect();
+      const buttons=[...rail.querySelectorAll('button')];
+      const fits=buttons.every(e=>{const r=e.getBoundingClientRect();return r.left>=rect.left&&r.right<=rect.right})&&rail.scrollWidth<=rail.clientWidth;
+      let panelGain=0;
+      if(innerWidth===390){
+        const before=panel.getBoundingClientRect().width;
+        const previous=rail.getAttribute('style');
+        rail.style.width='64px';
+        panelGain=before-panel.getBoundingClientRect().width;
+        if(previous===null)rail.removeAttribute('style');else rail.setAttribute('style',previous);
+      }
+      return {width:rect.width,projectSize:parseFloat(getComputedStyle(project).width),avatarSize:parseFloat(getComputedStyle(avatar).width),panelGain,fits};
+    })()`)
+    if (
+      rail.width !== (width < 768 ? 48 : 64) ||
+      rail.projectSize !== (width < 768 ? 36 : 40) ||
+      rail.avatarSize !== (width < 768 ? 28 : 32) ||
+      !rail.fits ||
+      (width === 390 && rail.panelGain !== 16)
+    )
+      throw new Error(`Sidebar rail sizing mismatch at ${width}: ${JSON.stringify(rail)}`)
+    console.log(`[sidebar-rail-qa] viewport=${width} sizes=${JSON.stringify(rail)}`)
+    await checkListSpacing("sidebar-session", width)
+  }
+  await resizeViewport(390, 664)
+  for (const [icon, name] of [
+    ["checklist", "project-tasks"],
+    ["clock", "scheduled-tasks"],
+  ]) {
+    await browser!.evaluate(
+      `document.querySelector('[data-component="sidebar-nav-mobile"] .sidebar-actions [data-icon="${icon}"]').click()`,
+    )
+    await waitFor(
+      async () =>
+        (await browser!.evaluate<boolean>(
+          `!!document.querySelector('[data-component="sidebar-nav-mobile"] [data-panel="${name}"]')`,
+        ))
+          ? true
+          : undefined,
+      `${name} panel opens`,
+    )
+    const fits = await browser!.evaluate<boolean>(`(() => {
+      const nav=document.querySelector('[data-component="sidebar-nav-mobile"]');
+      const slot=nav.querySelector('[data-slot="sidebar-panel"]').getBoundingClientRect();
+      const panel=nav.querySelector('[data-panel="${name}"]').getBoundingClientRect();
+      return Math.abs(panel.width-slot.width)<1&&Math.abs(panel.left-slot.left)<1;
+    })()`)
+    if (!fits) throw new Error(`${name} panel did not fill reclaimed rail space`)
+    console.log(`[sidebar-rail-qa] panel=${name} fillsAvailableWidth=true`)
+    if (taskCardsTest) await checkTaskCardIcons(name === "project-tasks" ? "project-task-item" : "scheduled-task-card")
+    await browser!.evaluate(
+      `document.querySelector('[data-component="sidebar-nav-mobile"] [data-panel="${name}"] [data-icon="arrow-left"]').click()`,
+    )
+  }
+  await browser!.evaluate(`document.querySelector('[data-component="titlebar"] button[aria-expanded]').click()`)
+}
+
+async function checkTaskCardIcons(component: string) {
+  const selector = `[data-component="sidebar-nav-mobile"] [data-component="${component}"]`
+  try {
+    await waitFor(
+      async () =>
+        (await browser!.evaluate<boolean>(`!!document.querySelector(${JSON.stringify(selector)})`)) ? true : undefined,
+      `${component} fixture rendered`,
+    )
+  } catch (error) {
+    console.log(
+      `[task-card-qa] missing component=${component} diagnostics=${await browser!.evaluate<string>(`JSON.stringify({text:document.querySelector('[data-component="sidebar-nav-mobile"]')?.innerText,logs:window.__remoteQaLogs,errors:window.__remoteQaErrors})`)}`,
+    )
+    throw error
+  }
+  for (const width of [320, 390, 767, 768, 1024]) {
+    await resizeViewport(width, 844)
+    await Bun.sleep(200)
+    const result = await browser!.evaluate<{ hidden: boolean; gain: number; fits: boolean }>(`(() => {
+      const card=document.querySelector(${JSON.stringify(selector)});
+      const icon=card.querySelector('[data-slot="task-card-icon"]');
+      const content=card.querySelector('[data-slot="task-card-content"]');
+      const hidden=getComputedStyle(icon).display==='none';
+      const rect=content.getBoundingClientRect();
+      const previous=icon.getAttribute('style');
+      icon.style.display=hidden?'flex':'none';
+      const gain=Math.abs(rect.width-content.getBoundingClientRect().width);
+      if(previous===null)icon.removeAttribute('style');else icon.setAttribute('style',previous);
+      return {hidden,gain,fits:card.scrollWidth<=card.clientWidth&&rect.left>=card.getBoundingClientRect().left&&rect.right<=card.getBoundingClientRect().right};
+    })()`)
+    if (result.hidden !== width < 768 || result.gain < 20 || !result.fits)
+      throw new Error(`Task card layout mismatch component=${component} width=${width}: ${JSON.stringify(result)}`)
+    console.log(`[task-card-qa] component=${component} width=${width} result=${JSON.stringify(result)}`)
+    await checkListSpacing(component, width)
+  }
+  await resizeViewport(390, 664)
+}
+
+async function checkListSpacing(component: string, width: number) {
+  const result = await browser!.evaluate<{ left: number; right: number; padding: number[]; fits: boolean }>(`(() => {
+    const item=document.querySelector('[data-component="sidebar-nav-mobile"] [data-component="${component}"]');
+    const panel=item.closest('[data-component="sidebar-panel"]');
+    const r=item.getBoundingClientRect(),p=panel.getBoundingClientRect();
+    const style=getComputedStyle(panel),itemStyle=getComputedStyle(item);
+    return {left:r.left-p.left-parseFloat(style.borderLeftWidth),right:p.right-r.right-parseFloat(style.borderRightWidth),padding:[parseFloat(itemStyle.paddingLeft),parseFloat(itemStyle.paddingRight)],fits:item.scrollWidth<=item.clientWidth};
+  })()`)
+  const expected = width < 768 ? 6 : component === "sidebar-session" ? 24 : 16
+  if (Math.abs(result.left - expected) > 0.5 || Math.abs(result.right - expected) > 0.5 || !result.fits)
+    throw new Error(`List spacing mismatch component=${component} width=${width}: ${JSON.stringify(result)}`)
+  if (
+    component === "sidebar-session" &&
+    result.padding.some((value, i) => value !== (width < 768 ? [10, 8] : [16, 12])[i])
+  )
+    throw new Error(`Session content spacing mismatch at ${width}: ${JSON.stringify(result)}`)
+  console.log(`[list-spacing-qa] component=${component} width=${width} result=${JSON.stringify(result)}`)
+}
+
+async function checkModelOnlyTrigger() {
+  const singleLine = await browser!.evaluate<boolean>(`(() => {
+    const trigger=document.querySelector('[data-action="prompt-mobile-model"]');
+    const name=trigger?.querySelector('[data-slot="prompt-mobile-model-name"]');
+    return !!name&&!!name.textContent.trim()&&trigger.innerText.trim()===name.textContent.trim()&&name.getBoundingClientRect().height<=24;
+  })()`)
+  if (!singleLine) throw new Error("Compact model trigger contains extra text or wraps")
+  await browser!.evaluate(`document.querySelector('[data-action="prompt-mobile-options"]').click()`)
+  await waitFor(
+    async () =>
+      (await browser!.evaluate<boolean>(
+        `document.querySelectorAll('.mobile-composer-options [data-slot="select-select-trigger"]').length>=2`,
+      ))
+        ? true
+        : undefined,
+    "agent and thinking variant remain in settings",
+  )
+  const settingsPopulated = await browser!.evaluate<boolean>(
+    `[...document.querySelectorAll('.mobile-composer-options [data-slot="select-select-trigger"]')].every(e=>e.innerText.trim().length>0)`,
+  )
+  if (!settingsPopulated) throw new Error("Agent or variant settings lost its selected value")
+  await browser!.evaluate(`document.querySelector('[data-slot="dialog-close-button"]').click()`)
+  await browser!.evaluate(`document.querySelector('[data-action="prompt-mobile-model"]').click()`)
+  await waitFor(
+    async () =>
+      (await browser!.evaluate<boolean>(
+        `document.querySelectorAll('[data-model-selector-popover-content] [data-slot="list-item"]').length>0`,
+      ))
+        ? true
+        : undefined,
+    "model picker still has models",
+  )
+  await browser!.evaluate(
+    `document.querySelector('[data-model-selector-popover-content] [data-slot="list-item"]').click()`,
+  )
+  console.log("[model-only-qa] single model label, agent/variant settings and model selection verified")
+}
+
+async function checkToolbarSizing() {
+  for (const width of [320, 390, 767, 768, 1024]) {
+    await resizeViewport(width, 664)
+    await Bun.sleep(200)
+    const result = await browser!.evaluate<{
+      heights: number[]
+      centers: number[]
+      icons: number[]
+      secondary: number[]
+    }>(`(() => {
+      const selectors=['prompt-mobile-attach','prompt-mobile-model','prompt-mobile-options','prompt-submit'];
+      const controls=selectors.map(action=>document.querySelector('[data-action="'+action+'"]'));
+      const rects=controls.map(e=>e.getBoundingClientRect());
+      const icons=controls.filter(e=>e.matches('[data-component="icon-button"]')).map(e=>e.querySelector('[data-component="icon"]').getBoundingClientRect().height);
+      const secondary=[...document.querySelectorAll('[data-slot="prompt-toolbar"] [data-component="icon-button"]')].map(e=>parseFloat(getComputedStyle(e).height));
+      return {heights:rects.map(r=>r.height),centers:rects.map(r=>r.top+r.height/2),icons,secondary};
+    })()`)
+    const expected = width < 768 ? 32 : 44
+    if (
+      result.heights.some((height) => Math.abs(height - expected) > 0.5) ||
+      Math.max(...result.centers) - Math.min(...result.centers) > 0.5
+    )
+      throw new Error(`Toolbar height/alignment mismatch at ${width}: ${JSON.stringify(result)}`)
+    if (
+      width < 768 &&
+      (result.icons.some((height) => Math.abs(height - 16) > 0.5) ||
+        result.secondary.some((height) => Math.abs(height - 32) > 0.5))
+    )
+      throw new Error(`Phone icon/action sizes mismatch: ${JSON.stringify(result)}`)
+    console.log(`[toolbar-sizing-qa] width=${width} controlHeight=${expected} aligned=true`)
+  }
+  await resizeViewport(390, 664)
+}
+
 async function checkResponsiveLayouts() {
   const fits = (selector: string) =>
     browser!.evaluate<boolean>(
@@ -106,7 +356,8 @@ async function checkResponsiveLayouts() {
         const toolbar=document.querySelector('[data-slot="prompt-toolbar"]');
         if(toolbar.scrollWidth>toolbar.clientWidth+1)failures.push('toolbar overflow');
         const send=document.querySelector('[data-action="prompt-submit"]').getBoundingClientRect();
-        if(send.width<44||send.height<44)failures.push('send touch target too small');
+        const expected=innerWidth<768?32:44;
+        if(Math.abs(send.width-expected)>1||Math.abs(send.height-expected)>1)failures.push('send control size mismatch');
       }
       return failures;
     })()`)
@@ -231,6 +482,11 @@ try {
         if(typeof args[0]==='string'&&args[0].startsWith('[remote-readiness]'))window.__remoteQaLogs.push(args[0]);
         originalInfo(...args);
       };
+      const originalDebug=console.debug;
+      console.debug=(...args)=>{
+        if(typeof args[0]==='string'&&args[0].startsWith('[scheduled-panel]'))window.__remoteQaLogs.push(args[0]);
+        originalDebug(...args);
+      };
       const originalFetch=window.fetch;
       window.fetch=async(...args)=>{
         const r=await originalFetch(...args);
@@ -278,6 +534,18 @@ try {
     const screenshot = await captureScreenshot()
     await writeFile("/private/tmp/opencode-remote-mobile-qa.png", Buffer.from(screenshot.data, "base64"))
   }
+  if (sidebarActionsTest) {
+    await browser.evaluate(
+      `(() => {const row=document.querySelector('.home-work-row[role="button"]');if(!row)throw new Error('Fixture Home session missing');row.click()})()`,
+    )
+    await waitFor(
+      async () =>
+        (await browser!.evaluate<boolean>(`location.pathname.includes(${JSON.stringify(invite.sessionId)})`))
+          ? true
+          : undefined,
+      "open fixture project through Home",
+    )
+  }
   // Match the real Home links: macOS tmpdir can be a /var alias while the
   // sidecar reports /private/var as the session's canonical directory.
   const info = await browser.evaluate<{ directory?: string }>(
@@ -312,10 +580,13 @@ try {
     await writeFile("/private/tmp/opencode-remote-session-qa.png", Buffer.from(sessionShot.data, "base64"))
   }
   if (!historyVisible) throw new Error("Remote session history did not render; see diagnostic state and screenshot")
+  if (sidebarActionsTest) await checkSidebarSessionActions()
+  if (toolbarSizingTest) await checkToolbarSizing()
+  if (modelOnlyTest) await checkModelOnlyTrigger()
   if (responsive) await checkResponsiveLayouts()
   const historyPath = `/session/${invite.sessionId}/message?directory=${encodeURIComponent(info.directory ?? invite.directory)}`
   const previousReplies = await browser.evaluate<number>(
-    `fetch(${JSON.stringify(historyPath)}).then(r=>r.json()).then(v=>v.filter(m=>m.info?.role==='assistant'&&m.parts?.some(p=>p.text?.includes('REMOTE_ACCESS_SIDECAR_OK'))).length)`,
+    `fetch(${JSON.stringify(historyPath)}).then(r=>r.json()).then(v=>v.filter(m=>m.info?.role==='assistant'&&m.info.time?.completed&&m.parts?.some(p=>p.text?.includes('REMOTE_ACCESS_SIDECAR_OK'))).length)`,
   )
   const previousToolCompletions = permissionTest
     ? await browser.evaluate<number>(
@@ -357,6 +628,24 @@ try {
     "enabled message submit",
   )
   await browser.evaluate(`document.querySelector('[data-action="prompt-submit"]').click()`)
+  if (toolbarSizingTest) {
+    await waitFor(
+      async () =>
+        (await browser!.evaluate<boolean>(
+          `document.querySelector('[data-action="prompt-submit"]')?.getAttribute('data-icon')==='stop'`,
+        ))
+          ? true
+          : undefined,
+      "streaming stop button",
+    )
+    const aligned = await browser.evaluate<boolean>(`(() => {
+      const controls=['prompt-mobile-attach','prompt-mobile-model','prompt-mobile-options','prompt-submit'].map(action=>document.querySelector('[data-action="'+action+'"]'));
+      const rects=controls.map(e=>e.getBoundingClientRect());const centers=rects.map(r=>r.top+r.height/2);
+      return rects.every(r=>Math.abs(r.height-32)<0.5)&&Math.max(...centers)-Math.min(...centers)<0.5;
+    })()`)
+    if (!aligned) throw new Error("Streaming stop button does not match the phone toolbar")
+    console.log("[toolbar-sizing-qa] streaming stop state controlHeight=32 aligned=true")
+  }
   if (permissionTest) {
     await waitFor(
       async () =>
@@ -388,7 +677,7 @@ try {
   await waitFor(
     async () =>
       (await browser!.evaluate<boolean>(
-        `fetch(${JSON.stringify(historyPath)}).then(r=>r.json()).then(v=>v.filter(m=>m.info?.role==='assistant'&&m.parts?.some(p=>p.text?.includes('REMOTE_ACCESS_SIDECAR_OK'))).length>${previousReplies})`,
+        `fetch(${JSON.stringify(historyPath)}).then(r=>r.json()).then(v=>v.filter(m=>m.info?.role==='assistant'&&m.info.time?.completed&&m.parts?.some(p=>p.text?.includes('REMOTE_ACCESS_SIDECAR_OK'))).length>${previousReplies})`,
       ))
         ? true
         : undefined,

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { randomBytes } from "node:crypto"
 import { createServer, type Server } from "node:http"
-import { mkdir, mkdtemp, rename, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, realpath, rename, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -11,12 +11,15 @@ import { createRemoteGateway } from "../src/main/remote/gateway"
 // provider credentials, or paid model requests.
 const marker = "REMOTE_ACCESS_SIDECAR_OK"
 const responsiveFixture = process.argv.includes("--responsive")
+const taskCardsFixture = process.argv.includes("--task-cards")
 const permissionFixture = process.argv.includes("--permission")
 const permissionMarker = "REMOTE_PERMISSION_TOOL_OK"
+const delayFlag = process.argv.find((arg) => arg.startsWith("--completion-delay="))
+const completionDelay = Math.min(10_000, Math.max(0, Number(delayFlag?.split("=")[1]) || 0))
 const completion = responsiveFixture
   ? `${marker}\n\n## Responsive layout review\n\nThe workspace is ready. This conversation has a deliberately long title and model name.\n\n| File | Result |\n| --- | --- |\n| packages/app/src/components/session/session-header.tsx | Reviewed |\n\n\`\`\`typescript\nconst veryLongLine = "${"unbroken-long-code-segment-".repeat(12)}"\n\`\`\`\n\nhttps://example.invalid/${"unbrokenpath".repeat(18)}\n\n1. Keep the conversation readable.\n2. Keep every message control reachable.\n3. Review changes without covering the conversation.`
   : marker
-const root = await mkdtemp(join(tmpdir(), "opencode-remote-e2e-"))
+const root = await realpath(await mkdtemp(join(tmpdir(), "opencode-remote-e2e-")))
 const desktop = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const project = join(root, "project")
 const webRoot = join(root, "web")
@@ -205,6 +208,7 @@ const modelServer = createServer(async (request, response) => {
       }
     : { role: "assistant", content: completion }
   response.write(`data: ${JSON.stringify(event(delta, null))}\n\n`)
+  if (completionDelay) await Bun.sleep(completionDelay)
   response.end(`data: ${JSON.stringify(event({}, asksPermission ? "tool_calls" : "stop"))}\n\ndata: [DONE]\n\n`)
 })
 
@@ -373,10 +377,61 @@ async function run() {
   })
   const createdBody = await created.text()
   assert(created.ok, `Session create failed (${created.status}): ${createdBody.slice(0, 500)}`)
-  const createdSession = JSON.parse(createdBody) as { id: string; directory?: string }
+  const createdSession = JSON.parse(createdBody) as { id: string; directory?: string; projectID: string }
   const id = createdSession.id
   assert(id, "Created session has no id")
   console.log(`[remote-e2e] created isolated session=${id}`)
+  if (taskCardsFixture) {
+    // Seed only this test's isolated sidecar; the public task API stays read-only.
+    const opened = await fetch(`${backendUrl}/project/open${query}`, {
+      method: "POST",
+      headers: internalHeaders,
+      signal: AbortSignal.timeout(30_000),
+    })
+    assert(opened.ok, `Task fixture project registration failed status=${opened.status}`)
+    const registered = (await opened.json()) as { id: string }
+    // Preconfigure display metadata; public clients cannot mutate project settings.
+    const styled = await fetch(`${backendUrl}/project/${registered.id}${query}`, {
+      method: "PATCH",
+      headers: { ...internalHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ icon: { color: "blue" } }),
+      signal: AbortSignal.timeout(30_000),
+    })
+    assert(styled.ok, `Task fixture project metadata setup failed status=${styled.status}`)
+    console.log("[remote-e2e] isolated task project registered as user-visible")
+    for (const [route, payload] of [
+      [
+        "project-task",
+        { title: "Mobile project task card QA", description: "Card content should reclaim the icon column." },
+      ],
+      [
+        "scheduled-task",
+        {
+          projectID: createdSession.projectID,
+          directory: project,
+          name: "Mobile scheduled task card QA",
+          prompt: "Disabled layout fixture; never execute.",
+          schedule: { kind: "every", interval: 86_400_000 },
+          agent: "build",
+          model: { providerID: "remote-qa", modelID: "echo" },
+          enabled: false,
+          unattended: true,
+        },
+      ],
+    ] as const) {
+      const response = await fetch(`${backendUrl}/${route}${query}`, {
+        method: "POST",
+        headers: { ...internalHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(30_000),
+      })
+      assert(
+        response.ok,
+        `Task card fixture create failed route=${route} status=${response.status}: ${(await response.text()).slice(0, 300)}`,
+      )
+      console.log(`[remote-e2e] task card fixture created route=${route}`)
+    }
+  }
   const prompt = await remoteFetch(`/session/${id}/${permissionFixture ? "prompt_async" : "message"}`, {
     method: "POST",
     body: JSON.stringify({

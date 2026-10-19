@@ -102,10 +102,10 @@ function ScheduledTaskCard(props: {
       onClick={props.onOpen}
     >
       <div data-slot="scheduled-task-header" class="flex w-full items-center gap-2">
-        <div class="flex shrink-0 items-center">
+        <div data-slot="task-card-icon" class="flex shrink-0 items-center">
           <Icon name="clock" size="normal" class="text-icon-base" />
         </div>
-        <div class="min-w-0 flex-1">
+        <div data-slot="task-card-content" class="min-w-0 flex-1">
           <div class="truncate text-16-medium !leading-5 text-text-strong">{props.task.name}</div>
         </div>
         <span data-slot="scheduled-task-status" class="shrink-0 text-11-regular text-text-weaker">

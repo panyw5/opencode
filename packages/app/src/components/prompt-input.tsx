@@ -2670,14 +2670,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     "aria-label": language.t("command.model.choose"),
                   }}
                 >
-                  <span class="min-w-0 flex-1 flex flex-col items-start">
-                    <span class="w-full truncate text-13-medium text-text-strong">
-                      {local.model.current()?.name ?? language.t("dialog.model.select.title")}
-                    </span>
-                    <span class="w-full truncate text-11-regular text-text-weak">
-                      {local.agent.current()?.name ?? "Build"} ·{" "}
-                      {variantLabel()(local.model.variant.current() ?? "default")}
-                    </span>
+                  <span
+                    data-slot="prompt-mobile-model-name"
+                    class="min-w-0 flex-1 truncate text-13-medium text-text-strong"
+                  >
+                    {local.model.current()?.name ?? language.t("dialog.model.select.title")}
                   </span>
                   <Icon name="chevron-down" size="small" class="shrink-0" />
                 </ModelSelectorPopover>

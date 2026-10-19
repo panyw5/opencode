@@ -180,6 +180,7 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
   })
   return (
     <div
+      data-slot="project-icon"
       data-loaded={loaded() ? "true" : "false"}
       data-component={loadingSessions() ? "project-icon-loading" : undefined}
       class={`relative size-8 shrink-0 ${props.class ?? ""}`}
@@ -1076,7 +1077,7 @@ export const NewSessionItem = (props: {
 
 
 export const SessionGroupHeader = (props: { label: string }): JSX.Element => (
-  <div class="px-4 pt-3 pb-1 first:pt-1 flex justify-end">
+  <div data-slot="sidebar-session-group" class="px-4 pt-3 pb-1 first:pt-1 flex justify-end">
     <span class="text-[11px] font-medium uppercase tracking-wider text-text-weak">{props.label}</span>
   </div>
 )
@@ -1087,7 +1088,7 @@ export const SessionSearchBar = (props: {
   placeholder: string
   reduced?: boolean
 }): JSX.Element => (
-  <div class="px-3 py-2">
+  <div data-slot="sidebar-session-search" class="px-3 py-2">
     <div
       classList={{
         "flex items-center gap-2 px-2.5 h-8 rounded-lg border border-transparent": true,

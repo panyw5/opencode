@@ -267,7 +267,7 @@ const WorkspaceSessionList = (props: {
   const boundaries = createMemo(() => sessionGroupBoundaries(props.sessions(), props.sortNow()))
 
   return (
-    <nav class="flex flex-col gap-1 px-3">
+    <nav data-slot="sidebar-session-list" class="flex flex-col gap-1 px-3">
       <Show when={!!props.refresh}>
         <div class="flex gap-1 px-2 pb-1">
           <Tooltip value={props.language.t("sidebar.sessions.refresh.genericagent")} placement="top">

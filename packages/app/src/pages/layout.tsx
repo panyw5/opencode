@@ -1881,7 +1881,9 @@ export default function Layout(props: ParentProps) {
     }
 
     if (!platform.remoteMode) return commands
-    return commands.filter((item) => !["provider.connect", "server.switch", "server.reloadBackend"].includes(item.id))
+    return commands.filter(
+      (item) => !["config.open", "provider.connect", "server.switch", "server.reloadBackend"].includes(item.id),
+    )
   })
 
   function connectProvider() {
@@ -4301,7 +4303,7 @@ export default function Layout(props: ParentProps) {
                       when={workspacesEnabled()}
                       fallback={
                         <>
-                          <div class="shrink-0 py-4 px-3">
+                          <div data-slot="sidebar-project-actions" class="shrink-0 py-4 px-3">
                             <SidebarQuickActions
                               primary={{
                                 icon: "new-session",
@@ -4356,7 +4358,7 @@ export default function Layout(props: ParentProps) {
                       }
                     >
                       <>
-                        <div class="shrink-0 py-4 px-3">
+                        <div data-slot="sidebar-project-actions" class="shrink-0 py-4 px-3">
                           <SidebarQuickActions
                             primary={{
                               icon: "plus-small",
@@ -4571,12 +4573,12 @@ export default function Layout(props: ParentProps) {
           .sort((a, b) => a.id.localeCompare(b.id))
       }}
       imChannelsLabel={() => language.t("sidebar.im.title")}
-      onOpenImChannelsConfig={() => openConfig("channels")}
+      onOpenImChannelsConfig={platform.remoteMode ? undefined : () => openConfig("channels")}
       configLabel={() => language.t("config.title")}
       configKeybind={() => command.keybind("config.open")}
       configActive={onConfigRoute}
-      onOpenConfig={openConfig}
-      onPrefetchConfig={prefetchConfigPage}
+      onOpenConfig={platform.remoteMode ? undefined : openConfig}
+      onPrefetchConfig={platform.remoteMode ? undefined : prefetchConfigPage}
       settingsLabel={() => language.t("sidebar.settings")}
       settingsKeybind={() => command.keybind("settings.open")}
       onOpenSettings={openSettings}

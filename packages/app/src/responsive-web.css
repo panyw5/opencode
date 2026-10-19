@@ -16,6 +16,7 @@ html[data-web-layout] #root {
 
 html[data-web-layout] [data-prompt-kind="main"][data-compact="true"] {
   --dock-shell-radius: 20px;
+  --prompt-control-size: 44px;
   border: 1px solid var(--border-weak-base);
   border-radius: 20px;
   background: var(--background-base);
@@ -60,13 +61,17 @@ html[data-web-layout] [data-prompt-kind="main"][data-compact="true"] {
   }
 
   [data-action="prompt-mobile-model"] {
-    min-height: 44px;
+    height: var(--prompt-control-size);
+    min-height: var(--prompt-control-size);
+    max-height: var(--prompt-control-size);
   }
 
   [data-action="prompt-mobile-attach"],
   [data-action="prompt-mobile-options"] {
-    min-width: 44px;
-    min-height: 44px;
+    width: var(--prompt-control-size);
+    height: var(--prompt-control-size);
+    min-width: var(--prompt-control-size);
+    min-height: var(--prompt-control-size);
   }
 
   [data-slot="prompt-send-actions"] {
@@ -75,8 +80,14 @@ html[data-web-layout] [data-prompt-kind="main"][data-compact="true"] {
 
   [data-action="prompt-submit"],
   [data-slot="prompt-primary-action"] {
-    width: 44px;
-    height: 44px;
+    width: var(--prompt-control-size);
+    height: var(--prompt-control-size);
+  }
+
+  [data-slot="prompt-primary-action"] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 }
 
@@ -230,6 +241,101 @@ html[data-web-layout] [data-prompt-kind="main"][data-compact="true"] {
       max-width: 100%;
       overflow-x: auto;
     }
+  }
+}
+
+@media (max-width: 767px) {
+  html[data-web-layout] [data-component="sidebar-nav-mobile"] {
+    [data-component="sidebar-panel"] {
+      padding-right: 6px;
+      padding-left: 6px;
+    }
+
+    [data-slot="sidebar-session-list"],
+    [data-slot="sidebar-session-search"],
+    [data-slot="sidebar-project-actions"],
+    [data-slot="task-panel-toolbar"],
+    [data-slot="task-panel-list"],
+    [data-slot="scheduled-task-list"] {
+      padding-right: 0;
+      padding-left: 0;
+    }
+
+    [data-slot="project-task-group-list"] {
+      padding-left: 0;
+    }
+
+    [data-slot="sidebar-session-group"] {
+      padding-right: 8px;
+      padding-left: 8px;
+    }
+
+    [data-component="sidebar-session"] {
+      padding-right: 8px;
+      padding-left: 10px;
+    }
+  }
+
+  html[data-web-layout] :is([data-component="project-task-item"], [data-component="scheduled-task-card"]) {
+    [data-slot="task-card-icon"] {
+      display: none;
+    }
+  }
+
+  html[data-web-layout] [data-component="sidebar-nav-mobile"] [data-component="sidebar-rail"] {
+    width: 48px;
+
+    [data-slot="sidebar-rail-header"],
+    [data-slot="sidebar-rail-projects"] {
+      padding-right: 4px;
+      padding-left: 4px;
+    }
+
+    [data-action="home-open"],
+    [data-action="project-switch"],
+    [data-component="icon-button"] {
+      width: 36px;
+      height: 36px;
+    }
+
+    [data-action="project-switch"] {
+      padding: 2px;
+    }
+
+    [data-slot="project-icon"] {
+      width: 28px;
+      height: 28px;
+    }
+
+    [data-action="home-open"] > svg,
+    [data-component="icon-button"] > [data-component="icon"] {
+      width: 18px;
+      height: 18px;
+    }
+  }
+
+  html[data-web-layout] [data-prompt-kind="main"][data-compact="true"] {
+    --prompt-control-size: 32px;
+
+    [data-slot="prompt-toolbar"] [data-component="icon-button"] {
+      width: var(--prompt-control-size);
+      height: var(--prompt-control-size);
+      min-width: var(--prompt-control-size);
+      min-height: var(--prompt-control-size);
+      padding: 0;
+    }
+
+    [data-slot="prompt-toolbar"] [data-component="icon-button"] > [data-component="icon"] {
+      width: 16px;
+      height: 16px;
+    }
+  }
+
+  html[data-web-layout]
+    [data-component="sidebar-nav-mobile"]
+    [data-component="sidebar-session"]
+    [data-slot="session-trailing"] {
+    display: none;
   }
 }
 
