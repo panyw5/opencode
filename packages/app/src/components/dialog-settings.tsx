@@ -44,6 +44,34 @@ export const DialogSettings: Component<{ returnTarget?: ConfigReturnTarget }> = 
     navigate(target, { state: props.returnTarget })
   }
 
+  if (platform.remoteMode) {
+    return (
+      <Dialog
+        size="x-large"
+        title={language.t("settings.tab.general")}
+        transition
+        class="settings-dialog remote-settings-dialog"
+      >
+        <div data-component="remote-settings" class="flex min-h-0 flex-1 flex-col">
+          <div data-slot="remote-settings-general" class="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <SettingsGeneral hideHeading />
+          </div>
+          <div class="flex shrink-0 items-center justify-between gap-3 border-t border-border-weak-base px-4 py-3">
+            <span class="text-11-regular text-text-weak">v{platform.version}</span>
+            <Button
+              data-action="remote-settings-logout"
+              size="small"
+              variant="ghost"
+              onClick={() => void logoutRemote()}
+            >
+              {language.t("settings.remote.logout")}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    )
+  }
+
   return (
     <Dialog size="x-large" transition class="settings-dialog">
       <Tabs orientation="vertical" variant="settings" defaultValue="general" class="h-full settings-dialog">
@@ -101,11 +129,6 @@ export const DialogSettings: Component<{ returnTarget?: ConfigReturnTarget }> = 
             <div class="flex flex-col gap-1 pl-1 py-1 text-12-medium text-text-weak">
               <span>{language.t("app.name.desktop")}</span>
               <span class="text-11-regular">v{platform.version}</span>
-              <Show when={platform.remoteMode}>
-                <Button size="small" variant="ghost" onClick={() => void logoutRemote()}>
-                  {language.t("settings.remote.logout")}
-                </Button>
-              </Show>
             </div>
           </div>
         </Tabs.List>

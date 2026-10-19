@@ -23,6 +23,7 @@ const taskCardsTest = process.argv.includes("--task-cards")
 const sidebarActionsTest = process.argv.includes("--sidebar-actions") || taskCardsTest
 const modelOnlyTest = process.argv.includes("--model-only")
 const toolbarSizingTest = process.argv.includes("--toolbar-sizing")
+const generalOnlyTest = process.argv.includes("--general-only")
 const presenceTest = invite.presence || process.argv.includes("--presence")
 const locale = process.argv.find((arg) => arg.startsWith("--locale="))?.slice("--locale=".length)
 const { client: desktop } = await connectCdp()
@@ -210,6 +211,56 @@ async function checkPresencePage(kind: RemotePage["kind"]) {
     20_000,
   )
   console.log(`[remote-presence-qa] browser page=${kind} heartbeat verified`)
+}
+
+async function checkRemoteGeneralDialog() {
+  await waitFor(
+    async () =>
+      (await browser!.evaluate<boolean>(
+        `!!document.querySelector('[data-component="remote-settings"] [data-settings-general]')`,
+      ))
+        ? true
+        : undefined,
+    "single-page remote General settings",
+  )
+  for (const [width, height] of [
+    [320, 640],
+    [390, 664],
+    [390, 360],
+    [768, 1024],
+    [1024, 768],
+    [1440, 900],
+  ]) {
+    await resizeViewport(width, height)
+    await Bun.sleep(200)
+    const result = await browser!.evaluate<{
+      fullWidth: boolean
+      navigation: number
+      heading: boolean
+      fits: boolean
+      scrolls: boolean
+      sizes: number[]
+    }>(`(() => {
+      const root=document.querySelector('[data-component="remote-settings"]');
+      const dialog=root.closest('[data-slot="dialog-content"]');
+      const body=dialog.querySelector('[data-slot="dialog-body"]');
+      const general=root.querySelector('[data-settings-general]');
+      const logout=root.querySelector('[data-action="remote-settings-logout"]');
+      const r=general.getBoundingClientRect(),b=body.getBoundingClientRect(),d=dialog.getBoundingClientRect(),l=logout.getBoundingClientRect();
+      const previous=general.scrollTop;general.scrollTop=general.scrollHeight;const scrolls=general.scrollTop>0;general.scrollTop=previous;
+      return {fullWidth:Math.abs(r.width-b.width)<1&&Math.abs(r.left-b.left)<1,navigation:dialog.querySelectorAll('[data-component="tabs"][data-variant="settings"],[data-slot="tabs-list"]').length,heading:!!dialog.querySelector('[data-slot="dialog-title"]')&&!general.querySelector('h2'),fits:d.left>=-1&&d.right<=innerWidth+1&&d.top>=-1&&d.bottom<=visualViewport.height+1&&l.bottom<=d.bottom&&l.top>=d.top&&general.scrollWidth<=general.clientWidth,scrolls,sizes:[r.height,b.height,d.height,general.clientHeight,general.scrollHeight]};
+    })()`)
+    if (!result.fullWidth || result.navigation || !result.heading || !result.fits || !result.scrolls)
+      throw new Error(`Remote General dialog layout mismatch at ${width}x${height}: ${JSON.stringify(result)}`)
+    console.log(`[remote-general-qa] viewport=${width}x${height} result=${JSON.stringify(result)}`)
+  }
+  await resizeViewport(390, 664)
+  const toggled = await browser!.evaluate<boolean>(`(() => {
+    const input=document.querySelector('[data-component="remote-settings"] [data-action="settings-feed-reasoning-summaries"] input[type="checkbox"]');
+    if(!input)return false;const before=input.checked;input.click();const changed=input.checked!==before;input.click();return changed&&input.checked===before;
+  })()`)
+  if (!toggled) throw new Error("General preferences no longer toggle or restore correctly")
+  console.log("[remote-general-qa] local preference toggled and restored; logout retained")
 }
 
 async function checkTaskCardIcons(component: string) {
@@ -733,36 +784,45 @@ try {
   if (state.errors.length || sessionState.errors.length) throw new Error("Remote web UI raised browser errors")
   if (state.failed.length || sessionState.failed.length)
     throw new Error("Remote web UI issued rejected bootstrap requests")
-  if (presenceTest) {
+  if (presenceTest || generalOnlyTest) {
     await browser.evaluate(
       `document.querySelector('[data-component="sidebar-nav-mobile"] [data-icon="settings-gear"]').click()`,
     )
-    await checkPresencePage("settings")
-    await browser.call("Input.dispatchKeyEvent", {
-      type: "keyDown",
-      key: "Escape",
-      code: "Escape",
-      windowsVirtualKeyCode: 27,
-    })
-    await browser.call("Input.dispatchKeyEvent", {
-      type: "keyUp",
-      key: "Escape",
-      code: "Escape",
-      windowsVirtualKeyCode: 27,
-    })
-    await checkPresencePage("session")
-    await browser.evaluate(`dispatchEvent(new PageTransitionEvent('pagehide'))`)
-    await waitFor(
-      async () => {
-        const device = (await presenceDevices()).find((d) => d.id === presenceDeviceID)
-        return device?.connection?.state === "offline" ? true : undefined
-      },
-      "pagehide clears authenticated page presence",
-      10_000,
+    if (presenceTest) await checkPresencePage("settings")
+    if (generalOnlyTest) await checkRemoteGeneralDialog()
+    const hasCloseButton = await browser.evaluate<boolean>(
+      `!!document.querySelector('[data-slot="dialog-close-button"]')`,
     )
-    await browser.evaluate(`dispatchEvent(new PageTransitionEvent('pageshow'))`)
-    await checkPresencePage("session")
-    console.log("[remote-presence-qa] settings navigation, pagehide disconnect and pageshow reconnect verified")
+    if (hasCloseButton) await browser.evaluate(`document.querySelector('[data-slot="dialog-close-button"]').click()`)
+    else {
+      await browser.call("Input.dispatchKeyEvent", {
+        type: "keyDown",
+        key: "Escape",
+        code: "Escape",
+        windowsVirtualKeyCode: 27,
+      })
+      await browser.call("Input.dispatchKeyEvent", {
+        type: "keyUp",
+        key: "Escape",
+        code: "Escape",
+        windowsVirtualKeyCode: 27,
+      })
+    }
+    if (presenceTest) {
+      await checkPresencePage("session")
+      await browser.evaluate(`dispatchEvent(new PageTransitionEvent('pagehide'))`)
+      await waitFor(
+        async () => {
+          const device = (await presenceDevices()).find((d) => d.id === presenceDeviceID)
+          return device?.connection?.state === "offline" ? true : undefined
+        },
+        "pagehide clears authenticated page presence",
+        10_000,
+      )
+      await browser.evaluate(`dispatchEvent(new PageTransitionEvent('pageshow'))`)
+      await checkPresencePage("session")
+      console.log("[remote-presence-qa] settings navigation, pagehide disconnect and pageshow reconnect verified")
+    }
   }
   console.log(
     skipScreenshots
