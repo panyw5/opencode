@@ -1578,7 +1578,7 @@ export function MessageTimeline(props: {
     })
     const running = createMemo(() => {
       const part = current()
-      return part?.state.status === "pending" || part?.state.status === "running"
+      return input.item().continuing === true || part?.state.status === "pending" || part?.state.status === "running"
     })
     const currentInfo = createMemo(() => {
       const part = current()
@@ -1599,12 +1599,12 @@ export function MessageTimeline(props: {
       on(
         () => {
           const part = current()
-          return part ? `${part.id}:${part.state.status}` : "empty"
+          return `${part?.id ?? "empty"}:${part?.state.status ?? "empty"}:${running()}`
         },
         () => {
           const part = current()
           console.debug(
-            `[tool-group] activity sid=${sessionID()} part=${part?.id} tool=${part?.tool} status=${part?.state.status} count=${refs().length}`,
+            `[tool-group] activity sid=${sessionID()} part=${part?.id} tool=${part?.tool} status=${part?.state.status} count=${refs().length} continuing=${input.item().continuing === true} end=${input.item().end ?? "none"} timer=${running() ? "start" : "stop"}`,
           )
           setNow(Date.now())
           if (!running()) return
@@ -1615,8 +1615,7 @@ export function MessageTimeline(props: {
     )
     // The pending (preparation) phase carries no server timestamp, so capture a
     // client-side start as soon as the group becomes active. The countdown then
-    // runs continuously from the group's beginning and only settles once every
-    // tool call in the group has finished.
+    // runs continuously until the group closes, including model gaps.
     const [clientStart, setClientStart] = createSignal<number>()
     createEffect(() => {
       if (!running()) return
@@ -1639,7 +1638,7 @@ export function MessageTimeline(props: {
     })
     const groupEnd = createMemo(() => {
       if (running()) return undefined
-      let end: number | undefined
+      let end = input.item().end
       for (const part of groupParts()) {
         const state = part.state
         const value = state.status === "pending" || state.status === "running" ? undefined : state.time.end

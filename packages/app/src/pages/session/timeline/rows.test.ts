@@ -180,10 +180,82 @@ describe("constructMessageRows", () => {
     expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "ToolGroup", "AssistantPart", "ToolGroup"])
   })
 
+  test("keeps the trailing activity alive between completed tool calls", () => {
+    const user = userMessage("user-tool-gap")
+    const assistant = assistantMessage("assistant-tool-gap", user.id)
+    const parts = [textPart(user.id, "work"), toolPart(assistant.id, "first", "read")]
+    const build = (status: "busy" | "retry" | "idle", active = true) =>
+      construct(user, partsByID(parts), [assistant], 0, true, true, status, active).filter(
+        (row) => row._tag === "ToolGroup",
+      )
+
+    expect(build("busy")[0].continuing).toBe(true)
+    expect(build("retry")[0].continuing).toBe(true)
+    parts.push(toolPart(assistant.id, "second", "bash"))
+    expect(build("busy")[0].continuing).toBe(true)
+    expect(build("idle")[0].continuing).toBe(false)
+    expect(build("busy", false)[0].continuing).toBe(false)
+    parts.push(textPart(assistant.id, "done"))
+    expect(build("busy")[0].continuing).toBe(false)
+    parts.push(toolPart(assistant.id, "third", "bash"))
+    expect(build("busy").map((row) => row.continuing)).toEqual([false, true])
+    console.info("[tool-group-test] gap=continuing retry=continuing idle=stopped text=closed history=stopped")
+  })
+
+  test("does not keep interrupted or failed trailing activity alive", () => {
+    const user = userMessage("user-tool-error")
+    const assistant = assistantMessage("assistant-tool-error", user.id)
+    const parts = [textPart(user.id, "work"), toolPart(assistant.id, "first", "read")]
+    for (const error of [
+      { name: "MessageAbortedError", data: { message: "aborted" } },
+      { name: "UnknownError", data: { message: "failed" } },
+    ] as const) {
+      const rows = construct(user, partsByID(parts), [{ ...assistant, error }], 0, true, true, "busy", true)
+      expect(rows.find((row) => row._tag === "ToolGroup")?.continuing).toBe(false)
+    }
+  })
+
+  test("settles at the next content boundary or turn completion, not the last tool end", () => {
+    const user = userMessage("user-tool-end")
+    const assistant = assistantMessage("assistant-tool-end", user.id)
+    assistant.time.completed = 10_000
+    const next = { ...textPart(assistant.id, "done"), time: { start: 8_000, end: 9_000 } } as TextPart
+    const parts = [textPart(user.id, "work"), toolPart(assistant.id, "first", "read")]
+    const build = (status: "busy" | "idle") =>
+      construct(user, partsByID(parts), [assistant], 0, true, true, status, true).find(
+        (row) => row._tag === "ToolGroup",
+      )!
+    expect(build("busy").end).toBeUndefined()
+    expect(build("idle").end).toBe(10_000)
+    parts.push(next)
+    expect(build("busy").end).toBe(8_000)
+    expect(build("idle").end).toBe(8_000)
+  })
+
+  test("allows a resumed group to continue without restarting the interrupted group", () => {
+    const user = userMessage("user-tool-resume")
+    const aborted = {
+      ...assistantMessage("assistant-aborted", user.id),
+      error: { name: "MessageAbortedError", data: { message: "aborted" } },
+    } as AssistantMessage
+    const resumed = assistantMessage("assistant-resumed", user.id)
+    const parts = [
+      textPart(user.id, "work"),
+      toolPart(aborted.id, "first", "read"),
+      toolPart(resumed.id, "second", "read"),
+    ]
+    const rows = construct(user, partsByID(parts), [aborted, resumed], 0, true, true, "busy", true)
+    expect(rows.filter((row) => row._tag === "ToolGroup").map((row) => row.continuing)).toEqual([false, true])
+  })
+
   test("keeps present_file as an independent assistant row", () => {
     const user = userMessage("user-present-file")
     const assistant = assistantMessage("assistant-present-file", user.id)
-    const parts = [textPart(user.id, "work"), toolPart(assistant.id, "tool-before", "read"), presentFilePart(assistant.id)]
+    const parts = [
+      textPart(user.id, "work"),
+      toolPart(assistant.id, "tool-before", "read"),
+      presentFilePart(assistant.id),
+    ]
     const rows = construct(user, partsByID(parts), [assistant], 0, true, true, "idle", false)
     expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "ToolGroup", "AssistantPart"])
     const row = rows.at(-1)
@@ -195,13 +267,17 @@ describe("constructMessageRows", () => {
     const assistant = assistantMessage("assistant-gpt-pro", user.id)
     const parts = [textPart(user.id, "consult"), toolPart(assistant.id, "tool-gpt", "gpt_pro_consult")]
     const rows = construct(user, partsByID(parts), [assistant], 0, true, true, "idle", false)
-    expect(rows.map(row => row._tag)).toEqual(["UserMessage", "AssistantPart"])
+    expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "AssistantPart"])
   })
 
   test("keeps present_diagram out of the collapsed tool group", () => {
     const user = userMessage("user-present-diagram")
     const assistant = assistantMessage("assistant-present-diagram", user.id)
-    const parts = [textPart(user.id, "work"), toolPart(assistant.id, "tool-before", "read"), toolPart(assistant.id, "tool-diagram", "present_diagram")]
+    const parts = [
+      textPart(user.id, "work"),
+      toolPart(assistant.id, "tool-before", "read"),
+      toolPart(assistant.id, "tool-diagram", "present_diagram"),
+    ]
     const rows = construct(user, partsByID(parts), [assistant], 0, true, true, "idle", false)
     expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "ToolGroup", "AssistantPart"])
     const row = rows.at(-1)
