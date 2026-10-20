@@ -1,8 +1,7 @@
 import type { Message, Part, Session, SessionStatus, ToolPart } from "@opencode-ai/sdk/v2/client"
 import { working } from "./session-working"
 
-type SessionChildAgentStatus = Exclude<ToolPart["state"]["status"], "pending">
-type SessionChildAgentUsage = "not used"
+type SessionChildAgentStatus = Exclude<ToolPart["state"]["status"], "pending"> | "unknown"
 
 export type SessionChildAgentEntry = {
   id: string
@@ -13,7 +12,6 @@ export type SessionChildAgentEntry = {
   description?: string
   created: number
   status?: SessionChildAgentStatus
-  usage?: SessionChildAgentUsage
   index?: number
   resume?: boolean
   /** True when the task tool launched with background=true or was promoted. */
@@ -73,14 +71,17 @@ function statusFor(
   sessionID: string,
   input: CollectChildAgentEntriesInput,
   toolStatus?: SessionChildAgentStatus,
-): SessionChildAgentStatus | undefined {
+  background = false,
+): SessionChildAgentStatus {
   const messages = input.messagesBySession?.[sessionID]
   const last = messages?.at(-1)
   if (last?.role === "assistant" && last.error !== undefined) return "error"
   if (working(input.statuses?.[sessionID], messages)) return "running"
   if (last?.role === "assistant" && typeof last.time.completed === "number") return "completed"
   if (toolStatus === "running" || toolStatus === "error") return toolStatus
-  if (toolStatus === "completed") return "completed"
+  // Background dispatch completing does not prove that the child finished.
+  if (toolStatus === "completed" && !background) return "completed"
+  return "unknown"
 }
 
 function entryFromTaskPart(input: {
@@ -112,7 +113,7 @@ function entryFromTaskPart(input: {
     agent: agent ?? text(session?.agent),
     description,
     created: stateStart(input.part.state) ?? session?.time.created ?? input.message.time.created,
-    status: statusFor(sessionID, input.collect, toolStatus),
+    status: statusFor(sessionID, input.collect, toolStatus, background),
     index: input.childIndexByID.get(sessionID),
     resume,
     background: background || undefined,
@@ -165,7 +166,6 @@ export function collectSessionChildAgentEntries(input: CollectChildAgentEntriesI
       agent: text(session.agent),
       created: session.time.created,
       status,
-      usage: status === "running" || status === "error" ? undefined : "not used",
       index: childIndexByID.get(session.id),
       resume: false,
       order,

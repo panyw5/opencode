@@ -14,6 +14,7 @@ import { SessionStatus } from "@/session/status"
 import { SessionInput } from "@/session/input"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
+import { TaskInterruptTool } from "../../src/tool/task_interrupt"
 import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -131,6 +132,15 @@ function reply(input: SessionPrompt.PromptInput, text: string): MessageV2.WithPa
 }
 
 describe("tool.task", () => {
+  it.instance("exposes child-task interruption to the primary agent", () =>
+    Effect.gen(function* () {
+      const agent = yield* (yield* Agent.Service).get("build")
+      const registry = yield* ToolRegistry.Service
+      const tools = yield* registry.tools({ ...ref, agent })
+      expect(tools.some((tool) => tool.id === TaskInterruptTool.id)).toBe(true)
+    }),
+  )
+
   it.instance(
     "description sorts subagents by name and is stable across calls",
     () =>

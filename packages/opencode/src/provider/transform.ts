@@ -20,7 +20,11 @@ function mimeToModality(mime: string): Modality | undefined {
   return undefined
 }
 
-export const OUTPUT_TOKEN_MAX = 32_000
+export const OUTPUT_TOKEN_FALLBACK = 32_000
+export const OUTPUT_TOKEN_MAX = 256_000
+export const SUMMARY_OUTPUT_TOKEN_MAX = 32_000
+const OUTPUT_TOKEN_MIN = 1_024
+const INPUT_ESTIMATE_MARGIN = 0.15
 
 export function sanitizeSurrogates(content: string) {
   return content.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD")
@@ -1425,8 +1429,28 @@ export function providerOptions(model: Provider.Model, options: { [x: string]: a
   return { [key]: options }
 }
 
-export function maxOutputTokens(model: Provider.Model, outputTokenMax = OUTPUT_TOKEN_MAX): number {
-  return Math.min(model.limit.output, outputTokenMax) || outputTokenMax
+export function maxOutputTokens(
+  model: Pick<Provider.Model, "limit">,
+  outputTokenMax = OUTPUT_TOKEN_MAX,
+  budget: {
+    kind?: "primary" | "compaction"
+    inputTokens?: { measured: number; estimated: number }
+  } = {},
+): number {
+  const configured = model.limit.output > 0 ? model.limit.output : OUTPUT_TOKEN_FALLBACK
+  const requested = Math.min(
+    configured,
+    outputTokenMax,
+    OUTPUT_TOKEN_MAX,
+    budget.kind === "compaction" ? SUMMARY_OUTPUT_TOKEN_MAX : OUTPUT_TOKEN_MAX,
+  )
+  if (!budget.inputTokens || model.limit.context <= 0) return requested
+  const room =
+    model.limit.context -
+    budget.inputTokens.measured -
+    Math.ceil(budget.inputTokens.estimated * (1 + INPUT_ESTIMATE_MARGIN))
+  // Match V2's minimum reply allowance when compaction is disabled or the window is already full.
+  return Math.min(requested, Math.max(OUTPUT_TOKEN_MIN, room))
 }
 
 type JsonRecord = Record<string, unknown>

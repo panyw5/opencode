@@ -518,6 +518,7 @@ export const layer = Layer.effect(
           model,
         })
         result = yield* processor.process({
+          kind: "compaction",
           user: userMessage,
           agent,
           sessionID: input.sessionID,

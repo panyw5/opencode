@@ -1171,6 +1171,12 @@ export const dict = {
   "session.mathTask.updated": "Worker task updated",
   "session.childAgents.open": "Open subagent call",
   "session.childAgents.menuLabel": "Subagent calls",
+  "session.childAgents.status.running": "Running",
+  "session.childAgents.status.completed": "Completed",
+  "session.childAgents.status.error": "Failed",
+  "session.childAgents.status.unknown": "Status unknown",
+  "session.childAgents.statusUnknownHint":
+    "Execution status has not been loaded yet. This does not mean the subagent was unused.",
   "session.userMessages.button": "View user messages",
   "session.userMessages.open": "View user messages",
   "session.userMessages.menuLabel": "User messages",

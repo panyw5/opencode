@@ -394,7 +394,7 @@ function SessionChildAgentMenu(props: {
   createEffect(() => {
     if (!store.open) return
     console.debug(
-      `[child-agent-menu] entries-updated count=${props.entries.length} scrollTop=${contentRef?.scrollTop ?? 0} states=${props.entries.map((entry) => `${entry.id}:${entry.usage ?? entry.status ?? "unknown"}`).join(",")}`,
+      `[child-agent-menu] entries-updated count=${props.entries.length} scrollTop=${contentRef?.scrollTop ?? 0} states=${props.entries.map((entry) => `${entry.id}:${entry.status ?? "unknown"}`).join(",")}`,
     )
   })
   const indexBadge = (entry: SessionChildAgentEntry): string | undefined => {
@@ -415,12 +415,12 @@ function SessionChildAgentMenu(props: {
       ?.trim()
     return value ? `@${value}` : undefined
   }
-  const status = (entry: SessionChildAgentEntry): string | undefined => entry.usage ?? entry.status
+  const status = (entry: SessionChildAgentEntry) => entry.status ?? "unknown"
   const statusClass = (value: string): string => {
     if (value === "completed") return "text-icon-success-base"
-    if (value === "not used") return "text-icon-warning-base"
     if (value === "running") return "text-icon-warning-base"
-    return "text-icon-critical-base"
+    if (value === "error") return "text-icon-critical-base"
+    return "text-text-weak"
   }
   const backgroundLabel = (): string => language.t("session.childAgents.background")
   const revealScrollbar = (): void => {
@@ -546,8 +546,14 @@ function SessionChildAgentMenu(props: {
                               <span
                                 class={`shrink-0 text-11-medium font-medium ${statusClass(value())}`}
                                 data-testid="session-child-agent-status"
+                                data-status={value()}
+                                title={
+                                  value() === "unknown"
+                                    ? language.t("session.childAgents.statusUnknownHint")
+                                    : undefined
+                                }
                               >
-                                {value()}
+                                {language.t(`session.childAgents.status.${value()}`)}
                               </span>
                             )}
                           </Show>

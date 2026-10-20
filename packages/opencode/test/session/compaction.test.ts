@@ -910,6 +910,24 @@ describe("session.compaction.prune", () => {
 })
 
 describe("session.compaction.process", () => {
+  itCompaction.instance("marks summary requests for the separate 32K generation policy", () => {
+    const stub = llm()
+    let kind: LLM.StreamInput["kind"]
+    stub.push(
+      reply("summary", (input) => {
+        kind = input.kind
+      }),
+    )
+    return Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const session = yield* ssn.create({})
+      const msg = yield* createUserMessage(session.id, "hello")
+      const messages = yield* ssn.messages({ sessionID: session.id })
+      yield* SessionCompaction.use.process({ parentID: msg.id, messages, sessionID: session.id, auto: false })
+      expect(kind).toBe("compaction")
+    }).pipe(withCompaction({ llm: stub.layer }))
+  })
+
   it.instance(
     "throws when parent is not a user message",
     Effect.gen(function* () {

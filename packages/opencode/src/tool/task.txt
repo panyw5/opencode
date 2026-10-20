@@ -20,3 +20,4 @@ When NOT to use the Task tool:
   - Tell it how to verify its work if possible.
 - The output includes a `task_id` for resuming the same subagent session with `task(task_id=...)`. Use `task_transcript` to inspect subagent activity before resuming.
 - If a task call is interrupted before returning its `task_id`, use `task_list` to rediscover child task sessions.
+- To correct a task that is still running, call `task_interrupt` with its `task_id` first. After interruption succeeds, resume with `task(task_id=...)` and a new prompt explaining the correction; the existing child conversation is preserved.

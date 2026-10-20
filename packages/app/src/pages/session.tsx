@@ -579,12 +579,27 @@ export default function Page() {
   const childAgentEntries = createMemo(() =>
     collectSessionChildAgentEntries({
       sessionID: params.id,
-      messages: messages(),
+      // Status lookup must not depend on the visible history window.
+      messages: params.id ? sortMessages(sync.data.message[params.id] ?? []) : [],
       parts: sync.data.part,
       sessions: childAgentSessions(),
       messagesBySession: sync.data.message,
       statuses: sync.session.status.all(),
     }).filter((entry) => entry.agent !== "math-worker"),
+  )
+  createEffect(
+    on(
+      () =>
+        childAgentEntries()
+          .map((entry) => `${entry.id}:${entry.status ?? "unknown"}`)
+          .join(","),
+      (states) => {
+        if (!states || !params.id) return
+        console.debug(
+          `[child-agent-status] session=${params.id} loadedParentMessages=${sync.data.message[params.id]?.length ?? 0} visibleParentMessages=${messages().length} states=${states}`,
+        )
+      },
+    ),
   )
   const [mathSwarm, setMathSwarm] = createStore({
     workers: [] as MathWorkerStatus[],

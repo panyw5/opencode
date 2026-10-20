@@ -9,6 +9,7 @@ import { ReadTool } from "./read"
 import { TaskTool } from "./task"
 import { TaskListTool } from "./task_list"
 import { TaskTranscriptTool } from "./task_transcript"
+import { TaskInterruptTool } from "./task_interrupt"
 import { TodoWriteTool } from "./todo"
 import {
   ProjectTaskCreateTool,
@@ -128,6 +129,7 @@ const BUILTINS = {
   task: TaskTool,
   task_list: TaskListTool,
   task_transcript: TaskTranscriptTool,
+  task_interrupt: TaskInterruptTool,
   im_list: IMListTool,
   im_read: IMReadTool,
   im_send: IMSendTool,
