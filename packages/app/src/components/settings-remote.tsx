@@ -9,6 +9,8 @@ import { usePlatform } from "@/context/platform"
 import type { RemoteAccessStatus, RemoteDevice, RemotePairing } from "@/remote/types"
 import {
   createPairingOperationController,
+  connectionPending,
+  connectionElapsed,
   deviceActivityAt,
   pairingRemainingSeconds,
   revokeAfterConfirmation,
@@ -29,6 +31,7 @@ export const SettingsRemote: Component = () => {
     disabling: false,
     error: "",
     deviceSort: "activity" as "activity" | "paired",
+    now: Date.now(),
   })
   const devices = createMemo(() => sortRemoteDevices(store.devices, store.deviceSort))
   const [remaining, setRemaining] = createSignal(0)
@@ -60,7 +63,8 @@ export const SettingsRemote: Component = () => {
       }
       lastUrl = status.url
       setStore("devices", reconcile(devices, { key: "id" }))
-      setStore({ status, error: "" })
+      setStore("status", reconcile(status))
+      setStore("error", "")
     } catch (error) {
       if (disposed || current !== generation || currentEvent !== eventGeneration) return
       setStore("error", error instanceof Error ? error.message : String(error))
@@ -76,12 +80,13 @@ export const SettingsRemote: Component = () => {
       ) {
         invalidatePairing()
       }
-      setStore("status", status)
+      setStore("status", reconcile(status))
       void refresh()
     })
     void refresh()
     let ticks = 0
     timer = setInterval(() => {
+      setStore("now", Date.now())
       if (++ticks % 5 === 0 && !store.busy) void refresh()
       const expiresAt = store.pairing?.expiresAt
       if (!expiresAt) return
@@ -105,7 +110,7 @@ export const SettingsRemote: Component = () => {
     try {
       const status = await operation()
       if (disposed || current !== actionGeneration) return
-      if (status) setStore("status", status)
+      if (status) setStore("status", reconcile(status))
       await refresh()
     } catch (error) {
       if (!disposed && current === actionGeneration) {
@@ -213,8 +218,35 @@ export const SettingsRemote: Component = () => {
       <div class="rounded-lg border border-border-base bg-surface-base p-4 flex flex-col gap-3">
         <div class="flex items-center gap-2 text-14-medium">
           <Icon name={store.status.phase === "online" ? "circle-check" : "settings-gear"} />
-          {language.t(`settings.remote.phase.${store.status.phase}`)}
+          {store.status.phase === "connecting" && store.status.stage
+            ? language.t(`settings.remote.stage.${store.status.stage}`)
+            : language.t(`settings.remote.phase.${store.status.phase}`)}
         </div>
+        <Show when={connectionPending(store.status)}>
+          <div data-component="remote-connection-progress" class="flex flex-col gap-2 text-13-regular text-text-weak">
+            <Show
+              when={connectionElapsed(store.status, store.now)}
+              fallback={<p>{language.t("settings.remote.elapsedUnavailable")}</p>}
+            >
+              {(elapsed) => (
+                <p data-slot="remote-connection-elapsed" class="tabular-nums">
+                  {language.t("settings.remote.elapsed", { duration: elapsed() })}
+                </p>
+              )}
+            </Show>
+            <Show when={connectionElapsed(store.status, store.now, true)}>
+              {(elapsed) => (
+                <p data-slot="remote-connection-stage-elapsed" class="tabular-nums">
+                  {language.t("settings.remote.stageElapsed", { duration: elapsed() })}
+                </p>
+              )}
+            </Show>
+            <Show when={store.status.stage === "registering" || store.status.stage === "waiting-certificate"}>
+              <p>{language.t("settings.remote.initialSetupHint")}</p>
+            </Show>
+            <p>{language.t("settings.remote.backgroundHint")}</p>
+          </div>
+        </Show>
         <Show when={store.status.error || store.error}>
           <p role="alert" class="text-13-regular text-icon-critical-base">
             {store.error || store.status.error}

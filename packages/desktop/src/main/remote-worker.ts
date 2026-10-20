@@ -141,7 +141,13 @@ async function start(request: StartInput): Promise<{ url: string }> {
     candidateController = new AbortController()
     controller = candidateController
     safeLog("remote-worker sdk-initialization-started")
-    candidateTransport = await createOpenTunnelTransport(tunnelStore())
+    candidateTransport = await createOpenTunnelTransport(tunnelStore(), {
+      onProgress: (setupStage) => {
+        if (generation !== activeGeneration || candidateController?.signal.aborted) return
+        safeLog(`remote-worker setup-stage stage=${setupStage}`)
+        notify("connecting", undefined, generation, setupStage)
+      },
+    })
     if (generation !== activeGeneration) throw new Error("start-cancelled")
     transport = candidateTransport
     safeLog("remote-worker sdk-initialized")
@@ -236,8 +242,8 @@ async function teardown(generation: number) {
   if (generation !== activeGeneration) return
 }
 
-function notify(phase: string, url?: string, generation = activeGeneration) {
-  parentPort?.postMessage({ type: "status", generation, phase, ...(url ? { url } : {}) })
+function notify(phase: string, url?: string, generation = activeGeneration, stage?: string) {
+  parentPort?.postMessage({ type: "status", generation, phase, ...(url ? { url } : {}), ...(stage ? { stage } : {}) })
 }
 
 function respond(id: string, ok: boolean, value?: unknown) {

@@ -1291,7 +1291,7 @@ export const dict = {
   "settings.remote.title": "远程访问",
   "settings.remote.description": "从可信的移动设备连接到此 OpenCode 主机。",
   "settings.remote.enableDescription":
-    "此功能会通过 OpenTunnel 中继将主机暴露到互联网。获准设备可以发送会在此机器上执行代码的消息。",
+    "借助免费的 OpenTunnel 中继服务，提供远程使用本机 OpenCode 功能。启动后将需要等待数分钟完成机器注册和收取证书",
   "settings.remote.enableConfirm":
     "启用远程访问？主机将通过互联网中继可访问。获准设备可以发送会在此机器上执行代码的消息。",
   "settings.remote.enable": "启用远程访问",
@@ -1334,6 +1334,16 @@ export const dict = {
   "settings.remote.phase.disabled": "远程访问已关闭",
   "settings.remote.phase.starting": "正在启动远程访问",
   "settings.remote.phase.connecting": "正在连接中继",
+  "settings.remote.stage.registering": "正在注册隧道身份",
+  "settings.remote.stage.waiting-certificate": "正在申请并等待 TLS 证书",
+  "settings.remote.stage.connecting-relay": "正在连接中继",
+  "settings.remote.elapsed": "已耗时：{{duration}}（不是预计完成时间）",
+  "settings.remote.stageElapsed": "当前阶段已耗时：{{duration}}",
+  "settings.remote.elapsedUnavailable": "正在后台连接，本次连接暂无耗时信息。",
+  "settings.remote.initialSetupHint":
+    "首次启用需要向 OpenTunnel 申请隧道身份和证书，可能耗时数分钟；具体取决于网络和证书服务，后续通常会复用已保存的身份。",
+  "settings.remote.backgroundHint":
+    "可以关闭此设置浮窗，连接会在后台继续；重新打开不会重新开始连接。点击“禁用”才会停止。",
   "settings.remote.phase.online": "在线",
   "settings.remote.phase.reconnecting": "正在重新连接",
   "settings.remote.phase.error": "连接错误",

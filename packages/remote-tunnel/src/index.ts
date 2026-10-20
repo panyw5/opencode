@@ -41,6 +41,8 @@ export type RemoteTunnelTransport = {
   dispose(): Promise<void>
 }
 
+export type TunnelSetupStage = "registering" | "waiting-certificate" | "connecting-relay"
+
 type TunnelClient = {
   tunnel: {
     connect(input: {
@@ -58,12 +60,22 @@ type TunnelClient = {
 const PROFILE = "opencode-desktop-remote"
 
 /** Create an SDK client with app-owned storage, never the global OpenTunnel CLI profile. */
-export async function createRemoteTunnelTransport(store: TunnelStore): Promise<RemoteTunnelTransport> {
+export async function createRemoteTunnelTransport(
+  store: TunnelStore,
+  options: { onProgress?: (stage: TunnelSetupStage) => void } = {},
+): Promise<RemoteTunnelTransport> {
   const sdk = await import("@opentunnel/client")
   const snapshot = await store.load()
   const identities = new Map(Object.entries(snapshot.identities))
   const pending = new Map(Object.entries(snapshot.pending))
   let writes = Promise.resolve()
+  let connecting = false
+  let previousStage: TunnelSetupStage | undefined
+  const progress = (stage: TunnelSetupStage) => {
+    if (!connecting || previousStage === stage) return
+    previousStage = stage
+    options.onProgress?.(stage)
+  }
   const persist = () => {
     const next: TunnelStoreSnapshot = {
       version: 1,
@@ -89,11 +101,13 @@ export async function createRemoteTunnelTransport(store: TunnelStore): Promise<R
       })
       pending.delete(profile)
       await persist()
+      progress("connecting-relay")
     },
     loadPending: async (profile: string) => pending.get(profile),
     savePending: async (profile: string, identity: PendingTunnelIdentity) => {
       pending.set(profile, identity)
       await persist()
+      progress("waiting-certificate")
     },
     remove: async (profile: string) => {
       identities.delete(profile)
@@ -112,7 +126,18 @@ export async function createRemoteTunnelTransport(store: TunnelStore): Promise<R
     await client.tunnel.remove({ profile: PROFILE })
   }
   return {
-    connect: (target, signal) => client.tunnel.connect({ profile: PROFILE, routes: { "@": target }, signal }),
+    connect: async (target, signal) => {
+      connecting = true
+      previousStage = undefined
+      try {
+        progress(
+          identities.has(PROFILE) ? "connecting-relay" : pending.has(PROFILE) ? "waiting-certificate" : "registering",
+        )
+        return await client.tunnel.connect({ profile: PROFILE, routes: { "@": target }, signal })
+      } finally {
+        connecting = false
+      }
+    },
     remove,
     dispose: () => client.dispose(),
   }

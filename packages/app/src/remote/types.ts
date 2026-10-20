@@ -12,6 +12,9 @@ export type RemoteAccessStatus = {
   phase: RemoteAccessPhase
   url?: string
   error?: string
+  stage?: "registering" | "waiting-certificate" | "connecting-relay"
+  startedAt?: number
+  stageStartedAt?: number
 }
 
 export type RemoteDevice = {

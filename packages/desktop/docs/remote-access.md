@@ -38,6 +38,14 @@ Run the isolated harness with `--permission --hold` to exercise a real permissio
 
 Model catalogs have a separate 32 MiB encoded and decoded JSON budget; regular configuration responses retain a 2 MiB budget. Oversized responses fail before their body is exposed, and gateway errors remove the upstream length and encoding headers. Diagnostic logs contain route names, byte counts, status and reason codes, not credentials, query values, or response bodies.
 
+## Startup Progress
+
+The settings show elapsed time for the current connection attempt and setup stage. The controller owns these timestamps, so closing or reopening the settings cannot reset them or cancel startup. The settings cleanup removes only its timers and status listener; Disable or application shutdown stops the worker.
+
+First-time setup may take minutes while the external service prepares a tunnel identity and TLS certificate; this is not a fixed two-minute delay or an ETA. Setup stages are observed from app-owned storage transitions: registering an identity, saving a pending certificate request, then saving the usable identity and attaching the relay. Cached identities skip registration. No extra SDK provisioning request is made just to observe progress, and certificate renewal after startup cannot mark a connected tunnel as starting again.
+
+`bun packages/desktop/scripts/remote-progress-cdp.ts` checks the actual settings component with an isolated mock connection: elapsed ticks, certificate hints, close/reopen continuity, and completion while closed. It reuses an existing development Electron on CDP 9222, or starts a separate temporary Electron without a sidecar or public tunnel. The installed app and its remote identities are not changed.
+
 ## Device Activity And Pages
 
 The host settings show pairing time, last activity (to seconds), a short authorization ID, and activity/pairing sort options. Duplicate display names are independent authorizations; sorting does not merge or revoke them.

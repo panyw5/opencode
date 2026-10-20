@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test"
 import QRCode from "qrcode"
 import {
   createPairingOperationController,
+  connectionElapsed,
+  connectionPending,
   deviceActivityAt,
   pairingRemainingSeconds,
   revokeAfterConfirmation,
@@ -20,6 +22,24 @@ const device: RemoteDevice = {
 }
 
 describe("remote access settings behavior", () => {
+  test("formats a host-owned elapsed timer without inventing an ETA or restarting on mount", () => {
+    const status: RemoteAccessStatus = {
+      enabled: true,
+      phase: "connecting",
+      stage: "waiting-certificate",
+      startedAt: 1_000,
+      stageStartedAt: 11_000,
+    }
+    expect(connectionPending(status)).toBe(true)
+    expect(connectionElapsed(status, 124_000)).toBe("02:03")
+    expect(connectionElapsed(status, 124_000, true)).toBe("01:53")
+    expect(connectionElapsed(status, 125_000)).toBe("02:04")
+    expect(connectionElapsed(status, 3_724_000)).toBe("1:02:03")
+    expect(connectionElapsed(status, 0)).toBe("00:00")
+    expect(connectionElapsed({ enabled: true, phase: "connecting" }, 124_000)).toBeUndefined()
+    expect(connectionElapsed({ ...status, phase: "online" }, 124_000)).toBeUndefined()
+    expect(connectionPending({ ...status, enabled: false })).toBe(false)
+  })
   test("sorts same-named devices by actual recent activity or pairing time without mutating input", () => {
     const older = {
       ...device,

@@ -1441,7 +1441,7 @@ export const dict = {
   "settings.remote.title": "Remote Access",
   "settings.remote.description": "Connect to this OpenCode host from a trusted mobile device.",
   "settings.remote.enableDescription":
-    "This exposes the host to the internet through an OpenTunnel relay. Anyone with an approved device can send messages that execute code on this machine.",
+    "Use the free OpenTunnel relay service to access this machine's OpenCode remotely. After enabling, allow a few minutes to register the machine and receive its certificate.",
   "settings.remote.enableConfirm":
     "Enable remote access? This makes the host reachable through an internet relay. Approved devices can send messages that execute code on this machine.",
   "settings.remote.enable": "Enable remote access",
@@ -1484,6 +1484,16 @@ export const dict = {
   "settings.remote.phase.disabled": "Remote access is off",
   "settings.remote.phase.starting": "Starting remote access",
   "settings.remote.phase.connecting": "Connecting to relay",
+  "settings.remote.stage.registering": "Registering tunnel identity",
+  "settings.remote.stage.waiting-certificate": "Requesting and waiting for a TLS certificate",
+  "settings.remote.stage.connecting-relay": "Connecting to relay",
+  "settings.remote.elapsed": "Elapsed: {{duration}} (not an estimated completion time)",
+  "settings.remote.stageElapsed": "Current stage: {{duration}}",
+  "settings.remote.elapsedUnavailable": "Connecting in the background. Elapsed time is unavailable for this attempt.",
+  "settings.remote.initialSetupHint":
+    "First-time setup requests a tunnel identity and certificate from OpenTunnel and can take several minutes. Timing depends on the network and certificate service; saved identities are normally reused later.",
+  "settings.remote.backgroundHint":
+    "You can close this settings window; connecting continues in the background. Reopening it does not restart the connection. Use Disable to stop it.",
   "settings.remote.phase.online": "Online",
   "settings.remote.phase.reconnecting": "Reconnecting",
   "settings.remote.phase.error": "Connection error",

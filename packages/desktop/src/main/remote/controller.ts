@@ -9,7 +9,7 @@ import type { TunnelStoreSnapshot } from "./transport"
 type Persistence = { version: 1; auth: RemoteAuthSnapshot; tunnel: TunnelStoreSnapshot }
 type WorkerMessage =
   | { type: "response"; id: string; ok: boolean; value?: unknown; error?: unknown }
-  | { type: "status"; generation: number; phase: string; url?: string }
+  | { type: "status"; generation: number; phase: string; url?: string; stage?: unknown }
   | { type: "store-write"; id: string; store: "auth" | "tunnel"; value: unknown }
   | { type: "log"; line: string }
 type WorkerProcess = {
@@ -86,7 +86,21 @@ export function createRemoteAccessController(options: {
   }
 
   function emit(next: RemoteAccessStatus) {
-    state = next
+    const now = Date.now()
+    const waiting = ["starting", "connecting", "reconnecting"].includes(next.phase)
+    const wasWaiting = ["starting", "connecting", "reconnecting"].includes(state.phase)
+    state = {
+      ...next,
+      ...(waiting ? { startedAt: wasWaiting ? (state.startedAt ?? now) : now } : {}),
+      ...(waiting && next.stage
+        ? { stageStartedAt: next.stage === state.stage ? (state.stageStartedAt ?? now) : now }
+        : {}),
+    }
+    if (!waiting) {
+      delete state.stage
+      delete state.startedAt
+      delete state.stageStartedAt
+    }
     for (const listener of listeners) listener({ ...state })
   }
 
@@ -157,10 +171,12 @@ export function createRemoteAccessController(options: {
         if (message.generation !== workerGeneration) return
         const phase = normalizePhase(message.phase)
         const url = validPublicUrl(message.url) ? message.url : undefined
+        const stage = normalizeStage(message.stage)
         emit({
           enabled: enabled(),
           phase,
           ...(url ? { url } : {}),
+          ...(phase === "connecting" && stage ? { stage } : {}),
           ...(phase === "error" ? { error: "Remote access connection stopped." } : {}),
         })
       }
@@ -535,6 +551,12 @@ function normalizePhase(phase: string): RemoteAccessStatus["phase"] {
   return ["disabled", "starting", "connecting", "online", "reconnecting", "error", "stopping"].includes(phase)
     ? (phase as RemoteAccessStatus["phase"])
     : "error"
+}
+
+function normalizeStage(stage: unknown): RemoteAccessStatus["stage"] {
+  return typeof stage === "string" && ["registering", "waiting-certificate", "connecting-relay"].includes(stage)
+    ? (stage as RemoteAccessStatus["stage"])
+    : undefined
 }
 
 function isAuth(value: unknown): value is RemoteAuthSnapshot {

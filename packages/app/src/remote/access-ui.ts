@@ -1,5 +1,19 @@
 import type { RemoteAccessStatus, RemoteDevice } from "./types"
 
+export function connectionPending(status: RemoteAccessStatus) {
+  return status.enabled && ["starting", "connecting", "reconnecting"].includes(status.phase)
+}
+
+export function connectionElapsed(status: RemoteAccessStatus, now: number, stage = false) {
+  const started = stage ? status.stageStartedAt : status.startedAt
+  if (!connectionPending(status) || typeof started !== "number" || !Number.isFinite(started)) return undefined
+  const seconds = Math.max(0, Math.floor((now - started) / 1000))
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor(seconds / 60) % 60
+  const rest = String(seconds % 60).padStart(2, "0")
+  return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${rest}` : `${String(minutes).padStart(2, "0")}:${rest}`
+}
+
 export function deviceActivityAt(device: RemoteDevice) {
   return Math.max(device.lastSeenAt, device.connection?.lastActivityAt ?? 0)
 }

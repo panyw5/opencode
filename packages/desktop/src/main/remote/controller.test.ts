@@ -94,6 +94,34 @@ class FakeWorker {
   }
 }
 
+test("remote startup progress survives removing a settings subscriber and resets only after connection", async () => {
+  const f = fixture()
+  let updates = 0
+  const unsubscribe = f.ctrl.subscribe(() => updates++)
+  await f.ctrl.enable()
+  await Bun.sleep(5)
+  const generation = f.worker.pendingStart.input.generation
+  const startedAt = f.ctrl.status().startedAt
+  expect(startedAt).toBeNumber()
+  f.worker.emit("message", { type: "status", generation, phase: "connecting", stage: "waiting-certificate" })
+  const stageStartedAt = f.ctrl.status().stageStartedAt
+  expect(f.ctrl.status()).toMatchObject({ stage: "waiting-certificate", startedAt })
+  unsubscribe()
+  const before = updates
+  f.worker.emit("message", { type: "status", generation, phase: "connecting", stage: "waiting-certificate" })
+  expect(updates).toBe(before)
+  expect(f.worker.killCount).toBe(0)
+  expect(f.ctrl.status()).toMatchObject({ stage: "waiting-certificate", startedAt, stageStartedAt })
+  f.worker.emit("message", { type: "status", generation: generation - 1, phase: "connecting", stage: "registering" })
+  expect(f.ctrl.status().stage).toBe("waiting-certificate")
+  f.worker.completeStart()
+  await Bun.sleep(5)
+  expect(f.ctrl.status().phase).toBe("online")
+  expect(f.ctrl.status().startedAt).toBeUndefined()
+  expect(f.ctrl.status().stage).toBeUndefined()
+  await f.ctrl.close()
+})
+
 function fixture(
   initial?: any,
   persistWrite?: (value: any) => Promise<void>,
