@@ -27,6 +27,8 @@ type Props = {
   headers: Array<{ key: string; value: string }>
   existingModelIDs: Set<string>
   onAdd: (id: string, name: string) => void
+  searchQuery: string
+  onSearchQueryChange: (value: string) => void
   /** Optional heading shown on the same row, left of the fetch button */
   title?: string
 }
@@ -36,7 +38,6 @@ export function FetchProviderModels(props: Props) {
   const [fetching, setFetching] = createSignal(false)
   const [models, setModels] = createSignal<FetchedModel[]>([])
   const [error, setError] = createSignal<string>()
-  const [searchQuery, setSearchQuery] = createSignal("")
 
   // Reset state when provider (baseURL) changes
   createEffect(() => {
@@ -44,17 +45,23 @@ export function FetchProviderModels(props: Props) {
     props.npm
     setModels([])
     setError(undefined)
-    setSearchQuery("")
+    props.onSearchQueryChange("")
   })
 
   // Filter models based on search query
   const filteredModels = createMemo(() => {
-    const query = searchQuery().toLowerCase().trim()
-    if (!query) return models()
-    return models().filter((model) => {
-      const haystack = `${model.id} ${model.name}`.toLowerCase()
-      return haystack.includes(query)
-    })
+    const query = props.searchQuery.toLowerCase().trim()
+    return models()
+      .filter((model) => {
+        if (!query) return true
+        const haystack = `${model.id} ${model.name}`.toLowerCase()
+        return haystack.includes(query)
+      })
+      .sort(
+        (a, b) =>
+          a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) ||
+          a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: "base" }),
+      )
   })
 
   const canFetch = () => !!props.baseURL.trim() && !!props.apiKey.trim()
@@ -127,9 +134,9 @@ export function FetchProviderModels(props: Props) {
           <span class="text-12-regular text-text-danger-base">{error()}</span>
         </Show>
       </div>
+      <TextField placeholder="搜索模型..." value={props.searchQuery} onChange={props.onSearchQueryChange} icon="search" />
       <Show when={models().length > 0}>
         <div class="flex flex-col gap-2">
-          <TextField placeholder="搜索模型..." value={searchQuery()} onChange={setSearchQuery} icon="search" />
           <div
             class="flex flex-wrap gap-1.5 rounded-lg border border-border-base p-2"
             style="background: var(--yuzu-dark-alpha-3);"

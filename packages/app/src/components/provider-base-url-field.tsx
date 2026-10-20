@@ -38,7 +38,6 @@ export function ProviderBaseURLField(
         {...rest}
         value={local.value}
         onChange={change}
-        description={usesProviderV1(local.npm) ? language.t("provider.custom.field.baseURL.autoV1") : rest.description}
         suffix={
           <Show when={usesProviderV1(local.npm)}>
             <span

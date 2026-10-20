@@ -6,7 +6,7 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { useMutation } from "@tanstack/solid-query"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
-import { batch, For, Show } from "solid-js"
+import { batch, createMemo, createSignal, For, Show } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { FetchProviderModels } from "@/components/fetch-provider-models"
 import { Link } from "@/components/link"
@@ -44,6 +44,16 @@ export function DialogCustomProvider(props: Props) {
     models: [modelRow()],
     headers: [headerRow()],
     err: {},
+  })
+  const [modelSearchQuery, setModelSearchQuery] = createSignal("")
+  const filteredModels = createMemo(() => {
+    const query = modelSearchQuery().toLowerCase().trim()
+    return form.models
+      .map((model, index) => ({ model, index }))
+      .filter(({ model }) => {
+        if (!query) return true
+        return `${model.id} ${model.name}`.toLowerCase().includes(query)
+      })
   })
 
   const goBack = () => {
@@ -271,8 +281,11 @@ export function DialogCustomProvider(props: Props) {
 
           <div class="flex flex-col gap-3">
             <label class="text-12-medium text-text-weak">{language.t("provider.custom.models.label")}</label>
-            <For each={form.models}>
-              {(m, i) => (
+            <For each={filteredModels()}>
+              {(entry) => {
+                const m = entry.model
+                const modelIndex = entry.index
+                return (
                 <div
                   class="flex flex-col gap-2 rounded-xl border border-border-weak-base bg-background-base/60 p-2"
                   data-row={m.row}
@@ -283,7 +296,7 @@ export function DialogCustomProvider(props: Props) {
                       icon={m.expanded ? "chevron-down" : "chevron-right"}
                       variant="ghost"
                       class="mt-1.5"
-                      onClick={() => toggleModelConfig(i())}
+                      onClick={() => toggleModelConfig(modelIndex)}
                       aria-label={
                         m.expanded
                           ? language.t("provider.custom.models.config.collapse")
@@ -296,7 +309,7 @@ export function DialogCustomProvider(props: Props) {
                         hideLabel
                         placeholder={language.t("provider.custom.models.id.placeholder")}
                         value={m.id}
-                        onChange={(v) => setModel(i(), "id", v)}
+                        onChange={(v) => setModel(modelIndex, "id", v)}
                         validationState={m.err.id ? "invalid" : undefined}
                         error={m.err.id}
                       />
@@ -307,7 +320,7 @@ export function DialogCustomProvider(props: Props) {
                         hideLabel
                         placeholder={language.t("provider.custom.models.name.placeholder")}
                         value={m.name}
-                        onChange={(v) => setModel(i(), "name", v)}
+                        onChange={(v) => setModel(modelIndex, "name", v)}
                         validationState={m.err.name ? "invalid" : undefined}
                         error={m.err.name}
                       />
@@ -317,7 +330,7 @@ export function DialogCustomProvider(props: Props) {
                       icon="trash"
                       variant="ghost"
                       class="mt-1.5"
-                      onClick={() => removeModel(i())}
+                      onClick={() => removeModel(modelIndex)}
                       disabled={form.models.length <= 1}
                       aria-label={language.t("provider.custom.models.remove")}
                     />
@@ -326,11 +339,12 @@ export function DialogCustomProvider(props: Props) {
                     <ModelConfigFields
                       providerID={form.providerID}
                       model={m}
-                      onChange={(configIndex, value) => setModelConfig(i(), configIndex, value)}
+                      onChange={(configIndex, value) => setModelConfig(modelIndex, configIndex, value)}
                     />
                   </Show>
                 </div>
-              )}
+                )
+              }}
             </For>
             <Button type="button" size="small" variant="ghost" icon="plus-small" onClick={addModel} class="self-start">
               {language.t("provider.custom.models.add")}
@@ -342,6 +356,8 @@ export function DialogCustomProvider(props: Props) {
               headers={form.headers}
               existingModelIDs={new Set(form.models.map((m) => m.id.trim()).filter(Boolean))}
               onAdd={addFetchedModel}
+              searchQuery={modelSearchQuery()}
+              onSearchQueryChange={setModelSearchQuery}
             />
           </div>
 

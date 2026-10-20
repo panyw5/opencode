@@ -3375,8 +3375,18 @@ function CustomEditor(props: {
 }) {
   const language = useLanguage()
   const [confirmDelete, setConfirmDelete] = createSignal(false)
+  const [modelSearchQuery, setModelSearchQuery] = createSignal("")
   const npmOptions = createMemo(() => customProviderNpmPackages(props.form.npm))
   const selectedNpm = createMemo(() => props.form.npm?.trim() || OPENAI_COMPATIBLE)
+  const filteredModels = createMemo(() => {
+    const query = modelSearchQuery().toLowerCase().trim()
+    return props.form.models
+      .map((model, index) => ({ model, index }))
+      .filter(({ model }) => {
+        if (!query) return true
+        return `${model.id} ${model.name}`.toLowerCase().includes(query)
+      })
+  })
 
   createEffect(
     on(
@@ -3558,6 +3568,8 @@ function CustomEditor(props: {
                   headers={props.form.headers}
                   existingModelIDs={new Set(props.form.models.map((m) => m.id.trim()).filter(Boolean))}
                   onAdd={props.onAddFetchedModel}
+                  searchQuery={modelSearchQuery()}
+                  onSearchQueryChange={setModelSearchQuery}
                 />
               </div>
               <div class="config-custom-model-list mb-3 flex flex-col gap-3">
@@ -3581,67 +3593,71 @@ function CustomEditor(props: {
                   </div>
                   <div aria-hidden="true" />
                 </div>
-                <For each={props.form.models}>
-                  {(item, idx) => (
-                    <div class="rounded-xl border border-border-weak-base bg-surface-base/60 p-2" data-row={item.row}>
-                      <div class="config-custom-model-summary grid gap-2 md:grid-cols-[24px_minmax(0,1fr)_5.5rem_minmax(0,1fr)_24px]">
-                        <IconButton
-                          type="button"
-                          icon={item.expanded ? "chevron-down" : "chevron-right"}
-                          variant="ghost"
-                          class="mt-1.5"
-                          onClick={() => props.onToggleModelConfig(idx())}
-                          aria-label={
-                            item.expanded
-                              ? language.t("provider.custom.models.config.collapse")
-                              : language.t("provider.custom.models.config.expand")
-                          }
-                        />
-                        <TextField
-                          label={language.t("config.custom.models.id")}
-                          hideLabel
-                          placeholder="模型 ID (如: gpt-4o, claude-3-opus)"
-                          value={item.id}
-                          onChange={(value) => props.onModel(idx(), "id", value)}
-                          validationState={item.err.id ? "invalid" : undefined}
-                          error={item.err.id}
-                        />
-                        <TestProviderModelButton
-                          class="flex h-8 w-full items-center justify-center"
-                          baseURL={resolveProviderBaseURL(props.form.baseURL, props.form.npm)}
-                          apiKey={props.form.apiKey}
-                          modelId={item.id}
-                          npm={props.form.npm}
-                          headers={props.form.headers}
-                        />
-                        <TextField
-                          label={language.t("config.custom.models.name")}
-                          hideLabel
-                          placeholder="显示名称 (如: GPT-4o, Claude 3 Opus)"
-                          value={item.name}
-                          onChange={(value) => props.onModel(idx(), "name", value)}
-                          validationState={item.err.name ? "invalid" : undefined}
-                          error={item.err.name}
-                        />
-                        <IconButton
-                          type="button"
-                          icon="trash"
-                          variant="ghost"
-                          class="mt-1.5"
-                          onClick={() => props.onRemoveModel(idx())}
-                          disabled={props.form.models.length <= 1}
-                          aria-label={language.t("config.custom.models.remove")}
-                        />
+                <For each={filteredModels()}>
+                  {(entry) => {
+                    const item = entry.model
+                    const modelIndex = entry.index
+                    return (
+                      <div class="rounded-xl border border-border-weak-base bg-surface-base/60 p-2" data-row={item.row}>
+                        <div class="config-custom-model-summary grid gap-2 md:grid-cols-[24px_minmax(0,1fr)_5.5rem_minmax(0,1fr)_24px]">
+                          <IconButton
+                            type="button"
+                            icon={item.expanded ? "chevron-down" : "chevron-right"}
+                            variant="ghost"
+                            class="mt-1.5"
+                            onClick={() => props.onToggleModelConfig(modelIndex)}
+                            aria-label={
+                              item.expanded
+                                ? language.t("provider.custom.models.config.collapse")
+                                : language.t("provider.custom.models.config.expand")
+                            }
+                          />
+                          <TextField
+                            label={language.t("config.custom.models.id")}
+                            hideLabel
+                            placeholder="模型 ID (如: gpt-4o, claude-3-opus)"
+                            value={item.id}
+                            onChange={(value) => props.onModel(modelIndex, "id", value)}
+                            validationState={item.err.id ? "invalid" : undefined}
+                            error={item.err.id}
+                          />
+                          <TestProviderModelButton
+                            class="flex h-8 w-full self-center items-center justify-center"
+                            baseURL={resolveProviderBaseURL(props.form.baseURL, props.form.npm)}
+                            apiKey={props.form.apiKey}
+                            modelId={item.id}
+                            npm={props.form.npm}
+                            headers={props.form.headers}
+                          />
+                          <TextField
+                            label={language.t("config.custom.models.name")}
+                            hideLabel
+                            placeholder="显示名称 (如: GPT-4o, Claude 3 Opus)"
+                            value={item.name}
+                            onChange={(value) => props.onModel(modelIndex, "name", value)}
+                            validationState={item.err.name ? "invalid" : undefined}
+                            error={item.err.name}
+                          />
+                          <IconButton
+                            type="button"
+                            icon="trash"
+                            variant="ghost"
+                            class="mt-1.5"
+                            onClick={() => props.onRemoveModel(modelIndex)}
+                            disabled={props.form.models.length <= 1}
+                            aria-label={language.t("config.custom.models.remove")}
+                          />
+                        </div>
+                        <Show when={item.expanded}>
+                          <ModelConfigFields
+                            providerID={props.form.providerID}
+                            model={item}
+                            onChange={(configIndex, value) => props.onModelConfig(modelIndex, configIndex, value)}
+                          />
+                        </Show>
                       </div>
-                      <Show when={item.expanded}>
-                        <ModelConfigFields
-                          providerID={props.form.providerID}
-                          model={item}
-                          onChange={(configIndex, value) => props.onModelConfig(idx(), configIndex, value)}
-                        />
-                      </Show>
-                    </div>
-                  )}
+                    )
+                  }}
                 </For>
               </div>
               <div>
