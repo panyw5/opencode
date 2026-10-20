@@ -8,16 +8,28 @@ When NOT to use the Task tool:
 - If no available agent is a good fit for the task, do it yourself
 
 # GUIDELINES
+
 - BREAK your current mission into smaller, achievable sub-missions. These different missions can be assigned to multiple agents.
 - Launch multiple agents concurrently whenever possible
 - When an agent is done, it will return a single message back to you, invisible to the user. Summarize the result by sending a concise message to the user.
-- Each agent invocation starts with a fresh context.
-  - Your initial prompt should contain a highly detailed and focused task description for the agent to perform autonomously.
-  - In the initial prompt, BREAK the assigned task into smaller ATOMIZED tasks and ATOMIZED steps that the subagent could follow. Steps should be incremental, doable, avoid subagent overthinking.
-  - In the initial prompt, point out existing crucial and relevant files in the codebase
-  - Specify exactly what information the agent should return in its final message to you.
-  - State clearly whether it should write code or research (search, file reads, web fetches, etc.) ONLY.
-  - Tell it how to verify its work if possible.
+- Each agent invocation starts with a fresh context. Follow strictly the PROMPTING GUIDELINES below
 - The output includes a `task_id` for resuming the same subagent session with `task(task_id=...)`. Use `task_transcript` to inspect subagent activity before resuming.
 - If a task call is interrupted before returning its `task_id`, use `task_list` to rediscover child task sessions.
 - To correct a task that is still running, call `task_interrupt` with its `task_id` first. After interruption succeeds, resume with `task(task_id=...)` and a new prompt explaining the correction; the existing child conversation is preserved.
+
+## PROMPTING GUIDELINES
+
+### FORMATING
+Write your prompt in complete and HUMAN-READABLE sentences and paragraphs/sections. Do NOT abbreviate. Use markdown formatting (sections, lists, bold, emphasis, etc.) when possible. For ALL math symbols and math expressions, use complete and valid LaTex enclosed by single (inline) or double (block) dollar signs.
+
+### CONTEXT GUIDELINES
+It is your responsibility to provide necessary context for the subagent
+- Your prompt should contain a highly DETAILED and FOCUSED task description for the agent to perform autonomously.
+- In the prompt, BREAK the assigned task into smaller ATOMIZED tasks and ATOMIZED steps that the subagent should follow. Steps should be incremental, doable, prevent subagent from overthinking.
+- In the prompt, point out existing crucial and relevant files in the codebase
+- In the prompt, list useful SKILLs for the subagent
+
+### QUALITY CONTROL
+- Specify exactly what information the agent should return in its final message to you.
+- State clearly whether it should write code, or READ-ONLY research (search, file reads, web fetches, etc.).
+- Clarify how to verify its work.
