@@ -300,6 +300,63 @@ test("closing a background session tab does not change the active route", async 
   })
 })
 
+test("child session list stays open for consecutive closes", async ({ page, sdk, gotoSession }) => {
+  await page.setViewportSize({ width: 1400, height: 800 })
+  await withSession(sdk, `e2e batch close parent ${Date.now()}`, async (parent) => {
+    const children: string[] = []
+    const tab = (id: string) => page.locator(`[data-component="session-tab"][data-session-id="${id}"]`)
+    const list = page.locator('[data-component="session-tab-children"]')
+    try {
+      await gotoSession(parent.id)
+      for (let index = 0; index < 4; index++) {
+        const child = await sdk.session
+          .create({ parentID: parent.id, title: `e2e batch close child ${index}` })
+          .then((result) => result.data)
+        if (!child) throw new Error("Child session create did not return a session")
+        children.push(child.id)
+        await gotoSession(child.id)
+      }
+      await gotoSession(children[1])
+      await page.clock.install()
+      await tab(parent.id).hover()
+      await expect(list).toBeVisible()
+
+      for (const [index, id] of children.entries()) {
+        if (index === 2) {
+          await tab(id).click({ button: "right" })
+          await page.locator('[data-component="context-menu-content"] [data-action="session-tab-close"]').click()
+        } else {
+          await tab(id).locator('[data-action="session-tab-close"]').click()
+        }
+        await expect(tab(id)).toHaveCount(0)
+        await page.clock.runFor(1000)
+        if (index === children.length - 1) {
+          await expect(list).toHaveCount(0)
+          continue
+        }
+        await expect(list).toBeVisible()
+        await expect(list.locator('[data-component="session-tab"]')).toHaveCount(children.length - index - 1)
+        if (index === 1) await expect(tab(parent.id)).toHaveAttribute("data-active", "true")
+        if (index === 0) {
+          await page.locator(promptSelector).click()
+          await expect(list).toHaveCount(0)
+          await tab(parent.id).hover()
+          await expect(list).toBeVisible()
+        }
+        if (index === 2) {
+          await page.keyboard.press("Escape")
+          await expect(list).toHaveCount(0)
+          await page.mouse.move(0, 0)
+          await tab(parent.id).hover()
+          await expect(list).toBeVisible()
+        }
+      }
+    } finally {
+      for (const id of children) await cleanupSession({ sdk, sessionID: id })
+    }
+  })
+})
+
 test("session tab can reveal its project sessions in the sidebar", async ({ page, sdk, gotoSession, slug }) => {
   await page.setViewportSize({ width: 1400, height: 800 })
 

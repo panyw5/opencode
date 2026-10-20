@@ -678,7 +678,6 @@ const sessionTabPermissionLayoutEvent = "opencode:session-tab-permission-layout"
 // Stable fallbacks for the transient window where a tab group is missing while
 // its tab is being removed from the bar. Placeholder values only; the item is
 // disposed by the end of the same flush.
-const NO_SESSION_TAB_CHILDREN: SessionTabGroup<SessionBarTab>["children"] = []
 const NO_SESSION_TABS: SessionBarTab[] = []
 const MISSING_SESSION_TAB: SessionBarTab = { directory: "", id: "" }
 
@@ -693,7 +692,7 @@ function SessionTabGroup(props: {
 }) {
   const autoRevealDuration = 500
   const sortable = createSortable(props.tabKey)
-  const [state, setState] = createStore({ open: false })
+  const [state, setState] = createStore({ open: false, keepOpen: false })
   let closeTimer: number | undefined
   let autoCloseTimer: number | undefined
   let revealFrame: number | undefined
@@ -705,6 +704,10 @@ function SessionTabGroup(props: {
   // component's effects/getters may still run in between. Render through it
   // instead of throwing and crashing the renderer.
   const group = () => props.group()
+  const childrenByKey = createMemo(
+    () => new Map(group()?.children.map((item) => [sessionBarKey(item.tab), item] as const) ?? []),
+  )
+  const childKeys = createMemo(() => [...childrenByKey().keys()])
 
   createEffect(() => {
     const value = group()
@@ -713,7 +716,7 @@ function SessionTabGroup(props: {
       return
     }
     if (value.children.length > 0) return
-    setState("open", false)
+    setState({ open: false, keepOpen: false })
   })
 
   const cancelClose = () => {
@@ -737,10 +740,29 @@ function SessionTabGroup(props: {
   const close = () => {
     cancelClose()
     cancelAutoClose()
+    if (state.keepOpen) {
+      console.debug(`[session-bar] child list retained for batch close parent=${group()?.tab.id ?? "none"}`)
+      return
+    }
+    console.debug(`[session-bar] child list close scheduled parent=${group()?.tab.id ?? "none"}`)
     closeTimer = window.setTimeout(() => {
       closeTimer = undefined
       setState("open", false)
+      console.debug(`[session-bar] child list hidden parent=${group()?.tab.id ?? "none"}`)
     }, 150)
+  }
+  const closeChild = (tab: SessionBarTab, descendants = false) => {
+    cancelClose()
+    cancelAutoClose()
+    // Batch closing ends on outside click, Escape, selection, or an empty list.
+    setState("keepOpen", true)
+    // Keep focus inside the persistent list when its focused row is removed.
+    childrenViewport?.focus({ preventScroll: true })
+    console.debug(
+      `[session-bar] child list close tab=${tab.id} parent=${group()?.tab.id ?? "none"} descendants=${descendants} remainingOpen=${state.open}`,
+    )
+    if (descendants) props.onCloseDescendants(tab)
+    else props.onClose(tab)
   }
   const activeChildID = createMemo(() => group()?.children.find((item) => props.active(item.tab))?.tab.id)
 
@@ -801,8 +823,9 @@ function SessionTabGroup(props: {
         onMenuOpenChange={(open) => {
           parentContextMenuOpen = open
           if (open) {
+            cancelClose()
             cancelAutoClose()
-            setState("open", false)
+            setState({ open: false, keepOpen: false })
           }
         }}
         onOpen={() => {
@@ -832,7 +855,10 @@ function SessionTabGroup(props: {
       <Show when={group()?.children.length} fallback={trigger()}>
         <Popover
           open={state.open}
-          onOpenChange={(open) => setState("open", open)}
+          onOpenChange={(open) => {
+            console.debug(`[session-bar] child list toggle parent=${group()?.tab.id ?? "none"} open=${open}`)
+            setState({ open, keepOpen: open && state.keepOpen })
+          }}
           placement="bottom-start"
           class="session-tab-children-popover"
           trigger={trigger()}
@@ -841,39 +867,46 @@ function SessionTabGroup(props: {
           <div
             ref={childrenViewport}
             data-component="session-tab-children"
+            tabIndex={-1}
             class="session-child-agent-scrollbar flex max-h-80 min-w-56 flex-col gap-1.5 overflow-y-auto"
             onMouseEnter={open}
             onMouseLeave={close}
             onFocusIn={open}
             onFocusOut={close}
           >
-            <For each={group()?.children ?? NO_SESSION_TAB_CHILDREN}>
-              {(item) => (
-                <div class="flex min-w-0" style={{ "padding-left": `${(item.depth - 1) * 12}px` }}>
-                  <SessionTab
-                    tab={item.tab}
-                    active={props.active(item.tab)}
-                    nested
-                    hasOpenDescendants={props.hasOpenDescendants(item.tab)}
-                    onMenuOpenChange={(menuOpen) => {
-                      if (menuOpen) {
-                        cancelClose()
-                        cancelAutoClose()
-                        setState("open", true)
-                        return
-                      }
-                      close()
-                    }}
-                    onOpen={() => {
-                      if (!props.active(item.tab)) skipAutoRevealID = item.tab.id
-                      setState("open", false)
-                      props.onOpen(item.tab)
-                    }}
-                    onClose={() => props.onClose(item.tab)}
-                    onCloseDescendants={() => props.onCloseDescendants(item.tab)}
-                  />
-                </div>
-              )}
+            <For each={childKeys()}>
+              {(key) => {
+                // Grouping creates new descriptors on every tab update. Key by session
+                // identity so closing one row does not remount all its siblings.
+                const item = () => childrenByKey().get(key)
+                const tab = () => item()?.tab ?? MISSING_SESSION_TAB
+                return (
+                  <div class="flex min-w-0" style={{ "padding-left": `${((item()?.depth ?? 1) - 1) * 12}px` }}>
+                    <SessionTab
+                      tab={tab()}
+                      active={props.active(tab())}
+                      nested
+                      hasOpenDescendants={props.hasOpenDescendants(tab())}
+                      onMenuOpenChange={(menuOpen) => {
+                        if (menuOpen) {
+                          cancelClose()
+                          cancelAutoClose()
+                          setState("open", true)
+                          return
+                        }
+                        close()
+                      }}
+                      onOpen={() => {
+                        if (!props.active(tab())) skipAutoRevealID = tab().id
+                        setState({ open: false, keepOpen: false })
+                        props.onOpen(tab())
+                      }}
+                      onClose={() => closeChild(tab())}
+                      onCloseDescendants={() => closeChild(tab(), true)}
+                    />
+                  </div>
+                )
+              }}
             </For>
           </div>
         </Popover>
