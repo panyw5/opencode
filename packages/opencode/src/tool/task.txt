@@ -1,11 +1,11 @@
 # PURPOSE
 Launch a new agent to handle complex, multistep, long-horizon tasks autonomously.
 
-When using the Task tool, you must specify a subagent_type parameter to select which agent type to use.
+When using the Task tool, you must specify a `subagent_type` parameter to select which agent type to use.
 
 When NOT to use the Task tool:
 - If your task is SIMPLE and can be completed by calling the provided TOOLS, like `Read`, `Glob`, `Websearch`
-- If no available agent is a good fit for the task, do it yourself
+- If no available agent is a good fit for the task, do it YOURSELF
 
 # GUIDELINES
 
@@ -18,16 +18,17 @@ When NOT to use the Task tool:
 - To correct a task that is still running, call `task_interrupt` with its `task_id` first. After interruption succeeds, resume with `task(task_id=...)` and a new prompt explaining the correction; the existing child conversation is preserved.
 
 ## PROMPTING GUIDELINES
-
-### FORMATING
-Write your prompt in complete and HUMAN-READABLE sentences and paragraphs/sections. Do NOT abbreviate. Use markdown formatting (sections, lists, bold, emphasis, etc.) when possible. For ALL math symbols and math expressions, use complete and valid LaTex enclosed by single (inline) or double (block) dollar signs.
-
-### CONTEXT GUIDELINES
-It is your responsibility to provide necessary context for the subagent
-- Your prompt should contain a highly DETAILED and FOCUSED task description for the agent to perform autonomously.
+It is your responsibility to provide necessary context for the subagent. Follow STRICTLY `PROMPT FORMATING` for formatting.
+- Your prompt should contain a highly DETAILED and FOCUSED task description for the subagent to perform autonomously.
 - In the prompt, BREAK the assigned task into smaller ATOMIZED tasks and ATOMIZED steps that the subagent should follow. Steps should be incremental, doable, prevent subagent from overthinking.
 - In the prompt, point out existing crucial and relevant files in the codebase
 - In the prompt, list useful SKILLs for the subagent
+
+### PROMPT FORMATING [CRITICAL]
+- Write your prompt in complete and HUMAN-READABLE sentences and paragraphs/sections.
+- Do NOT abbreviate or compress words and sentences.
+- ALWAYS use markdown formatting (sections, lists, bold, emphasis, etc.).
+- For ALL math symbols and math expressions, use complete and valid LaTex enclosed by single (inline) or double (block) dollar signs.
 
 ### QUALITY CONTROL
 - Specify exactly what information the agent should return in its final message to you.
