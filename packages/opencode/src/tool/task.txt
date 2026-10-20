@@ -30,6 +30,18 @@ It is your responsibility to provide necessary context for the subagent. Follow 
 - ALWAYS use markdown formatting (sections, lists, bold, emphasis, etc.).
 - For ALL math symbols and math expressions, use complete and valid LaTex enclosed by single (inline) or double (block) dollar signs.
 
+Prompt template (use OTHER languages following user's preference)
+```markdown
+# TASK
+
+# BACKGROUND AND REFERENCES
+
+# STEPS
+
+# EXPECTED OUTPUT
+
+```
+
 ### QUALITY CONTROL
 - Specify exactly what information the agent should return in its final message to you.
 - State clearly whether it should write code, or READ-ONLY research (search, file reads, web fetches, etc.).
