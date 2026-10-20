@@ -66,7 +66,12 @@ function openDisplayMath(text: string) {
 
 function heal(text: string) {
   if (openDisplayMath(text)) return text
-  const healed = remend(text, { linkMode: "text-only" })
+  // TeX comparisons such as \sum_{i<j} are not unfinished HTML tags.
+  // Removing them truncates every subsequent paragraph until the next open formula.
+  const healed = remend(text, { linkMode: "text-only", htmlTags: false })
+  if (healed.length < text.length && /\$\$|\\\[/.test(text)) {
+    console.debug(`[markdown-stream] healed shorter source=${text.length} result=${healed.length}`)
+  }
   if (!healed.startsWith(text)) return healed
   const suffix = healed.slice(text.length)
   if (!suffix.endsWith("$$")) return healed

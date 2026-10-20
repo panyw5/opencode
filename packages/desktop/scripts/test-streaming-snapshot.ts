@@ -8,7 +8,7 @@ const directory = await realpath(await mkdtemp(join(tmpdir(), "opencode-streamin
 const blocks = Array.from(
   { length: 16 },
   (_, i) =>
-    `## Section ${i + 1}\n\nSNAPSHOT_${i}_START **bold text** and $x^2$.\n\n- item one\n- item two\n\n\`\`\`ts\nconst value${i} = ${i}\n\`\`\`\n\nSNAPSHOT_${i}_END\n\n`,
+    `## Section ${i + 1}\n\nSNAPSHOT_${i}_START **bold text** and $x^2$.\n\n$$\nB_0=\\sum_{i<j}R_{ij}F_iF_j\n$$\n\n- item one\n- item two\n\n\`\`\`ts\nconst value${i} = ${i}\n\`\`\`\n\nSNAPSHOT_${i}_END\n\n`,
 )
 const expected = blocks.join("")
 let sent = ""
@@ -133,11 +133,12 @@ try {
       while (!sent && Date.now() < startDeadline) await Bun.sleep(100)
       assert.ok(sent, "sidecar did not start the controlled model stream; inspect backend logs")
       await navigate(route(session.id))
-      const deadline = Date.now() + 45000
+      const deadline = Date.now() + 60000
       let snapshots = 0
       let switched = false
       let reloaded = false
       let previous = ""
+      let renderedSections = 0
       while (Date.now() < deadline) {
         const messages = await api<
           Array<{ info: { role: string; time: { completed?: number } }; parts: Array<{ type: string; text?: string }> }>
@@ -182,12 +183,14 @@ try {
             headings: number
             bold: number
             code: number
+            math: number
             pages: string[]
           }>(`(() => {
             const page = document.querySelector('[data-component="session-page"][data-session-id="${session.id}"]');
             const root = page?.querySelector('[data-component="text-part"]');
             return { text: root?.textContent || "", headings: root?.querySelectorAll("h2").length || 0,
               bold: root?.querySelectorAll("strong").length || 0, code: root?.querySelectorAll("pre").length || 0,
+              math: root?.querySelectorAll(".katex-display").length || 0,
               pages: [...document.querySelectorAll('[data-component="session-page"]')].map(p=>p.dataset.sessionId) };
           })()`)
           assert.ok(
@@ -196,6 +199,12 @@ try {
           )
           assert.ok(dom.text.includes("SNAPSHOT_0_END"), "reopened stream lost its first completed section")
           assert.ok(dom.headings && dom.bold && dom.code, "reopened stream lost Markdown structure")
+          assert.ok(dom.math, "reopened stream lost its completed comparison formula")
+          for (let i = 0; i < renderedSections; i++) {
+            assert.ok(dom.text.includes(`SNAPSHOT_${i}_START`), `lost completed section ${i} start`)
+            assert.ok(dom.text.includes(`SNAPSHOT_${i}_END`), `lost completed section ${i} end`)
+          }
+          while (dom.text.includes(`SNAPSHOT_${renderedSections}_END`)) renderedSections++
         }
         if (assistant?.info.time.completed) {
           assert.equal(text, expected)

@@ -25,6 +25,22 @@ describe("markdown stream", () => {
     expect(fenced[0]?.src).not.toContain("$$$$")
   })
 
+  test("never truncates completed display math at a less-than comparison", () => {
+    const text = "## Outline\n\n$$\nB_0=\\sum_{i<j}R_{ij}F_iF_j\n$$\n\nAFTER_FORMULA\n\n## Proof\n\nFINAL_MARKER"
+    for (let length = 1; length <= text.length; length++) {
+      const source = text.slice(0, length)
+      const result = stream(source, true).map((block) => block.src).join("")
+      expect(result).toStartWith(source.trimEnd())
+    }
+  })
+
+  test("preserves comparison formulas while still completing trailing emphasis", () => {
+    for (const formula of ["$$\\sum_{i<j}a_{ij}$$", "\\[x<y\\]", "$i<j$"]) {
+      const source = `${formula}\n\nAFTER_FORMULA **bold`
+      expect(stream(source, true)[0]?.src).toBe(`${source}**`)
+    }
+  })
+
   test("keeps incomplete links non-clickable until they finish", () => {
     expect(stream("see [docs](https://example.com/gu", true)).toEqual([
       { raw: "see [docs](https://example.com/gu", src: "see docs", mode: "live" },
