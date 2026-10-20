@@ -87,6 +87,7 @@ const lucideByName: Record<string, string> = {
   check: "check",
   photo: "image",
   share: "share",
+  wifi: "wifi",
   shield: "shield",
   download: "download",
   "shopping-bag": "shopping-bag",

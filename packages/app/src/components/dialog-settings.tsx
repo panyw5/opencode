@@ -98,7 +98,7 @@ export const DialogSettings: Component<{ returnTarget?: ConfigReturnTarget }> = 
                     </Show>
                     <Show when={platform.remoteAccess}>
                       <Tabs.Trigger value="remote">
-                        <Icon name="share" />
+                        <Icon name="wifi" />
                         {language.t("settings.remote.title")}
                       </Tabs.Trigger>
                     </Show>
