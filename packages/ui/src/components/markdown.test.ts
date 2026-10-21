@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { Marked } from "marked"
 import { parseMarkdown as parseNativeMarkdown } from "../../../desktop/src/main/markdown"
 import {
+  applyLineAnnotations,
+  beginMarkdownDomUpdate,
   initialMarkdownEager,
   initialMarkdownMathSeen,
   markdownCacheMode,
@@ -18,10 +20,99 @@ import {
   preserveCodeLanguage,
   prepareMarkdown,
   prepareMarkdownTracked,
+  parseAnchoredMarkdown,
+  fallbackAnchoredMarkdown,
   protectBareAutolinks,
   protectMathExpressions,
   renderMathExpressions,
 } from "../context/marked"
+
+describe("anchored lazy Markdown", () => {
+  const source = [
+    "## Before",
+    "",
+    "Paragraph with $x^2$ and [a reference][ref].",
+    "",
+    "$$",
+    "p_i=\\frac{e_{2i-1}+ie_{2i}}{\\sqrt 2}",
+    "$$",
+    "",
+    "- first",
+    "- second",
+    "",
+    "```ts",
+    "const value = 1",
+    "```",
+    "",
+    "[ref]: https://example.com",
+    "",
+    "## After",
+  ].join("\n")
+
+  test("keeps source block identities while formulas upgrade", async () => {
+    const parser = new Marked()
+    const lite = await parseAnchoredMarkdown(source, (text) => parser.parse(text))
+    const full = await parseAnchoredMarkdown(
+      source,
+      (text) => parser.parse(text),
+      (html) => renderMathExpressions(html, "html"),
+    )
+    const lines = (html: string) => [...html.matchAll(/data-ml="(\d+)"/g)].map((match) => Number(match[1]))
+    expect(lines(lite)).toEqual([1, 3, 7, 9, 12, 18])
+    expect(lines(full)).toEqual(lines(lite))
+    expect(lite).not.toContain("katex-display")
+    expect(full).toContain("katex-display")
+    expect(lite).toContain('<a href="https://example.com">a reference</a>')
+    expect(full).toContain('<a href="https://example.com">a reference</a>')
+    expect(lite).toContain('<code class="language-ts">')
+  })
+
+  test("attaches source IDs to prepared code/math wrappers and removes markers", () => {
+    const root = document.createElement("div")
+    root.innerHTML =
+      '<span data-ml="4"></span><div data-component="markdown-code"><pre>code</pre></div><span data-ml="9"></span><div data-component="markdown-math">formula</div>'
+    applyLineAnnotations(root)
+    expect(root.querySelector("[data-ml]")).toBeNull()
+    expect([...root.children].map((element) => element.getAttribute("data-source-line"))).toEqual(["4", "9"])
+  })
+
+  test("does not share unannotated cache entries", () => {
+    expect(markdownCacheMode({ math: "defer", anchored: true })).not.toBe(markdownCacheMode({ math: "defer" }))
+  })
+
+  test("retains source identities and new source text when full parsing rejects", async () => {
+    const parser = new Marked()
+    const updated = `${source}\n\nNew response content with $a<b$ and <script>alert(1)</script>.`
+    const lite = await parseAnchoredMarkdown(updated, (text) => parser.parse(text))
+    const failed = await parseAnchoredMarkdown(updated, async () => {
+      throw new Error("full parser unavailable")
+    }).catch(() => fallbackAnchoredMarkdown(updated))
+    const markers = (html: string) => [...html.matchAll(/data-ml="(\d+)"/g)].map((match) => match[1])
+    expect(markers(failed)).toEqual(markers(lite))
+    const root = document.createElement("div")
+    root.innerHTML = failed
+    applyLineAnnotations(root)
+    expect(root.querySelector("script")).toBeNull()
+    expect(root.querySelector("[data-opencode-math-tex]")).toBeNull()
+    expect(root.textContent).toContain("New response content with $a<b$")
+    expect(root.textContent).toContain("p_i=\\frac{e_{2i-1}+ie_{2i}}{\\sqrt 2}")
+    expect(root.querySelectorAll("[data-source-line]").length).toBe(markers(lite).length)
+  })
+
+  test("commit hooks capture the old DOM and finish synchronously once after mutation", () => {
+    const root = document.createElement("div")
+    root.textContent = "before"
+    const steps: string[] = []
+    const finish = beginMarkdownDomUpdate(root, (container) => {
+      steps.push(container.textContent ?? "")
+      return () => steps.push(container.textContent ?? "")
+    })
+    root.textContent = "after"
+    finish()
+    finish()
+    expect(steps).toEqual(["before", "after"])
+  })
+})
 
 describe("highlighted code language", () => {
   test("keeps fenced language for Markdown selection copy", () => {
