@@ -12,7 +12,7 @@ import { ProjectID } from "@/project/schema"
 import { ProjectTaskID } from "@/project-task/schema"
 import { SessionID } from "@/session/schema"
 import { UI_LOCALES } from "@opencode-ai/core/locale"
-import { projectTaskContextCopy } from "@/project-task/context-copy"
+import { projectTaskContextCopy, projectTaskContextLocale } from "@/project-task/context-copy"
 
 function makeDetail(overrides?: Partial<Detail>): Detail {
   return {
@@ -173,6 +173,20 @@ describe("formatProjectTaskFullContext", () => {
 })
 
 describe("decideProjectTaskInject", () => {
+  test("UI locales using the same template do not trigger a background refresh", () => {
+    const detail = makeDetail()
+    for (const [from, to, expected] of [
+      ["zh", "zht", "zh"],
+      ["en", "ja", "en"],
+      ["ja", "fr", "en"],
+    ]) {
+      const first = decideProjectTaskInject({ detail, state: null, audience: "subagent", locale: from })
+      if (first.mode !== "full") throw new Error("expected full")
+      expect(first.next.snapshots[detail.id]?.locale).toBe(expected)
+      expect(decideProjectTaskInject({ detail, state: first.next, audience: "subagent", locale: to }).mode).toBe("skip")
+    }
+  })
+
   test("changing template language refreshes background without translating project content", () => {
     const detail = makeDetail({ title: "原始 title", description: "约定：Z=q^{-c/24} I\n\nDo not alter.\n" })
     const first = decideProjectTaskInject({ detail, state: null, audience: "subagent", locale: "zh" })
@@ -436,7 +450,9 @@ describe("project-task template locales", () => {
       expect(text).toContain(detail.id)
       expect(text).toContain(detail.workspaceDirectory!)
       expect(text).toContain(detail.description)
-      if (locale !== "en") expect(copy.heading).not.toBe(projectTaskContextCopy("en").heading)
+      const expected = locale === "zh" || locale === "zht" ? "zh" : "en"
+      expect(projectTaskContextLocale(locale)).toBe(expected)
+      expect(text).toBe(formatProjectTaskFullContext({ detail, audience: "subagent", locale: expected }))
     })
   }
 

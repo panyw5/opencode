@@ -1,8 +1,7 @@
 import type { Detail } from "./schema"
 import type { TaskWorkspaceFile } from "./description-file"
 import { descriptionRelativePath, taskWorkspaceRelativePath } from "./description-file"
-import { parseUILocale } from "@opencode-ai/core/locale"
-import { projectTaskContextCopy } from "./context-copy"
+import { projectTaskContextCopy, projectTaskContextLocale } from "./context-copy"
 
 /** Who receives the inject brief — main session vs task/subagent child. */
 export type ProjectTaskInjectAudience = "parent" | "subagent"
@@ -141,7 +140,7 @@ export function buildTaskContextSnapshot(
     status: detail.status,
     description: detail.description.trim(),
     workspaceDirectory: detail.workspaceDirectory,
-    locale: parseUILocale(locale) ?? "en",
+    locale: projectTaskContextLocale(locale),
     progress: {
       total: detail.progress.total,
       completed: detail.progress.completed,
@@ -228,8 +227,9 @@ function parentIntroLines(): string[] {
 
 function formatSubagentTaskContext(detail: Detail, mode: "full" | "delta", locale?: string): string {
   const copy = projectTaskContextCopy(locale)
-  const separator = locale === "zh" || locale === "zht" || locale === "ja" ? "：" : ": "
-  const period = locale === "zh" || locale === "zht" || locale === "ja" ? "。" : ". "
+  const chinese = projectTaskContextLocale(locale) === "zh"
+  const separator = chinese ? "：" : ": "
+  const period = chinese ? "。" : ". "
   return [
     `<project-task-state mode="${mode}" audience="subagent">`,
     `# ${copy.heading}`,

@@ -79,6 +79,7 @@ import { IMAttachmentTable } from "@/im/inbox.sql"
 import { SessionTable } from "./session.sql"
 import { SessionInput } from "./input"
 import { getContextLocale } from "./context-locale"
+import { projectTaskContextLocale } from "@/project-task/context-copy"
 import { referencePromptMetadata, referenceTextPart } from "./prompt/reference"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
@@ -2563,7 +2564,8 @@ export const layer = Layer.effect(
               const injectState = getTaskContextInjectState(sessionID)
               const hasDurablePart = hasProjectTaskInjectionPart(msgs, hydrated.id)
               const audience = session.parentID ? ("subagent" as const) : ("parent" as const)
-              const locale = getContextLocale(sessionID)
+              const uiLocale = getContextLocale(sessionID)
+              const locale = audience === "subagent" ? projectTaskContextLocale(uiLocale) : "en"
               const workspaceFiles =
                 audience === "parent"
                   ? yield* Effect.promise(() => listTaskWorkspaceFiles(taskFilesAnchor(ctx), hydrated.id))
@@ -2582,6 +2584,7 @@ export const layer = Layer.effect(
                 mode: decision.mode,
                 audience,
                 contextScope: audience === "subagent" ? "project-background" : "project-rollup",
+                uiLocale,
                 locale,
                 workspaceDirectory: hydrated.workspaceDirectory,
                 workspaceFiles: workspaceFiles.length,
