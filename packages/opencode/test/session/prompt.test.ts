@@ -1726,7 +1726,7 @@ it.instance("mounted project task context flows into task subagent prompt", () =
       description: [
         marker,
         "Verify a task-tool child receives mounted project-task context.",
-        "Acceptance: child sees prd.md, notes.md, and audience=subagent.",
+        "Acceptance: child sees project background, project root, and audience=subagent.",
       ].join("\n"),
       status: "in_progress",
     })
@@ -1743,9 +1743,10 @@ it.instance("mounted project task context flows into task subagent prompt", () =
       parts: [{ type: "text", text: "Delegate the controlled context inspection." }],
     })
 
+    const delegation = "Report the project-task-state tag, task title, marker, and project root you received."
     yield* llm.tool("task", {
       description: "inspect injected task context",
-      prompt: "Report the project-task-state tag, task title, marker, and workspace file paths you received.",
+      prompt: delegation,
       subagent_type: "general",
     })
     yield* llm.text("child context inspected")
@@ -1764,9 +1765,11 @@ it.instance("mounted project task context flows into task subagent prompt", () =
     expect(childBody).toContain('audience=\\"subagent\\"')
     expect(childBody).toContain("E2E subagent context inject")
     expect(childBody).toContain(marker)
-    expect(childBody).toContain(`.project-tasks/${task.id}/prd.md`)
-    expect(childBody).toContain(`.project-tasks/${task.id}/notes.md`)
-    expect(childBody).toContain("Working notes captured while executing this task.")
+    expect(childBody).toContain("# 项目任务上下文")
+    expect(childBody).toContain("不是对你的额外委派")
+    expect(childBody).toContain(dir)
+    expect(childBody).not.toContain(`.project-tasks/${task.id}/notes.md`)
+    expect(childBody!.indexOf(delegation)).toBeLessThan(childBody!.indexOf("# 项目任务上下文"))
 
     const parentMessages = yield* MessageV2.filterCompactedEffect(parent.id)
     const parentInjected = parentMessages
@@ -1805,7 +1808,13 @@ it.instance("mounted project task context flows into task subagent prompt", () =
     expect(injected?.metadata?.audience).toBe("subagent")
     expect(injected?.metadata?.taskID).toBe(task.id)
     expect(injected?.text).toContain(marker)
-    expect(injected?.text).toContain(`.project-tasks/${task.id}/notes.md`)
+    expect(injected?.text).toContain(`项目任务 ID：\`${task.id}\``)
+    expect(injected?.text).toContain(`项目根目录：\`${dir}\``)
+    expect(injected?.text).not.toContain("Task ID hygiene")
+    expect(injected?.text).not.toContain("Todo progress")
+    expect(injected?.text).not.toContain("Linked sessions")
+    expect(injected?.text).not.toContain("Task workspace files")
+    expect(injected?.text).not.toContain("project_task_list")
   }),
 )
 

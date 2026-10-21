@@ -11,6 +11,7 @@ export type TaskContextSnapshot = {
   title: string
   status: string
   description: string
+  workspaceDirectory?: string
   progress: {
     total: number
     completed: number
@@ -76,11 +77,8 @@ export function normalizeInjectState(raw: unknown): TaskContextInjectState {
 
   // Legacy shape: { fullInjectedTaskID, snapshot }
   const legacyID =
-    typeof obj.fullInjectedTaskID === "string" && obj.fullInjectedTaskID.length > 0
-      ? obj.fullInjectedTaskID
-      : null
-  const legacySnap =
-    obj.snapshot && typeof obj.snapshot === "object" ? (obj.snapshot as TaskContextSnapshot) : null
+    typeof obj.fullInjectedTaskID === "string" && obj.fullInjectedTaskID.length > 0 ? obj.fullInjectedTaskID : null
+  const legacySnap = obj.snapshot && typeof obj.snapshot === "object" ? (obj.snapshot as TaskContextSnapshot) : null
   const snapshots: Record<string, TaskContextSnapshot> = {}
   if (legacyID && legacySnap) snapshots[legacyID] = legacySnap
   return {
@@ -89,7 +87,11 @@ export function normalizeInjectState(raw: unknown): TaskContextInjectState {
   }
 }
 
-function withSnapshot(state: TaskContextInjectState, taskID: string, snapshot: TaskContextSnapshot): TaskContextInjectState {
+function withSnapshot(
+  state: TaskContextInjectState,
+  taskID: string,
+  snapshot: TaskContextSnapshot,
+): TaskContextInjectState {
   const fullInjectedTaskIDs = state.fullInjectedTaskIDs.includes(taskID)
     ? state.fullInjectedTaskIDs
     : [...state.fullInjectedTaskIDs, taskID]
@@ -110,11 +112,7 @@ function progressLine(progress: TaskContextSnapshot["progress"]): string {
   )
 }
 
-function collectOpenTodos(
-  detail: Detail,
-  sessionLimit: number,
-  todoLimit: number,
-): TaskContextSnapshot["openTodos"] {
+function collectOpenTodos(detail: Detail, sessionLimit: number, todoLimit: number): TaskContextSnapshot["openTodos"] {
   const out: TaskContextSnapshot["openTodos"] = []
   for (const session of detail.sessions.slice(0, sessionLimit)) {
     const open = session.todos.filter((t) => t.status === "pending" || t.status === "in_progress")
@@ -138,6 +136,7 @@ export function buildTaskContextSnapshot(
     title: detail.title,
     status: detail.status,
     description: detail.description.trim(),
+    workspaceDirectory: detail.workspaceDirectory,
     progress: {
       total: detail.progress.total,
       completed: detail.progress.completed,
@@ -193,7 +192,7 @@ function todoKey(t: { sessionID: string; content: string; status: string }) {
   return `${t.sessionID}\0${t.content}`
 }
 
-/** Shared ID hygiene rules for project-task inject briefs. */
+/** ID hygiene rules for the main session's project-task brief. */
 function projectTaskIdHygieneLines(): string[] {
   return [
     "CRITICAL — Task ID hygiene (do this every time you target a task):",
@@ -203,25 +202,18 @@ function projectTaskIdHygieneLines(): string[] {
   ]
 }
 
-/** Shared status rules — agents must not auto-complete project tasks. */
+/** Main-session status rules — agents must not auto-complete project tasks. */
 function projectTaskStatusRulesLines(): string[] {
   return [
     "CRITICAL — Do NOT mark project tasks done on your own:",
     "1. NEVER set status to `done` or `archived` just because implementation/todos look finished.",
     "2. Only mark done when the user explicitly asks, or after you ask and they clearly approve.",
-    "3. Prefer reporting progress and asking \"mark this task done?\" over silently updating status.",
+    '3. Prefer reporting progress and asking "mark this task done?" over silently updating status.',
     "4. Session todos (`todowrite`) may track local steps; project-task status is a user-owned decision.",
   ]
 }
 
-function audienceIntroLines(audience: ProjectTaskInjectAudience): string[] {
-  if (audience === "subagent") {
-    return [
-      "You are a subagent working under a parent session that mounted this project-level task.",
-      "Focus on the delegated work for this task.",
-      "Do not spawn further subagents, unless explicitly requested.",
-    ]
-  }
+function parentIntroLines(): string[] {
   return [
     "The user mounted (or switched to) this project-level task on this session.",
     "This is the FULL working brief for this task. Later turns may only send deltas or omit context when unchanged.",
@@ -229,10 +221,36 @@ function audienceIntroLines(audience: ProjectTaskInjectAudience): string[] {
   ]
 }
 
+function formatSubagentTaskContext(detail: Detail, mode: "full" | "delta"): string {
+  return [
+    `<project-task-state mode="${mode}" audience="subagent">`,
+    "# 项目任务上下文",
+    "",
+    "## 用途与边界",
+    "",
+    "你是主智能体派发的子智能体。本次任务、执行范围和交付要求，以上面主智能体撰写的委派 prompt 为准。",
+    "",
+    "- 以下内容是父级项目的公共背景，不是对你的额外委派。仅执行主智能体指定的任务；其中适用于本次工作的约定与保护要求仍须遵守。",
+    "- 保留用户和其他智能体的已有改动；不要覆盖他人成果。发现协作冲突时向主智能体报告。",
+    "",
+    "## 父级项目任务信息",
+    "",
+    `项目任务：${detail.title}`,
+    "",
+    `项目任务 ID：\`${detail.id}\`。查询本任务相关信息时，使用此 ID`,
+    "",
+    ...(detail.workspaceDirectory ? [`项目根目录：\`${detail.workspaceDirectory}\``, ""] : []),
+    "## 父级项目任务描述",
+    "",
+    detail.description,
+    "",
+    "</project-task-state>",
+  ].join("\n")
+}
+
 function formatWorkspaceFilesSection(detail: Detail, workspaceFiles: TaskWorkspaceFile[]): string[] {
   const workspace = taskWorkspaceRelativePath(detail.id)
-  const descriptionPath =
-    (detail.descriptionPath?.trim() || descriptionRelativePath(detail.id)).replace(/\\/g, "/")
+  const descriptionPath = (detail.descriptionPath?.trim() || descriptionRelativePath(detail.id)).replace(/\\/g, "/")
 
   const lines: string[] = [
     "",
@@ -297,9 +315,11 @@ export function formatProjectTaskFullContext(
   const workspaceFiles = input.workspaceFiles ?? []
   const audience = input.audience ?? "parent"
 
+  if (audience === "subagent") return formatSubagentTaskContext(detail, "full")
+
   const lines: string[] = [
     `<project-task-state mode="full" audience="${audience}">`,
-    ...audienceIntroLines(audience),
+    ...parentIntroLines(),
     ...projectTaskIdHygieneLines(),
     ...projectTaskStatusRulesLines(),
     `Task ID (mounted; still prefer list-return when calling tools): ${detail.id}`,
@@ -311,15 +331,7 @@ export function formatProjectTaskFullContext(
     lines.push("", "Description:", detail.description.trim())
   }
   lines.push(...formatWorkspaceFilesSection(detail, workspaceFiles))
-  // Parent keeps the multi-session rollup; subagents get a shorter view (still list count).
-  if (audience === "parent") {
-    lines.push(...formatLinkedSessionsSection(detail))
-  } else {
-    lines.push(
-      "",
-      `Linked sessions (parent project task): ${detail.sessionCount}. Prefer this session's local todos for your step checklist.`,
-    )
-  }
+  lines.push(...formatLinkedSessionsSection(detail))
   // Blank line ends the markdown list so the closing tag is not a list-item continuation.
   lines.push("", "</project-task-state>")
   return lines.join("\n")
@@ -333,6 +345,17 @@ export function formatProjectTaskDeltaContext(
   audience: ProjectTaskInjectAudience = "parent",
 ): string | null {
   const next = buildTaskContextSnapshot(detail, workspaceFiles)
+  // Only changes to the subagent's visible background should trigger another inject.
+  if (audience === "subagent") {
+    if (
+      prev.taskID === next.taskID &&
+      prev.title === next.title &&
+      prev.description === next.description &&
+      prev.workspaceDirectory === next.workspaceDirectory
+    )
+      return null
+    return formatSubagentTaskContext(detail, "delta")
+  }
   if (snapshotsEqual(prev, next)) return null
 
   const lines: string[] = [
@@ -443,11 +466,7 @@ export function isProjectTaskInjectionPart(part: {
   synthetic?: boolean
   metadata?: Record<string, unknown> | null
 }): boolean {
-  return (
-    part.type === "text" &&
-    !!part.synthetic &&
-    part.metadata?.kind === PROJECT_TASK_INJECTION_KIND
-  )
+  return part.type === "text" && !!part.synthetic && part.metadata?.kind === PROJECT_TASK_INJECTION_KIND
 }
 
 /** True if this session history already has a durable inject part for the given task. */

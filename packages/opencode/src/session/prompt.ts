@@ -2562,9 +2562,10 @@ export const layer = Layer.effect(
               const injectState = getTaskContextInjectState(sessionID)
               const hasDurablePart = hasProjectTaskInjectionPart(msgs, hydrated.id)
               const audience = session.parentID ? ("subagent" as const) : ("parent" as const)
-              const workspaceFiles = yield* Effect.promise(() =>
-                listTaskWorkspaceFiles(taskFilesAnchor(ctx), hydrated.id),
-              )
+              const workspaceFiles =
+                audience === "parent"
+                  ? yield* Effect.promise(() => listTaskWorkspaceFiles(taskFilesAnchor(ctx), hydrated.id))
+                  : []
               const decision = decideProjectTaskInject({
                 detail: hydrated,
                 state: injectState,
@@ -2577,6 +2578,8 @@ export const layer = Layer.effect(
                 title: hydrated.title,
                 mode: decision.mode,
                 audience,
+                contextScope: audience === "subagent" ? "project-background" : "project-rollup",
+                workspaceDirectory: hydrated.workspaceDirectory,
                 workspaceFiles: workspaceFiles.length,
                 hasDurablePart,
                 injectEnabled: !!session.injectTaskContext,

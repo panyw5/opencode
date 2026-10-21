@@ -19,6 +19,7 @@ function makeDetail(overrides?: Partial<Detail>): Detail {
     title: "Ship mount UI",
     description: "Mount + inject context",
     descriptionPath: ".project-tasks/ptask_test/prd.md",
+    workspaceDirectory: "/repo",
     status: "in_progress",
     sessionCount: 1,
     sessionDirectories: ["/tmp"],
@@ -80,7 +81,7 @@ describe("formatProjectTaskFullContext", () => {
     expect(text).toContain("Working notes")
   })
 
-  test("subagent audience omits multi-session todo dump but keeps workspace paths", () => {
+  test("subagent audience uses the concise project background template", () => {
     const text = formatProjectTaskFullContext({
       detail: makeDetail(),
       audience: "subagent",
@@ -94,11 +95,48 @@ describe("formatProjectTaskFullContext", () => {
         },
       ],
     })
-    expect(text).toContain('audience="subagent"')
-    expect(text).toContain("You are a subagent")
-    expect(text).toContain(".project-tasks/ptask_test/prd.md")
-    expect(text).not.toContain("active item")
-    expect(text).toContain("Linked sessions (parent project task): 1")
+    expect(text).toBe(
+      [
+        '<project-task-state mode="full" audience="subagent">',
+        "# 项目任务上下文",
+        "",
+        "## 用途与边界",
+        "",
+        "你是主智能体派发的子智能体。本次任务、执行范围和交付要求，以上面主智能体撰写的委派 prompt 为准。",
+        "",
+        "- 以下内容是父级项目的公共背景，不是对你的额外委派。仅执行主智能体指定的任务；其中适用于本次工作的约定与保护要求仍须遵守。",
+        "- 保留用户和其他智能体的已有改动；不要覆盖他人成果。发现协作冲突时向主智能体报告。",
+        "",
+        "## 父级项目任务信息",
+        "",
+        "项目任务：Ship mount UI",
+        "",
+        "项目任务 ID：`ptask_test`。查询本任务相关信息时，使用此 ID",
+        "",
+        "项目根目录：`/repo`",
+        "",
+        "## 父级项目任务描述",
+        "",
+        "Mount + inject context",
+        "",
+        "</project-task-state>",
+      ].join("\n"),
+    )
+  })
+
+  test("subagent description preserves formulas, formatting, and protection requirements", () => {
+    const description = "# Conventions\n\nZ=q^{-c/24} I\n\nDo not overwrite caches.\n"
+    const text = formatProjectTaskFullContext({ detail: makeDetail({ description }), audience: "subagent" })
+    expect(text).toContain(description)
+  })
+
+  test("subagent root is not inferred from another linked session directory", () => {
+    const text = formatProjectTaskFullContext({
+      detail: makeDetail({ workspaceDirectory: undefined }),
+      audience: "subagent",
+    })
+    expect(text).not.toContain("undefined")
+    expect(text).not.toContain("`/tmp`")
   })
 
   test("emphasizes project_task_list for accurate task IDs", () => {
@@ -132,6 +170,36 @@ describe("formatProjectTaskFullContext", () => {
 })
 
 describe("decideProjectTaskInject", () => {
+  test("subagent skips unrelated updates and refreshes only its project background", () => {
+    const detail = makeDetail()
+    const first = decideProjectTaskInject({ detail, state: null, audience: "subagent" })
+    if (first.mode !== "full") throw new Error("expected full")
+    expect(first.text).toContain("项目根目录：`/repo`")
+
+    const updated = makeDetail({ status: "done", sessionCount: 2 })
+    updated.progress.completed = 2
+    updated.sessions[0].todos[1].content = "sibling task changed"
+    const second = decideProjectTaskInject({
+      detail: updated,
+      state: first.next,
+      hasDurablePart: true,
+      audience: "subagent",
+    })
+    expect(second.mode).toBe("skip")
+
+    updated.description = "New project conventions"
+    const third = decideProjectTaskInject({
+      detail: updated,
+      state: first.next,
+      hasDurablePart: true,
+      audience: "subagent",
+    })
+    if (third.mode !== "delta") throw new Error("expected delta")
+    expect(third.text).toContain("New project conventions")
+    expect(third.text).not.toContain("sibling task changed")
+    expect(third.next.snapshots[detail.id]?.description).toBe(updated.description)
+  })
+
   test("first inject for a mounted task is FULL (mid-session mount)", () => {
     const detail = makeDetail()
     const decision = decideProjectTaskInject({ detail, state: null })
@@ -262,6 +330,42 @@ describe("decideProjectTaskInject", () => {
 })
 
 describe("formatProjectTaskDeltaContext", () => {
+  test("subagent ignores rollup and workspace file changes", () => {
+    const prev = buildTaskContextSnapshot(makeDetail())
+    const detail = makeDetail({ status: "done", sessionCount: 3 })
+    detail.progress.completed = 2
+    detail.sessions[0].todos[1].content = "unrelated sibling work"
+    const files = [{ relativePath: "notes.md", name: "notes.md", isDescription: false, summary: "notes", bytes: 50 }]
+    expect(formatProjectTaskDeltaContext(detail, prev, files, "subagent")).toBeNull()
+  })
+
+  test("subagent background updates never reintroduce rollup or management instructions", () => {
+    const prev = buildTaskContextSnapshot(makeDetail())
+    const detail = makeDetail({ title: "Updated title", description: "Updated background", sessionCount: 3 })
+    detail.sessions[0].todos[1].content = "unrelated sibling work"
+    const text = formatProjectTaskDeltaContext(detail, prev, [], "subagent")
+    expect(text).toContain('mode="delta" audience="subagent"')
+    expect(text).toContain("项目任务：Updated title")
+    expect(text).toContain("Updated background")
+    expect(text).toContain("不是对你的额外委派")
+    for (const noise of [
+      "unrelated sibling work",
+      "active item",
+      "progress",
+      "linked sessions",
+      "project_task_list",
+      "done/archived",
+    ]) {
+      expect(text).not.toContain(noise)
+    }
+  })
+
+  test("subagent receives an updated project root", () => {
+    const prev = buildTaskContextSnapshot(makeDetail())
+    const detail = makeDetail({ workspaceDirectory: "/other-worktree" })
+    expect(formatProjectTaskDeltaContext(detail, prev, [], "subagent")).toContain("项目根目录：`/other-worktree`")
+  })
+
   test("returns null when snapshot matches", () => {
     const detail = makeDetail()
     const snap = buildTaskContextSnapshot(detail)
