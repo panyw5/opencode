@@ -32,10 +32,11 @@
     "message": "Google 쿠키, 비밀번호, 채팅 기록 또는 API 자격 증명은 전송하지 않습니다. 확장 프로그램은 세션을 파일에 저장하지 않습니다."
   },
   "connect": { "message": "세션 가져오기" },
+  "connectImported": { "message": "세션 가져오기 완료" },
   "statusApproval": { "message": "가져오기 전에 승인하세요." },
   "statusReading": { "message": "세션 읽는 중…" },
   "statusImporting": { "message": "가져오는 중…" },
-  "statusImported": { "message": "가져왔습니다. OpenCode GPT-Pro 설정 페이지에서 확인하세요." },
+  "statusImported": { "message": "OpenCode의 GPT-Pro 설정 페이지로 돌아가 로그인 상태를 확인하세요." },
   "errorTab": {
     "message": "OpenCode에서 새 OpenCode-ChatGPT 연결 페이지(127.0.0.1)를 열고 해당 페이지에서 확장 프로그램을 여세요."
   },

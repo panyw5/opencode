@@ -40,18 +40,32 @@ function popup(
     responseStatus?: number
     responseCode?: string
     networkFailure?: boolean
+    beforeResponse?: () => Promise<void>
   } = {},
 ) {
   const consent = {
     checked: false,
+    disabled: false,
     addEventListener: (event: string, fn: () => void) => {
       handlers[`consent:${event}`] = fn
     },
   }
   const button = {
     disabled: true,
+    dataset: { state: "idle" },
+    attributes: {} as Record<string, string>,
+    setAttribute: (key: string, value: string) => {
+      button.attributes[key] = value
+    },
     addEventListener: (event: string, fn: () => Promise<void>) => {
       handlers[`button:${event}`] = fn
+    },
+  }
+  const buttonLabel = { textContent: "" }
+  const successIcon = {
+    hidden: true,
+    toggleAttribute: (name: string, present: boolean) => {
+      if (name === "hidden") successIcon.hidden = present
     },
   }
   const status = { textContent: "" }
@@ -64,7 +78,7 @@ function popup(
         key === "statusApproval"
           ? status
           : key === "connect"
-            ? button
+            ? buttonLabel
             : key === "statusChecking"
               ? loginState
               : { textContent: "" }
@@ -84,9 +98,14 @@ function popup(
       documentElement: root,
       querySelectorAll: () => Object.values(localized),
       querySelector: (selector: string) =>
-        ({ "#consent": consent, "#connect": button, "#status": status, "#login-state": loginState })[
-          selector as "#consent"
-        ],
+        ({
+          "#consent": consent,
+          "#connect": button,
+          "#connect-label": buttonLabel,
+          "#connect-success": successIcon,
+          "#status": status,
+          "#login-state": loginState,
+        })[selector as "#consent"],
     },
     chrome: {
       i18n: {
@@ -118,6 +137,7 @@ function popup(
     },
     fetch: async (url: string, init: Record<string, unknown>) => {
       requests.push({ url, init })
+      await input.beforeResponse?.()
       if (input.networkFailure) throw new Error(`PRIVATE_NETWORK_ERROR ${token} ${cookie.value}`)
       const responseStatus = input.responseStatus ?? 200
       return {
@@ -135,6 +155,8 @@ function popup(
   return {
     consent,
     button,
+    buttonLabel,
+    successIcon,
     status,
     loginState,
     queries,
@@ -198,7 +220,11 @@ describe("ChatGPT session connector explicit approval", () => {
     success.approve()
     await success.click()
     expect(success.status.textContent).toBe(catalogs.zh_CN.statusImported.message)
-    expect(success.consent.checked).toBe(false)
+    expect(success.consent.checked).toBe(true)
+    expect(success.consent.disabled).toBe(true)
+    expect(success.button.dataset.state).toBe("imported")
+    expect(success.buttonLabel.textContent).toBe(catalogs.zh_CN.connectImported.message)
+    expect(success.successIcon.hidden).toBe(false)
     const profile = popup({ locale: "zh_CN", stores: [] })
     await profile.settle()
     expect(profile.loginState.textContent).toBe(catalogs.zh_CN.statusUnknown.message)
@@ -289,7 +315,7 @@ describe("ChatGPT session connector explicit approval", () => {
     expect(p.requests[0].init.redirect).toBe("error")
     expect(p.status.textContent).not.toContain(cookie.value)
     expect(p.status.textContent).not.toContain(token)
-    expect(p.consent.checked).toBe(false)
+    expect(p.consent.checked).toBe(true)
   })
   test("does not transfer Google, partitioned or weak cookies", async () => {
     const p = popup({
@@ -304,6 +330,75 @@ describe("ChatGPT session connector explicit approval", () => {
     await p.click()
     expect(p.requests).toHaveLength(0)
     expect(p.status.textContent).toContain("No supported ChatGPT session")
+  })
+  test("successful import latches the checked consent and checkmarked button in every locale", async () => {
+    for (const locale of locales) {
+      const p = popup({ locale })
+      await p.settle()
+      p.approve()
+      await p.click()
+      expect(p.buttonLabel.textContent).toBe(catalogs[locale].connectImported.message)
+      expect(p.status.textContent).toBe(catalogs[locale].statusImported.message)
+      expect(p.successIcon.hidden).toBe(false)
+      expect(p.button.disabled).toBe(true)
+      expect(p.button.attributes["aria-busy"]).toBe("false")
+      expect(p.consent.checked).toBe(true)
+      expect(p.consent.disabled).toBe(true)
+      await p.click()
+      p.approve()
+      await p.click()
+      expect(p.requests).toHaveLength(1)
+      expect(p.button.dataset.state).toBe("imported")
+      expect(p.loginState.textContent).toBe(catalogs[locale].statusSessionFound.message)
+    }
+  })
+  test("pending import shows progress, blocks double dispatch, then reveals success", async () => {
+    let finish!: () => void
+    const p = popup({
+      beforeResponse: () =>
+        new Promise<void>((resolve) => {
+          finish = resolve
+        }),
+    })
+    await p.settle()
+    p.approve()
+    const pending = p.click()
+    await p.settle()
+    expect(p.button.dataset.state).toBe("importing")
+    expect(p.buttonLabel.textContent).toBe(catalogs.en.statusImporting.message)
+    expect(p.button.attributes["aria-busy"]).toBe("true")
+    expect(p.successIcon.hidden).toBe(true)
+    expect(p.consent.disabled).toBe(true)
+    await p.click()
+    expect(p.requests).toHaveLength(1)
+    finish()
+    await pending
+    expect(p.successIcon.hidden).toBe(false)
+    expect(p.consent.checked).toBe(true)
+  })
+  test("failed import never shows a success check and requires explicit approval before retry", async () => {
+    const p = popup({ networkFailure: true })
+    await p.settle()
+    p.approve()
+    await p.click()
+    expect(p.button.dataset.state).toBe("error")
+    expect(p.successIcon.hidden).toBe(true)
+    expect(p.buttonLabel.textContent).toBe(catalogs.en.connect.message)
+    expect(p.consent.checked).toBe(false)
+    expect(p.consent.disabled).toBe(false)
+    expect(p.button.disabled).toBe(true)
+    await p.click()
+    expect(p.requests).toHaveLength(1)
+    p.approve()
+    expect(p.button.disabled).toBe(false)
+    expect(p.status.textContent).not.toContain(cookie.value)
+  })
+  test("completed button remains full contrast despite being disabled", () => {
+    const css = readFileSync(new URL("../../resources/gpt-pro-login/popup.css", import.meta.url), "utf8")
+    expect(css).toContain('button[data-state="imported"]:disabled')
+    expect(css).toContain("opacity: 1;")
+    expect(markup).toContain('id="connect-success"')
+    expect(markup).toContain('aria-live="polite">Import session')
   })
   test("manifest has no Google, storage, downloads or browsing-history permissions", () => {
     const manifest = JSON.parse(

@@ -7,7 +7,9 @@ const fallback = {
   statusUnknown: "Unable to check",
   statusReading: "Reading session…",
   statusImporting: "Importing…",
-  statusImported: "Imported. Return to OpenCode GPT-Pro config page to verify.",
+  connect: "Import session",
+  connectImported: "Session imported",
+  statusImported: "Return to the GPT-Pro configuration page in OpenCode to verify your login.",
   errorTab: "Open a new OpenCode-ChatGPT connection page on 127.0.0.1, then open this extension from that tab.",
   errorProfile: "Cannot identify this Chrome profile. Keep the OpenCode-ChatGPT connection tab active.",
   errorNoSession: "No supported ChatGPT session found. Log in to ChatGPT in this Chrome profile, then try again.",
@@ -45,9 +47,28 @@ class ConnectorError extends Error {
 
 const consent = document.querySelector("#consent")
 const button = document.querySelector("#connect")
+const buttonLabel = document.querySelector("#connect-label")
+const successIcon = document.querySelector("#connect-success")
 const status = document.querySelector("#status")
 const loginState = document.querySelector("#login-state")
-let running = false
+let phase = "idle"
+
+function renderImportState() {
+  const busy = phase === "reading" || phase === "importing"
+  const imported = phase === "imported"
+  button.disabled = busy || imported || !consent.checked
+  consent.disabled = busy || imported
+  button.dataset.state = phase
+  button.setAttribute("aria-busy", String(busy))
+  buttonLabel.textContent = t(imported ? "connectImported" : busy ? "statusImporting" : "connect")
+  successIcon.toggleAttribute("hidden", !imported)
+}
+
+function transition(next) {
+  console.debug(`[gpt-pro-extension] import state ${phase}->${next}; credentials omitted`)
+  phase = next
+  renderImportState()
+}
 
 async function activeProfile() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
@@ -91,22 +112,21 @@ async function refreshLoginStatus() {
     const { store } = await activeProfile()
     const cookies = await readSessionCookies(store.id)
     loginState.textContent = t(cookies.length ? "statusSessionFound" : "statusLoggedOut")
-  } catch (error) {
-    console.warn("[gpt-pro-extension] could not check ChatGPT login status", error)
+  } catch {
+    console.warn("[gpt-pro-extension] could not check ChatGPT login status; credentials omitted")
     loginState.textContent = t("statusUnknown")
   }
 }
 
 consent.addEventListener("change", () => {
-  button.disabled = running || !consent.checked
+  renderImportState()
 })
 
 void refreshLoginStatus()
 
 button.addEventListener("click", async () => {
-  if (running || !consent.checked) return
-  running = true
-  button.disabled = true
+  if (["reading", "importing", "imported"].includes(phase) || !consent.checked) return
+  transition("reading")
   status.textContent = t("statusReading")
   let sending = false
   try {
@@ -126,6 +146,7 @@ button.addEventListener("click", async () => {
     const cookies = await readSessionCookies(store.id)
     if (!cookies.length) throw new ConnectorError("errorNoSession")
     status.textContent = t("statusImporting")
+    transition("importing")
     sending = true
     const response = await fetch(`${connection.origin}/import`, {
       method: "POST",
@@ -154,13 +175,12 @@ button.addEventListener("click", async () => {
           "errorImport",
       )
     }
+    transition("imported")
     status.textContent = t("statusImported")
   } catch (error) {
+    consent.checked = false
+    transition("error")
     status.textContent =
       error instanceof ConnectorError ? error.message : t(sending ? "errorImport" : "errorConnection")
-  } finally {
-    running = false
-    consent.checked = false
-    button.disabled = true
   }
 })

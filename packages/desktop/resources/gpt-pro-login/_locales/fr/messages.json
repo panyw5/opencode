@@ -36,10 +36,13 @@
     "message": "Aucun cookie Google, mot de passe, historique de discussion ou identifiant API n’est transféré. L’extension n’enregistre jamais la session dans un fichier."
   },
   "connect": { "message": "Importer la session" },
+  "connectImported": { "message": "Session importée" },
   "statusApproval": { "message": "Autorisez avant l’import." },
   "statusReading": { "message": "Lecture de la session…" },
   "statusImporting": { "message": "Importation…" },
-  "statusImported": { "message": "Importée. Vérifiez la page de configuration GPT-Pro dans OpenCode." },
+  "statusImported": {
+    "message": "Retournez à la page de configuration GPT-Pro dans OpenCode pour vérifier votre connexion."
+  },
   "errorTab": {
     "message": "Ouvrez une nouvelle page de connexion OpenCode-ChatGPT sur 127.0.0.1 depuis OpenCode, puis ouvrez l’extension dans cet onglet."
   },
