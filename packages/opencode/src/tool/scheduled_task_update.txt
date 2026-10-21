@@ -14,3 +14,8 @@ Provide (at least one) changed data: name/schedule/prompt/executionMode/model/en
 - `executionMode === "automatic_session"`: keeps the existing session binding (or binds a fresh session on the next run if none exists); reuses one session until 30 runs or the current context reaches 1000000 tokens, then rotates and references the previous session
 - `executionMode === "existing_session"`: keeps the existing session binding (or binds a fresh session on the next run if none exists) and never rotates
 - `executionMode === "new_session"`: clears the binding and creates unrelated sessions on every future run
+
+## Prompt update workflow
+1. `scheduled_task_list`: `taskID`
+2. `scheduled_task_get({ taskID })`: obtain task prompt. SAVE to temp file for prompt editing and inspection
+3. `scheduled_task_update`
