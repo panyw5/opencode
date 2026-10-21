@@ -36,7 +36,6 @@ describe("provider base URL", () => {
   test("preserves protocols with different version paths", () => {
     for (const npm of [
       undefined,
-      "@ai-sdk/openai-compatible",
       "@ai-sdk/google",
       "@ai-sdk/cohere",
       "@ai-sdk/azure",
@@ -67,6 +66,7 @@ describe("provider base URL", () => {
   })
 
   test.each([
+    ["@ai-sdk/openai-compatible", "https://api.example.com/v1"],
     ["@ai-sdk/openai", "https://api.openai.com/v1"],
     ["@ai-sdk/anthropic", "https://api.anthropic.com/v1"],
     ["@ai-sdk/groq", "https://api.groq.com/openai/v1"],
@@ -77,8 +77,17 @@ describe("provider base URL", () => {
     ["@ai-sdk/togetherai", "https://api.together.xyz/v1"],
     ["@ai-sdk/cerebras", "https://api.cerebras.ai/v1"],
     ["@ai-sdk/deepinfra", "https://api.deepinfra.com/v1"],
-  ])("offers v1 only for verified %s defaults", (npm, baseURL) => {
+  ])("offers automatic v1 for %s defaults", (npm, baseURL) => {
     expect(usesProviderV1(npm)).toBe(true)
     expect(resolveProviderBaseURL(stripProviderV1(baseURL, npm), npm)).toBe(baseURL)
+  })
+
+  test("can disable automatic v1 resolution", () => {
+    expect(resolveProviderBaseURL("https://api.example.com", "@ai-sdk/openai-compatible", false)).toBe(
+      "https://api.example.com",
+    )
+    expect(stripProviderV1("https://api.example.com/v1", "@ai-sdk/openai-compatible", false)).toBe(
+      "https://api.example.com/v1",
+    )
   })
 })

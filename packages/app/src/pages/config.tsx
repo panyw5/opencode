@@ -54,7 +54,7 @@ import { FetchProviderModels } from "@/components/fetch-provider-models"
 import { ModelConfigFields } from "@/components/model-config-fields"
 import { TestProviderModelButton } from "@/components/test-provider-model-button"
 import { ProviderBaseURLField } from "@/components/provider-base-url-field"
-import { resolveProviderBaseURL, stripProviderV1 } from "@/components/provider-base-url"
+import { hasProviderV1, resolveProviderBaseURL, stripProviderV1 } from "@/components/provider-base-url"
 import { Link } from "@/components/link"
 import { paintCode } from "@/utils/paint-code"
 import { decode64 } from "@/utils/base64"
@@ -1148,12 +1148,15 @@ function providerCfg(input: ProviderCfg | undefined): CustomState {
   const models = Object.entries(input?.models ?? {})
   const env = Array.isArray(input?.env) && input.env.length > 0 ? `{env:${input.env[0]}}` : ""
   const api = typeof input?.options?.apiKey === "string" ? input.options.apiKey : ""
+  const configuredBaseURL = typeof input?.options?.baseURL === "string" ? input.options.baseURL : ""
+  const npm = input?.npm ?? OPENAI_COMPATIBLE
   return {
     mode: input ? "edit" : "create",
     providerID: "",
-    npm: input?.npm ?? OPENAI_COMPATIBLE,
+    npm,
+    autoV1: !configuredBaseURL || hasProviderV1(configuredBaseURL),
     name: input?.name ?? "",
-    baseURL: typeof input?.options?.baseURL === "string" ? stripProviderV1(input.options.baseURL, input.npm) : "",
+    baseURL: configuredBaseURL ? stripProviderV1(configuredBaseURL, npm) : "",
     apiKey: api || env,
     models:
       models.length > 0
@@ -3357,6 +3360,7 @@ function CustomEditor(props: {
   busy: boolean
   onToggle: (item: ProviderItem, enabled: boolean) => void
   onField: (key: "providerID" | "npm" | "name" | "baseURL" | "apiKey", value: string) => void
+  onAutoV1Change: (value: boolean) => void
   onModel: (index: number, key: "id" | "name", value: string) => void
   onModelConfig: (modelIndex: number, configIndex: number, value: string) => void
   onToggleModelConfig: (index: number) => void
@@ -3516,8 +3520,10 @@ function CustomEditor(props: {
                   props.form.npm === "@ai-sdk/deepinfra" ? "https://api.deepinfra.com" : "https://api.example.com"
                 }
                 npm={props.form.npm}
+                autoV1={props.form.autoV1 ?? true}
                 value={props.form.baseURL}
                 onChange={(value) => props.onField("baseURL", value)}
+                onAutoV1Change={props.onAutoV1Change}
                 validationState={props.form.err.baseURL ? "invalid" : undefined}
                 error={props.form.err.baseURL}
               />
@@ -3562,7 +3568,7 @@ function CustomEditor(props: {
               <div class="mb-3">
                 <FetchProviderModels
                   title={language.t("config.custom.models.title")}
-                  baseURL={resolveProviderBaseURL(props.form.baseURL, props.form.npm)}
+                  baseURL={resolveProviderBaseURL(props.form.baseURL, props.form.npm, props.form.autoV1)}
                   apiKey={props.form.apiKey}
                   npm={props.form.npm}
                   headers={props.form.headers}
@@ -3623,7 +3629,7 @@ function CustomEditor(props: {
                           />
                           <TestProviderModelButton
                             class="flex h-8 w-full self-center items-center justify-center"
-                            baseURL={resolveProviderBaseURL(props.form.baseURL, props.form.npm)}
+                            baseURL={resolveProviderBaseURL(props.form.baseURL, props.form.npm, props.form.autoV1)}
                             apiKey={props.form.apiKey}
                             modelId={item.id}
                             npm={props.form.npm}
@@ -7273,8 +7279,13 @@ export default function ConfigPage() {
   function setCustomField(key: "providerID" | "npm" | "name" | "baseURL" | "apiKey", value: string) {
     if (key === "npm") console.info(`[config] custom provider SDK selected npm=${value}`)
     setState("custom", key, value)
+    if (key === "npm") setState("custom", "autoV1", true)
     if (key === "apiKey") setState("customApiDirty", true)
     if (key === "providerID" || key === "name" || key === "baseURL") setState("custom", "err", key, undefined)
+  }
+
+  function setCustomAutoV1(value: boolean) {
+    setState("custom", "autoV1", value)
   }
 
   function setCustomModel(index: number, key: "id" | "name", value: string) {
@@ -9233,6 +9244,7 @@ export default function ConfigPage() {
                     busy={state.providerBusy === selectedCustom()?.id}
                     onToggle={toggleProvider}
                     onField={setCustomField}
+                    onAutoV1Change={setCustomAutoV1}
                     onModel={setCustomModel}
                     onModelConfig={setCustomModelConfig}
                     onToggleModelConfig={toggleCustomModelConfig}

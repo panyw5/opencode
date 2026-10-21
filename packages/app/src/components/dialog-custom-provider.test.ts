@@ -53,8 +53,6 @@ function model(input: { row: string; id: string; name: string; values?: Record<s
 
 describe("validateCustomProvider", () => {
   test.each([
-    [undefined, "https://api.example.com/custom"],
-    ["@ai-sdk/openai-compatible", "https://api.example.com/v1/openai"],
     ["@ai-sdk/google", "https://generativelanguage.googleapis.com/v1beta"],
     ["@ai-sdk/cohere", "https://api.cohere.com/v2"],
     ["@ai-sdk/azure", "https://resource.openai.azure.com/openai"],
@@ -76,6 +74,45 @@ describe("validateCustomProvider", () => {
       existingProviderIDs: new Set(),
     })
     expect(result.result?.config.options.baseURL).toBe(baseURL)
+  })
+
+  test("adds v1 to openai-compatible endpoints by default", () => {
+    const result = validateCustomProvider({
+      form: {
+        providerID: "compatible-provider",
+        npm: "@ai-sdk/openai-compatible",
+        name: "Compatible provider",
+        baseURL: "https://api.example.com",
+        apiKey: "",
+        models: [model({ row: "m0", id: "smoke", name: "Smoke" })],
+        headers: [],
+        err: {},
+      },
+      t,
+      disabledProviders: [],
+      existingProviderIDs: new Set(),
+    })
+    expect(result.result?.config.options.baseURL).toBe("https://api.example.com/v1")
+  })
+
+  test("preserves the endpoint when automatic v1 is disabled", () => {
+    const result = validateCustomProvider({
+      form: {
+        providerID: "compatible-provider",
+        npm: "@ai-sdk/openai-compatible",
+        autoV1: false,
+        name: "Compatible provider",
+        baseURL: "https://api.example.com/custom",
+        apiKey: "",
+        models: [model({ row: "m0", id: "smoke", name: "Smoke" })],
+        headers: [],
+        err: {},
+      },
+      t,
+      disabledProviders: [],
+      existingProviderIDs: new Set(),
+    })
+    expect(result.result?.config.options.baseURL).toBe("https://api.example.com/custom")
   })
   test.each([
     "https://api.example.com",
@@ -228,7 +265,7 @@ describe("validateCustomProvider", () => {
         name: "Custom Provider",
         env: ["CUSTOM_PROVIDER_KEY"],
         options: {
-          baseURL: "https://api.example.com",
+          baseURL: "https://api.example.com/v1",
           headers: {
             "X-Test": "enabled",
           },

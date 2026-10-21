@@ -38,6 +38,7 @@ export function DialogCustomProvider(props: Props) {
   const [form, setForm] = createStore<FormState>({
     providerID: "",
     npm: OPENAI_COMPATIBLE,
+    autoV1: true,
     name: "",
     baseURL: "",
     apiKey: "",
@@ -118,7 +119,11 @@ export function DialogCustomProvider(props: Props) {
 
   const setField = (key: "providerID" | "npm" | "name" | "baseURL" | "apiKey", value: string) => {
     setForm(key, value)
-    if (key === "apiKey" || key === "npm") return
+    if (key === "npm") {
+      setForm("autoV1", true)
+      return
+    }
+    if (key === "apiKey") return
     setForm("err", key, undefined)
   }
 
@@ -265,8 +270,10 @@ export function DialogCustomProvider(props: Props) {
               label={language.t("provider.custom.field.baseURL.label")}
               placeholder="https://api.myprovider.com"
               npm={form.npm}
+              autoV1={form.autoV1 ?? true}
               value={form.baseURL}
               onChange={(v) => setField("baseURL", v)}
+              onAutoV1Change={(value) => setForm("autoV1", value)}
               validationState={form.err.baseURL ? "invalid" : undefined}
               error={form.err.baseURL}
             />
@@ -350,7 +357,7 @@ export function DialogCustomProvider(props: Props) {
               {language.t("provider.custom.models.add")}
             </Button>
             <FetchProviderModels
-              baseURL={resolveProviderBaseURL(form.baseURL, form.npm)}
+              baseURL={resolveProviderBaseURL(form.baseURL, form.npm, form.autoV1)}
               apiKey={form.apiKey}
               npm={form.npm}
               headers={form.headers}

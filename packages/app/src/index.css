@@ -83,10 +83,23 @@
     [data-slot="provider-base-url-suffix"] {
       display: inline-flex;
       align-items: center;
+      border: 0;
       padding: 2px 7px;
       border-radius: 4px;
       background: var(--surface-hover);
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
       line-height: 20px;
+    }
+
+    [data-slot="provider-base-url-suffix"]:hover {
+      background: var(--surface-base-hover);
+    }
+
+    [data-slot="provider-base-url-suffix"][aria-pressed="false"] {
+      opacity: 0.6;
+      text-decoration-line: line-through;
     }
   }
 

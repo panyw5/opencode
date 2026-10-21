@@ -1,25 +1,31 @@
 import { TextField, type TextFieldProps } from "@opencode-ai/ui/text-field"
 import { createEffect, onCleanup, Show, splitProps } from "solid-js"
 import { useLanguage } from "@/context/language"
-import { hasProviderV1, pasteProviderBaseURL, usesProviderV1 } from "./provider-base-url"
+import { hasProviderV1, pasteProviderBaseURL, stripProviderV1, usesProviderV1 } from "./provider-base-url"
 
 export function ProviderBaseURLField(
-  props: TextFieldProps & { value: string; npm?: string; onChange: (value: string) => void },
+  props: TextFieldProps & {
+    value: string
+    npm?: string
+    autoV1: boolean
+    onChange: (value: string) => void
+    onAutoV1Change: (value: boolean) => void
+  },
 ) {
   const language = useLanguage()
-  const [local, rest] = splitProps(props, ["value", "npm", "onChange"])
-  let suffix: HTMLSpanElement | undefined
+  const [local, rest] = splitProps(props, ["value", "npm", "autoV1", "onChange", "onAutoV1Change"])
+  let suffix: HTMLButtonElement | undefined
   let animation: Animation | undefined
   onCleanup(() => animation?.cancel())
   createEffect(() => {
     console.info(
-      `[provider-base-url] SDK=${local.npm?.trim() || "@ai-sdk/openai-compatible"} autoV1=${usesProviderV1(local.npm)}`,
+      `[provider-base-url] SDK=${local.npm?.trim() || "@ai-sdk/openai-compatible"} autoV1=${local.autoV1 && usesProviderV1(local.npm)}`,
     )
   })
 
   const change = (value: string) => {
     local.onChange(value)
-    if (!usesProviderV1(local.npm) || !hasProviderV1(value)) return
+    if (!local.autoV1 || !usesProviderV1(local.npm) || !hasProviderV1(value)) return
     animation?.cancel()
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
     console.info(`[provider-base-url] typed v1 suffix detected warning=scale-bounce systemReducedMotion=${reduced}`)
@@ -32,6 +38,13 @@ export function ProviderBaseURLField(
     )
   }
 
+  const toggleAutoV1 = () => {
+    const next = !local.autoV1
+    if (next) local.onChange(stripProviderV1(local.value, local.npm))
+    local.onAutoV1Change(next)
+    console.info(`[provider-base-url] autoV1 toggled enabled=${next}`)
+  }
+
   return (
     <div data-component="provider-base-url">
       <TextField
@@ -40,17 +53,21 @@ export function ProviderBaseURLField(
         onChange={change}
         suffix={
           <Show when={usesProviderV1(local.npm)}>
-            <span
+            <button
+              type="button"
               ref={suffix}
               data-slot="provider-base-url-suffix"
               title={language.t("provider.custom.field.baseURL.autoV1")}
+              aria-label={language.t("provider.custom.field.baseURL.autoV1")}
+              aria-pressed={local.autoV1}
+              onClick={toggleAutoV1}
             >
               /v1
-            </span>
+            </button>
           </Show>
         }
         onPaste={(event: ClipboardEvent & { currentTarget: HTMLInputElement | HTMLTextAreaElement }) => {
-          if (!usesProviderV1(local.npm)) return
+          if (!local.autoV1 || !usesProviderV1(local.npm)) return
           const pasted = event.clipboardData?.getData("text/plain")
           if (!pasted) return
           event.preventDefault()
@@ -61,6 +78,7 @@ export function ProviderBaseURLField(
             input.selectionStart ?? input.value.length,
             input.selectionEnd ?? input.value.length,
             local.npm,
+            local.autoV1,
           )
           console.info(`[provider-base-url] paste normalized removed=${hasProviderV1(pasted) ? "v1" : "none"}`)
           input.value = result.value
