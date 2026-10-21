@@ -43,6 +43,10 @@ const useTunnel = process.argv.includes("--tunnel")
 const holdForBrowser = process.argv.includes("--hold")
 const webRootFlag = process.argv.indexOf("--web-root")
 const browserWebRoot = webRootFlag >= 0 ? process.argv[webRootFlag + 1] : undefined
+const sidecarFlag = process.argv.indexOf("--sidecar")
+const packagedSidecar = sidecarFlag >= 0 ? process.argv[sidecarFlag + 1] : undefined
+if (sidecarFlag >= 0 && (!packagedSidecar || packagedSidecar.startsWith("--")))
+  throw new Error("--sidecar requires a packaged executable")
 if (webRootFlag >= 0 && (!browserWebRoot || browserWebRoot.startsWith("--"))) {
   throw new Error("--web-root requires a compiled web directory")
 }
@@ -244,10 +248,9 @@ async function run() {
   }
   backend = Bun.spawn(
     [
-      process.execPath,
-      "run",
-      "--conditions=browser",
-      "./src/index.ts",
+      ...(packagedSidecar
+        ? [resolve(packagedSidecar)]
+        : [process.execPath, "run", "--conditions=browser", "./src/index.ts"]),
       "--pure",
       "--print-logs",
       "serve",
@@ -307,6 +310,19 @@ async function run() {
   }
   assert(healthy, "Sidecar did not become healthy")
   console.log("[remote-e2e] isolated sidecar healthy")
+  if (packagedSidecar) {
+    await writeFile(
+      join(root, "package-worker-input.json"),
+      JSON.stringify({
+        upstream: { url: backendUrl, username: "opencode", password },
+        project,
+        permission: permissionFixture,
+        config,
+      }),
+      { mode: 0o600 },
+    )
+    console.log("[remote-e2e] packaged sidecar fixture metadata saved privately")
+  }
   gateway = await createRemoteGateway({
     upstream: () => ({ url: backendUrl, username: "opencode", password }),
     webRoot: holdForBrowser ? resolve(browserWebRoot ?? join(desktop, "resources/remote-web")) : webRoot,

@@ -168,9 +168,9 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
     createEffect(() => {
       if (typeof document === "undefined") return
       const id = store.appearance?.font ?? defaultSettings.appearance.font
-      if (id !== defaultSettings.appearance.font) {
-        void loadFont().then((x) => x.ensureMonoFont(id))
-      }
+      // createStore can mutate its initial object; it is not a stable default
+      // to compare against. The loader already skips the built-in font.
+      void loadFont().then((x) => x.ensureMonoFont(id))
       document.documentElement.style.setProperty("--font-family-mono", monoFontFamily(id))
     })
 

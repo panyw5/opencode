@@ -24,6 +24,7 @@ const sidebarActionsTest = process.argv.includes("--sidebar-actions") || taskCar
 const modelOnlyTest = process.argv.includes("--model-only")
 const toolbarSizingTest = process.argv.includes("--toolbar-sizing")
 const generalOnlyTest = process.argv.includes("--general-only")
+const fontsTest = process.argv.includes("--fonts")
 const presenceTest = invite.presence || process.argv.includes("--presence")
 const locale = process.argv.find((arg) => arg.startsWith("--locale="))?.slice("--locale=".length)
 const { client: desktop } = await connectCdp()
@@ -261,6 +262,114 @@ async function checkRemoteGeneralDialog() {
   })()`)
   if (!toggled) throw new Error("General preferences no longer toggle or restore correctly")
   console.log("[remote-general-qa] local preference toggled and restored; logout retained")
+}
+
+async function checkRemoteFonts() {
+  await resizeViewport(1440, 900)
+  const original = await browser!.evaluate<string>(
+    `document.querySelector('[data-action="settings-font"] [data-slot="select-select-trigger-value"]').textContent.trim()`,
+  )
+  const trigger = `document.querySelector('[data-action="settings-font"] [data-slot="select-select-trigger"]')`
+  const openPicker = () =>
+    browser!.evaluate(`(() => {
+    const trigger=${trigger};trigger.scrollIntoView({block:'center'});trigger.focus();
+    trigger.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',code:'ArrowDown',bubbles:true}));
+  })()`)
+  await openPicker()
+  await waitFor(async () => {
+    const count = await browser!.evaluate<number>(
+      `document.querySelectorAll('[data-slot="select-select-item"]').length`,
+    )
+    return count === 13 ? count : undefined
+  }, "all thirteen remote font options")
+  const options = await browser!.evaluate<Array<{ label: string; family: string }>>(`
+    [...document.querySelectorAll('[data-slot="select-select-item"]')].map(item=>{
+      const label=item.querySelector('[data-slot="select-select-item-label"]');
+      const span=label.querySelector('span');
+      return {label:label.textContent.trim(),family:getComputedStyle(span??label).fontFamily.split(',')[0].trim().replaceAll('"','')};
+    })
+  `)
+  for (const [index, option] of options.entries()) {
+    if (index) await openPicker()
+    await waitFor(
+      async () =>
+        (await browser!.evaluate<number>(`document.querySelectorAll('[data-slot="select-select-item"]').length`)) === 13
+          ? true
+          : undefined,
+      "font picker options",
+    )
+    await browser!.evaluate(`(() => {
+      const option=[...document.querySelectorAll('[data-slot="select-select-item"]')].find(e=>e.querySelector('[data-slot="select-select-item-label"]').textContent.trim()===${JSON.stringify(option.label)});
+      option.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:1,pointerType:'mouse',button:0}));
+      option.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:1,pointerType:'mouse',button:0}));
+      option.click();
+    })()`)
+    await waitFor(
+      async () =>
+        (await browser!.evaluate<boolean>(
+          `document.querySelector('[data-action="settings-font"] [data-slot="select-select-trigger-value"]').textContent.trim()===${JSON.stringify(option.label)} && document.documentElement.style.getPropertyValue('--font-family-mono').startsWith(${JSON.stringify(`"${option.family}"`)})`,
+        ))
+          ? true
+          : undefined,
+      `selected font ${option.label}`,
+    )
+    await waitFor(async () => {
+      const loaded = await browser!.evaluate<boolean>(`(async()=>{
+        const family=${JSON.stringify(option.family)};
+        const faces=await document.fonts.load('16px "'+family+'"','ABC 0123 -> !=');
+        const bold=await document.fonts.load('700 16px "'+family+'"','ABC 0123');
+        const icons=await document.fonts.load('16px "IBM Plex Mono"',String.fromCodePoint(0xf120));
+        return faces.length>0&&bold.length>0&&icons.length>0&&[...faces,...bold,...icons].every(f=>f.status==='loaded');
+      })()`)
+      return loaded ? true : undefined
+    }, `regular, bold and shared icon font ${option.family}`)
+    console.log(`[remote-fonts-cdp] font=${option.family} regular=true bold=true sharedIcons=true`)
+  }
+  await browser!.call("Page.reload")
+  await waitFor(
+    async () =>
+      (await browser!.evaluate<boolean>(
+        `!!document.getElementById('oc-font-geist-mono') && document.documentElement.style.getPropertyValue('--font-family-mono').startsWith('"GeistMono Nerd Font"')`,
+      ))
+        ? true
+        : undefined,
+    "saved non-default font restored after reload",
+  )
+  console.log("[remote-fonts-cdp] saved non-default font restored after page reload")
+  await resizeViewport(390, 664)
+  await waitFor(
+    async () =>
+      (await browser!.evaluate<boolean>(
+        `!!document.querySelector('[data-component="sidebar-nav-mobile"] [data-icon="settings-gear"]')`,
+      ))
+        ? true
+        : undefined,
+    "mobile settings entry ready after reload",
+  )
+  await browser!.evaluate(
+    `document.querySelector('[data-component="sidebar-nav-mobile"] [data-icon="settings-gear"]').click()`,
+  )
+  await waitFor(
+    async () =>
+      (await browser!.evaluate<boolean>(`!!document.querySelector('[data-action="settings-font"]')`))
+        ? true
+        : undefined,
+    "font settings reopened after reload",
+  )
+  await openPicker()
+  await waitFor(
+    async () =>
+      (await browser!.evaluate<number>(`document.querySelectorAll('[data-slot="select-select-item"]').length`)) === 13
+        ? true
+        : undefined,
+    "restore font picker",
+  )
+  await browser!.evaluate(`(() => {
+    const option=[...document.querySelectorAll('[data-slot="select-select-item"]')].find(e=>e.querySelector('[data-slot="select-select-item-label"]').textContent.trim()===${JSON.stringify(original)});
+    option.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:1,pointerType:'mouse',button:0}));
+    option.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:1,pointerType:'mouse',button:0}));option.click();
+  })()`)
+  console.log("[remote-fonts-cdp] all 13 font options verified; original selection restored")
 }
 
 async function checkTaskCardIcons(component: string) {
@@ -784,12 +893,13 @@ try {
   if (state.errors.length || sessionState.errors.length) throw new Error("Remote web UI raised browser errors")
   if (state.failed.length || sessionState.failed.length)
     throw new Error("Remote web UI issued rejected bootstrap requests")
-  if (presenceTest || generalOnlyTest) {
+  if (presenceTest || generalOnlyTest || fontsTest) {
     await browser.evaluate(
       `document.querySelector('[data-component="sidebar-nav-mobile"] [data-icon="settings-gear"]').click()`,
     )
     if (presenceTest) await checkPresencePage("settings")
     if (generalOnlyTest) await checkRemoteGeneralDialog()
+    if (fontsTest) await checkRemoteFonts()
     const hasCloseButton = await browser.evaluate<boolean>(
       `!!document.querySelector('[data-slot="dialog-close-button"]')`,
     )

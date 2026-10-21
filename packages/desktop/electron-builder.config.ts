@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
 import type { Configuration } from "electron-builder"
+import { auditPackage } from "./scripts/package-content"
 
 const execFileAsync = promisify(execFile)
 const packageDir = path.dirname(fileURLToPath(import.meta.url))
@@ -49,7 +50,28 @@ const getBase = (appId: string): Configuration => ({
   extraMetadata: {
     desktopName: `${appId}.desktop`,
   },
-  files: ["out/**/*", "!**/*.map", "!out/renderer/assets/JetBrainsMonoNerdFontMono-Regular.woff2", "package.json"],
+  files: [
+    "out/**/*",
+    "!**/*.map",
+    "!out/renderer/assets/JetBrainsMonoNerdFontMono-Regular.woff2",
+    "package.json",
+    // These source-only workspace packages and the tunnel SDK are bundled by
+    // electron-vite. Keep metadata/licenses, not a second runtime/source tree.
+    "!node_modules/@opencode-ai/{core,util,remote-tunnel}/{src,test,tests,scripts}/**/*",
+    "!node_modules/@opencode-ai/remote-tunnel/node_modules/**/*",
+    "!node_modules/@opentunnel/{client,protocol}/dist/**/*",
+    "!node_modules/@opentunnel/{client,protocol}/src/**/*",
+    "!node_modules/effect/src/**/*",
+    "!node_modules/effect/ai-docs/**/*",
+    "!**/node_modules/**/{AGENTS,CLAUDE}.md",
+  ],
+  afterPack: async (context) => {
+    const resources =
+      context.electronPlatformName === "darwin"
+        ? path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, "Contents", "Resources")
+        : path.join(context.appOutDir, "resources")
+    await auditPackage(resources)
+  },
   extraResources: [
     { from: "resources/gpt-pro-login", to: "gpt-pro-login", filter: ["**/*"] },
     {
