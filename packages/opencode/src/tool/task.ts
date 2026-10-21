@@ -3,6 +3,7 @@ import DESCRIPTION from "./task.txt"
 import { ToolJsonSchema } from "./json-schema"
 import { BackgroundJob } from "@/background/job"
 import { Session } from "@/session/session"
+import { getContextLocale, setContextLocale } from "@/session/context-locale"
 import { SessionID, MessageID } from "../session/schema"
 import { MessageV2 } from "../session/message-v2"
 import { Agent } from "../agent/agent"
@@ -211,6 +212,14 @@ export const TaskTool = Tool.define(
               enabled: true,
             })
           }
+
+          const locale = getContextLocale(ctx.sessionID)
+          setContextLocale(nextSession.id, locale)
+          yield* elog.info("subagent context locale inherited", {
+            parentSessionID: ctx.sessionID,
+            sessionID: nextSession.id,
+            locale,
+          })
 
           const metadata = {
             parentSessionId: ctx.sessionID,

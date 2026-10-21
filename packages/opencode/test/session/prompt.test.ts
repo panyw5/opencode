@@ -60,6 +60,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { ScheduledTaskRepository } from "@/scheduled-task/repository"
 import { ProjectTask } from "@/project-task/service"
+import { setContextLocale } from "@/session/context-locale"
 import { InstanceState } from "@/effect/instance-state"
 import { IMOwner } from "@/im/owner"
 import { IM } from "@/im/service"
@@ -1721,6 +1722,7 @@ it.instance("mounted project task context flows into task subagent prompt", () =
       title: "Project task context E2E",
       permission: [{ permission: "*", pattern: "*", action: "allow" }],
     })
+    setContextLocale(parent.id, "zh")
     const task = yield* projectTasks.create({
       title: "E2E subagent context inject",
       description: [
@@ -1815,6 +1817,37 @@ it.instance("mounted project task context flows into task subagent prompt", () =
     expect(injected?.text).not.toContain("Linked sessions")
     expect(injected?.text).not.toContain("Task workspace files")
     expect(injected?.text).not.toContain("project_task_list")
+
+    setContextLocale(parent.id, "en")
+    yield* prompt.prompt({
+      sessionID: parent.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "Resume the child using the new UI language." }],
+    })
+    yield* llm.tool("task", {
+      description: "inspect updated context language",
+      prompt: delegation,
+      subagent_type: "general",
+      task_id: child.id,
+    })
+    yield* llm.text("child context language inspected")
+    yield* llm.text("parent received updated child report")
+    const resumed = yield* prompt.loop({ sessionID: parent.id })
+    expect(resumed.parts.some((part) => part.type === "text" && part.text === "parent received updated child report")).toBe(true)
+    const updatedInputs = yield* llm.inputs
+    expect(updatedInputs).toHaveLength(6)
+    expect(JSON.stringify(updatedInputs[4]?.messages)).toContain("# Project Task Context")
+    const updatedMessages = yield* MessageV2.filterCompactedEffect(child.id)
+    const updates = updatedMessages.flatMap((message) => message.parts).filter(
+      (part): part is MessageV2.TextPart => part.type === "text" && part.metadata?.kind === "project-task-injection",
+    )
+    expect(updates).toHaveLength(2)
+    expect(updates[0]?.text).toBe(injected?.text)
+    expect(updates[1]?.metadata?.locale).toBe("en")
+    expect(updates[1]?.text).toContain(task.description)
+    expect(updates[1]?.text).toContain("# Project Task Context")
+    expect(updates[1]?.text).not.toContain("## 用途与边界")
   }),
 )
 

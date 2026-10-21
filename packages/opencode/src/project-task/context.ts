@@ -1,6 +1,8 @@
 import type { Detail } from "./schema"
 import type { TaskWorkspaceFile } from "./description-file"
 import { descriptionRelativePath, taskWorkspaceRelativePath } from "./description-file"
+import { parseUILocale } from "@opencode-ai/core/locale"
+import { projectTaskContextCopy } from "./context-copy"
 
 /** Who receives the inject brief — main session vs task/subagent child. */
 export type ProjectTaskInjectAudience = "parent" | "subagent"
@@ -12,6 +14,7 @@ export type TaskContextSnapshot = {
   status: string
   description: string
   workspaceDirectory?: string
+  locale?: string
   progress: {
     total: number
     completed: number
@@ -130,6 +133,7 @@ function collectOpenTodos(detail: Detail, sessionLimit: number, todoLimit: numbe
 export function buildTaskContextSnapshot(
   detail: Detail,
   workspaceFiles: TaskWorkspaceFile[] = [],
+  locale?: string,
 ): TaskContextSnapshot {
   return {
     taskID: detail.id,
@@ -137,6 +141,7 @@ export function buildTaskContextSnapshot(
     status: detail.status,
     description: detail.description.trim(),
     workspaceDirectory: detail.workspaceDirectory,
+    locale: parseUILocale(locale) ?? "en",
     progress: {
       total: detail.progress.total,
       completed: detail.progress.completed,
@@ -221,26 +226,29 @@ function parentIntroLines(): string[] {
   ]
 }
 
-function formatSubagentTaskContext(detail: Detail, mode: "full" | "delta"): string {
+function formatSubagentTaskContext(detail: Detail, mode: "full" | "delta", locale?: string): string {
+  const copy = projectTaskContextCopy(locale)
+  const separator = locale === "zh" || locale === "zht" || locale === "ja" ? "：" : ": "
+  const period = locale === "zh" || locale === "zht" || locale === "ja" ? "。" : ". "
   return [
     `<project-task-state mode="${mode}" audience="subagent">`,
-    "# 项目任务上下文",
+    `# ${copy.heading}`,
     "",
-    "## 用途与边界",
+    `## ${copy.scope}`,
     "",
-    "你是主智能体派发的子智能体。本次任务、执行范围和交付要求，以上面主智能体撰写的委派 prompt 为准。",
+    copy.intro,
     "",
-    "- 以下内容是父级项目的公共背景，不是对你的额外委派。仅执行主智能体指定的任务；其中适用于本次工作的约定与保护要求仍须遵守。",
-    "- 保留用户和其他智能体的已有改动；不要覆盖他人成果。发现协作冲突时向主智能体报告。",
+    `- ${copy.background}`,
+    `- ${copy.preserve}`,
     "",
-    "## 父级项目任务信息",
+    `## ${copy.info}`,
     "",
-    `项目任务：${detail.title}`,
+    `${copy.task}${separator}${detail.title}`,
     "",
-    `项目任务 ID：\`${detail.id}\`。查询本任务相关信息时，使用此 ID`,
+    `${copy.id}${separator}\`${detail.id}\`${period}${copy.lookup}`,
     "",
-    ...(detail.workspaceDirectory ? [`项目根目录：\`${detail.workspaceDirectory}\``, ""] : []),
-    "## 父级项目任务描述",
+    ...(detail.workspaceDirectory ? [`${copy.root}${separator}\`${detail.workspaceDirectory}\``, ""] : []),
+    `## ${copy.description}`,
     "",
     detail.description,
     "",
@@ -298,6 +306,7 @@ export type FormatProjectTaskContextInput = {
   workspaceFiles?: TaskWorkspaceFile[]
   /** parent = main/orchestrator session; subagent = task-tool child session. */
   audience?: ProjectTaskInjectAudience
+  locale?: string
 }
 
 /** Format a full project-task brief (first inject for a task on this session). */
@@ -315,7 +324,7 @@ export function formatProjectTaskFullContext(
   const workspaceFiles = input.workspaceFiles ?? []
   const audience = input.audience ?? "parent"
 
-  if (audience === "subagent") return formatSubagentTaskContext(detail, "full")
+  if (audience === "subagent") return formatSubagentTaskContext(detail, "full", input.locale)
 
   const lines: string[] = [
     `<project-task-state mode="full" audience="${audience}">`,
@@ -343,18 +352,20 @@ export function formatProjectTaskDeltaContext(
   prev: TaskContextSnapshot,
   workspaceFiles: TaskWorkspaceFile[] = [],
   audience: ProjectTaskInjectAudience = "parent",
+  locale?: string,
 ): string | null {
-  const next = buildTaskContextSnapshot(detail, workspaceFiles)
+  const next = buildTaskContextSnapshot(detail, workspaceFiles, locale)
   // Only changes to the subagent's visible background should trigger another inject.
   if (audience === "subagent") {
     if (
       prev.taskID === next.taskID &&
       prev.title === next.title &&
       prev.description === next.description &&
-      prev.workspaceDirectory === next.workspaceDirectory
+      prev.workspaceDirectory === next.workspaceDirectory &&
+      prev.locale === next.locale
     )
       return null
-    return formatSubagentTaskContext(detail, "delta")
+    return formatSubagentTaskContext(detail, "delta", locale)
   }
   if (snapshotsEqual(prev, next)) return null
 
@@ -508,10 +519,11 @@ export function decideProjectTaskInject(input: {
   workspaceFiles?: TaskWorkspaceFile[]
   /** parent (default) vs subagent child session. */
   audience?: ProjectTaskInjectAudience
+  locale?: string
 }): InjectDecision {
   const workspaceFiles = input.workspaceFiles ?? []
   const audience = input.audience ?? "parent"
-  const snapshot = buildTaskContextSnapshot(input.detail, workspaceFiles)
+  const snapshot = buildTaskContextSnapshot(input.detail, workspaceFiles, input.locale)
   let state = normalizeInjectState(input.state)
   const taskID = input.detail.id
 
@@ -525,7 +537,7 @@ export function decideProjectTaskInject(input: {
   if (!alreadyFullForThisTask) {
     return {
       mode: "full",
-      text: formatProjectTaskFullContext({ detail: input.detail, workspaceFiles, audience }),
+      text: formatProjectTaskFullContext({ detail: input.detail, workspaceFiles, audience, locale: input.locale }),
       next: withSnapshot(state, taskID, snapshot),
     }
   }
@@ -535,12 +547,12 @@ export function decideProjectTaskInject(input: {
     // Full flag set but snapshot missing/stale — re-send FULL to re-anchor.
     return {
       mode: "full",
-      text: formatProjectTaskFullContext({ detail: input.detail, workspaceFiles, audience }),
+      text: formatProjectTaskFullContext({ detail: input.detail, workspaceFiles, audience, locale: input.locale }),
       next: withSnapshot(state, taskID, snapshot),
     }
   }
 
-  const delta = formatProjectTaskDeltaContext(input.detail, prev, workspaceFiles, audience)
+  const delta = formatProjectTaskDeltaContext(input.detail, prev, workspaceFiles, audience, input.locale)
   if (!delta) return { mode: "skip" }
 
   return {

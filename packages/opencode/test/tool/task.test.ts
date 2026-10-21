@@ -19,6 +19,7 @@ import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProjectTask } from "@/project-task/service"
+import { getContextLocale, setContextLocale } from "@/session/context-locale"
 import { disposeAllInstances } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
@@ -223,6 +224,8 @@ describe("tool.task", () => {
       const sessions = yield* Session.Service
       const { chat, assistant } = yield* seed()
       const child = yield* sessions.create({ parentID: chat.id, title: "Existing child" })
+      setContextLocale(chat.id, "ja")
+      setContextLocale(child.id, "zh")
       const tool = yield* TaskTool
       const def = yield* tool.init()
       let seen: SessionPrompt.PromptInput | undefined
@@ -253,6 +256,7 @@ describe("tool.task", () => {
       expect(result.metadata.sessionId).toBe(child.id)
       expect(result.output).toContain(`task_id: ${child.id}`)
       expect(seen?.sessionID).toBe(child.id)
+      expect(getContextLocale(child.id)).toBe("ja")
     }),
   )
 
@@ -614,6 +618,7 @@ describe("tool.task", () => {
       const sessions = yield* Session.Service
       const projectTasks = yield* ProjectTask.Service
       const { chat, assistant } = yield* seed()
+      setContextLocale(chat.id, "zh")
       const task = yield* projectTasks.create({
         title: "Inherit mount",
         description: "Child should see this task",
@@ -649,6 +654,7 @@ describe("tool.task", () => {
       expect(child.mountedTaskID).toBe(task.id)
       expect(child.injectTaskContext).toBe(true)
       expect(result.metadata.mountedTaskID).toBe(task.id)
+      expect(getContextLocale(child.id)).toBe("zh")
     }),
   )
 

@@ -11,6 +11,8 @@ import type { Detail } from "@/project-task/schema"
 import { ProjectID } from "@/project/schema"
 import { ProjectTaskID } from "@/project-task/schema"
 import { SessionID } from "@/session/schema"
+import { UI_LOCALES } from "@opencode-ai/core/locale"
+import { projectTaskContextCopy } from "@/project-task/context-copy"
 
 function makeDetail(overrides?: Partial<Detail>): Detail {
   return {
@@ -85,6 +87,7 @@ describe("formatProjectTaskFullContext", () => {
     const text = formatProjectTaskFullContext({
       detail: makeDetail(),
       audience: "subagent",
+      locale: "zh",
       workspaceFiles: [
         {
           relativePath: ".project-tasks/ptask_test/prd.md",
@@ -170,11 +173,26 @@ describe("formatProjectTaskFullContext", () => {
 })
 
 describe("decideProjectTaskInject", () => {
+  test("changing template language refreshes background without translating project content", () => {
+    const detail = makeDetail({ title: "原始 title", description: "约定：Z=q^{-c/24} I\n\nDo not alter.\n" })
+    const first = decideProjectTaskInject({ detail, state: null, audience: "subagent", locale: "zh" })
+    if (first.mode !== "full") throw new Error("expected full")
+    const updated = decideProjectTaskInject({ detail, state: first.next, audience: "subagent", locale: "en" })
+    if (updated.mode !== "delta") throw new Error("expected delta")
+    expect(updated.text).toContain("# Project Task Context")
+    expect(updated.text).toContain(detail.title)
+    expect(updated.text).toContain(detail.description)
+    expect(updated.next.snapshots[detail.id]?.locale).toBe("en")
+    expect(decideProjectTaskInject({ detail, state: updated.next, audience: "subagent", locale: "en" }).mode).toBe(
+      "skip",
+    )
+  })
+
   test("subagent skips unrelated updates and refreshes only its project background", () => {
     const detail = makeDetail()
     const first = decideProjectTaskInject({ detail, state: null, audience: "subagent" })
     if (first.mode !== "full") throw new Error("expected full")
-    expect(first.text).toContain("项目根目录：`/repo`")
+    expect(first.text).toContain("Project root: `/repo`")
 
     const updated = makeDetail({ status: "done", sessionCount: 2 })
     updated.progress.completed = 2
@@ -345,9 +363,9 @@ describe("formatProjectTaskDeltaContext", () => {
     detail.sessions[0].todos[1].content = "unrelated sibling work"
     const text = formatProjectTaskDeltaContext(detail, prev, [], "subagent")
     expect(text).toContain('mode="delta" audience="subagent"')
-    expect(text).toContain("项目任务：Updated title")
+    expect(text).toContain("Project task: Updated title")
     expect(text).toContain("Updated background")
-    expect(text).toContain("不是对你的额外委派")
+    expect(text).toContain("not an additional assignment")
     for (const noise of [
       "unrelated sibling work",
       "active item",
@@ -363,7 +381,7 @@ describe("formatProjectTaskDeltaContext", () => {
   test("subagent receives an updated project root", () => {
     const prev = buildTaskContextSnapshot(makeDetail())
     const detail = makeDetail({ workspaceDirectory: "/other-worktree" })
-    expect(formatProjectTaskDeltaContext(detail, prev, [], "subagent")).toContain("项目根目录：`/other-worktree`")
+    expect(formatProjectTaskDeltaContext(detail, prev, [], "subagent")).toContain("Project root: `/other-worktree`")
   })
 
   test("returns null when snapshot matches", () => {
@@ -397,5 +415,35 @@ describe("formatProjectTaskDeltaContext", () => {
     const text = formatProjectTaskDeltaContext(detail, prev, files)
     expect(text).toContain("task workspace files changed")
     expect(text).toContain(".project-tasks/ptask_test/notes.md")
+  })
+})
+
+describe("project-task template locales", () => {
+  for (const locale of UI_LOCALES) {
+    test(`${locale} translates only the template`, () => {
+      const detail = makeDetail({
+        title: "原始标题 / Original title",
+        description: "# 原文\n\nZ=q^{-c/24} I\n\n- Keep caches.\n",
+        workspaceDirectory: "/Users/example/论文 and notes",
+      })
+      const copy = projectTaskContextCopy(locale)
+      const text = formatProjectTaskFullContext({ detail, audience: "subagent", locale })
+      for (const value of Object.values(copy)) {
+        expect(value.length).toBeGreaterThan(0)
+        expect(text).toContain(value)
+      }
+      expect(text).toContain(detail.title)
+      expect(text).toContain(detail.id)
+      expect(text).toContain(detail.workspaceDirectory!)
+      expect(text).toContain(detail.description)
+      if (locale !== "en") expect(copy.heading).not.toBe(projectTaskContextCopy("en").heading)
+    })
+  }
+
+  test("missing and unsupported locales fall back to English", () => {
+    const detail = makeDetail()
+    const expected = formatProjectTaskFullContext({ detail, audience: "subagent", locale: "en" })
+    expect(formatProjectTaskFullContext({ detail, audience: "subagent" })).toBe(expected)
+    expect(formatProjectTaskFullContext({ detail, audience: "subagent", locale: "unsupported" })).toBe(expected)
   })
 })

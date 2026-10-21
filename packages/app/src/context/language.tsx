@@ -5,25 +5,9 @@ import { createSimpleContext } from "@opencode-ai/ui/context"
 import { Persist, persisted } from "@/utils/persist"
 import { dict as en } from "@/i18n/en"
 import { dict as uiEn } from "@opencode-ai/ui/i18n/en"
+import { UI_LOCALES, type UILocale } from "@opencode-ai/core/locale"
 
-export type Locale =
-  | "en"
-  | "zh"
-  | "zht"
-  | "ko"
-  | "de"
-  | "es"
-  | "fr"
-  | "da"
-  | "ja"
-  | "pl"
-  | "ru"
-  | "ar"
-  | "no"
-  | "br"
-  | "th"
-  | "bs"
-  | "tr"
+export type Locale = UILocale
 
 type RawDictionary = typeof en & typeof uiEn
 type Dictionary = i18n.Flatten<RawDictionary>
@@ -33,25 +17,7 @@ function cookie(locale: Locale) {
   return `oc_locale=${encodeURIComponent(locale)}; Path=/; Max-Age=31536000; SameSite=Lax`
 }
 
-const LOCALES: readonly Locale[] = [
-  "en",
-  "zh",
-  "zht",
-  "ko",
-  "de",
-  "es",
-  "fr",
-  "da",
-  "ja",
-  "pl",
-  "ru",
-  "bs",
-  "ar",
-  "no",
-  "br",
-  "th",
-  "tr",
-]
+const LOCALES: readonly Locale[] = UI_LOCALES
 
 const INTL: Record<Locale, string> = {
   en: "en",

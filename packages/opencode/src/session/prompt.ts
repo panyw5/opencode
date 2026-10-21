@@ -78,6 +78,7 @@ import * as Database from "@/storage/db"
 import { IMAttachmentTable } from "@/im/inbox.sql"
 import { SessionTable } from "./session.sql"
 import { SessionInput } from "./input"
+import { getContextLocale } from "./context-locale"
 import { referencePromptMetadata, referenceTextPart } from "./prompt/reference"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
@@ -2562,6 +2563,7 @@ export const layer = Layer.effect(
               const injectState = getTaskContextInjectState(sessionID)
               const hasDurablePart = hasProjectTaskInjectionPart(msgs, hydrated.id)
               const audience = session.parentID ? ("subagent" as const) : ("parent" as const)
+              const locale = getContextLocale(sessionID)
               const workspaceFiles =
                 audience === "parent"
                   ? yield* Effect.promise(() => listTaskWorkspaceFiles(taskFilesAnchor(ctx), hydrated.id))
@@ -2572,6 +2574,7 @@ export const layer = Layer.effect(
                 hasDurablePart,
                 workspaceFiles,
                 audience,
+                locale,
               })
               yield* slog.info("project-task inject decide", {
                 taskID: hydrated.id,
@@ -2579,6 +2582,7 @@ export const layer = Layer.effect(
                 mode: decision.mode,
                 audience,
                 contextScope: audience === "subagent" ? "project-background" : "project-rollup",
+                locale,
                 workspaceDirectory: hydrated.workspaceDirectory,
                 workspaceFiles: workspaceFiles.length,
                 hasDurablePart,
@@ -2599,6 +2603,7 @@ export const layer = Layer.effect(
                       kind: PROJECT_TASK_INJECTION_KIND,
                       mode: decision.mode,
                       audience,
+                      locale,
                       taskID: hydrated.id,
                       taskName: hydrated.title,
                     },
