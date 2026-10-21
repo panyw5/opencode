@@ -1,0 +1,22 @@
+/* Keep desktop floating panels on the session-status surface. Unlayered rules
+   intentionally override theme effects and per-panel background utilities. */
+html {
+  :is(
+    [data-component="dialog"] [data-slot="dialog-content"],
+    [data-component="popover-content"],
+    [data-component="dropdown-menu-content"],
+    [data-component="dropdown-menu-sub-content"],
+    [data-component="context-menu-content"],
+    [data-component="context-menu-sub-content"],
+    [data-component="select-content"],
+    [data-component="hover-card-content"]
+  ) {
+    background: var(--surface-raised-stronger-non-alpha);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  :is([data-slot="popover-arrow"], [data-slot="dropdown-menu-arrow"], [data-slot="context-menu-arrow"]) {
+    fill: var(--surface-raised-stronger-non-alpha);
+  }
+}
