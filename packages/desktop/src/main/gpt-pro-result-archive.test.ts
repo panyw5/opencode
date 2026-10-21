@@ -102,6 +102,11 @@ describe("shared GPT-Pro result archive", () => {
       expect(status.phase).toBe("completed")
       expect(status.html).toBeUndefined()
       expect(controller.list()).toEqual([])
+      expect(controller.stateList().jobs).toEqual([])
+      const resolved = controller.stateRead("gpt_saved")
+      expect(resolved.state).toMatchObject({ kind: "archive", result: { id: "gpt_saved", phase: "completed" } })
+      expect(resolved.state).not.toHaveProperty("job")
+      expect(resolved.state).not.toHaveProperty("attachments")
       await controller.command({ action: "open", id: "gpt_saved" }, "/repo\nsession")
       expect(opened).toEqual(["gpt_saved"])
       await expect(

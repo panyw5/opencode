@@ -51,6 +51,7 @@ export const dict = {
   "gptPro.configSection": "Configuration",
   "gptPro.loggedIn": "Chat composer available",
   "gptPro.history": "Recent consultations",
+  "gptPro.historyStale": "Last confirmed consultation states; connection not verified.",
   "gptPro.viewResult": "View result",
   "gptPro.resultUnavailable": "The saved result is unavailable. You can try opening the original webpage.",
   "gptPro.guide.title": "Login flow",

@@ -15,16 +15,14 @@ import { usePlatform } from "@/context/platform"
 import { useLanguage } from "@/context/language"
 import { createGptProRefreshFence } from "./gpt-pro-refresh-fence"
 import { GptProRuntimeCards } from "./gpt-pro-runtime-cards"
-import {
-  DEFAULT_GPT_PRO_CONFIG,
-  type GptProConfig,
-  type GptProJob,
-  type GptProRuntimeStatus,
-} from "@opencode-ai/util/gpt-pro"
+import { gptProStateStore } from "@opencode-ai/ui/gpt-pro-state"
+import type { GptProExecutionSnapshot } from "@opencode-ai/util/gpt-pro-state"
+import { DEFAULT_GPT_PRO_CONFIG, type GptProConfig, type GptProRuntimeStatus } from "@opencode-ai/util/gpt-pro"
 
 export function GptProSettings(props: { onConfig?: (config: GptProConfig) => void }) {
   const platform = usePlatform()
   const api = platform.gptPro
+  const consultations = api ? gptProStateStore(api) : undefined
   const t = useLanguage().t
   const installGuide = t("gptPro.guide.install").split("chrome://extensions")
   const [state, set] = createStore({
@@ -34,8 +32,9 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
     loginErrorCode: undefined as GptProIssueCode | undefined,
     runtime: undefined as GptProRuntimeStatus | undefined,
     refreshError: "",
+    historyError: "",
     extensionDirectory: "",
-    jobs: [] as GptProJob[],
+    jobs: [] as GptProExecutionSnapshot[],
     result: {
       open: false,
       loading: false,
@@ -58,9 +57,9 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
     refreshing = true
     try {
       const runtime = await api.runtimeStatus?.()
-      const [config, login, jobs] = runtime
-        ? [runtime.config, runtime.login, runtime.jobs]
-        : await Promise.all([api.getConfig(), api.loginStatus(), api.list()])
+      const [config, login] = runtime
+        ? [runtime.config, runtime.login]
+        : await Promise.all([api.getConfig(), api.loginStatus()])
       if (disposed || !refreshFence.current(sequence)) return
       set({
         runtime,
@@ -70,7 +69,6 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
         loginErrorCode: login.errorCode,
         refreshError: "",
         extensionDirectory: login.extensionDirectory ?? "",
-        jobs: jobs.slice().reverse().slice(0, 10),
       })
       props.onConfig?.(config)
       console.debug(
@@ -116,7 +114,7 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
     if (state.login === "cancelled") return t("gptPro.importStatus.cancelled")
     return t("gptPro.importStatus.notImported")
   }
-  const viewHistory = async (job: GptProJob) => {
+  const viewHistory = async (job: GptProExecutionSnapshot) => {
     if (!api || state.busy) return
     set("busy", true)
     set("error", "")
@@ -140,7 +138,7 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
           loading: false,
           opening: false,
           error: "",
-          originalURL: resolution.result.url || job.url,
+          originalURL: resolution.result.url || undefined,
           jobID: resolution.result.id,
           result: resolution.result,
         })
@@ -154,7 +152,7 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
           opening: false,
           error: resolution.error || t("gptPro.resultUnavailable"),
           errorCode: resolution.errorCode,
-          originalURL: resolution.url || job.url,
+          originalURL: resolution.url || undefined,
           jobID: resolution.id,
           result: undefined,
         })
@@ -180,7 +178,7 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
           loading: false,
           opening: false,
           error: t("gptPro.resultUnavailable"),
-          originalURL: job.url,
+          originalURL: undefined,
           jobID: job.id,
           result: undefined,
         })
@@ -200,6 +198,17 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
     })
   }
   onMount(() => {
+    const unsubscribe = consultations?.watchList(() => {
+      set("historyError", consultations.connectionError())
+      set(
+        "jobs",
+        consultations
+          .list()
+          .slice()
+          .sort((a, b) => b.createdAt - a.createdAt)
+          .slice(0, 10),
+      )
+    })
     void refresh()
     const timer = setInterval(() => {
       if (!state.busy) void refresh()
@@ -208,6 +217,7 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
       disposed = true
       refreshFence.invalidate()
       clearInterval(timer)
+      unsubscribe?.()
     })
   })
   return (
@@ -505,6 +515,11 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
           <Collapsible.Arrow style={{ opacity: 1 }} />
         </Collapsible.Trigger>
         <Collapsible.Content>
+          <Show when={state.historyError}>
+            <p class="p-3 text-12-regular text-text-weak" role="status">
+              {t("gptPro.historyStale")}
+            </p>
+          </Show>
           <div class="mt-3 flex flex-col gap-2">
             <For each={state.jobs}>
               {(job) => (

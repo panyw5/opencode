@@ -52,6 +52,7 @@ export const dict = {
   "gptPro.configSection": "配置",
   "gptPro.loggedIn": "Chat 输入框可用",
   "gptPro.history": "最近咨询",
+  "gptPro.historyStale": "以下为最后确认的咨询状态，当前连接尚未核实。",
   "gptPro.viewResult": "查看结果",
   "gptPro.resultUnavailable": "已保存的结果不可用。你可以尝试打开原网页。",
   "gptPro.guide.title": "登录流程",

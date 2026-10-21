@@ -166,6 +166,32 @@ type Deps = {
 
 export function registerIpcHandlers(deps: Deps) {
   getGptProController()
+  const gptStateSubscriptions = new Map<string, () => void>()
+  ipcMain.handle("gpt-pro-state-read", (_event, id: string) => getGptProController().stateRead(id))
+  ipcMain.handle("gpt-pro-state-list", () => getGptProController().stateList())
+  ipcMain.handle("gpt-pro-state-subscribe", (event, subscriptionID: string) => {
+    if (typeof subscriptionID !== "string" || subscriptionID.length > 100) throw new Error("Invalid state subscription")
+    const sender = event.sender
+    const key = `${sender.id}:${subscriptionID}`
+    gptStateSubscriptions.get(key)?.()
+    const controller = getGptProController()
+    const unsubscribe = controller.subscribeState((state) => {
+      if (!sender.isDestroyed()) sender.send("gpt-pro-state-changed", { subscriptionID, state })
+    })
+    const cleanup = () => {
+      unsubscribe()
+      sender.removeListener("destroyed", cleanup)
+      gptStateSubscriptions.delete(key)
+    }
+    gptStateSubscriptions.set(key, cleanup)
+    sender.once("destroyed", cleanup)
+    writeLog("gpt-pro", `[gpt-pro-state] renderer subscribed renderer=${sender.id}`)
+    // Register before snapshotting: an update cannot fall into a handshake gap.
+    return controller.stateList()
+  })
+  ipcMain.on("gpt-pro-state-unsubscribe", (event, subscriptionID: string) => {
+    gptStateSubscriptions.get(`${event.sender.id}:${subscriptionID}`)?.()
+  })
   ipcMain.handle("gpt-pro-config", () => getGptProController().config())
   ipcMain.handle("gpt-pro-set-config", (_event, config: GptProConfig) => getGptProController().setConfig(config))
   ipcMain.handle("gpt-pro-command", (_event, command: GptProCommand) => getGptProController().command(command))

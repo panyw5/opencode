@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
 import type { BrowserViewState, ElectronAPI, InitStep, SqliteMigrationProgress } from "./types"
 import type { RemoteAccessStatus } from "@opencode-ai/app/remote/types"
+import type { GptProStateEvent } from "@opencode-ai/util/gpt-pro-state"
 
 const api: ElectronAPI = {
   remoteAccess: {
@@ -18,6 +19,31 @@ const api: ElectronAPI = {
     },
   },
   gptPro: {
+    state: {
+      read: (id) => ipcRenderer.invoke("gpt-pro-state-read", id),
+      list: () => ipcRenderer.invoke("gpt-pro-state-list"),
+      subscribe: (listener) => {
+        const subscriptionID = crypto.randomUUID()
+        let active = true
+        const handler = (_: unknown, payload: { subscriptionID: string; state: GptProStateEvent }) => {
+          if (active && payload.subscriptionID === subscriptionID) listener(payload.state)
+        }
+        ipcRenderer.on("gpt-pro-state-changed", handler)
+        void ipcRenderer.invoke("gpt-pro-state-subscribe", subscriptionID).then(
+          (snapshot) => {
+            if (active) listener(snapshot)
+          },
+          () => {
+            if (active) listener({ type: "disconnected", message: "Consultation state connection unavailable" })
+          },
+        )
+        return () => {
+          active = false
+          ipcRenderer.removeListener("gpt-pro-state-changed", handler)
+          ipcRenderer.send("gpt-pro-state-unsubscribe", subscriptionID)
+        }
+      },
+    },
     runtimeStatus: () => ipcRenderer.invoke("gpt-pro-runtime-status"),
     getConfig: () => ipcRenderer.invoke("gpt-pro-config"),
     setConfig: (config) => ipcRenderer.invoke("gpt-pro-set-config", config),

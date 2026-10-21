@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { GptProCommand, GptProJob } from "@opencode-ai/util/gpt-pro"
 import { parseGptProOutputFallback, resolveGptProView } from "./gpt-pro-result"
 import { closeDialogIfCurrent } from "./gpt-pro-handoff"
+import { gptProExecutionSnapshot } from "@opencode-ai/util/gpt-pro-state"
 
 const job = (id: string, phase: GptProJob["phase"], extra: Partial<GptProJob> = {}): GptProJob => ({
   id,
@@ -17,11 +18,24 @@ const job = (id: string, phase: GptProJob["phase"], extra: Partial<GptProJob> = 
   ...extra,
 })
 
-function client(run: (input: GptProCommand) => Promise<GptProJob>) {
+function client(
+  run: (input: GptProCommand) => Promise<GptProJob>,
+  lookup: () => GptProJob = () => job("gpt_current", "completed"),
+) {
   const calls: GptProCommand[] = []
   return {
     calls,
     api: {
+      state: {
+        read: async (requestedID: string) => ({
+          sourceID: "test",
+          sequence: 1,
+          requestedID,
+          state: { kind: "execution" as const, job: gptProExecutionSnapshot(lookup()) },
+        }),
+        list: async () => ({ type: "snapshot" as const, sourceID: "test", sequence: 1, jobs: [], removed: [] }),
+        subscribe: () => () => {},
+      },
       command: async (input: GptProCommand) => {
         calls.push(input)
         return run(input)
@@ -34,7 +48,8 @@ describe("GPT-Pro cached result view", () => {
   test("uses full read output first and never opens the browser", async () => {
     const full = "Answer ".repeat(5000)
     const f = client(async (input) => {
-      if (input.action === "read") return job("gpt_current", "completed", { text: full, html: "<script>unsafe</script>" })
+      if (input.action === "read")
+        return job("gpt_current", "completed", { text: full, html: "<script>unsafe</script>" })
       throw new Error(`Unexpected action ${input.action}`)
     })
     const result = await resolveGptProView(f.api, "gpt_original")
@@ -67,7 +82,7 @@ describe("GPT-Pro cached result view", () => {
     expect(result.result.html).toBe("<img src=x onerror=alert(1)>")
     expect(result.result.source).toBe("output")
     expect(parseGptProOutputFallback(output, "gpt_parent")).toBeUndefined()
-    expect(f.calls.map((call) => call.action)).toEqual(["read", "status"])
+    expect(f.calls.map((call) => call.action)).toEqual(["read"])
   })
 
   test("does not reuse parent output after status redirects to a successor", async () => {
@@ -77,39 +92,61 @@ describe("GPT-Pro cached result view", () => {
       url: "https://chatgpt.com/c/gpt_parent",
       text: "Stale parent answer",
     })
-    const f = client(async (input) => {
-      if (input.action === "status") return job("gpt_successor", "completed")
-      throw new Error("successor history was pruned")
-    })
+    const f = client(
+      async (input) => {
+        if (input.action === "status") return job("gpt_successor", "completed")
+        throw new Error("successor history was pruned")
+      },
+      () => job("gpt_successor", "completed"),
+    )
     const result = await resolveGptProView(f.api, "gpt_parent", parentOutput)
     expect(result).toMatchObject({ kind: "unavailable", id: "gpt_successor" })
-    expect(f.calls.map((call) => call.action)).toEqual(["read", "status"])
+    expect(f.calls.map((call) => call.action)).toEqual(["read"])
   })
   test("does not reuse a completed output when the current job is active after read failure", async () => {
     const output = JSON.stringify({ consultation_id: "gpt_active", phase: "completed", text: "Older result" })
-    const f = client(async (input) => {
-      if (input.action === "read") throw new Error("read unavailable")
-      if (input.action === "status") return job("gpt_active", "generating")
-      throw new Error(`Unexpected action ${input.action}`)
-    })
+    const f = client(
+      async (input) => {
+        if (input.action === "read") throw new Error("read unavailable")
+        if (input.action === "status") return job("gpt_active", "generating")
+        throw new Error(`Unexpected action ${input.action}`)
+      },
+      () => job("gpt_active", "generating"),
+    )
     const result = await resolveGptProView(f.api, "gpt_active", output)
     expect(result.kind).toBe("live")
-    expect(f.calls.map((call) => call.action)).toEqual(["read", "status"])
+    expect(f.calls).toEqual([])
   })
 
   test("keeps active and recovery jobs on the live-page handoff path", async () => {
-    const f = client(async (input) => {
-      if (input.action === "read") return job("gpt_active", "paused", { recovery: { stage: "compose", reason: "repair" } })
-      throw new Error(`Unexpected action ${input.action}`)
-    })
+    const f = client(
+      async (input) => {
+        if (input.action === "read")
+          return job("gpt_active", "paused", { recovery: { stage: "compose", reason: "repair" } })
+        throw new Error(`Unexpected action ${input.action}`)
+      },
+      () => job("gpt_active", "paused", { recovery: { stage: "compose", reason: "repair" } }),
+    )
     const result = await resolveGptProView(f.api, "gpt_active")
     expect(result.kind).toBe("live")
-    expect(f.calls.map((call) => call.action)).toEqual(["read"])
+    expect(f.calls).toEqual([])
   })
   test("a connection failure while reading history is not mislabeled as an expired record", async () => {
-    const f = client(async () => { throw new Error("Failed to fetch") })
+    const f = client(
+      async () => {
+        throw new Error("Failed to fetch")
+      },
+      () => {
+        throw new Error("Failed to fetch")
+      },
+    )
     const result = await resolveGptProView(f.api, "gpt_saved")
-    expect(result).toMatchObject({ kind: "unavailable", id: "gpt_saved", errorCode: "connection", error: "Failed to fetch" })
+    expect(result).toMatchObject({
+      kind: "unavailable",
+      id: "gpt_saved",
+      errorCode: "connection",
+      error: "Failed to fetch",
+    })
     expect(f.calls.some((call) => call.action === "open" || call.action === "send")).toBe(false)
   })
 

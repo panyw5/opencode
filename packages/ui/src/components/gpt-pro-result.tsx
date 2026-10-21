@@ -1,5 +1,8 @@
-import { gptProTerminal, type GptProAPI, type GptProJob } from "@opencode-ai/util/gpt-pro"
+import { type GptProJob } from "@opencode-ai/util/gpt-pro"
 import { gptProErrorText, gptProIssue, type GptProIssueCode } from "@opencode-ai/util/gpt-pro-error"
+import { gptProStateStore } from "./gpt-pro-state"
+import { gptProResultFinal, type GptProExecutionSnapshot } from "@opencode-ai/util/gpt-pro-state"
+import type { GptProStateClient } from "@opencode-ai/util/gpt-pro-store"
 
 export type GptProCachedResult = {
   id: string
@@ -14,7 +17,7 @@ export type GptProCachedResult = {
 
 export type GptProViewResolution =
   | { kind: "cached"; result: GptProCachedResult }
-  | { kind: "live"; job: GptProJob }
+  | { kind: "live"; job: GptProExecutionSnapshot }
   | { kind: "unavailable"; id: string; url?: string; error?: string; errorCode?: GptProIssueCode }
 
 function finalPhase(value: unknown): value is GptProCachedResult["phase"] {
@@ -34,7 +37,10 @@ function resultFromJob(job: GptProJob): GptProCachedResult {
   }
 }
 
-export function parseGptProOutputFallback(output: string | undefined, expectedID: string): GptProCachedResult | undefined {
+export function parseGptProOutputFallback(
+  output: string | undefined,
+  expectedID: string,
+): GptProCachedResult | undefined {
   if (!output) return
   try {
     const value = JSON.parse(output) as Record<string, unknown>
@@ -60,30 +66,45 @@ export function parseGptProOutputFallback(output: string | undefined, expectedID
 }
 
 export async function resolveGptProView(
-  client: Pick<GptProAPI, "command">,
+  client: GptProStateClient,
   id: string,
   output?: string,
 ): Promise<GptProViewResolution> {
-  let current: GptProJob
+  const store = gptProStateStore(client)
+  const entry = await store.refresh(id)
+  if (entry.freshness !== "current" || !entry.state)
+    return { kind: "unavailable", id, error: entry.error, errorCode: "connection" }
+  const current = entry.state.kind === "execution" ? entry.state.job : entry.state.result
+  if (entry.state.kind === "execution" && !gptProResultFinal(current.phase))
+    return { kind: "live", job: entry.state.job }
   try {
-    // Read is successor-aware and preserves the full answer; never build a result from list/status text.
-    current = await client.command({ action: "read", id })
+    const answer = await store.command({ action: "read", id: current.id })
+    const latest = store.get(id)
+    const selected = latest.state?.kind === "execution" ? latest.state.job : latest.state?.result
+    if (latest.freshness !== "current" || !selected || selected.id !== answer.id || selected.phase !== answer.phase)
+      return { kind: "unavailable", id: selected?.id ?? current.id, errorCode: "history_missing" }
+    return { kind: "cached", result: resultFromJob(answer) }
   } catch (error) {
-    const failure = { error: gptProErrorText(error), errorCode: gptProIssue({ error })?.code ?? "unknown" as const }
-    let currentID = id
-    let url: string | undefined
-    try {
-      const status = await client.command({ action: "status", id })
-      currentID = status.id
-      url = status.url
-      if (!finalPhase(status.phase)) return { kind: "live", job: status }
-    } catch {
-      const fallback = parseGptProOutputFallback(output, id)
-      return fallback ? { kind: "cached", result: fallback } : { kind: "unavailable", id, ...failure }
-    }
-    const fallback = parseGptProOutputFallback(output, currentID)
-    return fallback ? { kind: "cached", result: fallback } : { kind: "unavailable", id: currentID, url, ...failure }
+    const latest = await store.refresh(id)
+    if (latest.freshness !== "current" || !latest.state)
+      return {
+        kind: "unavailable",
+        id: current.id,
+        error: gptProErrorText(error),
+        errorCode: gptProIssue({ error })?.code ?? "unknown",
+      }
+    if (latest.state.kind === "execution" && !gptProResultFinal(latest.state.job.phase))
+      return { kind: "live", job: latest.state.job }
+    const selected = latest.state.kind === "execution" ? latest.state.job : latest.state.result
+    const fallback = parseGptProOutputFallback(output, selected.id)
+    return fallback && fallback.phase === selected.phase
+      ? { kind: "cached", result: fallback }
+      : {
+          kind: "unavailable",
+          id: selected.id,
+          url: selected.url,
+          error: gptProErrorText(error),
+          errorCode: gptProIssue({ error })?.code ?? "unknown",
+        }
   }
-  if (!gptProTerminal(current.phase) || !finalPhase(current.phase)) return { kind: "live", job: current }
-  return { kind: "cached", result: resultFromJob(current) }
 }
