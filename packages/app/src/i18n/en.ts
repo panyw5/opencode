@@ -1528,6 +1528,11 @@ export const dict = {
   "settings.desktop.openclaw.token.placeholder": "Paste token",
 
   "settings.general.section.appearance": "Appearance",
+  "settings.appearance.preview.description": "Choose a theme. Cards preview the main surfaces in the current light or dark mode.",
+  "settings.appearance.preview.sidebar": "Sidebar",
+  "settings.appearance.preview.session": "Session",
+  "settings.appearance.preview.topbar": "Top bar",
+  "settings.appearance.preview.popup": "Popup",
   "settings.general.section.notifications": "System notifications",
   "settings.general.section.updates": "Updates",
   "settings.general.section.sounds": "Sound effects",

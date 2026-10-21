@@ -1377,6 +1377,11 @@ export const dict = {
   "settings.desktop.openclaw.token.placeholder": "粘贴 token",
 
   "settings.general.section.appearance": "外观",
+  "settings.appearance.preview.description": "选择主题，卡片展示当前明暗模式下各主要板块的配色。",
+  "settings.appearance.preview.sidebar": "左边栏",
+  "settings.appearance.preview.session": "会话区",
+  "settings.appearance.preview.topbar": "顶栏",
+  "settings.appearance.preview.popup": "浮窗",
   "settings.general.section.notifications": "系统通知",
   "settings.general.section.updates": "更新",
   "settings.general.section.sounds": "音效",

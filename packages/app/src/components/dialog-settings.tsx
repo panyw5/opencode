@@ -9,6 +9,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { SettingsGeneral } from "./settings-general"
+import { SettingsAppearance } from "./settings-appearance"
 import { SettingsKeybinds } from "./settings-keybinds"
 import { SettingsProviders } from "./settings-providers"
 import { SettingsModels } from "./settings-models"
@@ -73,7 +74,12 @@ export const DialogSettings: Component<{ returnTarget?: ConfigReturnTarget }> = 
   }
 
   return (
-    <Dialog size="x-large" transition class="settings-dialog">
+    <Dialog
+      size="x-large"
+      transition
+      class="settings-dialog"
+      containerStyle={{ height: "min(calc(100dvh - 32px), 760px)" }}
+    >
       <Tabs orientation="vertical" variant="settings" defaultValue="general" class="h-full settings-dialog">
         <Tabs.List>
           <div class="flex flex-col justify-between h-full w-full">
@@ -85,6 +91,10 @@ export const DialogSettings: Component<{ returnTarget?: ConfigReturnTarget }> = 
                     <Tabs.Trigger value="general">
                       <Icon name="sliders" />
                       {language.t("settings.tab.general")}
+                    </Tabs.Trigger>
+                    <Tabs.Trigger value="appearance">
+                      <Icon name="eye" />
+                      {language.t("settings.general.section.appearance")}
                     </Tabs.Trigger>
                     <Tabs.Trigger value="shortcuts">
                       <Icon name="keyboard" />
@@ -134,6 +144,9 @@ export const DialogSettings: Component<{ returnTarget?: ConfigReturnTarget }> = 
         </Tabs.List>
         <Tabs.Content value="general" class="no-scrollbar">
           <SettingsGeneral />
+        </Tabs.Content>
+        <Tabs.Content value="appearance" class="no-scrollbar min-w-0">
+          <SettingsAppearance />
         </Tabs.Content>
         <Tabs.Content value="shortcuts" class="no-scrollbar">
           <SettingsKeybinds />

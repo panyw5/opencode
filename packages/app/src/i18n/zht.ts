@@ -699,6 +699,11 @@ export const dict = {
   "settings.desktop.wsl.description": "在 Windows 上的 WSL 中執行 OpenCode 伺服器。",
 
   "settings.general.section.appearance": "外觀",
+  "settings.appearance.preview.description": "選擇主題，卡片展示目前明暗模式下各主要區塊的配色。",
+  "settings.appearance.preview.sidebar": "側邊欄",
+  "settings.appearance.preview.session": "工作階段",
+  "settings.appearance.preview.topbar": "頂欄",
+  "settings.appearance.preview.popup": "浮動視窗",
   "settings.general.section.notifications": "系統通知",
   "settings.general.section.updates": "更新",
   "settings.general.section.sounds": "音效",

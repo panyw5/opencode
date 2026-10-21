@@ -71,9 +71,9 @@ test("global search shows localized index progress and can be disabled", async (
           ? { enabled: true, state: "running", indexed: 25, total: 100, complete: false, known: true }
           : state === "rebuilt"
             ? { enabled: true, state: "running", indexed: 0, total: 100, complete: false, known: true }
-          : state === "complete"
-            ? { enabled: true, state: "complete", indexed: 100, total: 100, complete: true, known: true }
-            : { enabled: false, state: "disabled", indexed: 0, total: 0, complete: false, known: false },
+            : state === "complete"
+              ? { enabled: true, state: "complete", indexed: 100, total: 100, complete: true, known: true }
+              : { enabled: false, state: "disabled", indexed: 0, total: 0, complete: false, known: false },
     })
   })
 
@@ -116,10 +116,46 @@ test("global search shows localized index progress and can be disabled", async (
   await expect(status.getByRole("progressbar")).toHaveCount(0)
 })
 
+test("message font size and content width live in appearance and keep their adjustments", async ({
+  page,
+  gotoSession,
+}) => {
+  await gotoSession()
+  const dialog = await openSettings(page)
+  const selectors = ["[data-action=settings-font-size]", "[data-action=settings-content-width]"]
+  for (const selector of selectors) await expect(dialog.locator(selector)).toHaveCount(0)
+  await dialog.getByRole("tab", { name: "Appearance", exact: true }).click()
+  expect(
+    await dialog
+      .locator("[data-settings-appearance] [data-action]")
+      .evaluateAll((elements) => elements.map((element) => element.getAttribute("data-action"))),
+  ).toEqual([
+    "settings-font",
+    "settings-icon-pack",
+    "settings-font-size",
+    "settings-content-width",
+    "settings-color-scheme",
+    "settings-theme",
+  ])
+  for (const selector of selectors) {
+    const control = dialog.locator(selector)
+    await expect(control).toBeVisible()
+    const initial = await control.locator("span").textContent()
+    const increase = control.getByRole("button").last()
+    const decrease = control.getByRole("button").first()
+    const canIncrease = await increase.isEnabled()
+    await (canIncrease ? increase : decrease).click()
+    await expect(control.locator("span")).not.toHaveText(initial!)
+    await (canIncrease ? decrease : increase).click()
+    await expect(control.locator("span")).toHaveText(initial!)
+  }
+})
+
 test("changing color scheme persists in localStorage", async ({ page, gotoSession }) => {
   await gotoSession()
 
   const dialog = await openSettings(page)
+  await dialog.getByRole("tab", { name: "Appearance", exact: true }).click()
   const select = dialog.locator(settingsColorSchemeSelector)
   await expect(select).toBeVisible()
 
@@ -140,44 +176,46 @@ test("changing color scheme persists in localStorage", async ({ page, gotoSessio
   expect(lightColorScheme).toBe("light")
 })
 
-test("changing theme persists in localStorage", async ({ page, gotoSession }) => {
+test("appearance cards select and persist a theme with four surface previews", async ({ page, gotoSession }) => {
   await gotoSession()
-
   const dialog = await openSettings(page)
-  const select = dialog.locator(settingsThemeSelector)
-  await expect(select).toBeVisible()
-
-  const currentThemeId = await page.evaluate(() => {
-    return document.documentElement.getAttribute("data-theme")
-  })
-  const currentTheme = (await select.locator('[data-slot="select-select-trigger-value"]').textContent())?.trim() ?? ""
-
-  await select.locator('[data-slot="select-select-trigger"]').click()
-
-  const items = page.locator('[data-slot="select-select-item"]')
-  const count = await items.count()
-  expect(count).toBeGreaterThan(1)
-
-  const nextTheme = (await items.locator('[data-slot="select-select-item-label"]').allTextContents())
-    .map((x) => x.trim())
-    .find((x) => x && x !== currentTheme)
-  expect(nextTheme).toBeTruthy()
-
-  await items.filter({ hasText: nextTheme! }).first().click()
-
-  await page.keyboard.press("Escape")
-
-  const storedThemeId = await page.evaluate(() => {
-    return localStorage.getItem("opencode-theme-id")
-  })
-
-  expect(storedThemeId).not.toBeNull()
-  expect(storedThemeId).not.toBe(currentThemeId)
-
-  const dataTheme = await page.evaluate(() => {
-    return document.documentElement.getAttribute("data-theme")
-  })
-  expect(dataTheme).toBe(storedThemeId)
+  await expect(dialog.locator(settingsThemeSelector)).toHaveCount(0)
+  await expect(dialog.locator(settingsColorSchemeSelector)).toHaveCount(0)
+  await dialog.getByRole("tab", { name: "Appearance", exact: true }).click()
+  const cards = dialog.locator(settingsThemeSelector).getByRole("button")
+  await expect(cards.first()).toBeEnabled()
+  expect(await cards.count()).toBeGreaterThan(1)
+  await expect(cards.first().locator(".theme-card-preview")).toHaveText("")
+  expect(
+    await dialog
+      .locator(settingsThemeSelector)
+      .evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length),
+  ).toBe(3)
+  const currentTheme = await page.locator("html").getAttribute("data-theme")
+  const next = dialog.locator("[data-component=settings-theme-card][aria-pressed=false]").first()
+  const id = await next.getAttribute("data-theme-id")
+  expect(id).not.toBe(currentTheme)
+  await expect(next.locator("[data-preview-surface]")).toHaveCount(4)
+  const colors = await next
+    .locator("[data-preview-surface]")
+    .evaluateAll((elements) => elements.map((el) => getComputedStyle(el).backgroundColor))
+  await next.click()
+  await expect(next).toHaveAttribute("aria-pressed", "true")
+  await expect(dialog.locator("[data-component=settings-theme-card][aria-pressed=true]")).toHaveCount(1)
+  await expect(page.locator("html")).toHaveAttribute("data-theme", id!)
+  expect(
+    await next
+      .locator("[data-preview-surface]")
+      .evaluateAll((elements) => elements.map((el) => getComputedStyle(el).backgroundColor)),
+  ).toEqual(colors)
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("opencode-theme-id"))).toBe(id)
+  await page.setViewportSize({ width: 600, height: 800 })
+  await expect
+    .poll(() => dialog.locator("[data-settings-appearance]").evaluate((el) => el.scrollWidth <= el.clientWidth))
+    .toBe(true)
+  await closeDialog(page, dialog)
+  await page.reload()
+  await expect(page.locator("html")).toHaveAttribute("data-theme", id!)
 })
 
 test("legacy oc-1 theme migrates to oc-2", async ({ page, gotoSession }) => {
@@ -220,6 +258,7 @@ test("changing font persists in localStorage and updates CSS variable", async ({
   await gotoSession()
 
   const dialog = await openSettings(page)
+  await dialog.getByRole("tab", { name: "Appearance", exact: true }).click()
   const select = dialog.locator(settingsFontSelector)
   await expect(select).toBeVisible()
 
@@ -277,6 +316,7 @@ test("color scheme and font rehydrate after reload", async ({ page, gotoSession 
   await gotoSession()
 
   const dialog = await openSettings(page)
+  await dialog.getByRole("tab", { name: "Appearance", exact: true }).click()
 
   const colorSchemeSelect = dialog.locator(settingsColorSchemeSelector)
   await expect(colorSchemeSelect).toBeVisible()
