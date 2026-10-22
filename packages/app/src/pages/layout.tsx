@@ -852,6 +852,18 @@ export default function Layout(props: ParentProps) {
   // care about the route root must not rerun for an equivalent project object.
   const currentProjectRoot = createMemo(() => currentProject()?.root)
 
+  function restoreSessionSidebarProject(source: string) {
+    // Rail clicks only preview another project. Session-scoped entry points
+    // must resolve their scope again instead of reusing that temporary choice.
+    if (!onSessionRoute()) return
+    const root = currentProjectRoot() ?? routeDir()
+    if (!root) return
+    console.debug(
+      `[sidebar-project] session-open source=${source} session=${params.id ?? "draft"} selected-root=${layout.sidebar.project() ?? "none"} target-root=${root} route-directory=${routeDir()}`,
+    )
+    setSidebarProjectRoot(root)
+  }
+
   // Directories the user just closed. The route-registration effect must not
   // immediately re-open them while navigation catches up (especially when the
   // closed tile is a /tmp ↔ /private/tmp alias of the current route).
@@ -1479,8 +1491,10 @@ export default function Layout(props: ParentProps) {
           // xl breakpoint = 1280px; below that the desktop sidebar is
           // CSS-hidden and the mobile overlay sidebar is used instead.
           if (window.innerWidth < 1280) {
+            if (!layout.mobileSidebar.opened()) restoreSessionSidebarProject("sidebar-toggle-mobile")
             layout.mobileSidebar.toggle()
           } else {
+            if (!layout.sidebar.opened()) restoreSessionSidebarProject("sidebar-toggle")
             layout.sidebar.toggle()
           }
         },
@@ -2040,6 +2054,7 @@ export default function Layout(props: ParentProps) {
       const detail = (event as CustomEvent<PresentedTaskOpenRequest>).detail
       if (!detail?.taskID) return
       console.debug(`[layout] present-task-open kind=${detail.kind} task=${detail.taskID} session=${detail.sessionID}`)
+      restoreSessionSidebarProject("present-task-open")
       if (detail.kind === "project_task") {
         openProjectTasksPanel()
         setPresentedTaskFocus({ kind: "projectTasks", taskID: detail.taskID })

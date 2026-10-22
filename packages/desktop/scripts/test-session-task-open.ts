@@ -53,6 +53,38 @@ await withCdp(async (cdp, target) => {
   const openButton = '[data-action="session-project-task-open"]'
   const rail = `[data-action="project-switch"][aria-label=${JSON.stringify(basename(directory))}]`
   const menu = `[data-action="project-menu"][data-project="${slug}"]`
+  const expandedRail = '[data-action="project-switch"][data-sidebar-expanded="true"]'
+  const sidebarKeybind = await cdp.evaluate<string>(`(async () => {
+    const settings = JSON.parse(await window.api.storeGet("default.dat", "settings.v3") || "{}");
+    return settings.keybinds?.["sidebar.toggle"] ?? "mod+b";
+  })()`)
+  assert.notEqual(sidebarKeybind, "none", "sidebar toggle must be bound for the shortcut regression")
+  const toggleSidebar = async () => {
+    const parts = sidebarKeybind.toLowerCase().split("+")
+    const key = parts.pop()!
+    const modifiers =
+      (parts.includes("mod") || parts.includes("meta") ? 4 : 0) |
+      (parts.includes("ctrl") ? 2 : 0) |
+      (parts.includes("shift") ? 8 : 0) |
+      (parts.includes("alt") ? 1 : 0)
+    await cdp.call("Input.dispatchKeyEvent", { type: "keyDown", key, modifiers })
+    await cdp.call("Input.dispatchKeyEvent", { type: "keyUp", key, modifiers })
+  }
+  const peekOtherProject = async () => {
+    if (await exists(expandedRail)) await click(expandedRail)
+    const other = await cdp.evaluate<string>(`(() => {
+      const rail = [...document.querySelectorAll('[data-action="project-switch"]')]
+        .find(el => el.getAttribute('data-project') !== ${JSON.stringify(slug)});
+      if (!rail) throw Error('another project is required for the temporary preview regression');
+      return '[data-action="project-switch"][data-project="' + rail.getAttribute('data-project') + '"]';
+    })()`)
+    await click(other)
+    await wait("other project preview", () => exists(`${other}[data-sidebar-expanded="true"]`))
+    assert.ok(await exists(`[data-component="session-tab"][data-active="true"][data-session-id="${sessionID}"]`))
+    await click(other)
+    await wait("preview closed", async () => !(await exists(expandedRail)))
+    log("PASS previewing another project leaves the current session unchanged")
+  }
   const closeDialog = async () => {
     if (!(await exists("[data-project-task-dialog]"))) return
     await cdp.evaluate(`(() => {
@@ -128,10 +160,41 @@ await withCdp(async (cdp, target) => {
     await cdp.call("Page.captureScreenshot").then(async (shot: any) => {
       await Bun.write("/tmp/opencode-session-task-open.png", Buffer.from(shot.data, "base64"))
     })
+    await peekOtherProject()
+    await toggleSidebar()
+    await wait("sidebar shortcut restores current session project", () =>
+      exists(`${rail}[data-sidebar-expanded="true"]`),
+    )
+    await toggleSidebar()
+    await wait("shortcut closes sidebar", async () => !(await exists(expandedRail)))
+    log(`PASS shortcut restores current project keybind=${sidebarKeybind}`)
+    await peekOtherProject()
+    try {
+      await cdp.call("Emulation.setDeviceMetricsOverride", {
+        width: 1000,
+        height: 800,
+        deviceScaleFactor: 1,
+        mobile: false,
+      })
+      await toggleSidebar()
+      await wait("mobile shortcut restores current session project", () =>
+        exists(`[data-component="sidebar-nav-mobile"].translate-x-0 ${menu}`),
+      )
+      await toggleSidebar()
+      await wait(
+        "mobile shortcut closes sidebar",
+        async () => !(await exists('[data-component="sidebar-nav-mobile"].translate-x-0')),
+      )
+      log("PASS narrow-window shortcut restores current project")
+    } finally {
+      await cdp.call("Emulation.clearDeviceMetricsOverride")
+    }
     for (let index = 0; index < 2; index++) {
       if (index) await click(`${float} > button`)
+      await peekOtherProject()
       await click(openButton)
       await wait("correct task detail", () => exists(`[data-project-task-dialog="${taskID}"]`))
+      assert.ok(await exists(`${rail}[data-sidebar-expanded="true"]`), "task details restore the session project")
       assert.equal(
         await cdp.evaluate(`document.querySelector('${float}')?.getAttribute('data-collapsed')`),
         "true",
@@ -161,6 +224,17 @@ await withCdp(async (cdp, target) => {
     await wait("pending task details", () => exists(`[data-project-task-dialog="${taskID}"]`))
     await closeDialog()
     log("PASS new session pending selection opens details")
+    await click('[data-action="home-open"]')
+    await wait(
+      "home has no current session project",
+      async () => !(await exists('[data-action="project-switch"][data-session-current="true"]')),
+    )
+    await click(rail)
+    await wait("home manual project selection", () => exists(`${rail}[data-sidebar-expanded="true"]`))
+    await click(rail)
+    await toggleSidebar()
+    await wait("home shortcut keeps manually selected project", () => exists(`${rail}[data-sidebar-expanded="true"]`))
+    log("PASS home shortcut preserves manual selection when no session is active")
   } finally {
     log("cleaning test UI")
     await closeDialog()
