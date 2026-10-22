@@ -22,6 +22,7 @@ import { sessionTabsTargetHref, useSessionTabs } from "@/context/session-tabs"
 import { ChannelBrandIcon } from "@/components/channel-brand-icon"
 import { extraAgentByDirectory, extraAgentDomain } from "./extra-agents"
 import { NewSessionItem, SessionItem, SessionGroupHeader, SessionSearchBar } from "./sidebar-items"
+import { createSessionListPagination } from "./session-list-pagination"
 import {
   isInitialSessionLoad,
   sessionGroupBoundaries,
@@ -721,7 +722,7 @@ export const LocalWorkspace = (props: {
   const [restarting, setRestarting] = createSignal(false)
   // Project view paginates the merged, sorted session list; per-directory store
   // limits would make worktrees compete and cause rows to appear mid-list later.
-  const [visibleLimit, setVisibleLimit] = createSignal(10)
+  const { limit: visibleLimit, loadMore } = createSessionListPagination(() => workspaceKey(props.project.worktree))
   const dirs = props.directories
   const stores = createMemo(() => dirs().map((directory) => globalSync.child(directory, { bootstrap: false })))
   const slug = createMemo(() => base64Encode(props.project.worktree))
@@ -785,10 +786,6 @@ export const LocalWorkspace = (props: {
       setRestarting(false)
     }
   }
-  const loadMore = async () => {
-    setVisibleLimit((limit) => limit + 5)
-  }
-
   createEffect(() => {
     const root = props.project.worktree
     for (const directory of dirs()) {
