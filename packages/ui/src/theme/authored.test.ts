@@ -11,7 +11,7 @@ describe("hand-authored theme identity", () => {
     ["arc", "light", "#F5F2FA", "#FFFFFF", "#FFFFFF", "#4A4458", "#6b46e5"],
     ["arc", "dark", "#2b2128", "#362c3a", "#3c3240", "#C8BED4", "#9b7ae8"],
     ["chatgpt", "light", "#ffffff", "#ffffff", "#ffffff", "#0d0d0d", "#0d0d0d"],
-    ["chatgpt", "dark", "#212121", "#212121", "#212121", "#ffffff", "#ffffff"],
+    ["chatgpt", "dark", "#323232", "#181818", "#282828", "#ffffff", "#ffffff"],
   ] as const) {
     test(`${id} ${mode} preserves its original materials and seed palette`, () => {
       const variant = DEFAULT_THEMES[id][mode]
@@ -40,6 +40,26 @@ describe("hand-authored theme identity", () => {
     expect(tokens["surface-brand-base"]).toBe("#c96442")
     expect(tokens["surface-interactive-weak-hover"]).toBe("#e8c3b5")
     expect(tokens["input-base"]).toBe("#ffffff")
+  })
+
+  test("ChatGPT dark matches the reference background layers", () => {
+    const tokens = resolveThemeVariant(DEFAULT_THEMES.chatgpt.dark, true)
+    for (const [key, value] of Object.entries({
+      "background-base": "#323232",
+      "background-weak": "#232323",
+      "background-stronger": "#181818",
+      "surface-raised-base": "#282828",
+      "surface-raised-stronger-non-alpha": "#363636",
+      "input-base": "#363636",
+    } as const)) {
+      expect(tokens[key].toLowerCase(), key).toBe(value.toLowerCase())
+      console.info(`[chatgpt-background-test] ${key}=${tokens[key]}`)
+    }
+    const css = readFileSync(new URL("../styles/chatgpt.css", import.meta.url), "utf8")
+    expect(css).toContain('html[data-theme="chatgpt"][data-color-scheme="dark"]')
+    expect(css).toContain("background-color: var(--background-weak);")
+    expect(css).toContain("background-color: var(--input-base);")
+    expect(css).toContain("backdrop-filter: none;")
   })
 
   test("Aether and Arc keep their dedicated component materials", () => {

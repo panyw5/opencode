@@ -9,7 +9,9 @@ describe("theme card previews", () => {
       for (const mode of ["light", "dark"] as const) {
         const preview = themePreview(theme, mode)!
         const tokens = resolveThemeVariant(theme[mode], mode === "dark")
-        expect(preview["--preview-sidebar"]).toBe(tokens["background-base"])
+        expect(preview["--preview-sidebar"]).toBe(
+          tokens[theme.id === "chatgpt" && mode === "dark" ? "background-weak" : "background-base"],
+        )
         expect(preview["--preview-session"]).toBe(tokens["background-stronger"])
         expect(preview["--preview-topbar"]).toBe(tokens["background-base"])
         expect(preview["--preview-popup"]).toBe(tokens["surface-raised-stronger-non-alpha"])
@@ -27,6 +29,15 @@ describe("theme card previews", () => {
         expect(themePreview(theme, mode)).toBe(preview)
       }
     }
+  })
+
+  test("ChatGPT dark preview separates the sidebar from the chrome and composer", () => {
+    const preview = themePreview(DEFAULT_THEMES.chatgpt, "dark")
+    expect(preview["--preview-topbar"]).toBe("#323232")
+    expect(preview["--preview-sidebar"]).toBe("#232323")
+    expect(preview["--preview-session"]).toBe("#181818")
+    expect(preview["--preview-input"]).toBe("#363636")
+    console.info(`[chatgpt-preview-test] ${JSON.stringify(preview)}`)
   })
 
   test("Catppuccin previews share Latte but retain three distinct dark palettes", () => {

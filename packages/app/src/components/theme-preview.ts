@@ -17,7 +17,7 @@ export function themePreview(theme: DesktopTheme, mode: "light" | "dark"): Recor
   }
   // Resolve references locally so a card never inherits colors from the active theme.
   const result = {
-    "--preview-sidebar": color("background-base"),
+    "--preview-sidebar": color(theme.id === "chatgpt" && mode === "dark" ? "background-weak" : "background-base"),
     "--preview-session": color("background-stronger"),
     "--preview-topbar": color("background-base"),
     "--preview-popup": color("surface-raised-stronger-non-alpha"),
