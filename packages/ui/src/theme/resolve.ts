@@ -36,6 +36,7 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
   const backgroundHex = getHex(backgroundOverride)
   const overlay = Boolean(backgroundOverride) && !backgroundHex
   const content = (seed: HexColor, scale: HexColor[]) => {
+    if (variant.surfaces) return restrainedColor(seed, isDark)
     const base = hexToOklch(seed)
     const value = isDark ? (base.l > 0.84 ? shift(seed, { c: 1.18 }) : scale[10]) : scale[10]
     return shift(value, { l: isDark ? 0.034 : -0.024, c: isDark ? 1.3 : 1.18 })

@@ -5,7 +5,8 @@ import type { HexColor, ResolvedTheme, ThemeSurfaces } from "./types"
 export function surfaceTokens(surfaces: ThemeSurfaces, ink: HexColor, isDark: boolean): ResolvedTheme {
   const { shell, canvas, raised, inset } = surfaces
   const tone = hexToOklch(ink)
-  const text = (l: number) => oklchToHex({ ...tone, l, c: Math.min(tone.c, 0.035) })
+  const body = isDark ? Math.min(tone.l, 0.91) : Math.max(tone.l, 0.28)
+  const text = (offset: number) => oklchToHex({ ...tone, l: body + offset, c: Math.min(tone.c, 0.065) })
   const hover = blend(isDark ? inset : ink, raised, isDark ? 0.18 : 0.045)
   const active = blend(isDark ? inset : ink, raised, isDark ? 0.32 : 0.08)
   const border = (alpha: number) => blend(ink, canvas, alpha)
@@ -48,16 +49,16 @@ export function surfaceTokens(surfaces: ThemeSurfaces, ink: HexColor, isDark: bo
     "border-weak-base": border(isDark ? 0.15 : 0.12),
     "border-weaker-base": border(isDark ? 0.09 : 0.07),
     "border-strong-base": border(isDark ? 0.29 : 0.25),
-    "text-strong": text(isDark ? 0.94 : 0.22),
-    "text-base": text(isDark ? 0.86 : 0.31),
-    "text-weak": text(isDark ? 0.76 : 0.46),
-    "text-weaker": text(isDark ? 0.7 : 0.5),
-    "markdown-text": text(isDark ? 0.86 : 0.31),
-    "markdown-code-block": text(isDark ? 0.86 : 0.31),
+    "text-strong": text(isDark ? 0.055 : -0.055),
+    "text-base": text(0),
+    "text-weak": text(isDark ? -0.07 : 0.07),
+    "text-weaker": text(isDark ? -0.11 : 0.11),
+    "markdown-text": text(0),
+    "markdown-code-block": text(0),
   }
 }
 
-export function restrainedColor(color: HexColor, isDark: boolean, maximum = isDark ? 0.12 : 0.14): HexColor {
+export function restrainedColor(color: HexColor, isDark: boolean, maximum = isDark ? 0.145 : 0.17): HexColor {
   const tone = hexToOklch(color)
   return tone.c <= maximum ? color : oklchToHex({ ...tone, c: maximum })
 }
@@ -90,9 +91,9 @@ export function preserveTextHierarchy(tokens: ResolvedTheme, isDark: boolean, ov
   const direction = isDark ? 1 : -1
   let previous = hexToOklch(tokens["text-weaker"] as HexColor).l
   for (const [key, gap] of [
-    ["text-weak", 0.035],
-    ["text-base", 0.065],
-    ["text-strong", 0.055],
+    ["text-weak", 0.025],
+    ["text-base", 0.045],
+    ["text-strong", 0.035],
   ] as const) {
     const tone = hexToOklch(tokens[key] as HexColor)
     if (!(key in overrides) && (tone.l - previous) * direction < gap) {

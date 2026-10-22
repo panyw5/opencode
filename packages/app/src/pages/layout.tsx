@@ -91,6 +91,7 @@ import { ConstrainDragXAxis, getDraggableId } from "@/utils/solid-dnd"
 import { DialogSelectDirectory } from "@/components/dialog-select-directory"
 import { DialogEditProject } from "@/components/dialog-edit-project"
 import { DialogSelectTheme } from "@/components/dialog-select-theme"
+import { themeOptionCurrent, themeOptionIDs, themeOptionName, themeOptionTarget } from "@/components/theme-options"
 import { DialogSwitchProject } from "@/components/dialog-switch-project"
 import { DialogRecentSessions } from "@/components/dialog-recent-sessions"
 import { DebugBar } from "@/components/debug-bar"
@@ -577,15 +578,18 @@ export default function Layout(props: ParentProps) {
   }
 
   function cycleTheme(direction = 1) {
-    const ids = availableThemeEntries().map(([id]) => id)
+    const ids = themeOptionIDs(
+      availableThemeEntries().map(([id]) => id),
+      theme.mode(),
+    )
     if (ids.length === 0) return
-    const currentIndex = ids.indexOf(theme.themeId())
+    const currentIndex = ids.indexOf(themeOptionCurrent(theme.themeId(), theme.mode()))
     const nextIndex = currentIndex === -1 ? 0 : (currentIndex + direction + ids.length) % ids.length
     const nextThemeId = ids[nextIndex]
-    theme.setTheme(nextThemeId)
+    theme.setTheme(themeOptionTarget(nextThemeId, theme.themeId(), theme.mode()))
     showToast({
       title: language.t("toast.theme.title"),
-      description: theme.name(nextThemeId),
+      description: themeOptionName(nextThemeId, theme.name(nextThemeId), theme.mode()),
     })
   }
 
@@ -1833,12 +1837,15 @@ export default function Layout(props: ParentProps) {
       },
     ]
 
-    for (const [id] of availableThemeEntries()) {
+    for (const id of themeOptionIDs(
+      availableThemeEntries().map(([id]) => id),
+      theme.mode(),
+    )) {
       commands.push({
         id: `theme.set.${id}`,
-        title: language.t("command.theme.set", { theme: theme.name(id) }),
+        title: language.t("command.theme.set", { theme: themeOptionName(id, theme.name(id), theme.mode()) }),
         category: language.t("command.category.theme"),
-        onSelect: () => theme.setTheme(id),
+        onSelect: () => theme.setTheme(themeOptionTarget(id, theme.themeId(), theme.mode())),
       })
     }
 

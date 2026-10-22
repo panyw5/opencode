@@ -9,15 +9,15 @@
       "primary": "#31748f",
       "accent": "#d7827e",
       "success": "#286983",
-      "warning": "#e89e3d",
+      "warning": "#ea9d34",
       "error": "#b4637a",
       "info": "#56949f"
     },
     "surfaces": {
-      "shell": "#eee5df",
-      "canvas": "#fbf4ee",
-      "raised": "#fffbf6",
-      "inset": "#e2d6ce"
+      "shell": "#eee8e1",
+      "canvas": "#faf4ed",
+      "raised": "#fffefc",
+      "inset": "#e4dfd8"
     },
     "overrides": {
       "syntax-comment": "#716c7d",
@@ -53,14 +53,14 @@
       "accent": "#ebbcba",
       "success": "#31748f",
       "warning": "#f6c177",
-      "error": "#db7c95",
+      "error": "#eb6f92",
       "info": "#9ccfd8"
     },
     "surfaces": {
-      "shell": "#191722",
-      "canvas": "#272330",
-      "raised": "#37303f",
-      "inset": "#121019"
+      "shell": "#13111e",
+      "canvas": "#191724",
+      "raised": "#262432",
+      "inset": "#0d0b17"
     },
     "overrides": {
       "syntax-comment": "#6e6a86",
@@ -80,7 +80,7 @@
       "markdown-code": "#31748f",
       "markdown-block-quote": "#6e6a86",
       "markdown-emph": "#f6c177",
-      "markdown-strong": "#db7c95",
+      "markdown-strong": "#e67393",
       "markdown-horizontal-rule": "#403d52",
       "markdown-list-item": "#9ccfd8",
       "markdown-list-enumeration": "#ebbcba",

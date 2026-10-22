@@ -6,28 +6,28 @@
     "palette": {
       "neutral": "#f8f8f2",
       "ink": "#1f1f2f",
-      "primary": "#7d76d5",
-      "accent": "#cd6490",
-      "success": "#4ebb79",
-      "warning": "#f6a14f",
-      "error": "#cd5f73",
+      "primary": "#7c6bf5",
+      "accent": "#d16090",
+      "success": "#2fbf71",
+      "warning": "#f7a14d",
+      "error": "#d9536f",
       "info": "#1d7fc5",
       "diffAdd": "#9fe3b3",
       "diffDelete": "#f8a1b8"
     },
     "surfaces": {
-      "shell": "#eceaf2",
-      "canvas": "#f9f8fc",
+      "shell": "#ecece6",
+      "canvas": "#f8f8f2",
       "raised": "#ffffff",
-      "inset": "#dfdce9"
+      "inset": "#e2e2dd"
     },
     "overrides": {
       "syntax-comment": "#6c6d85",
-      "syntax-keyword": "#b24c78",
+      "syntax-keyword": "#b64778",
       "syntax-string": "#596600",
       "syntax-primitive": "#197f48",
       "syntax-property": "#0674b9",
-      "syntax-constant": "#6d66c2",
+      "syntax-constant": "#6d60d2",
       "text-interactive-base": "#6e67c4"
     }
   },
@@ -35,28 +35,28 @@
     "palette": {
       "neutral": "#1d1e28",
       "ink": "#f8f8f2",
-      "primary": "#b999eb",
-      "accent": "#e78fbe",
-      "success": "#9deba8",
-      "warning": "#fdb970",
-      "error": "#d97a74",
+      "primary": "#bd93f9",
+      "accent": "#ff79c6",
+      "success": "#50fa7b",
+      "warning": "#ffb86c",
+      "error": "#ff5555",
       "info": "#8be9fd",
-      "diffAdd": "#46af81",
-      "diffDelete": "#e4838d"
+      "diffAdd": "#2fb27d",
+      "diffDelete": "#ff6b81"
     },
     "surfaces": {
-      "shell": "#20212c",
-      "canvas": "#2b2d3b",
-      "raised": "#3a3c4d",
-      "inset": "#181923"
+      "shell": "#171821",
+      "canvas": "#1d1e28",
+      "raised": "#2a2b36",
+      "inset": "#11111b"
     },
     "overrides": {
       "syntax-comment": "#6272a4",
-      "syntax-keyword": "#e78fbe",
-      "syntax-string": "#f1f999",
-      "syntax-primitive": "#9deba8",
+      "syntax-keyword": "#f187c1",
+      "syntax-string": "#f1fa8c",
+      "syntax-primitive": "#8eef9d",
       "syntax-property": "#8be9fd",
-      "syntax-constant": "#b999eb"
+      "syntax-constant": "#bd94f7"
     }
   }
 }

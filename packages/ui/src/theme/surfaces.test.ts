@@ -19,26 +19,27 @@ describe("built-in material hierarchy", () => {
         for (const [a, b, minimum] of [
           ["background-base", "background-stronger", 0.02],
           ["background-stronger", "surface-raised-base", 0.01],
-          ["surface-inset-base", "surface-raised-base", 0.07],
+          ["surface-inset-base", "surface-raised-base", 0.04],
           ["button-secondary-base", "button-secondary-hover", 0.01],
           ["button-secondary-hover", "button-secondary-active", 0.005],
         ] as const) {
           expect(Math.abs(lightness(a) - lightness(b)), `${a} vs ${b}`).toBeGreaterThanOrEqual(minimum)
         }
         expect(lightness("background-stronger")).toBeGreaterThan(lightness("background-base"))
-        expect(lightness("surface-raised-base")).toBeGreaterThan(lightness("background-stronger"))
-        if (!dark) expect(lightness("background-stronger")).toBeGreaterThan(0.95)
+        if (dark) expect(lightness("surface-raised-base")).toBeGreaterThan(lightness("background-stronger"))
+        expect(tokens["background-stronger"]).toBe(variant.surfaces!.canvas)
+        if (!dark) expect(lightness("background-stronger")).toBeGreaterThan(0.89)
 
         for (const [a, b, gap] of [
-          ["text-strong", "text-base", 0.05],
-          ["text-base", "text-weak", 0.06],
-          ["text-weak", "text-weaker", 0.03],
+          ["text-strong", "text-base", 0.03],
+          ["text-base", "text-weak", 0.04],
+          ["text-weak", "text-weaker", 0.02],
         ] as const) {
           expect((lightness(a) - lightness(b)) * (dark ? 1 : -1), `${a} vs ${b}`).toBeGreaterThanOrEqual(gap)
         }
         for (const [key, value] of Object.entries(tokens)) {
           if (!/^#(?:[\da-f]{3}|[\da-f]{6})$/i.test(value)) continue
-          expect(hexToOklch(value as HexColor).c, key).toBeLessThanOrEqual(dark ? 0.125 : 0.145)
+          expect(hexToOklch(value as HexColor).c, key).toBeLessThanOrEqual(dark ? 0.149 : 0.174)
           const maximum = surfaceChromaLimit(key, dark)
           if (maximum !== undefined)
             expect(hexToOklch(value as HexColor).c, `${key} large-area chroma`).toBeLessThanOrEqual(maximum + 0.002)
@@ -72,14 +73,43 @@ describe("built-in material hierarchy", () => {
     }
   }
 
-  test("Frappe and Macchiato light do not reuse their dark ink or gray canvas", () => {
-    for (const id of ["catppuccin-frappe", "catppuccin-macchiato"]) {
-      const theme = DEFAULT_THEMES[id]
-      expect(theme.light.palette?.ink).not.toBe(theme.dark.palette?.ink)
-      const tokens = resolveThemeVariant(theme.light, false)
-      expect(hexToOklch(tokens["text-base"] as HexColor).l).toBeLessThan(0.35)
-      expect(hexToOklch(tokens["background-stronger"] as HexColor).l).toBeGreaterThan(0.97)
+  test("Catppuccin uses one official Latte and three distinct native dark bases", () => {
+    const family = ["catppuccin", "catppuccin-frappe", "catppuccin-macchiato"]
+    for (const id of family) {
+      expect(DEFAULT_THEMES[id].light).toEqual(DEFAULT_THEMES.catppuccin.light)
+      const tokens = resolveThemeVariant(DEFAULT_THEMES[id].light, false)
+      expect(tokens["background-stronger"]).toBe("#eff1f5")
+      expect(DEFAULT_THEMES[id].light.palette?.ink).toBe("#4c4f69")
+      expect(hexToOklch(tokens["text-base"] as HexColor).l).toBeGreaterThan(0.39)
+      expect(DEFAULT_THEMES[id].light.palette?.primary).toBe("#1e66f5")
     }
+    for (const [id, base] of [
+      ["catppuccin", "#1e1e2e"],
+      ["catppuccin-frappe", "#303446"],
+      ["catppuccin-macchiato", "#24273a"],
+    ] as const) {
+      expect(resolveThemeVariant(DEFAULT_THEMES[id].dark, true)["background-stronger"]).toBe(base)
+    }
+  })
+
+  test("native theme backgrounds and foreground tints are not flattened into one palette", () => {
+    for (const [id, base] of [
+      ["nord", "#2e3440"],
+      ["solarized", "#002b36"],
+      ["rosepine", "#191724"],
+      ["gruvbox", "#282828"],
+      ["nightowl", "#011627"],
+      ["cobalt2", "#193549"],
+    ] as const) {
+      expect(resolveThemeVariant(DEFAULT_THEMES[id].dark, true)["background-stronger"].toLowerCase()).toBe(base)
+    }
+    const matrix = resolveThemeVariant(DEFAULT_THEMES.matrix.dark, true)
+    const jade = resolveThemeVariant(DEFAULT_THEMES["osaka-jade"].dark, true)
+    expect(hexToOklch(matrix["text-base"] as HexColor).c).toBeGreaterThan(0.04)
+    expect(hexToOklch(jade["text-base"] as HexColor).c).toBeGreaterThan(0.04)
+    const gruvbox = resolveThemeVariant(DEFAULT_THEMES.gruvbox.dark, true)
+    expect(hexToOklch(gruvbox["text-base"] as HexColor).c).toBeGreaterThan(0.04)
+    expect(resolveThemeVariant(DEFAULT_THEMES.nord.dark, true)["syntax-string"]).toBe("#a3be8c")
   })
 
   test("pure-black themes retain their black shell without flattening panels", () => {

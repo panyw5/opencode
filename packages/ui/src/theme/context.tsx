@@ -49,7 +49,7 @@ const names: Record<string, string> = {
   aura: "Aura",
   ayu: "Ayu",
   carbonfox: "Carbonfox",
-  catppuccin: "Catppuccin",
+  catppuccin: "Catppuccin Mocha",
   "catppuccin-frappe": "Catppuccin Frappe",
   "catppuccin-macchiato": "Catppuccin Macchiato",
   chatgpt: "ChatGPT",

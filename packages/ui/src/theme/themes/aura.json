@@ -6,29 +6,29 @@
     "palette": {
       "neutral": "#f5f0ff",
       "ink": "#2d2640",
-      "primary": "#9e83e3",
-      "accent": "#cb5e5a",
-      "success": "#4cbd7d",
+      "primary": "#a277ff",
+      "accent": "#d94f4f",
+      "success": "#40bf7a",
       "warning": "#d9a24a",
-      "error": "#cb5e5a",
+      "error": "#d94f4f",
       "info": "#5bb8d9",
       "diffAdd": "#b3e6cc",
       "diffDelete": "#f5b3b3"
     },
     "surfaces": {
-      "shell": "#eeeaf3",
-      "canvas": "#faf7fd",
-      "raised": "#fefcff",
-      "inset": "#e3ddeb"
+      "shell": "#e9e4f3",
+      "canvas": "#f5f0ff",
+      "raised": "#fcfbff",
+      "inset": "#dfdbe9"
     },
     "overrides": {
       "syntax-comment": "#6e6983",
-      "syntax-keyword": "#7361bd",
+      "syntax-keyword": "#745acd",
       "syntax-string": "#187d4b",
       "syntax-primitive": "#2570af",
       "syntax-property": "#9c5e10",
       "syntax-type": "#187d4b",
-      "syntax-constant": "#b74b4a",
+      "syntax-constant": "#c33d3f",
       "text-interactive-base": "#7c5fbb"
     }
   },
@@ -36,29 +36,29 @@
     "palette": {
       "neutral": "#15141b",
       "ink": "#edecee",
-      "primary": "#9c87d8",
-      "accent": "#e1817d",
-      "success": "#88f9cf",
+      "primary": "#a277ff",
+      "accent": "#ff6767",
+      "success": "#61ffca",
       "warning": "#ffca85",
-      "error": "#e1817d",
+      "error": "#ff6767",
       "info": "#82e2ff",
-      "diffAdd": "#88f9cf",
-      "diffDelete": "#e1817d"
+      "diffAdd": "#61ffca",
+      "diffDelete": "#ff6767"
     },
     "surfaces": {
-      "shell": "#17141e",
-      "canvas": "#211d2a",
-      "raised": "#2e2738",
-      "inset": "#100e16"
+      "shell": "#0f0e15",
+      "canvas": "#15141b",
+      "raised": "#222128",
+      "inset": "#09080f"
     },
     "overrides": {
       "syntax-comment": "#6d6a7e",
-      "syntax-keyword": "#9c87d8",
-      "syntax-string": "#88f9cf",
+      "syntax-keyword": "#9e82e5",
+      "syntax-string": "#6cfdcb",
       "syntax-primitive": "#82e2ff",
       "syntax-property": "#ffca85",
-      "syntax-type": "#88f9cf",
-      "syntax-constant": "#e1817d"
+      "syntax-type": "#6cfdcb",
+      "syntax-constant": "#ed7875"
     }
   }
 }

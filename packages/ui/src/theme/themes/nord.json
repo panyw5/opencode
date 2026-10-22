@@ -16,10 +16,10 @@
       "diffDelete": "#bf616a"
     },
     "surfaces": {
-      "shell": "#e5eaf0",
-      "canvas": "#f5f8fc",
-      "raised": "#fdfeff",
-      "inset": "#d7dfe9"
+      "shell": "#e0e3e8",
+      "canvas": "#eceff4",
+      "raised": "#f5f8fd",
+      "inset": "#d7dadf"
     },
     "overrides": {
       "syntax-comment": "#646b7b",
@@ -44,10 +44,10 @@
       "diffDelete": "#bf616a"
     },
     "surfaces": {
-      "shell": "#252c38",
-      "canvas": "#323c4c",
-      "raised": "#414c5f",
-      "inset": "#1d2430"
+      "shell": "#272d39",
+      "canvas": "#2e3440",
+      "raised": "#3c424f",
+      "inset": "#212632"
     },
     "overrides": {
       "syntax-comment": "#616e88",

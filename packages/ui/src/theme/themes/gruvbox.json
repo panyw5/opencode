@@ -3,24 +3,30 @@
   "name": "Gruvbox",
   "id": "gruvbox",
   "light": {
-    "seeds": {
+    "palette": {
       "neutral": "#fbf1c7",
+      "ink": "#3c3836",
+      "accent": "#8f3f71",
       "primary": "#076678",
       "success": "#79740e",
       "warning": "#b57614",
-      "error": "#8f2821",
+      "error": "#9d0006",
       "info": "#8f3f71",
       "interactive": "#076678",
       "diffAdd": "#79740e",
-      "diffDelete": "#8f2821"
+      "diffDelete": "#9d0006"
     },
     "surfaces": {
-      "shell": "#eae2c8",
-      "canvas": "#faf4df",
-      "raised": "#fff9e9",
-      "inset": "#ded4b8"
+      "shell": "#efe5bc",
+      "canvas": "#fbf1c7",
+      "raised": "#fffae4",
+      "inset": "#e5dcb2"
     },
     "overrides": {
+      "syntax-keyword": "#af3a03",
+      "syntax-variable": "#3c3836",
+      "syntax-punctuation": "#504945",
+      "syntax-comment": "#928374",
       "border-weak-hover": "#c9b897",
       "border-weak-active": "#bdae93",
       "border-weak-selected": "#b0a285",
@@ -38,7 +44,7 @@
       "surface-diff-delete-base": "#e3c9c6",
       "surface-diff-hidden-base": "#e5dfc9",
       "syntax-string": "#767006",
-      "syntax-primitive": "#8f2821",
+      "syntax-primitive": "#9a0f0f",
       "syntax-property": "#076678",
       "syntax-type": "#986206",
       "syntax-constant": "#8f3f71",
@@ -49,7 +55,7 @@
       "markdown-code": "#767006",
       "markdown-block-quote": "#796a5c",
       "markdown-emph": "#8f3f71",
-      "markdown-strong": "#a7431f",
+      "markdown-strong": "#af3a03",
       "markdown-horizontal-rule": "#d5c4a1",
       "markdown-list-item": "#076678",
       "markdown-list-enumeration": "#427b58",
@@ -62,24 +68,30 @@
     }
   },
   "dark": {
-    "seeds": {
+    "palette": {
       "neutral": "#282828",
+      "ink": "#ebdbb2",
+      "accent": "#d3869b",
       "primary": "#83a598",
-      "success": "#b6ba5a",
-      "warning": "#eec167",
-      "error": "#d17465",
+      "success": "#b8bb26",
+      "warning": "#fabd2f",
+      "error": "#fb4934",
       "info": "#d3869b",
       "interactive": "#83a598",
-      "diffAdd": "#b6ba5a",
-      "diffDelete": "#d17465"
+      "diffAdd": "#b8bb26",
+      "diffDelete": "#fb4934"
     },
     "surfaces": {
-      "shell": "#242321",
-      "canvas": "#302e29",
-      "raised": "#403b33",
-      "inset": "#1b1a18"
+      "shell": "#212121",
+      "canvas": "#282828",
+      "raised": "#363636",
+      "inset": "#1b1b1b"
     },
     "overrides": {
+      "syntax-keyword": "#e58e57",
+      "syntax-variable": "#ebdbb2",
+      "syntax-punctuation": "#d5c4a1",
+      "syntax-comment": "#928374",
       "surface-interactive-base": "#81948180",
       "surface-interactive-hover": "#a5b5a080",
       "border-weak-hover": "#5a524b",
@@ -98,10 +110,10 @@
       "surface-diff-add-base": "#2a3325",
       "surface-diff-delete-base": "#3c2222",
       "surface-diff-hidden-base": "#32302f",
-      "syntax-string": "#b6ba5a",
-      "syntax-primitive": "#d17465",
+      "syntax-string": "#b7bb3d",
+      "syntax-primitive": "#dc6b5a",
       "syntax-property": "#83a598",
-      "syntax-type": "#eec167",
+      "syntax-type": "#f6bf48",
       "syntax-constant": "#d3869b",
       "syntax-info": "#8ec07c",
       "markdown-heading": "#83a598",
@@ -110,7 +122,7 @@
       "markdown-code": "#d3869b",
       "markdown-block-quote": "#928374",
       "markdown-emph": "#d3869b",
-      "markdown-strong": "#e3915e",
+      "markdown-strong": "#ee8b4a",
       "markdown-horizontal-rule": "#504945",
       "markdown-list-item": "#83a598",
       "markdown-list-enumeration": "#8ec07c",

@@ -1,58 +1,91 @@
 {
   "$schema": "https://opencode.ai/desktop-theme.json",
-  "name": "Catppuccin",
+  "name": "Catppuccin Mocha",
   "id": "catppuccin",
   "light": {
     "palette": {
-      "neutral": "#e6e8f0",
+      "neutral": "#eff1f5",
       "ink": "#4c4f69",
-      "primary": "#788be8",
-      "accent": "#b5494f",
-      "success": "#549c46",
-      "warning": "#dc902f",
-      "error": "#b5494f",
-      "info": "#1aa5e3",
-      "diffAdd": "#a6d189",
-      "diffDelete": "#e78284"
+      "primary": "#1e66f5",
+      "accent": "#8839ef",
+      "success": "#40a02b",
+      "warning": "#df8e1d",
+      "error": "#d20f39",
+      "info": "#179299",
+      "interactive": "#1e66f5",
+      "diffAdd": "#40a02b",
+      "diffDelete": "#d20f39"
     },
     "surfaces": {
-      "shell": "#e6e8f0",
-      "canvas": "#f6f6fb",
-      "raised": "#fefeff",
-      "inset": "#dadde8"
+      "shell": "#e6e9ef",
+      "canvas": "#eff1f5",
+      "raised": "#ffffff",
+      "inset": "#dce0e8"
     },
     "overrides": {
-      "syntax-comment": "#62667b",
-      "syntax-keyword": "#795ab6",
-      "syntax-primitive": "#3c67bb",
-      "syntax-constant": "#9f520e",
-      "text-interactive-base": "#5262bb"
+      "syntax-comment": "#8c8fa1",
+      "syntax-keyword": "#7f57c8",
+      "syntax-string": "#449f31",
+      "syntax-primitive": "#396ed6",
+      "syntax-variable": "#4c4f69",
+      "syntax-property": "#396ed6",
+      "syntax-type": "#df8e1d",
+      "syntax-constant": "#f0723b",
+      "syntax-operator": "#04a5e5",
+      "syntax-punctuation": "#7c7f93",
+      "syntax-object": "#4c4f69",
+      "markdown-heading": "#7f57c8",
+      "markdown-text": "#4c4f69",
+      "markdown-link": "#396ed6",
+      "markdown-link-text": "#179299",
+      "markdown-code": "#449f31",
+      "markdown-strong": "#4c4f69",
+      "markdown-emph": "#f0723b",
+      "markdown-block-quote": "#5c5f77",
+      "markdown-code-block": "#4c4f69"
     }
   },
   "dark": {
     "palette": {
       "neutral": "#1e1e2e",
       "ink": "#cdd6f4",
-      "primary": "#b4befe",
-      "accent": "#ef8ea9",
-      "success": "#a6d189",
-      "warning": "#f4b8e4",
-      "error": "#ef8ea9",
-      "info": "#89dceb",
-      "diffAdd": "#94e2d5",
-      "diffDelete": "#ef8ea9"
+      "primary": "#89b4fa",
+      "accent": "#cba6f7",
+      "success": "#a6e3a1",
+      "warning": "#f9e2af",
+      "error": "#f38ba8",
+      "info": "#94e2d5",
+      "interactive": "#89b4fa",
+      "diffAdd": "#a6e3a1",
+      "diffDelete": "#f38ba8"
     },
     "surfaces": {
       "shell": "#181825",
-      "canvas": "#242435",
-      "raised": "#323247",
+      "canvas": "#1e1e2e",
+      "raised": "#313244",
       "inset": "#11111b"
     },
     "overrides": {
-      "syntax-comment": "#6c7086",
+      "syntax-comment": "#7f849c",
       "syntax-keyword": "#cba6f7",
+      "syntax-string": "#a6e3a1",
       "syntax-primitive": "#89b4fa",
-      "syntax-constant": "#fab387"
+      "syntax-variable": "#cdd6f4",
+      "syntax-property": "#89b4fa",
+      "syntax-type": "#f9e2af",
+      "syntax-constant": "#fab387",
+      "syntax-operator": "#89dceb",
+      "syntax-punctuation": "#9399b2",
+      "syntax-object": "#cdd6f4",
+      "markdown-heading": "#cba6f7",
+      "markdown-text": "#cdd6f4",
+      "markdown-link": "#89b4fa",
+      "markdown-link-text": "#94e2d5",
+      "markdown-code": "#a6e3a1",
+      "markdown-strong": "#cdd6f4",
+      "markdown-emph": "#fab387",
+      "markdown-block-quote": "#bac2de",
+      "markdown-code-block": "#cdd6f4"
     }
   }
 }
