@@ -2,6 +2,18 @@ import type { Prompt } from "@/context/prompt"
 import { serialize } from "../prompt-input/editor-dom"
 import { clonePromptParts } from "../prompt-input/history"
 
+export function quickEditorHistoryKey(
+  event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey">,
+) {
+  return (
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.shiftKey &&
+    (event.key === "ArrowUp" || event.key === "ArrowDown")
+  )
+}
+
 export function emptyQuickPrompt(): Prompt {
   return [{ type: "text", content: "", start: 0, end: 0 }]
 }

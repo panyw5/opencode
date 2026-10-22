@@ -18,6 +18,7 @@ import {
 import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useLocal } from "@/context/local"
+import { focusCommandScope } from "@/context/command-focus"
 import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange } from "@/context/file"
 import { createStore } from "solid-js/store"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
@@ -3504,8 +3505,13 @@ export default function Page() {
         {/* Session panel */}
         <div
           data-slot="session-main-panel"
+          data-command-scope="session"
+          tabIndex={-1}
+          onPointerDown={(event) => {
+            if (event.button === 0 && !event.defaultPrevented) focusCommandScope(event.currentTarget, event.target)
+          }}
           classList={{
-            "@container relative shrink-0 flex flex-col min-h-0 h-full bg-background-stronger flex-1 md:flex-none": true,
+            "@container relative shrink-0 flex flex-col min-h-0 h-full bg-background-stronger flex-1 md:flex-none outline-none": true,
             "will-change-[width]": !size.active(),
           }}
           style={{

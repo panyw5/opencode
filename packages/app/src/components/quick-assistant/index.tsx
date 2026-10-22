@@ -24,6 +24,7 @@ import { useSettings } from "@/context/settings"
 import { decode64 } from "@/utils/base64"
 import { Identifier } from "@/utils/id"
 import { Persist, persisted } from "@/utils/persist"
+import { focusCommandScope } from "@/context/command-focus"
 import { working } from "@/pages/session/session-working"
 import {
   sessionPermissionRequests,
@@ -1087,7 +1088,12 @@ export function QuickAssistant() {
       <Show when={saved.open}>
         <div
           data-component="quick-assistant-panel"
-          class="fixed right-5 bottom-5 z-40 pointer-events-auto max-h-[calc(100dvh-72px)] rounded-[calc(var(--radius-4xl)+0.75rem+1px)] transition-[width] duration-[180ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
+          data-command-scope="quick-assistant"
+          tabIndex={-1}
+          onPointerDown={(event) => {
+            if (event.button === 0 && !event.defaultPrevented) focusCommandScope(event.currentTarget, event.target)
+          }}
+          class="fixed right-5 bottom-5 z-40 pointer-events-auto max-h-[calc(100dvh-72px)] rounded-[calc(var(--radius-4xl)+0.75rem+1px)] transition-[width] duration-[180ms] ease-[cubic-bezier(0.16,1,0.3,1)] outline-none"
           ref={(element) =>
             requestAnimationFrame(() => {
               if (!element.isConnected) return

@@ -423,6 +423,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       }),
       sessionCommand({
         id: "message.previous",
+        keybindScope: "session",
         title: language.t("command.message.previous"),
         description: language.t("command.message.previous.description"),
         keywords: kw("command.message.previous", "command.message.previous.description"),
@@ -432,6 +433,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       }),
       sessionCommand({
         id: "message.next",
+        keybindScope: "session",
         title: language.t("command.message.next"),
         description: language.t("command.message.next.description"),
         keywords: kw("command.message.next", "command.message.next.description"),
