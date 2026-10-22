@@ -45,6 +45,8 @@ function inspect(id: string) {
     tokens: Object.fromEntries([...preview.style].map((key) => [key, root.getPropertyValue(key).trim()])),
     samples,
     overflow: code.scrollWidth > code.clientWidth + 1,
+    tabBorder: getComputedStyle(card.querySelector(".theme-card-tab")!).borderBottomWidth,
+    projectBorder: getComputedStyle(card.querySelector(".theme-card-project")!).borderLeftWidth,
     box: { x: box.x, y: box.y, width: box.width, height: box.height },
     columns: getComputedStyle(card.parentElement!).gridTemplateColumns.split(" ").length,
   }
@@ -105,6 +107,7 @@ await withCdp(async (cdp, target) => {
           .map(([key]) => `wrong token ${key}`)
         if (card.name !== themeOptionName(id, DEFAULT_THEMES[id].name, mode)) failures.push("wrong flavor label")
         if (card.overflow) failures.push("code sample overflows")
+        if (card.tabBorder !== "0px" || card.projectBorder !== "0px") failures.push("unexpected accent border")
         const samples = card.samples.map((s) => ({ ...s, ratio: contrastRatio(hex(s.fg), hex(s.bg)) }))
         for (const sample of samples)
           if (sample.ratio < 4.5) failures.push(`${sample.kind} contrast=${sample.ratio.toFixed(2)}`)

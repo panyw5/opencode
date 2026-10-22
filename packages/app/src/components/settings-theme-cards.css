@@ -83,9 +83,8 @@
 
   .theme-card-tab {
     align-self: end;
-    padding: 2px 7px 3px;
+    padding: 2px 7px 5px;
     border-radius: 4px 4px 0 0;
-    border-bottom: 2px solid var(--preview-accent);
     background: var(--preview-selection);
     color: var(--preview-text);
     font-size: 9px;
@@ -121,8 +120,7 @@
     gap: 4px;
     min-width: 0;
     margin: 0 -3px 9px;
-    padding: 4px 3px;
-    border-left: 2px solid var(--preview-accent);
+    padding: 4px 3px 4px 5px;
     border-radius: 3px;
     background: var(--preview-selection);
     color: var(--preview-text);
