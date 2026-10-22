@@ -11,7 +11,7 @@
 ## ✨ 主要改进
 
 
-### OpenClaw、Hermes、GenericAgent 集成
+### OpenClaw、Hermes、GenericAgent、codex、claude、grok、dsh 集成
 
 <p align="center">
   <img width="165" height="128" alt="image" src="https://github.com/user-attachments/assets/598d7347-39e0-4662-85da-84fc4263131e" />
@@ -29,9 +29,9 @@
 #### 智能体深层功能升级
 
 - **项目任务** 项目级会话任务管理，自动注入任务上下文以及关联会话信息，自动追踪和记录任务进度，会话级 Todo 层级系统，智能体可自主创建、修改、管理任务
-- **数学模式**: 内置了数学智能体框架 [Danus](https://github.com/frenzymath/Danus)，高效完成复杂、长程的数学任务
-- **背景 shell 和智能体**: 将 shell 命令和子智能体发送到后台背景运行，完成后自动注入到主智能体的对话流；异步、优雅停止会话
 - **定时任务**: 支持定时任务功能，智能体可自主创建、修改、管理
+- **shell 和智能体后台运行**: 将 shell 命令和子智能体发送到后台背景运行，完成后自动注入到主智能体的对话流；异步、优雅停止会话
+- **数学模式**: 内置了数学智能体框架 [Danus](https://github.com/frenzymath/Danus)，高效完成复杂、长程的数学任务
 - **Codex、claude、grok、dsh 外部参谋**: 接入 Codex 等作为外部智能体，可在会话中通过主智能体调用作为外部参谋
 - **GPT-pro**：智能体自主调用内置 ChatGPT 网页，充分利用网页对话额度
 - **内置浏览器**: 集成内置浏览器，智能体可自主控制
