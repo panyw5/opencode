@@ -29,6 +29,11 @@
     }
   },
   "definitions": {
+    "MaterialColor": {
+      "type": "string",
+      "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+      "description": "An opaque material color. Use token overrides for translucent surfaces."
+    },
     "HexColor": {
       "type": "string",
       "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$",
@@ -140,6 +145,18 @@
       "description": "A theme variant (light or dark) with either a compact palette or legacy seeds and optional overrides",
       "oneOf": [{ "required": ["seeds"] }, { "required": ["palette"] }],
       "properties": {
+        "surfaces": {
+          "type": "object",
+          "description": "Optional explicit material hierarchy with restrained generated accents. Direct overrides take precedence.",
+          "additionalProperties": false,
+          "required": ["shell", "canvas", "raised", "inset"],
+          "properties": {
+            "shell": { "$ref": "#/definitions/MaterialColor" },
+            "canvas": { "$ref": "#/definitions/MaterialColor" },
+            "raised": { "$ref": "#/definitions/MaterialColor" },
+            "inset": { "$ref": "#/definitions/MaterialColor" }
+          }
+        },
         "seeds": {
           "$ref": "#/definitions/ThemeSeedColors",
           "description": "Legacy seed colors used to generate the full palette"

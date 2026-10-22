@@ -7,13 +7,19 @@
       "neutral": "#fdfaf4",
       "ink": "#4f5964",
       "primary": "#4aa8c8",
-      "accent": "#ef7d71",
+      "accent": "#ee7e72",
       "success": "#5fb978",
       "warning": "#ea9f41",
-      "error": "#e6656a",
+      "error": "#dd6d70",
       "info": "#2f9bce",
       "diffAdd": "#b1d780",
-      "diffDelete": "#e6656a"
+      "diffDelete": "#dd6d70"
+    },
+    "surfaces": {
+      "shell": "#eeeae2",
+      "canvas": "#faf7f0",
+      "raised": "#fffdf7",
+      "inset": "#e3ddd1"
     },
     "overrides": {
       "syntax-comment": "#69717c",
@@ -23,7 +29,6 @@
       "syntax-property": "#1c77a8",
       "syntax-type": "#1576b7",
       "syntax-constant": "#8860af",
-      "text-weaker": "#69727a",
       "text-interactive-base": "#1f7a95"
     }
   },
@@ -31,23 +36,29 @@
     "palette": {
       "neutral": "#0f1419",
       "ink": "#d6dae0",
-      "primary": "#3fb7e3",
-      "accent": "#f2856f",
-      "success": "#78d05c",
+      "primary": "#41b7e2",
+      "accent": "#ea8b77",
+      "success": "#8ec97d",
       "warning": "#e4a75c",
-      "error": "#f58572",
+      "error": "#eb8c7b",
       "info": "#66c6f1",
-      "diffAdd": "#59c57c",
-      "diffDelete": "#f58572"
+      "diffAdd": "#6dc185",
+      "diffDelete": "#eb8c7b"
+    },
+    "surfaces": {
+      "shell": "#0e141c",
+      "canvas": "#171f29",
+      "raised": "#222d39",
+      "inset": "#090e14"
     },
     "overrides": {
       "syntax-comment": "#5a6673",
-      "syntax-keyword": "#ff8f40",
-      "syntax-string": "#aad94c",
-      "syntax-primitive": "#ffb454",
-      "syntax-property": "#39bae6",
-      "syntax-type": "#59c2ff",
-      "syntax-constant": "#d2a6ff"
+      "syntax-keyword": "#ec9a66",
+      "syntax-string": "#b3d47c",
+      "syntax-primitive": "#f7b76a",
+      "syntax-property": "#42bae4",
+      "syntax-type": "#63c1fa",
+      "syntax-constant": "#d0a8fa"
     }
   }
 }

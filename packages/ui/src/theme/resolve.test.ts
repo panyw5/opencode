@@ -24,11 +24,25 @@ function delta(a: HexColor, b: HexColor) {
 
 describe("primary button interaction colors", () => {
   test("brand foreground colors follow overridden brand surfaces", () => {
-    const tokens = resolveThemeVariant(DEFAULT_THEMES.claude.light, false)
-
-    expect(tokens["surface-brand-hover"]).toBe("#b85a39")
-    expect(tokens["icon-on-brand-hover"]).toBe("#ffffff")
-    expect(tokens["text-on-brand-strong"]).toBe("#ffffff")
+    for (const [fill, foreground] of [
+      ["#50372c", "#ffffff"],
+      ["#e8cbb9", "#000000"],
+    ] as const) {
+      const theme = DEFAULT_THEMES.claude.light
+      const tokens = resolveThemeVariant(
+        {
+          ...theme,
+          overrides: {
+            ...theme.overrides,
+            "surface-brand-hover": fill,
+          },
+        },
+        false,
+      )
+      expect(tokens["surface-brand-hover"]).toBe(fill)
+      expect(tokens["icon-on-brand-hover"]).toBe(foreground)
+      expect(tokens["text-on-brand-strong"]).toBe(foreground)
+    }
   })
 
   test("Claude light has a clearly visible hover state", () => {

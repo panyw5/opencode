@@ -6,48 +6,60 @@
     "palette": {
       "neutral": "#8e8e8e",
       "ink": "#161616",
-      "primary": "#0072c3",
-      "accent": "#da1e28",
-      "success": "#198038",
-      "warning": "#f1c21b",
-      "error": "#da1e28",
-      "info": "#0043ce",
-      "interactive": "#0f62fe",
-      "diffAdd": "#198038",
-      "diffDelete": "#da1e28"
+      "primary": "#1a72bd",
+      "accent": "#bb504a",
+      "success": "#1a8038",
+      "warning": "#ebc44e",
+      "error": "#bb504a",
+      "info": "#2951a3",
+      "interactive": "#4470c5",
+      "diffAdd": "#1a8038",
+      "diffDelete": "#bb504a"
+    },
+    "surfaces": {
+      "shell": "#e9ebee",
+      "canvas": "#f7f8fa",
+      "raised": "#ffffff",
+      "inset": "#dde0e5"
     },
     "overrides": {
       "syntax-comment": "#696969",
-      "syntax-keyword": "#8335f3",
-      "syntax-string": "#0a7931",
-      "syntax-primitive": "#025af5",
-      "syntax-property": "#0043ce",
+      "syntax-keyword": "#785db9",
+      "syntax-string": "#0d7932",
+      "syntax-primitive": "#3d69bd",
+      "syntax-property": "#2951a3",
       "syntax-type": "#8a5f00",
-      "syntax-constant": "#d10c20"
+      "syntax-constant": "#b34943"
     }
   },
   "dark": {
     "palette": {
       "neutral": "#393939",
       "ink": "#f2f4f8",
-      "primary": "#33b1ff",
-      "accent": "#ff8389",
-      "success": "#42be65",
-      "warning": "#f1c21b",
-      "error": "#ff8389",
-      "info": "#78a9ff",
-      "interactive": "#4589ff",
-      "diffAdd": "#42be65",
-      "diffDelete": "#ff8389"
+      "primary": "#5bb0ec",
+      "accent": "#f08e91",
+      "success": "#68b778",
+      "warning": "#e6c566",
+      "error": "#f08e91",
+      "info": "#7eaaf5",
+      "interactive": "#638ed7",
+      "diffAdd": "#68b778",
+      "diffDelete": "#f08e91"
+    },
+    "surfaces": {
+      "shell": "#202124",
+      "canvas": "#2a2b30",
+      "raised": "#36383e",
+      "inset": "#18191c"
     },
     "overrides": {
       "syntax-comment": "#6f6f6f",
-      "syntax-keyword": "#be95ff",
-      "syntax-string": "#42be65",
-      "syntax-primitive": "#33b1ff",
-      "syntax-property": "#78a9ff",
-      "syntax-type": "#f1c21b",
-      "syntax-constant": "#ff8389"
+      "syntax-keyword": "#ba9cee",
+      "syntax-string": "#68b778",
+      "syntax-primitive": "#5bb0ec",
+      "syntax-property": "#7eaaf5",
+      "syntax-type": "#e6c566",
+      "syntax-constant": "#f08e91"
     }
   }
 }

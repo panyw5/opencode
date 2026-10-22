@@ -6,46 +6,58 @@
     "palette": {
       "neutral": "#f7ebff",
       "ink": "#3b2c59",
-      "primary": "#7a5af8",
-      "accent": "#ff6bd5",
-      "success": "#3dd598",
-      "warning": "#f7c948",
-      "error": "#ff6bd5",
+      "primary": "#786dcb",
+      "accent": "#e687c7",
+      "success": "#52d39b",
+      "warning": "#f4ca56",
+      "error": "#e687c7",
       "info": "#62d4ff",
       "diffAdd": "#c8f8da",
       "diffDelete": "#ffc3ef"
     },
+    "surfaces": {
+      "shell": "#ece7f3",
+      "canvas": "#faf7fd",
+      "raised": "#fefcff",
+      "inset": "#dfd7e9"
+    },
     "overrides": {
-      "syntax-comment": "#8946dd",
+      "syntax-comment": "#805db8",
       "syntax-keyword": "#ab5302",
-      "syntax-string": "#1c7c22",
-      "syntax-primitive": "#9e38d3",
+      "syntax-string": "#287b2b",
+      "syntax-primitive": "#8e59af",
       "syntax-property": "#157494",
       "syntax-type": "#836818",
-      "syntax-constant": "#c43163"
+      "syntax-constant": "#b34967"
     }
   },
   "dark": {
     "palette": {
       "neutral": "#1a102b",
       "ink": "#f5f0ff",
-      "primary": "#c792ff",
-      "accent": "#ff7ac6",
+      "primary": "#c19bec",
+      "accent": "#e790bf",
       "success": "#7be0b0",
       "warning": "#ffd580",
-      "error": "#ff7ac6",
+      "error": "#e790bf",
       "info": "#7dd4ff",
       "diffAdd": "#53c39f",
-      "diffDelete": "#d85aa0"
+      "diffDelete": "#c46f9b"
+    },
+    "surfaces": {
+      "shell": "#221b30",
+      "canvas": "#30273f",
+      "raised": "#403450",
+      "inset": "#191323"
     },
     "overrides": {
-      "syntax-comment": "#b362ff",
-      "syntax-keyword": "#ff9d00",
-      "syntax-string": "#a5ff90",
-      "syntax-primitive": "#fb94ff",
+      "syntax-comment": "#a37fcd",
+      "syntax-keyword": "#eba75e",
+      "syntax-string": "#b9f8ab",
+      "syntax-primitive": "#e9a5eb",
       "syntax-property": "#9effff",
-      "syntax-type": "#fad000",
-      "syntax-constant": "#ff628c"
+      "syntax-type": "#edd272",
+      "syntax-constant": "#e08094"
     }
   }
 }

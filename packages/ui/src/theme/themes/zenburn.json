@@ -13,8 +13,13 @@
       "error": "#8f5f5f",
       "info": "#8f7f5f"
     },
+    "surfaces": {
+      "shell": "#eae9df",
+      "canvas": "#f8f7ee",
+      "raised": "#fefdf5",
+      "inset": "#dcdace"
+    },
     "overrides": {
-      "text-weak": "#6f6f6f",
       "syntax-comment": "#5a7a5a",
       "syntax-keyword": "#757546",
       "syntax-string": "#8f5f5f",
@@ -27,7 +32,6 @@
       "syntax-punctuation": "#3f3f3f",
       "syntax-object": "#3f3f3f",
       "markdown-heading": "#757546",
-      "markdown-text": "#3f3f3f",
       "markdown-link": "#577787",
       "markdown-link-text": "#4b7b7b",
       "markdown-code": "#4f7e4f",
@@ -38,9 +42,7 @@
       "markdown-list-item": "#5f7f8f",
       "markdown-list-enumeration": "#5f8f8f",
       "markdown-image": "#5f7f8f",
-      "markdown-image-text": "#5f8f8f",
-      "markdown-code-block": "#3f3f3f",
-      "text-weaker": "#737373"
+      "markdown-image-text": "#5f8f8f"
     }
   },
   "dark": {
@@ -56,8 +58,13 @@
       "diffAdd": "#8fb28f",
       "diffDelete": "#dca3a3"
     },
+    "surfaces": {
+      "shell": "#2c2d29",
+      "canvas": "#3a3b35",
+      "raised": "#494b42",
+      "inset": "#22231f"
+    },
     "overrides": {
-      "text-weak": "#9f9f9f",
       "syntax-comment": "#7f9f7f",
       "syntax-keyword": "#f0dfaf",
       "syntax-string": "#cc9393",
@@ -70,7 +77,6 @@
       "syntax-punctuation": "#dcdccc",
       "syntax-object": "#dcdccc",
       "markdown-heading": "#f0dfaf",
-      "markdown-text": "#dcdccc",
       "markdown-link": "#8cd0d3",
       "markdown-link-text": "#93e0e3",
       "markdown-code": "#7f9f7f",
@@ -81,8 +87,7 @@
       "markdown-list-item": "#8cd0d3",
       "markdown-list-enumeration": "#93e0e3",
       "markdown-image": "#8cd0d3",
-      "markdown-image-text": "#93e0e3",
-      "markdown-code-block": "#dcdccc"
+      "markdown-image-text": "#93e0e3"
     }
   }
 }

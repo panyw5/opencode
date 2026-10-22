@@ -1,6 +1,7 @@
 import type { ColorValue, DesktopTheme, HexColor, ResolvedTheme, ThemeVariant } from "./types"
 import { blend, generateNeutralScale, generateScale, hexToOklch, hexToRgb, shift, withAlpha } from "./color"
 import { enforceThemeContrast, opaqueColor } from "./contrast"
+import { preserveTextHierarchy, restrainedColor, restrainThemeChroma, surfaceTokens } from "./surfaces"
 
 export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): ResolvedTheme {
   const colors = getColors(variant)
@@ -8,25 +9,20 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
   const soft = colors.compact && !isDark
 
   const neutral = generateNeutralScale(colors.neutral, isDark, colors.ink)
-  const primary = generateScale(colors.primary, isDark)
-  const accent = generateScale(colors.accent, isDark)
-  const success = generateScale(colors.success, isDark)
-  const warning = generateScale(colors.warning, isDark)
-  const error = generateScale(colors.error, isDark)
-  const info = generateScale(colors.info, isDark)
-  const interactive = generateScale(colors.interactive, isDark)
-  const amber = generateScale(
-    shift(colors.warning, isDark ? { h: -16, l: -0.058, c: 1.14 } : { h: -22, l: -0.082, c: 0.94 }),
-    isDark,
-  )
-  const blue = generateScale(shift(colors.interactive, { h: -12, l: 0.128, c: 1.12 }), isDark)
-  const diffAdd = generateScale(
-    colors.diffAdd ?? shift(colors.success, { c: isDark ? 0.7 : 0.55, l: isDark ? -0.18 : 0.14 }),
-    isDark,
-  )
-  const diffDelete = generateScale(
+  const scale = (seed: HexColor) =>
+    generateScale(seed, isDark).map((color) => (variant.surfaces ? restrainedColor(color, isDark) : color))
+  const primary = scale(colors.primary)
+  const accent = scale(colors.accent)
+  const success = scale(colors.success)
+  const warning = scale(colors.warning)
+  const error = scale(colors.error)
+  const info = scale(colors.info)
+  const interactive = scale(colors.interactive)
+  const amber = scale(shift(colors.warning, isDark ? { h: -16, l: -0.058, c: 1.14 } : { h: -22, l: -0.082, c: 0.94 }))
+  const blue = scale(shift(colors.interactive, { h: -12, l: 0.128, c: 1.12 }))
+  const diffAdd = scale(colors.diffAdd ?? shift(colors.success, { c: isDark ? 0.7 : 0.55, l: isDark ? -0.18 : 0.14 }))
+  const diffDelete = scale(
     colors.diffDelete ?? shift(colors.error, { c: isDark ? 0.82 : 0.7, l: isDark ? -0.08 : 0.08 }),
-    isDark,
   )
   const ink = colors.ink ?? colors.neutral
   const tint = colors.compact ? hexToOklch(ink) : undefined
@@ -36,7 +32,7 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
         c: isDark ? 1.04 : 1.02,
       })
     : undefined
-  const backgroundOverride = overrides["background-base"]
+  const backgroundOverride = overrides["background-base"] ?? variant.surfaces?.shell
   const backgroundHex = getHex(backgroundOverride)
   const overlay = Boolean(backgroundOverride) && !backgroundHex
   const content = (seed: HexColor, scale: HexColor[]) => {
@@ -453,6 +449,16 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
   tokens["avatar-text-cyan"] = isDark ? "#369eff" : "#0894b3"
   tokens["avatar-text-lime"] = isDark ? "#c4f042" : "#5d770d"
 
+  if (variant.surfaces) {
+    Object.assign(tokens, surfaceTokens(variant.surfaces, colors.ink ?? neutral[11], isDark))
+    for (const key of ["base", "base2", "base3"]) tokens[key] = tokens["surface-base"]
+    tokens["icon-base"] = tokens["text-weak"]
+    tokens["icon-hover"] = tokens["text-base"]
+    tokens["icon-active"] = tokens["text-strong"]
+    // Keep generated accents, status colors and avatar colors out of the neon range.
+    restrainThemeChroma(tokens, isDark)
+  }
+
   for (const [key, value] of Object.entries(overrides)) {
     tokens[key] = value
   }
@@ -519,7 +525,7 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
     if (!("button-primary-hover" in overrides)) tokens["button-primary-hover"] = tokens["icon-strong-hover"]
     if (!("button-primary-active" in overrides)) tokens["button-primary-active"] = tokens["icon-strong-active"]
   }
-  if (!("button-secondary-active" in overrides)) {
+  if (!variant.surfaces && !("button-secondary-active" in overrides)) {
     tokens["button-secondary-active"] = tokens["surface-base-active"]
   }
 
@@ -546,6 +552,7 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
   }
 
   enforceThemeContrast(tokens, isDark)
+  if (variant.surfaces) preserveTextHierarchy(tokens, isDark, overrides)
   return tokens
 }
 

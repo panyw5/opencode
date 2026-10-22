@@ -851,42 +851,32 @@
   [data-dock-surface="shell"][data-slot="prompt-shell"] {
     border-top-left-radius: 28px;
     border-top-right-radius: 28px;
-    /* Theme-aware solid fill, darker than raised surface; no frosted blur.
-       Arc overrides via --dock-shell-bg; aether uses the rule below. */
-    background-color: light-dark(
-      color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 70%, var(--background-base)),
-      color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 32%, black)
-    );
+    /* Use the theme's elevated input material instead of flattening it into the canvas. */
+    background-color: var(--input-base);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
 
   /* Beat aether's shell `background-color: … !important` for the prompt only. */
   html[data-theme="aether"] [data-dock-surface="shell"][data-slot="prompt-shell"] {
-    background-color: light-dark(
-      color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 70%, var(--background-base)),
-      color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 32%, black)
-    ) !important;
+    background-color: var(--input-base) !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
   }
 
   html[data-platform="desktop"] [data-dock-surface="shell"][data-slot="prompt-shell"] {
-    border-color: light-dark(
-      color-mix(in oklch, var(--border-weak-base) 54%, transparent),
-      color-mix(in oklch, var(--border-strong-base) 88%, transparent)
-    );
+    border-color: var(--border-weak-base);
   }
 
-  /* Focus feedback = a gentle warm shift of the border only. The shell carries
+  /* Focus feedback = a gentle theme-colored shift of the border only. The shell carries
      a single border and one ambient drop (see dock-surface.css) — don't
      re-state rings/shadows here; they stack into a double-border look. */
   [data-dock-surface="shell"][data-slot="prompt-shell"].prompt-shell-shadow:focus-within {
-    border-color: light-dark(rgba(142, 120, 98, 0.34), rgba(166, 141, 111, 0.34));
+    border-color: color-mix(in srgb, var(--text-interactive-base) 38%, var(--border-weak-base));
   }
 
   html[data-theme="aether"] [data-dock-surface="shell"][data-slot="prompt-shell"].prompt-shell-shadow:focus-within {
-    border-color: light-dark(rgba(142, 120, 98, 0.32), rgba(174, 149, 118, 0.32));
+    border-color: color-mix(in srgb, var(--text-interactive-base) 38%, var(--border-weak-base));
   }
 
   [data-component="prompt-input"] + [data-slot="prompt-placeholder"] {

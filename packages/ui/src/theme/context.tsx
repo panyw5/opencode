@@ -153,6 +153,13 @@ function applyThemeCss(theme: DesktopTheme, themeId: string, mode: "light" | "da
       iconBase: tokens["icon-base"],
       textStrong: tokens["text-strong"],
       textSuccess: tokens["text-success-base"],
+      shell: tokens["background-base"],
+      canvas: tokens["background-stronger"],
+      raised: tokens["surface-raised-base"],
+      inset: tokens["surface-inset-base"],
+      input: tokens["input-base"],
+      textBase: tokens["text-base"],
+      textWeak: tokens["text-weak"],
     }),
   )
   const css = themeToCss(tokens)

@@ -68,14 +68,14 @@ html[data-theme="aether"] [data-component="markdown"] a[data-file-link]:hover {
 
 /* Dock surfaces follow the app's active color scheme, which can differ from the OS preference. */
 html[data-theme="aether"] [data-component="collapsible"].tool-collapsible {
-  background-color: #FDF1EB;
-  border: 1px solid #F0CFC1;
+  background-color: var(--surface-base);
+  border: 1px solid var(--border-weak-base);
   border-radius: var(--radius-xl);
 }
 
 html[data-theme="aether"] [data-dock-surface="shell"] {
-  background-color: #FFFFFF !important;
-  border: 1px solid #DDD6C8;
+  background-color: var(--input-base) !important;
+  border: 1px solid var(--border-weak-base);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   box-shadow:
@@ -86,8 +86,8 @@ html[data-theme="aether"] [data-dock-surface="shell"] {
 }
 
 html[data-theme="aether"] [data-dock-surface="tray"] {
-  background-color: #FAF9F5;
-  border: 1px solid #E8E2D8;
+  background-color: var(--background-base);
+  border: 1px solid var(--border-weak-base);
   --dock-shell-radius: var(--radius-4xl);
 }
 
@@ -97,13 +97,13 @@ html[data-theme="aether"] [data-component="dock-prompt"] {
 }
 
 html[data-theme="aether"][data-color-scheme="dark"] [data-component="collapsible"].tool-collapsible {
-  background-color: #25221E;
-  border-color: #3D3830;
+  background-color: var(--surface-base);
+  border-color: var(--border-weak-base);
 }
 
 html[data-theme="aether"][data-color-scheme="dark"] [data-dock-surface="shell"] {
-  background-color: #1E1B18 !important;
-  border-color: #3D3830;
+  background-color: var(--input-base) !important;
+  border-color: var(--border-weak-base);
   box-shadow:
     0 0 0 0.5px rgba(193, 95, 60, 0.08),
     0 2px 8px -2px rgba(0, 0, 0, 0.18),
@@ -111,8 +111,8 @@ html[data-theme="aether"][data-color-scheme="dark"] [data-dock-surface="shell"] 
 }
 
 html[data-theme="aether"][data-color-scheme="dark"] [data-dock-surface="tray"] {
-  background-color: #1A1815;
-  border-color: #3D3830;
+  background-color: var(--background-base);
+  border-color: var(--border-weak-base);
 }
 
 /* Question options — keep Aether's dark selection state warm. */

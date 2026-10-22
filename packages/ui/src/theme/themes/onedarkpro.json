@@ -6,40 +6,52 @@
     "palette": {
       "neutral": "#f5f6f8",
       "ink": "#2b303b",
-      "primary": "#528bff",
-      "accent": "#d85462",
+      "primary": "#628fe6",
+      "accent": "#cd5f68",
       "success": "#4fa66d",
       "warning": "#d19a66",
-      "error": "#e06c75",
+      "error": "#de6e76",
       "info": "#61afef",
       "diffAdd": "#c2ebcf",
       "diffDelete": "#f7c1c5"
     },
+    "surfaces": {
+      "shell": "#e8ebf0",
+      "canvas": "#f7f9fc",
+      "raised": "#fefeff",
+      "inset": "#dbe0e9"
+    },
     "overrides": {
       "syntax-comment": "#686f7b",
-      "syntax-keyword": "#a626a4",
-      "syntax-primitive": "#3167e0",
+      "syntax-keyword": "#944891",
+      "syntax-primitive": "#456dc2",
       "syntax-constant": "#916619",
-      "text-interactive-base": "#3168dc"
+      "text-interactive-base": "#436dc2"
     }
   },
   "dark": {
     "palette": {
       "neutral": "#1e222a",
       "ink": "#abb2bf",
-      "primary": "#61afef",
-      "accent": "#e06c75",
+      "primary": "#62afee",
+      "accent": "#d5757b",
       "success": "#98c379",
       "warning": "#e5c07b",
-      "error": "#e06c75",
+      "error": "#d5757b",
       "info": "#56b6c2",
       "diffAdd": "#4b815a",
       "diffDelete": "#b2555f"
     },
+    "surfaces": {
+      "shell": "#1b2029",
+      "canvas": "#282f3b",
+      "raised": "#374151",
+      "inset": "#131821"
+    },
     "overrides": {
       "syntax-comment": "#5c6370",
-      "syntax-keyword": "#c678dd",
-      "syntax-primitive": "#61afef",
+      "syntax-keyword": "#bc84cc",
+      "syntax-primitive": "#62afee",
       "syntax-constant": "#d19a66"
     }
   }

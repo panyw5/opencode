@@ -6,45 +6,57 @@
     "palette": {
       "neutral": "#fdf8ec",
       "ink": "#292318",
-      "primary": "#bf7bff",
-      "accent": "#d9487c",
-      "success": "#4fb54b",
+      "primary": "#b788e6",
+      "accent": "#c75d7e",
+      "success": "#63b15e",
       "warning": "#f1a948",
-      "error": "#e54b4b",
+      "error": "#d0625d",
       "info": "#2d9ad7",
       "diffAdd": "#bfe7a3",
       "diffDelete": "#f6a3ae"
     },
+    "surfaces": {
+      "shell": "#eee9dd",
+      "canvas": "#faf7ed",
+      "raised": "#fffdf5",
+      "inset": "#e2dac9"
+    },
     "overrides": {
       "syntax-comment": "#786f5e",
-      "syntax-keyword": "#c8376e",
+      "syntax-keyword": "#b74e70",
       "syntax-string": "#8a6500",
-      "syntax-primitive": "#2e8020",
+      "syntax-primitive": "#367f2a",
       "syntax-property": "#1976ae",
-      "syntax-constant": "#8e51d1",
-      "text-interactive-base": "#9844da"
+      "syntax-constant": "#875fba",
+      "text-interactive-base": "#8c5eb7"
     }
   },
   "dark": {
     "palette": {
       "neutral": "#272822",
       "ink": "#f8f8f2",
-      "primary": "#ae81ff",
-      "accent": "#f92672",
-      "success": "#a6e22e",
-      "warning": "#fd971f",
-      "error": "#f92672",
+      "primary": "#a88ee0",
+      "accent": "#c96b7f",
+      "success": "#b5da83",
+      "warning": "#e9a15e",
+      "error": "#c96b7f",
       "info": "#66d9ef",
-      "diffAdd": "#4d7f2a",
-      "diffDelete": "#f4477c"
+      "diffAdd": "#507e31",
+      "diffDelete": "#cf7185"
+    },
+    "surfaces": {
+      "shell": "#22231d",
+      "canvas": "#2f3027",
+      "raised": "#3e4033",
+      "inset": "#191a15"
     },
     "overrides": {
       "syntax-comment": "#75715e",
-      "syntax-keyword": "#f92672",
-      "syntax-string": "#e6db74",
-      "syntax-primitive": "#a6e22e",
+      "syntax-keyword": "#c96b7f",
+      "syntax-string": "#e5db79",
+      "syntax-primitive": "#b5da83",
       "syntax-property": "#66d9ef",
-      "syntax-constant": "#ae81ff"
+      "syntax-constant": "#a88ee0"
     }
   }
 }
