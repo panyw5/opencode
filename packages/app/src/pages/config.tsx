@@ -114,6 +114,8 @@ import { CONFIG_PAGE_REFRESH_EVENT, refreshAfterConfigWrite } from "@/utils/conf
 import type { Agent, Config, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
 import { configAgentDisplayItems, configuredAgentsFromJsonc, jsoncAgentVariantOptions } from "./config-agent-display"
 import { agentFilePath, agentNameIssue, agentTemplate } from "./config-agent-create"
+import { frontmatterData } from "./config-frontmatter"
+import { renameSkillDraft, skillDraftFromText, skillTemplate } from "./config-skill-create"
 import { parseAgentMarkdown, upsertAgentMarkdownModel, upsertAgentMarkdownVariant } from "./config-agent-markdown"
 import { AgentMarkdownMeta } from "./config-agent-markdown-meta"
 import { BuiltInAgentEditor, type BuiltInAgentForm } from "./config-agent-builtin-editor"
@@ -440,56 +442,6 @@ function pkg(spec: string | [string, Record<string, unknown>]) {
     return { name: spec.slice(0, last), version: spec.slice(last + 1) || "latest" }
   }
   return { name: spec, version: "latest" }
-}
-
-function cleanFrontmatterValue(value: string) {
-  return value.trim().replace(/\s+/g, " ")
-}
-
-function frontmatterData(text: string) {
-  const hit = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
-  if (!hit) return
-
-  const lines = hit[1].split(/\r?\n/)
-  const data: Record<string, string> = {}
-
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index].match(/^([A-Za-z0-9_-]+):\s*(.*)$/)
-    if (!line) continue
-
-    const key = line[1]
-    const raw = line[2].trim()
-    const block = raw.match(/^([|>])[-+]?$/)
-
-    if (block) {
-      const blockLines: string[] = []
-      for (let next = index + 1; next < lines.length; next++) {
-        const blockLine = lines[next]
-        if (/^[A-Za-z0-9_-]+:\s*/.test(blockLine) || (blockLine.trim() && !/^\s/.test(blockLine))) {
-          index = next - 1
-          break
-        }
-
-        blockLines.push(blockLine)
-        index = next
-      }
-
-      const indents = blockLines
-        .filter((blockLine) => blockLine.trim())
-        .map((blockLine) => blockLine.match(/^\s*/)?.[0].length ?? 0)
-      const indent = indents.length ? Math.min(...indents) : 0
-      data[key] = cleanFrontmatterValue(
-        blockLines
-          .map((blockLine) => blockLine.slice(Math.min(indent, blockLine.length)))
-          .join(block[1] === ">" ? " " : "\n"),
-      )
-      continue
-    }
-
-    data[key] = cleanFrontmatterValue(raw.replace(/^['"]|['"]$/g, ""))
-  }
-
-  return data
 }
 
 function markdownBody(text: string) {
@@ -7518,6 +7470,7 @@ export default function ConfigPage() {
   }
 
   function createSkill(projectRoot = "", projectLabel = "") {
+    console.debug(`[config-skills] create scope=${projectRoot ? "project" : "global"}`)
     const text = skillTemplate("")
     setState("skillPanel", "editor")
     setState("pick", SKILL_NEW)
@@ -7548,13 +7501,25 @@ export default function ConfigPage() {
   }
 
   function setSkillTitle(value: string) {
-    const prev = state.skillTitle
-    setState("skillTitle", value)
-    setState("skillErr", "")
-    if (state.text !== skillTemplate(prev)) return
-    const text = skillTemplate(value)
-    setState("text", text)
-    setState("saved", text)
+    const pristine = state.text === skillTemplate(state.skillTitle)
+    const text = renameSkillDraft(state.text, state.skillTitle, value)
+    console.debug(`[config-skills] title-input name=${JSON.stringify(value)} pristine=${pristine}`)
+    batch(() => {
+      setState("skillTitle", value)
+      setState("skillErr", "")
+      setState("text", text)
+      if (pristine) setState("saved", text)
+    })
+  }
+
+  function setSkillText(value: string) {
+    const draft = skillDraftFromText(value)
+    console.debug(`[config-skills] text-input name=${JSON.stringify(draft.title)} length=${value.length}`)
+    batch(() => {
+      setState("text", draft.text)
+      setState("skillTitle", draft.title)
+      setState("skillErr", "")
+    })
   }
 
   function validateSkillTitle() {
@@ -7566,13 +7531,17 @@ export default function ConfigPage() {
   }
 
   async function saveSkill() {
+    if (state.skillSaving) return
     const root = state.skillCreateRoot || space()?.skillsRoot
+    console.debug(`[config-skills] save-request name=${JSON.stringify(state.skillTitle)} root=${root ?? ""}`)
     if (!root || !platform.createLocalFile) {
+      console.warn("[config-skills] save-blocked reason=storage-unavailable")
       setState("skillErr", t("config.error.globalConfigUnavailable"))
       return
     }
     const err = validateSkillTitle()
     if (err) {
+      console.warn(`[config-skills] save-blocked reason=${err}`)
       setState("skillErr", err)
       return
     }
@@ -7581,9 +7550,11 @@ export default function ConfigPage() {
     const text = state.text
     const isProject = !!state.skillCreateProjectRoot
     setState("skillSaving", true)
+    console.debug(`[config-skills] write-start path=${path} length=${text.length}`)
     await platform
       .createLocalFile(path, text)
       .then(async () => {
+        console.debug(`[config-skills] write-complete path=${path}`)
         const meta = skillMeta(text, path)
         cache.set(path, text)
         setState("skillPath", path)
@@ -7603,8 +7574,12 @@ export default function ConfigPage() {
           root: isProject ? state.skillCreateProjectRoot : undefined,
           project: isProject ? state.skillCreateProjectLabel : undefined,
         })
+        console.debug(`[config-skills] save-complete path=${path}`)
       })
       .catch((err: unknown) => {
+        console.error(
+          `[config-skills] save-failed path=${path} error=${err instanceof Error ? err.message : String(err)}`,
+        )
         setState("skillErr", err instanceof Error ? err.message : String(err))
         showToast({
           title: language.t("common.requestFailed"),
@@ -9673,7 +9648,7 @@ export default function ConfigPage() {
                           busy={state.skillSaving}
                           err={state.skillErr || undefined}
                           onTitle={setSkillTitle}
-                          onInput={(value) => setState("text", value)}
+                          onInput={setSkillText}
                           onSave={() => void saveSkill()}
                           onCancel={cancelSkillCreate}
                         />
@@ -9879,21 +9854,6 @@ function CommandCreator(props: {
 }
 
 const yaml = (value: string) => JSON.stringify(value.trim())
-
-function skillTemplate(title: string) {
-  const name = title.trim()
-  return [
-    "---",
-    `name: ${yaml(name)}`,
-    'description: "Describe when to use this skill."',
-    "---",
-    "",
-    name ? `# ${name}` : "# New Skill",
-    "",
-    "Add instructions, workflows, and examples here.",
-    "",
-  ].join("\n")
-}
 
 function SkillCreator(props: {
   root?: string
