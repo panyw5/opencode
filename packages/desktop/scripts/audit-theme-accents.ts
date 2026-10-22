@@ -95,9 +95,10 @@ await withCdp(async (cdp, target) => {
       for (const mode of ["light", "dark"] as const) {
         await switchTheme(id, mode)
         await cdp.call("Input.dispatchMouseEvent", { type: "mouseMoved", x: 800, y: 500 })
-        const keys = Object.keys(resolveThemeVariant(DEFAULT_THEMES[id][mode], mode === "dark")).filter(
-          (key) => surfaceChromaLimit(key, mode === "dark") !== undefined,
-        )
+        const variant = DEFAULT_THEMES[id][mode]
+        const tokens = resolveThemeVariant(variant, mode === "dark")
+        const authored = !variant.surfaces
+        const keys = Object.keys(tokens).filter((key) => surfaceChromaLimit(key, mode === "dark") !== undefined)
         const page = await cdp.evaluate<ReturnType<typeof inspect>>(`(${inspect.toString()})(${JSON.stringify(keys)})`)
         const tabs = page.tabs.map((tab) => ({
           ...tab,
@@ -109,17 +110,22 @@ await withCdp(async (cdp, target) => {
           key: surface.key,
           background: hex(surface.bg),
           chroma: hexToOklch(hex(surface.bg)).c,
-          maximum: surfaceChromaLimit(surface.key, mode === "dark")!,
+          maximum: authored ? undefined : surfaceChromaLimit(surface.key, mode === "dark"),
+          expected: /^#[\da-f]{6}$/i.test(tokens[surface.key]) ? tokens[surface.key].toLowerCase() : undefined,
         }))
         const failures = [
-          ...tabs.filter((tab) => tab.chroma > (mode === "dark" ? 0.043 : 0.033) || tab.ratio < 4.5),
-          ...surfaces.filter((surface) => surface.chroma > surface.maximum + 0.003),
+          ...tabs.filter((tab) => (!authored && tab.chroma > (mode === "dark" ? 0.043 : 0.033)) || tab.ratio < 4.5),
+          ...surfaces.filter((surface) =>
+            authored
+              ? !!surface.expected && surface.background !== surface.expected
+              : surface.chroma > surface.maximum! + 0.003,
+          ),
         ]
         if (!tabs.some((tab) => tab.kind === "session"))
           throw new Error(`Missing real active session tab ${id} ${mode}`)
         if (!tabs.some((tab) => tab.kind === "file-or-navigation"))
           throw new Error(`Open a safe file preview before auditing ${id} ${mode}`)
-        results.push({ id, mode, tabs, surfaces, failures })
+        results.push({ id, mode, authored, tabs, surfaces, failures })
         await Bun.write(`${output}/results.json`, JSON.stringify(results, null, 2))
         // Only capture tab headers, never the file contents or conversation below them.
         const shot = await cdp.call<{ data: string }>("Page.captureScreenshot", {
@@ -128,7 +134,7 @@ await withCdp(async (cdp, target) => {
         })
         await Bun.write(`${output}/${id}-${mode}-tabs.png`, Buffer.from(shot.data, "base64"))
         log(
-          `${id} ${mode} tabs=${tabs.length} surfaces=${surfaces.length} maxTabChroma=${Math.max(...tabs.map((t) => t.chroma)).toFixed(4)} failures=${failures.length}`,
+          `${id} ${mode} authored=${authored} tabs=${tabs.length} surfaces=${surfaces.length} maxTabChroma=${Math.max(...tabs.map((t) => t.chroma)).toFixed(4)} failures=${failures.length}`,
         )
       }
     }

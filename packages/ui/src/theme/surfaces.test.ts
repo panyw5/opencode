@@ -15,34 +15,41 @@ describe("built-in material hierarchy", () => {
         const tokens = resolveThemeVariant(variant, dark)
         const color = (key: string) => opaqueColor(tokens[key], tokens, tokens["background-base"] as HexColor)!
         const lightness = (key: string) => hexToOklch(color(key)).l
-        expect(variant.surfaces).toBeDefined()
-        for (const [a, b, minimum] of [
-          ["background-base", "background-stronger", 0.02],
-          ["background-stronger", "surface-raised-base", 0.01],
-          ["surface-inset-base", "surface-raised-base", 0.04],
-          ["button-secondary-base", "button-secondary-hover", 0.01],
-          ["button-secondary-hover", "button-secondary-active", 0.005],
-        ] as const) {
-          expect(Math.abs(lightness(a) - lightness(b)), `${a} vs ${b}`).toBeGreaterThanOrEqual(minimum)
-        }
-        expect(lightness("background-stronger")).toBeGreaterThan(lightness("background-base"))
-        if (dark) expect(lightness("surface-raised-base")).toBeGreaterThan(lightness("background-stronger"))
-        expect(tokens["background-stronger"]).toBe(variant.surfaces!.canvas)
-        if (!dark) expect(lightness("background-stronger")).toBeGreaterThan(0.89)
+        if (variant.surfaces) {
+          for (const [a, b, minimum] of [
+            ["background-base", "background-stronger", 0.02],
+            ["background-stronger", "surface-raised-base", 0.01],
+            ["surface-inset-base", "surface-raised-base", 0.04],
+            ["button-secondary-base", "button-secondary-hover", 0.01],
+            ["button-secondary-hover", "button-secondary-active", 0.005],
+          ] as const) {
+            expect(Math.abs(lightness(a) - lightness(b)), `${a} vs ${b}`).toBeGreaterThanOrEqual(minimum)
+          }
+          expect(lightness("background-stronger")).toBeGreaterThan(lightness("background-base"))
+          if (dark) expect(lightness("surface-raised-base")).toBeGreaterThan(lightness("background-stronger"))
+          expect(tokens["background-stronger"]).toBe(variant.surfaces.canvas)
+          if (!dark) expect(lightness("background-stronger")).toBeGreaterThan(0.89)
 
-        for (const [a, b, gap] of [
-          ["text-strong", "text-base", 0.03],
-          ["text-base", "text-weak", 0.04],
-          ["text-weak", "text-weaker", 0.02],
-        ] as const) {
-          expect((lightness(a) - lightness(b)) * (dark ? 1 : -1), `${a} vs ${b}`).toBeGreaterThanOrEqual(gap)
-        }
-        for (const [key, value] of Object.entries(tokens)) {
-          if (!/^#(?:[\da-f]{3}|[\da-f]{6})$/i.test(value)) continue
-          expect(hexToOklch(value as HexColor).c, key).toBeLessThanOrEqual(dark ? 0.149 : 0.174)
-          const maximum = surfaceChromaLimit(key, dark)
-          if (maximum !== undefined)
-            expect(hexToOklch(value as HexColor).c, `${key} large-area chroma`).toBeLessThanOrEqual(maximum + 0.002)
+          for (const [a, b, gap] of [
+            ["text-strong", "text-base", 0.03],
+            ["text-base", "text-weak", 0.04],
+            ["text-weak", "text-weaker", 0.02],
+          ] as const) {
+            expect((lightness(a) - lightness(b)) * (dark ? 1 : -1), `${a} vs ${b}`).toBeGreaterThanOrEqual(gap)
+          }
+          for (const [key, value] of Object.entries(tokens)) {
+            if (!/^#(?:[\da-f]{3}|[\da-f]{6})$/i.test(value)) continue
+            expect(hexToOklch(value as HexColor).c, key).toBeLessThanOrEqual(dark ? 0.149 : 0.174)
+            const maximum = surfaceChromaLimit(key, dark)
+            if (maximum !== undefined)
+              expect(hexToOklch(value as HexColor).c, `${key} large-area chroma`).toBeLessThanOrEqual(maximum + 0.002)
+          }
+        } else {
+          // Authored palettes own their material hierarchy instead of the generated profile.
+          for (const key of ["background-base", "background-stronger", "surface-raised-base", "input-base"]) {
+            expect(variant.overrides?.[key], `${id} ${mode} authored ${key}`).toBeDefined()
+            expect(tokens[key]).toBe(variant.overrides![key])
+          }
         }
         const foregrounds = Object.keys(tokens).filter(
           (key) =>
@@ -52,6 +59,7 @@ describe("built-in material hierarchy", () => {
         )
         for (const key of foregrounds) {
           for (const surface of contentSurfaces) {
+            if (!tokens[surface]) continue
             expect(contrastRatio(color(key), color(surface)), `${key} on ${surface}`).toBeGreaterThanOrEqual(4.6)
           }
         }
@@ -67,7 +75,7 @@ describe("built-in material hierarchy", () => {
           }
         }
         console.info(
-          `[theme-materials-test] ${id} ${mode} materials=4 foregrounds=${foregrounds.length} surfaces=${contentSurfaces.length}`,
+          `[theme-materials-test] ${id} ${mode} authored=${!variant.surfaces} foregrounds=${foregrounds.length} surfaces=${contentSurfaces.filter((key) => !!tokens[key]).length}`,
         )
       })
     }

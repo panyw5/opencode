@@ -30,18 +30,22 @@ html[data-theme="arc"] {
 
   /* Sidebar card background — warm purple-gray, Arc's signature
      panel identity against the darker main content pane. */
-  --sidebar-card-bg: var(--surface-raised-base);
+  --sidebar-card-bg: #4a3d47;
 
-  /* Chrome stays below the raised panel instead of borrowing a border color. */
-  --sidebar-chrome-bg: var(--background-base);
+  /* Chrome shades (rail / titlebar / scoop-join) and the sidebar's
+     hover / active fills. Dark mode keeps its existing appearance: the
+     chrome tracks --border-strong-base as before, and the interaction
+     fills match the values previously hardcoded in the dark scope. */
+  --sidebar-chrome-bg: var(--border-strong-base);
   --sidebar-chrome-hover: #554750;
   --sidebar-chrome-active: #4d4048;
 
   /* Tile letters stay white on the deep dark-mode rail hues. */
   --rail-letter-fg: #ffffff;
 
-  /* The composer uses the same elevated material as other inputs. */
-  --dock-shell-bg: var(--input-base);
+  /* Dock-prompt shell — solid, deeper purple-gray (was translucent #3d323b
+     which washed out lighter than the canvas / tray). */
+  --dock-shell-bg: #221c22;
 
   /* Floating card elevation (subtle violet-tinged outer shadow) */
   --card-elevation:
@@ -109,7 +113,7 @@ html[data-theme="arc"][data-color-scheme="light"] {
      previous #ebe6ef, text-weak landed on 4.49:1 and text-weaker on 4.09:1.
      Raising lightness fixes both without touching the shared text tokens
      (which also have to work against the white main pane). */
-  --dock-shell-bg: var(--input-base);
+  --dock-shell-bg: #f6f1fa;
 
   /* Floating card elevation (subtle violet-tinged warm shadow) */
   --card-elevation:
@@ -409,7 +413,7 @@ html[data-theme="arc"] [data-component="sidebar-panel"] {
 }
 
 html[data-theme="arc"][data-color-scheme="dark"] [data-component="sidebar-panel"] {
-  background-color: var(--sidebar-card-bg) !important;
+  background-color: var(--color-border-base) !important;
 }
 
 /* Main pane — the largest floating card, fully rounded top-left corner */
@@ -421,8 +425,11 @@ html[data-theme="arc"] main {
   box-shadow: none;
 }
 
-/* Keep the chrome's light foregrounds paired with its local translucent fills.
-   Raw tokens and Tailwind aliases stay paired. */
+/* Dark-mode sidebar text/icon contrast boost.
+   The rendered panel is #584e62 (the runtime --color-border-base), while
+   session hover, pending-avatar, and button faces reach #645a6d. Keep the
+   full muted text ramp above 4.5:1 and weak icons above 3:1 on those actual
+   fills. Raw tokens and Tailwind aliases stay paired. */
 html[data-theme="arc"][data-color-scheme="dark"] [data-component="sidebar-rail"],
 html[data-theme="arc"][data-color-scheme="dark"] [data-component="sidebar-nav-desktop"],
 html[data-theme="arc"][data-color-scheme="dark"] [data-component="sidebar-nav-mobile"],
@@ -594,7 +601,7 @@ html[data-theme="arc"] [data-component="dock-prompt"] {
 
 html[data-theme="arc"] [data-dock-surface="shell"][data-slot="prompt-shell"] {
   border-radius: var(--radius-4xl);
-  /* Beat the generic translucent dock fill without losing input elevation. */
+  /* Beat generic prompt-shell fill; keep Arc's deep solid panel. */
   background-color: var(--dock-shell-bg) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -612,44 +619,44 @@ html[data-theme="arc"] [data-component="dock-prompt"][data-kind="question"] {
   }
 
   [data-slot="option-description"] {
-    color: var(--text-base);
+    color: light-dark(#5b21b6, var(--text-base));
   }
 
   [data-slot="question-option"]:hover:not([data-picked="true"]) {
-    background-color: var(--surface-base-hover);
+    background-color: light-dark(var(--color-surface-raised-base-hover), rgba(255, 255, 255, 0.06));
   }
 
   [data-slot="question-option"]:active:not([data-picked="true"]) {
-    background-color: var(--surface-base-active);
-    border-color: var(--border-selected);
+    background-color: light-dark(#c4b5fd, rgba(192, 132, 208, 0.34));
+    border-color: light-dark(#8b5cf6, rgba(192, 132, 208, 0.5));
 
     [data-slot="option-label"],
     [data-slot="option-description"] {
-      color: var(--text-strong);
+      color: light-dark(var(--text-strong), #ffffff);
     }
   }
 
   [data-slot="question-option"][data-focused="true"]:not([data-picked="true"]) {
-    background-color: var(--surface-base-hover);
-    border-color: var(--border-selected);
+    background-color: light-dark(#ddd6fe, rgba(192, 132, 208, 0.26));
+    border-color: light-dark(#a78bfa, rgba(192, 132, 208, 0.4));
   }
 
   [data-slot="question-option"][data-picked="true"] {
-    background-color: var(--surface-base-active);
-    border-color: var(--border-selected);
+    background-color: light-dark(#c4b5fd, rgba(192, 132, 208, 0.34));
+    border-color: light-dark(#8b5cf6, rgba(192, 132, 208, 0.5));
 
     [data-slot="option-label"],
     [data-slot="option-description"] {
-      color: var(--text-strong);
+      color: light-dark(var(--text-strong), #ffffff);
     }
   }
 
   [data-slot="question-option-box"][data-picked="true"] {
-    border-color: var(--surface-brand-base);
-    background-color: var(--surface-brand-base);
+    border-color: light-dark(#8b5cf6, #c084d0);
+    background-color: light-dark(#8b5cf6, #c084d0);
 
     [data-component="icon"] {
-      color: var(--text-on-brand-base);
+      color: light-dark(#ffffff, #3a2448);
     }
   }
 }
