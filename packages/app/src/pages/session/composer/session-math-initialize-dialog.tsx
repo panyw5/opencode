@@ -234,9 +234,12 @@ export function SessionMathInitializeDialog(props: {
             "shrink-0": store.instructionsOpen,
           }}
         >
-          <label class="relative z-10 w-fit shrink-0 translate-y-8 text-12-medium text-text-weak">
-            {language.t("session.mathInitialize.problem")}
-          </label>
+          <div class="relative z-10 flex w-fit shrink-0 translate-y-8 items-center gap-2 text-12-medium text-text-weak">
+            <label>{language.t("session.mathInitialize.problem")}</label>
+            <span class="text-12-regular tabular-nums" data-testid="math-problem-character-count">
+              {language.t("session.mathInitialize.problem.characterCount", { count: store.problem.trim().length })}
+            </span>
+          </div>
           <div
             class="overflow-hidden"
             classList={{

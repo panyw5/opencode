@@ -1143,7 +1143,8 @@ export const dict = {
   "session.mathInitialize.project.error": "Enter a valid problem-scoped project name.",
   "session.mathInitialize.problem": "Research problem",
   "session.mathInitialize.problem.description":
-    "State the question, assumptions, scope, and what would count as completion.",
+    "At least 200 characters. State the question, assumptions, scope, and what would count as completion.",
+  "session.mathInitialize.problem.characterCount": "{{count}} characters",
   "session.mathInitialize.model": "Worker model",
   "session.mathInitialize.model.description": "Provider/model used for newly created evidence workers.",
   "session.mathInitialize.verifierModel": "Verifier model",
