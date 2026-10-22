@@ -60,9 +60,7 @@ export function commandInvocationFromParts(parts: Part[]): string | undefined {
   )
   if (invocation) return invocation.text.trim()
 
-  const subtask = parts.find(
-    (part): part is SubtaskPart => part.type === "subtask" && !!part.command?.trim(),
-  )
+  const subtask = parts.find((part): part is SubtaskPart => part.type === "subtask" && !!part.command?.trim())
   if (subtask?.command) return `/${subtask.command.trim()}`
 }
 
@@ -74,8 +72,10 @@ export { injectionPreviewFromParts } from "@opencode-ai/ui/injected-prompt-model
  * This is used by undo to restore the original user prompt.
  */
 export function extractPromptFromParts(parts: Part[], opts?: { directory?: string; attachmentName?: string }): Prompt {
+  const command = commandInvocationFromParts(parts)
   const textPart = textPartValue(parts)
-  const text = textPart?.text ?? ""
+  // Restore what the user typed, not the expanded command template sent to the model.
+  const text = command ?? textPart?.text ?? ""
   const directory = opts?.directory
   const attachmentName = opts?.attachmentName ?? "attachment"
 

@@ -2852,7 +2852,17 @@ export default function Page() {
       directory: sdk.directory,
       attachmentName: language.t("common.attachment"),
     })
-  const draft = (id: string) => draftParts(sync.data.part[id] ?? [])
+  const draft = (id: string) => {
+    const parts = sync.data.part[id] ?? []
+    console.debug(
+      `[prompt-restore] extract message=${id} parts=${parts.length} command=${!!commandInvocationFromParts(parts)}`,
+    )
+    const value = draftParts(parts)
+    console.debug(
+      `[prompt-restore] extracted message=${id} parts=${value.length} chars=${value.reduce((length, part) => length + (part.type === "image" ? 0 : part.content.length), 0)}`,
+    )
+    return value
+  }
 
   const line = (id: string, input?: Part[]) => {
     const parts = input ?? sync.data.part[id] ?? []
@@ -3261,16 +3271,24 @@ export default function Page() {
       const prev = prompt.current().slice()
       const last = info()?.revert
       const value = draft(input.messageID)
+      console.debug(
+        `[session-revert] start sid=${input.sessionID} message=${input.messageID} draftParts=${value.length}`,
+      )
       batch(() => {
         roll(input.sessionID, { messageID: input.messageID })
         prompt.set(value)
       })
+      console.debug(`[session-revert] draft applied sid=${input.sessionID} parts=${prompt.current().length}`)
       await halt(input.sessionID)
         .then(() => sdk.client.session.revert(input))
         .then((result) => {
           if (result.data) merge(result.data)
+          console.debug(`[session-revert] persisted sid=${input.sessionID} message=${input.messageID}`)
         })
         .catch((err) => {
+          console.warn(
+            `[session-revert] failed sid=${input.sessionID} message=${input.messageID} error=${err instanceof Error ? err.message : String(err)}`,
+          )
           batch(() => {
             roll(input.sessionID, last)
             prompt.set(prev)

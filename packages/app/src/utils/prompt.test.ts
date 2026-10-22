@@ -3,6 +3,72 @@ import type { Part } from "@opencode-ai/sdk/v2"
 import { commandInvocationFromParts, extractPromptFromParts, injectionPreviewFromParts } from "./prompt"
 
 describe("extractPromptFromParts", () => {
+  const base = { sessionID: "ses_1", messageID: "msg_1" }
+
+  test("restores the ignored slash invocation instead of its expanded template", () => {
+    const parts = [
+      {
+        ...base,
+        id: "invocation",
+        type: "text",
+        text: "/ocr paper.pdf",
+        ignored: true,
+        metadata: { kind: "command-invocation", command: "ocr" },
+      },
+      {
+        ...base,
+        id: "template",
+        type: "text",
+        text: "Expanded command instructions",
+        synthetic: true,
+        metadata: { kind: "command-injection", command: "ocr" },
+      },
+      {
+        ...base,
+        id: "file",
+        type: "file",
+        mime: "application/pdf",
+        filename: "paper.pdf",
+        url: "data:application/pdf;base64,AAA",
+      },
+    ] satisfies Part[]
+
+    expect(extractPromptFromParts(parts)).toEqual([
+      { type: "text", content: "/ocr paper.pdf", start: 0, end: 14 },
+      {
+        type: "image",
+        id: "file",
+        mime: "application/pdf",
+        filename: "paper.pdf",
+        dataUrl: "data:application/pdf;base64,AAA",
+      },
+    ])
+  })
+
+  test("restores legacy subtask commands without exposing the expanded prompt", () => {
+    const parts = [
+      {
+        ...base,
+        id: "subtask",
+        type: "subtask",
+        command: "research",
+        prompt: "Expanded prompt",
+        description: "Research",
+        agent: "explore",
+      },
+    ] satisfies Part[]
+    expect(extractPromptFromParts(parts)).toEqual([{ type: "text", content: "/research", start: 0, end: 9 }])
+  })
+
+  test("restores ordinary text while still excluding internal injections", () => {
+    const parts = [
+      { ...base, id: "text", type: "text", text: "hello" },
+      { ...base, id: "ignored", type: "text", text: "Internal ignored instructions", ignored: true },
+      { ...base, id: "synthetic", type: "text", text: "Internal synthetic instructions", synthetic: true },
+    ] satisfies Part[]
+    expect(extractPromptFromParts(parts)).toEqual([{ type: "text", content: "hello", start: 0, end: 5 }])
+  })
+
   test("restores multiple uploaded attachments", () => {
     const parts = [
       {
