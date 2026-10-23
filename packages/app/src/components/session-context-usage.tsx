@@ -31,6 +31,14 @@ interface SessionContextUsageProps {
   placement?: TooltipProps["placement"]
 }
 
+type ContextStat = {
+  label: string
+  labelText?: string | undefined
+  value: string
+  title?: string | undefined
+  span?: 1 | 2
+}
+
 const emptyMessages: Message[] = []
 const emptyUserMessages: UserMessage[] = []
 
@@ -172,9 +180,9 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
     </div>
   )
 
-  const stats = createMemo(() => [
+  const stats = createMemo((): ContextStat[] => [
     { label: "context.stats.provider", value: context()?.providerLabel ?? "—" },
-    { label: "context.stats.model", value: context()?.modelLabel ?? "—" },
+    { label: "context.stats.model", value: context()?.modelLabel ?? "—", span: 2 },
     {
       label: "context.stats.limit",
       labelText: context()?.limitSource
@@ -191,7 +199,8 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
     { label: "context.stats.reasoningTokens", value: formatter().number(context()?.reasoning) },
     {
       label: "context.stats.cacheTokens",
-      value: `${formatter().number(context()?.cacheRead)} / ${formatter().number(context()?.cacheWrite)}`,
+      value: `${formatter().compact(context()?.cacheRead)} / ${formatter().compact(context()?.cacheWrite)}`,
+      title: `${formatter().number(context()?.cacheRead)} / ${formatter().number(context()?.cacheWrite)}`,
     },
     { label: "context.stats.messages", value: counts().all.toLocaleString(language.intl()) },
     { label: "context.stats.totalCost", value: cost() },
@@ -199,15 +208,24 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
 
   const details = () => (
     <div class="flex flex-col gap-4">
-      <div class="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2.5">
+      <div class="grid grid-cols-3 gap-1.5">
         <For each={stats()}>
           {(stat) => (
-            <>
-              <div class="text-13-regular text-text-weak whitespace-nowrap">
+            <div
+              class={`flex min-w-0 flex-col gap-0.5 rounded-lg border border-border-weaker-base bg-surface-base/60 px-2.5 py-2${
+                stat.span === 2 ? " col-span-2" : ""
+              }`}
+            >
+              <div
+                class="truncate text-11-regular text-text-weak"
+                title={stat.labelText ?? language.t(stat.label as Parameters<typeof language.t>[0])}
+              >
                 {stat.labelText ?? language.t(stat.label as Parameters<typeof language.t>[0])}
               </div>
-              <div class="text-13-medium text-text-strong text-right truncate min-w-0">{stat.value}</div>
-            </>
+              <div class="truncate text-13-medium text-text-strong tabular-nums" title={stat.title ?? stat.value}>
+                {stat.value}
+              </div>
+            </div>
           )}
         </For>
       </div>
