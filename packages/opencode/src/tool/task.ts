@@ -162,9 +162,32 @@ export const TaskTool = Tool.define(
       }
 
       const taskID = params.task_id
+      yield* elog.info("subagent session lookup started", {
+        parentSessionID: ctx.sessionID,
+        taskID,
+      })
       const session = taskID
         ? yield* sessions.get(SessionID.make(taskID)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         : undefined
+      // Forked histories retain old task IDs, but must never write to the source's children.
+      if (session && session.parentID !== ctx.sessionID) {
+        yield* elog.warn("subagent resume rejected: parent mismatch", {
+          parentSessionID: ctx.sessionID,
+          taskID: session.id,
+          actualParentSessionID: session.parentID,
+        })
+        return yield* Effect.fail(
+          new Error(
+            "task_id must identify a child task of the current session. IDs copied from a fork's history belong to the original session. Omit task_id to create a new child task in this session, including any needed context in the prompt.",
+          ),
+        )
+      }
+      yield* elog.info("subagent session lookup completed", {
+        parentSessionID: ctx.sessionID,
+        taskID,
+        resolvedSessionID: session?.id,
+        action: session ? "resume" : "create",
+      })
       const parentAgent = parent.agent
         ? yield* agent.get(parent.agent).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         : undefined
@@ -198,6 +221,12 @@ export const TaskTool = Tool.define(
               permission,
               agent: next.name,
             }))
+          yield* elog.info("subagent session selected", {
+            parentSessionID: ctx.sessionID,
+            sessionID: nextSession.id,
+            actualParentSessionID: nextSession.parentID,
+            created,
+          })
 
           // Inherit mounted project-task from parent so the child session gets the same
           // task brief (audience=subagent) via SessionPrompt inject. Resume paths keep

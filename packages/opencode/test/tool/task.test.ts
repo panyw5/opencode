@@ -1,5 +1,5 @@
 import { afterEach, describe, expect } from "bun:test"
-import { Deferred, Effect, Exit, Fiber, Layer } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { BackgroundJob } from "@/background/job"
 import { Bus } from "@/bus"
@@ -257,6 +257,110 @@ describe("tool.task", () => {
       expect(result.output).toContain(`task_id: ${child.id}`)
       expect(seen?.sessionID).toBe(child.id)
       expect(getContextLocale(child.id)).toBe("ja")
+    }),
+  )
+
+  it.instance("fork cannot resume the source session's child task", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const child = yield* sessions.create({ parentID: chat.id, title: "Original child" })
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: assistant.id,
+        sessionID: chat.id,
+        type: "tool",
+        tool: "task",
+        callID: "original-task",
+        state: {
+          status: "completed",
+          input: { description: "original task", prompt: "inspect", subagent_type: "general" },
+          title: "original task",
+          metadata: { sessionId: child.id, parentSessionId: chat.id },
+          output: `task_id: ${child.id}`,
+          time: { start: Date.now(), end: Date.now() },
+        },
+      })
+      const fork = yield* sessions.fork({ sessionID: chat.id })
+      const history = yield* sessions.messages({ sessionID: fork.id })
+      const copied = history.find((message) => message.info.role === "assistant")!
+      const childBefore = yield* sessions.get(child.id)
+      const messagesBefore = yield* sessions.messages({ sessionID: child.id })
+      let prompts = 0
+      let metadata = 0
+      const def = yield* (yield* TaskTool).init()
+      const ctx = {
+        sessionID: fork.id,
+        messageID: copied.info.id,
+        agent: "build",
+        abort: new AbortController().signal,
+        extra: { promptOps: stubOps({ onPrompt: () => prompts++ }) },
+        messages: [],
+        metadata: () =>
+          Effect.sync(() => {
+            metadata++
+          }),
+        ask: () => Effect.void,
+      }
+      const params = { description: "continue task", prompt: "continue", subagent_type: "general" }
+      const exit = yield* def.execute({ ...params, task_id: child.id }, ctx).pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        expect(Cause.pretty(exit.cause)).toContain("task_id must identify a child task of the current session")
+      }
+      expect(prompts).toBe(0)
+      expect(metadata).toBe(0)
+      expect(yield* sessions.get(child.id)).toEqual(childBefore)
+      expect(yield* sessions.messages({ sessionID: child.id })).toEqual(messagesBefore)
+      expect(yield* sessions.children(fork.id)).toHaveLength(0)
+
+      const fresh = yield* def.execute(params, ctx)
+      const resumed = yield* def.execute({ ...params, task_id: fresh.metadata.sessionId }, ctx)
+      expect(resumed.metadata.sessionId).toBe(fresh.metadata.sessionId)
+      expect((yield* sessions.get(fresh.metadata.sessionId)).parentID).toBe(fork.id)
+      expect((yield* sessions.children(chat.id)).map((session) => session.id)).toEqual([child.id])
+      expect((yield* sessions.children(fork.id)).map((session) => session.id)).toEqual([fresh.metadata.sessionId])
+      expect(prompts).toBe(2)
+    }),
+  )
+
+  it.instance("execute rejects root, self and unrelated task sessions before dispatch", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const other = yield* sessions.create({ title: "Other root" })
+      const foreign = yield* sessions.create({ parentID: other.id, title: "Foreign child" })
+      const def = yield* (yield* TaskTool).init()
+      for (const taskID of [chat.id, other.id, foreign.id]) {
+        let dispatched = false
+        const exit = yield* def
+          .execute(
+            { description: "resume", prompt: "continue", subagent_type: "general", task_id: taskID },
+            {
+              sessionID: chat.id,
+              messageID: assistant.id,
+              agent: "build",
+              abort: new AbortController().signal,
+              extra: {
+                promptOps: stubOps({
+                  onPrompt: () => {
+                    dispatched = true
+                  },
+                }),
+              },
+              messages: [],
+              metadata: () => Effect.void,
+              ask: () => Effect.void,
+            },
+          )
+          .pipe(Effect.exit)
+        expect(Exit.isFailure(exit)).toBe(true)
+        if (Exit.isFailure(exit)) {
+          expect(Cause.pretty(exit.cause)).toContain("task_id must identify a child task of the current session")
+        }
+        expect(dispatched).toBe(false)
+      }
+      expect(yield* sessions.children(chat.id)).toHaveLength(0)
     }),
   )
 
