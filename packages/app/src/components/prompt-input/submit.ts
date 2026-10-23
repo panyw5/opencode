@@ -23,6 +23,7 @@ import { formatServerError } from "@/utils/server-errors"
 import { sessionHookControlCommand, sessionHookControlInput } from "@/pages/session/session-hook-controls"
 import { takePendingProjectTaskMount } from "@/components/session/pending-project-task-mount"
 import { setSessionStatusPending } from "@/context/global-sync/session-status-refresh"
+import { pendingSessionKey, pendingSessionSubmissions } from "./pending-session"
 
 type PendingPrompt = {
   abort: AbortController
@@ -52,6 +53,7 @@ type FollowupSendInput = {
   messageID?: string
   optimisticBusy?: boolean
   before?: () => Promise<boolean> | boolean
+  prepared?: ReturnType<typeof buildRequestParts> & { message: Message }
 }
 
 function errorName(err: unknown) {
@@ -295,18 +297,20 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
   }
 
   const messageID = input.messageID ?? Identifier.ascending("message")
-  const { requestParts, optimisticParts } = buildRequestParts({
-    prompt: input.draft.prompt,
-    context: input.draft.context,
-    images,
-    text,
-    sessionID: input.draft.sessionID,
-    messageID,
-    sessionDirectory: input.draft.sessionDirectory,
-    gptProBackground: input.draft.gptProBackground,
-  })
+  const { requestParts, optimisticParts } =
+    input.prepared ??
+    buildRequestParts({
+      prompt: input.draft.prompt,
+      context: input.draft.context,
+      images,
+      text,
+      sessionID: input.draft.sessionID,
+      messageID,
+      sessionDirectory: input.draft.sessionDirectory,
+      gptProBackground: input.draft.gptProBackground,
+    })
 
-  const message: Message = {
+  const message: Message = input.prepared?.message ?? {
     id: messageID,
     sessionID: input.draft.sessionID,
     role: "user",
@@ -334,7 +338,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
   // Batch message + busy so the timeline never renders the user bubble without
   // the sticky "Sending" row (or vice versa) on separate frames.
   batch(() => {
-    add()
+    if (!input.prepared) add()
     setBusy()
   })
   performance.mark("submit:optimistic-add:end")
@@ -524,6 +528,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
   const handleSubmit = async (event: Event, options?: SubmitOptions) => {
     event.preventDefault()
+    const submissionKey = pendingSessionKey(sdk.url, sdk.directory, params.draftID)
+    if (!params.id && pendingSessionSubmissions.entries[submissionKey]) {
+      console.debug(`[new-session-submit] duplicate ignored key=${submissionKey}`)
+      return
+    }
     const intervene = options?.intervene === true
 
     const attempt = crypto.randomUUID()
@@ -689,496 +698,640 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     let sessionDirectory = currentDirectory
     let sessionCwd: string | undefined
     let client = sdk.client
-
-    if (isNewSession) {
-      if (genericagent) {
-        if (worktreeSelection !== "main" && worktreeSelection !== "create") {
-          sessionCwd = worktreeSelection
-        }
-        sessionDirectory = currentDirectory
-        client = sdk.client
-      } else {
-        if (worktreeSelection === "main") {
-          sessionDirectory = rootDirectory
-        }
-
-        if (worktreeSelection === "create") {
-          const rootClient =
-            rootDirectory === currentDirectory
-              ? sdk.client
-              : sdk.createClient({
-                  directory: rootDirectory,
-                  throwOnError: true,
-                })
-          const createdWorktree = await rootClient.worktree
-            .create({ directory: rootDirectory })
-            .then((x) => x.data)
-            .catch((err) => {
-              showToast({
-                title: language.t("prompt.toast.worktreeCreateFailed.title"),
-                description: errorMessage(err),
-              })
-              return undefined
-            })
-
-          if (!createdWorktree?.directory) {
-            diagnose("skip", { reason: "worktree-create-failed" })
-            showToast({
-              title: language.t("prompt.toast.worktreeCreateFailed.title"),
-              description: language.t("common.requestFailed"),
-            })
-            return
-          }
-          WorktreeState.pending(createdWorktree.directory)
-          sessionDirectory = createdWorktree.directory
-        }
-
-        if (worktreeSelection !== "main" && worktreeSelection !== "create") {
-          sessionDirectory = worktreeSelection
-        }
-
-        if (sessionDirectory !== currentDirectory) {
-          // Guard: 确保 sessionDirectory 不为空（worktree 场景）
-          if (!sessionDirectory || sessionDirectory.trim() === "") {
-            diagnose("skip", { reason: "empty-worktree-directory" })
-            console.error(
-              `[BUG] sessionDirectory is empty in worktree path sessionDirectory=${sessionDirectory || ""} currentDirectory=${currentDirectory} rootDirectory=${rootDirectory} worktreeSelection=${worktreeSelection}`,
-            )
-            showToast({
-              variant: "error",
-              title: language.t("prompt.toast.sessionCreateFailed.title"),
-              description: "工作树目录配置错误，请重试",
-            })
-            return
-          }
-          client = sdk.createClient({
-            directory: sessionDirectory,
-            throwOnError: true,
-          })
-          globalSync.child(sessionDirectory)
-        } else {
-          client = sdk.client
-        }
-      }
-
-      input.onNewSessionWorktreeReset?.()
-    }
-
-    let session = input.info()
-    if (!session && isNewSession) {
-      performance.mark("submit:session-create:start")
-      const createSession = client.session.create.bind(client.session) as (
-        parameters?: undefined,
-        options?: { body?: { cwd?: string } },
-      ) => Promise<{ data?: Session }>
-      const created = await createSession(
-        undefined,
-        genericagent && sessionCwd
-          ? ({
-              body: { cwd: sessionCwd },
-            } as Parameters<typeof createSession>[1])
-          : undefined,
-      )
-        .then((x) => x.data ?? undefined)
-        .catch((err) => {
-          showToast({
-            title: language.t("prompt.toast.sessionCreateFailed.title"),
-            description: errorMessage(err),
-          })
-          return undefined
+    let createdSession = input.info()
+    let worktreePrepared = false
+    let prepared: FollowupSendInput["prepared"]
+    const firstMessageID = isNewSession && mode === "normal" ? Identifier.ascending("message") : undefined
+    const preview = firstMessageID
+      ? buildRequestParts({
+          prompt: submittedPrompt,
+          context: currentContext,
+          images,
+          text,
+          sessionID: submittedDraft?.id ?? firstMessageID,
+          messageID: firstMessageID,
+          sessionDirectory,
+          gptProBackground,
         })
-      performance.mark("submit:session-create:end")
-      performance.measure("submit:session-create", "submit:session-create:start", "submit:session-create:end")
-      if (created) {
-        sync.session.created({ directory: sessionDirectory, info: created })
-        session = created
-        if (shouldAutoAccept) permission.enableAutoAccept(session.id, sessionDirectory)
-        local.session.promote(sessionDirectory, session.id)
-        const sessionID = session.id
-
-        // Apply project-task selection while the draft route is still mounted.
-        // Pending is keyed by the UI directory (sdk.directory), which may differ from
-        // sessionDirectory when creating a worktree session.
-        const pendingMount =
-          takePendingProjectTaskMount(currentDirectory) ??
-          (sessionDirectory !== currentDirectory ? takePendingProjectTaskMount(sessionDirectory) : undefined)
-        if (pendingMount?.taskID) {
-          const taskID = pendingMount.taskID
-          const inject = pendingMount.inject
-          console.log(
-            `[submit] apply pending project-task mount session=${session.id} task=${taskID} inject=${inject} uiDir=${currentDirectory} sessionDir=${sessionDirectory}`,
-          )
-          await client.projectTask
-            .mount({
-              sessionID: session.id,
-              projectTaskMountInput: { taskID },
-            })
-            .catch((err: unknown) => {
-              const msg = err instanceof Error ? err.message : String(err)
-              console.warn(`[submit] pending project-task mount failed session=${session!.id} err=${msg}`)
-              showToast({
-                variant: "error",
-                title: language.t("common.requestFailed"),
-                description: msg,
-              })
-            })
-          // mount enables inject by default; honor explicit opt-out from the new-session UI
-          if (!inject) {
-            await client.session
-              .update({
-                sessionID: session.id,
-                injectTaskContext: false,
-              })
-              .catch((err: unknown) => {
-                const msg = err instanceof Error ? err.message : String(err)
-                console.warn(`[submit] pending inject=false failed session=${session!.id} err=${msg}`)
-              })
-          }
-        }
-
-        console.debug(
-          `[session-bar] draft transition start directory=${currentDirectory} sessionDirectory=${sessionDirectory} sessionID=${sessionID}`,
-        )
-        performance.mark("submit:navigate:start")
-        batch(() => {
-          // draftDir lets the tab bar and draft route mask the consumed draft
-          // for the rest of the router transition (params.id stays stale until
-          // the new route commits).
-          if (!submittedDraft) {
-            console.error(
-              `[session-bar] draft transition missing draft routeDraftID=${params.draftID ?? "none"} sessionID=${sessionID}`,
-            )
-            sessionTabs.ensureOpen({ directory: sessionDirectory, id: sessionID })
-            navigate(`/${base64Encode(sessionDirectory)}/session/${sessionID}`)
-            return
-          }
-          const active = !params.id && params.draftID === submittedDraft.id
-          if (active) deferScopeReset = true
-          console.debug(
-            `[session-bar] draft promotion decision draftID=${submittedDraft.id} sessionID=${sessionID} active=${active}`,
-          )
-          if (active) {
-            layout.handoff.setTabs(
-              base64Encode(sessionDirectory),
-              sessionID,
-              submittedDraft.id,
-              base64Encode(currentDirectory),
-            )
-          }
-          sessionTabs.promoteDraft(
-            { directory: sessionDirectory, id: sessionID },
-            submittedDraft,
-            active
-              ? () => {
-                  pendingScopeReset?.()
-                  diagnose("draft-scope-reset", { sessionID, draftID: submittedDraft.id })
-                }
-              : undefined,
-          )
-          if (active) navigate(`/${base64Encode(sessionDirectory)}/session/${sessionID}`)
-        })
-        performance.mark("submit:navigate:end")
-        performance.measure("submit:navigate", "submit:navigate:start", "submit:navigate:end")
-        console.debug(
-          `[session-bar] draft transition committed directory=${currentDirectory} sessionDirectory=${sessionDirectory} sessionID=${sessionID}`,
-        )
-      }
-    }
-    if (!session) {
-      diagnose("skip", { reason: "missing-session" })
-      showToast({
-        title: language.t("prompt.toast.promptSendFailed.title"),
-        description: language.t("prompt.toast.promptSendFailed.description"),
-      })
-      return
-    }
-
-    const model = {
-      modelID: currentModel.id,
-      providerID: currentModel.provider.id,
-    }
-    const agent = currentAgent.name
-    const context = currentContext
-    const consumedContext = context.filter((item) => item.type === "session" || !!item.comment?.trim())
-    const draft: FollowupDraft = {
-      sessionID: session.id,
-      sessionDirectory,
-      prompt: submittedPrompt,
-      context,
-      agent,
-      model,
-      variant,
-      gptProBackground,
-    }
-
-    const scopeResetAction = () => {
+      : undefined
+    const early = !!preview && !!firstMessageID
+    const resetEarly = () => {
       prompt.reset(submittedScope)
-      removeContextItems(consumedContext, submittedScope)
-    }
-
-    const clearInput = () => {
-      if (deferScopeReset) pendingScopeReset = scopeResetAction
-      else prompt.reset(submittedScope)
+      removeContextItems(
+        currentContext.filter((item) => item.type === "session" || !!item.comment?.trim()),
+        submittedScope,
+      )
       input.resetInputUndo()
       input.setMode("normal")
       input.setPopover(null)
     }
+    if (early) {
+      pendingSessionSubmissions.begin({
+        key: submissionKey,
+        directory: currentDirectory,
+        draftID: submittedDraft?.id ?? params.draftID,
+        message: {
+          id: firstMessageID,
+          sessionID: submittedDraft?.id ?? firstMessageID,
+          role: "user",
+          time: { created: Date.now() },
+          agent: currentAgent.name,
+          model: { providerID: currentModel.provider.id, modelID: currentModel.id, variant },
+        },
+        parts: preview.optimisticParts,
+        phase: "preparing",
+        retry: () => {
+          void run(true)
+        },
+        edit: () => {
+          const entry = pendingSessionSubmissions.entries[submissionKey]
+          if (entry?.phase !== "failed") return
+          const scope = entry.sessionID
+            ? { dir: base64Encode(entry.sessionDirectory!), id: entry.sessionID }
+            : submittedScope
+          pendingSessionSubmissions.finish(submissionKey)
+          for (const item of currentContext) prompt.context.add(item, scope)
+          prompt.set(currentPrompt, input.promptLength(currentPrompt), scope)
+          input.resetInputUndo(currentPrompt, input.promptLength(currentPrompt))
+          input.setMode(mode)
+        },
+      })
+      resetEarly()
+      diagnose("preview-ready", { messageID: firstMessageID })
+    }
 
-    const restoreInput = () => {
-      for (const item of consumedContext) prompt.context.add(item, submittedScope)
-      prompt.set(currentPrompt, input.promptLength(currentPrompt), submittedScope)
-      input.resetInputUndo(currentPrompt, input.promptLength(currentPrompt))
-      input.setMode(mode)
-      input.setPopover(null)
-      requestAnimationFrame(() => {
-        const editor = input.editor()
-        if (!mayFocusComposer(editor)) {
-          console.debug("[prompt-isolation] failed-send focus skipped foreign composer")
+    const run = async (retry = false) => {
+      if (retry && !pendingSessionSubmissions.retry(submissionKey)) return
+      let session = createdSession
+      let seeded = false
+      try {
+        if (isNewSession && !session && !worktreePrepared) {
+          if (genericagent) {
+            if (worktreeSelection !== "main" && worktreeSelection !== "create") {
+              sessionCwd = worktreeSelection
+            }
+            sessionDirectory = currentDirectory
+            client = sdk.client
+          } else {
+            if (worktreeSelection === "main") {
+              sessionDirectory = rootDirectory
+            }
+
+            if (worktreeSelection === "create") {
+              const rootClient =
+                rootDirectory === currentDirectory
+                  ? sdk.client
+                  : sdk.createClient({
+                      directory: rootDirectory,
+                      throwOnError: true,
+                    })
+              const createdWorktree = await rootClient.worktree
+                .create({ directory: rootDirectory })
+                .then((x) => x.data)
+                .catch((err) => {
+                  showToast({
+                    title: language.t("prompt.toast.worktreeCreateFailed.title"),
+                    description: errorMessage(err),
+                  })
+                  return undefined
+                })
+
+              if (!createdWorktree?.directory) {
+                diagnose("skip", { reason: "worktree-create-failed" })
+                if (early) throw new Error(language.t("prompt.toast.worktreeCreateFailed.title"))
+                showToast({
+                  title: language.t("prompt.toast.worktreeCreateFailed.title"),
+                  description: language.t("common.requestFailed"),
+                })
+                return
+              }
+              WorktreeState.pending(createdWorktree.directory)
+              sessionDirectory = createdWorktree.directory
+            }
+
+            if (worktreeSelection !== "main" && worktreeSelection !== "create") {
+              sessionDirectory = worktreeSelection
+            }
+
+            if (sessionDirectory !== currentDirectory) {
+              // Guard: 确保 sessionDirectory 不为空（worktree 场景）
+              if (!sessionDirectory || sessionDirectory.trim() === "") {
+                diagnose("skip", { reason: "empty-worktree-directory" })
+                if (early) throw new Error(language.t("prompt.toast.sessionCreateFailed.title"))
+                console.error(
+                  `[BUG] sessionDirectory is empty in worktree path sessionDirectory=${sessionDirectory || ""} currentDirectory=${currentDirectory} rootDirectory=${rootDirectory} worktreeSelection=${worktreeSelection}`,
+                )
+                showToast({
+                  variant: "error",
+                  title: language.t("prompt.toast.sessionCreateFailed.title"),
+                  description: "工作树目录配置错误，请重试",
+                })
+                return
+              }
+              client = sdk.createClient({
+                directory: sessionDirectory,
+                throwOnError: true,
+              })
+              globalSync.child(sessionDirectory)
+            } else {
+              client = sdk.client
+            }
+          }
+
+          input.onNewSessionWorktreeReset?.()
+          worktreePrepared = true
+        }
+
+        if (!session && isNewSession) {
+          performance.mark("submit:session-create:start")
+          diagnose("session-create-start", { directory: sessionDirectory })
+          const createSession = client.session.create.bind(client.session) as (
+            parameters?: undefined,
+            options?: { body?: { cwd?: string } },
+          ) => Promise<{ data?: Session }>
+          const created = await createSession(
+            undefined,
+            genericagent && sessionCwd
+              ? ({
+                  body: { cwd: sessionCwd },
+                } as Parameters<typeof createSession>[1])
+              : undefined,
+          )
+            .then((x) => x.data ?? undefined)
+            .catch((err) => {
+              if (early) throw err
+              showToast({
+                title: language.t("prompt.toast.sessionCreateFailed.title"),
+                description: errorMessage(err),
+              })
+              return undefined
+            })
+          performance.mark("submit:session-create:end")
+          performance.measure("submit:session-create", "submit:session-create:start", "submit:session-create:end")
+          diagnose("session-create-end", { sessionID: created?.id, directory: sessionDirectory })
+          if (created) {
+            sync.session.created({ directory: sessionDirectory, info: created })
+            session = created
+            createdSession = created
+            if (shouldAutoAccept) permission.enableAutoAccept(session.id, sessionDirectory)
+            local.session.promote(sessionDirectory, session.id)
+            const sessionID = session.id
+            if (early && mode === "normal" && !sync.data.command.some((cmd) => text.split(" ")[0] === `/${cmd.name}`)) {
+              const entry = pendingSessionSubmissions.entries[submissionKey]!
+              prepared = {
+                ...buildRequestParts({
+                  prompt: submittedPrompt,
+                  context: currentContext,
+                  images,
+                  text,
+                  sessionID,
+                  messageID: firstMessageID!,
+                  sessionDirectory,
+                  gptProBackground,
+                }),
+                message: { ...entry.message, sessionID },
+              }
+              sync.session.optimistic.add({
+                directory: sessionDirectory,
+                sessionID,
+                message: prepared.message,
+                parts: prepared.optimisticParts,
+              })
+              seeded = true
+              diagnose("preview-seeded", { sessionID, messageID: firstMessageID })
+            }
+            if (early) pendingSessionSubmissions.promote(submissionKey, sessionDirectory, sessionID)
+
+            // Apply project-task selection while the draft route is still mounted.
+            // Pending is keyed by the UI directory (sdk.directory), which may differ from
+            // sessionDirectory when creating a worktree session.
+            const pendingMount =
+              takePendingProjectTaskMount(currentDirectory) ??
+              (sessionDirectory !== currentDirectory ? takePendingProjectTaskMount(sessionDirectory) : undefined)
+            if (pendingMount?.taskID) {
+              const taskID = pendingMount.taskID
+              const inject = pendingMount.inject
+              console.log(
+                `[submit] apply pending project-task mount session=${session.id} task=${taskID} inject=${inject} uiDir=${currentDirectory} sessionDir=${sessionDirectory}`,
+              )
+              await client.projectTask
+                .mount({
+                  sessionID: session.id,
+                  projectTaskMountInput: { taskID },
+                })
+                .catch((err: unknown) => {
+                  const msg = err instanceof Error ? err.message : String(err)
+                  console.warn(`[submit] pending project-task mount failed session=${session!.id} err=${msg}`)
+                  showToast({
+                    variant: "error",
+                    title: language.t("common.requestFailed"),
+                    description: msg,
+                  })
+                })
+              // mount enables inject by default; honor explicit opt-out from the new-session UI
+              if (!inject) {
+                await client.session
+                  .update({
+                    sessionID: session.id,
+                    injectTaskContext: false,
+                  })
+                  .catch((err: unknown) => {
+                    const msg = err instanceof Error ? err.message : String(err)
+                    console.warn(`[submit] pending inject=false failed session=${session!.id} err=${msg}`)
+                  })
+              }
+            }
+
+            console.debug(
+              `[session-bar] draft transition start directory=${currentDirectory} sessionDirectory=${sessionDirectory} sessionID=${sessionID}`,
+            )
+            performance.mark("submit:navigate:start")
+            batch(() => {
+              // draftDir lets the tab bar and draft route mask the consumed draft
+              // for the rest of the router transition (params.id stays stale until
+              // the new route commits).
+              if (!submittedDraft) {
+                console.error(
+                  `[session-bar] draft transition missing draft routeDraftID=${params.draftID ?? "none"} sessionID=${sessionID}`,
+                )
+                sessionTabs.ensureOpen({ directory: sessionDirectory, id: sessionID })
+                navigate(`/${base64Encode(sessionDirectory)}/session/${sessionID}`)
+                return
+              }
+              const active = !params.id && params.draftID === submittedDraft.id
+              if (active && !early) deferScopeReset = true
+              console.debug(
+                `[session-bar] draft promotion decision draftID=${submittedDraft.id} sessionID=${sessionID} active=${active}`,
+              )
+              if (active) {
+                layout.handoff.setTabs(
+                  base64Encode(sessionDirectory),
+                  sessionID,
+                  submittedDraft.id,
+                  base64Encode(currentDirectory),
+                )
+              }
+              sessionTabs.promoteDraft(
+                { directory: sessionDirectory, id: sessionID },
+                submittedDraft,
+                active
+                  ? () => {
+                      pendingScopeReset?.()
+                      diagnose("draft-scope-reset", { sessionID, draftID: submittedDraft.id })
+                    }
+                  : undefined,
+              )
+              if (active) navigate(`/${base64Encode(sessionDirectory)}/session/${sessionID}`)
+            })
+            performance.mark("submit:navigate:end")
+            performance.measure("submit:navigate", "submit:navigate:start", "submit:navigate:end")
+            console.debug(
+              `[session-bar] draft transition committed directory=${currentDirectory} sessionDirectory=${sessionDirectory} sessionID=${sessionID}`,
+            )
+          }
+        }
+        if (!session) {
+          diagnose("skip", { reason: "missing-session" })
+          if (early) throw new Error(language.t("prompt.toast.sessionCreateFailed.title"))
+          showToast({
+            title: language.t("prompt.toast.promptSendFailed.title"),
+            description: language.t("prompt.toast.promptSendFailed.description"),
+          })
           return
         }
-        if (!editor) return
-        editor.focus()
-        setCursorPosition(editor, input.promptLength(currentPrompt))
-        input.queueScroll()
-      })
-    }
 
-    if (!isNewSession && mode === "normal" && !intervene && input.shouldQueue?.()) {
-      diagnose("queued", { sessionID: session.id, directory: sessionDirectory })
-      input.onQueue?.(draft)
-      clearContext(submittedScope)
-      clearInput()
-      return
-    }
-
-    input.onSubmit?.(session.id, options)
-
-    if (mode === "shell") {
-      clearInput()
-      client.session
-        .shell({
-          sessionID: session.id,
-          agent,
-          model,
-          command: text,
-        })
-        .catch((err) => {
-          input.onSubmitFailed?.(session.id)
-          showToast({
-            title: language.t("prompt.toast.shellSendFailed.title"),
-            description: errorMessage(err),
-          })
-          restoreInput()
-        })
-      return
-    }
-
-    if (text.startsWith("/")) {
-      const [cmdName, ...args] = text.split(" ")
-      const commandName = cmdName.slice(1)
-      const customCommand = sync.data.command.find((c) => c.name === commandName)
-      if (customCommand) {
-        const messageID = Identifier.ascending("message")
-        input.onUserMessageCreated?.(messageID)
-        addOptimisticCommandMessage({
-          sync,
-          directory: sessionDirectory,
-          sessionID: session.id,
-          messageID,
-          command: commandName,
-          arguments: args.join(" "),
-          source: customCommand.source,
-          agent,
-          model,
-          variant,
-        })
-        clearInput()
-        client.session
-          .command({
+        const send = (session: { id: string }) => {
+          const isCurrentSubmission = () =>
+            (params.id === session.id && sdk.directory === sessionDirectory) ||
+            (!params.id && params.draftID === submittedDraft?.id && sdk.directory === currentDirectory)
+          const model = {
+            modelID: currentModel.id,
+            providerID: currentModel.provider.id,
+          }
+          const agent = currentAgent.name
+          const context = currentContext
+          const consumedContext = context.filter((item) => item.type === "session" || !!item.comment?.trim())
+          const draft: FollowupDraft = {
             sessionID: session.id,
-            messageID,
-            command: commandName,
-            arguments: args.join(" "),
+            sessionDirectory,
+            prompt: submittedPrompt,
+            context,
             agent,
-            model: `${model.providerID}/${model.modelID}`,
+            model,
             variant,
-            parts: images.map((attachment) => ({
-              id: Identifier.ascending("part"),
-              type: "file" as const,
-              mime: attachment.mime,
-              url: attachment.dataUrl,
-              filename: attachment.filename,
-            })),
-          })
-          .then(() => {
-            completeOptimisticCommandMessage({ sync, directory: sessionDirectory, sessionID: session.id, messageID })
-          })
-          .catch(async (err) => {
-            if (await delivered(globalSync, sessionDirectory, session.id, messageID)) {
-              completeOptimisticCommandMessage({ sync, directory: sessionDirectory, sessionID: session.id, messageID })
+            gptProBackground,
+          }
+
+          const scopeResetAction = () => {
+            prompt.reset(submittedScope)
+            removeContextItems(consumedContext, submittedScope)
+          }
+
+          const clearInput = () => {
+            if (early) return
+            if (deferScopeReset) pendingScopeReset = scopeResetAction
+            else prompt.reset(submittedScope)
+            input.resetInputUndo()
+            input.setMode("normal")
+            input.setPopover(null)
+          }
+
+          const restoreInput = () => {
+            if (early && pendingSessionSubmissions.entries[submissionKey]) {
+              pendingSessionSubmissions.fail(submissionKey, language.t("prompt.toast.promptSendFailed.description"))
               return
             }
-            input.onSubmitFailed?.(session.id)
-            removeOptimisticCommandMessage({ sync, directory: sessionDirectory, sessionID: session.id, messageID })
-            showToast({
-              title: language.t("prompt.toast.commandSendFailed.title"),
-              description: formatServerError(err, language.t, language.t("common.requestFailed")),
+            const scope = early ? { dir: base64Encode(sessionDirectory), id: session.id } : submittedScope
+            for (const item of consumedContext) prompt.context.add(item, scope)
+            prompt.set(currentPrompt, input.promptLength(currentPrompt), scope)
+            input.resetInputUndo(currentPrompt, input.promptLength(currentPrompt))
+            input.setMode(mode)
+            input.setPopover(null)
+            requestAnimationFrame(() => {
+              const editor = input.editor()
+              if (!mayFocusComposer(editor)) {
+                console.debug("[prompt-isolation] failed-send focus skipped foreign composer")
+                return
+              }
+              if (!editor) return
+              editor.focus()
+              setCursorPosition(editor, input.promptLength(currentPrompt))
+              input.queueScroll()
             })
-            restoreInput()
-          })
-        return
-      }
-    }
+          }
 
-    const messageID = Identifier.ascending("message")
-    input.onUserMessageCreated?.(messageID)
+          if (!isNewSession && mode === "normal" && !intervene && input.shouldQueue?.()) {
+            diagnose("queued", { sessionID: session.id, directory: sessionDirectory })
+            input.onQueue?.(draft)
+            clearContext(submittedScope)
+            clearInput()
+            return
+          }
 
-    const removeOptimisticMessage = () => {
-      sync.session.optimistic.remove({
-        directory: sessionDirectory,
-        sessionID: session.id,
-        messageID,
-      })
-    }
+          if (!early || isCurrentSubmission()) input.onSubmit?.(session.id, options)
 
-    // For a deferred draft-promotion reset, comment chips stay visible on the
-    // draft composer until the route commits (scopeResetAction clears them).
-    if (!deferScopeReset) removeContextItems(consumedContext, submittedScope)
-    performance.mark("submit:clear-input:start")
-    clearInput()
-    performance.mark("submit:clear-input:end")
-    performance.measure("submit:clear-input", "submit:clear-input:start", "submit:clear-input:end")
-    performance.measure("submit:sync-path", "submit:start", "submit:clear-input:end")
+          if (mode === "shell") {
+            clearInput()
+            client.session
+              .shell({
+                sessionID: session.id,
+                agent,
+                model,
+                command: text,
+              })
+              .catch((err) => {
+                input.onSubmitFailed?.(session.id)
+                showToast({
+                  title: language.t("prompt.toast.shellSendFailed.title"),
+                  description: errorMessage(err),
+                })
+                restoreInput()
+              })
+            return
+          }
 
-    requestAnimationFrame(() => {
-      performance.mark("submit:first-raf")
-      performance.measure("submit:to-first-raf", "submit:start", "submit:first-raf")
-      console.debug(`[perf:submit] first-raf breakdown ${submitMeasureSummary()}`)
-      input.onSubmitted?.(options)
-    })
+          if (text.startsWith("/")) {
+            const [cmdName, ...args] = text.split(" ")
+            const commandName = cmdName.slice(1)
+            const customCommand = sync.data.command.find((c) => c.name === commandName)
+            if (customCommand) {
+              const messageID = firstMessageID ?? Identifier.ascending("message")
+              if (!early) input.onUserMessageCreated?.(messageID)
+              addOptimisticCommandMessage({
+                sync,
+                directory: sessionDirectory,
+                sessionID: session.id,
+                messageID,
+                command: commandName,
+                arguments: args.join(" "),
+                source: customCommand.source,
+                agent,
+                model,
+                variant,
+              })
+              clearInput()
+              client.session
+                .command({
+                  sessionID: session.id,
+                  messageID,
+                  command: commandName,
+                  arguments: args.join(" "),
+                  agent,
+                  model: `${model.providerID}/${model.modelID}`,
+                  variant,
+                  parts: images.map((attachment) => ({
+                    id: Identifier.ascending("part"),
+                    type: "file" as const,
+                    mime: attachment.mime,
+                    url: attachment.dataUrl,
+                    filename: attachment.filename,
+                  })),
+                })
+                .then(() => {
+                  completeOptimisticCommandMessage({
+                    sync,
+                    directory: sessionDirectory,
+                    sessionID: session.id,
+                    messageID,
+                  })
+                })
+                .catch(async (err) => {
+                  if (await delivered(globalSync, sessionDirectory, session.id, messageID)) {
+                    completeOptimisticCommandMessage({
+                      sync,
+                      directory: sessionDirectory,
+                      sessionID: session.id,
+                      messageID,
+                    })
+                    return
+                  }
+                  input.onSubmitFailed?.(session.id)
+                  removeOptimisticCommandMessage({
+                    sync,
+                    directory: sessionDirectory,
+                    sessionID: session.id,
+                    messageID,
+                  })
+                  showToast({
+                    title: language.t("prompt.toast.commandSendFailed.title"),
+                    description: formatServerError(err, language.t, language.t("common.requestFailed")),
+                  })
+                  restoreInput()
+                })
+              return
+            }
+          }
 
-    const waitForWorktree = async () => {
-      const stop = stopping.get(session.id)
-      if (stop) await stop
-      const worktree = WorktreeState.get(sessionDirectory)
-      if (!worktree || worktree.status !== "pending") {
-        diagnose("worktree-ready", { directory: sessionDirectory, status: worktree?.status ?? "untracked" })
-        return true
-      }
+          const messageID = firstMessageID ?? Identifier.ascending("message")
+          if (!early) input.onUserMessageCreated?.(messageID)
 
-      diagnose("worktree-wait", { directory: sessionDirectory })
-
-      if (sessionDirectory === currentDirectory) {
-        setSessionStatusPending(sessionDirectory, session.id, true, messageID)
-        globalSync.session.status.set(sessionDirectory, session.id, { type: "busy" })
-      }
-
-      const controller = new AbortController()
-      const cleanup = () => {
-        if (sessionDirectory === currentDirectory) {
-          setSessionStatusPending(sessionDirectory, session.id, false, messageID)
-          globalSync.session.status.set(sessionDirectory, session.id, { type: "idle" })
-        }
-        removeOptimisticMessage()
-        restoreInput()
-      }
-
-      pending.set(session.id, { abort: controller, cleanup })
-
-      const abortWait = new Promise<Awaited<ReturnType<typeof WorktreeState.wait>>>((resolve) => {
-        if (controller.signal.aborted) {
-          resolve({ status: "failed", message: "aborted" })
-          return
-        }
-        controller.signal.addEventListener(
-          "abort",
-          () => {
-            resolve({ status: "failed", message: "aborted" })
-          },
-          { once: true },
-        )
-      })
-
-      const timeoutMs = 5 * 60 * 1000
-      const timer = { id: undefined as number | undefined }
-      const timeout = new Promise<Awaited<ReturnType<typeof WorktreeState.wait>>>((resolve) => {
-        timer.id = window.setTimeout(() => {
-          resolve({
-            status: "failed",
-            message: language.t("workspace.error.stillPreparing"),
-          })
-        }, timeoutMs)
-      })
-
-      const result = await Promise.race([WorktreeState.wait(sessionDirectory), abortWait, timeout]).finally(() => {
-        if (timer.id === undefined) return
-        clearTimeout(timer.id)
-      })
-      pending.delete(session.id)
-      diagnose("worktree-wait-finished", {
-        directory: sessionDirectory,
-        status: result.status,
-        aborted: controller.signal.aborted,
-      })
-      if (controller.signal.aborted) return false
-      if (result.status === "failed") throw new Error(result.message)
-      return true
-    }
-
-    diagnose("dispatch", { sessionID: session.id, directory: sessionDirectory })
-    const dispatch = sendFollowupDraft({
-      client,
-      sync,
-      globalSync,
-      draft,
-      messageID,
-      optimisticBusy: sessionDirectory === currentDirectory,
-      before: waitForWorktree,
-    })
-    dispatching.set(session.id, dispatch)
-    void dispatch
-      .finally(() => {
-        if (dispatching.get(session.id) === dispatch) dispatching.delete(session.id)
-      })
-      .then((sent) => {
-        if (!sent) {
-          input.onSubmitFailed?.(session.id)
-          return
-        }
-        if (intervene && !stopping.has(session.id)) {
-          // Mirror flushQueued(): finalize the running assistant locally so the
-          // timeline does not show the interrupted turn as active until events
-          // land, then ask the server to gracefully interrupt the in-flight
-          // step and serve the posted prompt immediately.
-          finalizeRunningAssistantLocally({ globalSync, directory: sdk.directory, sessionID: session.id })
-          console.debug(`[intervene] flushing session=${session.id}`)
-          void sdk.client.session
-            .flush({ sessionID: session.id })
-            .then(() => {
-              console.debug(`[intervene] flush done session=${session.id}`)
+          const removeOptimisticMessage = () => {
+            sync.session.optimistic.remove({
+              directory: sessionDirectory,
+              sessionID: session.id,
+              messageID,
             })
-            .catch((err) => {
-              console.warn(
-                `[intervene] flush failed session=${session.id} err=${err instanceof Error ? err.message : String(err)}`,
+          }
+
+          // For a deferred draft-promotion reset, comment chips stay visible on the
+          // draft composer until the route commits (scopeResetAction clears them).
+          if (!deferScopeReset && !early) removeContextItems(consumedContext, submittedScope)
+          performance.mark("submit:clear-input:start")
+          clearInput()
+          performance.mark("submit:clear-input:end")
+          performance.measure("submit:clear-input", "submit:clear-input:start", "submit:clear-input:end")
+          performance.measure("submit:sync-path", "submit:start", "submit:clear-input:end")
+
+          requestAnimationFrame(() => {
+            performance.mark("submit:first-raf")
+            performance.measure("submit:to-first-raf", "submit:start", "submit:first-raf")
+            console.debug(`[perf:submit] first-raf breakdown ${submitMeasureSummary()}`)
+            if (!early || isCurrentSubmission()) input.onSubmitted?.(options)
+          })
+
+          const waitForWorktree = async () => {
+            const stop = stopping.get(session.id)
+            if (stop) await stop
+            const worktree = WorktreeState.get(sessionDirectory)
+            if (!worktree || worktree.status !== "pending") {
+              diagnose("worktree-ready", { directory: sessionDirectory, status: worktree?.status ?? "untracked" })
+              return true
+            }
+
+            diagnose("worktree-wait", { directory: sessionDirectory })
+
+            if (sessionDirectory === currentDirectory) {
+              setSessionStatusPending(sessionDirectory, session.id, true, messageID)
+              globalSync.session.status.set(sessionDirectory, session.id, { type: "busy" })
+            }
+
+            const controller = new AbortController()
+            const cleanup = () => {
+              if (sessionDirectory === currentDirectory) {
+                setSessionStatusPending(sessionDirectory, session.id, false, messageID)
+                globalSync.session.status.set(sessionDirectory, session.id, { type: "idle" })
+              }
+              removeOptimisticMessage()
+              restoreInput()
+            }
+
+            pending.set(session.id, { abort: controller, cleanup })
+
+            const abortWait = new Promise<Awaited<ReturnType<typeof WorktreeState.wait>>>((resolve) => {
+              if (controller.signal.aborted) {
+                resolve({ status: "failed", message: "aborted" })
+                return
+              }
+              controller.signal.addEventListener(
+                "abort",
+                () => {
+                  resolve({ status: "failed", message: "aborted" })
+                },
+                { once: true },
               )
             })
+
+            const timeoutMs = 5 * 60 * 1000
+            const timer = { id: undefined as number | undefined }
+            const timeout = new Promise<Awaited<ReturnType<typeof WorktreeState.wait>>>((resolve) => {
+              timer.id = window.setTimeout(() => {
+                resolve({
+                  status: "failed",
+                  message: language.t("workspace.error.stillPreparing"),
+                })
+              }, timeoutMs)
+            })
+
+            const result = await Promise.race([WorktreeState.wait(sessionDirectory), abortWait, timeout]).finally(
+              () => {
+                if (timer.id === undefined) return
+                clearTimeout(timer.id)
+              },
+            )
+            pending.delete(session.id)
+            diagnose("worktree-wait-finished", {
+              directory: sessionDirectory,
+              status: result.status,
+              aborted: controller.signal.aborted,
+            })
+            if (controller.signal.aborted) return false
+            if (result.status === "failed") throw new Error(result.message)
+            return true
+          }
+
+          diagnose("dispatch", { sessionID: session.id, directory: sessionDirectory })
+          if (retry && prepared && !seeded) {
+            sync.session.optimistic.add({
+              directory: sessionDirectory,
+              sessionID: session.id,
+              message: prepared.message,
+              parts: prepared.optimisticParts,
+            })
+            pendingSessionSubmissions.promote(submissionKey, sessionDirectory, session.id)
+          }
+          const dispatch = sendFollowupDraft({
+            client,
+            sync,
+            globalSync,
+            draft,
+            messageID,
+            optimisticBusy: sessionDirectory === currentDirectory,
+            before: waitForWorktree,
+            prepared,
+          })
+          dispatching.set(session.id, dispatch)
+          void dispatch
+            .finally(() => {
+              if (dispatching.get(session.id) === dispatch) dispatching.delete(session.id)
+            })
+            .then((sent) => {
+              if (!sent) {
+                input.onSubmitFailed?.(session.id)
+                return
+              }
+              if (early && !isCurrentSubmission()) pendingSessionSubmissions.finish(submissionKey)
+              if (intervene && !stopping.has(session.id)) {
+                // Mirror flushQueued(): finalize the running assistant locally so the
+                // timeline does not show the interrupted turn as active until events
+                // land, then ask the server to gracefully interrupt the in-flight
+                // step and serve the posted prompt immediately.
+                finalizeRunningAssistantLocally({ globalSync, directory: sdk.directory, sessionID: session.id })
+                console.debug(`[intervene] flushing session=${session.id}`)
+                void sdk.client.session
+                  .flush({ sessionID: session.id })
+                  .then(() => {
+                    console.debug(`[intervene] flush done session=${session.id}`)
+                  })
+                  .catch((err) => {
+                    console.warn(
+                      `[intervene] flush failed session=${session.id} err=${err instanceof Error ? err.message : String(err)}`,
+                    )
+                  })
+              }
+            })
+            .catch((err) => {
+              input.onSubmitFailed?.(session.id)
+              if (aborted(err)) return
+              pending.delete(session.id)
+              if (sessionDirectory === currentDirectory) {
+                setSessionStatusPending(sessionDirectory, session.id, false, messageID)
+                globalSync.session.status.set(sessionDirectory, session.id, { type: "idle" })
+              }
+              showToast({
+                title: language.t("prompt.toast.promptSendFailed.title"),
+                description: errorMessage(err),
+              })
+              removeOptimisticMessage()
+              restoreInput()
+            })
         }
-      })
-      .catch((err) => {
-        input.onSubmitFailed?.(session.id)
-        if (aborted(err)) return
-        pending.delete(session.id)
-        if (sessionDirectory === currentDirectory) {
-          setSessionStatusPending(sessionDirectory, session.id, false, messageID)
-          globalSync.session.status.set(sessionDirectory, session.id, { type: "idle" })
-        }
-        showToast({
-          title: language.t("prompt.toast.promptSendFailed.title"),
-          description: errorMessage(err),
-        })
-        removeOptimisticMessage()
-        restoreInput()
-      })
+        return send(session)
+      } catch (err) {
+        if (!early) throw err
+        pendingSessionSubmissions.fail(submissionKey, errorMessage(err))
+      }
+    }
+    return run()
   }
 
   const handlePrimaryAction = (event: Event, action: "send" | "stop") => {

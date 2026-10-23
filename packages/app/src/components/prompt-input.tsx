@@ -105,6 +105,7 @@ import { workspaceKey } from "@/pages/layout/helpers"
 import { uiPerfTriggerDown, uiPerfOpen } from "@/utils/ui-perf"
 import { mayFocusComposer } from "./prompt-input/composer-boundary"
 import { filterAtFileSources } from "./prompt-input/gpt-pro-private-files"
+import { pendingSessionSubmissions } from "./prompt-input/pending-session"
 
 interface PromptInputProps {
   class?: string
@@ -2509,6 +2510,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         composerElement = element
       }}
       data-prompt-kind="main"
+      inert={!!pendingSessionSubmissions.get(sdk.url, sdk.directory, params)}
+      aria-busy={!!pendingSessionSubmissions.get(sdk.url, sdk.directory, params)}
       data-compact={compactComposer() ? "true" : undefined}
       data-prompt-scope={JSON.stringify([sdk.directory, params.id ?? params.draftID])}
       class="relative size-full _max-h-[320px] flex flex-col gap-0"
