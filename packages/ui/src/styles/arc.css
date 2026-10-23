@@ -631,7 +631,8 @@ html[data-theme="arc"] [data-component="dock-prompt"][data-kind="question"] {
     border-color: light-dark(#8b5cf6, rgba(192, 132, 208, 0.5));
 
     [data-slot="option-label"],
-    [data-slot="option-description"] {
+    [data-slot="option-description"],
+    [data-slot="question-custom-input"] {
       color: light-dark(var(--text-strong), #ffffff);
     }
   }
@@ -646,7 +647,8 @@ html[data-theme="arc"] [data-component="dock-prompt"][data-kind="question"] {
     border-color: light-dark(#8b5cf6, rgba(192, 132, 208, 0.5));
 
     [data-slot="option-label"],
-    [data-slot="option-description"] {
+    [data-slot="option-description"],
+    [data-slot="question-custom-input"] {
       color: light-dark(var(--text-strong), #ffffff);
     }
   }

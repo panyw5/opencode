@@ -2216,9 +2216,12 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
       border-color: var(--border-interactive-hover);
     }
 
-    &:active:not([data-picked="true"]) [data-slot="option-description"],
-    &[data-focused="true"]:not([data-picked="true"]) [data-slot="option-description"] {
-      color: var(--text-strong);
+    &:active:not([data-picked="true"]),
+    &[data-focused="true"]:not([data-picked="true"]) {
+      [data-slot="option-description"],
+      [data-slot="question-custom-input"] {
+        color: var(--text-strong);
+      }
     }
 
     &[data-picked="true"] {
@@ -2397,7 +2400,8 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
     }
 
     &::placeholder {
-      color: light-dark(#8a8a8a, var(--text-weak));
+      color: currentColor;
+      opacity: 1;
     }
 
     &:focus-visible {

@@ -151,14 +151,17 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
 
     // Keyboard navigation
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (store.sending) return
+      if (store.sending || e.defaultPrevented) return
+      if (
+        e.target instanceof Element &&
+        e.target.closest(
+          'input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"], [role="listbox"]',
+        )
+      )
+        return
 
       // Handle cmd+enter for submit
       if (e.key === "Enter" && e.metaKey) {
-        // If textarea is focused, let it handle cmd+enter (commitCustom)
-        if (e.target instanceof HTMLTextAreaElement && e.target.dataset.slot === "question-custom-input") {
-          return
-        }
         e.preventDefault()
         next("command-enter")
         return
@@ -166,40 +169,43 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
 
       // Arrow key navigation
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        // Don't interfere if textarea is focused
-        if (e.target instanceof HTMLTextAreaElement) return
-
         e.preventDefault()
         const totalOptions = options().length + 1 // +1 for custom option
 
-        if (e.key === "ArrowDown") {
-          setStore("focusedOption", (current) => {
-            if (current === -1) return 0
-            return (current + 1) % totalOptions
-          })
-        } else {
-          setStore("focusedOption", (current) => {
-            if (current === -1) return totalOptions - 1
-            return (current - 1 + totalOptions) % totalOptions
-          })
-        }
+        setStore("focusedOption", (current) => {
+          const next =
+            e.key === "ArrowDown"
+              ? (current + 1) % totalOptions
+              : current === -1
+                ? totalOptions - 1
+                : (current - 1 + totalOptions) % totalOptions
+          console.debug(`[question-dock] keyboard focus id=${props.request.id} option=${next}`)
+          return next
+        })
         return
       }
 
       // Enter key to select focused option
       if (e.key === "Enter" && store.focusedOption !== -1) {
-        if (e.target instanceof HTMLTextAreaElement) return
         e.preventDefault()
         selectOption(store.focusedOption)
         return
       }
     }
 
+    const handlePointerDown = () => {
+      if (store.focusedOption === -1) return
+      console.debug(`[question-dock] keyboard focus cleared id=${props.request.id} reason=pointer`)
+      setStore("focusedOption", -1)
+    }
+
     window.addEventListener("keydown", handleKeyDown)
+    window.addEventListener("pointerdown", handlePointerDown, true)
 
     onCleanup(() => {
       window.removeEventListener("resize", update)
       window.removeEventListener("keydown", handleKeyDown)
+      window.removeEventListener("pointerdown", handlePointerDown, true)
       observer.disconnect()
       if (raf !== undefined) cancelAnimationFrame(raf)
     })
