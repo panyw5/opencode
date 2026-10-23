@@ -10,6 +10,42 @@
 }
 
 @layer components {
+  [data-component="file-tree-node"] {
+    /* Theme surface hover tokens can be indistinguishable from the panel. */
+    --file-tree-ink: var(--text-strong);
+    transition:
+      background-color 120ms ease-out,
+      box-shadow 120ms ease-out;
+
+    &[data-active="true"] {
+      background-color: color-mix(in srgb, var(--file-tree-ink) 16%, transparent);
+    }
+
+    &:hover {
+      background-color: color-mix(in srgb, var(--file-tree-ink) 10%, transparent);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--file-tree-ink) 18%, transparent);
+    }
+
+    &[data-active="true"]:hover {
+      background-color: color-mix(in srgb, var(--file-tree-ink) 22%, transparent);
+    }
+
+    &:active,
+    &[data-active="true"]:active {
+      background-color: color-mix(in srgb, var(--file-tree-ink) 26%, transparent);
+    }
+
+    &:focus-visible,
+    [data-slot="collapsible-trigger"]:focus-visible > & {
+      outline: 2px solid var(--border-focus-base);
+      outline-offset: -2px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+    }
+  }
+
   [data-component="channel-create-notice"] {
     --channel-notice-accent: #72927e;
 

@@ -132,7 +132,8 @@ export default function FileTreeSearch(props: ParentProps<{ onFileClick: (path: 
               return (
                 <button
                   type="button"
-                  class="w-full min-w-0 h-6 flex items-center justify-start gap-x-1.5 rounded-md px-1.5 py-0 text-left hover:bg-surface-raised-base-hover active:bg-surface-base-active transition-colors cursor-pointer [contain:layout_style_paint]"
+                  data-component="file-tree-node"
+                  class="w-full min-w-0 h-6 flex items-center justify-start gap-x-1.5 rounded-md px-1.5 py-0 text-left cursor-pointer [contain:layout_style_paint]"
                   onClick={() => props.onFileClick(path)}
                 >
                   <div class="w-4 shrink-0" />
