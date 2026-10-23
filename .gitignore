@@ -76,6 +76,7 @@ packages/opencode/bin/.opencode
 .commandcode/
 .plans/
 .workbuddy/
+.playwright-mcp/
 opencode.db
 sidecar.js
 
