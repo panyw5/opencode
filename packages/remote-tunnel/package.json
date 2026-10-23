@@ -1,7 +1,7 @@
 {
   "name": "@opencode-ai/remote-tunnel",
   "private": true,
-  "version": "1.18.60",
+  "version": "1.18.61",
   "type": "module",
   "license": "MIT",
   "exports": {
