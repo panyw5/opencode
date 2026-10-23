@@ -99,6 +99,7 @@ import {
 } from "./config-provider-list-shared"
 import { fetchSkillMarketFile, loadSkillMarketIndex } from "./config-skill-market"
 import { SectionButton } from "./config-section-button"
+import { ConfigCreateMenu } from "./config-create-menu"
 import { ServerConnection, useServer } from "@/context/server"
 import { extraAgentById, extraAgents, mainDomain } from "@/pages/layout/extra-agents"
 import {
@@ -3863,27 +3864,41 @@ export default function ConfigPage() {
       .sort((a, b) => a.name.localeCompare(b.name))
   })
 
+  const mcpProjectDirectory = createMemo(() => {
+    if (state.pick === MCP_NEW && state.mcpTargetDirectory) return state.mcpTargetDirectory
+    const selected = parseMcpSelectionID(state.pick)
+    return selected?.scope === "project" ? selected.directory : (sync.data.path?.directory ?? "")
+  })
+  const mcpProjectData = createMemo(() => {
+    const directory = mcpProjectDirectory()
+    if (!directory || directory === sync.data.path?.directory) return sync.data
+    return globalSync.child(directory, { bootstrap: false })[0]
+  })
   const projectMcpRecords = createConfigLocalLoader(
-    () => (state.section === "mcp" ? sync.data.path?.directory || null : false),
-    async (directory) => loadConfigRecords(directory, "project"),
+    () => (state.section === "mcp" ? mcpProjectDirectory() || null : false),
+    async (directory) => ({ directory, records: await loadConfigRecords(directory, "project") }),
     "mcp.project-records",
   )
+  const activeProjectMcpRecords = createMemo(() => {
+    const value = projectMcpRecords.latest
+    return value?.directory === mcpProjectDirectory() ? value.records : []
+  })
 
   async function refetchProjectMcpRecords() {
-    const directory = sync.data.path?.directory
+    const directory = mcpProjectDirectory()
     const records = directory ? await loadConfigRecords(directory, "project") : []
-    projectMcpRecords.replace(records)
+    if (directory === mcpProjectDirectory()) projectMcpRecords.replace({ directory, records })
   }
 
   const mcpProject = createMemo(() => {
-    const directory = sync.data.path?.directory ?? ""
-    const declared = declaredMcpEntries(projectMcpRecords.latest ?? [])
-    const mergedCfg = sync.data.config?.mcp ?? {}
-    const dirMcp = sync.data.mcp ?? {}
+    const directory = mcpProjectDirectory()
+    const declared = declaredMcpEntries(activeProjectMcpRecords())
+    const mergedCfg = mcpProjectData().config?.mcp ?? {}
+    const dirMcp = mcpProjectData().mcp ?? {}
     const items = Object.keys(declared)
       .filter((name_) => !state.mcpGlobalDeleting[name_])
       .map((name_) => {
-        const entry = mergedCfg[name_] as Record<string, unknown> | undefined
+        const entry = (mergedCfg[name_] ?? declared[name_]) as Record<string, unknown> | undefined
         const status = dirMcp[name_]?.status ?? "disabled"
         const type = entry ? ((entry.type as string) ?? "unknown") : "unknown"
         const detail = entry
@@ -3903,7 +3918,7 @@ export default function ConfigPage() {
         }
       })
       .sort((a, b) => a.name.localeCompare(b.name))
-    if (state.pick === MCP_NEW && state.mcpTargetDirectory === sync.data.path?.directory) {
+    if (state.pick === MCP_NEW && state.mcpTargetDirectory && state.mcpTargetDirectory === directory) {
       const name = state.mcpNewName.trim() || t("config.mcp.add")
       const detail = state.mcpForm.type === "local" ? state.mcpForm.command.trim() : state.mcpForm.url.trim()
       return [{ id: MCP_NEW, name, type: state.mcpForm.type, detail, status: "disabled", draft: true }, ...items]
@@ -3911,7 +3926,10 @@ export default function ConfigPage() {
     return items
   })
 
-  const mcpProjectName = createMemo(() => sync.data.project || name(sync.data.path?.directory ?? ""))
+  const mcpProjectName = createMemo(() => {
+    const directory = mcpProjectDirectory()
+    return layout.projects.list().find((project) => norm(project.worktree) === norm(directory))?.name || name(directory)
+  })
   const mcpProjectOpen = () => !state.treeClosed["mcp-project"]
   const toggleMcpProject = () => setState("treeClosed", "mcp-project", (v) => !v)
   const channelMiddleItems = useChannelMiddleItems(() => state.pick)
@@ -3927,7 +3945,8 @@ export default function ConfigPage() {
   const selectedMcpStatus = createMemo(() => {
     const n = selectedMcpName()
     if (!n) return undefined
-    return sync.data.mcp?.[n]?.status ?? "disabled"
+    const data = selectedMcpSelection()?.scope === "project" ? mcpProjectData() : sync.data
+    return data.mcp?.[n]?.status ?? "disabled"
   })
 
   const selectedMcpConfig = createMemo(() => {
@@ -3935,7 +3954,9 @@ export default function ConfigPage() {
     if (!n) return undefined
     const selected = selectedMcpSelection()
     if (selected?.scope === "global") return globalSync.data.config.mcp?.[n] as Record<string, unknown> | undefined
-    return sync.data.config?.mcp?.[n] as Record<string, unknown> | undefined
+    return (mcpProjectData().config?.mcp?.[n] ?? declaredMcpEntry(activeProjectMcpRecords(), n)) as
+      | Record<string, unknown>
+      | undefined
   })
 
   const selectedMcpDirectory = createMemo(() => {
@@ -4013,6 +4034,9 @@ export default function ConfigPage() {
     const n = isNew ? state.mcpNewName.trim() : selectedMcpName()
     if (!n || state.mcpSaving) return
     const targetDirectory = isNew ? state.mcpTargetDirectory : selectedMcpDirectory()
+    console.info(
+      `[config-mcp] save-start scope=${targetDirectory ? "project" : "global"} directory=${targetDirectory} name=${n} new=${isNew}`,
+    )
     const targetStore = targetDirectory ? globalSync.child(targetDirectory, { bootstrap: false }) : undefined
     const currentConfig = targetDirectory ? targetStore?.[0].config : globalSync.data.config
     setState("mcpSaving", true)
@@ -4052,6 +4076,8 @@ export default function ConfigPage() {
           .client.instance.dispose({ directory: targetDirectory })
           .catch(() => undefined)
         await client.mcp.add({ name: n, config: config as never })
+        const status = await client.mcp.status()
+        if (status.data) targetStore[1]("mcp", status.data)
         const result = await client.config.get()
         if (result.data) targetStore[1]("config", result.data)
         await refetchProjectMcpRecords()
@@ -4092,6 +4118,12 @@ export default function ConfigPage() {
           setState("mcpTargetDirectory", "")
         })
       }
+      console.info(`[config-mcp] save-complete directory=${targetDirectory} name=${n}`)
+    } catch (error) {
+      console.error(
+        `[config-mcp] save-failed directory=${targetDirectory} name=${n} error=${error instanceof Error ? error.message : String(error)}`,
+      )
+      throw error
     } finally {
       setState("mcpSaving", false)
     }
@@ -4148,16 +4180,24 @@ export default function ConfigPage() {
     setState("pick", "")
   }
 
-  function toggleMcp(name: string, enabled: boolean) {
+  function toggleMcp(name: string, enabled: boolean, directory = sync.data.path?.directory) {
     if (state.mcpBusy === name) return
+    console.info(`[config-mcp] toggle-start directory=${directory ?? ""} name=${name} enabled=${enabled}`)
     setState("mcpBusy", name)
-    const directory = sync.data.path?.directory
     const client = directory
       ? globalSDK.forDomain(mainDomain).createClient({ directory, throwOnError: true })
       : globalSDK.forDomain(mainDomain).client
     const action = enabled ? client.mcp.connect({ name }) : client.mcp.disconnect({ name })
     void action
+      .then(async () => {
+        const status = await client.mcp.status()
+        if (directory && status.data) globalSync.child(directory, { bootstrap: false })[1]("mcp", status.data)
+        console.info(`[config-mcp] toggle-complete directory=${directory ?? ""} name=${name} enabled=${enabled}`)
+      })
       .catch((err: unknown) => {
+        console.error(
+          `[config-mcp] toggle-failed directory=${directory ?? ""} name=${name} error=${err instanceof Error ? err.message : String(err)}`,
+        )
         showToast({
           title: language.t("common.requestFailed"),
           description: err instanceof Error ? err.message : String(err),
@@ -4169,6 +4209,7 @@ export default function ConfigPage() {
   }
 
   function createMcp(targetDirectory = "") {
+    console.debug(`[config-mcp] create scope=${targetDirectory ? "project" : "global"} directory=${targetDirectory}`)
     setState("pick", MCP_NEW)
     setState("mcpNewName", "")
     setState("mcpTargetDirectory", targetDirectory)
@@ -4632,6 +4673,9 @@ export default function ConfigPage() {
           .join("\x1f"),
       )
       .join("\x1e"),
+  )
+  const createProjects = createMemo(() =>
+    opened().map((project) => ({ root: project.worktree, label: project.name ?? name(project.worktree) })),
   )
   const projectScanSection = createMemo(() =>
     state.section === "agents" ||
@@ -7343,6 +7387,9 @@ export default function ConfigPage() {
   }
 
   function createCommand(projectRoot = "", projectLabel = "") {
+    console.debug(
+      `[config-commands] create scope=${projectRoot ? "project" : "global"} root=${projectRoot || space()?.configRoot || ""}`,
+    )
     const text = commandTemplate("")
     setState("pick", COMMAND_NEW)
     setState("doc", COMMAND_NEW)
@@ -7370,6 +7417,7 @@ export default function ConfigPage() {
 
   async function saveCommand() {
     const targetDir = state.cmdCreateDir || (space()?.configRoot ? join(space()!.configRoot!, "commands") : "")
+    console.debug(`[config-commands] save-request name=${JSON.stringify(state.cmdTitle)} root=${targetDir}`)
     if (!targetDir || !platform.createLocalFile) return
     const title = state.cmdTitle.trim()
     if (!title) {
@@ -7385,7 +7433,9 @@ export default function ConfigPage() {
     const isProject = !!state.cmdCreateProjectRoot
     setState("cmdSaving", true)
     try {
+      console.debug(`[config-commands] write-start path=${path}`)
       await platform.createLocalFile(path, state.text)
+      console.debug(`[config-commands] write-complete path=${path}`)
       cache.set(path, state.text)
       batch(() => {
         setState("cmdPath", path)
@@ -7412,8 +7462,10 @@ export default function ConfigPage() {
         root: isProject ? state.cmdCreateProjectRoot : space()?.configRoot,
         project: isProject ? state.cmdCreateProjectLabel : undefined,
       })
+      console.debug(`[config-commands] save-complete path=${path}`)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err)
+      console.error(`[config-commands] save-failed path=${path} error=${message}`)
       showToast({ title: "Failed", description: message })
     } finally {
       setState("cmdSaving", false)
@@ -8360,16 +8412,14 @@ export default function ConfigPage() {
                       icon={sectionIcon("mcp")}
                     />
                     <div class="mt-4 flex items-center gap-2">
-                      <Button
-                        size="small"
-                        variant="ghost"
-                        icon="plus-small"
-                        class="h-8 rounded-lg border border-border-weak-base bg-background-base px-2.5 pr-3 text-12-medium text-text-base shadow-none transition-colors hover:border-border-strong hover:bg-surface-base-hover active:border-border-base active:bg-surface-base-active focus-visible:border-border-strong focus-visible:bg-surface-base-hover disabled:border-border-weak-base disabled:bg-background-base disabled:text-text-weaker"
-                        onClick={() => createMcp()}
-                        disabled={!globalSync.updateConfig}
-                      >
-                        {t("config.mcp.add")}
-                      </Button>
+                      <ConfigCreateMenu
+                        kind="mcp"
+                        label={t("config.mcp.add")}
+                        globalRoot={space()?.configRoot}
+                        projects={createProjects()}
+                        disabled={!platform.listConfigFiles || !platform.readLocalFile || !platform.writeLocalFile}
+                        onCreate={createMcp}
+                      />
                     </div>
                   </Match>
                   <Match when={state.section === "channels"}>
@@ -8393,16 +8443,14 @@ export default function ConfigPage() {
                       icon={sectionIcon("commands")}
                     />
                     <div class="mt-4 flex flex-wrap items-center gap-2">
-                      <Button
-                        size="small"
-                        variant="ghost"
-                        icon="folder-add-left"
-                        class="h-8 rounded-lg border border-border-weak-base bg-background-base px-2.5 pr-3 text-12-medium text-text-base shadow-none transition-colors hover:border-border-strong hover:bg-surface-base-hover active:border-border-base active:bg-surface-base-active focus-visible:border-border-strong focus-visible:bg-surface-base-hover disabled:border-border-weak-base disabled:bg-background-base disabled:text-text-weaker"
-                        onClick={() => createCommand()}
-                        disabled={!space()?.configRoot || !platform.createLocalFile}
-                      >
-                        {t("config.commands.create.action")}
-                      </Button>
+                      <ConfigCreateMenu
+                        kind="command"
+                        label={t("config.commands.create.action")}
+                        globalRoot={space()?.configRoot ? join(space()!.configRoot!, "commands") : undefined}
+                        projects={createProjects()}
+                        disabled={!platform.createLocalFile}
+                        onCreate={createCommand}
+                      />
                     </div>
                   </Match>
                   <Match when={state.section === "skills"}>
@@ -8412,16 +8460,14 @@ export default function ConfigPage() {
                       icon={sectionIcon("skills")}
                     />
                     <div class="mt-4 flex flex-wrap items-center gap-2">
-                      <Button
-                        size="small"
-                        variant="ghost"
-                        icon="folder-add-left"
-                        class="h-8 rounded-lg border border-border-weak-base bg-background-base px-2.5 pr-3 text-12-medium text-text-base shadow-none transition-colors hover:border-border-strong hover:bg-surface-base-hover active:border-border-base active:bg-surface-base-active focus-visible:border-border-strong focus-visible:bg-surface-base-hover disabled:border-border-weak-base disabled:bg-background-base disabled:text-text-weaker"
-                        onClick={() => createSkill()}
-                        disabled={!space()?.skillsRoot || !platform.createLocalFile}
-                      >
-                        {t("config.skills.create.action")}
-                      </Button>
+                      <ConfigCreateMenu
+                        kind="skill"
+                        label={t("config.skills.create.action")}
+                        globalRoot={space()?.skillsRoot}
+                        projects={createProjects()}
+                        disabled={!platform.createLocalFile}
+                        onCreate={createSkill}
+                      />
                     </div>
                   </Match>
                   <Match when={state.section === "plugins"}>
@@ -8777,13 +8823,13 @@ export default function ConfigPage() {
                           <Show when={mcpProject().length > 0}>
                             <ProjectListGroup
                               label={mcpProjectName()}
-                              path={sync.data.path?.directory}
+                              path={mcpProjectDirectory()}
                               count={mcpProject().length}
                               open={mcpProjectOpen()}
                               onToggle={toggleMcpProject}
-                              onAdd={() => createMcp(sync.data.path?.directory ?? "")}
+                              onAdd={() => createMcp(mcpProjectDirectory())}
                               addLabel={t("config.mcp.add")}
-                              addDisabled={!sync.data.path?.directory}
+                              addDisabled={!mcpProjectDirectory()}
                             >
                               <For each={mcpProject()}>
                                 {(server) => (
@@ -8798,7 +8844,7 @@ export default function ConfigPage() {
                                         <Toggle
                                           checked={server.status === "connected"}
                                           disabled={state.mcpBusy === server.name}
-                                          onChange={(value) => toggleMcp(server.name, value)}
+                                          onChange={(value) => toggleMcp(server.name, value, mcpProjectDirectory())}
                                           hideLabel
                                         >
                                           {server.name}
@@ -9431,6 +9477,12 @@ export default function ConfigPage() {
                                   {selectedMcpStatus()}
                                 </span>
                               </Show>
+                            </div>
+                            <div
+                              class="mt-1 break-all font-mono text-12-regular text-text-weak"
+                              data-mcp-target-directory={isNew() ? state.mcpTargetDirectory : selectedMcpDirectory()}
+                            >
+                              {(isNew() ? state.mcpTargetDirectory : selectedMcpDirectory()) || space()?.configRoot}
                             </div>
                           </div>
                           <div class="flex shrink-0 items-center gap-2">
