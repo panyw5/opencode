@@ -226,6 +226,7 @@ const AGENT_NEW = "agent:_new_custom"
 const SKILL_NEW = "skill:_new_custom"
 const COMMAND_NEW = "cmd:_new_custom"
 const MCP_NEW = "mcp:_new"
+const AGENTS_MD_NEW = "agents-md:_new"
 
 type SkillMarketRepo = {
   id: string
@@ -1345,6 +1346,7 @@ function SkillListButton(props: {
   active: boolean
   title: string
   note?: string
+  meta?: string
   icon?: IconName
   warn?: boolean
   warnLabel?: string
@@ -1420,6 +1422,17 @@ function SkillListButton(props: {
               }}
             >
               {props.note}
+            </div>
+          </Show>
+          <Show when={props.meta}>
+            <div
+              class="mt-2 break-all font-mono text-[12px] leading-5 transition-colors"
+              classList={{
+                "text-text-base": props.active,
+                "text-text-weak": !props.active,
+              }}
+            >
+              {props.meta}
             </div>
           </Show>
         </div>
@@ -3741,6 +3754,11 @@ export default function ConfigPage() {
     query: "",
     agentQuery: "",
     commandQuery: "",
+    agentsMdQuery: "",
+    agentsMdRev: 0,
+    agentsMdDraft: undefined as DocItem | undefined,
+    agentsMdCreating: false,
+    agentsMdSaving: false,
     pluginQuery: "",
     providerBusy: "",
     providerOffCollapsed: true,
@@ -3813,7 +3831,7 @@ export default function ConfigPage() {
 
   const refreshAfterBackendReload = () => {
     console.info("[config] backend reload refresh started")
-    bump("workspaceRev", "skillRev", "pluginRev", "agentRev", "clawRev", "gaRev", "hmRev")
+    bump("workspaceRev", "skillRev", "pluginRev", "agentRev", "clawRev", "gaRev", "hmRev", "agentsMdRev")
     console.info("[config] backend reload refresh completed")
   }
 
@@ -3832,7 +3850,15 @@ export default function ConfigPage() {
 
   function bump(
     ...list: Array<
-      "workspaceRev" | "skillRev" | "pluginRev" | "agentRev" | "clawRev" | "gaRev" | "hmRev" | "commandRev"
+      | "workspaceRev"
+      | "skillRev"
+      | "pluginRev"
+      | "agentRev"
+      | "clawRev"
+      | "gaRev"
+      | "hmRev"
+      | "commandRev"
+      | "agentsMdRev"
     >
   ) {
     list.forEach((key) => setState(key, (value) => value + 1))
@@ -4678,6 +4704,7 @@ export default function ConfigPage() {
     opened().map((project) => ({ root: project.worktree, label: project.name ?? name(project.worktree) })),
   )
   const projectScanSection = createMemo(() =>
+    state.section === "agents-md" ||
     state.section === "agents" ||
     state.section === "skills" ||
     state.section === "plugins" ||
@@ -4710,7 +4737,7 @@ export default function ConfigPage() {
     return projectRoots(item).filter((root) => allowed.has(norm(root)))
   }
 
-  const agentsMd = createMemo<DocItem[]>(() => {
+  const globalAgentsMd = createMemo<DocItem[]>(() => {
     if (!space()?.agentsMdPath) return []
     return [
       {
@@ -4719,10 +4746,179 @@ export default function ConfigPage() {
         path: space()!.agentsMdPath!,
         editable: true,
         source: "opencode",
+        group: "global",
         note: t("config.agentsMd.note"),
       },
     ]
   })
+
+  const projectAgentsMd = createConfigLocalLoader(
+    () => {
+      const roots = allowedProjectRootsKey()
+      return state.section === "agents-md" && roots !== undefined
+        ? ([state.agentsMdRev, openedKey(), roots] as const)
+        : false
+    },
+    async () => {
+      if (!platform.readLocalFile) return [] as DocItem[]
+      const seen = new Set<string>()
+      const targets = untrack(opened).flatMap((project) =>
+        scannableProjectRoots(project).flatMap((root) => {
+          const path = join(root, "AGENTS.md")
+          if (seen.has(norm(path))) return []
+          seen.add(norm(path))
+          return [{ path, root: project.worktree, project: project.name ?? name(project.worktree) }]
+        }),
+      )
+      const items = await Promise.all(
+        targets.map(async (target): Promise<DocItem | undefined> => {
+          try {
+            const exists = platform.statLocalFile
+              ? !!(await platform.statLocalFile(target.path))
+              : (await platform.readLocalFile!(target.path)) !== null
+            console.debug(`[config-agents-md] scan path=${target.path} exists=${exists}`)
+            if (!exists) return
+            return {
+              ...target,
+              id: `agents-md:${target.path}`,
+              label: "AGENTS.md",
+              editable: true,
+              source: "project",
+              group: "project",
+            }
+          } catch (error) {
+            console.warn(
+              `[config-agents-md] scan-failed path=${target.path} error=${error instanceof Error ? error.message : String(error)}`,
+            )
+          }
+        }),
+      )
+      return items.filter((item): item is DocItem => !!item)
+    },
+    "agents-md.projects",
+  )
+  const agentsMd = createMemo(() => {
+    const draft = state.agentsMdDraft
+    const items = [...globalAgentsMd(), ...(projectAgentsMd.latest ?? [])]
+    return draft ? [...items.filter((item) => norm(item.path) !== norm(draft.path)), draft] : items
+  })
+  const agentsMdMatches = (item: DocItem) =>
+    skillSearchMatch([item.label, item.path, item.project, item.note], state.agentsMdQuery)
+  const agentsMdGlobal = createMemo(() => agentsMd().filter((item) => item.group === "global" && agentsMdMatches(item)))
+  const agentsMdProjects = createMemo(() =>
+    opened()
+      .map((project) => ({
+        label: project.name ?? name(project.worktree),
+        path: project.worktree,
+        items: agentsMd().filter(
+          (item) => item.group === "project" && item.root === project.worktree && agentsMdMatches(item),
+        ),
+      }))
+      .filter((group) => group.items.length > 0 || skillSearchMatch([group.label, group.path], state.agentsMdQuery)),
+  )
+  const agentsMdProjectOpen = (path: string) => !!state.treeClosed[`agents-md-project:${path}`]
+  const toggleAgentsMdProject = (path: string) => setState("treeClosed", `agents-md-project:${path}`, (value) => !value)
+
+  async function createAgentsMd(projectRoot = "", projectLabel = "") {
+    const path = projectRoot ? join(projectRoot, "AGENTS.md") : space()?.agentsMdPath
+    if (!path || !platform.readLocalFile || state.agentsMdCreating || state.agentsMdSaving) return
+    const run = ++openRun
+    console.info(`[config-agents-md] create-request path=${path} scope=${projectRoot ? "project" : "global"}`)
+    setState("agentsMdCreating", true)
+    try {
+      const existing = await platform.readLocalFile(path)
+      if (openRun !== run || state.section !== "agents-md") return
+      const item: DocItem = {
+        id: projectRoot ? `agents-md:${path}` : "agents-md:global",
+        label: projectRoot ? "AGENTS.md" : t("config.agentsMd.title"),
+        path,
+        editable: true,
+        source: projectRoot ? "project" : "opencode",
+        group: projectRoot ? "project" : "global",
+        root: projectRoot || undefined,
+        project: projectRoot ? projectLabel || name(projectRoot) : undefined,
+      }
+      console.info(`[config-agents-md] create-read path=${path} exists=${existing !== null}`)
+      if (existing !== null) {
+        cache.set(path, existing)
+        batch(() => {
+          if (projectRoot)
+            projectAgentsMd.replace([...(projectAgentsMd.latest ?? []).filter((doc) => doc.path !== path), item])
+          if (state.agentsMdDraft?.path === path) setState("agentsMdDraft", undefined)
+          if (projectRoot) setState("treeClosed", `agents-md-project:${projectRoot}`, true)
+        })
+        await open(item)
+        return
+      }
+      const draft = { ...item, id: AGENTS_MD_NEW, content: "# AGENTS.md\n\n" }
+      batch(() => {
+        setState("agentsMdDraft", draft)
+        setState({ pick: AGENTS_MD_NEW, doc: AGENTS_MD_NEW, text: draft.content, saved: "", busy: false })
+        if (projectRoot) setState("treeClosed", `agents-md-project:${projectRoot}`, true)
+      })
+      console.info(`[config-agents-md] draft-ready path=${path}`)
+    } catch (error) {
+      console.error(
+        `[config-agents-md] create-failed path=${path} error=${error instanceof Error ? error.message : String(error)}`,
+      )
+      showToast({
+        title: t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setState("agentsMdCreating", false)
+    }
+  }
+
+  async function saveAgentsMd() {
+    const item = currentDoc()
+    if (!item?.editable || !platform.writeLocalFile || state.agentsMdSaving) return
+    const creating = item.id === AGENTS_MD_NEW
+    if (creating && !platform.createLocalFile) return
+    const text = state.text
+    setState("agentsMdSaving", true)
+    console.info(`[config-agents-md] write-start path=${item.path} creating=${creating} length=${text.length}`)
+    try {
+      if (creating) await platform.createLocalFile!(item.path, text)
+      else await platform.writeLocalFile(item.path, text)
+      const savedItem = {
+        ...item,
+        id: item.group === "global" ? "agents-md:global" : `agents-md:${item.path}`,
+        content: undefined,
+      }
+      cache.set(item.path, text)
+      batch(() => {
+        if (item.group === "project")
+          projectAgentsMd.replace([
+            ...(projectAgentsMd.latest ?? []).filter((doc) => doc.path !== item.path),
+            savedItem,
+          ])
+        if (creating) setState("agentsMdDraft", undefined)
+        if (state.doc === item.id) setState({ pick: savedItem.id, doc: savedItem.id, saved: text })
+        bump("agentsMdRev")
+      })
+      console.info(`[config-agents-md] write-complete path=${item.path}`)
+      showToast({ title: t("common.save"), description: item.label })
+    } catch (error) {
+      console.error(
+        `[config-agents-md] write-failed path=${item.path} error=${error instanceof Error ? error.message : String(error)}`,
+      )
+      showToast({
+        title: t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setState("agentsMdSaving", false)
+    }
+  }
+
+  function cancelAgentsMdCreate() {
+    console.debug(`[config-agents-md] draft-cancel path=${state.agentsMdDraft?.path ?? ""}`)
+    setState("agentsMdDraft", undefined)
+    const item = globalAgentsMd()[0]
+    if (item) void open(item)
+    else setState({ pick: "", doc: "", text: "", saved: "", busy: false })
+  }
 
   const globalAgents = createMemo<DocItem[]>(() =>
     (space()?.agents ?? []).map((item) => ({
@@ -6382,7 +6578,7 @@ export default function ConfigPage() {
     setState("pick", item.id)
     const cached = item.content ?? cache.get(item.path)
     if (cached !== undefined) {
-      setState({ doc: item.id, busy: false, text: cached, saved: cached })
+      setState({ doc: item.id, busy: false, text: cached, saved: item.id === AGENTS_MD_NEW ? "" : cached })
       return
     }
     const timeout = setTimeout(() => {
@@ -6396,6 +6592,7 @@ export default function ConfigPage() {
   }
 
   async function save() {
+    if (state.section === "agents-md") return saveAgentsMd()
     const item = currentDoc()
     if (!item?.editable || !platform.writeLocalFile) return
     await platform
@@ -8342,6 +8539,21 @@ export default function ConfigPage() {
                       description={t("config.agentsMd.header")}
                       icon={sectionIcon("agents-md")}
                     />
+                    <div class="mt-4 flex flex-wrap items-center gap-2">
+                      <ConfigCreateMenu
+                        kind="agents-md"
+                        label={t("config.agentsMd.create.action")}
+                        globalRoot={space()?.configRoot}
+                        projects={createProjects()}
+                        disabled={
+                          !platform.readLocalFile ||
+                          !platform.createLocalFile ||
+                          state.agentsMdCreating ||
+                          state.agentsMdSaving
+                        }
+                        onCreate={(root, label) => void createAgentsMd(root, label)}
+                      />
+                    </div>
                   </Match>
                   <Match when={state.section === "providers"}>
                     <ConfigPaneTitle
@@ -8488,17 +8700,73 @@ export default function ConfigPage() {
                 <div class="flex flex-col">
                   <Switch>
                     <Match when={state.section === "agents-md"}>
-                      <For each={agentsMd()}>
-                        {(item) => (
-                          <ListButton
-                            active={state.pick === item.id}
-                            title={item.label}
-                            note={item.note}
-                            meta={short(item.path, space()?.configRoot)}
-                            onClick={() => void open(item)}
-                          />
-                        )}
-                      </For>
+                      <div class="flex flex-col gap-3" data-config-agents-md-list>
+                        <ConfigSearchBox
+                          value={state.agentsMdQuery}
+                          placeholder={t("common.search.placeholder")}
+                          onInput={(value) => setState("agentsMdQuery", value)}
+                        />
+                        <Show when={agentsMdGlobal().length > 0}>
+                          <div class="px-1 text-11-medium uppercase tracking-[0.08em] text-text-weak">
+                            {t("config.commands.group.global")}
+                          </div>
+                          <For each={agentsMdGlobal()}>
+                            {(item) => (
+                              <SkillListButton
+                                active={state.pick === item.id}
+                                title={item.label}
+                                icon="review"
+                                note={item.note}
+                                meta={short(item.path, space()?.configRoot)}
+                                onClick={() => void open(item)}
+                              />
+                            )}
+                          </For>
+                        </Show>
+                        <Show when={projectAgentsMd.loading}>
+                          <Wait text={t("common.loading")} />
+                        </Show>
+                        <Show when={agentsMdProjects().length > 0}>
+                          <div class="px-1 text-11-medium uppercase tracking-[0.08em] text-text-weak">
+                            {t("config.commands.group.project")}
+                          </div>
+                          <For each={agentsMdProjects()}>
+                            {(group) => (
+                              <div data-agents-md-project={group.path}>
+                                <ProjectListGroup
+                                  label={group.label}
+                                  path={group.path}
+                                  count={group.items.length}
+                                  open={agentsMdProjectOpen(group.path)}
+                                  onToggle={() => toggleAgentsMdProject(group.path)}
+                                  onAdd={() => void createAgentsMd(group.path, group.label)}
+                                  addLabel={t("config.agentsMd.create.action")}
+                                  addDisabled={
+                                    !platform.createLocalFile || state.agentsMdCreating || state.agentsMdSaving
+                                  }
+                                >
+                                  <For each={group.items}>
+                                    {(item) => (
+                                      <SkillListButton
+                                        active={state.pick === item.id}
+                                        title={item.label}
+                                        icon="review"
+                                        meta={short(item.path, group.path)}
+                                        onClick={() => void open(item)}
+                                      />
+                                    )}
+                                  </For>
+                                  <Show when={group.items.length === 0}>
+                                    <div class="px-3 py-2 text-12-regular text-text-weak">
+                                      {t("config.agentsMd.project.empty")}
+                                    </div>
+                                  </Show>
+                                </ProjectListGroup>
+                              </div>
+                            )}
+                          </For>
+                        </Show>
+                      </div>
                     </Match>
 
                     <Match when={state.section === "providers"}>
@@ -9817,17 +10085,40 @@ export default function ConfigPage() {
               </Match>
 
               <Match when={state.section === "agents-md"}>
-                <Editor
-                  item={currentDoc()}
-                  text={state.text}
-                  dirty={dirty()}
-                  busy={state.busy}
-                  onInput={(value) => setState("text", value)}
-                  onSave={() => void save()}
-                  onOpenFolder={currentDoc() ? openFolder : undefined}
-                  empty={t("config.agentsMd.empty")}
-                  markdown
-                />
+                <div
+                  class="flex h-full min-h-0 flex-col"
+                  data-config-agents-md-editor
+                  data-agents-md-path={currentDoc()?.path}
+                >
+                  <Editor
+                    item={currentDoc()}
+                    text={state.text}
+                    dirty={!state.agentsMdSaving && (dirty() || currentDoc()?.id === AGENTS_MD_NEW)}
+                    busy={state.busy || state.agentsMdSaving}
+                    onInput={(value) => {
+                      setState("text", value)
+                      if (state.doc === AGENTS_MD_NEW && state.agentsMdDraft)
+                        setState("agentsMdDraft", "content", value)
+                    }}
+                    onSave={() => void save()}
+                    onOpenFolder={currentDoc() ? openFolder : undefined}
+                    empty={t("config.agentsMd.empty")}
+                    extra={
+                      <Show when={currentDoc()?.id === AGENTS_MD_NEW}>
+                        <Button
+                          size="small"
+                          variant="ghost"
+                          icon="close"
+                          disabled={state.agentsMdSaving}
+                          onClick={cancelAgentsMdCreate}
+                        >
+                          {t("common.cancel")}
+                        </Button>
+                      </Show>
+                    }
+                    markdown
+                  />
+                </div>
               </Match>
             </Switch>
           </main>

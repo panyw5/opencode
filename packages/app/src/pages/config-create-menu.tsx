@@ -6,7 +6,7 @@ import { useLanguage } from "@/context/language"
 import "./config-create-menu.css"
 
 export function ConfigCreateMenu(props: {
-  kind: "skill" | "command" | "mcp"
+  kind: "skill" | "command" | "mcp" | "agents-md"
   label: string
   globalRoot?: string
   projects: { root: string; label: string }[]
