@@ -8183,7 +8183,7 @@ export default function ConfigPage() {
             <div class="relative flex items-center gap-3 border-b border-border-weak-base px-4 py-5">
               <button
                 type="button"
-                class="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border-weak-base bg-background-base/75 text-text-weak shadow-sm transition-[background-color,border-color,color,transform] hover:-translate-x-0.5 hover:border-border-strong hover:bg-background-base hover:text-text-strong active:translate-x-0"
+                class="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border-weak-base bg-background-base/75 text-text-weak shadow-sm transition-colors hover:border-border-strong hover:bg-surface-base-hover hover:text-text-strong active:bg-surface-base-active"
                 onClick={back}
                 aria-label={language.t("common.goBack")}
               >
