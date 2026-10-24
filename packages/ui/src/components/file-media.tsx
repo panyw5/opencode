@@ -193,7 +193,7 @@ export function FileMedia(props: {
   const status = createMemo(() => {
     if (direct()) return "ready" as const
     if (!request()) return "idle" as const
-    if (loaded.loading) return "loading" as const
+    if (!remote()) return "loading" as const
     if (remote()?.error) return "error" as const
     if (src()) return "ready" as const
     return "idle" as const
