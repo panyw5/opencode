@@ -7,15 +7,20 @@ import type { CatalogEntry } from "../extensions/catalog"
 import { usePlatform } from "../context/platform"
 import type { InstallationOperations } from "./install-actions-state"
 
-export interface ConfigExtensionCatalogEntryProps {
-  entry: CatalogEntry
-  active: boolean
+export interface ExtensionCardRowProps {
+  title: string
+  subtitle: string
   note: string
+  warn?: boolean
+  active: boolean
   onSelect: () => void
 }
 
-/** Middle-column card row: title + author pill row, matching the AGENTS.md card style. */
-export function ConfigExtensionCatalogEntry(props: ConfigExtensionCatalogEntryProps) {
+/**
+ * Middle-column card row shared by installed extensions and catalog entries,
+ * matching the AGENTS.md card style.
+ */
+export function ExtensionCardRow(props: ExtensionCardRowProps) {
   const press = (event: KeyboardEvent) => {
     if (event.key !== "Enter" && event.key !== " ") return
     event.preventDefault()
@@ -23,7 +28,6 @@ export function ConfigExtensionCatalogEntry(props: ConfigExtensionCatalogEntryPr
   }
   return (
     <div
-      data-catalog-entry={props.entry.id}
       role="button"
       tabIndex={0}
       class="relative cursor-pointer overflow-hidden rounded-[14px] border bg-background-base/65 shadow-[inset_0_1px_0_color-mix(in_srgb,white_5%,transparent)] transition-colors"
@@ -47,12 +51,18 @@ export function ConfigExtensionCatalogEntry(props: ConfigExtensionCatalogEntryPr
             <Icon name="dot-grid" size="small" />
           </div>
           <div class="min-w-0">
-            <div class="truncate text-13-medium text-text-strong">{props.entry.name}</div>
-            <div class="mt-1 truncate font-mono text-[11px] leading-4 text-text-weak">{props.entry.author}</div>
+            <div class="truncate text-13-medium text-text-strong">{props.title}</div>
+            <div class="mt-1 truncate font-mono text-[11px] leading-4 text-text-weak">{props.subtitle}</div>
           </div>
         </div>
         <div class="flex shrink-0 items-center gap-2">
-          <div class="rounded-full border border-border-weak-base bg-surface-secondary px-2 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
+          <div
+            class="rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.08em]"
+            classList={{
+              "border-border-danger-base/60 text-text-danger-base": !!props.warn,
+              "border-border-weak-base bg-surface-secondary text-text-weak": !props.warn,
+            }}
+          >
             {props.note}
           </div>
           <div class="flex size-7 items-center justify-center rounded-full border border-border-weak-base bg-background-base text-text-weak transition-colors group-hover:border-border-base group-hover:text-text-base">

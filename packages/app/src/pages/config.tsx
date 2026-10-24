@@ -145,7 +145,7 @@ import { ConfigIM } from "./config-im"
 import { useExtensionHost } from "@/extensions/host"
 import { pendingCatalogEntries } from "@/extensions/catalog"
 import { ExtensionArchiveDropTarget } from "./config-extension-archive-drop"
-import { ConfigExtensionCatalogDetail, ConfigExtensionCatalogEntry } from "./config-extension-catalog"
+import { ConfigExtensionCatalogDetail, ExtensionCardRow } from "./config-extension-catalog"
 import { ConfigExtensionDetail } from "./config-extension-detail"
 import { ConfigExtensionInstallActions } from "./config-extension-install-actions"
 import {
@@ -9485,22 +9485,23 @@ export default function ConfigPage() {
                           }
                         >
                           {(item) => (
-                            <ListButton
+                            <ExtensionCardRow
                               active={state.pick === extensionPick(item.id)}
                               title={item.displayName}
-                              meta={`${item.id} · v${item.version}`}
+                              subtitle={`${item.id} · v${item.version}`}
                               note={t(`config.extensions.state.${item.state}`)}
                               warn={item.state === "error" || item.state === "incompatible"}
-                              onClick={() => selectMiddlePick(extensionPick(item.id))}
+                              onSelect={() => selectMiddlePick(extensionPick(item.id))}
                             />
                           )}
                         </For>
                         <div class="flex flex-col gap-2">
                           <For each={catalogEntries()}>
                             {(entry) => (
-                              <ConfigExtensionCatalogEntry
-                                entry={entry}
+                              <ExtensionCardRow
                                 active={state.pick === catalogPick(entry.id)}
+                                title={entry.name}
+                                subtitle={entry.author}
                                 note={t("config.extensions.catalog.notInstalled")}
                                 onSelect={() => selectMiddlePick(catalogPick(entry.id))}
                               />

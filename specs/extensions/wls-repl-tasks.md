@@ -164,3 +164,9 @@ registry 未触碰（全程隔离 registry）。
 
 - 用户发现 Remove extension 弹窗的准备按钮显示 "Review installation"。根因：按钮标签固定用 `install.preview` 键，不区分操作类型。
 - 修复：`previewLabel()` 按 intent.kind 返回 preview/previewUpdate/previewUninstall 三键（en/zh/zht 新增），`installationTranslationKeys` 同步注册。CDP 实机验证安装弹窗 "Review installation"、卸载弹窗 "Review uninstallation"。
+
+## 增量：已安装扩展统一卡片样式（2026-10-25 修正四）
+
+- 用户反馈：已安装扩展的行还是旧 ListButton 样式。将卡片组件泛化为 `ExtensionCardRow`（title/subtitle/note/warn props），已安装行（subtitle=`id · v版本`、note=状态、warn 红色 pill）与目录行（subtitle=author、note=未安装）共用。
+- 期间用户窗口再次出现 ConfigExtensionCatalogEntry 缺失导出的 SyntaxError——根因同前：其窗口连接的 dev server 被清理后模块图失效；新实例即恢复。以后给用户开检查实例前先杀旧 server。
+- 验证：app 118/0、typecheck 0 错误；CDP 实机：目录卡片点击 → 一键安装 → 目录卡片消失、已安装行以同款卡片显示"已启用"（截图 /tmp/wls-uniform-installed.png）。已提交。
