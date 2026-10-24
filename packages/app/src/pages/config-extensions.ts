@@ -21,3 +21,14 @@ export function extensionSelection(items: readonly ExtensionInfo[], pick: string
 export function extensionSelectionKey(items: readonly ExtensionInfo[]) {
   return JSON.stringify(items.map((item) => item.id))
 }
+
+const CATALOG_PREFIX = "catalog:"
+
+export function catalogPick(id: string) {
+  return `${CATALOG_PREFIX}${id}`
+}
+
+export function parseCatalogPick(pick: string) {
+  if (!pick.startsWith(CATALOG_PREFIX)) return
+  return pick.slice(CATALOG_PREFIX.length) || undefined
+}

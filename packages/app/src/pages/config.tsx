@@ -143,11 +143,19 @@ import {
 } from "./config-channels"
 import { ConfigIM } from "./config-im"
 import { useExtensionHost } from "@/extensions/host"
+import { pendingCatalogEntries } from "@/extensions/catalog"
 import { ExtensionArchiveDropTarget } from "./config-extension-archive-drop"
-import { ConfigExtensionCatalog } from "./config-extension-catalog"
+import { ConfigExtensionCatalogDetail, ConfigExtensionCatalogEntry } from "./config-extension-catalog"
 import { ConfigExtensionDetail } from "./config-extension-detail"
 import { ConfigExtensionInstallActions } from "./config-extension-install-actions"
-import { extensionPick, extensionSelection, extensionSelectionKey, parseExtensionPick } from "./config-extensions"
+import {
+  catalogPick,
+  extensionPick,
+  extensionSelection,
+  extensionSelectionKey,
+  parseCatalogPick,
+  parseExtensionPick,
+} from "./config-extensions"
 
 const CORE_SECTIONS = [
   "providers",
@@ -3827,6 +3835,11 @@ export default function ConfigPage() {
     copied: "" as "dsh-api-key" | "custom-api-key" | "config-path" | "",
   })
   const selectedExtensionID = createMemo(() => parseExtensionPick(state.pick))
+  const catalogDetailEntry = createMemo(() => {
+    const id = parseCatalogPick(state.pick)
+    return pendingCatalogEntries(extensionHost.extensions().map((item) => item.id)).find((entry) => entry.id === id)
+  })
+  const catalogEntries = createMemo(() => pendingCatalogEntries(extensionHost.extensions().map((item) => item.id)))
   const selectedExtension = createMemo(() =>
     extensionHost.extensions().find((item) => item.id === selectedExtensionID()),
   )
@@ -8728,7 +8741,19 @@ export default function ConfigPage() {
                       icon={sectionIcon("extensions")}
                     />
                     <ExtensionArchiveDropTarget />
-                    <ConfigExtensionCatalog operations={extensionHost} connection={() => globalSDK.client} />
+                    <Show when={catalogEntries().length > 0}>
+                      <div class="mt-3 flex flex-col gap-1" data-extension-catalog="">
+                        <For each={catalogEntries()}>
+                          {(entry) => (
+                            <ConfigExtensionCatalogEntry
+                              entry={entry}
+                              active={state.pick === catalogPick(entry.id)}
+                              onSelect={() => selectMiddlePick(catalogPick(entry.id))}
+                            />
+                          )}
+                        </For>
+                      </div>
+                    </Show>
                     <div class="mt-4">
                       <ConfigExtensionInstallActions
                         operations={extensionHost}
@@ -9962,14 +9987,28 @@ export default function ConfigPage() {
                     fallback={<p class="text-13-regular text-text-weak">{t("settings.extensions.disabled")}</p>}
                   >
                     <Show
-                      when={selectedExtension() ? selectedExtensionID() : undefined}
+                      when={catalogDetailEntry()}
                       keyed
-                      fallback={<p class="text-13-regular text-text-weak">{t("config.extensions.select")}</p>}
-                    >
-                      {(id) => (
-                        <Show when={extensionHost.extensions().find((item) => item.id === id)}>
-                          {(item) => <ConfigExtensionDetail item={item()} />}
+                      fallback={
+                        <Show
+                          when={selectedExtension() ? selectedExtensionID() : undefined}
+                          keyed
+                          fallback={<p class="text-13-regular text-text-weak">{t("config.extensions.select")}</p>}
+                        >
+                          {(id) => (
+                            <Show when={extensionHost.extensions().find((item) => item.id === id)}>
+                              {(item) => <ConfigExtensionDetail item={item()} />}
+                            </Show>
+                          )}
                         </Show>
+                      }
+                    >
+                      {(entry) => (
+                        <ConfigExtensionCatalogDetail
+                          entry={entry}
+                          operations={extensionHost}
+                          connection={() => globalSDK.client}
+                        />
                       )}
                     </Show>
                   </Show>

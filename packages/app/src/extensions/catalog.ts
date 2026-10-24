@@ -8,6 +8,7 @@
 export type CatalogEntry = {
   id: string
   name: string
+  author: string
   releaseUrl: string
 }
 
@@ -15,6 +16,7 @@ export const builtinCatalog: CatalogEntry[] = [
   {
     id: "local.wls-repl",
     name: "WolframScript REPL",
+    author: "panyw5",
     releaseUrl: "https://raw.githubusercontent.com/panyw5/opencode-wls/main/stable.json",
   },
 ]

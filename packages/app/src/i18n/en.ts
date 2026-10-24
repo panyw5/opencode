@@ -59,7 +59,9 @@ export const dict = {
   "config.extensions.install.cleanupPending": "Old packages or data are retained pending safe cleanup",
   "config.extensions.install.status": "Check status",
   "config.extensions.install.statusFailed": "Status could not be read; do not assume the change failed",
-  "config.extensions.catalog.description": "Breakpoint debugging for .wls files: run in a persistent Wolfram kernel, inspect variables, and evaluate expressions in a REPL. Requires a local wolframscript; on restricted networks you can also drag a downloaded .tgz archive here to install.",
+  "config.extensions.catalog.description":
+    "Breakpoint debugging for .wls files: run in a persistent Wolfram kernel, inspect variables, and evaluate expressions in a REPL. Requires a local wolframscript; on restricted networks you can also drag a downloaded .tgz archive here to install.",
+  "config.extensions.catalog.source": "Install source",
   "config.extensions.catalog.install": "Install",
   "config.extensions.install.local": "Local archive (dropped)",
   "config.extensions.install.localArchive": "Dropped archive",
@@ -68,7 +70,8 @@ export const dict = {
   "config.extensions.install.localDigestMismatch": "Checksum does not match the dropped archive yet.",
   "config.extensions.install.localDigestPending": "Reading the archive…",
   "config.extensions.install.localDropHint": "Drop a .tgz extension archive here to install it",
-  "prompt.mobile.options": "Message options",  "gptPro.card.login": "ChatGPT identity",
+  "prompt.mobile.options": "Message options",
+  "gptPro.card.login": "ChatGPT identity",
   "gptPro.card.model": "Current model",
   "gptPro.card.userSelected": "Uses your selection in ChatGPT",
   "gptPro.card.connectionHint": "Connects this app to the consultation runtime",
@@ -1626,7 +1629,8 @@ export const dict = {
   "settings.desktop.openclaw.token.placeholder": "Paste token",
 
   "settings.general.section.appearance": "Appearance",
-  "settings.appearance.preview.description": "Choose a theme. Cards preview the main surfaces in the current light or dark mode.",
+  "settings.appearance.preview.description":
+    "Choose a theme. Cards preview the main surfaces in the current light or dark mode.",
   "settings.appearance.preview.sidebar": "Sidebar",
   "settings.appearance.preview.session": "Session",
   "settings.appearance.preview.topbar": "Top bar",

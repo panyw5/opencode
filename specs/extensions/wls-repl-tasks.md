@@ -134,3 +134,9 @@ registry 未触碰（全程隔离 registry）。
 - i18n en/zh/zht 三键（含 fake-IP 网络下拖拽归档替代路径的提示）；卡片文案用全局 useLanguage（弹窗语言接口用适配器传入）。
 - 验证：catalog 单测 2/0（URL 校验 + 已安装过滤）；app 扩展定向 118/0（含 parity）；typecheck 0 错误；prettier 通过；CDP 实机（隔离 dev Electron）：卡片随未安装状态出现、点击 Install 后弹窗 sourceType=release 且 URL 预填为 stable.json 地址（截图 /tmp/wls-catalog-dialog.png）；安装→断点调试链路此前已验收，本轮验证到预填。清理后零残留。
 - 边界：占位目录与 app 同版本发布（更新条目需发版）；release 直装受 fake-IP DNS 校验边界影响（卡片文案已提示拖拽替代）；未提交（本轮以独立提交留在本地分支）。
+
+## 增量：目录卡片改两栏交互（2026-10-24 第六轮修正）
+
+- 用户反馈：中栏卡片只保留标题、作者，详细信息与安装按钮移到右栏详情区。
+- 重构：中栏改为紧凑行（`ConfigExtensionCatalogEntry`，标题 + 作者，复用 `state.pick` 选择机制，新增 `catalog:<id>` pick 前缀）；右栏新增 `ConfigExtensionCatalogDetail` 分支（名称/作者/描述/安装来源/Install 按钮，优先于已安装扩展详情匹配）；catalog 数据增加 `author` 字段；i18n 补 `catalog.source` 键。
+- 验证：app 118/0（含 parity）、typecheck 0 错误；CDP 实机：中栏行仅显示标题+作者、点击后右栏详情出现、详情 Install 按钮弹窗预填 release URL（截图 /tmp/wls-catalog-twopane.png）。已提交。
