@@ -443,6 +443,14 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
         ? (op: "prepare" | "commit" | "status" | "cancel", payload: Record<string, unknown>) =>
             desktopApi.extensionArchiveOp(op, payload)
         : undefined,
+    extensionArchiveStage:
+      typeof desktopApi.extensionArchiveStage === "function"
+        ? (bytes: Uint8Array) => desktopApi.extensionArchiveStage(bytes)
+        : undefined,
+    extensionArchiveCleanup:
+      typeof desktopApi.extensionArchiveCleanup === "function"
+        ? (path: string) => desktopApi.extensionArchiveCleanup(path)
+        : undefined,
 
     async find(query, dir) {
       return findInPage(query, dir)

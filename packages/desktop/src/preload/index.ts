@@ -291,6 +291,8 @@ const api: ElectronAPI = {
   fetchExternal: (url, options) => ipcRenderer.invoke("fetch-external", url, options),
   extensionArchiveDigest: (path) => ipcRenderer.invoke("extension-archive-digest", path),
   extensionArchiveOp: (op, payload) => ipcRenderer.invoke("extension-archive-op", op, payload),
+  extensionArchiveStage: (bytes) => ipcRenderer.invoke("extension-archive-stage", bytes),
+  extensionArchiveCleanup: (path) => ipcRenderer.invoke("extension-archive-cleanup", path),
 }
 
 contextBridge.exposeInMainWorld("api", api)

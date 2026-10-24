@@ -140,3 +140,11 @@ registry 未触碰（全程隔离 registry）。
 - 用户反馈：中栏卡片只保留标题、作者，详细信息与安装按钮移到右栏详情区。
 - 重构：中栏改为紧凑行（`ConfigExtensionCatalogEntry`，标题 + 作者，复用 `state.pick` 选择机制，新增 `catalog:<id>` pick 前缀）；右栏新增 `ConfigExtensionCatalogDetail` 分支（名称/作者/描述/安装来源/Install 按钮，优先于已安装扩展详情匹配）；catalog 数据增加 `author` 字段；i18n 补 `catalog.source` 键。
 - 验证：app 118/0（含 parity）、typecheck 0 错误；CDP 实机：中栏行仅显示标题+作者、点击后右栏详情出现、详情 Install 按钮弹窗预填 release URL（截图 /tmp/wls-catalog-twopane.png）。已提交。
+
+## 增量：目录安装改走 renderer 辅助下载（2026-10-25，用户实测反馈修复）
+
+- 用户实测目录卡片 Install 后，release 直装弹窗出现"请检查来源和校验值"（archive 模式 + 空 sha256 的破碎状态）——且本机 fake-IP 网络下 release 直装（sidecar 直连下载被 publicAddress 校验拒绝）注定失败。
+- 根治：目录安装改为 **renderer 辅助下载 + 本地归档通道**。新 `catalog-install.ts` 流程：renderer fetch descriptor（fetch 走系统代理，Chromium 校验 https + redirect:"error"）→ fetch artifact（release 资产必然 302 到 CDN，允许跟随；摘要核对是安全闸）→ WebCrypto 摘要核对 descriptor → main 新增 staging IPC（字节写临时文件，commit/cancel 后自动清理）→ 既有 local prepare/commit 通道（enable 默认 true）。descriptor id 与目录条目匹配校验。
+- UI：详情面板 Install 按钮驱动流程，阶段标签（读取描述/下载归档/校验通过/准备/提交/完成）内联展示；无 desktop 通道时显示拖拽归档提示（降级）。
+- 验证：单测 6 个（descriptor 解析/拒绝矩阵、注入 fetch 的全流程、摘要不符中止、id 不符中止）；app 124/0 含 parity；typecheck 0 错误。**CDP 实机（隔离实例）：目录 Install 一键真装成功**（renderer 代理下载 GitHub descriptor+归档 → staging → local prepare/commit → Enabled），打开 .wls 断点暂停正常，kernel 由安装副本启动（截图 /tmp/wls-catalog-installed.png）。
+- 过程教训：CDP 判断"超时"实为 flow 完成后 DOM 卸载导致轮询元素消失（误报）；多实例残留在 9255 造成旧 main/新 renderer 混合假象——清理必须 lsof 确认端口归属。未提交（本轮独立提交）。

@@ -62,6 +62,15 @@ export const dict = {
   "config.extensions.catalog.description":
     "Breakpoint debugging for .wls files: run in a persistent Wolfram kernel, inspect variables, and evaluate expressions in a REPL. Requires a local wolframscript; on restricted networks you can also drag a downloaded .tgz archive here to install.",
   "config.extensions.catalog.source": "Install source",
+  "config.extensions.catalog.flowDescriptor": "Reading release descriptor…",
+  "config.extensions.catalog.flowArtifact": "Downloading archive…",
+  "config.extensions.catalog.flowReady": "Archive verified",
+  "config.extensions.catalog.flowPreparing": "Preparing installation…",
+  "config.extensions.catalog.flowCommitting": "Committing installation…",
+  "config.extensions.catalog.flowDone": "Installed and enabled",
+  "config.extensions.catalog.flowFailed": "Installation failed",
+  "config.extensions.catalog.dragHint":
+    "This app build cannot fetch the release directly. Download the .tgz from the release page and drag it onto this section to install.",
   "config.extensions.catalog.install": "Install",
   "config.extensions.install.local": "Local archive (dropped)",
   "config.extensions.install.localArchive": "Dropped archive",

@@ -469,6 +469,14 @@ export type Platform = {
     payload: Record<string, unknown>,
   ): Promise<{ ok: true; value: unknown } | { ok: false; error: { code?: string; message: string } }>
 
+  /** Persist renderer-downloaded archive bytes to a staging file (desktop only) */
+  extensionArchiveStage?(
+    bytes: Uint8Array,
+  ): Promise<{ ok: true; value: { path: string } } | { ok: false; error: { message: string } }>
+
+  /** Remove a staged archive file (desktop only) */
+  extensionArchiveCleanup?(path: string): Promise<{ ok: true } | { ok: false; error: { message: string } }>
+
   /** Read image from clipboard (desktop only) */
   readClipboardImage?(): Promise<File | null>
 

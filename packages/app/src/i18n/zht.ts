@@ -63,6 +63,15 @@ export const dict = {
   "config.extensions.catalog.description":
     "為 .wls 檔案提供斷點調試：在常駐 Wolfram 內核中運行、檢視變數，並在 REPL 中求值表達式。需要本機安裝 wolframscript；網路受限時可改為此處拖入下載好的 .tgz 歸檔安裝。",
   "config.extensions.catalog.source": "安裝來源",
+  "config.extensions.catalog.flowDescriptor": "正在讀取發布描述…",
+  "config.extensions.catalog.flowArtifact": "正在下載歸檔…",
+  "config.extensions.catalog.flowReady": "歸檔校驗通過",
+  "config.extensions.catalog.flowPreparing": "正在準備安裝…",
+  "config.extensions.catalog.flowCommitting": "正在提交安裝…",
+  "config.extensions.catalog.flowDone": "已安裝並啟用",
+  "config.extensions.catalog.flowFailed": "安裝失敗",
+  "config.extensions.catalog.dragHint":
+    "當前應用構建無法直接抓取發布地址。請從發布頁下載 .tgz 後拖到本分割區即可安裝。",
   "config.extensions.catalog.install": "安裝",
   "config.extensions.install.local": "本機歸檔（拖入）",
   "config.extensions.install.localArchive": "拖入的歸檔",
