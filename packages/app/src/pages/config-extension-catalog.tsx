@@ -1,3 +1,4 @@
+import { Icon } from "@opencode-ai/ui/icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { Show, createSignal } from "solid-js"
 import { useLanguage } from "../context/language"
@@ -5,6 +6,63 @@ import { runCatalogInstall, type CatalogFlowState } from "../extensions/catalog-
 import type { CatalogEntry } from "../extensions/catalog"
 import { usePlatform } from "../context/platform"
 import type { InstallationOperations } from "./install-actions-state"
+
+export interface ConfigExtensionCatalogEntryProps {
+  entry: CatalogEntry
+  active: boolean
+  note: string
+  onSelect: () => void
+}
+
+/** Middle-column card row: title + author pill row, matching the AGENTS.md card style. */
+export function ConfigExtensionCatalogEntry(props: ConfigExtensionCatalogEntryProps) {
+  const press = (event: KeyboardEvent) => {
+    if (event.key !== "Enter" && event.key !== " ") return
+    event.preventDefault()
+    props.onSelect()
+  }
+  return (
+    <div
+      data-catalog-entry={props.entry.id}
+      role="button"
+      tabIndex={0}
+      class="relative cursor-pointer overflow-hidden rounded-[14px] border bg-background-base/65 shadow-[inset_0_1px_0_color-mix(in_srgb,white_5%,transparent)] transition-colors"
+      classList={{
+        "border-border-base bg-surface-base/40": props.active,
+        "border-border-weak-base/80 hover:border-border-base": !props.active,
+      }}
+      onClick={props.onSelect}
+      onKeyDown={press}
+    >
+      <div class="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,color-mix(in_srgb,var(--text-strong)_16%,transparent),transparent)]" />
+      <div class="group flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left">
+        <div class="flex min-w-0 items-center gap-3">
+          <div
+            class="flex size-9 shrink-0 items-center justify-center rounded-xl text-text-base transition-colors"
+            classList={{
+              "bg-surface-secondary text-text-strong": props.active,
+              "bg-surface-secondary/60 group-hover:bg-surface-secondary group-hover:text-text-strong": !props.active,
+            }}
+          >
+            <Icon name="dot-grid" size="small" />
+          </div>
+          <div class="min-w-0">
+            <div class="truncate text-13-medium text-text-strong">{props.entry.name}</div>
+            <div class="mt-1 truncate font-mono text-[11px] leading-4 text-text-weak">{props.entry.author}</div>
+          </div>
+        </div>
+        <div class="flex shrink-0 items-center gap-2">
+          <div class="rounded-full border border-border-weak-base bg-surface-secondary px-2 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
+            {props.note}
+          </div>
+          <div class="flex size-7 items-center justify-center rounded-full border border-border-weak-base bg-background-base text-text-weak transition-colors group-hover:border-border-base group-hover:text-text-base">
+            <Icon name="chevron-right" size="small" />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export interface ConfigExtensionCatalogDetailProps {
   entry: CatalogEntry

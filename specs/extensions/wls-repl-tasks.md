@@ -154,3 +154,8 @@ registry 未触碰（全程隔离 registry）。
 - 用户反馈：目录条目未安装时也应作为普通列表行放进中栏扩展列表，点击后右栏显示详情（去掉分区头部的独立大卡片）。
 - 实现：中栏列表在已安装 `For` 之后追加目录 `For`，复用 `ListButton`（title=name、meta=author、note="未安装"、active 联动 `catalog:<id>` pick）；无已安装扩展且目录有条目时抑制"尚未链接扩展"空态；右栏 `ConfigExtensionCatalogDetail` 不变；移除旧的 header 卡片与 `ConfigExtensionCatalogEntry` 组件。i18n 补 `catalog.notInstalled`。
 - 验证：app 124/0、typecheck 0 错误；CDP 实机：列表行 `WolframScript REPL | Not installed | panyw5`，点击右栏详情出现（截图 /tmp/wls-catalog-list.png）。已提交。
+
+## 增量：目录卡片样式对齐 AGENTS.md 卡片（2026-10-25 修正三）
+
+- 用户反馈：卡片样式参考其它配置页的卡片。复用 `ProjectListGroup`（AGENTS.md 分区）的视觉语言：`rounded-[14px]` 卡片、图标方块（dot-grid）、状态 pill（NOT INSTALLED）、chevron、顶部渐变高光线；active 态对齐 open 态。
+- 中栏列表的 ListButton 行替换为 `ConfigExtensionCatalogEntry` 卡片（恢复导出，新增 note prop）。CDP 实机确认渲染与点击联动（截图 /tmp/wls-catalog-cardstyle.png）。已提交。

@@ -145,7 +145,7 @@ import { ConfigIM } from "./config-im"
 import { useExtensionHost } from "@/extensions/host"
 import { pendingCatalogEntries } from "@/extensions/catalog"
 import { ExtensionArchiveDropTarget } from "./config-extension-archive-drop"
-import { ConfigExtensionCatalogDetail } from "./config-extension-catalog"
+import { ConfigExtensionCatalogDetail, ConfigExtensionCatalogEntry } from "./config-extension-catalog"
 import { ConfigExtensionDetail } from "./config-extension-detail"
 import { ConfigExtensionInstallActions } from "./config-extension-install-actions"
 import {
@@ -9495,17 +9495,18 @@ export default function ConfigPage() {
                             />
                           )}
                         </For>
-                        <For each={catalogEntries()}>
-                          {(entry) => (
-                            <ListButton
-                              active={state.pick === catalogPick(entry.id)}
-                              title={entry.name}
-                              meta={entry.author}
-                              note={t("config.extensions.catalog.notInstalled")}
-                              onClick={() => selectMiddlePick(catalogPick(entry.id))}
-                            />
-                          )}
-                        </For>
+                        <div class="flex flex-col gap-2">
+                          <For each={catalogEntries()}>
+                            {(entry) => (
+                              <ConfigExtensionCatalogEntry
+                                entry={entry}
+                                active={state.pick === catalogPick(entry.id)}
+                                note={t("config.extensions.catalog.notInstalled")}
+                                onSelect={() => selectMiddlePick(catalogPick(entry.id))}
+                              />
+                            )}
+                          </For>
+                        </div>
                       </Show>
                     </Match>
                     <Match when={state.section === "plugins"}>
