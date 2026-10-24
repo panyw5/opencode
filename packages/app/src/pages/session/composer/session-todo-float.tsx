@@ -136,7 +136,7 @@ export function SessionTodoFloat(props: {
           </div>
           <div class="min-h-0 overflow-y-auto no-scrollbar">
             <div class="border-b border-border-weaker-base">
-              <SessionProjectTaskMount variant="panel" />
+              <SessionProjectTaskMount variant="panel" onOpenTask={() => setShown(false)} />
             </div>
             <div class="py-2">
               <TodoList todos={props.todos} open={shown()} maxHeight="420px" completedAsCircle />

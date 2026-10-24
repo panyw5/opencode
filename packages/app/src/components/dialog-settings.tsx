@@ -1,16 +1,20 @@
-import { Component } from "solid-js"
+import { Component, Show } from "solid-js"
 import { useNavigate, useParams } from "@solidjs/router"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { Icon } from "@opencode-ai/ui/icon"
+import { Button } from "@opencode-ai/ui/button"
+import { showToast } from "@opencode-ai/ui/toast"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { SettingsGeneral } from "./settings-general"
+import { SettingsAppearance } from "./settings-appearance"
 import { SettingsKeybinds } from "./settings-keybinds"
 import { SettingsProviders } from "./settings-providers"
 import { SettingsModels } from "./settings-models"
 import { SettingsAssistant } from "./settings-assistant"
+import { SettingsRemote } from "./settings-remote"
 import type { ConfigReturnTarget } from "@/pages/config-navigation"
 
 export const DialogSettings: Component<{ returnTarget?: ConfigReturnTarget }> = (props) => {
@@ -19,6 +23,17 @@ export const DialogSettings: Component<{ returnTarget?: ConfigReturnTarget }> = 
   const navigate = useNavigate()
   const params = useParams()
   const dialog = useDialog()
+
+  const logoutRemote = async () => {
+    try {
+      const request = platform.fetch ?? fetch
+      const response = await request("/remote/api/logout", { method: "POST", credentials: "same-origin" })
+      if (!response.ok) throw new Error("Request failed")
+      location.assign("/remote/connect")
+    } catch {
+      showToast({ title: language.t("settings.remote.logoutFailed") })
+    }
+  }
 
   const openConfig = () => {
     console.debug(`[settings-nav] dialog-config pathname=${window.location.pathname} dir=${params.dir ?? "none"}`)
@@ -30,8 +45,41 @@ export const DialogSettings: Component<{ returnTarget?: ConfigReturnTarget }> = 
     navigate(target, { state: props.returnTarget })
   }
 
+  if (platform.remoteMode) {
+    return (
+      <Dialog
+        size="x-large"
+        title={language.t("settings.tab.general")}
+        transition
+        class="settings-dialog remote-settings-dialog"
+      >
+        <div data-component="remote-settings" class="flex min-h-0 flex-1 flex-col">
+          <div data-slot="remote-settings-general" class="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <SettingsGeneral hideHeading />
+          </div>
+          <div class="flex shrink-0 items-center justify-between gap-3 border-t border-border-weak-base px-4 py-3">
+            <span class="text-11-regular text-text-weak">v{platform.version}</span>
+            <Button
+              data-action="remote-settings-logout"
+              size="small"
+              variant="ghost"
+              onClick={() => void logoutRemote()}
+            >
+              {language.t("settings.remote.logout")}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    )
+  }
+
   return (
-    <Dialog size="x-large" transition class="settings-dialog">
+    <Dialog
+      size="x-large"
+      transition
+      class="settings-dialog"
+      containerStyle={{ height: "min(calc(100dvh - 32px), 760px)" }}
+    >
       <Tabs orientation="vertical" variant="settings" defaultValue="general" class="h-full settings-dialog">
         <Tabs.List>
           <div class="flex flex-col justify-between h-full w-full">
@@ -44,34 +92,48 @@ export const DialogSettings: Component<{ returnTarget?: ConfigReturnTarget }> = 
                       <Icon name="sliders" />
                       {language.t("settings.tab.general")}
                     </Tabs.Trigger>
+                    <Tabs.Trigger value="appearance">
+                      <Icon name="eye" />
+                      {language.t("settings.general.section.appearance")}
+                    </Tabs.Trigger>
                     <Tabs.Trigger value="shortcuts">
                       <Icon name="keyboard" />
                       {language.t("settings.tab.shortcuts")}
                     </Tabs.Trigger>
-                    <Tabs.Trigger value="config" onClick={openConfig}>
-                      <Icon name="settings-gear" />
-                      {language.t("settings.tab.goConfig")}
-                    </Tabs.Trigger>
+                    <Show when={!platform.remoteMode}>
+                      <Tabs.Trigger value="config" onClick={openConfig}>
+                        <Icon name="settings-gear" />
+                        {language.t("settings.tab.goConfig")}
+                      </Tabs.Trigger>
+                    </Show>
+                    <Show when={platform.remoteAccess}>
+                      <Tabs.Trigger value="remote">
+                        <Icon name="wifi" />
+                        {language.t("settings.remote.title")}
+                      </Tabs.Trigger>
+                    </Show>
                   </div>
                 </div>
 
-                <div class="flex flex-col gap-1.5">
-                  <Tabs.SectionTitle>{language.t("settings.section.server")}</Tabs.SectionTitle>
-                  <div class="flex flex-col gap-1.5 w-full">
-                    <Tabs.Trigger value="providers">
-                      <Icon name="providers" />
-                      {language.t("settings.providers.title")}
-                    </Tabs.Trigger>
-                    <Tabs.Trigger value="models">
-                      <Icon name="models" />
-                      {language.t("settings.models.title")}
-                    </Tabs.Trigger>
-                    <Tabs.Trigger value="assistant">
-                      <Icon name="bubble-5" />
-                      {language.t("settings.assistant.title")}
-                    </Tabs.Trigger>
+                <Show when={!platform.remoteMode}>
+                  <div class="flex flex-col gap-1.5">
+                    <Tabs.SectionTitle>{language.t("settings.section.server")}</Tabs.SectionTitle>
+                    <div class="flex flex-col gap-1.5 w-full">
+                      <Tabs.Trigger value="providers">
+                        <Icon name="providers" />
+                        {language.t("settings.providers.title")}
+                      </Tabs.Trigger>
+                      <Tabs.Trigger value="models">
+                        <Icon name="models" />
+                        {language.t("settings.models.title")}
+                      </Tabs.Trigger>
+                      <Tabs.Trigger value="assistant">
+                        <Icon name="bubble-5" />
+                        {language.t("settings.assistant.title")}
+                      </Tabs.Trigger>
+                    </div>
                   </div>
-                </div>
+                </Show>
               </div>
             </div>
             <div class="flex flex-col gap-1 pl-1 py-1 text-12-medium text-text-weak">
@@ -83,19 +145,29 @@ export const DialogSettings: Component<{ returnTarget?: ConfigReturnTarget }> = 
         <Tabs.Content value="general" class="no-scrollbar">
           <SettingsGeneral />
         </Tabs.Content>
+        <Tabs.Content value="appearance" class="no-scrollbar min-w-0">
+          <SettingsAppearance />
+        </Tabs.Content>
         <Tabs.Content value="shortcuts" class="no-scrollbar">
           <SettingsKeybinds />
         </Tabs.Content>
-        <Tabs.Content value="config" class="no-scrollbar" />
-        <Tabs.Content value="providers" class="no-scrollbar">
-          <SettingsProviders />
-        </Tabs.Content>
-        <Tabs.Content value="models" class="no-scrollbar">
-          <SettingsModels />
-        </Tabs.Content>
-        <Tabs.Content value="assistant" class="no-scrollbar">
-          <SettingsAssistant />
-        </Tabs.Content>
+        <Show when={!platform.remoteMode}>
+          <Tabs.Content value="config" class="no-scrollbar" />
+          <Tabs.Content value="providers" class="no-scrollbar">
+            <SettingsProviders />
+          </Tabs.Content>
+          <Tabs.Content value="models" class="no-scrollbar">
+            <SettingsModels />
+          </Tabs.Content>
+          <Tabs.Content value="assistant" class="no-scrollbar">
+            <SettingsAssistant />
+          </Tabs.Content>
+        </Show>
+        <Show when={platform.remoteAccess}>
+          <Tabs.Content value="remote" class="no-scrollbar">
+            <SettingsRemote />
+          </Tabs.Content>
+        </Show>
       </Tabs>
     </Dialog>
   )

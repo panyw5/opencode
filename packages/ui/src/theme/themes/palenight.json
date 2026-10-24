@@ -13,34 +13,36 @@
       "error": "#e53935",
       "info": "#f4511e"
     },
+    "surfaces": {
+      "shell": "#eeeeee",
+      "canvas": "#fafafa",
+      "raised": "#f5f5f5",
+      "inset": "#e4e4e4"
+    },
     "overrides": {
-      "text-weak": "#63718a",
       "syntax-comment": "#63718a",
-      "syntax-keyword": "#9943e1",
+      "syntax-keyword": "#9058c7",
       "syntax-string": "#587b15",
-      "syntax-primitive": "#3e69dd",
+      "syntax-primitive": "#426bd5",
       "syntax-variable": "#292d3e",
       "syntax-property": "#1b7b8a",
       "syntax-type": "#956809",
-      "syntax-constant": "#cc3d0c",
+      "syntax-constant": "#c54621",
       "syntax-operator": "#1b7b8a",
       "syntax-punctuation": "#292d3e",
       "syntax-object": "#292d3e",
-      "markdown-heading": "#9943e1",
-      "markdown-text": "#292d3e",
-      "markdown-link": "#3e69dd",
+      "markdown-heading": "#9058c7",
+      "markdown-link": "#426bd5",
       "markdown-link-text": "#1b7b8a",
       "markdown-code": "#587b15",
       "markdown-block-quote": "#63718a",
       "markdown-emph": "#956809",
-      "markdown-strong": "#cc3d0c",
+      "markdown-strong": "#c54621",
       "markdown-horizontal-rule": "#8796b0",
-      "markdown-list-item": "#4976eb",
+      "markdown-list-item": "#4d78e3",
       "markdown-list-enumeration": "#00acc1",
-      "markdown-image": "#4976eb",
-      "markdown-image-text": "#00acc1",
-      "markdown-code-block": "#292d3e",
-      "text-weaker": "#667184"
+      "markdown-image": "#4d78e3",
+      "markdown-image-text": "#00acc1"
     }
   },
   "dark": {
@@ -54,8 +56,13 @@
       "error": "#f07178",
       "info": "#f78c6c"
     },
+    "surfaces": {
+      "shell": "#222637",
+      "canvas": "#292d3e",
+      "raised": "#373b4d",
+      "inset": "#1c2030"
+    },
     "overrides": {
-      "text-weak": "#676e95",
       "syntax-comment": "#676e95",
       "syntax-keyword": "#c792ea",
       "syntax-string": "#c3e88d",
@@ -68,7 +75,6 @@
       "syntax-punctuation": "#a6accd",
       "syntax-object": "#a6accd",
       "markdown-heading": "#c792ea",
-      "markdown-text": "#a6accd",
       "markdown-link": "#82aaff",
       "markdown-link-text": "#89ddff",
       "markdown-code": "#c3e88d",
@@ -79,8 +85,7 @@
       "markdown-list-item": "#82aaff",
       "markdown-list-enumeration": "#89ddff",
       "markdown-image": "#82aaff",
-      "markdown-image-text": "#89ddff",
-      "markdown-code-block": "#a6accd"
+      "markdown-image-text": "#89ddff"
     }
   }
 }

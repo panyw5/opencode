@@ -1,4 +1,4 @@
-import { Cause, Effect, Layer, Context, Schema } from "effect"
+import { Cause, Deferred, Duration, Effect, Layer, Context, Schedule, Schema } from "effect"
 // @ts-ignore
 import { createWrapper } from "@parcel/watcher/wrapper"
 import type ParcelWatcher from "@parcel/watcher"
@@ -55,29 +55,14 @@ export function coalesceEvents(events: WatcherFileEvent[]): WatcherFileEvent[] {
   }))
 }
 
-/**
- * Collapse add/unlink events to one representative per (parent directory,
- * kind). The renderer only uses them to refresh the parent directory, so
- * per-file granularity is not needed; "change" events are kept as-is because
- * they carry per-file reload semantics for open editors.
- */
-export function collapseByDirectory(events: WatcherFileEvent[]): WatcherFileEvent[] {
-  const collapsed: WatcherFileEvent[] = []
-  const seen = new Set<string>()
-  for (const evt of events) {
-    if (evt.event === "change") {
-      collapsed.push(evt)
-      continue
-    }
-    const key = `${evt.event}\n${path.dirname(evt.file)}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    collapsed.push(evt)
-  }
-  return collapsed
+export function planEvents(events: WatcherFileEvent[], limit = MAX_EVENTS_PER_FLUSH) {
+  const merged = coalesceEvents(events)
+  // Losing precision is safe only if consumers know the whole scope is stale.
+  return { events: merged.length > limit ? [] : merged, invalidated: merged.length > limit }
 }
 
 export const Event = {
+  Invalidated: BusEvent.define("file.watcher.invalidated", Schema.Struct({ directory: Schema.String })),
   Updated: BusEvent.define(
     "file.watcher.updated",
     Schema.Struct({
@@ -146,16 +131,18 @@ export const layer = Layer.effect(
 
           log.info("watcher backend", { directory: ctx.directory, platform: process.platform, backend })
           const bridge = yield* EffectBridge.make()
-          const subs: ParcelWatcher.AsyncSubscription[] = []
+          const subs = new Set<ParcelWatcher.AsyncSubscription>()
           const closed = new WeakSet<ParcelWatcher.AsyncSubscription>()
           const close = async (sub: ParcelWatcher.AsyncSubscription, dir: string, reason: string) => {
             if (closed.has(sub)) return
             closed.add(sub)
+            subs.delete(sub)
             log.warn(`unsubscribe begin directory=${dir} reason=${reason}`)
             await sub.unsubscribe()
             log.warn(`unsubscribe settled directory=${dir} reason=${reason}`)
           }
           let queue: WatcherFileEvent[] = []
+          let invalidated = false
           let flushTimer: ReturnType<typeof setTimeout> | undefined
           const KINDS = { create: "add", update: "change", delete: "unlink" } as const
 
@@ -168,34 +155,30 @@ export const layer = Layer.effect(
           }
 
           function flush() {
-            if (queue.length === 0) return
+            if (queue.length === 0 && !invalidated) return
             const raw = queue
             queue = []
 
-            let events = coalesceEvents(raw)
-            if (events.length > MAX_EVENTS_PER_FLUSH) {
-              events = collapseByDirectory(events)
-              log.warn("file event flood collapsed to directories", {
+            const plan = planEvents(raw)
+            if (plan.invalidated || invalidated) {
+              invalidated = false
+              log.warn("file event flood invalidated scope", {
                 directory: ctx.directory,
                 received: raw.length,
-                publishing: events.length,
               })
-            }
-            if (events.length > MAX_EVENTS_PER_FLUSH) {
-              log.warn("file event flood truncated", {
-                directory: ctx.directory,
-                received: raw.length,
-                publishing: MAX_EVENTS_PER_FLUSH,
-              })
-              events = events.slice(0, MAX_EVENTS_PER_FLUSH)
+              void Bus.publish(ctx, Event.Invalidated, { directory: ctx.directory })
+              return
             }
 
-            for (const evt of events) void Bus.publish(ctx, Event.Updated, evt)
+            for (const evt of plan.events) void Bus.publish(ctx, Event.Updated, evt)
           }
 
           const cb: ParcelWatcher.SubscribeCallback = bridge.bind((err, evts) => {
             if (err) {
               log.warn(`callback error directory=${ctx.directory} error=${String(err)}`)
+              invalidated = true
+              queue = []
+              scheduleFlush()
               return
             }
             for (const evt of evts) {
@@ -208,28 +191,55 @@ export const layer = Layer.effect(
 
           yield* Effect.addFinalizer(() =>
             Effect.promise(async () => {
-              log.warn(`finalize begin directory=${ctx.directory} subscriptions=${String(subs.length)}`)
+              log.warn(`finalize begin directory=${ctx.directory} subscriptions=${String(subs.size)}`)
               for (const sub of subs) await close(sub, ctx.directory, "scope-finalizer").catch(() => undefined)
               if (flushTimer) clearTimeout(flushTimer)
               flushTimer = undefined
               queue = []
-              log.warn(`finalize settled directory=${ctx.directory} subscriptions=${String(subs.length)}`)
+              invalidated = false
+              log.warn(`finalize settled directory=${ctx.directory} subscriptions=${String(subs.size)}`)
             }),
           )
 
           const subscribe = (dir: string, ignore: string[]) => {
-            log.warn(`subscribe begin directory=${dir} backend=${backend} ignoreCount=${String(ignore.length)}`)
-            const pending = w.subscribe(dir, cb, { ignore, backend })
             return Effect.gen(function* () {
-              const sub = yield* Effect.promise(() => pending)
-              subs.push(sub)
+              const failed = yield* Deferred.make<never, Error>()
+              log.warn(`subscribe begin directory=${dir} backend=${backend} ignoreCount=${String(ignore.length)}`)
+              const pending = w.subscribe(
+                dir,
+                bridge.bind((error, events) => {
+                  cb(error, events)
+                  if (error) bridge.fork(Deferred.fail(failed, new Error(String(error))))
+                }),
+                { ignore, backend },
+              )
+              yield* Effect.acquireRelease(
+                Effect.promise(() => pending).pipe(
+                  Effect.timeout(SUBSCRIBE_TIMEOUT_MS),
+                  Effect.catchCause((cause) => {
+                    pending.then((sub) => close(sub, dir, "subscribe-failed")).catch(() => undefined)
+                    return Effect.fail(new Error(Cause.pretty(cause)))
+                  }),
+                ),
+                (sub) => Effect.promise(() => close(sub, dir, "subscription-ended")).pipe(Effect.ignore),
+              ).pipe(
+                Effect.tap((sub) =>
+                  Effect.sync(() => {
+                    subs.add(sub)
+                  }),
+                ),
+              )
               log.warn(`subscribe success directory=${dir} backend=${backend}`)
+              yield* Deferred.await(failed)
             }).pipe(
-              Effect.timeout(SUBSCRIBE_TIMEOUT_MS),
-              Effect.catchCause((cause) => {
-                log.error("failed to subscribe", { dir, cause: Cause.pretty(cause) })
-                pending.then((sub) => close(sub, dir, "subscribe-timeout")).catch(() => undefined)
-                return Effect.void
+              Effect.scoped,
+              Effect.tapError((error) =>
+                Effect.sync(() => log.warn(`subscription retry directory=${dir} error=${error.message}`)),
+              ),
+              Effect.retry({
+                schedule: Schedule.exponential("1 second").pipe(
+                  Schedule.modifyDelay((_, delay) => Effect.succeed(Math.min(Duration.toMillis(delay), 30_000))),
+                ),
               }),
             )
           }

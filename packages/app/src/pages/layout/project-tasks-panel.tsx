@@ -1082,7 +1082,11 @@ export function ProjectTasksPanel(props: {
   let focusOpened: string | undefined
   createEffect(() => {
     const taskID = props.focusTaskID?.()
-    if (!taskID || focusOpened === taskID) return
+    if (!taskID) {
+      focusOpened = undefined
+      return
+    }
+    if (focusOpened === taskID) return
     const task = state.tasks.find((item) => item.id === taskID)
     if (!task) return
     focusOpened = taskID
@@ -1239,7 +1243,7 @@ export function ProjectTasksPanel(props: {
                           <span class="ml-auto shrink-0 text-13-medium text-text-base">{group.tasks.length}</span>
                         </Collapsible.Trigger>
                         <Collapsible.Content>
-                          <div class="flex flex-col gap-2 pt-2 pl-2">
+                          <div data-slot="project-task-group-list" class="flex flex-col gap-2 pt-2 pl-2">
                             <ProjectTaskCards
                               tasks={group.tasks}
                               sort={state.sort}

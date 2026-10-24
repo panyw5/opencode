@@ -83,6 +83,7 @@ const phosphorByName: Record<string, { file: string; weight?: Weight }> = {
   check: { file: "check" },
   photo: { file: "image" },
   share: { file: "export" },
+  wifi: { file: "wifi-high" },
   shield: { file: "shield" },
   download: { file: "download-simple" },
   "shopping-bag": { file: "shopping-bag" },

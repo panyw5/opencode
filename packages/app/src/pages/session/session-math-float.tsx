@@ -47,7 +47,7 @@ export function SessionMathFloat(props: SessionMathFloatProps) {
       return
     }
     console.debug(`[math-swarm] open route=details workers=${props.workers.length}`)
-    dialog.show(() => <SessionMathDialog {...props} />)
+    dialog.showForOwner(() => <SessionMathDialog {...props} />)
   }
 
   return (

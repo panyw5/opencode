@@ -5,13 +5,28 @@ import { GptProController, type GptProPageResources } from "./gpt-pro-controller
 import { GptProDriver } from "./gpt-pro-driver"
 import { createGptProPersistence } from "./gpt-pro-persistence"
 import { write as writeLog } from "./logging"
-import { app } from "electron"
+import { app, shell } from "electron"
 import { getGptProCredentials } from "./gpt-pro-credentials"
+import { createRequire } from "node:module"
+import { chmodSync, mkdirSync } from "node:fs"
+import path from "node:path"
+import { createGptProResultArchive } from "./gpt-pro-result-archive"
 
 let instance: GptProController | undefined
 export function getGptProController() {
   if (instance) return instance
   const store = getStore("gpt-pro-consultations")
+  const archiveRoot = path.join(app.getPath("appData"), "opencode")
+  mkdirSync(archiveRoot, { recursive: true, mode: 0o700 })
+  const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite")
+  const archive = createGptProResultArchive(
+    new DatabaseSync(path.join(archiveRoot, "gpt-pro-results.db")),
+    ["ai.opencode.desktop", "ai.opencode.desktop.dev"].map((profile) =>
+      path.join(app.getPath("appData"), profile, "gpt-pro-consultations"),
+    ),
+    (message) => writeLog("gpt-pro", message),
+  )
+  chmodSync(path.join(archiveRoot, "gpt-pro-results.db"), 0o600)
   const withExistingPage = async <T>(pageID: string, epoch: number, action: (driver: GptProDriver) => Promise<T>) => {
     const state = browserController.getState().find((view) => (view.pageID ?? view.partition) === pageID)
     if (!state || state.epoch !== epoch || state.kind !== "consultation")
@@ -47,7 +62,14 @@ export function getGptProController() {
         prepare: () => getGptProCredentials().ready(),
       }),
     {
-      ...createGptProPersistence(store, (message) => writeLog("gpt-pro", message)),
+      ...createGptProPersistence(store, (message) => writeLog("gpt-pro", message), archive),
+      openResult: async (job) => {
+        const url = new URL(job.url)
+        if (url.origin !== "https://chatgpt.com" || !url.pathname.startsWith("/c/"))
+          throw new Error("Archived consultation has no valid original conversation URL")
+        writeLog("gpt-pro", `archived original page opened id=${job.id}; no execution imported`)
+        await shell.openExternal(url.href)
+      },
       stagingRoot: () => `${app.getPath("userData")}/gpt-pro/attachments`,
     },
     (message) => writeLog("gpt-pro", message),
@@ -55,6 +77,9 @@ export function getGptProController() {
     undefined,
     { resources },
   )
-  app.once("before-quit", () => instance?.dispose())
+  app.once("before-quit", () => {
+    instance?.dispose()
+    archive.close()
+  })
   return instance
 }

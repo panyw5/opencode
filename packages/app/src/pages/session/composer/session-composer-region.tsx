@@ -30,6 +30,7 @@ import { SessionFollowupDock } from "@/pages/session/composer/session-followup-d
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
 import type { SessionComposerState } from "@/pages/session/composer/session-composer-state"
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
+import { createChildAgentMenuEntries } from "@/pages/session/composer/session-child-agent-menu-state"
 import type { FollowupDraft, SubmitOptions } from "@/components/prompt-input/submit"
 import type { SessionChildAgentEntry } from "@/pages/session/session-child-agents"
 import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2"
@@ -385,6 +386,7 @@ function SessionChildAgentMenu(props: {
   onOpen: (entry: SessionChildAgentEntry) => void
 }) {
   const language = useLanguage()
+  const entries = createChildAgentMenuEntries(() => props.entries)
   let contentRef: HTMLDivElement | undefined
   let scrollTimer: number | undefined
   const [store, setStore] = createStore({ open: false, scrolling: false })
@@ -392,7 +394,7 @@ function SessionChildAgentMenu(props: {
   createEffect(() => {
     if (!store.open) return
     console.debug(
-      `[child-agent-menu] entries-updated count=${props.entries.length} states=${props.entries.map((entry) => `${entry.id}:${entry.usage ?? entry.status ?? "unknown"}`).join(",")}`,
+      `[child-agent-menu] entries-updated count=${props.entries.length} scrollTop=${contentRef?.scrollTop ?? 0} states=${props.entries.map((entry) => `${entry.id}:${entry.status ?? "unknown"}`).join(",")}`,
     )
   })
   const indexBadge = (entry: SessionChildAgentEntry): string | undefined => {
@@ -413,12 +415,12 @@ function SessionChildAgentMenu(props: {
       ?.trim()
     return value ? `@${value}` : undefined
   }
-  const status = (entry: SessionChildAgentEntry): string | undefined => entry.usage ?? entry.status
+  const status = (entry: SessionChildAgentEntry) => entry.status ?? "unknown"
   const statusClass = (value: string): string => {
     if (value === "completed") return "text-icon-success-base"
-    if (value === "not used") return "text-icon-warning-base"
     if (value === "running") return "text-icon-warning-base"
-    return "text-icon-critical-base"
+    if (value === "error") return "text-icon-critical-base"
+    return "text-text-weak"
   }
   const backgroundLabel = (): string => language.t("session.childAgents.background")
   const revealScrollbar = (): void => {
@@ -443,9 +445,11 @@ function SessionChildAgentMenu(props: {
   }
   const handleKeyDown = (event: KeyboardEvent): void => {
     if (!["ArrowDown", "ArrowUp", "Home", "End", "PageDown", "PageUp"].includes(event.key)) return
+    console.debug(`[child-agent-menu] keyboard-navigation key=${event.key} scrollTop=${contentRef?.scrollTop ?? 0}`)
     scrollHighlightedIntoView()
   }
   const handleScroll = (): void => {
+    console.debug(`[child-agent-menu] scroll top=${contentRef?.scrollTop ?? 0}`)
     revealScrollbar()
   }
 
@@ -498,7 +502,7 @@ function SessionChildAgentMenu(props: {
               <DropdownMenu.GroupLabel class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
                 {language.t("session.childAgents.menuLabel")}
               </DropdownMenu.GroupLabel>
-              <For each={props.entries}>
+              <For each={entries}>
                 {(entry) => {
                   const itemIndexBadge = () => indexBadge(entry)
                   const itemAgent = () => agent(entry)
@@ -542,8 +546,14 @@ function SessionChildAgentMenu(props: {
                               <span
                                 class={`shrink-0 text-11-medium font-medium ${statusClass(value())}`}
                                 data-testid="session-child-agent-status"
+                                data-status={value()}
+                                title={
+                                  value() === "unknown"
+                                    ? language.t("session.childAgents.statusUnknownHint")
+                                    : undefined
+                                }
                               >
-                                {value()}
+                                {language.t(`session.childAgents.status.${value()}`)}
                               </span>
                             )}
                           </Show>
@@ -752,6 +762,13 @@ export function SessionComposerRegion(props: {
   })
 
   const refreshBackgroundShells = () => {
+    if (platform.remoteMode) {
+      backgroundRequest++
+      setBackgroundShells([])
+      setBackgroundShellsLoading(false)
+      console.info("[background-shell] refresh skipped reason=remote-mode")
+      return
+    }
     const sessionID = route.params.id
     if (!sessionID) {
       setBackgroundShells([])
@@ -779,6 +796,7 @@ export function SessionComposerRegion(props: {
   }
 
   const loadBackgroundShell = async (id: string) => {
+    if (platform.remoteMode) throw new Error("Background shells are unavailable in remote sessions")
     const sessionID = route.params.id
     if (!sessionID) throw new Error("Background shell session is not available")
     const items = await listBackgroundShells({
@@ -793,16 +811,18 @@ export function SessionComposerRegion(props: {
     return info
   }
 
-  const stopSessionBackgroundShell = (id: string) =>
-    stopBackgroundShell({
+  const stopSessionBackgroundShell = (id: string) => {
+    if (platform.remoteMode) return Promise.reject(new Error("Background shells are unavailable in remote sessions"))
+    return stopBackgroundShell({
       sdk,
       platform,
       auth: server.currentFor(domainFromDirectory(sdk.directory))?.http,
       id,
     })
+  }
 
   const openBackgroundShell = (entry: BackgroundShellInfo) => {
-    dialog.show(() => (
+    dialog.showForOwner(() => (
       <SessionBackgroundShellDialog entry={entry} load={loadBackgroundShell} stop={stopSessionBackgroundShell} />
     ))
   }
@@ -829,7 +849,7 @@ export function SessionComposerRegion(props: {
   })
 
   const openSkippedQuestions = () => {
-    dialog.show(() => (
+    dialog.showForOwner(() => (
       <SessionSkippedQuestionsDialog
         requests={props.state.skippedQuestionRequests}
         invalidation={props.state.skippedQuestionInvalidation}

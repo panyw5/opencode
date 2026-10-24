@@ -9,6 +9,7 @@ import fuzzysort from "fuzzysort"
 import { formatKeybind, keyFromEvent, parseKeybind, useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
+import { usePlatform } from "@/context/platform"
 import { SettingsList } from "./settings-list"
 
 const IS_MAC = typeof navigator === "object" && /(Mac|iPod|iPhone|iPad)/.test(navigator.platform)
@@ -351,6 +352,7 @@ export const SettingsKeybinds: Component = () => {
   const command = useCommand()
   const language = useLanguage()
   const settings = useSettings()
+  const platform = usePlatform()
 
   const [store, setStore] = createStore({
     active: null as string | null,
@@ -390,7 +392,13 @@ export const SettingsKeybinds: Component = () => {
 
   const list = createMemo(() => {
     language.locale()
-    return listFor(command, map(), language.t("command.palette"), language.t as Translate)
+    const result = listFor(command, map(), language.t("command.palette"), language.t as Translate)
+    if (platform.remoteMode) {
+      for (const id of result.keys()) {
+        if (id === "prompt.mode.shell" || id.startsWith("terminal.")) result.delete(id)
+      }
+    }
+    return result
   })
 
   const title = (id: string) => list().get(id)?.title ?? ""

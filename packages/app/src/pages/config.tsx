@@ -54,7 +54,7 @@ import { FetchProviderModels } from "@/components/fetch-provider-models"
 import { ModelConfigFields } from "@/components/model-config-fields"
 import { TestProviderModelButton } from "@/components/test-provider-model-button"
 import { ProviderBaseURLField } from "@/components/provider-base-url-field"
-import { resolveProviderBaseURL, stripProviderV1 } from "@/components/provider-base-url"
+import { hasProviderV1, resolveProviderBaseURL, stripProviderV1 } from "@/components/provider-base-url"
 import { Link } from "@/components/link"
 import { paintCode } from "@/utils/paint-code"
 import { decode64 } from "@/utils/base64"
@@ -99,6 +99,7 @@ import {
 } from "./config-provider-list-shared"
 import { fetchSkillMarketFile, loadSkillMarketIndex } from "./config-skill-market"
 import { SectionButton } from "./config-section-button"
+import { ConfigCreateMenu } from "./config-create-menu"
 import { ServerConnection, useServer } from "@/context/server"
 import { extraAgentById, extraAgents, mainDomain } from "@/pages/layout/extra-agents"
 import {
@@ -114,6 +115,8 @@ import { CONFIG_PAGE_REFRESH_EVENT, refreshAfterConfigWrite } from "@/utils/conf
 import type { Agent, Config, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
 import { configAgentDisplayItems, configuredAgentsFromJsonc, jsoncAgentVariantOptions } from "./config-agent-display"
 import { agentFilePath, agentNameIssue, agentTemplate } from "./config-agent-create"
+import { frontmatterData } from "./config-frontmatter"
+import { renameSkillDraft, skillDraftFromText, skillTemplate } from "./config-skill-create"
 import { parseAgentMarkdown, upsertAgentMarkdownModel, upsertAgentMarkdownVariant } from "./config-agent-markdown"
 import { AgentMarkdownMeta } from "./config-agent-markdown-meta"
 import { BuiltInAgentEditor, type BuiltInAgentForm } from "./config-agent-builtin-editor"
@@ -229,6 +232,7 @@ const AGENT_NEW = "agent:_new_custom"
 const SKILL_NEW = "skill:_new_custom"
 const COMMAND_NEW = "cmd:_new_custom"
 const MCP_NEW = "mcp:_new"
+const AGENTS_MD_NEW = "agents-md:_new"
 
 type SkillMarketRepo = {
   id: string
@@ -446,56 +450,6 @@ function pkg(spec: string | [string, Record<string, unknown>]) {
     return { name: spec.slice(0, last), version: spec.slice(last + 1) || "latest" }
   }
   return { name: spec, version: "latest" }
-}
-
-function cleanFrontmatterValue(value: string) {
-  return value.trim().replace(/\s+/g, " ")
-}
-
-function frontmatterData(text: string) {
-  const hit = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
-  if (!hit) return
-
-  const lines = hit[1].split(/\r?\n/)
-  const data: Record<string, string> = {}
-
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index].match(/^([A-Za-z0-9_-]+):\s*(.*)$/)
-    if (!line) continue
-
-    const key = line[1]
-    const raw = line[2].trim()
-    const block = raw.match(/^([|>])[-+]?$/)
-
-    if (block) {
-      const blockLines: string[] = []
-      for (let next = index + 1; next < lines.length; next++) {
-        const blockLine = lines[next]
-        if (/^[A-Za-z0-9_-]+:\s*/.test(blockLine) || (blockLine.trim() && !/^\s/.test(blockLine))) {
-          index = next - 1
-          break
-        }
-
-        blockLines.push(blockLine)
-        index = next
-      }
-
-      const indents = blockLines
-        .filter((blockLine) => blockLine.trim())
-        .map((blockLine) => blockLine.match(/^\s*/)?.[0].length ?? 0)
-      const indent = indents.length ? Math.min(...indents) : 0
-      data[key] = cleanFrontmatterValue(
-        blockLines
-          .map((blockLine) => blockLine.slice(Math.min(indent, blockLine.length)))
-          .join(block[1] === ">" ? " " : "\n"),
-      )
-      continue
-    }
-
-    data[key] = cleanFrontmatterValue(raw.replace(/^['"]|['"]$/g, ""))
-  }
-
-  return data
 }
 
 function markdownBody(text: string) {
@@ -1154,12 +1108,15 @@ function providerCfg(input: ProviderCfg | undefined): CustomState {
   const models = Object.entries(input?.models ?? {})
   const env = Array.isArray(input?.env) && input.env.length > 0 ? `{env:${input.env[0]}}` : ""
   const api = typeof input?.options?.apiKey === "string" ? input.options.apiKey : ""
+  const configuredBaseURL = typeof input?.options?.baseURL === "string" ? input.options.baseURL : ""
+  const npm = input?.npm ?? OPENAI_COMPATIBLE
   return {
     mode: input ? "edit" : "create",
     providerID: "",
-    npm: input?.npm ?? OPENAI_COMPATIBLE,
+    npm,
+    autoV1: !configuredBaseURL || hasProviderV1(configuredBaseURL),
     name: input?.name ?? "",
-    baseURL: typeof input?.options?.baseURL === "string" ? stripProviderV1(input.options.baseURL, input.npm) : "",
+    baseURL: configuredBaseURL ? stripProviderV1(configuredBaseURL, npm) : "",
     apiKey: api || env,
     models:
       models.length > 0
@@ -1396,6 +1353,7 @@ function SkillListButton(props: {
   active: boolean
   title: string
   note?: string
+  meta?: string
   icon?: IconName
   warn?: boolean
   warnLabel?: string
@@ -1471,6 +1429,17 @@ function SkillListButton(props: {
               }}
             >
               {props.note}
+            </div>
+          </Show>
+          <Show when={props.meta}>
+            <div
+              class="mt-2 break-all font-mono text-[12px] leading-5 transition-colors"
+              classList={{
+                "text-text-base": props.active,
+                "text-text-weak": !props.active,
+              }}
+            >
+              {props.meta}
             </div>
           </Show>
         </div>
@@ -3364,6 +3333,7 @@ function CustomEditor(props: {
   busy: boolean
   onToggle: (item: ProviderItem, enabled: boolean) => void
   onField: (key: "providerID" | "npm" | "name" | "baseURL" | "apiKey", value: string) => void
+  onAutoV1Change: (value: boolean) => void
   onModel: (index: number, key: "id" | "name", value: string) => void
   onModelConfig: (modelIndex: number, configIndex: number, value: string) => void
   onToggleModelConfig: (index: number) => void
@@ -3382,8 +3352,18 @@ function CustomEditor(props: {
 }) {
   const language = useLanguage()
   const [confirmDelete, setConfirmDelete] = createSignal(false)
+  const [modelSearchQuery, setModelSearchQuery] = createSignal("")
   const npmOptions = createMemo(() => customProviderNpmPackages(props.form.npm))
   const selectedNpm = createMemo(() => props.form.npm?.trim() || OPENAI_COMPATIBLE)
+  const filteredModels = createMemo(() => {
+    const query = modelSearchQuery().toLowerCase().trim()
+    return props.form.models
+      .map((model, index) => ({ model, index }))
+      .filter(({ model }) => {
+        if (!query) return true
+        return `${model.id} ${model.name}`.toLowerCase().includes(query)
+      })
+  })
 
   createEffect(
     on(
@@ -3513,8 +3493,10 @@ function CustomEditor(props: {
                   props.form.npm === "@ai-sdk/deepinfra" ? "https://api.deepinfra.com" : "https://api.example.com"
                 }
                 npm={props.form.npm}
+                autoV1={props.form.autoV1 ?? true}
                 value={props.form.baseURL}
                 onChange={(value) => props.onField("baseURL", value)}
+                onAutoV1Change={props.onAutoV1Change}
                 validationState={props.form.err.baseURL ? "invalid" : undefined}
                 error={props.form.err.baseURL}
               />
@@ -3559,12 +3541,14 @@ function CustomEditor(props: {
               <div class="mb-3">
                 <FetchProviderModels
                   title={language.t("config.custom.models.title")}
-                  baseURL={resolveProviderBaseURL(props.form.baseURL, props.form.npm)}
+                  baseURL={resolveProviderBaseURL(props.form.baseURL, props.form.npm, props.form.autoV1)}
                   apiKey={props.form.apiKey}
                   npm={props.form.npm}
                   headers={props.form.headers}
                   existingModelIDs={new Set(props.form.models.map((m) => m.id.trim()).filter(Boolean))}
                   onAdd={props.onAddFetchedModel}
+                  searchQuery={modelSearchQuery()}
+                  onSearchQueryChange={setModelSearchQuery}
                 />
               </div>
               <div class="config-custom-model-list mb-3 flex flex-col gap-3">
@@ -3588,67 +3572,71 @@ function CustomEditor(props: {
                   </div>
                   <div aria-hidden="true" />
                 </div>
-                <For each={props.form.models}>
-                  {(item, idx) => (
-                    <div class="rounded-xl border border-border-weak-base bg-surface-base/60 p-2" data-row={item.row}>
-                      <div class="config-custom-model-summary grid gap-2 md:grid-cols-[24px_minmax(0,1fr)_5.5rem_minmax(0,1fr)_24px]">
-                        <IconButton
-                          type="button"
-                          icon={item.expanded ? "chevron-down" : "chevron-right"}
-                          variant="ghost"
-                          class="mt-1.5"
-                          onClick={() => props.onToggleModelConfig(idx())}
-                          aria-label={
-                            item.expanded
-                              ? language.t("provider.custom.models.config.collapse")
-                              : language.t("provider.custom.models.config.expand")
-                          }
-                        />
-                        <TextField
-                          label={language.t("config.custom.models.id")}
-                          hideLabel
-                          placeholder="模型 ID (如: gpt-4o, claude-3-opus)"
-                          value={item.id}
-                          onChange={(value) => props.onModel(idx(), "id", value)}
-                          validationState={item.err.id ? "invalid" : undefined}
-                          error={item.err.id}
-                        />
-                        <TestProviderModelButton
-                          class="flex h-8 w-full items-center justify-center"
-                          baseURL={resolveProviderBaseURL(props.form.baseURL, props.form.npm)}
-                          apiKey={props.form.apiKey}
-                          modelId={item.id}
-                          npm={props.form.npm}
-                          headers={props.form.headers}
-                        />
-                        <TextField
-                          label={language.t("config.custom.models.name")}
-                          hideLabel
-                          placeholder="显示名称 (如: GPT-4o, Claude 3 Opus)"
-                          value={item.name}
-                          onChange={(value) => props.onModel(idx(), "name", value)}
-                          validationState={item.err.name ? "invalid" : undefined}
-                          error={item.err.name}
-                        />
-                        <IconButton
-                          type="button"
-                          icon="trash"
-                          variant="ghost"
-                          class="mt-1.5"
-                          onClick={() => props.onRemoveModel(idx())}
-                          disabled={props.form.models.length <= 1}
-                          aria-label={language.t("config.custom.models.remove")}
-                        />
+                <For each={filteredModels()}>
+                  {(entry) => {
+                    const item = entry.model
+                    const modelIndex = entry.index
+                    return (
+                      <div class="rounded-xl border border-border-weak-base bg-surface-base/60 p-2" data-row={item.row}>
+                        <div class="config-custom-model-summary grid gap-2 md:grid-cols-[24px_minmax(0,1fr)_5.5rem_minmax(0,1fr)_24px]">
+                          <IconButton
+                            type="button"
+                            icon={item.expanded ? "chevron-down" : "chevron-right"}
+                            variant="ghost"
+                            class="mt-1.5"
+                            onClick={() => props.onToggleModelConfig(modelIndex)}
+                            aria-label={
+                              item.expanded
+                                ? language.t("provider.custom.models.config.collapse")
+                                : language.t("provider.custom.models.config.expand")
+                            }
+                          />
+                          <TextField
+                            label={language.t("config.custom.models.id")}
+                            hideLabel
+                            placeholder="模型 ID (如: gpt-4o, claude-3-opus)"
+                            value={item.id}
+                            onChange={(value) => props.onModel(modelIndex, "id", value)}
+                            validationState={item.err.id ? "invalid" : undefined}
+                            error={item.err.id}
+                          />
+                          <TestProviderModelButton
+                            class="flex h-8 w-full self-center items-center justify-center"
+                            baseURL={resolveProviderBaseURL(props.form.baseURL, props.form.npm, props.form.autoV1)}
+                            apiKey={props.form.apiKey}
+                            modelId={item.id}
+                            npm={props.form.npm}
+                            headers={props.form.headers}
+                          />
+                          <TextField
+                            label={language.t("config.custom.models.name")}
+                            hideLabel
+                            placeholder="显示名称 (如: GPT-4o, Claude 3 Opus)"
+                            value={item.name}
+                            onChange={(value) => props.onModel(modelIndex, "name", value)}
+                            validationState={item.err.name ? "invalid" : undefined}
+                            error={item.err.name}
+                          />
+                          <IconButton
+                            type="button"
+                            icon="trash"
+                            variant="ghost"
+                            class="mt-1.5"
+                            onClick={() => props.onRemoveModel(modelIndex)}
+                            disabled={props.form.models.length <= 1}
+                            aria-label={language.t("config.custom.models.remove")}
+                          />
+                        </div>
+                        <Show when={item.expanded}>
+                          <ModelConfigFields
+                            providerID={props.form.providerID}
+                            model={item}
+                            onChange={(configIndex, value) => props.onModelConfig(modelIndex, configIndex, value)}
+                          />
+                        </Show>
                       </div>
-                      <Show when={item.expanded}>
-                        <ModelConfigFields
-                          providerID={props.form.providerID}
-                          model={item}
-                          onChange={(configIndex, value) => props.onModelConfig(idx(), configIndex, value)}
-                        />
-                      </Show>
-                    </div>
-                  )}
+                    )
+                  }}
                 </For>
               </div>
               <div>
@@ -3727,6 +3715,9 @@ export default function ConfigPage() {
   // the component is still constructing and must not hit this binding's TDZ.
   const t = language.t
   const platform = usePlatform()
+  if (platform.remoteMode) {
+    return <div class="p-6 text-14-regular text-text-weak">{t("settings.remote.configUnsupported")}</div>
+  }
   const globalSDK = useGlobalSDK()
   const globalSync = useGlobalSync()
   const sync = useSync()
@@ -3771,6 +3762,11 @@ export default function ConfigPage() {
     query: "",
     agentQuery: "",
     commandQuery: "",
+    agentsMdQuery: "",
+    agentsMdRev: 0,
+    agentsMdDraft: undefined as DocItem | undefined,
+    agentsMdCreating: false,
+    agentsMdSaving: false,
     pluginQuery: "",
     providerBusy: "",
     providerOffCollapsed: true,
@@ -3847,7 +3843,7 @@ export default function ConfigPage() {
 
   const refreshAfterBackendReload = () => {
     console.info("[config] backend reload refresh started")
-    bump("workspaceRev", "skillRev", "pluginRev", "agentRev", "clawRev", "gaRev", "hmRev")
+    bump("workspaceRev", "skillRev", "pluginRev", "agentRev", "clawRev", "gaRev", "hmRev", "agentsMdRev")
     console.info("[config] backend reload refresh completed")
   }
 
@@ -3866,7 +3862,15 @@ export default function ConfigPage() {
 
   function bump(
     ...list: Array<
-      "workspaceRev" | "skillRev" | "pluginRev" | "agentRev" | "clawRev" | "gaRev" | "hmRev" | "commandRev"
+      | "workspaceRev"
+      | "skillRev"
+      | "pluginRev"
+      | "agentRev"
+      | "clawRev"
+      | "gaRev"
+      | "hmRev"
+      | "commandRev"
+      | "agentsMdRev"
     >
   ) {
     list.forEach((key) => setState(key, (value) => value + 1))
@@ -3898,27 +3902,41 @@ export default function ConfigPage() {
       .sort((a, b) => a.name.localeCompare(b.name))
   })
 
+  const mcpProjectDirectory = createMemo(() => {
+    if (state.pick === MCP_NEW && state.mcpTargetDirectory) return state.mcpTargetDirectory
+    const selected = parseMcpSelectionID(state.pick)
+    return selected?.scope === "project" ? selected.directory : (sync.data.path?.directory ?? "")
+  })
+  const mcpProjectData = createMemo(() => {
+    const directory = mcpProjectDirectory()
+    if (!directory || directory === sync.data.path?.directory) return sync.data
+    return globalSync.child(directory, { bootstrap: false })[0]
+  })
   const projectMcpRecords = createConfigLocalLoader(
-    () => (state.section === "mcp" ? sync.data.path?.directory || null : false),
-    async (directory) => loadConfigRecords(directory, "project"),
+    () => (state.section === "mcp" ? mcpProjectDirectory() || null : false),
+    async (directory) => ({ directory, records: await loadConfigRecords(directory, "project") }),
     "mcp.project-records",
   )
+  const activeProjectMcpRecords = createMemo(() => {
+    const value = projectMcpRecords.latest
+    return value?.directory === mcpProjectDirectory() ? value.records : []
+  })
 
   async function refetchProjectMcpRecords() {
-    const directory = sync.data.path?.directory
+    const directory = mcpProjectDirectory()
     const records = directory ? await loadConfigRecords(directory, "project") : []
-    projectMcpRecords.replace(records)
+    if (directory === mcpProjectDirectory()) projectMcpRecords.replace({ directory, records })
   }
 
   const mcpProject = createMemo(() => {
-    const directory = sync.data.path?.directory ?? ""
-    const declared = declaredMcpEntries(projectMcpRecords.latest ?? [])
-    const mergedCfg = sync.data.config?.mcp ?? {}
-    const dirMcp = sync.data.mcp ?? {}
+    const directory = mcpProjectDirectory()
+    const declared = declaredMcpEntries(activeProjectMcpRecords())
+    const mergedCfg = mcpProjectData().config?.mcp ?? {}
+    const dirMcp = mcpProjectData().mcp ?? {}
     const items = Object.keys(declared)
       .filter((name_) => !state.mcpGlobalDeleting[name_])
       .map((name_) => {
-        const entry = mergedCfg[name_] as Record<string, unknown> | undefined
+        const entry = (mergedCfg[name_] ?? declared[name_]) as Record<string, unknown> | undefined
         const status = dirMcp[name_]?.status ?? "disabled"
         const type = entry ? ((entry.type as string) ?? "unknown") : "unknown"
         const detail = entry
@@ -3938,7 +3956,7 @@ export default function ConfigPage() {
         }
       })
       .sort((a, b) => a.name.localeCompare(b.name))
-    if (state.pick === MCP_NEW && state.mcpTargetDirectory === sync.data.path?.directory) {
+    if (state.pick === MCP_NEW && state.mcpTargetDirectory && state.mcpTargetDirectory === directory) {
       const name = state.mcpNewName.trim() || t("config.mcp.add")
       const detail = state.mcpForm.type === "local" ? state.mcpForm.command.trim() : state.mcpForm.url.trim()
       return [{ id: MCP_NEW, name, type: state.mcpForm.type, detail, status: "disabled", draft: true }, ...items]
@@ -3946,7 +3964,10 @@ export default function ConfigPage() {
     return items
   })
 
-  const mcpProjectName = createMemo(() => sync.data.project || name(sync.data.path?.directory ?? ""))
+  const mcpProjectName = createMemo(() => {
+    const directory = mcpProjectDirectory()
+    return layout.projects.list().find((project) => norm(project.worktree) === norm(directory))?.name || name(directory)
+  })
   const mcpProjectOpen = () => !state.treeClosed["mcp-project"]
   const toggleMcpProject = () => setState("treeClosed", "mcp-project", (v) => !v)
   const channelMiddleItems = useChannelMiddleItems(() => state.pick)
@@ -3962,7 +3983,8 @@ export default function ConfigPage() {
   const selectedMcpStatus = createMemo(() => {
     const n = selectedMcpName()
     if (!n) return undefined
-    return sync.data.mcp?.[n]?.status ?? "disabled"
+    const data = selectedMcpSelection()?.scope === "project" ? mcpProjectData() : sync.data
+    return data.mcp?.[n]?.status ?? "disabled"
   })
 
   const selectedMcpConfig = createMemo(() => {
@@ -3970,7 +3992,9 @@ export default function ConfigPage() {
     if (!n) return undefined
     const selected = selectedMcpSelection()
     if (selected?.scope === "global") return globalSync.data.config.mcp?.[n] as Record<string, unknown> | undefined
-    return sync.data.config?.mcp?.[n] as Record<string, unknown> | undefined
+    return (mcpProjectData().config?.mcp?.[n] ?? declaredMcpEntry(activeProjectMcpRecords(), n)) as
+      | Record<string, unknown>
+      | undefined
   })
 
   const selectedMcpDirectory = createMemo(() => {
@@ -4048,6 +4072,9 @@ export default function ConfigPage() {
     const n = isNew ? state.mcpNewName.trim() : selectedMcpName()
     if (!n || state.mcpSaving) return
     const targetDirectory = isNew ? state.mcpTargetDirectory : selectedMcpDirectory()
+    console.info(
+      `[config-mcp] save-start scope=${targetDirectory ? "project" : "global"} directory=${targetDirectory} name=${n} new=${isNew}`,
+    )
     const targetStore = targetDirectory ? globalSync.child(targetDirectory, { bootstrap: false }) : undefined
     const currentConfig = targetDirectory ? targetStore?.[0].config : globalSync.data.config
     setState("mcpSaving", true)
@@ -4087,6 +4114,8 @@ export default function ConfigPage() {
           .client.instance.dispose({ directory: targetDirectory })
           .catch(() => undefined)
         await client.mcp.add({ name: n, config: config as never })
+        const status = await client.mcp.status()
+        if (status.data) targetStore[1]("mcp", status.data)
         const result = await client.config.get()
         if (result.data) targetStore[1]("config", result.data)
         await refetchProjectMcpRecords()
@@ -4127,6 +4156,12 @@ export default function ConfigPage() {
           setState("mcpTargetDirectory", "")
         })
       }
+      console.info(`[config-mcp] save-complete directory=${targetDirectory} name=${n}`)
+    } catch (error) {
+      console.error(
+        `[config-mcp] save-failed directory=${targetDirectory} name=${n} error=${error instanceof Error ? error.message : String(error)}`,
+      )
+      throw error
     } finally {
       setState("mcpSaving", false)
     }
@@ -4183,16 +4218,24 @@ export default function ConfigPage() {
     setState("pick", "")
   }
 
-  function toggleMcp(name: string, enabled: boolean) {
+  function toggleMcp(name: string, enabled: boolean, directory = sync.data.path?.directory) {
     if (state.mcpBusy === name) return
+    console.info(`[config-mcp] toggle-start directory=${directory ?? ""} name=${name} enabled=${enabled}`)
     setState("mcpBusy", name)
-    const directory = sync.data.path?.directory
     const client = directory
       ? globalSDK.forDomain(mainDomain).createClient({ directory, throwOnError: true })
       : globalSDK.forDomain(mainDomain).client
     const action = enabled ? client.mcp.connect({ name }) : client.mcp.disconnect({ name })
     void action
+      .then(async () => {
+        const status = await client.mcp.status()
+        if (directory && status.data) globalSync.child(directory, { bootstrap: false })[1]("mcp", status.data)
+        console.info(`[config-mcp] toggle-complete directory=${directory ?? ""} name=${name} enabled=${enabled}`)
+      })
       .catch((err: unknown) => {
+        console.error(
+          `[config-mcp] toggle-failed directory=${directory ?? ""} name=${name} error=${err instanceof Error ? err.message : String(err)}`,
+        )
         showToast({
           title: language.t("common.requestFailed"),
           description: err instanceof Error ? err.message : String(err),
@@ -4204,6 +4247,7 @@ export default function ConfigPage() {
   }
 
   function createMcp(targetDirectory = "") {
+    console.debug(`[config-mcp] create scope=${targetDirectory ? "project" : "global"} directory=${targetDirectory}`)
     setState("pick", MCP_NEW)
     setState("mcpNewName", "")
     setState("mcpTargetDirectory", targetDirectory)
@@ -4668,7 +4712,11 @@ export default function ConfigPage() {
       )
       .join("\x1e"),
   )
+  const createProjects = createMemo(() =>
+    opened().map((project) => ({ root: project.worktree, label: project.name ?? name(project.worktree) })),
+  )
   const projectScanSection = createMemo(() =>
+    state.section === "agents-md" ||
     state.section === "agents" ||
     state.section === "skills" ||
     state.section === "plugins" ||
@@ -4701,7 +4749,7 @@ export default function ConfigPage() {
     return projectRoots(item).filter((root) => allowed.has(norm(root)))
   }
 
-  const agentsMd = createMemo<DocItem[]>(() => {
+  const globalAgentsMd = createMemo<DocItem[]>(() => {
     if (!space()?.agentsMdPath) return []
     return [
       {
@@ -4710,10 +4758,179 @@ export default function ConfigPage() {
         path: space()!.agentsMdPath!,
         editable: true,
         source: "opencode",
+        group: "global",
         note: t("config.agentsMd.note"),
       },
     ]
   })
+
+  const projectAgentsMd = createConfigLocalLoader(
+    () => {
+      const roots = allowedProjectRootsKey()
+      return state.section === "agents-md" && roots !== undefined
+        ? ([state.agentsMdRev, openedKey(), roots] as const)
+        : false
+    },
+    async () => {
+      if (!platform.readLocalFile) return [] as DocItem[]
+      const seen = new Set<string>()
+      const targets = untrack(opened).flatMap((project) =>
+        scannableProjectRoots(project).flatMap((root) => {
+          const path = join(root, "AGENTS.md")
+          if (seen.has(norm(path))) return []
+          seen.add(norm(path))
+          return [{ path, root: project.worktree, project: project.name ?? name(project.worktree) }]
+        }),
+      )
+      const items = await Promise.all(
+        targets.map(async (target): Promise<DocItem | undefined> => {
+          try {
+            const exists = platform.statLocalFile
+              ? !!(await platform.statLocalFile(target.path))
+              : (await platform.readLocalFile!(target.path)) !== null
+            console.debug(`[config-agents-md] scan path=${target.path} exists=${exists}`)
+            if (!exists) return
+            return {
+              ...target,
+              id: `agents-md:${target.path}`,
+              label: "AGENTS.md",
+              editable: true,
+              source: "project",
+              group: "project",
+            }
+          } catch (error) {
+            console.warn(
+              `[config-agents-md] scan-failed path=${target.path} error=${error instanceof Error ? error.message : String(error)}`,
+            )
+          }
+        }),
+      )
+      return items.filter((item): item is DocItem => !!item)
+    },
+    "agents-md.projects",
+  )
+  const agentsMd = createMemo(() => {
+    const draft = state.agentsMdDraft
+    const items = [...globalAgentsMd(), ...(projectAgentsMd.latest ?? [])]
+    return draft ? [...items.filter((item) => norm(item.path) !== norm(draft.path)), draft] : items
+  })
+  const agentsMdMatches = (item: DocItem) =>
+    skillSearchMatch([item.label, item.path, item.project, item.note], state.agentsMdQuery)
+  const agentsMdGlobal = createMemo(() => agentsMd().filter((item) => item.group === "global" && agentsMdMatches(item)))
+  const agentsMdProjects = createMemo(() =>
+    opened()
+      .map((project) => ({
+        label: project.name ?? name(project.worktree),
+        path: project.worktree,
+        items: agentsMd().filter(
+          (item) => item.group === "project" && item.root === project.worktree && agentsMdMatches(item),
+        ),
+      }))
+      .filter((group) => group.items.length > 0 || skillSearchMatch([group.label, group.path], state.agentsMdQuery)),
+  )
+  const agentsMdProjectOpen = (path: string) => !!state.treeClosed[`agents-md-project:${path}`]
+  const toggleAgentsMdProject = (path: string) => setState("treeClosed", `agents-md-project:${path}`, (value) => !value)
+
+  async function createAgentsMd(projectRoot = "", projectLabel = "") {
+    const path = projectRoot ? join(projectRoot, "AGENTS.md") : space()?.agentsMdPath
+    if (!path || !platform.readLocalFile || state.agentsMdCreating || state.agentsMdSaving) return
+    const run = ++openRun
+    console.info(`[config-agents-md] create-request path=${path} scope=${projectRoot ? "project" : "global"}`)
+    setState("agentsMdCreating", true)
+    try {
+      const existing = await platform.readLocalFile(path)
+      if (openRun !== run || state.section !== "agents-md") return
+      const item: DocItem = {
+        id: projectRoot ? `agents-md:${path}` : "agents-md:global",
+        label: projectRoot ? "AGENTS.md" : t("config.agentsMd.title"),
+        path,
+        editable: true,
+        source: projectRoot ? "project" : "opencode",
+        group: projectRoot ? "project" : "global",
+        root: projectRoot || undefined,
+        project: projectRoot ? projectLabel || name(projectRoot) : undefined,
+      }
+      console.info(`[config-agents-md] create-read path=${path} exists=${existing !== null}`)
+      if (existing !== null) {
+        cache.set(path, existing)
+        batch(() => {
+          if (projectRoot)
+            projectAgentsMd.replace([...(projectAgentsMd.latest ?? []).filter((doc) => doc.path !== path), item])
+          if (state.agentsMdDraft?.path === path) setState("agentsMdDraft", undefined)
+          if (projectRoot) setState("treeClosed", `agents-md-project:${projectRoot}`, true)
+        })
+        await open(item)
+        return
+      }
+      const draft = { ...item, id: AGENTS_MD_NEW, content: "# AGENTS.md\n\n" }
+      batch(() => {
+        setState("agentsMdDraft", draft)
+        setState({ pick: AGENTS_MD_NEW, doc: AGENTS_MD_NEW, text: draft.content, saved: "", busy: false })
+        if (projectRoot) setState("treeClosed", `agents-md-project:${projectRoot}`, true)
+      })
+      console.info(`[config-agents-md] draft-ready path=${path}`)
+    } catch (error) {
+      console.error(
+        `[config-agents-md] create-failed path=${path} error=${error instanceof Error ? error.message : String(error)}`,
+      )
+      showToast({
+        title: t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setState("agentsMdCreating", false)
+    }
+  }
+
+  async function saveAgentsMd() {
+    const item = currentDoc()
+    if (!item?.editable || !platform.writeLocalFile || state.agentsMdSaving) return
+    const creating = item.id === AGENTS_MD_NEW
+    if (creating && !platform.createLocalFile) return
+    const text = state.text
+    setState("agentsMdSaving", true)
+    console.info(`[config-agents-md] write-start path=${item.path} creating=${creating} length=${text.length}`)
+    try {
+      if (creating) await platform.createLocalFile!(item.path, text)
+      else await platform.writeLocalFile(item.path, text)
+      const savedItem = {
+        ...item,
+        id: item.group === "global" ? "agents-md:global" : `agents-md:${item.path}`,
+        content: undefined,
+      }
+      cache.set(item.path, text)
+      batch(() => {
+        if (item.group === "project")
+          projectAgentsMd.replace([
+            ...(projectAgentsMd.latest ?? []).filter((doc) => doc.path !== item.path),
+            savedItem,
+          ])
+        if (creating) setState("agentsMdDraft", undefined)
+        if (state.doc === item.id) setState({ pick: savedItem.id, doc: savedItem.id, saved: text })
+        bump("agentsMdRev")
+      })
+      console.info(`[config-agents-md] write-complete path=${item.path}`)
+      showToast({ title: t("common.save"), description: item.label })
+    } catch (error) {
+      console.error(
+        `[config-agents-md] write-failed path=${item.path} error=${error instanceof Error ? error.message : String(error)}`,
+      )
+      showToast({
+        title: t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setState("agentsMdSaving", false)
+    }
+  }
+
+  function cancelAgentsMdCreate() {
+    console.debug(`[config-agents-md] draft-cancel path=${state.agentsMdDraft?.path ?? ""}`)
+    setState("agentsMdDraft", undefined)
+    const item = globalAgentsMd()[0]
+    if (item) void open(item)
+    else setState({ pick: "", doc: "", text: "", saved: "", busy: false })
+  }
 
   const globalAgents = createMemo<DocItem[]>(() =>
     (space()?.agents ?? []).map((item) => ({
@@ -6392,7 +6609,7 @@ export default function ConfigPage() {
     setState("pick", item.id)
     const cached = item.content ?? cache.get(item.path)
     if (cached !== undefined) {
-      setState({ doc: item.id, busy: false, text: cached, saved: cached })
+      setState({ doc: item.id, busy: false, text: cached, saved: item.id === AGENTS_MD_NEW ? "" : cached })
       return
     }
     const timeout = setTimeout(() => {
@@ -6406,6 +6623,7 @@ export default function ConfigPage() {
   }
 
   async function save() {
+    if (state.section === "agents-md") return saveAgentsMd()
     const item = currentDoc()
     if (!item?.editable || !platform.writeLocalFile) return
     await platform
@@ -7285,8 +7503,13 @@ export default function ConfigPage() {
   function setCustomField(key: "providerID" | "npm" | "name" | "baseURL" | "apiKey", value: string) {
     if (key === "npm") console.info(`[config] custom provider SDK selected npm=${value}`)
     setState("custom", key, value)
+    if (key === "npm") setState("custom", "autoV1", true)
     if (key === "apiKey") setState("customApiDirty", true)
     if (key === "providerID" || key === "name" || key === "baseURL") setState("custom", "err", key, undefined)
+  }
+
+  function setCustomAutoV1(value: boolean) {
+    setState("custom", "autoV1", value)
   }
 
   function setCustomModel(index: number, key: "id" | "name", value: string) {
@@ -7392,6 +7615,9 @@ export default function ConfigPage() {
   }
 
   function createCommand(projectRoot = "", projectLabel = "") {
+    console.debug(
+      `[config-commands] create scope=${projectRoot ? "project" : "global"} root=${projectRoot || space()?.configRoot || ""}`,
+    )
     const text = commandTemplate("")
     setState("pick", COMMAND_NEW)
     setState("doc", COMMAND_NEW)
@@ -7419,6 +7645,7 @@ export default function ConfigPage() {
 
   async function saveCommand() {
     const targetDir = state.cmdCreateDir || (space()?.configRoot ? join(space()!.configRoot!, "commands") : "")
+    console.debug(`[config-commands] save-request name=${JSON.stringify(state.cmdTitle)} root=${targetDir}`)
     if (!targetDir || !platform.createLocalFile) return
     const title = state.cmdTitle.trim()
     if (!title) {
@@ -7434,7 +7661,9 @@ export default function ConfigPage() {
     const isProject = !!state.cmdCreateProjectRoot
     setState("cmdSaving", true)
     try {
+      console.debug(`[config-commands] write-start path=${path}`)
       await platform.createLocalFile(path, state.text)
+      console.debug(`[config-commands] write-complete path=${path}`)
       cache.set(path, state.text)
       batch(() => {
         setState("cmdPath", path)
@@ -7461,8 +7690,10 @@ export default function ConfigPage() {
         root: isProject ? state.cmdCreateProjectRoot : space()?.configRoot,
         project: isProject ? state.cmdCreateProjectLabel : undefined,
       })
+      console.debug(`[config-commands] save-complete path=${path}`)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err)
+      console.error(`[config-commands] save-failed path=${path} error=${message}`)
       showToast({ title: "Failed", description: message })
     } finally {
       setState("cmdSaving", false)
@@ -7519,6 +7750,7 @@ export default function ConfigPage() {
   }
 
   function createSkill(projectRoot = "", projectLabel = "") {
+    console.debug(`[config-skills] create scope=${projectRoot ? "project" : "global"}`)
     const text = skillTemplate("")
     setState("skillPanel", "editor")
     setState("pick", SKILL_NEW)
@@ -7549,13 +7781,25 @@ export default function ConfigPage() {
   }
 
   function setSkillTitle(value: string) {
-    const prev = state.skillTitle
-    setState("skillTitle", value)
-    setState("skillErr", "")
-    if (state.text !== skillTemplate(prev)) return
-    const text = skillTemplate(value)
-    setState("text", text)
-    setState("saved", text)
+    const pristine = state.text === skillTemplate(state.skillTitle)
+    const text = renameSkillDraft(state.text, state.skillTitle, value)
+    console.debug(`[config-skills] title-input name=${JSON.stringify(value)} pristine=${pristine}`)
+    batch(() => {
+      setState("skillTitle", value)
+      setState("skillErr", "")
+      setState("text", text)
+      if (pristine) setState("saved", text)
+    })
+  }
+
+  function setSkillText(value: string) {
+    const draft = skillDraftFromText(value)
+    console.debug(`[config-skills] text-input name=${JSON.stringify(draft.title)} length=${value.length}`)
+    batch(() => {
+      setState("text", draft.text)
+      setState("skillTitle", draft.title)
+      setState("skillErr", "")
+    })
   }
 
   function validateSkillTitle() {
@@ -7567,13 +7811,17 @@ export default function ConfigPage() {
   }
 
   async function saveSkill() {
+    if (state.skillSaving) return
     const root = state.skillCreateRoot || space()?.skillsRoot
+    console.debug(`[config-skills] save-request name=${JSON.stringify(state.skillTitle)} root=${root ?? ""}`)
     if (!root || !platform.createLocalFile) {
+      console.warn("[config-skills] save-blocked reason=storage-unavailable")
       setState("skillErr", t("config.error.globalConfigUnavailable"))
       return
     }
     const err = validateSkillTitle()
     if (err) {
+      console.warn(`[config-skills] save-blocked reason=${err}`)
       setState("skillErr", err)
       return
     }
@@ -7582,9 +7830,11 @@ export default function ConfigPage() {
     const text = state.text
     const isProject = !!state.skillCreateProjectRoot
     setState("skillSaving", true)
+    console.debug(`[config-skills] write-start path=${path} length=${text.length}`)
     await platform
       .createLocalFile(path, text)
       .then(async () => {
+        console.debug(`[config-skills] write-complete path=${path}`)
         const meta = skillMeta(text, path)
         cache.set(path, text)
         setState("skillPath", path)
@@ -7604,8 +7854,12 @@ export default function ConfigPage() {
           root: isProject ? state.skillCreateProjectRoot : undefined,
           project: isProject ? state.skillCreateProjectLabel : undefined,
         })
+        console.debug(`[config-skills] save-complete path=${path}`)
       })
       .catch((err: unknown) => {
+        console.error(
+          `[config-skills] save-failed path=${path} error=${err instanceof Error ? err.message : String(err)}`,
+        )
         setState("skillErr", err instanceof Error ? err.message : String(err))
         showToast({
           title: language.t("common.requestFailed"),
@@ -8209,7 +8463,7 @@ export default function ConfigPage() {
             <div class="relative flex items-center gap-3 border-b border-border-weak-base px-4 py-5">
               <button
                 type="button"
-                class="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border-weak-base bg-background-base/75 text-text-weak shadow-sm transition-[background-color,border-color,color,transform] hover:-translate-x-0.5 hover:border-border-strong hover:bg-background-base hover:text-text-strong active:translate-x-0"
+                class="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border-weak-base bg-background-base/75 text-text-weak shadow-sm transition-colors hover:border-border-strong hover:bg-surface-base-hover hover:text-text-strong active:bg-surface-base-active"
                 onClick={back}
                 aria-label={language.t("common.goBack")}
               >
@@ -8323,6 +8577,21 @@ export default function ConfigPage() {
                       description={t("config.agentsMd.header")}
                       icon={sectionIcon("agents-md")}
                     />
+                    <div class="mt-4 flex flex-wrap items-center gap-2">
+                      <ConfigCreateMenu
+                        kind="agents-md"
+                        label={t("config.agentsMd.create.action")}
+                        globalRoot={space()?.configRoot}
+                        projects={createProjects()}
+                        disabled={
+                          !platform.readLocalFile ||
+                          !platform.createLocalFile ||
+                          state.agentsMdCreating ||
+                          state.agentsMdSaving
+                        }
+                        onCreate={(root, label) => void createAgentsMd(root, label)}
+                      />
+                    </div>
                   </Match>
                   <Match when={state.section === "providers"}>
                     <ConfigPaneTitle
@@ -8393,16 +8662,14 @@ export default function ConfigPage() {
                       icon={sectionIcon("mcp")}
                     />
                     <div class="mt-4 flex items-center gap-2">
-                      <Button
-                        size="small"
-                        variant="ghost"
-                        icon="plus-small"
-                        class="h-8 rounded-lg border border-border-weak-base bg-background-base px-2.5 pr-3 text-12-medium text-text-base shadow-none transition-colors hover:border-border-strong hover:bg-surface-base-hover active:border-border-base active:bg-surface-base-active focus-visible:border-border-strong focus-visible:bg-surface-base-hover disabled:border-border-weak-base disabled:bg-background-base disabled:text-text-weaker"
-                        onClick={() => createMcp()}
-                        disabled={!globalSync.updateConfig}
-                      >
-                        {t("config.mcp.add")}
-                      </Button>
+                      <ConfigCreateMenu
+                        kind="mcp"
+                        label={t("config.mcp.add")}
+                        globalRoot={space()?.configRoot}
+                        projects={createProjects()}
+                        disabled={!platform.listConfigFiles || !platform.readLocalFile || !platform.writeLocalFile}
+                        onCreate={createMcp}
+                      />
                     </div>
                   </Match>
                   <Match when={state.section === "channels"}>
@@ -8426,16 +8693,14 @@ export default function ConfigPage() {
                       icon={sectionIcon("commands")}
                     />
                     <div class="mt-4 flex flex-wrap items-center gap-2">
-                      <Button
-                        size="small"
-                        variant="ghost"
-                        icon="folder-add-left"
-                        class="h-8 rounded-lg border border-border-weak-base bg-background-base px-2.5 pr-3 text-12-medium text-text-base shadow-none transition-colors hover:border-border-strong hover:bg-surface-base-hover active:border-border-base active:bg-surface-base-active focus-visible:border-border-strong focus-visible:bg-surface-base-hover disabled:border-border-weak-base disabled:bg-background-base disabled:text-text-weaker"
-                        onClick={() => createCommand()}
-                        disabled={!space()?.configRoot || !platform.createLocalFile}
-                      >
-                        {t("config.commands.create.action")}
-                      </Button>
+                      <ConfigCreateMenu
+                        kind="command"
+                        label={t("config.commands.create.action")}
+                        globalRoot={space()?.configRoot ? join(space()!.configRoot!, "commands") : undefined}
+                        projects={createProjects()}
+                        disabled={!platform.createLocalFile}
+                        onCreate={createCommand}
+                      />
                     </div>
                   </Match>
                   <Match when={state.section === "skills"}>
@@ -8445,16 +8710,14 @@ export default function ConfigPage() {
                       icon={sectionIcon("skills")}
                     />
                     <div class="mt-4 flex flex-wrap items-center gap-2">
-                      <Button
-                        size="small"
-                        variant="ghost"
-                        icon="folder-add-left"
-                        class="h-8 rounded-lg border border-border-weak-base bg-background-base px-2.5 pr-3 text-12-medium text-text-base shadow-none transition-colors hover:border-border-strong hover:bg-surface-base-hover active:border-border-base active:bg-surface-base-active focus-visible:border-border-strong focus-visible:bg-surface-base-hover disabled:border-border-weak-base disabled:bg-background-base disabled:text-text-weaker"
-                        onClick={() => createSkill()}
-                        disabled={!space()?.skillsRoot || !platform.createLocalFile}
-                      >
-                        {t("config.skills.create.action")}
-                      </Button>
+                      <ConfigCreateMenu
+                        kind="skill"
+                        label={t("config.skills.create.action")}
+                        globalRoot={space()?.skillsRoot}
+                        projects={createProjects()}
+                        disabled={!platform.createLocalFile}
+                        onCreate={createSkill}
+                      />
                     </div>
                   </Match>
                   <Match when={state.section === "extensions"}>
@@ -8492,17 +8755,73 @@ export default function ConfigPage() {
                 <div class="flex flex-col">
                   <Switch>
                     <Match when={state.section === "agents-md"}>
-                      <For each={agentsMd()}>
-                        {(item) => (
-                          <ListButton
-                            active={state.pick === item.id}
-                            title={item.label}
-                            note={item.note}
-                            meta={short(item.path, space()?.configRoot)}
-                            onClick={() => void open(item)}
-                          />
-                        )}
-                      </For>
+                      <div class="flex flex-col gap-3" data-config-agents-md-list>
+                        <ConfigSearchBox
+                          value={state.agentsMdQuery}
+                          placeholder={t("common.search.placeholder")}
+                          onInput={(value) => setState("agentsMdQuery", value)}
+                        />
+                        <Show when={agentsMdGlobal().length > 0}>
+                          <div class="px-1 text-11-medium uppercase tracking-[0.08em] text-text-weak">
+                            {t("config.commands.group.global")}
+                          </div>
+                          <For each={agentsMdGlobal()}>
+                            {(item) => (
+                              <SkillListButton
+                                active={state.pick === item.id}
+                                title={item.label}
+                                icon="review"
+                                note={item.note}
+                                meta={short(item.path, space()?.configRoot)}
+                                onClick={() => void open(item)}
+                              />
+                            )}
+                          </For>
+                        </Show>
+                        <Show when={projectAgentsMd.loading}>
+                          <Wait text={t("common.loading")} />
+                        </Show>
+                        <Show when={agentsMdProjects().length > 0}>
+                          <div class="px-1 text-11-medium uppercase tracking-[0.08em] text-text-weak">
+                            {t("config.commands.group.project")}
+                          </div>
+                          <For each={agentsMdProjects()}>
+                            {(group) => (
+                              <div data-agents-md-project={group.path}>
+                                <ProjectListGroup
+                                  label={group.label}
+                                  path={group.path}
+                                  count={group.items.length}
+                                  open={agentsMdProjectOpen(group.path)}
+                                  onToggle={() => toggleAgentsMdProject(group.path)}
+                                  onAdd={() => void createAgentsMd(group.path, group.label)}
+                                  addLabel={t("config.agentsMd.create.action")}
+                                  addDisabled={
+                                    !platform.createLocalFile || state.agentsMdCreating || state.agentsMdSaving
+                                  }
+                                >
+                                  <For each={group.items}>
+                                    {(item) => (
+                                      <SkillListButton
+                                        active={state.pick === item.id}
+                                        title={item.label}
+                                        icon="review"
+                                        meta={short(item.path, group.path)}
+                                        onClick={() => void open(item)}
+                                      />
+                                    )}
+                                  </For>
+                                  <Show when={group.items.length === 0}>
+                                    <div class="px-3 py-2 text-12-regular text-text-weak">
+                                      {t("config.agentsMd.project.empty")}
+                                    </div>
+                                  </Show>
+                                </ProjectListGroup>
+                              </div>
+                            )}
+                          </For>
+                        </Show>
+                      </div>
                     </Match>
 
                     <Match when={state.section === "providers"}>
@@ -8827,13 +9146,13 @@ export default function ConfigPage() {
                           <Show when={mcpProject().length > 0}>
                             <ProjectListGroup
                               label={mcpProjectName()}
-                              path={sync.data.path?.directory}
+                              path={mcpProjectDirectory()}
                               count={mcpProject().length}
                               open={mcpProjectOpen()}
                               onToggle={toggleMcpProject}
-                              onAdd={() => createMcp(sync.data.path?.directory ?? "")}
+                              onAdd={() => createMcp(mcpProjectDirectory())}
                               addLabel={t("config.mcp.add")}
-                              addDisabled={!sync.data.path?.directory}
+                              addDisabled={!mcpProjectDirectory()}
                             >
                               <For each={mcpProject()}>
                                 {(server) => (
@@ -8848,7 +9167,7 @@ export default function ConfigPage() {
                                         <Toggle
                                           checked={server.status === "connected"}
                                           disabled={state.mcpBusy === server.name}
-                                          onChange={(value) => toggleMcp(server.name, value)}
+                                          onChange={(value) => toggleMcp(server.name, value, mcpProjectDirectory())}
                                           hideLabel
                                         >
                                           {server.name}
@@ -9297,6 +9616,7 @@ export default function ConfigPage() {
                     busy={state.providerBusy === selectedCustom()?.id}
                     onToggle={toggleProvider}
                     onField={setCustomField}
+                    onAutoV1Change={setCustomAutoV1}
                     onModel={setCustomModel}
                     onModelConfig={setCustomModelConfig}
                     onToggleModelConfig={toggleCustomModelConfig}
@@ -9508,6 +9828,12 @@ export default function ConfigPage() {
                                   {selectedMcpStatus()}
                                 </span>
                               </Show>
+                            </div>
+                            <div
+                              class="mt-1 break-all font-mono text-12-regular text-text-weak"
+                              data-mcp-target-directory={isNew() ? state.mcpTargetDirectory : selectedMcpDirectory()}
+                            >
+                              {(isNew() ? state.mcpTargetDirectory : selectedMcpDirectory()) || space()?.configRoot}
                             </div>
                           </div>
                           <div class="flex shrink-0 items-center gap-2">
@@ -9745,7 +10071,7 @@ export default function ConfigPage() {
                           busy={state.skillSaving}
                           err={state.skillErr || undefined}
                           onTitle={setSkillTitle}
-                          onInput={(value) => setState("text", value)}
+                          onInput={setSkillText}
                           onSave={() => void saveSkill()}
                           onCancel={cancelSkillCreate}
                         />
@@ -9862,17 +10188,40 @@ export default function ConfigPage() {
               </Match>
 
               <Match when={state.section === "agents-md"}>
-                <Editor
-                  item={currentDoc()}
-                  text={state.text}
-                  dirty={dirty()}
-                  busy={state.busy}
-                  onInput={(value) => setState("text", value)}
-                  onSave={() => void save()}
-                  onOpenFolder={currentDoc() ? openFolder : undefined}
-                  empty={t("config.agentsMd.empty")}
-                  markdown
-                />
+                <div
+                  class="flex h-full min-h-0 flex-col"
+                  data-config-agents-md-editor
+                  data-agents-md-path={currentDoc()?.path}
+                >
+                  <Editor
+                    item={currentDoc()}
+                    text={state.text}
+                    dirty={!state.agentsMdSaving && (dirty() || currentDoc()?.id === AGENTS_MD_NEW)}
+                    busy={state.busy || state.agentsMdSaving}
+                    onInput={(value) => {
+                      setState("text", value)
+                      if (state.doc === AGENTS_MD_NEW && state.agentsMdDraft)
+                        setState("agentsMdDraft", "content", value)
+                    }}
+                    onSave={() => void save()}
+                    onOpenFolder={currentDoc() ? openFolder : undefined}
+                    empty={t("config.agentsMd.empty")}
+                    extra={
+                      <Show when={currentDoc()?.id === AGENTS_MD_NEW}>
+                        <Button
+                          size="small"
+                          variant="ghost"
+                          icon="close"
+                          disabled={state.agentsMdSaving}
+                          onClick={cancelAgentsMdCreate}
+                        >
+                          {t("common.cancel")}
+                        </Button>
+                      </Show>
+                    }
+                    markdown
+                  />
+                </div>
               </Match>
             </Switch>
           </main>
@@ -9951,21 +10300,6 @@ function CommandCreator(props: {
 }
 
 const yaml = (value: string) => JSON.stringify(value.trim())
-
-function skillTemplate(title: string) {
-  const name = title.trim()
-  return [
-    "---",
-    `name: ${yaml(name)}`,
-    'description: "Describe when to use this skill."',
-    "---",
-    "",
-    name ? `# ${name}` : "# New Skill",
-    "",
-    "Add instructions, workflows, and examples here.",
-    "",
-  ].join("\n")
-}
 
 function SkillCreator(props: {
   root?: string

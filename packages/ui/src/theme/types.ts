@@ -33,7 +33,15 @@ export interface ThemePaletteColors {
 }
 
 type ThemeVariantBase = {
+  surfaces?: ThemeSurfaces
   overrides?: Record<string, ColorValue>
+}
+
+export interface ThemeSurfaces {
+  shell: HexColor
+  canvas: HexColor
+  raised: HexColor
+  inset: HexColor
 }
 
 export type ThemeVariant =

@@ -16,10 +16,15 @@
       "diffAdd": "#5dac7e",
       "diffDelete": "#d53a3a"
     },
+    "surfaces": {
+      "shell": "#e2e7de",
+      "canvas": "#eef3ea",
+      "raised": "#f7fcf3",
+      "inset": "#d9ded5"
+    },
     "overrides": {
-      "text-weak": "#607062",
       "syntax-comment": "#607062",
-      "syntax-keyword": "#9940ce",
+      "syntax-keyword": "#9250bc",
       "syntax-string": "#0c7d2d",
       "syntax-primitive": "#1972a5",
       "syntax-variable": "#203022",
@@ -30,7 +35,6 @@
       "syntax-punctuation": "#203022",
       "syntax-object": "#203022",
       "markdown-heading": "#107a6b",
-      "markdown-text": "#203022",
       "markdown-link": "#1972a5",
       "markdown-link-text": "#107a6b",
       "markdown-code": "#0c7d2d",
@@ -42,8 +46,6 @@
       "markdown-list-enumeration": "#24f6d9",
       "markdown-image": "#30b3ff",
       "markdown-image-text": "#24f6d9",
-      "markdown-code-block": "#203022",
-      "text-weaker": "#636f64",
       "text-interactive-base": "#1572a6"
     }
   },
@@ -61,33 +63,36 @@
       "diffAdd": "#77ffaf",
       "diffDelete": "#ff7171"
     },
+    "surfaces": {
+      "shell": "#050805",
+      "canvas": "#0a0e0a",
+      "raised": "#161a16",
+      "inset": "#020402"
+    },
     "overrides": {
-      "text-weak": "#8ca391",
       "syntax-comment": "#8ca391",
-      "syntax-keyword": "#c770ff",
-      "syntax-string": "#1cc24b",
-      "syntax-primitive": "#30b3ff",
-      "syntax-variable": "#62ff94",
-      "syntax-property": "#24f6d9",
-      "syntax-type": "#e6ff57",
-      "syntax-constant": "#ffa83d",
-      "syntax-operator": "#24f6d9",
-      "syntax-punctuation": "#62ff94",
-      "syntax-object": "#62ff94",
-      "markdown-heading": "#00efff",
-      "markdown-text": "#62ff94",
-      "markdown-link": "#30b3ff",
-      "markdown-link-text": "#24f6d9",
-      "markdown-code": "#1cc24b",
+      "syntax-keyword": "#ba83e1",
+      "syntax-string": "#5dba6a",
+      "syntax-primitive": "#3eb3fa",
+      "syntax-variable": "#8ff6a9",
+      "syntax-property": "#42f4d9",
+      "syntax-type": "#e8fc86",
+      "syntax-constant": "#fbaa4a",
+      "syntax-operator": "#42f4d9",
+      "syntax-punctuation": "#8ff6a9",
+      "syntax-object": "#8ff6a9",
+      "markdown-heading": "#1ceffe",
+      "markdown-link": "#3eb3fa",
+      "markdown-link-text": "#42f4d9",
+      "markdown-code": "#5dba6a",
       "markdown-block-quote": "#8ca391",
-      "markdown-emph": "#ffa83d",
-      "markdown-strong": "#e6ff57",
+      "markdown-emph": "#fbaa4a",
+      "markdown-strong": "#e8fc86",
       "markdown-horizontal-rule": "#8ca391",
-      "markdown-list-item": "#30b3ff",
-      "markdown-list-enumeration": "#24f6d9",
-      "markdown-image": "#30b3ff",
-      "markdown-image-text": "#24f6d9",
-      "markdown-code-block": "#62ff94"
+      "markdown-list-item": "#3eb3fa",
+      "markdown-list-enumeration": "#42f4d9",
+      "markdown-image": "#3eb3fa",
+      "markdown-image-text": "#42f4d9"
     }
   }
 }

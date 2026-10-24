@@ -103,6 +103,15 @@ export const layer = Layer.effect(
       sessionID: SessionID,
       cleanup: Effect.Effect<void> = Effect.void,
     ) {
+      // A task's wrapper re-enters session cancellation from its onInterrupt.
+      // Cancel that wrapper before moving the runner to Stopping, or its
+      // finalizer and the runner's cleanup will wait on each other.
+      const task = yield* background.get(sessionID)
+      if (task?.type === "task" && task.status === "running") {
+        yield* elog.info("cancel stopping task wrapper", { sessionID })
+        yield* background.cancel(sessionID)
+        yield* elog.info("cancel task wrapper stopped", { sessionID })
+      }
       // Stop the session runner first so the agent loop cannot keep producing
       // turns while background-job teardown (or a re-entrant cancel) is in flight.
       const existing = yield* runner(sessionID)

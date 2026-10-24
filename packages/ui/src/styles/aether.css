@@ -140,7 +140,8 @@ html[data-theme="aether"][data-color-scheme="dark"] [data-component="dock-prompt
       color: var(--text-strong);
     }
 
-    [data-slot="option-description"] {
+    [data-slot="option-description"],
+    [data-slot="question-custom-input"] {
       color: var(--text-base);
     }
   }

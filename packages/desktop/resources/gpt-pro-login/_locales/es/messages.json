@@ -36,10 +36,13 @@
     "message": "No se transfieren cookies de Google, contraseñas, historial de chats ni credenciales de API. La extensión nunca guarda la sesión en un archivo."
   },
   "connect": { "message": "Importar sesión" },
+  "connectImported": { "message": "Sesión importada" },
   "statusApproval": { "message": "Autoriza antes de importar." },
   "statusReading": { "message": "Leyendo sesión…" },
   "statusImporting": { "message": "Importando…" },
-  "statusImported": { "message": "Importado. Comprueba la configuración de GPT-Pro en OpenCode." },
+  "statusImported": {
+    "message": "Vuelve a la configuración de GPT-Pro en OpenCode para verificar tu inicio de sesión."
+  },
   "errorTab": {
     "message": "Abre una nueva página de conexión OpenCode-ChatGPT en 127.0.0.1 desde OpenCode y abre la extensión en esa pestaña."
   },

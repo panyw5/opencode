@@ -1,4 +1,8 @@
 export const dict = {
+  "ui.tool.gptPro.openOriginal": "원본 웹페이지 열기",
+  "ui.tool.gptPro.resultOpening": "원본 웹페이지 여는 중…",
+  "ui.tool.gptPro.resultMaximize": "미리보기 최대화",
+  "ui.tool.gptPro.resultRestore": "미리보기 복원",
   "ui.sessionReview.title": "세션 변경 사항",
   "ui.sessionReview.title.lastTurn": "마지막 턴 변경 사항",
   "ui.sessionReview.diffStyle.unified": "통합 보기",

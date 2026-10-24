@@ -262,6 +262,7 @@ export const dict = {
   "prompt.dropzone.file.label": "أفلت لإشارة @ للملف",
   "prompt.slash.badge.custom": "مخصص",
   "prompt.slash.badge.skill": "مهارة",
+  "prompt.skill.pill": "المهارة: {{name}}",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.active": "نشط",
   "prompt.context.includeActiveFile": "تضمين الملف النشط",

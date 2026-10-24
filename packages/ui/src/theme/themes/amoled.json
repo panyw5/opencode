@@ -15,13 +15,19 @@
       "diffAdd": "#00e676",
       "diffDelete": "#ff1744"
     },
+    "surfaces": {
+      "shell": "#ededed",
+      "canvas": "#fafafa",
+      "raised": "#ffffff",
+      "inset": "#e2e2e2"
+    },
     "overrides": {
       "syntax-comment": "#696969",
-      "syntax-keyword": "#ae21ca",
+      "syntax-keyword": "#9d4bb0",
       "syntax-string": "#167a3f",
       "syntax-primitive": "#1c70a0",
       "syntax-property": "#9b5913",
-      "syntax-constant": "#6200ff"
+      "syntax-constant": "#5c4ebe"
     }
   },
   "dark": {
@@ -37,13 +43,19 @@
       "diffAdd": "#00ff88",
       "diffDelete": "#ff1744"
     },
+    "surfaces": {
+      "shell": "#000000",
+      "canvas": "#080808",
+      "raised": "#191919",
+      "inset": "#000000"
+    },
     "overrides": {
       "syntax-comment": "#555555",
-      "syntax-keyword": "#ff00ff",
-      "syntax-string": "#00ff88",
-      "syntax-primitive": "#18ffff",
-      "syntax-property": "#ffea00",
-      "syntax-constant": "#b388ff"
+      "syntax-keyword": "#cf7ccc",
+      "syntax-string": "#85f2a7",
+      "syntax-primitive": "#3bfefd",
+      "syntax-property": "#f8ea6e",
+      "syntax-constant": "#b08ef1"
     }
   }
 }

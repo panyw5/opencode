@@ -1,4 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
+import { createMediaQuery } from "@solid-primitives/media"
 import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -33,6 +34,8 @@ export function NotificationBell() {
   const language = useLanguage()
   const navigate = useNavigate()
   const platform = usePlatform()
+  const compactWidth = createMediaQuery("(max-width: 1439px)")
+  const compact = () => platform.platform === "web" && compactWidth()
   const [open, setOpen] = createSignal(false)
   let bellElement: HTMLDivElement | undefined
   let toastLayer: HTMLDivElement | undefined
@@ -45,10 +48,13 @@ export function NotificationBell() {
     const bell = bellElement.getBoundingClientRect()
     const hasRegularToast = toastRegion.querySelector('[data-component="toast-v2"]') !== null
     const bottom = window.innerHeight - bell.top + TOAST_GAP
+    const top = compact() ? `${bell.bottom + TOAST_GAP}px` : "auto"
+    toastRegion.style.top = top
     if (!hasRegularToast) {
       toastRegion.style.visibility = "hidden"
       console.debug("[notification-bell] regular toast position deferred", { reason: "region-empty" })
     } else if (bell.width === 0 || bell.height === 0) {
+      toastRegion.style.top = "auto"
       toastRegion.style.left = "auto"
       toastRegion.style.right = `${VIEWPORT_GAP}px`
       toastRegion.style.bottom = `${BELL_SIZE + TOAST_GAP + 24}px`
@@ -60,9 +66,11 @@ export function NotificationBell() {
       const left = Math.max(VIEWPORT_GAP, Math.min(centered, window.innerWidth - width - VIEWPORT_GAP))
       toastRegion.style.left = `${left}px`
       toastRegion.style.right = "auto"
-      toastRegion.style.bottom = `${bottom}px`
+      toastRegion.style.bottom = compact() ? "auto" : `${bottom}px`
       toastRegion.style.visibility = "visible"
-      console.debug("[notification-bell] regular toast positioned", { left, bottom, width, bell: [bell.left, bell.top] })
+      console.debug(
+        `[notification-bell] regular-toast left=${left} bottom=${bottom} width=${width} compact=${compact()}`,
+      )
     }
 
     if (!toastLayer) return
@@ -73,7 +81,8 @@ export function NotificationBell() {
       Math.min(bellToastCentered, window.innerWidth - bellToastWidth - VIEWPORT_GAP),
     )
     toastLayer.style.left = `${bellToastLeft}px`
-    toastLayer.style.bottom = `${bottom}px`
+    toastLayer.style.top = top
+    toastLayer.style.bottom = compact() ? "auto" : `${bottom}px`
     toastLayer.style.visibility = "visible"
     const layer = toastLayer.getBoundingClientRect()
     for (const toast of toastLayer.querySelectorAll<HTMLElement>('[data-component="notification-bell-toast"]')) {
@@ -116,11 +125,20 @@ export function NotificationBell() {
     if (actions) observer.observe(actions)
     if (toastLayer) observer.observe(toastLayer)
     window.addEventListener("resize", updateToastPosition)
+    window.visualViewport?.addEventListener("resize", updateToastPosition)
+    window.visualViewport?.addEventListener("scroll", updateToastPosition)
     onCleanup(() => {
       observer.disconnect()
       window.removeEventListener("resize", updateToastPosition)
+      window.visualViewport?.removeEventListener("resize", updateToastPosition)
+      window.visualViewport?.removeEventListener("scroll", updateToastPosition)
       for (const frame of frames) cancelAnimationFrame(frame)
     })
+  })
+
+  createEffect(() => {
+    compact()
+    updateToastPosition()
   })
 
   const unread = createMemo(() => notification.unseenList())
@@ -192,8 +210,12 @@ export function NotificationBell() {
               }}
               style={{ opacity: 0, "transform-origin": "center center" }}
               data-session={toast.session}
-              onAnimationStart={(event) => console.debug("[notification-bell] animation started", { id: toast.id, name: event.animationName })}
-              onAnimationEnd={(event) => console.debug("[notification-bell] animation ended", { id: toast.id, name: event.animationName })}
+              onAnimationStart={(event) =>
+                console.debug("[notification-bell] animation started", { id: toast.id, name: event.animationName })
+              }
+              onAnimationEnd={(event) =>
+                console.debug("[notification-bell] animation ended", { id: toast.id, name: event.animationName })
+              }
               onClick={() => {
                 notification.bell.dismiss(toast.id)
                 go(toast)
@@ -221,7 +243,7 @@ export function NotificationBell() {
         <Popover
           open={open()}
           onOpenChange={setOpen}
-          placement="top-end"
+          placement={compact() ? "bottom-end" : "top-end"}
           class="notification-bell-popover-shell"
           trigger={
             <div ref={bellElement} class="relative" data-component="notification-bell">

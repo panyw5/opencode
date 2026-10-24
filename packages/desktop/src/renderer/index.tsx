@@ -193,6 +193,7 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
 
   return {
     platform: "desktop",
+    remoteAccess: desktopApi.remoteAccess,
     os,
     version: pkg.version,
 
@@ -299,6 +300,10 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
     },
 
     exportDebugLogs: () => desktopApi.exportDebugLogs(),
+
+    resourceUsage: () => desktopApi.getResourceUsage(),
+
+    cleanResourceTarget: (id) => desktopApi.cleanResourceTarget(id),
 
     recordFatalRendererError: (error) => desktopApi.recordFatalRendererError(error),
 

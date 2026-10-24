@@ -9,7 +9,10 @@ let files: Record<string, () => Promise<string>> | undefined
 
 function getFiles() {
   if (files) return files
-  files = import.meta.glob("./assets/fonts/*.woff2", { import: "default" }) as Record<string, () => Promise<string>>
+  files = import.meta.glob(
+    ["./assets/fonts/*-nerd-font*.woff2", "./assets/fonts/GeistMonoNerdFontMono-{Regular,Bold}.woff2"],
+    { import: "default" },
+  ) as Record<string, () => Promise<string>>
   return files
 }
 
@@ -120,13 +123,18 @@ export function ensureMonoFont(id: string | undefined) {
   const hit = loads.get(font.id)
   if (hit) return hit
   const files = getFiles()
+  console.debug(`[fonts] load-start id=${font.id}`)
   const load = Promise.all([files[font.regular]?.(), files[font.bold]?.()]).then(([regular, bold]) => {
-    if (!regular || !bold) return
+    if (!regular || !bold) {
+      console.warn(`[fonts] load-missing id=${font.id} regular=${Boolean(regular)} bold=${Boolean(bold)}`)
+      return
+    }
     if (document.getElementById(styleId)) return
     const style = document.createElement("style")
     style.id = styleId
     style.textContent = css({ family: font.family, regular, bold })
     document.head.appendChild(style)
+    console.debug(`[fonts] load-ready id=${font.id}`)
   })
   loads.set(font.id, load)
   return load

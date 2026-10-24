@@ -9,10 +9,11 @@ import { ProviderTransform } from "@/provider/transform"
 import { SystemPrompt } from "../system"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { Effect, Record } from "effect"
-import { jsonSchema, tool as aiTool, type ModelMessage, type Tool } from "ai"
+import { asSchema, jsonSchema, tool as aiTool, type ModelMessage, type Tool, type ToolResultPart } from "ai"
 import type { Plugin } from "@/plugin"
 import { mergeDeep } from "remeda"
 import * as Log from "@opencode-ai/core/util/log"
+import { Token } from "@/util/token"
 
 const log = Log.create({ service: "session.llm.request" })
 const USER_AGENT = `opencode/${InstallationVersion}`
@@ -27,6 +28,7 @@ type PrepareInput = {
   readonly system: string[]
   readonly messages: ModelMessage[]
   readonly small?: boolean
+  readonly kind?: "primary" | "compaction"
   readonly tools: Record<string, Tool>
   readonly provider: Provider.Info
   readonly auth: Auth.Info | undefined
@@ -52,6 +54,54 @@ export type Prepared = {
 
 const mergeOptions = (target: Record<string, any>, source: Record<string, any> | undefined): Record<string, any> =>
   mergeDeep(target, source ?? {}) as Record<string, any>
+
+const mediaTokens = (mime: string) => {
+  if (mime.toLowerCase().startsWith("image/")) return 1_500
+  if (mime.toLowerCase() === "application/pdf") return 2_000
+  return 0
+}
+
+function outputTokens(output: ToolResultPart["output"]): number {
+  if (output.type === "execution-denied") return Token.estimate(output.reason ?? "")
+  if (output.type !== "content")
+    return Token.estimate(typeof output.value === "string" ? output.value : JSON.stringify(output.value))
+  return output.value.reduce((sum, part) => {
+    if (part.type === "text") return sum + Token.estimate(part.text)
+    if (part.type.startsWith("image-")) return sum + 1_500
+    return sum + ("mediaType" in part ? mediaTokens(part.mediaType) : 0)
+  }, 0)
+}
+
+/** Estimate sendable content, excluding local provider metadata and encoded media bytes, as in V2. */
+export function estimateInputTokens(input: {
+  messages: ModelMessage[]
+  tools: { name: string; description?: string; parameters?: unknown }[]
+  system?: string[]
+}) {
+  const messages = input.messages.reduce((sum, message) => {
+    if (typeof message.content === "string") return sum + Token.estimate(message.content)
+    return (
+      sum +
+      message.content.reduce((total, part) => {
+        if (part.type === "text" || part.type === "reasoning") return total + Token.estimate(part.text)
+        if (part.type === "image") return total + 1_500
+        if (part.type === "file") return total + mediaTokens(part.mediaType)
+        if (part.type === "tool-call") return total + Token.estimate(part.toolName + JSON.stringify(part.input))
+        if (part.type === "tool-result") return total + outputTokens(part.output)
+        return total
+      }, 0)
+    )
+  }, 0)
+  return (
+    messages +
+    (input.system ?? []).reduce((sum, text) => sum + Token.estimate(text), 0) +
+    input.tools.reduce(
+      (sum, item) =>
+        sum + Token.estimate(item.name + (item.description ?? "") + (JSON.stringify(item.parameters) ?? "")),
+      0,
+    )
+  )
+}
 
 export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: PrepareInput) {
   const isOpenaiOauth = input.provider.id === "openai" && input.auth?.type === "oauth"
@@ -104,6 +154,37 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
           ...input.messages,
         ]
 
+  const tools = resolveTools(input)
+  const definitions = yield* Effect.forEach(Object.entries(tools), ([name, item]) =>
+    Effect.gen(function* () {
+      const schema = item.inputSchema
+        ? yield* Effect.promise(() => Promise.resolve(asSchema(item.inputSchema).jsonSchema))
+        : undefined
+      return { name, description: item.description, parameters: schema }
+    }),
+  )
+  // Estimate this request, not lifetime session usage. OAuth/workflow instructions travel outside messages.
+  const estimatedInputTokens = estimateInputTokens({
+    messages,
+    tools: definitions,
+    ...(isOpenaiOauth || input.isWorkflow ? { system } : {}),
+  })
+  const kind = input.kind ?? (input.agent.name === "compaction" ? "compaction" : "primary")
+  const outputBudget = ProviderTransform.maxOutputTokens(input.model, input.flags.outputTokenMax, {
+    kind,
+    inputTokens: { measured: 0, estimated: estimatedInputTokens },
+  })
+  log.info("generation budget calculated", {
+    sessionID: input.sessionID,
+    modelID: input.model.id,
+    kind,
+    modelOutputLimit: input.model.limit.output,
+    contextLimit: input.model.limit.context,
+    estimatedInputTokens,
+    outputTokenMax: input.flags.outputTokenMax,
+    maxOutputTokens: outputBudget,
+  })
+
   const triggeredParams = yield* input.plugin.trigger(
     "chat.params",
     {
@@ -119,11 +200,25 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
         : undefined,
       topP: input.agent.topP ?? ProviderTransform.topP(input.model),
       topK: ProviderTransform.topK(input.model),
-      maxOutputTokens: ProviderTransform.maxOutputTokens(input.model, input.flags.outputTokenMax),
+      maxOutputTokens: outputBudget,
       options,
     },
   )
-  const params = { ...triggeredParams, options: { ...triggeredParams.options } }
+  const params = {
+    ...triggeredParams,
+    // Some protocol adapters must omit this field (e.g. Cloudflare's OpenAI reasoning route).
+    maxOutputTokens:
+      triggeredParams.maxOutputTokens === undefined
+        ? undefined
+        : Math.min(outputBudget, triggeredParams.maxOutputTokens),
+    options: { ...triggeredParams.options },
+  }
+  log.info("generation budget finalized", {
+    sessionID: input.sessionID,
+    kind,
+    requestedMaxOutputTokens: triggeredParams.maxOutputTokens,
+    maxOutputTokens: params.maxOutputTokens,
+  })
   if (input.provider.options?.setCacheKey === false) {
     delete params.options.promptCacheKey
     delete params.options.prompt_cache_key
@@ -150,7 +245,6 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     },
   )
 
-  const tools = resolveTools(input)
   // Codex parity: OpenAI Responses-family providers hardcode `strict: false`
   // on every function tool so MCP-sourced and dynamic schemas that don't
   // satisfy OpenAI's structured-outputs constraints still register.

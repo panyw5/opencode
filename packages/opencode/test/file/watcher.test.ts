@@ -202,7 +202,7 @@ describe("FileWatcher event coalescing", () => {
     ])
   })
 
-  test("collapseByDirectory keeps changes and reduces adds/unlinks to one per parent", () => {
+  test("small batches retain precise add, change, and unlink events", () => {
     const events = [
       { file: "/repo/src/a.ts", event: "change" as const },
       { file: "/repo/obj/00/1", event: "add" as const },
@@ -212,12 +212,28 @@ describe("FileWatcher event coalescing", () => {
       { file: "/repo/obj/02/5", event: "unlink" as const },
     ]
 
-    expect(FileWatcher.collapseByDirectory(events)).toEqual([
-      { file: "/repo/src/a.ts", event: "change" },
-      { file: "/repo/obj/00/1", event: "add" },
-      { file: "/repo/obj/01/3", event: "add" },
-      { file: "/repo/obj/02/4", event: "unlink" },
-    ])
+    expect(FileWatcher.planEvents(events)).toEqual({
+      invalidated: false,
+      events: [
+        { file: "/repo/src/a.ts", event: "change" },
+        { file: "/repo/obj/00/1", event: "add" },
+        { file: "/repo/obj/00/2", event: "add" },
+        { file: "/repo/obj/01/3", event: "add" },
+        { file: "/repo/obj/02/4", event: "unlink" },
+        { file: "/repo/obj/02/5", event: "unlink" },
+      ],
+    })
+  })
+
+  test("floods invalidate the entire scope instead of losing open-file updates", () => {
+    for (const event of ["add", "change", "unlink"] as const) {
+      const events = Array.from({ length: 2001 }, (_, index) => ({ file: `/repo/output/${index}.svg`, event }))
+      expect(FileWatcher.planEvents(events)).toEqual({ events: [], invalidated: true })
+    }
+    expect(FileWatcher.planEvents(Array.from({ length: 3000 }, () => ({ file: "/repo/a", event: "change" })))).toEqual({
+      events: [{ file: "/repo/a", event: "change" }],
+      invalidated: false,
+    })
   })
 })
 

@@ -22,6 +22,8 @@ import {
 import { GptProPageError } from "./gpt-pro-page-error"
 import { gptProIssue, GptProOperationError } from "@opencode-ai/util/gpt-pro-error"
 import { collectGptProNotification } from "./gpt-pro-notifications"
+import { gptProArchivedResult, type GptProStateResponse, type GptProStateEvent } from "@opencode-ai/util/gpt-pro-state"
+import { GptProStateFeed } from "./gpt-pro-state-feed"
 
 export type GptProDriverAPI = {
   open(url?: string, fresh?: boolean): Promise<void>
@@ -53,6 +55,8 @@ type Persistence = {
   config(): GptProConfig
   setConfig(config: GptProConfig): void
   stagingRoot?(): string
+  readResult?(id: string, owners?: string[]): GptProJob | undefined
+  openResult?(job: GptProJob): Promise<void>
 }
 export type GptProManagedPage = {
   pageID: string
@@ -158,6 +162,7 @@ function validateAttachmentBytes(extension: string, bytes: Uint8Array) {
 }
 
 export class GptProController {
+  private readonly stateFeed = new GptProStateFeed((message) => this.log(message))
   private jobs: GptProJob[]
   private pumping = false
   private pumpRequested = false
@@ -210,7 +215,17 @@ export class GptProController {
             }
           : {}),
       }
-      if (["completed", "cancelled", "failed"].includes(job.phase)) return migrated
+      if (job.phase === "completed")
+        return {
+          ...migrated,
+          error: undefined,
+          errorCode: undefined,
+          recovery: undefined,
+          queueReason: undefined,
+          queueOwnerConsultationID: undefined,
+          stopPending: false,
+        }
+      if (["cancelled", "failed"].includes(job.phase)) return migrated
       if (job.sendAttempted === true && !job.userID)
         return {
           ...migrated,
@@ -340,6 +355,37 @@ export class GptProController {
       } = job
       return this.publicJob({ ...visible, prompt: visible.prompt.slice(0, 160) })
     })
+  }
+  stateList() {
+    return this.stateFeed.list()
+  }
+  subscribeState(listener: (event: GptProStateEvent) => void) {
+    return this.stateFeed.subscribe(listener)
+  }
+  stateRead(id: string): GptProStateResponse {
+    const envelope = this.stateFeed.list()
+    const local = this.jobs.find((job) => job.id === id)
+    if (local) {
+      const resolved = this.get(id)
+      const job = this.stateFeed.get(resolved.id)
+      if (!job) throw new Error("Consultation state has not been durably committed")
+      this.log(`[gpt-pro-state] read requested=${id} resolved=${job.id} version=${job.stateVersion} kind=execution`)
+      return {
+        sourceID: envelope.sourceID,
+        sequence: envelope.sequence,
+        requestedID: id,
+        state: { kind: "execution", job },
+      }
+    }
+    const archived = this.persistence.readResult?.(id)
+    if (!archived) throw new Error("Consultation state is unavailable")
+    this.log(`[gpt-pro-state] read requested=${id} resolved=${archived.id} kind=archive`)
+    return {
+      sourceID: envelope.sourceID,
+      sequence: envelope.sequence,
+      requestedID: id,
+      state: { kind: "archive", result: gptProArchivedResult(archived) },
+    }
   }
   async attachmentPreview(input: { id: string; attachmentID: string }): Promise<GptProAttachmentPreview> {
     if (
@@ -542,6 +588,7 @@ export class GptProController {
         })
     }
     for (const driver of this.drivers.values()) driver.dispose?.()
+    this.stateFeed.dispose()
     this.drivers.clear()
     this.log(`consult lifecycle disposed timers=0 observers=0 drivers=0`)
   }
@@ -570,7 +617,7 @@ export class GptProController {
     )
     const remaining = new Set(next.map((job) => job.id))
     const removed = previous.filter((job) => !remaining.has(job.id))
-    this.persistence.save(next)
+    const stateEvent = this.stateFeed.commit(next, () => this.persistence.save(next))
     this.jobs = next
     for (const job of removed) {
       this.notificationCandidates.delete(job)
@@ -596,6 +643,7 @@ export class GptProController {
         )
       }
     }
+    this.stateFeed.publish(stateEvent)
     this.reconcilePageLifecycle()
   }
   private update(job: GptProJob, input: Partial<GptProJob>) {
@@ -603,6 +651,15 @@ export class GptProController {
     const previous = job.phase
     const previousCode = job.errorCode
     Object.assign(job, input, { updatedAt: Date.now() })
+    if (job.phase === "completed")
+      Object.assign(job, {
+        error: undefined,
+        errorCode: undefined,
+        recovery: undefined,
+        queueReason: undefined,
+        queueOwnerConsultationID: undefined,
+        stopPending: false,
+      })
     job.errorCode =
       job.error || job.phase === "send_uncertain"
         ? gptProIssue({ error: job.error, phase: job.phase, needsHuman: job.recovery?.needsHuman })?.code
@@ -1605,6 +1662,25 @@ export class GptProController {
       ["read", "status"].includes(action) && owner !== undefined
         ? (this.jobs.find((job) => job.id === input.id && readOwners.includes(job.owner))?.owner ?? owner)
         : owner
+    // Foreign archived answers must never enter this controller's scheduler.
+    const local = this.jobs.find((job) => job.id === input.id && (readOwner === undefined || job.owner === readOwner))
+    if (!local && input.id && ["read", "status", "open"].includes(action)) {
+      const archived = this.persistence.readResult?.(
+        input.id,
+        owner === undefined ? undefined : [owner, ...(["read", "status"].includes(action) ? readOwners : [])],
+      )
+      if (archived) {
+        this.log(`consult archived result id=${archived.id} action=${action}; no execution imported`)
+        if (action === "open") {
+          if (!this.persistence.openResult) throw new Error("Archived consultation webpage opening is unavailable")
+          await this.persistence.openResult(archived)
+          return this.publicJob(archived)
+        }
+        if (action === "read") return this.publicJob(archived)
+        const { html, ...status } = this.publicJob(archived)
+        return { ...status, text: status.text?.slice(0, 20000) }
+      }
+    }
     const job = this.get(input.id, readOwner)
     if (readOwner !== owner)
       this.log(`consult descendant read id=${job.id} action=${action}; mutation authority unchanged`)

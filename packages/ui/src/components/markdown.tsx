@@ -1,4 +1,4 @@
-import { useMarked } from "../context/marked"
+import { fallbackAnchoredMarkdown, useMarked } from "../context/marked"
 import { useI18n } from "../context/i18n"
 import DOMPurify from "dompurify"
 import morphdom from "morphdom"
@@ -8,6 +8,7 @@ import { applyResolvedIcon, readDocumentIconPack, refreshDomIcons, resolveIcon, 
 import { chooseIconName } from "./file-icon"
 import fileIconSprite from "./file-icons/sprite.svg"
 import {
+  batch,
   ComponentProps,
   createEffect,
   createMemo,
@@ -29,6 +30,19 @@ type Entry = {
 type Mark = Record<string, string | number | boolean | undefined>
 
 export type MarkdownStage = "lite" | "structure" | "full"
+
+export function beginMarkdownDomUpdate(
+  container: HTMLDivElement,
+  before?: (container: HTMLDivElement) => void | (() => void),
+) {
+  const after = untrack(() => before?.(container))
+  let finished = false
+  return () => {
+    if (finished) return
+    finished = true
+    if (after) untrack(after)
+  }
+}
 
 export function initialMarkdownEager(input: {
   stage?: MarkdownStage
@@ -71,6 +85,37 @@ export function upgradeStreamingMath(
 
 const max = 200
 const cache = new Map<string, Entry>()
+const anchoredUpgrades = new Map<HTMLElement, { viewport?: HTMLElement; promote: () => void }>()
+let anchoredUpgradeFrame: number | undefined
+
+function scheduleAnchoredUpgrade() {
+  if (anchoredUpgradeFrame !== undefined || anchoredUpgrades.size === 0) return
+  anchoredUpgradeFrame = requestAnimationFrame(() => {
+    anchoredUpgradeFrame = undefined
+    for (const [container, request] of anchoredUpgrades) {
+      anchoredUpgrades.delete(container)
+      if (!container.isConnected) continue
+      const box = container.getBoundingClientRect()
+      const viewport = request.viewport?.getBoundingClientRect()
+      const top = viewport?.top ?? 0
+      const bottom = viewport?.bottom ?? innerHeight
+      // Initial bottom settling can move queued top-of-history messages out
+      // of view before this frame. Never typeset those obsolete candidates.
+      if (box.bottom < top - 200 || box.top > bottom + 200) continue
+      request.promote()
+      break
+    }
+    scheduleAnchoredUpgrade()
+  })
+}
+
+function cancelAnchoredUpgrade(container: HTMLElement) {
+  anchoredUpgrades.delete(container)
+  if (anchoredUpgrades.size === 0 && anchoredUpgradeFrame !== undefined) {
+    cancelAnimationFrame(anchoredUpgradeFrame)
+    anchoredUpgradeFrame = undefined
+  }
+}
 
 function mark(name: string, data: Mark = {}) {
   if (
@@ -490,6 +535,7 @@ export function markdownCacheMode(input: {
   chunked?: boolean
   math: "full" | "defer"
   annotated?: boolean
+  anchored?: boolean
 }) {
   return [
     "math-protect-v8",
@@ -497,6 +543,7 @@ export function markdownCacheMode(input: {
     input.math ?? "full",
     input.chunked ? "chunked" : "plain",
     input.annotated ? "lines" : "nolines",
+    input.anchored ? "anchors-v1" : "noanchors",
   ].join(":")
 }
 
@@ -732,7 +779,7 @@ const DOM_WARN_MS = 50
 // Converts the `data-ml` marker spans emitted by `parseAnnotated` into
 // `data-source-line` attributes on the rendered top-level elements, removing
 // the markers. Runs on the detached staging node before it enters the DOM.
-function applyLineAnnotations(root: HTMLElement) {
+export function applyLineAnnotations(root: HTMLElement) {
   let line: number | undefined
   for (const node of Array.from(root.childNodes)) {
     if (node instanceof HTMLElement && node.dataset.ml) {
@@ -765,6 +812,8 @@ export function Markdown(
     math?: "full" | "defer"
     fileLinks?: boolean
     annotateLines?: boolean
+    anchorBlocks?: boolean
+    onBeforeDomUpdate?: (container: HTMLDivElement) => void | (() => void)
   },
 ) {
   const [local, others] = splitProps(props, [
@@ -784,6 +833,8 @@ export function Markdown(
     "math",
     "fileLinks",
     "annotateLines",
+    "anchorBlocks",
+    "onBeforeDomUpdate",
   ])
   const marked = useMarked()
   const i18n = useI18n()
@@ -827,7 +878,8 @@ export function Markdown(
     const current = mode()
     const math: "full" | "defer" = mathReady() ? "full" : "defer"
     const annotated = !!local.annotateLines && !local.streaming
-    const cache = markdownCacheMode({ highlight: local.highlight, chunked: local.chunked, math, annotated })
+    const anchored = !!local.anchorBlocks
+    const cache = markdownCacheMode({ highlight: local.highlight, chunked: local.chunked, math, annotated, anchored })
     const key = hash ? `${cache}:${current}:${hash}` : undefined
     return {
       markdown,
@@ -841,6 +893,7 @@ export function Markdown(
       chunked: local.chunked,
       math,
       annotated,
+      anchored,
     }
   })
 
@@ -887,25 +940,30 @@ export function Markdown(
         input.mode === "full" &&
         input.math === "full" &&
         typeof parseAnnotated === "function"
+      const renderFallback = () =>
+        input.anchored ? fallbackAnchoredMarkdown(input.normalized) : fallback(input.normalized)
+      const renderFailure = (err: unknown) => {
+        console.error(
+          `[markdown] render failed key=${input.cacheKey ?? input.key ?? "none"} text=${input.markdown.length} error=${err instanceof Error ? err.message : String(err)}`,
+        )
+        return renderFallback()
+      }
       let renderPromise =
-        useAnnotated && parseAnnotated
-          ? await parseAnnotated(input.normalized)
-          : input.mode === "plain"
-            ? fallback(input.normalized)
-            : await (
-                input.mode === "lite"
-                  ? marked.parseLite
-                  : input.mode === "fast"
-                    ? marked.parseFast
-                    : input.math === "defer" && marked.parseNoMath
-                      ? marked.parseNoMath
-                      : marked.parse
-              )(input.normalized).catch((err) => {
-                console.error(
-                  `[markdown] render failed key=${input.cacheKey ?? input.key ?? "none"} text=${input.markdown.length} error=${err instanceof Error ? err.message : String(err)}`,
-                )
-                return fallback(input.normalized)
-              })
+        input.anchored && input.mode !== "plain"
+          ? await marked.parseAnchored(input.normalized, { mode: input.mode, math: input.math }).catch(renderFailure)
+          : useAnnotated && parseAnnotated
+            ? await parseAnnotated(input.normalized)
+            : input.mode === "plain"
+              ? fallback(input.normalized)
+              : await (
+                  input.mode === "lite"
+                    ? marked.parseLite
+                    : input.mode === "fast"
+                      ? marked.parseFast
+                      : input.math === "defer" && marked.parseNoMath
+                        ? marked.parseNoMath
+                        : marked.parse
+                )(input.normalized).catch(renderFailure)
 
       renderPromise = upgradeStreamingMath(renderPromise, input, marked.renderMath)
 
@@ -915,7 +973,7 @@ export function Markdown(
       } else {
         rendered = await Promise.race([
           renderPromise,
-          new Promise<string>((resolve) => setTimeout(() => resolve(fallback(input.normalized)), PARSE_TIMEOUT_MS)),
+          new Promise<string>((resolve) => setTimeout(() => resolve(renderFallback()), PARSE_TIMEOUT_MS)),
         ])
       }
 
@@ -971,8 +1029,8 @@ export function Markdown(
 
   createEffect(
     on(
-      () => [root(), local.viewport, eager()] as const,
-      ([container, viewport, eager]) => {
+      () => [root(), local.viewport, eager(), local.anchorBlocks] as const,
+      ([container, viewport, eager, anchored]) => {
         if (!container || eager) {
           if (eager) setSeen(true)
           return
@@ -981,23 +1039,43 @@ export function Markdown(
           (entries) => {
             if (!live || !container.isConnected) return
             if (!entries.some((entry) => entry.isIntersecting)) return
+            if (anchored) {
+              if (untrack(() => seen() && mathSeen())) return
+              anchoredUpgrades.set(container, {
+                viewport,
+                promote: () => {
+                  if (!live || !container.isConnected) return
+                  console.debug(`[markdown] anchored promote key=${info.key || "none"} text=${info.text}`)
+                  batch(() => {
+                    setSeen(true)
+                    setMathSeen(true)
+                  })
+                },
+              })
+              scheduleAnchoredUpgrade()
+              return
+            }
             setSeen(true)
           },
           {
             root: viewport,
-            rootMargin: "800px 0px",
+            rootMargin: anchored ? "200px 0px" : "800px 0px",
           },
         )
         observer.observe(container)
-        onCleanup(() => observer.disconnect())
+        onCleanup(() => {
+          observer.disconnect()
+          if (anchored) cancelAnchoredUpgrade(container)
+        })
       },
     ),
   )
 
   createEffect(
     on(
-      () => [root(), local.viewport, eager(), mathMode()] as const,
-      ([container, viewport, eager, math]) => {
+      () => [root(), local.viewport, eager(), mathMode(), local.anchorBlocks] as const,
+      ([container, viewport, eager, math, anchored]) => {
+        if (anchored && !eager && math === "defer") return
         if (!container || eager || math !== "defer") {
           setMathSeen(true)
           return
@@ -1053,9 +1131,13 @@ export function Markdown(
     })
 
     if (!content) {
+      const afterDomUpdate = container.childNodes.length
+        ? beginMarkdownDomUpdate(container, local.onBeforeDomUpdate)
+        : undefined
       container.innerHTML = ""
       delete container.dataset.html
       delete container.dataset.markdownRenderedStage
+      afterDomUpdate?.()
       return
     }
 
@@ -1070,12 +1152,21 @@ export function Markdown(
     const isStreaming = local.streaming
     const chunked = local.chunked
     const upgrading = !isStreaming && domMathMode === "defer" && src()?.math === "full"
-    const pane = isStreaming || upgrading ? view(container) : null
+    const pane = !local.onBeforeDomUpdate && (isStreaming || upgrading) ? view(container) : null
     const before = isStreaming || upgrading ? snap(pane) : undefined
     const upgradeHeight = upgrading && pane ? container.offsetHeight : 0
     const upgradeBox = upgrading && pane ? container.getBoundingClientRect() : undefined
     const paneBox = upgrading && pane ? pane.getBoundingClientRect() : undefined
     const time = performance.now()
+    let afterDomUpdate: (() => void) | undefined
+    const beforeDomUpdate = () => {
+      afterDomUpdate = beginMarkdownDomUpdate(container, local.onBeforeDomUpdate)
+      if (local.anchorBlocks) {
+        console.debug(
+          `[markdown] anchored commit begin key=${local.cacheKey ?? "none"} stage=${stage()} text=${local.text.length}`,
+        )
+      }
+    }
 
     if (isStreaming && prevHtml && content.length < prevHtml.length) {
       console.warn(
@@ -1093,6 +1184,10 @@ export function Markdown(
       const took = performance.now() - time
       container.dataset.html = content
       container.dataset.markdownRenderedStage = stage()
+      afterDomUpdate?.()
+      if (local.anchorBlocks) {
+        console.debug(`[markdown] anchored commit end key=${local.cacheKey ?? "none"} stage=${stage()} mode=${mode}`)
+      }
 
       if (took > DOM_WARN_MS) {
         console.warn("[markdown] slow dom", {
@@ -1196,7 +1291,9 @@ export function Markdown(
       if (existingCount > 0) {
         const temp = document.createElement("div")
         temp.innerHTML = content
+        if (local.annotateLines && !local.anchorBlocks) applyLineAnnotations(temp)
         prepareMarkdownDom(temp, { fileLinks })
+        if (local.anchorBlocks) applyLineAnnotations(temp)
         const newCount = temp.childNodes.length
 
         // Check how many leading children are identical
@@ -1213,6 +1310,7 @@ export function Markdown(
         }
 
         if (stableCount > 0 && stableCount >= existingCount - 1) {
+          beforeDomUpdate()
           // Remove unstable trailing nodes from container
           while (container.childNodes.length > stableCount) {
             const child = container.lastChild
@@ -1233,15 +1331,18 @@ export function Markdown(
     // Chunked path prefers a simple replace on first mount to avoid expensive diffing.
     const temp = document.createElement("div")
     temp.innerHTML = content
-    if (local.annotateLines) applyLineAnnotations(temp)
+    if (local.annotateLines && !local.anchorBlocks) applyLineAnnotations(temp)
     prepareMarkdownDom(temp, { fileLinks })
+    if (local.anchorBlocks) applyLineAnnotations(temp)
 
     if (chunked && !prevHtml) {
+      beforeDomUpdate()
       container.replaceChildren(...Array.from(temp.childNodes))
       done("replace")
       return
     }
 
+    beforeDomUpdate()
     reconcileMarkdownDom(container, temp)
     done("morph")
   })

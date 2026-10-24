@@ -153,7 +153,9 @@ function DirectoryDataProvider(
           return blob
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
-          console.warn(`[presentation] load failed session=${sessionID} artifact=${artifactID} variant=${variant} error=${message}`)
+          console.warn(
+            `[presentation] load failed session=${sessionID} artifact=${artifactID} variant=${variant} error=${message}`,
+          )
           throw error
         }
       }}
@@ -371,7 +373,6 @@ export default function Layout(props: ParentProps) {
       identity: directoryProviderKey(next, context()),
     })
   })
-
   createEffect(() => {
     const dir = params.dir
     if (!dir) return

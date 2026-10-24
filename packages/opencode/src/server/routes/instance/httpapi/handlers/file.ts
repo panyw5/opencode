@@ -3,8 +3,10 @@ import { File } from "@/file"
 import { Ripgrep } from "@/file/ripgrep"
 import { containsPath } from "@/project/instance-context"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
-import { Effect } from "effect"
+import { Effect, Stream } from "effect"
+import { subscribe } from "@/file/preview-watcher"
 import { HttpServerResponse } from "effect/unstable/http"
+import * as Sse from "effect/unstable/encoding/Sse"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { lstat, readFile, realpath } from "fs/promises"
 import path from "path"
@@ -90,6 +92,28 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
       return yield* svc.status()
     })
 
+    const watch = Effect.fn("FileHttpApi.watch")(function* (ctx: { query: { path: string } }) {
+      const changes = yield* subscribe(ctx.query.path)
+      const heartbeat = Stream.tick("10 seconds").pipe(
+        Stream.drop(1),
+        Stream.map(() => ({ type: "server.heartbeat" })),
+      )
+      return HttpServerResponse.stream(
+        changes.pipe(
+          Stream.merge(heartbeat, { haltStrategy: "left" }),
+          Stream.map(
+            (event): Sse.Event => ({ _tag: "Event", event: "message", id: undefined, data: JSON.stringify(event) }),
+          ),
+          Stream.pipeThroughChannel(Sse.encode()),
+          Stream.encodeText,
+        ),
+        {
+          contentType: "text/event-stream",
+          headers: { "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" },
+        },
+      )
+    })
+
     return handlers
       .handle("findText", findText)
       .handle("findFile", findFile)
@@ -97,6 +121,7 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
       .handle("list", list)
       .handle("content", content)
       .handle("raw", raw)
+      .handleRaw("watch", watch)
       .handle("status", status)
   }),
 )

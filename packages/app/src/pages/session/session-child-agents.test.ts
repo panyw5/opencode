@@ -138,7 +138,7 @@ describe("collectSessionChildAgentEntries", () => {
         title: "Only child",
         agent: "general",
         created: 50,
-        usage: "not used",
+        status: "unknown",
         index: 1,
         resume: false,
       },
@@ -169,7 +169,6 @@ describe("collectSessionChildAgentEntries", () => {
     expect(entries).toHaveLength(1)
     expect(entries[0]?.id).toBe("tool:msg_1:prt_1:ses_child")
     expect(entries[0]?.status).toBe("completed")
-    expect(entries[0]?.usage).toBeUndefined()
     expect(entries[0]?.title).toBe("Inspect bug")
     expect(entries[0]?.index).toBe(1)
     expect(entries[0]?.resume).toBe(false)
@@ -245,7 +244,7 @@ describe("collectSessionChildAgentEntries", () => {
     expect(entries[0]?.resume).toBe(false)
   })
 
-  test("marks background task children completed once the child is idle", () => {
+  test("does not mistake background dispatch completion for child completion", () => {
     const message = assistant({ id: "msg_1", sessionID: "ses_parent", created: 10 })
     const entries = collectSessionChildAgentEntries({
       sessionID: "ses_parent",
@@ -267,9 +266,7 @@ describe("collectSessionChildAgentEntries", () => {
       sessions: [session({ id: "ses_child", parentID: "ses_parent", title: "Background work", created: 25 })],
     })
 
-    // Parent tool completes immediately for background/promote; when the child is
-    // not working, surface the normal completed status (same as foreground).
-    expect(entries[0]?.status).toBe("completed")
+    expect(entries[0]?.status).toBe("unknown")
     expect(entries[0]?.background).toBe(true)
   })
 
@@ -324,7 +321,7 @@ describe("collectSessionChildAgentEntries", () => {
     expect(entries[0]?.background).toBeUndefined()
   })
 
-  test("marks direct child sessions not referenced by task metadata as not used", () => {
+  test("uses unknown rather than inferring usage from missing task metadata", () => {
     const message = assistant({ id: "msg_1", sessionID: "ses_parent", created: 10 })
     const entries = collectSessionChildAgentEntries({
       sessionID: "ses_parent",
@@ -349,10 +346,68 @@ describe("collectSessionChildAgentEntries", () => {
     })
 
     expect(entries).toHaveLength(2)
-    expect(entries.map((entry) => [entry.sessionID, entry.usage])).toEqual([
-      ["ses_used", undefined],
-      ["ses_unused", "not used"],
+    expect(entries.map((entry) => [entry.sessionID, entry.status])).toEqual([
+      ["ses_used", "completed"],
+      ["ses_unused", "unknown"],
     ])
+  })
+
+  test("preserves known completion when historical parent calls load or unload", () => {
+    const message = assistant({ id: "msg_1", sessionID: "ses_parent", created: 10 })
+    const input = {
+      sessionID: "ses_parent",
+      parts: {
+        msg_1: [
+          task({
+            id: "prt_1",
+            sessionID: "ses_parent",
+            messageID: "msg_1",
+            childID: "ses_child",
+            description: "old background work",
+            agent: "general",
+            started: 25,
+            background: true,
+          }),
+        ],
+      },
+      sessions: [session({ id: "ses_child", parentID: "ses_parent", created: 25 })],
+      messagesBySession: {
+        ses_child: [assistant({ id: "msg_child", sessionID: "ses_child", created: 30, completed: 40 })],
+      },
+    }
+
+    for (const messages of [[], [message], []]) {
+      const entries = collectSessionChildAgentEntries({ ...input, messages })
+      expect(entries).toHaveLength(1)
+      expect(entries[0]?.status).toBe("completed")
+      expect(entries[0]?.index).toBe(1)
+      expect(entries[0]).not.toHaveProperty("usage")
+    }
+  })
+
+  test("idle alone does not prove completion for an unloaded child", () => {
+    const entries = collectSessionChildAgentEntries({
+      sessionID: "ses_parent",
+      messages: [],
+      parts: {},
+      sessions: [session({ id: "ses_child", parentID: "ses_parent", created: 50 })],
+      statuses: { ses_child: { type: "idle" } },
+    })
+
+    expect(entries[0]?.status).toBe("unknown")
+  })
+
+  test.each(["busy", "retry"] as const)("uses live %s status without historical calls or child messages", (type) => {
+    const status: SessionStatus = type === "retry" ? { type, attempt: 1, message: "retrying", next: 100 } : { type }
+    const entries = collectSessionChildAgentEntries({
+      sessionID: "ses_parent",
+      messages: [],
+      parts: {},
+      sessions: [session({ id: "ses_child", parentID: "ses_parent", created: 50 })],
+      statuses: { ses_child: status },
+    })
+
+    expect(entries[0]?.status).toBe("running")
   })
 
   test("marks unreferenced direct child sessions as running while they are active", () => {
@@ -444,7 +499,7 @@ describe("collectSessionChildAgentEntries", () => {
     expect(entries[0]?.status).toBe("error")
   })
 
-  test("shows unreferenced direct child session errors instead of not used", () => {
+  test("preserves direct child session errors without historical task calls", () => {
     const entries = collectSessionChildAgentEntries({
       sessionID: "ses_parent",
       messages: [],

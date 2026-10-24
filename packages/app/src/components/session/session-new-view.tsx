@@ -231,7 +231,7 @@ export function NewSessionView(props: NewSessionViewProps) {
   })
 
   const chooseGenericAgentCwd = () => {
-    dialog.show(() => (
+    dialog.showForOwner(() => (
       <DialogSelectDirectory
         title={language.t("session.new.genericagent.cwd.choose")}
         domain={mainDomain}

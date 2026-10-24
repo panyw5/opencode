@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
 import type { Configuration } from "electron-builder"
+import { auditPackage } from "./scripts/package-content"
 
 const execFileAsync = promisify(execFile)
 const packageDir = path.dirname(fileURLToPath(import.meta.url))
@@ -13,7 +14,9 @@ const signScript = path.join(rootDir, "script", "sign-windows.ps1")
 // Custom signer so electron-builder still runs rcedit (icon + version metadata).
 // `signAndEditExecutable: false` skips both signing AND icon embedding.
 async function signWindows(configuration: { path: string }) {
-  console.log(`[desktop] windows sign hook path=${configuration.path} platform=${process.platform} gha=${process.env.GITHUB_ACTIONS ?? ""}`)
+  console.log(
+    `[desktop] windows sign hook path=${configuration.path} platform=${process.platform} gha=${process.env.GITHUB_ACTIONS ?? ""}`,
+  )
   if (process.platform !== "win32") return
   if (process.env.GITHUB_ACTIONS !== "true") return
 
@@ -47,7 +50,28 @@ const getBase = (appId: string): Configuration => ({
   extraMetadata: {
     desktopName: `${appId}.desktop`,
   },
-  files: ["out/**/*", "!**/*.map", "!out/renderer/assets/JetBrainsMonoNerdFontMono-Regular.woff2", "package.json"],
+  files: [
+    "out/**/*",
+    "!**/*.map",
+    "!out/renderer/assets/JetBrainsMonoNerdFontMono-Regular.woff2",
+    "package.json",
+    // These source-only workspace packages and the tunnel SDK are bundled by
+    // electron-vite. Keep metadata/licenses, not a second runtime/source tree.
+    "!node_modules/@opencode-ai/{core,util,remote-tunnel}/{src,test,tests,scripts}/**/*",
+    "!node_modules/@opencode-ai/remote-tunnel/node_modules/**/*",
+    "!node_modules/@opentunnel/{client,protocol}/dist/**/*",
+    "!node_modules/@opentunnel/{client,protocol}/src/**/*",
+    "!node_modules/effect/src/**/*",
+    "!node_modules/effect/ai-docs/**/*",
+    "!**/node_modules/**/{AGENTS,CLAUDE}.md",
+  ],
+  afterPack: async (context) => {
+    const resources =
+      context.electronPlatformName === "darwin"
+        ? path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, "Contents", "Resources")
+        : path.join(context.appOutDir, "resources")
+    await auditPackage(resources)
+  },
   extraResources: [
     { from: "resources/gpt-pro-login", to: "gpt-pro-login", filter: ["**/*"] },
     {
@@ -57,6 +81,11 @@ const getBase = (appId: string): Configuration => ({
     {
       from: "resources/sidecars",
       to: "sidecars",
+      filter: ["**/*"],
+    },
+    {
+      from: "resources/remote-web",
+      to: "remote-web",
       filter: ["**/*"],
     },
   ],
@@ -128,8 +157,7 @@ function getConfig() {
         appId,
         productName: "OpenCode Beta",
         protocols: { name: "OpenCode Beta", schemes: ["opencode"] },
-        // TODO: Update owner/repo to the fork's beta release repository
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode-beta", channel: "latest" },
+        publish: { provider: "github", owner: "panyw5", repo: "opencode", channel: "latest" },
         rpm: { packageName: "opencode-beta" },
       }
     }

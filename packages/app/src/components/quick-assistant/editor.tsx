@@ -26,7 +26,7 @@ import {
 } from "../prompt-input/consult-mentions"
 import { mainDomain } from "@/pages/layout/extra-agents"
 
-import { parseQuickEditor, quickPromptText } from "./editor-model"
+import { parseQuickEditor, quickEditorHistoryKey, quickPromptText } from "./editor-model"
 import { createInputUndoEntry, createInputUndoState, recordInputUndo, stepInputUndo } from "../prompt-input/input-undo"
 import { mayFocusComposer } from "../prompt-input/composer-boundary"
 
@@ -457,10 +457,11 @@ export function QuickAssistantEditor(props: {
               return
             }
             if (
-              (event.key === "ArrowUp" && getCursorPosition(editor) === 0) ||
-              (event.key === "ArrowDown" &&
-                state.history >= 0 &&
-                getCursorPosition(editor) === serialize(editor).length)
+              quickEditorHistoryKey(event) &&
+              ((event.key === "ArrowUp" && getCursorPosition(editor) === 0) ||
+                (event.key === "ArrowDown" &&
+                  state.history >= 0 &&
+                  getCursorPosition(editor) === serialize(editor).length))
             ) {
               const next =
                 event.key === "ArrowUp" ? Math.min(state.history + 1, props.history.length - 1) : state.history - 1

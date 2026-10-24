@@ -60,7 +60,7 @@ export const SidebarContent = (props: {
   configLabel: Accessor<string>
   configKeybind: Accessor<string | undefined>
   configActive: Accessor<boolean>
-  onOpenConfig: () => void
+  onOpenConfig?: () => void
   onPrefetchConfig?: () => void
   settingsLabel: Accessor<string>
   settingsKeybind: Accessor<string | undefined>
@@ -173,7 +173,7 @@ export const SidebarContent = (props: {
         data-component="sidebar-rail"
         class="relative z-20 w-16 shrink-0 bg-background-base flex flex-col items-center overflow-hidden arc-sidebar-scope"
       >
-        <div class="shrink-0 flex w-full flex-col items-center px-2 pt-3 pb-2">
+        <div data-slot="sidebar-rail-header" class="shrink-0 flex w-full flex-col items-center px-2 pt-3 pb-2">
           <RailTooltip mobile={props.mobile} title={props.homeLabel()} inactive={props.homeActive()}>
             <button
               type="button"
@@ -265,7 +265,10 @@ export const SidebarContent = (props: {
           >
             <DragDropSensors />
             <ConstrainDragXAxis />
-            <div class="h-full w-full flex flex-col items-center px-2 py-3 overflow-y-auto no-scrollbar">
+            <div
+              data-slot="sidebar-rail-projects"
+              class="h-full w-full flex flex-col items-center px-2 py-3 overflow-y-auto no-scrollbar"
+            >
               <SortableProvider ids={props.projects().map((p) => p.worktree)}>
                 <For each={props.projects()}>{(project) => props.renderProject(project)}</For>
               </SortableProvider>
@@ -413,18 +416,21 @@ export const SidebarContent = (props: {
               </div>
             </Popover>
           </Show>
-          <RailTooltip mobile={props.mobile} title={props.configLabel()} keybind={props.configKeybind()}>
-            <IconButton
-              icon="sliders"
-              variant="ghost"
-              size="large"
-              classList={{ "bg-surface-base-active": props.configActive() }}
-              onClick={() => props.onOpenConfig()}
-              onPointerEnter={() => props.onPrefetchConfig?.()}
-              onFocus={() => props.onPrefetchConfig?.()}
-              aria-label={props.configLabel()}
-            />
-          </RailTooltip>
+          <Show when={props.onOpenConfig}>
+            <RailTooltip mobile={props.mobile} title={props.configLabel()} keybind={props.configKeybind()}>
+              <IconButton
+                data-action="config-open"
+                icon="sliders"
+                variant="ghost"
+                size="large"
+                classList={{ "bg-surface-base-active": props.configActive() }}
+                onClick={props.onOpenConfig}
+                onPointerEnter={() => props.onPrefetchConfig?.()}
+                onFocus={() => props.onPrefetchConfig?.()}
+                aria-label={props.configLabel()}
+              />
+            </RailTooltip>
+          </Show>
           <RailTooltip mobile={props.mobile} title={props.settingsLabel()} keybind={props.settingsKeybind()}>
             <IconButton
               icon="settings-gear"
@@ -447,6 +453,7 @@ export const SidebarContent = (props: {
       </div>
 
       <div
+        data-slot="sidebar-panel"
         ref={(el) => {
           panel = el
         }}

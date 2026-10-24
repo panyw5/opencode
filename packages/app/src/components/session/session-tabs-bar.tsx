@@ -72,6 +72,7 @@ const apiErrorStatus = (error: unknown) => {
  */
 export function SessionTabsBar() {
   const layout = useLayout()
+  const dialog = useDialog()
   const settings = useSettings()
   const globalSync = useGlobalSync()
   const globalSDK = useGlobalSDK()
@@ -85,6 +86,7 @@ export function SessionTabsBar() {
 
   const [state, setState] = createStore({
     activeDraggable: undefined as string | undefined,
+    activeDraggableWidth: undefined as number | undefined,
   })
   let tabsViewport: HTMLDivElement | undefined
   let revealFrame: number | undefined
@@ -357,6 +359,10 @@ export function SessionTabsBar() {
   }
 
   const close = (tab: SessionBarTab) => {
+    if (isActive(tab)) {
+      console.debug(`[session-tabs] close active dialog session=${tab.id}`)
+      dialog.closeOwnerBound()
+    }
     void sessionTabs.requestClose(tab)
   }
 
@@ -368,6 +374,10 @@ export function SessionTabsBar() {
 
   const closeDraft = (draft = activeDraft()) => {
     if (!draft) return
+    if (activeDraft()?.id === draft.id) {
+      console.debug(`[session-tabs] close active dialog draft=${draft.id}`)
+      dialog.closeOwnerBound()
+    }
     console.debug(`[session-tabs] draft close delegated id=${draft.id} directory=${draft.directory}`)
     void sessionTabs.requestCloseDraft(draft)
   }
@@ -506,7 +516,12 @@ export function SessionTabsBar() {
   const handleDragStart = (event: unknown) => {
     const id = getDraggableId(event)
     if (!id) return
-    setState("activeDraggable", id)
+    const tab = Array.from(tabsViewport?.querySelectorAll<HTMLElement>('[data-component="session-tab"]') ?? []).find(
+      (element) => element.dataset.sessionId === id,
+    )
+    const width = tab?.getBoundingClientRect().width
+    setState({ activeDraggable: id, activeDraggableWidth: width })
+    console.debug(`[session-tabs] drag start id=${id} width=${width ?? "unavailable"}`)
   }
 
   const handleDragOver = (event: DragEvent) => {
@@ -518,8 +533,10 @@ export function SessionTabsBar() {
     )
   }
 
-  const handleDragEnd = () => {
-    setState("activeDraggable", undefined)
+  const handleDragEnd = (event: unknown) => {
+    const id = getDraggableId(event) ?? state.activeDraggable ?? "unknown"
+    console.debug(`[session-tabs] drag end id=${id} width=${state.activeDraggableWidth ?? "unavailable"}`)
+    setState({ activeDraggable: undefined, activeDraggableWidth: undefined })
   }
 
   return (
@@ -531,21 +548,23 @@ export function SessionTabsBar() {
       style={{ "--tabs-bar-height": "36px" }}
     >
       <Show when={onSessionRoute()}>
-        <div class="relative flex min-w-0 flex-1 items-center xl:hidden">
-          <div class="pointer-events-none absolute inset-x-0 flex min-w-0 items-center justify-center px-12">
-            <span class="max-w-[48%] truncate text-13-medium text-text-strong">{currentSessionTitle()}</span>
-          </div>
+        <div data-slot="compact-session-heading" class="relative flex min-w-0 flex-1 items-center xl:hidden">
           <DropdownMenu gutter={4} placement="bottom-start">
-            <div class="ml-auto flex min-w-0 max-w-[48%] items-center gap-1 rounded-md px-2">
-              <span class="min-w-0 truncate text-11-regular text-text-weak">{projectName(routeDir())}</span>
-              <DropdownMenu.Trigger
-                as={IconButton}
-                icon="chevron-down"
-                variant="ghost"
-                class="titlebar-icon size-7 shrink-0 rounded-md p-0 text-icon-weak hover:text-icon-base data-[expanded]:bg-surface-base-active"
-                aria-label={language.t("session.tabs.bar.label")}
-              />
-            </div>
+            <DropdownMenu.Trigger
+              data-action="compact-session-switch"
+              class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left hover:bg-surface-base-hover"
+              aria-label={`${currentSessionTitle()} · ${language.t("session.tabs.bar.label")}`}
+            >
+              <span class="flex min-w-0 flex-1 flex-col">
+                <span data-slot="compact-session-title" class="truncate text-13-medium text-text-strong">
+                  {currentSessionTitle()}
+                </span>
+                <span data-slot="compact-session-project" class="truncate text-11-regular text-text-weak">
+                  {projectName(routeDir())}
+                </span>
+              </span>
+              <Icon name="chevron-down" size="small" class="shrink-0 text-icon-weak" />
+            </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
               <DropdownMenu.Content
                 class="session-child-agent-scrollbar w-[520px] max-w-[calc(100vw-32px)]"
@@ -556,6 +575,9 @@ export function SessionTabsBar() {
                 }}
               >
                 <DropdownMenu.Group>
+                  <DropdownMenu.GroupLabel class="whitespace-normal break-words px-2 py-3 text-13-medium text-text-strong">
+                    {currentSessionTitle()}
+                  </DropdownMenu.GroupLabel>
                   <For each={orderedTabs()}>{(tab) => compactSessionItem(tab)}</For>
                   <For each={visibleDrafts()}>
                     {(draft) => (
@@ -625,7 +647,13 @@ export function SessionTabsBar() {
                 {(key) => {
                   const title = () => tabs().find((item) => sessionBarKey(item) === key)?.title
                   return (
-                    <div data-component="tabs-drag-preview">
+                    <div
+                      data-component="tabs-drag-preview"
+                      style={{
+                        width: state.activeDraggableWidth ? `${state.activeDraggableWidth}px` : undefined,
+                        "flex-shrink": 0,
+                      }}
+                    >
                       <span class="truncate px-2 text-13-medium">{title() ?? ""}</span>
                     </div>
                   )
@@ -650,7 +678,6 @@ const sessionTabPermissionLayoutEvent = "opencode:session-tab-permission-layout"
 // Stable fallbacks for the transient window where a tab group is missing while
 // its tab is being removed from the bar. Placeholder values only; the item is
 // disposed by the end of the same flush.
-const NO_SESSION_TAB_CHILDREN: SessionTabGroup<SessionBarTab>["children"] = []
 const NO_SESSION_TABS: SessionBarTab[] = []
 const MISSING_SESSION_TAB: SessionBarTab = { directory: "", id: "" }
 
@@ -665,7 +692,7 @@ function SessionTabGroup(props: {
 }) {
   const autoRevealDuration = 500
   const sortable = createSortable(props.tabKey)
-  const [state, setState] = createStore({ open: false })
+  const [state, setState] = createStore({ open: false, keepOpen: false })
   let closeTimer: number | undefined
   let autoCloseTimer: number | undefined
   let revealFrame: number | undefined
@@ -677,6 +704,10 @@ function SessionTabGroup(props: {
   // component's effects/getters may still run in between. Render through it
   // instead of throwing and crashing the renderer.
   const group = () => props.group()
+  const childrenByKey = createMemo(
+    () => new Map(group()?.children.map((item) => [sessionBarKey(item.tab), item] as const) ?? []),
+  )
+  const childKeys = createMemo(() => [...childrenByKey().keys()])
 
   createEffect(() => {
     const value = group()
@@ -685,7 +716,7 @@ function SessionTabGroup(props: {
       return
     }
     if (value.children.length > 0) return
-    setState("open", false)
+    setState({ open: false, keepOpen: false })
   })
 
   const cancelClose = () => {
@@ -709,10 +740,29 @@ function SessionTabGroup(props: {
   const close = () => {
     cancelClose()
     cancelAutoClose()
+    if (state.keepOpen) {
+      console.debug(`[session-bar] child list retained for batch close parent=${group()?.tab.id ?? "none"}`)
+      return
+    }
+    console.debug(`[session-bar] child list close scheduled parent=${group()?.tab.id ?? "none"}`)
     closeTimer = window.setTimeout(() => {
       closeTimer = undefined
       setState("open", false)
+      console.debug(`[session-bar] child list hidden parent=${group()?.tab.id ?? "none"}`)
     }, 150)
+  }
+  const closeChild = (tab: SessionBarTab, descendants = false) => {
+    cancelClose()
+    cancelAutoClose()
+    // Batch closing ends on outside click, Escape, selection, or an empty list.
+    setState("keepOpen", true)
+    // Keep focus inside the persistent list when its focused row is removed.
+    childrenViewport?.focus({ preventScroll: true })
+    console.debug(
+      `[session-bar] child list close tab=${tab.id} parent=${group()?.tab.id ?? "none"} descendants=${descendants} remainingOpen=${state.open}`,
+    )
+    if (descendants) props.onCloseDescendants(tab)
+    else props.onClose(tab)
   }
   const activeChildID = createMemo(() => group()?.children.find((item) => props.active(item.tab))?.tab.id)
 
@@ -773,8 +823,9 @@ function SessionTabGroup(props: {
         onMenuOpenChange={(open) => {
           parentContextMenuOpen = open
           if (open) {
+            cancelClose()
             cancelAutoClose()
-            setState("open", false)
+            setState({ open: false, keepOpen: false })
           }
         }}
         onOpen={() => {
@@ -804,7 +855,10 @@ function SessionTabGroup(props: {
       <Show when={group()?.children.length} fallback={trigger()}>
         <Popover
           open={state.open}
-          onOpenChange={(open) => setState("open", open)}
+          onOpenChange={(open) => {
+            console.debug(`[session-bar] child list toggle parent=${group()?.tab.id ?? "none"} open=${open}`)
+            setState({ open, keepOpen: open && state.keepOpen })
+          }}
           placement="bottom-start"
           class="session-tab-children-popover"
           trigger={trigger()}
@@ -813,39 +867,46 @@ function SessionTabGroup(props: {
           <div
             ref={childrenViewport}
             data-component="session-tab-children"
+            tabIndex={-1}
             class="session-child-agent-scrollbar flex max-h-80 min-w-56 flex-col gap-1.5 overflow-y-auto"
             onMouseEnter={open}
             onMouseLeave={close}
             onFocusIn={open}
             onFocusOut={close}
           >
-            <For each={group()?.children ?? NO_SESSION_TAB_CHILDREN}>
-              {(item) => (
-                <div class="flex min-w-0" style={{ "padding-left": `${(item.depth - 1) * 12}px` }}>
-                  <SessionTab
-                    tab={item.tab}
-                    active={props.active(item.tab)}
-                    nested
-                    hasOpenDescendants={props.hasOpenDescendants(item.tab)}
-                    onMenuOpenChange={(menuOpen) => {
-                      if (menuOpen) {
-                        cancelClose()
-                        cancelAutoClose()
-                        setState("open", true)
-                        return
-                      }
-                      close()
-                    }}
-                    onOpen={() => {
-                      if (!props.active(item.tab)) skipAutoRevealID = item.tab.id
-                      setState("open", false)
-                      props.onOpen(item.tab)
-                    }}
-                    onClose={() => props.onClose(item.tab)}
-                    onCloseDescendants={() => props.onCloseDescendants(item.tab)}
-                  />
-                </div>
-              )}
+            <For each={childKeys()}>
+              {(key) => {
+                // Grouping creates new descriptors on every tab update. Key by session
+                // identity so closing one row does not remount all its siblings.
+                const item = () => childrenByKey().get(key)
+                const tab = () => item()?.tab ?? MISSING_SESSION_TAB
+                return (
+                  <div class="flex min-w-0" style={{ "padding-left": `${((item()?.depth ?? 1) - 1) * 12}px` }}>
+                    <SessionTab
+                      tab={tab()}
+                      active={props.active(tab())}
+                      nested
+                      hasOpenDescendants={props.hasOpenDescendants(tab())}
+                      onMenuOpenChange={(menuOpen) => {
+                        if (menuOpen) {
+                          cancelClose()
+                          cancelAutoClose()
+                          setState("open", true)
+                          return
+                        }
+                        close()
+                      }}
+                      onOpen={() => {
+                        if (!props.active(tab())) skipAutoRevealID = tab().id
+                        setState({ open: false, keepOpen: false })
+                        props.onOpen(tab())
+                      }}
+                      onClose={() => closeChild(tab())}
+                      onCloseDescendants={() => closeChild(tab(), true)}
+                    />
+                  </div>
+                )
+              }}
             </For>
           </div>
         </Popover>
@@ -1068,7 +1129,7 @@ function SessionTab(props: {
 
   const editTitle = () => {
     console.debug(`[session-tab] edit title open id=${props.tab.id} dir=${props.tab.directory}`)
-    dialog.show(() => (
+    dialog.showForOwner(() => (
       <DialogEditSessionTitle directory={props.tab.directory} sessionID={props.tab.id} initialTitle={title()} />
     ))
   }

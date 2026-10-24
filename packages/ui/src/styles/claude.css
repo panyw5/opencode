@@ -239,17 +239,32 @@ html[data-theme="claude"][data-color-scheme="light"]
   [data-slot="option-label"],
   [data-slot="option-description"],
   [data-slot="question-custom-input"] {
-    color: var(--text-on-interactive-base);
+    color: #ffffff;
   }
 }
 
-html[data-theme="claude"][data-color-scheme="dark"]
-  [data-component="dock-prompt"][data-kind="question"]
+html[data-theme="claude"][data-color-scheme="dark"] [data-component="dock-prompt"][data-kind="question"] {
+  [data-slot="question-option"]:hover:not([data-picked="true"]):not([data-focused="true"]):not(:active) {
+    background-color: var(--surface-interactive-base);
+
+    [data-slot="option-label"],
+    [data-slot="option-description"],
+    [data-slot="question-custom-input"] {
+      color: var(--text-on-interactive-base);
+    }
+  }
+
   [data-slot="question-option"][data-picked="true"] {
-  [data-slot="option-label"],
-  [data-slot="option-description"],
-  [data-slot="question-custom-input"] {
-    color: #ffffff;
+    background-color: color-mix(in srgb, var(--surface-interactive-weak) 40%, var(--surface-interactive-base));
+
+    [data-slot="option-label"] {
+      color: var(--text-strong);
+    }
+
+    [data-slot="option-description"],
+    [data-slot="question-custom-input"] {
+      color: var(--text-base);
+    }
   }
 }
 

@@ -1,4 +1,8 @@
 export const dict: Record<string, string> = {
+  "ui.tool.gptPro.openOriginal": "Відкрити вихідну сторінку",
+  "ui.tool.gptPro.resultOpening": "Відкриття вихідної сторінки…",
+  "ui.tool.gptPro.resultMaximize": "Розгорнути попередній перегляд",
+  "ui.tool.gptPro.resultRestore": "Відновити попередній перегляд",
   "ui.sessionReview.title": "Зміни сесії",
   "ui.sessionReview.title.git": "Зміни Git",
   "ui.sessionReview.title.branch": "Зміни гілки",

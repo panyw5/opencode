@@ -1,5 +1,5 @@
 import type { FileContent } from "@opencode-ai/sdk/v2"
-import { ErrorBoundary, createEffect, createMemo, createResource, createSignal, Match, on, Show, Switch, type JSX } from "solid-js"
+import { ErrorBoundary, createEffect, createMemo, createSignal, Match, on, Show, Switch, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { useI18n } from "../context/i18n"
 import {
@@ -143,27 +143,41 @@ export function FileMedia(props: {
     }
   })
 
-  const [loaded] = createResource(request, async (input) => {
-    return input.readFile(input.path).then(
-      (result) => {
-        const src = dataUrlFromMediaValue(result as any, input.kind)
-        if (!src) {
-          input.onError?.({ kind: input.kind })
-          return { key: input.key, error: true as const }
-        }
+  type LoadedMedia = { key: string; error?: true; src?: string; mime?: string }
 
-        return {
-          key: input.key,
-          src,
-          mime: input.kind === "audio" || input.kind === "pdf" ? normalizeMimeType(result?.mimeType) : undefined,
-        }
-      },
-      () => {
-        input.onError?.({ kind: input.kind })
-        return { key: input.key, error: true as const }
-      },
-    )
-  })
+  // Signal-based fetch: reading a createResource inside the `remote` memo
+  // would suspend the nearest Suspense boundary (router-level for timeline
+  // attachments) on every mount and path change.
+  const [loaded, setLoaded] = createSignal<LoadedMedia | undefined>()
+  let loadRun = 0
+  createEffect(
+    on(request, (input) => {
+      const run = ++loadRun
+      if (!input) return
+      void input.readFile(input.path).then(
+        (result) => {
+          if (run !== loadRun) return
+          const src = dataUrlFromMediaValue(result as any, input.kind)
+          if (!src) {
+            input.onError?.({ kind: input.kind })
+            setLoaded({ key: input.key, error: true })
+            return
+          }
+
+          setLoaded({
+            key: input.key,
+            src,
+            mime: input.kind === "audio" || input.kind === "pdf" ? normalizeMimeType(result?.mimeType) : undefined,
+          })
+        },
+        () => {
+          if (run !== loadRun) return
+          input.onError?.({ kind: input.kind })
+          setLoaded({ key: input.key, error: true })
+        },
+      )
+    }),
+  )
 
   const remote = createMemo(() => {
     const input = request()

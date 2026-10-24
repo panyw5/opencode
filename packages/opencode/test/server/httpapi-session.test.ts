@@ -28,7 +28,9 @@ import * as Log from "@opencode-ai/core/util/log"
 import { desc, eq } from "drizzle-orm"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
+import { pollWithTimeout, testEffect } from "../lib/effect"
+import { getContextLocale } from "@/session/context-locale"
+import { UI_LOCALE_HEADER } from "@opencode-ai/core/locale"
 
 void Log.init({ print: false })
 
@@ -243,6 +245,53 @@ afterEach(async () => {
 })
 
 describe("session HttpApi", () => {
+  it.instance(
+    "prompt endpoints capture the UI locale without changing message text",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        for (const endpoint of [SessionPaths.prompt, SessionPaths.promptAsync]) {
+          const session = yield* createSession({ title: "UI locale HTTP test" })
+          for (const locale of ["zh", "en", "unsupported", undefined]) {
+            const text = "原文保持不变：Z=q^{-c/24} I"
+            const messageID = MessageID.ascending()
+            const response = yield* request(pathFor(endpoint, { sessionID: session.id }), {
+              method: "POST",
+              headers: {
+                "x-opencode-directory": test.directory,
+                "content-type": "application/json",
+                ...(locale ? { [UI_LOCALE_HEADER]: locale } : {}),
+              },
+              body: JSON.stringify({ messageID, noReply: true, agent: "build", parts: [{ type: "text", text }] }),
+            })
+            expect(response.status).toBe(endpoint === SessionPaths.prompt ? 200 : 204)
+            yield* Effect.promise(() => response.text())
+            expect(getContextLocale(session.id)).toBe(locale === "zh" ? "zh" : "en")
+            const message = yield* pollWithTimeout(
+              Effect.gen(function* () {
+                const messages = yield* (yield* Session.Service).messages({ sessionID: session.id })
+                return messages.find((message) => message.info.id === messageID)
+              }),
+              "prompt message was not persisted",
+            )
+            expect(message.parts.some((part) => part.type === "text" && part.text === text)).toBe(true)
+          }
+        }
+      }),
+    {
+      config: {
+        model: "test/test-model",
+        provider: {
+          test: {
+            npm: "@ai-sdk/openai-compatible",
+            models: { "test-model": { name: "Test Model" } },
+            options: { apiKey: "test-key", baseURL: "http://localhost:1/v1" },
+          },
+        },
+      },
+    },
+  )
+
   it.effect("maps busy sessions to public session busy errors", () =>
     Effect.gen(function* () {
       const sessionID = SessionID.descending()

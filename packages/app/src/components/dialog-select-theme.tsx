@@ -5,6 +5,7 @@ import { List } from "@opencode-ai/ui/list"
 import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
 import { createMemo, onCleanup } from "solid-js"
 import { useLanguage } from "@/context/language"
+import { themeOptionCurrent, themeOptionIDs, themeOptionName, themeOptionTarget } from "./theme-options"
 
 type ThemeEntry = {
   id: string
@@ -48,13 +49,14 @@ export function DialogSelectTheme() {
       })
     }
 
-    for (const [id, definition] of Object.entries(theme.themes())) {
+    for (const id of themeOptionIDs(Object.keys(theme.themes()), theme.mode())) {
+      const definition = theme.themes()[id]
       entries.push({
         id: `theme:${id}`,
         type: "theme",
-        title: definition.name ?? id,
+        title: themeOptionName(id, definition.name ?? id, theme.mode()),
         category: language.t("dialog.theme.group.theme"),
-        themeId: id,
+        themeId: themeOptionTarget(id, theme.themeId(), theme.mode()),
       })
     }
 
@@ -88,7 +90,7 @@ export function DialogSelectTheme() {
     dialog.close()
   }
 
-  const currentTheme = createMemo(() => `theme:${theme.themeId()}`)
+  const currentTheme = createMemo(() => `theme:${themeOptionCurrent(theme.themeId(), theme.mode())}`)
   const currentScheme = createMemo(() => `scheme:${theme.colorScheme()}`)
 
   const isCurrent = (item: ThemeEntry) => {

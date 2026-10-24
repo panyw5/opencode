@@ -30,6 +30,10 @@ body {
   margin: 4px 0 0;
 }
 button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   width: 100%;
   margin-top: 10px;
   padding: 10px;
@@ -43,6 +47,18 @@ button {
 button:disabled {
   opacity: 0.45;
   cursor: default;
+}
+button[data-state="imported"]:disabled {
+  opacity: 1;
+  background: #254c36;
+}
+#connect-success {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+#connect-success[hidden] {
+  display: none;
 }
 #status {
   margin: 10px 0 0;

@@ -13,8 +13,13 @@
       "error": "#AF3029",
       "info": "#24837B"
     },
+    "surfaces": {
+      "shell": "#f3f0e4",
+      "canvas": "#FFFCF0",
+      "raised": "#faf7eb",
+      "inset": "#e9e6db"
+    },
     "overrides": {
-      "text-weak": "#6F6E69",
       "syntax-comment": "#6F6E69",
       "syntax-keyword": "#62791b",
       "syntax-string": "#1d7e76",
@@ -27,7 +32,6 @@
       "syntax-punctuation": "#6F6E69",
       "syntax-object": "#205EA6",
       "markdown-heading": "#5E409D",
-      "markdown-text": "#100F0F",
       "markdown-link": "#205EA6",
       "markdown-link-text": "#1d7e76",
       "markdown-code": "#1d7e76",
@@ -38,9 +42,7 @@
       "markdown-list-item": "#BC5215",
       "markdown-list-enumeration": "#24837B",
       "markdown-image": "#A02F6F",
-      "markdown-image-text": "#24837B",
-      "markdown-code-block": "#100F0F",
-      "text-weaker": "#72716d"
+      "markdown-image-text": "#24837B"
     }
   },
   "dark": {
@@ -55,33 +57,36 @@
       "info": "#3AA99F",
       "interactive": "#4385BE"
     },
+    "surfaces": {
+      "shell": "#0a0909",
+      "canvas": "#100F0F",
+      "raised": "#1c1b1b",
+      "inset": "#050505"
+    },
     "overrides": {
-      "text-weak": "#6F6E69",
       "syntax-comment": "#6F6E69",
       "syntax-keyword": "#879A39",
       "syntax-string": "#3AA99F",
-      "syntax-primitive": "#DA702C",
+      "syntax-primitive": "#d67336",
       "syntax-variable": "#4385BE",
       "syntax-property": "#3AA99F",
-      "syntax-type": "#D0A215",
+      "syntax-type": "#d0a219",
       "syntax-constant": "#8B7EC8",
       "syntax-operator": "#B7B5AC",
       "syntax-punctuation": "#B7B5AC",
       "syntax-object": "#4385BE",
       "markdown-heading": "#8B7EC8",
-      "markdown-text": "#CECDC3",
       "markdown-link": "#4385BE",
       "markdown-link-text": "#3AA99F",
       "markdown-code": "#3AA99F",
-      "markdown-block-quote": "#D0A215",
-      "markdown-emph": "#D0A215",
-      "markdown-strong": "#DA702C",
+      "markdown-block-quote": "#d0a219",
+      "markdown-emph": "#d0a219",
+      "markdown-strong": "#d67336",
       "markdown-horizontal-rule": "#6F6E69",
-      "markdown-list-item": "#DA702C",
+      "markdown-list-item": "#d67336",
       "markdown-list-enumeration": "#3AA99F",
-      "markdown-image": "#CE5D97",
-      "markdown-image-text": "#3AA99F",
-      "markdown-code-block": "#CECDC3"
+      "markdown-image": "#ca6196",
+      "markdown-image-text": "#3AA99F"
     }
   }
 }

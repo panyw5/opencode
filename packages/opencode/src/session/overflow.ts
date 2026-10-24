@@ -10,12 +10,15 @@ export function usable(input: { cfg: Config.Info; model: Provider.Model; outputT
   const context = input.model.limit.context
   if (context === 0) return 0
 
-  const reserved =
-    input.cfg.compaction?.reserved ??
-    Math.min(COMPACTION_BUFFER, ProviderTransform.maxOutputTokens(input.model, input.outputTokenMax))
+  // A larger generation allowance must not reserve the entire window and force endless compaction.
+  const summaryOutput = Math.min(
+    ProviderTransform.maxOutputTokens(input.model, input.outputTokenMax, { kind: "compaction" }),
+    context >= 2 * ProviderTransform.SUMMARY_OUTPUT_TOKEN_MAX ? context : Math.floor(context * 0.1),
+  )
+  const reserved = input.cfg.compaction?.reserved ?? Math.min(COMPACTION_BUFFER, summaryOutput)
   return input.model.limit.input
     ? Math.max(0, input.model.limit.input - reserved)
-    : Math.max(0, context - ProviderTransform.maxOutputTokens(input.model, input.outputTokenMax))
+    : Math.max(0, context - summaryOutput)
 }
 
 export function isOverflow(input: {

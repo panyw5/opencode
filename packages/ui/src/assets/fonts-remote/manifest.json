@@ -1,0 +1,170 @@
+{
+  "CaskaydiaCoveNerdFontMono-Bold.woff2": {
+    "source": "b733668d4de133c5d8cc68575da8c97d75ea617b2398badd9b6d440c53be4299",
+    "output": "f3d07290fad7e5effc3d9046bab0e6641d4669c7017eaef18d8eebe47d4120a0",
+    "fallback": "BlexMonoNerdFontMono-Bold.woff2",
+    "before": 1219740,
+    "after": 117664,
+    "sharedGlyphs": 10396
+  },
+  "CaskaydiaCoveNerdFontMono-Regular.woff2": {
+    "source": "6665900de12ce43214f6fd38fb22318d79e5d502f7b2c6e909dcddd6dfa37727",
+    "output": "95f3566872bd5d382b64b75f717b7d343f3fc26b659c9570e7c954bc26623b48",
+    "fallback": "BlexMonoNerdFontMono-Regular.woff2",
+    "before": 1219428,
+    "after": 117120,
+    "sharedGlyphs": 10396
+  },
+  "GeistMonoNerdFontMono-Bold.woff2": {
+    "source": "3cf3dfa81c3dea8f2831982af3d854e7967fe7f188818d3fcf4384842376855f",
+    "output": "7b9453efae6532ca4b02b205b6db9fd0a11c9d997a7288207664c99a02fb121b",
+    "fallback": "BlexMonoNerdFontMono-Bold.woff2",
+    "before": 1183844,
+    "after": 47624,
+    "sharedGlyphs": 10396
+  },
+  "GeistMonoNerdFontMono-Medium.woff2": {
+    "source": "8e9da7ffea696a2400ca5ca4ad74bb6818ad2fcf990a77bc6bd514ff79d1d672",
+    "output": "c076d1cc661db857fb78f0619d6e61bbcac1944af5fc599acd132dbfbead1520",
+    "fallback": "BlexMonoNerdFontMono-Medium.woff2",
+    "before": 1181184,
+    "after": 47124,
+    "sharedGlyphs": 10396
+  },
+  "GeistMonoNerdFontMono-Regular.woff2": {
+    "source": "deca898d5f5cbe09ae0d625f9bb979900faf15b9c728d0a733a87945347dc485",
+    "output": "dfa349c24d913386bc57dbb69bbbfbe3967ff6012c30523b394d9d8e230baca4",
+    "fallback": "BlexMonoNerdFontMono-Regular.woff2",
+    "before": 1181700,
+    "after": 44200,
+    "sharedGlyphs": 10396
+  },
+  "HackNerdFontMono-Bold.woff2": {
+    "source": "9e637419848b933b9d879b20e7e37863b958df608c58cea9e7b7562ece0bc7dc",
+    "output": "4f43110d9cc27073a90ae8ecb1b62f556c2c38aeadb01b2008a5f81c26d99087",
+    "fallback": "BlexMonoNerdFontMono-Bold.woff2",
+    "before": 1206544,
+    "after": 101064,
+    "sharedGlyphs": 10396
+  },
+  "HackNerdFontMono-Regular.woff2": {
+    "source": "0d7de65b0180fbab6a3b06cceba66dc018311ee306e2ba32aa453ca0bb680aea",
+    "output": "241fdf6b8ed0d9adc24e7e069d261077e956bca20065fd98b2d1866eff1a7499",
+    "fallback": "BlexMonoNerdFontMono-Regular.woff2",
+    "before": 1205264,
+    "after": 99704,
+    "sharedGlyphs": 10396
+  },
+  "InconsolataNerdFontMono-Bold.woff2": {
+    "source": "20728683a7488ebe349d39d79d9354782b3cf7ee3a1a7182d3bbce5350d2b083",
+    "output": "34aef475cfba391897131f81469274adc431cce828c8df1cfbdec7fc7a99e9ee",
+    "fallback": "BlexMonoNerdFontMono-Bold.woff2",
+    "before": 978488,
+    "after": 36484,
+    "sharedGlyphs": 10396
+  },
+  "InconsolataNerdFontMono-Regular.woff2": {
+    "source": "9dcbf9dc924857892ae8646ece5b30da52d4ba51489d597bed95f94ff9f57ff3",
+    "output": "e206c8e2299cb54ea2c97be5080c5bcd25c5a83a82402cb520c749bf5f94ec93",
+    "fallback": "BlexMonoNerdFontMono-Regular.woff2",
+    "before": 977080,
+    "after": 35276,
+    "sharedGlyphs": 10396
+  },
+  "IntoneMonoNerdFontMono-Bold.woff2": {
+    "source": "fe11736e370f28a8d4fff4a555e2590d70b6c988a1d2fbe0de311a8f98620ff9",
+    "output": "311cb75bac1990e40cebd4b489ecd49ee003f9d4ff2215d726627854ec757748",
+    "fallback": "BlexMonoNerdFontMono-Bold.woff2",
+    "before": 1006384,
+    "after": 41712,
+    "sharedGlyphs": 10396
+  },
+  "IntoneMonoNerdFontMono-Regular.woff2": {
+    "source": "dff9ee74dcd469c0f225ad96579bb46dca83108c9f8d73dfcbddff25e2a673bc",
+    "output": "c22ad8da4c23f1609f8c252ee4d38e3afab8953ce34f2866f4aa1cfe8dda6662",
+    "fallback": "BlexMonoNerdFontMono-Regular.woff2",
+    "before": 1008196,
+    "after": 43260,
+    "sharedGlyphs": 10396
+  },
+  "JetBrainsMonoNerdFontMono-Bold.woff2": {
+    "source": "986adeabc42bab2925de274ebfb27ceaf479052eac55e0f8692e1dc87f1d4db6",
+    "output": "a1fc264ebce1d18677439a445abac12c4894097c037a6cef5642b93f77d20d06",
+    "fallback": "BlexMonoNerdFontMono-Bold.woff2",
+    "before": 1046588,
+    "after": 82848,
+    "sharedGlyphs": 10396
+  },
+  "JetBrainsMonoNerdFontMono-Regular.woff2": {
+    "source": "9a9579b8988a1209afb089803a65f747fac876e620b7fd6e8c868a96a37ba097",
+    "output": "95486f434c9c8f96657cf9ee363e65748e0cba14fc189fe771e2ce4d5f032864",
+    "fallback": "BlexMonoNerdFontMono-Regular.woff2",
+    "before": 1044196,
+    "after": 80512,
+    "sharedGlyphs": 10396
+  },
+  "MesloLGSNerdFontMono-Bold.woff2": {
+    "source": "42c76831d50d5faa245c74c232e4619b7dcdd7ef90666a0b55de6fb0a399934c",
+    "output": "1e06ba48ba87cbc9c7772dcdb200d643cfaf67f5c9dc08f6ed1d6727192c8a62",
+    "fallback": "BlexMonoNerdFontMono-Bold.woff2",
+    "before": 1255408,
+    "after": 147760,
+    "sharedGlyphs": 10396
+  },
+  "MesloLGSNerdFontMono-Regular.woff2": {
+    "source": "6bc685bbe7e3cdad0b7e90f8f1eed5684dec67eb5569ab2e41fcc0d1e71bac9a",
+    "output": "f7ff4f0bff39b41ee58aa62b73f91c14f35f98efe01306c09e1919df8c1dddda",
+    "fallback": "BlexMonoNerdFontMono-Regular.woff2",
+    "before": 1248580,
+    "after": 141652,
+    "sharedGlyphs": 10396
+  },
+  "RobotoMonoNerdFontMono-Bold.woff2": {
+    "source": "bc2438eeb4e10f9b784b1c379f2b2797028573e0c274e7a772dfc80b7896a9a3",
+    "output": "514c94d39b726708c948eec21fb71ea053f4dbe3409a072489174f217d88b430",
+    "fallback": "BlexMonoNerdFontMono-Bold.woff2",
+    "before": 1146548,
+    "after": 40484,
+    "sharedGlyphs": 10396
+  },
+  "RobotoMonoNerdFontMono-Regular.woff2": {
+    "source": "6fc62a77ae7db25a22645ab5910b173b525022702760d825ea4b89e34561993d",
+    "output": "8b30bc8de5b9b59fe5909419fa03bd08b2ff01e00e87a5fbce75114be1df7f75",
+    "fallback": "BlexMonoNerdFontMono-Regular.woff2",
+    "before": 1145980,
+    "after": 40260,
+    "sharedGlyphs": 10396
+  },
+  "SauceCodeProNerdFontMono-Bold.woff2": {
+    "source": "4cb44fc51bdf6f8ab43fdf51400898307d788d5753bf7edc9171b619f7371e7e",
+    "output": "4539e9d70c0c7ce5e18a0f8a5c360813b7d1c9445f2797f371deef485bd3e919",
+    "fallback": "BlexMonoNerdFontMono-Bold.woff2",
+    "before": 1028428,
+    "after": 66408,
+    "sharedGlyphs": 10396
+  },
+  "SauceCodeProNerdFontMono-Regular.woff2": {
+    "source": "5cecfbe4e5755bce1a22393f6626b145672e33eec7d82fcc32d7902643db09dd",
+    "output": "9273358ca3ceeae6cf75230a0c7fec447783a873e7dac5221fbf7ea5863fe310",
+    "fallback": "BlexMonoNerdFontMono-Regular.woff2",
+    "before": 1027144,
+    "after": 65940,
+    "sharedGlyphs": 10396
+  },
+  "UbuntuMonoNerdFontMono-Bold.woff2": {
+    "source": "01a799d8551e0ea5ab814ade64045b4eed7c6af4d4eea7e4aeecb9edbebcd929",
+    "output": "942707e481e1f9cc270bbfb8cab19bd99c4242fe27a4d1c27a853d6d79631280",
+    "fallback": "BlexMonoNerdFontMono-Bold.woff2",
+    "before": 1009816,
+    "after": 71796,
+    "sharedGlyphs": 10396
+  },
+  "UbuntuMonoNerdFontMono-Regular.woff2": {
+    "source": "6423ce5e996f7f85732538268e798cfae57ec13dd9ca59e3d5d37c9d20b733a2",
+    "output": "7a3694c36b5b5ae78b22de3dd35c0de4d2e7e5293069927eef25e6eb5b0e745d",
+    "fallback": "BlexMonoNerdFontMono-Regular.woff2",
+    "before": 1012872,
+    "after": 75088,
+    "sharedGlyphs": 10396
+  }
+}

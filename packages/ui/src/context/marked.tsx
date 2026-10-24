@@ -31,7 +31,7 @@ function katexOptions(input: { output: MathOutput; displayMode?: boolean }): kat
 
 // marked's GFM autolink stops at whitespace or "<" only, so a bare URL glued to
 // Chinese prose swallows the rest of the sentence:
-//   增加维护 https://axonhub-k34h.onrender.com，跟现在的2个render服务器… 
+//   增加维护 https://axonhub-k34h.onrender.com，跟现在的2个render服务器…
 // would link the whole tail. Chinese has no word spaces, so a link has to end
 // where CJK text starts. ASCII is left to marked: it already strips trailing
 // punctuation and keeps balanced parentheses in URLs.
@@ -84,7 +84,7 @@ registerCustomTheme("OpenCode", () => {
   return Promise.resolve({
     name: "OpenCode",
     colors: {
-      "editor.background": "var(--color-background-stronger)",
+      "editor.background": "var(--surface-base)",
       "editor.foreground": "var(--text-base)",
       "gitDecoration.addedResourceForeground": "var(--syntax-diff-add)",
       "gitDecoration.deletedResourceForeground": "var(--syntax-diff-delete)",
@@ -586,7 +586,20 @@ function protectDisplayMath(markdown: string, display: RegExp, empty: string, tr
 
   while ((match = display.exec(markdown))) {
     const math = match[1] ?? ""
-    const clean = math.trim()
+    const lineStart = markdown.lastIndexOf("\n", match.index - 1) + 1
+    const linePrefix = markdown.slice(lineStart, match.index)
+    const quoteDepth = /^(?:[ \t]{0,3}>[ \t]?)+[ \t]*$/.test(linePrefix) ? linePrefix.split(">").length - 1 : 0
+    // Strip only the enclosing Markdown containers on subsequent source lines.
+    // A further leading '>' (or any comparison inside the formula) is TeX.
+    const quote = new RegExp(`^(?:[ \\t]{0,3}>[ \\t]?){${quoteDepth}}`)
+    const clean = (
+      quoteDepth
+        ? math
+            .split("\n")
+            .map((line, i) => (i === 0 ? line : line.replace(quote, "")))
+            .join("\n")
+        : math
+    ).trim()
     if (!clean) {
       const verbatim = markdown.slice(from, match.index)
       account(verbatim)
@@ -595,12 +608,10 @@ function protectDisplayMath(markdown: string, display: RegExp, empty: string, tr
       continue
     }
 
-    const lineStart = markdown.lastIndexOf("\n", match.index - 1) + 1
-    const linePrefix = markdown.slice(lineStart, match.index)
     const indented = /^[ \t]+$/.test(linePrefix)
     const placeholder = mathPlaceholder(clean, "display")
 
-    if (indented) {
+    if (indented || quoteDepth) {
       // Keep list and blockquote indentation on the placeholder. Removing it
       // makes the following indented prose become an unrelated code block.
       const verbatim = markdown.slice(from, lineStart)
@@ -616,11 +627,13 @@ function protectDisplayMath(markdown: string, display: RegExp, empty: string, tr
       const lineEnd = tail.indexOf("\n")
       const restOfLine = lineEnd === -1 ? tail : tail.slice(0, lineEnd)
       if (/^[ \t]*$/.test(restOfLine)) {
-        out += "\n"
+        out += `\n${quoteDepth ? linePrefix.trimEnd() : ""}`
         if (track) track.emitted += 1
       }
       if (track) track.consumed += countNewlines(markdown.slice(lineStart, match.index + match[0].length))
-      console.debug(`[markdown] protect display math indent=${linePrefix.length} tex=${clean.length}`)
+      console.debug(
+        `[markdown] protect display math indent=${linePrefix.length} quoteDepth=${quoteDepth} source=${math.length} tex=${clean.length}`,
+      )
     } else {
       const verbatim = markdown.slice(from, match.index)
       account(verbatim)
@@ -695,6 +708,49 @@ export function prepareMarkdownTracked(markdown: string): {
       return line - shift
     },
   }
+}
+
+const anchorLexer = new Marked()
+
+export async function parseAnchoredMarkdown(
+  markdown: string,
+  parse: (source: string, raw: string) => string | Promise<string>,
+  renderMath?: (html: string) => string,
+): Promise<string> {
+  const prepared = prepareMarkdownTracked(markdown)
+  // Use one inexpensive tokenizer for every stage, not the stage-specific
+  // renderer's tokens: formula expansion must not change a block's identity.
+  const tokens = anchorLexer.lexer(prepared.text)
+  const definitions = tokens
+    .filter((token) => token.type === "def")
+    .map((token) => token.raw)
+    .join("")
+  let line = 1
+  let html = ""
+  for (const token of tokens) {
+    if (token.type !== "space" && token.type !== "def") {
+      const sourceLine = prepared.originLineOf(line - 1) + 1
+      const source = definitions ? `${definitions}\n\n${token.raw}` : token.raw
+      const block = await parse(source, token.raw)
+      html += `<span data-ml="${sourceLine}"></span>${renderMath ? renderMath(block) : block}`
+    }
+    line += token.raw.split("\n").length - 1
+  }
+  return html
+}
+
+export function fallbackAnchoredMarkdown(markdown: string) {
+  return parseAnchoredMarkdown(markdown, (_source, raw) => {
+    // Recover the user's TeX, not the internal HTML placeholder attributes.
+    const text = raw.replace(
+      /<(?:div|span) data-opencode-math-style="(display|inline)" data-opencode-math-tex="([^"]*)"><\/(?:div|span)>/g,
+      (_match, style: string, encoded: string) => {
+        const tex = unescapeHtmlEntities(encoded).replace(/&#124;/g, "|")
+        return style === "display" ? `$$\n${tex}\n$$` : `$${tex}$`
+      },
+    )
+    return `<p>${escapeMathHtml(text).replace(/&#10;/g, "<br>")}</p>`
+  })
 }
 
 function escapedDollar(text: string, at: number) {
@@ -1225,6 +1281,20 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
     // The renderer upgrades to the full parser later when needed.
     const fastParser = new Marked(linkRenderer)
 
+    const parseAnchored = (markdown: string, options: { mode: "full" | "fast" | "lite"; math: "full" | "defer" }) => {
+      const parser =
+        options.mode === "lite" || options.mode === "fast"
+          ? liteParser
+          : options.math === "defer"
+            ? noMathParser
+            : fullParser
+      return parseAnchoredMarkdown(
+        markdown,
+        (source) => parser.parse(source),
+        options.math === "full" ? (html) => renderMathExpressions(html, output) : undefined,
+      )
+    }
+
     // Renders markdown with a `data-ml` marker span before each top-level
     // block, carrying the block's first source line. The Markdown component
     // converts these markers into `data-source-line` attributes on the
@@ -1278,6 +1348,7 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
           return liteParser.parse(prepareMarkdown(markdown))
         },
         parseAnnotated,
+        parseAnchored,
         renderMath(html: string) {
           return renderMathExpressions(html, output)
         },
@@ -1293,6 +1364,7 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
         return renderMathExpressions(html, output)
       },
       parseAnnotated,
+      parseAnchored,
       async parseNoMath(markdown: string): Promise<string> {
         return noMathParser.parse(prepareMarkdown(markdown))
       },

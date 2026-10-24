@@ -60,7 +60,9 @@ describe("GPT-Pro user guidance", () => {
           },
         }),
       )
-      expect(uncertain).toContain("Do not resend or start a replacement consultation")
+      expect(uncertain).toContain("Submission is uncertain. Do not resend.")
+      expect(uncertain).toContain('data-testid="gpt-pro-historical-record"')
+      expect(uncertain).not.toContain('role="alert"')
       expect(uncertain).not.toContain("Continue consultation</span>")
       expect(uncertain).not.toContain("Continue the same consultation. Sent questions")
       const stopped = renderToString(() =>

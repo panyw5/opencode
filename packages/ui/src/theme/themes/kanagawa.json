@@ -15,8 +15,13 @@
       "diffAdd": "#89AF5B",
       "diffDelete": "#D61F1F"
     },
+    "surfaces": {
+      "shell": "#e6ddd3",
+      "canvas": "#F2E9DE",
+      "raised": "#fbf2e7",
+      "inset": "#ddd4c9"
+    },
     "overrides": {
-      "text-weak": "#72675e",
       "syntax-comment": "#72675e",
       "syntax-keyword": "#755f96",
       "syntax-string": "#547324",
@@ -29,7 +34,6 @@
       "syntax-punctuation": "#54433A",
       "syntax-object": "#54433A",
       "markdown-heading": "#755f96",
-      "markdown-text": "#54433A",
       "markdown-link": "#2D4F67",
       "markdown-link-text": "#557149",
       "markdown-code": "#547324",
@@ -40,9 +44,7 @@
       "markdown-list-item": "#2D4F67",
       "markdown-list-enumeration": "#76946A",
       "markdown-image": "#2D4F67",
-      "markdown-image-text": "#76946A",
-      "markdown-code-block": "#54433A",
-      "text-weaker": "#6f6861"
+      "markdown-image-text": "#76946A"
     }
   },
   "dark": {
@@ -58,8 +60,13 @@
       "diffAdd": "#A9D977",
       "diffDelete": "#F24A4A"
     },
+    "surfaces": {
+      "shell": "#191921",
+      "canvas": "#1F1F28",
+      "raised": "#2c2c36",
+      "inset": "#12121b"
+    },
     "overrides": {
-      "text-weak": "#727169",
       "syntax-comment": "#727169",
       "syntax-keyword": "#957FB8",
       "syntax-string": "#98BB6C",
@@ -72,7 +79,6 @@
       "syntax-punctuation": "#DCD7BA",
       "syntax-object": "#DCD7BA",
       "markdown-heading": "#957FB8",
-      "markdown-text": "#DCD7BA",
       "markdown-link": "#7E9CD8",
       "markdown-link-text": "#76946A",
       "markdown-code": "#98BB6C",
@@ -83,8 +89,7 @@
       "markdown-list-item": "#7E9CD8",
       "markdown-list-enumeration": "#76946A",
       "markdown-image": "#7E9CD8",
-      "markdown-image-text": "#76946A",
-      "markdown-code-block": "#DCD7BA"
+      "markdown-image-text": "#76946A"
     }
   }
 }

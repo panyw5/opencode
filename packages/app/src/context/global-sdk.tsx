@@ -71,6 +71,7 @@ export function GlobalSDKProvider(props: ParentProps) {
     client: createSdkForServer({
       server: conn.http,
       fetch: platform.fetch,
+      locale: language.locale,
       throwOnError: true,
     }),
     version,
@@ -78,6 +79,7 @@ export function GlobalSDKProvider(props: ParentProps) {
       return createSdkForServer({
         server: conn.http,
         fetch: platform.fetch,
+        locale: language.locale,
         ...opts,
       })
     },

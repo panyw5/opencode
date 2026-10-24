@@ -3,7 +3,6 @@ import {
   createEffect,
   createMemo,
   createSignal,
-  createResource,
   For,
   on,
   onCleanup,
@@ -92,6 +91,7 @@ import { ConstrainDragXAxis, getDraggableId } from "@/utils/solid-dnd"
 import { DialogSelectDirectory } from "@/components/dialog-select-directory"
 import { DialogEditProject } from "@/components/dialog-edit-project"
 import { DialogSelectTheme } from "@/components/dialog-select-theme"
+import { themeOptionCurrent, themeOptionIDs, themeOptionName, themeOptionTarget } from "@/components/theme-options"
 import { DialogSwitchProject } from "@/components/dialog-switch-project"
 import { DialogRecentSessions } from "@/components/dialog-recent-sessions"
 import { DebugBar } from "@/components/debug-bar"
@@ -578,15 +578,18 @@ export default function Layout(props: ParentProps) {
   }
 
   function cycleTheme(direction = 1) {
-    const ids = availableThemeEntries().map(([id]) => id)
+    const ids = themeOptionIDs(
+      availableThemeEntries().map(([id]) => id),
+      theme.mode(),
+    )
     if (ids.length === 0) return
-    const currentIndex = ids.indexOf(theme.themeId())
+    const currentIndex = ids.indexOf(themeOptionCurrent(theme.themeId(), theme.mode()))
     const nextIndex = currentIndex === -1 ? 0 : (currentIndex + direction + ids.length) % ids.length
     const nextThemeId = ids[nextIndex]
-    theme.setTheme(nextThemeId)
+    theme.setTheme(themeOptionTarget(nextThemeId, theme.themeId(), theme.mode()))
     showToast({
       title: language.t("toast.theme.title"),
-      description: theme.name(nextThemeId),
+      description: themeOptionName(nextThemeId, theme.name(nextThemeId), theme.mode()),
     })
   }
 
@@ -849,6 +852,18 @@ export default function Layout(props: ParentProps) {
   // care about the route root must not rerun for an equivalent project object.
   const currentProjectRoot = createMemo(() => currentProject()?.root)
 
+  function restoreSessionSidebarProject(source: string) {
+    // Rail clicks only preview another project. Session-scoped entry points
+    // must resolve their scope again instead of reusing that temporary choice.
+    if (!onSessionRoute()) return
+    const root = currentProjectRoot() ?? routeDir()
+    if (!root) return
+    console.debug(
+      `[sidebar-project] session-open source=${source} session=${params.id ?? "draft"} selected-root=${layout.sidebar.project() ?? "none"} target-root=${root} route-directory=${routeDir()}`,
+    )
+    setSidebarProjectRoot(root)
+  }
+
   // Directories the user just closed. The route-registration effect must not
   // immediately re-open them while navigation catches up (especially when the
   // closed tile is a /tmp ↔ /private/tmp alias of the current route).
@@ -905,32 +920,42 @@ export default function Layout(props: ParentProps) {
     return workspaceIds(project)
   })
 
-  const [autoselecting] = createResource(async () => {
-    await ready.promise
-    await layout.ready.promise
-    if (!untrack(() => state.autoselect)) return
-    if (onConfigRoute()) {
-      console.debug("[layout] skipping auto-selection for config route")
-      return
-    }
-    if (routeDir()) {
-      console.debug(`[layout] skipping auto-selection for explicit route directory=${routeDir()}`)
-      return
-    }
+  // Signal-based one-shot task: the resource's value was never read (only
+  // `.loading` gated startup UI), so a plain signal avoids the createResource
+  // machinery without changing the gating behavior.
+  const [autoselectDone, setAutoselectDone] = createSignal(false)
+  void (async () => {
+    try {
+      await ready.promise
+      await layout.ready.promise
+      if (!untrack(() => state.autoselect)) return
+      if (onConfigRoute()) {
+        console.debug("[layout] skipping auto-selection for config route")
+        return
+      }
+      if (routeDir()) {
+        console.debug(`[layout] skipping auto-selection for explicit route directory=${routeDir()}`)
+        return
+      }
 
-    const list = layout.projects.list()
-    const last = server.projects.last()
+      const list = layout.projects.list()
+      const last = server.projects.last()
 
-    if (list.length === 0) {
-      // Ownership cutover: do not auto-resurrect a closed project via
-      // lastProject. The user must explicitly open a project.
-      return
+      if (list.length === 0) {
+        // Ownership cutover: do not auto-resurrect a closed project via
+        // lastProject. The user must explicitly open a project.
+        return
+      }
+
+      const next = list.find((project) => project.worktree === last) ?? list[0]
+      if (!next) return
+      await openProject(next.worktree, true)
+    } catch (err) {
+      console.warn("[layout] auto-selection failed", err)
+    } finally {
+      setAutoselectDone(true)
     }
-
-    const next = list.find((project) => project.worktree === last) ?? list[0]
-    if (!next) return
-    await openProject(next.worktree, true)
-  })
+  })()
 
   const workspaceName = (directory: string, projectId?: string, branch?: string) => {
     const key = workspaceKey(directory)
@@ -1024,7 +1049,7 @@ export default function Layout(props: ParentProps) {
   const startup = createMemo(() => {
     const page = pageReady()
     const layout = layoutReady()
-    const selecting = autoselecting.loading
+    const selecting = !autoselectDone()
     const dir = routeDir()
     if (!page || !layout || selecting) {
       return false
@@ -1476,8 +1501,10 @@ export default function Layout(props: ParentProps) {
           // xl breakpoint = 1280px; below that the desktop sidebar is
           // CSS-hidden and the mobile overlay sidebar is used instead.
           if (window.innerWidth < 1280) {
+            if (!layout.mobileSidebar.opened()) restoreSessionSidebarProject("sidebar-toggle-mobile")
             layout.mobileSidebar.toggle()
           } else {
+            if (!layout.sidebar.opened()) restoreSessionSidebarProject("sidebar-toggle")
             layout.sidebar.toggle()
           }
         },
@@ -1834,12 +1861,15 @@ export default function Layout(props: ParentProps) {
       },
     ]
 
-    for (const [id] of availableThemeEntries()) {
+    for (const id of themeOptionIDs(
+      availableThemeEntries().map(([id]) => id),
+      theme.mode(),
+    )) {
       commands.push({
         id: `theme.set.${id}`,
-        title: language.t("command.theme.set", { theme: theme.name(id) }),
+        title: language.t("command.theme.set", { theme: themeOptionName(id, theme.name(id), theme.mode()) }),
         category: language.t("command.category.theme"),
-        onSelect: () => theme.setTheme(id),
+        onSelect: () => theme.setTheme(themeOptionTarget(id, theme.themeId(), theme.mode())),
       })
     }
 
@@ -1881,7 +1911,10 @@ export default function Layout(props: ParentProps) {
       })
     }
 
-    return commands
+    if (!platform.remoteMode) return commands
+    return commands.filter(
+      (item) => !["config.open", "provider.connect", "server.switch", "server.reloadBackend"].includes(item.id),
+    )
   })
 
   function connectProvider() {
@@ -2031,6 +2064,7 @@ export default function Layout(props: ParentProps) {
       const detail = (event as CustomEvent<PresentedTaskOpenRequest>).detail
       if (!detail?.taskID) return
       console.debug(`[layout] present-task-open kind=${detail.kind} task=${detail.taskID} session=${detail.sessionID}`)
+      restoreSessionSidebarProject("present-task-open")
       if (detail.kind === "project_task") {
         openProjectTasksPanel()
         setPresentedTaskFocus({ kind: "projectTasks", taskID: detail.taskID })
@@ -3612,7 +3646,7 @@ export default function Layout(props: ParentProps) {
 
   createEffect(
     on(
-      () => [visibleSessionDirs(), routeDir(), autoselecting.loading] as const,
+      () => [visibleSessionDirs(), routeDir(), !autoselectDone()] as const,
       ([dirs, dir, selecting]) => {
         if (selecting) return
         if (dirs.length === 0) return
@@ -4308,7 +4342,7 @@ export default function Layout(props: ParentProps) {
                       when={workspacesEnabled()}
                       fallback={
                         <>
-                          <div class="shrink-0 py-4 px-3">
+                          <div data-slot="sidebar-project-actions" class="shrink-0 py-4 px-3">
                             <SidebarQuickActions
                               primary={{
                                 icon: "new-session",
@@ -4363,7 +4397,7 @@ export default function Layout(props: ParentProps) {
                       }
                     >
                       <>
-                        <div class="shrink-0 py-4 px-3">
+                        <div data-slot="sidebar-project-actions" class="shrink-0 py-4 px-3">
                           <SidebarQuickActions
                             primary={{
                               icon: "plus-small",
@@ -4578,12 +4612,12 @@ export default function Layout(props: ParentProps) {
           .sort((a, b) => a.id.localeCompare(b.id))
       }}
       imChannelsLabel={() => language.t("sidebar.im.title")}
-      onOpenImChannelsConfig={() => openConfig("channels")}
+      onOpenImChannelsConfig={platform.remoteMode ? undefined : () => openConfig("channels")}
       configLabel={() => language.t("config.title")}
       configKeybind={() => command.keybind("config.open")}
       configActive={onConfigRoute}
-      onOpenConfig={openConfig}
-      onPrefetchConfig={prefetchConfigPage}
+      onOpenConfig={platform.remoteMode ? undefined : openConfig}
+      onPrefetchConfig={platform.remoteMode ? undefined : prefetchConfigPage}
       settingsLabel={() => language.t("sidebar.settings")}
       settingsKeybind={() => command.keybind("settings.open")}
       onOpenSettings={openSettings}
@@ -4799,6 +4833,7 @@ export default function Layout(props: ParentProps) {
               <Show when={!desktopSidebar()}>
                 <div>
                   <div
+                    data-component="sidebar-mobile-backdrop"
                     classList={{
                       "fixed inset-x-0 top-10 bottom-0 z-40 transition-opacity duration-200": true,
                       "opacity-100 pointer-events-auto": layout.mobileSidebar.opened(),
@@ -4897,7 +4932,7 @@ export default function Layout(props: ParentProps) {
                     "overflow-y-hidden": onConfigRoute(),
                   }}
                 >
-                  <Show when={!autoselecting.loading} fallback={<div class="size-full" />}>
+                  <Show when={autoselectDone()} fallback={<div class="size-full" />}>
                     <Show
                       when={!projectContentLoading()}
                       fallback={

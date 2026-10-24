@@ -4,6 +4,7 @@ import {
   parseQuickEditor,
   quickPromptCanSend,
   quickPromptText,
+  quickEditorHistoryKey,
   recoverQuickPrompt,
 } from "./editor-model"
 import { createStore, reconcile } from "solid-js/store"
@@ -11,6 +12,16 @@ import { buildRequestParts } from "../prompt-input/build-request-parts"
 import { merge } from "../prompt-input/expand"
 
 describe("quick assistant rich editor", () => {
+  test("modified arrows retain native selection instead of replacing the draft with history", () => {
+    const event = { key: "ArrowUp", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false }
+    expect(quickEditorHistoryKey(event)).toBe(true)
+    expect(quickEditorHistoryKey({ ...event, key: "ArrowDown" })).toBe(true)
+    for (const modifier of ["metaKey", "ctrlKey", "altKey", "shiftKey"] as const) {
+      expect(quickEditorHistoryKey({ ...event, [modifier]: true })).toBe(false)
+    }
+    expect(quickEditorHistoryKey({ ...event, metaKey: true, shiftKey: true })).toBe(false)
+    expect(quickEditorHistoryKey({ ...event, key: "Enter" })).toBe(false)
+  })
   test("editing cannot pollute the empty draft used after submission", () => {
     const [state, setState] = createStore({ prompt: emptyQuickPrompt() })
     setState("prompt", reconcile([{ type: "text", content: "sent message", start: 0, end: 12 }]))

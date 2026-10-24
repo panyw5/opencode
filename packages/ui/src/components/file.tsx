@@ -794,7 +794,9 @@ function FileRoot(props: {
 function FloatingFileActions(props: { mount: () => HTMLElement | undefined; children: JSX.Element }) {
   const i18n = useI18n()
   const [state, setState] = createStore({ hovered: false, focused: false, pinned: false, menu: false })
+  const [contentWidth, setContentWidth] = createSignal(0)
   let root: HTMLDivElement | undefined
+  let content: HTMLDivElement | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
   let pointer: { x: number; y: number } | undefined
   const open = () => state.hovered || state.focused || state.pinned || state.menu
@@ -805,6 +807,12 @@ function FloatingFileActions(props: { mount: () => HTMLElement | undefined; chil
       `[file-actions] ${key}=${value} hovered=${state.hovered} focused=${state.focused} pinned=${state.pinned} menu=${state.menu} expanded=${open()}`,
     )
   }
+  createEffect(() => {
+    if (!open() || !content) return
+    const width = content.scrollWidth
+    setContentWidth(width)
+    console.debug(`[file-actions] expand-width width=${width}`)
+  })
   const cancelClose = () => {
     if (timer === undefined) return
     clearTimeout(timer)
@@ -892,8 +900,14 @@ function FloatingFileActions(props: { mount: () => HTMLElement | undefined; chil
               update("focused", false)
             }}
           >
-            <div data-slot="file-markdown-actions-inner" class="flex items-center gap-2">
-              <div data-slot="file-markdown-actions-content" hidden={!open()}>
+            <div data-slot="file-markdown-actions-inner" class="flex items-center">
+              <div
+                ref={content}
+                data-slot="file-markdown-actions-content"
+                aria-hidden={!open()}
+                inert={!open()}
+                style={{ "--file-actions-expanded-width": `${contentWidth()}px` }}
+              >
                 {props.children}
               </div>
               {/* Keep the hover entry anchored while the actions expand to its left. */}

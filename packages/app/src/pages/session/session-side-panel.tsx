@@ -22,6 +22,7 @@ import { SessionContextTab, SortableTab, FileVisual } from "@/components/session
 import { useCommand } from "@/context/command"
 import { useFile, type SelectedLineRange } from "@/context/file"
 import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
 import { useServer } from "@/context/server"
@@ -55,19 +56,23 @@ export function SessionSidePanel(props: {
   const layout = useLayout()
   const file = useFile()
   const language = useLanguage()
+  const platform = usePlatform()
   const sdk = useSDK()
   const server = useServer()
   const command = useCommand()
   const dialog = useDialog()
   const { sessionKey, tabs, view } = useSessionLayout()
 
-  const isDesktop = createMediaQuery("(min-width: 768px)")
+  const isDesktop = createMediaQuery(platform.platform === "web" ? "(min-width: 1024px)" : "(min-width: 768px)")
+  const tabletWidth = createMediaQuery("(max-width: 1439px)")
 
   const reviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const filePreviewOpen = createMemo(() => isDesktop() && view().filePreview.opened())
-  const browserOpen = createMemo(() => isDesktop() && view().browser.opened())
-  const fileOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
+  const browserOpen = createMemo(() => !platform.remoteMode && isDesktop() && view().browser.opened())
   const wideOpen = createMemo(() => isDesktop() && layout.rightPanel.wide())
+  const fileOpen = createMemo(
+    () => isDesktop() && layout.fileTree.opened() && !(platform.platform === "web" && tabletWidth() && wideOpen()),
+  )
   const open = createMemo(() => isDesktop() && layout.rightPanel.opened())
   const reviewTab = reviewOpen
   const panelWidth = createMemo(() => {
@@ -237,7 +242,11 @@ export function SessionSidePanel(props: {
 
   const handleDragStart = (event: unknown) => {
     const id = getDraggableId(event)
-    if (!id) return
+    if (!id) {
+      console.debug("[file-preview] tab drag start skipped reason=missing-id")
+      return
+    }
+    console.debug(`[file-preview] tab drag start tab=${id}`)
     setStore("activeDraggable", id)
   }
 
@@ -248,10 +257,12 @@ export function SessionSidePanel(props: {
     const currentTabs = tabs().all()
     const toIndex = getTabReorderIndex(currentTabs, draggable.id.toString(), droppable.id.toString())
     if (toIndex === undefined) return
+    console.debug(`[file-preview] tab drag reorder tab=${draggable.id} target=${droppable.id} index=${toIndex}`)
     tabs().move(draggable.id.toString(), toIndex)
   }
 
   const handleDragEnd = () => {
+    console.debug(`[file-preview] tab drag end tab=${store.activeDraggable ?? "none"}`)
     setStore("activeDraggable", undefined)
   }
 
@@ -301,6 +312,7 @@ export function SessionSidePanel(props: {
       >
         <div class="size-full flex border-l border-border-weaker-base">
           <div
+            data-slot="session-wide-panel"
             aria-hidden={!wideOpen()}
             inert={!wideOpen()}
             class="relative min-w-0 h-full flex-1 overflow-hidden bg-background-base"
@@ -372,7 +384,7 @@ export function SessionSidePanel(props: {
                               iconSize="large"
                               class="file-preview-open-button !rounded-md h-12 w-14 !aspect-auto"
                               onClick={() =>
-                                dialog.show(() => <DialogSelectFile mode="files" onOpenFile={showAllFiles} />)
+                                dialog.showForOwner(() => <DialogSelectFile mode="files" onOpenFile={showAllFiles} />)
                               }
                               aria-label={language.t("command.file.open")}
                             />
@@ -442,7 +454,8 @@ export function SessionSidePanel(props: {
                     {(tab) => <FileTabContent tab={tab} forceMount={true} />}
                   </For>
                 </Tabs>
-                <DragOverlay>
+                {/* Keep the portaled preview above the composited panel, but below dialogs. */}
+                <DragOverlay style={{ "z-index": 40, "pointer-events": "none" }}>
                   <Show when={store.activeDraggable} keyed>
                     {(tab) => {
                       const path = file.pathFromTab(tab)
@@ -463,7 +476,9 @@ export function SessionSidePanel(props: {
                 mounted while hidden so its IPC listeners keep tracking
                 agent-driven tabs and can auto-reveal the panel. */}
             <div class="size-full min-w-0 h-full bg-background-base" classList={{ hidden: !browserOpen() }}>
-              <BrowserPanel />
+              <Show when={!platform.remoteMode}>
+                <BrowserPanel />
+              </Show>
             </div>
           </div>
 

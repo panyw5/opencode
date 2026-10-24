@@ -13,9 +13,22 @@ type WatcherOps = {
   node: (path: string) => FileNode | undefined
   isDirLoaded: (path: string) => boolean
   refreshDir: (path: string) => void
+  files?: () => string[]
+  invalidateDirs?: (path: string) => void
 }
 
 export function invalidateFromWatcher(event: WatcherEvent, ops: WatcherOps) {
+  if (event.type === "file.watcher.invalidated") {
+    const props = event.properties as { directory?: unknown } | undefined
+    if (typeof props?.directory !== "string") return
+    const dir = ops.normalize(props.directory).replace(/\/$/, "")
+    console.debug(`[file-preview] scope invalidated directory=${dir || "."}`)
+    for (const file of ops.files?.() ?? []) {
+      if (!dir || file === dir || file.startsWith(`${dir}/`)) ops.loadFile(file)
+    }
+    ops.invalidateDirs?.(dir)
+    return
+  }
   if (event.type !== "file.watcher.updated") return
   const props =
     typeof event.properties === "object" && event.properties ? (event.properties as Record<string, unknown>) : undefined
@@ -64,6 +77,7 @@ export function createWatcherInvalidator(ops: WatcherOps, flushMs = INVALIDATE_F
   let timer: ReturnType<typeof setTimeout> | undefined
 
   const flush = () => {
+    if (timer) clearTimeout(timer)
     timer = undefined
     if (dirs.size === 0 && files.size === 0) return
     const pendingDirs = Array.from(dirs)
@@ -116,6 +130,7 @@ export function createWorkspaceTreeWatcher(ops: WorkspaceTreeWatcherOps, flushMs
   let allDirty = false
   let timer: ReturnType<typeof setTimeout> | undefined
   const flush = () => {
+    if (timer) clearTimeout(timer)
     timer = undefined
     if (allDirty) ops.dirtyAll()
     else for (const dir of dirs) ops.dirtyDir(dir)
@@ -128,15 +143,27 @@ export function createWorkspaceTreeWatcher(ops: WorkspaceTreeWatcherOps, flushMs
     timer = setTimeout(flush, flushMs)
   }
   return {
+    flush,
     handle(event: WatcherEvent) {
+      if (event.type === "file.watcher.invalidated") {
+        allDirty = true
+        schedule()
+        return
+      }
       if (event.type !== "file.watcher.updated") return
-      const props = typeof event.properties === "object" && event.properties ? event.properties as Record<string, unknown> : undefined
+      const props =
+        typeof event.properties === "object" && event.properties
+          ? (event.properties as Record<string, unknown>)
+          : undefined
       const rawPath = typeof props?.file === "string" ? props.file : undefined
       const kind = typeof props?.event === "string" ? props.event : undefined
       if (!rawPath || !kind) return
       const path = ops.normalize(rawPath)
       if (!path || path.startsWith(".git/")) return
-      if (["change", "add", "unlink", "rename"].includes(kind) && [".gitignore", ".ignore"].includes(path.split("/").at(-1) ?? "")) {
+      if (
+        ["change", "add", "unlink", "rename"].includes(kind) &&
+        [".gitignore", ".ignore"].includes(path.split("/").at(-1) ?? "")
+      ) {
         allDirty = true
         schedule()
         return

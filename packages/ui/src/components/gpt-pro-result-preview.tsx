@@ -6,11 +6,14 @@ import { Markdown } from "./markdown"
 import { Spinner } from "./spinner"
 import { useDialog } from "../context/dialog"
 import { useI18n } from "../context/i18n"
-import { handoffGptPro } from "./gpt-pro-handoff"
+import { closeDialogIfCurrent, handoffGptPro } from "./gpt-pro-handoff"
 import type { GptProCachedResult } from "./gpt-pro-result"
 import type { GptProAPI } from "@opencode-ai/util/gpt-pro"
 import { GptProErrorNotice } from "./gpt-pro-error-notice"
 import type { GptProIssueCode } from "@opencode-ai/util/gpt-pro-error"
+import { gptProMarkdown } from "./gpt-pro-markdown"
+import { IconButton } from "./icon-button"
+import { Tooltip } from "./tooltip"
 
 export type GptProResultPreviewState = {
   open: boolean
@@ -20,15 +23,6 @@ export type GptProResultPreviewState = {
   errorCode?: GptProIssueCode
   originalURL?: string
   result?: GptProCachedResult
-}
-
-export function closeDialogIfCurrent(
-  dialog: { active?: { id: string }; close: () => void },
-  expectedID: string | undefined,
-) {
-  if (!expectedID || dialog.active?.id !== expectedID) return false
-  dialog.close()
-  return true
 }
 
 export function GptProResultPreviewContent(props: { state: GptProResultPreviewState; localError?: string }) {
@@ -58,7 +52,10 @@ export function GptProResultPreviewContent(props: { state: GptProResultPreviewSt
               <GptProErrorNotice error={result().error} code={result().errorCode} phase={result().phase} />
             </Show>
             <div class="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border-weak-base bg-background-base p-4">
-              <Show when={result().text} fallback={<p class="text-13-regular text-text-weak">{t("ui.tool.gptPro.resultNoText")}</p>}>
+              <Show
+                when={gptProMarkdown(result().html, result().text)}
+                fallback={<p class="text-13-regular text-text-weak">{t("ui.tool.gptPro.resultNoText")}</p>}
+              >
                 {(text) => {
                   const [markdownReady, setMarkdownReady] = createSignal(false)
                   return (
@@ -90,7 +87,9 @@ export function GptProResultPreviewContent(props: { state: GptProResultPreviewSt
         )}
       </Show>
       <Show when={props.state.opening}>
-        <span class="sr-only" role="status">{t("ui.tool.gptPro.resultOpening")}</span>
+        <span class="sr-only" role="status">
+          {t("ui.tool.gptPro.resultOpening")}
+        </span>
       </Show>
     </div>
   )
@@ -104,7 +103,8 @@ export function GptProResultPreviewDialog(props: {
 }) {
   const dialog = useDialog()
   const t = useI18n().t
-  const [local, setLocal] = createStore({ opening: false, error: "" })
+  const [local, setLocal] = createStore({ opening: false, error: "", maximized: false })
+  const maximizeLabel = () => t(local.maximized ? "ui.tool.gptPro.resultRestore" : "ui.tool.gptPro.resultMaximize")
   const openOriginal = async () => {
     const jobID = props.state.result?.id ?? props.jobID
     if (!jobID) return
@@ -140,8 +140,38 @@ export function GptProResultPreviewDialog(props: {
             </Button>
           }
           size="x-large"
+          transition
           class="h-full"
-          containerStyle={{ width: "min(calc(100vw - 32px), 960px)", height: "min(calc(100vh - 32px), 760px)" }}
+          action={
+            <div class="flex items-center gap-2">
+              <Tooltip placement="bottom" value={maximizeLabel()}>
+                <IconButton
+                  icon={local.maximized ? "collapse" : "expand"}
+                  variant="ghost"
+                  size="large"
+                  aria-label={maximizeLabel()}
+                  onClick={() => {
+                    setLocal("maximized", !local.maximized)
+                    console.debug(`[gpt-pro-result] preview maximized=${local.maximized}`)
+                  }}
+                />
+              </Tooltip>
+              <Tooltip placement="bottom" value={t("ui.common.close")}>
+                <IconButton
+                  icon="close"
+                  variant="ghost"
+                  size="large"
+                  aria-label={t("ui.common.close")}
+                  onClick={() => dialog.close()}
+                />
+              </Tooltip>
+            </div>
+          }
+          containerStyle={{
+            width: local.maximized ? "90vw" : "min(calc(100vw - 32px), 960px)",
+            height: local.maximized ? "95dvh" : "min(calc(100dvh - 32px), 760px)",
+            transition: "width 180ms cubic-bezier(0.16, 1, 0.3, 1), height 180ms cubic-bezier(0.16, 1, 0.3, 1)",
+          }}
         >
           <GptProResultPreviewContent state={props.state} localError={local.error} />
         </Dialog>

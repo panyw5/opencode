@@ -16,8 +16,6 @@ import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
 import { useServer } from "@/context/server"
 import { usePrompt } from "@/context/prompt"
-import { ExtensionPanelVisual } from "@/extensions/panel-content"
-import { isExtensionPanelTab } from "@/extensions/panel-tab"
 
 export function FileVisual(props: { path: string; active?: boolean }): JSX.Element {
   return (
@@ -46,9 +44,7 @@ export function SortableTab(props: { tab: string; onTabClose: (tab: string) => v
   const prompt = usePrompt()
   const sortable = createSortable(props.tab)
   const path = createMemo(() => file.pathFromTab(props.tab))
-  const extension = createMemo(() => isExtensionPanelTab(props.tab))
   const content = createMemo(() => {
-    if (extension()) return <ExtensionPanelVisual tab={props.tab} />
     const value = path()
     if (!value) return
     return <FileVisual path={value} />
@@ -103,36 +99,40 @@ export function SortableTab(props: { tab: string; onTabClose: (tab: string) => v
     console.debug(`[file-preview] tab mention-file path=${value}`)
     prompt.context.add({ type: "file", path: value })
   }
+  // Register with the surrounding tabs collection, not the context menu's collection.
+  const trigger = (
+    <Tabs.Trigger
+      class="session-file-tab-trigger"
+      value={props.tab}
+      closeButton={
+        <TooltipKeybind
+          title={language.t("common.closeTab")}
+          keybind={command.keybind("tab.close")}
+          placement="bottom"
+          gutter={10}
+        >
+          <IconButton
+            icon="close-small"
+            variant="ghost"
+            class="h-5 w-5"
+            onClick={() => props.onTabClose(props.tab)}
+            aria-label={language.t("common.closeTab")}
+          />
+        </TooltipKeybind>
+      }
+      hideCloseButton
+      onMiddleClick={() => props.onTabClose(props.tab)}
+    >
+      <Show when={content()}>{(value) => value()}</Show>
+    </Tabs.Trigger>
+  )
   return (
     <div use:sortable class="h-full flex items-center" classList={{ "opacity-0": sortable.isActiveDraggable }}>
       <div class="relative h-full">
         <ContextMenu>
           {/* The menu only holds file actions, which do not apply to extension panel tabs. */}
           <ContextMenu.Trigger as="div" class="h-full" disabled={extension()}>
-            <Tabs.Trigger
-              class="session-file-tab-trigger"
-              value={props.tab}
-              closeButton={
-                <TooltipKeybind
-                  title={language.t("common.closeTab")}
-                  keybind={command.keybind("tab.close")}
-                  placement="bottom"
-                  gutter={10}
-                >
-                  <IconButton
-                    icon="close-small"
-                    variant="ghost"
-                    class="h-5 w-5"
-                    onClick={() => props.onTabClose(props.tab)}
-                    aria-label={language.t("common.closeTab")}
-                  />
-                </TooltipKeybind>
-              }
-              hideCloseButton
-              onMiddleClick={() => props.onTabClose(props.tab)}
-            >
-              <Show when={content()}>{(value) => value()}</Show>
-            </Tabs.Trigger>
+            {trigger}
           </ContextMenu.Trigger>
           <ContextMenu.Portal>
             <ContextMenu.Content>

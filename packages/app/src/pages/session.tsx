@@ -18,6 +18,7 @@ import {
 import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useLocal } from "@/context/local"
+import { focusCommandScope } from "@/context/command-focus"
 import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange } from "@/context/file"
 import { createStore } from "solid-js/store"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
@@ -36,6 +37,8 @@ import { setCursorPosition } from "@/components/prompt-input/editor-dom"
 import { promptLength } from "@/components/prompt-input/history"
 import { appendSelectionToPrompt } from "@/utils/selection-prompt"
 import { NewSessionView, SessionHeader } from "@/components/session"
+import { PendingSessionView } from "@/components/session/pending-session-view"
+import { pendingSessionSubmissions } from "@/components/prompt-input/pending-session"
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
 import { ensureSessionProfile, markSessionProfile, startSessionProfile } from "@/utils/session-profile"
@@ -240,6 +243,10 @@ export default function Page() {
         console.debug(
           `[session] session-key from=${previous ?? "none"} to=${key} ready=${String(sync.data.message[params.id ?? ""] !== undefined)}`,
         )
+        if (previous !== undefined && previous !== key) {
+          console.debug(`[session] close session-bound dialog from=${previous} to=${key}`)
+          dialog.closeOwnerBound()
+        }
       },
       { defer: true },
     ),
@@ -298,7 +305,7 @@ export default function Page() {
     ),
   )
 
-  const isDesktop = createMediaQuery("(min-width: 768px)")
+  const isDesktop = createMediaQuery(platform.platform === "web" ? "(min-width: 1024px)" : "(min-width: 768px)")
   const size = createSizing()
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const desktopFilePreviewOpen = createMemo(() => isDesktop() && view().filePreview.opened())
@@ -313,6 +320,30 @@ export default function Page() {
     return layout.rightPanel.sessionWidth()
   })
   const centered = createMemo(() => isDesktop() && !desktopWidePanelOpen())
+  const pendingSubmission = createMemo(() => pendingSessionSubmissions.get(sdk.url, sdk.directory, params))
+  createEffect(() => {
+    const entry = pendingSubmission()
+    if (!entry || entry.phase === "failed" || !params.id || params.id !== entry.sessionID) return
+    let frame: number
+    // Keep the preview above the real timeline until its message is actually
+    // painted, not just until the router has committed an empty session page.
+    const reveal = () => {
+      const timeline = root?.querySelector('[data-component="message-timeline"]')
+      const row = timeline?.querySelector(`[data-message-id="${entry.message.id}"] [data-component="user-message"]`)
+      const text = row?.querySelector('[data-slot="user-message-text"]')
+      const hasText = entry.parts.some(
+        (part) => part.type === "text" && !part.synthetic && !part.ignored && part.text.trim(),
+      )
+      if (row && (!hasText || text?.textContent?.trim())) {
+        console.debug(`[new-session-submit] timeline-ready session=${entry.sessionID} message=${entry.message.id}`)
+        pendingSessionSubmissions.finish(entry.key)
+        return
+      }
+      frame = requestAnimationFrame(reveal)
+    }
+    frame = requestAnimationFrame(reveal)
+    onCleanup(() => cancelAnimationFrame(frame))
+  })
 
   function normalizeTab(tab: string) {
     if (!tab.startsWith("file://")) return tab
@@ -575,12 +606,27 @@ export default function Page() {
   const childAgentEntries = createMemo(() =>
     collectSessionChildAgentEntries({
       sessionID: params.id,
-      messages: messages(),
+      // Status lookup must not depend on the visible history window.
+      messages: params.id ? sortMessages(sync.data.message[params.id] ?? []) : [],
       parts: sync.data.part,
       sessions: childAgentSessions(),
       messagesBySession: sync.data.message,
       statuses: sync.session.status.all(),
     }).filter((entry) => entry.agent !== "math-worker"),
+  )
+  createEffect(
+    on(
+      () =>
+        childAgentEntries()
+          .map((entry) => `${entry.id}:${entry.status ?? "unknown"}`)
+          .join(","),
+      (states) => {
+        if (!states || !params.id) return
+        console.debug(
+          `[child-agent-status] session=${params.id} loadedParentMessages=${sync.data.message[params.id]?.length ?? 0} visibleParentMessages=${messages().length} states=${states}`,
+        )
+      },
+    ),
   )
   const [mathSwarm, setMathSwarm] = createStore({
     workers: [] as MathWorkerStatus[],
@@ -1749,7 +1795,8 @@ export default function Page() {
   const openMathInitialize = () => {
     const current = local.model.current()
     const defaultModel = current ? `${current.provider.id}/${current.id}` : ""
-    dialog.show(() => (
+    console.debug(`[math-initialize] open session=${params.id ?? "draft"}`)
+    dialog.showForOwner(() => (
       <SessionMathInitializeDialog
         defaultModel={defaultModel}
         defaultVerifierModel={mathSwarm.workers[0]?.verifierModel ?? defaultModel}
@@ -2831,7 +2878,17 @@ export default function Page() {
       directory: sdk.directory,
       attachmentName: language.t("common.attachment"),
     })
-  const draft = (id: string) => draftParts(sync.data.part[id] ?? [])
+  const draft = (id: string) => {
+    const parts = sync.data.part[id] ?? []
+    console.debug(
+      `[prompt-restore] extract message=${id} parts=${parts.length} command=${!!commandInvocationFromParts(parts)}`,
+    )
+    const value = draftParts(parts)
+    console.debug(
+      `[prompt-restore] extracted message=${id} parts=${value.length} chars=${value.reduce((length, part) => length + (part.type === "image" ? 0 : part.content.length), 0)}`,
+    )
+    return value
+  }
 
   const line = (id: string, input?: Part[]) => {
     const parts = input ?? sync.data.part[id] ?? []
@@ -2941,6 +2998,12 @@ export default function Page() {
     cwd?: string
     description?: string
   }) => {
+    if (platform.remoteMode) {
+      console.info("[background-shell] action rejected reason=remote-mode")
+      const error = new Error("Background shells are unavailable in remote sessions")
+      fail(error)
+      throw error
+    }
     const currentSessionID = params.id
     console.info("[background-shell] request", {
       currentSessionID,
@@ -3234,16 +3297,24 @@ export default function Page() {
       const prev = prompt.current().slice()
       const last = info()?.revert
       const value = draft(input.messageID)
+      console.debug(
+        `[session-revert] start sid=${input.sessionID} message=${input.messageID} draftParts=${value.length}`,
+      )
       batch(() => {
         roll(input.sessionID, { messageID: input.messageID })
         prompt.set(value)
       })
+      console.debug(`[session-revert] draft applied sid=${input.sessionID} parts=${prompt.current().length}`)
       await halt(input.sessionID)
         .then(() => sdk.client.session.revert(input))
         .then((result) => {
           if (result.data) merge(result.data)
+          console.debug(`[session-revert] persisted sid=${input.sessionID} message=${input.messageID}`)
         })
         .catch((err) => {
+          console.warn(
+            `[session-revert] failed sid=${input.sessionID} message=${input.messageID} error=${err instanceof Error ? err.message : String(err)}`,
+          )
           batch(() => {
             roll(input.sessionID, last)
             prompt.set(prev)
@@ -3440,6 +3511,7 @@ export default function Page() {
         root = el
       }}
       data-component="session-page"
+      data-mobile-tab={store.mobileTab}
       data-session-id={params.id}
       data-render-phase={sessionRenderState().phase}
       onClick={handleFileLinkClick}
@@ -3448,9 +3520,9 @@ export default function Page() {
       class="relative bg-background-stronger size-full overflow-hidden flex flex-col"
     >
       <SessionHeader />
-      <div class="flex-1 min-h-0 flex flex-col md:flex-row">
+      <div data-slot="session-workspace" class="flex-1 min-h-0 flex flex-col md:flex-row">
         <Show when={!isDesktop() && !!params.id}>
-          <Tabs value={store.mobileTab} class="h-auto">
+          <Tabs value={store.mobileTab} class="h-auto" data-slot="session-mobile-tabs">
             <Tabs.List>
               <Tabs.Trigger
                 value="session"
@@ -3476,8 +3548,14 @@ export default function Page() {
 
         {/* Session panel */}
         <div
+          data-slot="session-main-panel"
+          data-command-scope="session"
+          tabIndex={-1}
+          onPointerDown={(event) => {
+            if (event.button === 0 && !event.defaultPrevented) focusCommandScope(event.currentTarget, event.target)
+          }}
           classList={{
-            "@container relative shrink-0 flex flex-col min-h-0 h-full bg-background-stronger flex-1 md:flex-none": true,
+            "@container relative shrink-0 flex flex-col min-h-0 h-full bg-background-stronger flex-1 md:flex-none outline-none": true,
             "will-change-[width]": !size.active(),
           }}
           style={{
@@ -3507,7 +3585,7 @@ export default function Page() {
                       <MessageTimeline
                         actions={actions}
                         onSendQueued={composer.blocked() ? undefined : flushQueued}
-                        onBackgroundShell={backgroundShell}
+                        onBackgroundShell={platform.remoteMode ? undefined : backgroundShell}
                         onBackgroundTask={backgroundTask}
                         scroll={ui.scroll}
                         onResumeScroll={resumeScroll}
@@ -3568,15 +3646,20 @@ export default function Page() {
                   </Show>
                 </Match>
                 <Match when={true}>
-                  <NewSessionView
-                    worktree={newSessionWorktree()}
-                    onWorktreeChange={(value) => {
-                      setStore("newSessionWorktree", value)
-                      setStore("newSessionPicked", true)
-                    }}
-                  />
+                  <Show when={!pendingSubmission()}>
+                    <NewSessionView
+                      worktree={newSessionWorktree()}
+                      onWorktreeChange={(value) => {
+                        setStore("newSessionWorktree", value)
+                        setStore("newSessionPicked", true)
+                      }}
+                    />
+                  </Show>
                 </Match>
               </Switch>
+              <Show when={pendingSubmission()}>
+                {(entry) => <PendingSessionView submission={entry()} centered={centered()} />}
+              </Show>
             </div>
             <Show when={platform.platform === "desktop" && params.id}>
               <SessionStatusFloat
@@ -3783,7 +3866,9 @@ export default function Page() {
         />
       </div>
 
-      <TerminalPanel />
+      <Show when={!platform.remoteMode}>
+        <TerminalPanel />
+      </Show>
 
       <DropdownMenu
         modal={false}

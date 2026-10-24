@@ -3,6 +3,10 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "ui.tool.gptPro.openOriginal": "Originalwebseite öffnen",
+  "ui.tool.gptPro.resultOpening": "Originalwebseite wird geöffnet…",
+  "ui.tool.gptPro.resultMaximize": "Vorschau maximieren",
+  "ui.tool.gptPro.resultRestore": "Vorschau wiederherstellen",
   "ui.sessionReview.title": "Sitzungsänderungen",
   "ui.sessionReview.title.lastTurn": "Änderungen der letzten Runde",
   "ui.sessionReview.diffStyle.unified": "Vereinheitlicht",

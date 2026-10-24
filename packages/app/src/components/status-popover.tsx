@@ -228,7 +228,7 @@ export function StatusPopover() {
   const language = useLanguage()
   const [shown, setShown] = createSignal(false)
   const [tab, setTab] = createSignal<"servers" | "mcp" | "lsp" | "plugins" | "skills" | "agents" | "commands">(
-    "servers",
+    platform.remoteMode ? "mcp" : "servers",
   )
   const [documents, setDocuments] = createStore({
     agents: [] as MarkdownDocument[],
@@ -630,7 +630,7 @@ export function StatusPopover() {
           value={tab()}
           onChange={(value) => {
             if (
-              value === "servers" ||
+              (!platform.remoteMode && value === "servers") ||
               value === "mcp" ||
               value === "lsp" ||
               value === "plugins" ||
@@ -644,13 +644,15 @@ export function StatusPopover() {
           variant="alt"
         >
           <Tabs.List data-slot="tablist" class="bg-transparent border-b-0 px-4 pt-2 pb-0 gap-4 h-10">
-            <Tabs.Trigger value="servers" data-slot="tab" class="text-12-regular">
-              {tabLabel({
-                count: sortedServers().length,
-                label: language.t("status.popover.tab.servers"),
-                issue: serverIssue(),
-              })}
-            </Tabs.Trigger>
+            <Show when={!platform.remoteMode}>
+              <Tabs.Trigger value="servers" data-slot="tab" class="text-12-regular">
+                {tabLabel({
+                  count: sortedServers().length,
+                  label: language.t("status.popover.tab.servers"),
+                  issue: serverIssue(),
+                })}
+              </Tabs.Trigger>
+            </Show>
             <Tabs.Trigger value="mcp" data-slot="tab" class="text-12-regular">
               {tabLabel({ count: mcpConnected(), label: language.t("status.popover.tab.mcp"), issue: mcpIssue() })}
             </Tabs.Trigger>
@@ -671,8 +673,9 @@ export function StatusPopover() {
             </Tabs.Trigger>
           </Tabs.List>
 
-          <Tabs.Content value="servers">
-            <Show when={tab() === "servers"}>
+          <Show when={!platform.remoteMode}>
+            <Tabs.Content value="servers">
+              <Show when={tab() === "servers"}>
               <div class="flex flex-col px-2 pb-2 max-h-[calc(100vh-120px)] overflow-y-auto">
                 <div class="flex flex-col p-3 bg-background-base rounded-sm min-h-14">
                   <For each={sortedServers()}>
@@ -728,8 +731,9 @@ export function StatusPopover() {
                   </Button>
                 </div>
               </div>
-            </Show>
-          </Tabs.Content>
+              </Show>
+            </Tabs.Content>
+          </Show>
 
           <Tabs.Content value="mcp">
             <Show when={tab() === "mcp"}>

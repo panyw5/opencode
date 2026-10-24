@@ -789,6 +789,86 @@ it.instance(
   { config: () => openAIConfig(loadFixture("openai", "gpt-5.2").model, `${state.server!.url.origin}/v1`) },
 )
 
+describe("session.llm.output-budget wire parameters", () => {
+  for (const native of [false, true]) {
+    for (const spec of [
+      { name: "model capped at 256K", context: 1_000_000, output: 384_000, expected: 256_000 },
+      { name: "missing output limit falls back to 32K", context: 1_000_000, output: 0, expected: 32_000 },
+      { name: "smaller model output limit", context: 1_000_000, output: 8_192, expected: 8_192 },
+      {
+        name: "summary capped at 32K",
+        context: 1_000_000,
+        output: 384_000,
+        expected: 32_000,
+        kind: "compaction" as const,
+      },
+      { name: "fits remaining context", context: 100_000, output: 384_000, content: "x".repeat(200_000) },
+    ]) {
+      it.instance(
+        `${native ? "native" : "AI SDK"}: ${spec.name}`,
+        () =>
+          Effect.gen(function* () {
+            const request = waitRequest(
+              "/chat/completions",
+              new Response(createChatStream("Budget OK"), {
+                headers: { "Content-Type": "text/event-stream" },
+              }),
+            )
+            const resolved = yield* Provider.use.getModel(ProviderID.opencode, ModelID.make("budget-model"))
+            const sessionID = SessionID.make("ses_budget_wire_test")
+            const agent = { name: "test", mode: "primary", options: {}, permission: [] } satisfies Agent.Info
+            const input: LLM.StreamInput = {
+              user: {
+                id: MessageID.make("msg_budget_wire_test"),
+                sessionID,
+                role: "user",
+                time: { created: 1 },
+                agent: "test",
+                model: { providerID: resolved.providerID, modelID: resolved.id },
+              },
+              sessionID,
+              model: resolved,
+              agent,
+              system: [],
+              tools: {},
+              kind: spec.kind,
+              messages: [{ role: "user", content: spec.content ?? "Hello" }],
+            }
+            if (native) {
+              yield* drainWith(
+                llmLayerWithExecutor(RequestExecutor.defaultLayer, { experimentalNativeLlm: true }),
+                input,
+              )
+            } else {
+              yield* drain(input)
+            }
+            const captured = yield* Effect.promise(() => request)
+            if (spec.expected !== undefined) {
+              expect(captured.body.max_tokens).toBe(spec.expected)
+            } else {
+              expect(captured.body.max_tokens).toBeGreaterThanOrEqual(1_024)
+              expect(captured.body.max_tokens).toBeLessThan(42_500)
+            }
+          }),
+        {
+          config: () => ({
+            enabled_providers: ["opencode"],
+            provider: {
+              opencode: {
+                npm: "@ai-sdk/openai-compatible",
+                options: { apiKey: "test-key", baseURL: `${state.server!.url.origin}/v1` },
+                models: {
+                  "budget-model": { name: "Budget model", limit: { context: spec.context, output: spec.output } },
+                },
+              },
+            },
+          }),
+        },
+      )
+    }
+  }
+})
+
 describe("session.llm.stream", () => {
   const vivgridFixture = { providerID: "vivgrid", modelID: "gemini-3.1-pro-preview" }
   it.instance(

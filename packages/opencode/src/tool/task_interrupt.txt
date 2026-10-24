@@ -1,0 +1,14 @@
+# PURPOSE
+Interrupt the current execution of one of your child tasks, preserving its session history so you can resume it with corrected instructions.
+
+# PARAMETERS
+- task_id: Required. Use the exact ID returned by task or discovered with task_list.
+- reason: Optional explanation for stopping. This is not delivered as a new prompt to the child.
+
+# GUIDELINES
+- Use this when a child task is pursuing the wrong approach or needs to stop before you correct its instructions.
+- Only your own child or descendant tasks in the current workspace can be interrupted. You cannot interrupt yourself, ancestors, siblings, or unrelated sessions.
+- This stops the current execution and waits for cleanup. It does not delete history, undo file changes, or freeze execution for an exact in-place continuation. Child-owned background tasks may also be stopped by the normal cancellation flow.
+- After interrupted: true, use task_transcript if needed, then call task with the SAME task_id and a new prompt explaining the correction. Do not create a replacement child unless you intentionally need a fresh session.
+- interrupted: false means no active execution was found on this server, not proof that another server has stopped it. Do not claim successful interruption in that case.
+- Detached math-workers have their own lifecycle; use math_worker_stop for those workers.

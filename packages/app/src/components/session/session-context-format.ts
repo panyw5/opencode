@@ -12,6 +12,11 @@ export function createSessionContextFormatter(locale: string) {
       if (value === null) return "—"
       return value.toLocaleString(locale) + "%"
     },
+    compact(value: number | null | undefined) {
+      if (value === undefined) return "—"
+      if (value === null) return "—"
+      return value.toLocaleString(locale, { notation: "compact", maximumFractionDigits: 1 })
+    },
     time(value: number | undefined) {
       if (!value) return "—"
       return DateTime.fromMillis(value).setLocale(locale).toLocaleString(DateTime.DATETIME_MED)

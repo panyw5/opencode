@@ -38,10 +38,13 @@
     "message": "Google-Cookies, Passwörter, Chatverlauf und API-Zugangsdaten werden nicht übertragen. Die Erweiterung speichert die Sitzung nicht in einer Datei."
   },
   "connect": { "message": "Sitzung importieren" },
+  "connectImported": { "message": "Sitzung importiert" },
   "statusApproval": { "message": "Bitte vor dem Import zustimmen." },
   "statusReading": { "message": "Sitzung wird gelesen…" },
   "statusImporting": { "message": "Wird importiert…" },
-  "statusImported": { "message": "Importiert. Prüfen Sie die GPT-Pro-Konfigurationsseite in OpenCode." },
+  "statusImported": {
+    "message": "Kehren Sie zur GPT-Pro-Konfigurationsseite in OpenCode zurück, um Ihre Anmeldung zu überprüfen."
+  },
   "errorTab": {
     "message": "Öffnen Sie in OpenCode eine neue OpenCode-ChatGPT-Verbindungsseite auf 127.0.0.1 und öffnen Sie dort diese Erweiterung."
   },

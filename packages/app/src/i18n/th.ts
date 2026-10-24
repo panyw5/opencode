@@ -281,6 +281,7 @@ export const dict = {
   "prompt.dropzone.file.label": "วางเพื่อ @กล่าวถึงไฟล์",
   "prompt.slash.badge.custom": "กำหนดเอง",
   "prompt.slash.badge.skill": "ทักษะ",
+  "prompt.skill.pill": "ทักษะ: {{name}}",
   "prompt.slash.badge.mcp": "MCP",
   "prompt.context.active": "ใช้งานอยู่",
   "prompt.context.includeActiveFile": "รวมไฟล์ที่ใช้งานอยู่",

@@ -1,8 +1,49 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
-import type { BrowserViewState, ElectronAPI, InitStep, SqliteMigrationProgress } from "./types"
+import type { BrowserViewState, ElectronAPI, InitStep, ResourceUsageTargetId, SqliteMigrationProgress } from "./types"
+import type { RemoteAccessStatus } from "@opencode-ai/app/remote/types"
+import type { GptProStateEvent } from "@opencode-ai/util/gpt-pro-state"
 
 const api: ElectronAPI = {
+  remoteAccess: {
+    status: () => ipcRenderer.invoke("remote-access-status"),
+    enable: () => ipcRenderer.invoke("remote-access-enable"),
+    disable: () => ipcRenderer.invoke("remote-access-disable"),
+    pair: () => ipcRenderer.invoke("remote-access-pair"),
+    devices: () => ipcRenderer.invoke("remote-access-devices"),
+    revoke: (id) => ipcRenderer.invoke("remote-access-revoke", id),
+    reset: () => ipcRenderer.invoke("remote-access-reset"),
+    onStatus: (listener) => {
+      const handler = (_: unknown, status: RemoteAccessStatus) => listener(status)
+      ipcRenderer.on("remote-access-status-changed", handler)
+      return () => ipcRenderer.removeListener("remote-access-status-changed", handler)
+    },
+  },
   gptPro: {
+    state: {
+      read: (id) => ipcRenderer.invoke("gpt-pro-state-read", id),
+      list: () => ipcRenderer.invoke("gpt-pro-state-list"),
+      subscribe: (listener) => {
+        const subscriptionID = crypto.randomUUID()
+        let active = true
+        const handler = (_: unknown, payload: { subscriptionID: string; state: GptProStateEvent }) => {
+          if (active && payload.subscriptionID === subscriptionID) listener(payload.state)
+        }
+        ipcRenderer.on("gpt-pro-state-changed", handler)
+        void ipcRenderer.invoke("gpt-pro-state-subscribe", subscriptionID).then(
+          (snapshot) => {
+            if (active) listener(snapshot)
+          },
+          () => {
+            if (active) listener({ type: "disconnected", message: "Consultation state connection unavailable" })
+          },
+        )
+        return () => {
+          active = false
+          ipcRenderer.removeListener("gpt-pro-state-changed", handler)
+          ipcRenderer.send("gpt-pro-state-unsubscribe", subscriptionID)
+        }
+      },
+    },
     runtimeStatus: () => ipcRenderer.invoke("gpt-pro-runtime-status"),
     getConfig: () => ipcRenderer.invoke("gpt-pro-config"),
     setConfig: (config) => ipcRenderer.invoke("gpt-pro-set-config", config),
@@ -121,6 +162,8 @@ const api: ElectronAPI = {
   storeClear: (name) => ipcRenderer.invoke("store-clear", name),
   storeKeys: (name) => ipcRenderer.invoke("store-keys", name),
   storeLength: (name) => ipcRenderer.invoke("store-length", name),
+  getResourceUsage: () => ipcRenderer.invoke("get-resource-usage"),
+  cleanResourceTarget: (id: ResourceUsageTargetId) => ipcRenderer.invoke("clean-resource-target", id),
   promptHistoryAppend: (kind, entry) => ipcRenderer.invoke("prompt-history-append", kind, entry),
   promptHistoryPage: (kind, offset, limit) => ipcRenderer.invoke("prompt-history-page", kind, offset, limit),
 

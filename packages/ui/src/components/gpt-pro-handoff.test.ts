@@ -1,11 +1,36 @@
 import { describe, expect, test } from "bun:test"
 import { handoffGptPro } from "./gpt-pro-handoff"
 import type { GptProCommand, GptProJob, GptProPhase } from "@opencode-ai/util/gpt-pro"
+import { gptProExecutionSnapshot } from "@opencode-ai/util/gpt-pro-state"
 
 function fixture(phase: GptProPhase, race = false) {
   const calls: GptProCommand[] = []
   let current = phase
   const client = {
+    state: {
+      read: async (requestedID: string) => ({
+        sourceID: "test",
+        sequence: 1,
+        requestedID,
+        state: {
+          kind: "execution" as const,
+          job: gptProExecutionSnapshot({
+            id: "consultation",
+            owner: "owner",
+            requestID: "request",
+            prompt: "prompt",
+            phase: current,
+            url: "https://chatgpt.com/",
+            createdAt: 1,
+            updatedAt: 1,
+            revision: 0,
+            submitted: true,
+          }),
+        },
+      }),
+      list: async () => ({ type: "snapshot" as const, sourceID: "test", sequence: 1, jobs: [], removed: [] }),
+      subscribe: () => () => {},
+    },
     command: async (input: GptProCommand) => {
       calls.push(input)
       if (input.action === "pause") {

@@ -10,6 +10,7 @@ import { usePermission } from "@/context/permission"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { usePlatform } from "@/context/platform"
 import { sessionTabsTargetHref, useSessionTabs } from "@/context/session-tabs"
 import { useTerminal } from "@/context/terminal"
 import { DialogSelectFile } from "@/components/dialog-select-file"
@@ -58,6 +59,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const prompt = usePrompt()
   const sdk = useSDK()
   const sync = useSync()
+  const platform = usePlatform()
   const terminal = useTerminal()
   const layout = useLayout()
   const navigate = useNavigate()
@@ -265,7 +267,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
             }),
           ]
 
-    return [
+    const commands = [
       sessionCommand({
         id: "session.new",
         title: language.t("command.session.new"),
@@ -292,7 +294,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         keybind: "mod+p",
         slash: "open",
         onSelect: () =>
-          dialog.show(() => <DialogSelectFile mode="files" onOpenFile={showAllFiles} />, undefined, {
+          dialog.showForOwner(() => <DialogSelectFile mode="files" onOpenFile={showAllFiles} />, {
             modal: false,
             preventScroll: false,
           }),
@@ -421,6 +423,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       }),
       sessionCommand({
         id: "message.previous",
+        keybindScope: "session",
         title: language.t("command.message.previous"),
         description: language.t("command.message.previous.description"),
         keywords: kw("command.message.previous", "command.message.previous.description"),
@@ -430,6 +433,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       }),
       sessionCommand({
         id: "message.next",
+        keybindScope: "session",
         title: language.t("command.message.next"),
         description: language.t("command.message.next.description"),
         keywords: kw("command.message.next", "command.message.next.description"),
@@ -444,7 +448,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         keywords: kw("command.model.choose", "command.model.choose.description"),
         keybind: "mod+'",
         slash: "model",
-        onSelect: () => dialog.show(() => <DialogSelectModel model={local.model} />),
+        onSelect: () => dialog.showForOwner(() => <DialogSelectModel model={local.model} />),
       }),
       mcpCommand({
         id: "mcp.toggle",
@@ -453,7 +457,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         keywords: kw("command.mcp.toggle", "command.mcp.toggle.description"),
         keybind: "mod+;",
         slash: "mcp",
-        onSelect: () => dialog.show(() => <DialogSelectMcp />),
+        onSelect: () => dialog.showForOwner(() => <DialogSelectMcp />),
       }),
       withCategory(language.t("command.category.skill"))({
         id: "skill.list",
@@ -461,7 +465,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         description: language.t("command.skill.list.description"),
         keywords: kw("command.skill.list", "command.skill.list.description"),
         keybind: "mod+shift+;",
-        onSelect: () => dialog.show(() => <DialogSelectSkill />),
+        onSelect: () => dialog.showForOwner(() => <DialogSelectSkill />),
       }),
       agentCommand({
         id: "agent.cycle",
@@ -648,9 +652,11 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         keywords: kw("command.session.fork", "command.session.fork.description"),
         slash: "fork",
         disabled: !params.id || userMessages().length === 0,
-        onSelect: () => dialog.show(() => <DialogFork />),
+        onSelect: () => dialog.showForOwner(() => <DialogFork />),
       }),
       ...share,
     ]
+    if (!platform.remoteMode) return commands
+    return commands.filter((item) => !["terminal.toggle", "terminal.new", "browser.toggle"].includes(item.id))
   })
 }

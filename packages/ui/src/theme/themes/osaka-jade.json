@@ -13,8 +13,13 @@
       "error": "#c7392d",
       "info": "#1faa90"
     },
+    "surfaces": {
+      "shell": "#eae9d2",
+      "canvas": "#F6F5DD",
+      "raised": "#fffee8",
+      "inset": "#e0dfc8"
+    },
     "overrides": {
-      "text-weak": "#53685B",
       "syntax-comment": "#53685B",
       "syntax-keyword": "#0e7c69",
       "syntax-string": "#3d7a52",
@@ -27,7 +32,6 @@
       "syntax-punctuation": "#111c18",
       "syntax-object": "#111c18",
       "markdown-heading": "#0e7c69",
-      "markdown-text": "#111c18",
       "markdown-link": "#0e7c69",
       "markdown-link-text": "#3d7a52",
       "markdown-code": "#3d7a52",
@@ -39,8 +43,6 @@
       "markdown-list-enumeration": "#1faa90",
       "markdown-image": "#1faa90",
       "markdown-image-text": "#3d7a52",
-      "markdown-code-block": "#111c18",
-      "text-weaker": "#617167",
       "text-interactive-base": "#017b67"
     }
   },
@@ -58,8 +60,13 @@
       "diffAdd": "#63b07a",
       "diffDelete": "#db9f9c"
     },
+    "surfaces": {
+      "shell": "#0b1612",
+      "canvas": "#111c18",
+      "raised": "#1e2925",
+      "inset": "#06100c"
+    },
     "overrides": {
-      "text-weak": "#53685B",
       "syntax-comment": "#53685B",
       "syntax-keyword": "#2DD5B7",
       "syntax-string": "#63b07a",
@@ -67,24 +74,22 @@
       "syntax-variable": "#C1C497",
       "syntax-property": "#549e6a",
       "syntax-type": "#549e6a",
-      "syntax-constant": "#D2689C",
+      "syntax-constant": "#d2689c",
       "syntax-operator": "#459451",
       "syntax-punctuation": "#C1C497",
       "syntax-object": "#C1C497",
       "markdown-heading": "#2DD5B7",
-      "markdown-text": "#C1C497",
       "markdown-link": "#8CD3CB",
       "markdown-link-text": "#549e6a",
       "markdown-code": "#63b07a",
       "markdown-block-quote": "#53685B",
-      "markdown-emph": "#D2689C",
+      "markdown-emph": "#d2689c",
       "markdown-strong": "#C1C497",
       "markdown-horizontal-rule": "#53685B",
       "markdown-list-item": "#2DD5B7",
       "markdown-list-enumeration": "#8CD3CB",
       "markdown-image": "#8CD3CB",
-      "markdown-image-text": "#549e6a",
-      "markdown-code-block": "#C1C497"
+      "markdown-image-text": "#549e6a"
     }
   }
 }

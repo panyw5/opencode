@@ -66,13 +66,19 @@ export const contentSurfaces = [
   "surface-base-hover",
   "surface-base-active",
   "surface-inset-base",
+  "surface-inset-base-hover",
   "surface-raised-base",
   "surface-raised-base-hover",
   "surface-raised-base-active",
   "surface-raised-stronger-non-alpha",
+  "surface-panel",
+  "surface-weak",
+  "surface-weaker",
   "input-base",
+  "input-hover",
   "button-secondary-base",
   "button-secondary-hover",
+  "button-secondary-active",
 ] as const
 
 export function enforceThemeContrast(tokens: ResolvedTheme, isDark: boolean) {
@@ -101,6 +107,12 @@ export function enforceThemeContrast(tokens: ResolvedTheme, isDark: boolean) {
     "markdown-link",
     "markdown-link-text",
     "markdown-code-block",
+    "markdown-block-quote",
+    "markdown-list-item",
+    "markdown-list-enumeration",
+    "markdown-image",
+    "markdown-image-text",
+    ...Object.keys(tokens).filter((key) => key.startsWith("syntax-")),
   ]) {
     const color = opaqueColor(tokens[key], tokens, background)
     if (color) tokens[key] = readableColor(color, surfaces, 4.6)

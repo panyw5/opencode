@@ -263,6 +263,7 @@ export const dict = {
   "prompt.dropzone.file.label": "Upuść, aby @wspomnieć plik",
   "prompt.slash.badge.custom": "własne",
   "prompt.slash.badge.skill": "skill",
+  "prompt.skill.pill": "Umiejętność: {{name}}",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.active": "aktywny",
   "prompt.context.includeActiveFile": "Dołącz aktywny plik",

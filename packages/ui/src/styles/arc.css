@@ -245,6 +245,12 @@ html[data-theme="arc"][data-color-scheme="light"]
   [data-component="session-tab"][data-active="true"] {
   --text-strong: #1a1625;
   --color-text-strong: #1a1625;
+  --text-base: #312d3e;
+  --color-text-base: #312d3e;
+  --text-weak: #494251;
+  --color-text-weak: #494251;
+  --text-weaker: #312d3e;
+  --color-text-weaker: #312d3e;
   --icon-base: #4a4458;
   --color-icon-base: #4a4458;
   --icon-strong-base: #1a1625;
@@ -625,7 +631,8 @@ html[data-theme="arc"] [data-component="dock-prompt"][data-kind="question"] {
     border-color: light-dark(#8b5cf6, rgba(192, 132, 208, 0.5));
 
     [data-slot="option-label"],
-    [data-slot="option-description"] {
+    [data-slot="option-description"],
+    [data-slot="question-custom-input"] {
       color: light-dark(var(--text-strong), #ffffff);
     }
   }
@@ -640,7 +647,8 @@ html[data-theme="arc"] [data-component="dock-prompt"][data-kind="question"] {
     border-color: light-dark(#8b5cf6, rgba(192, 132, 208, 0.5));
 
     [data-slot="option-label"],
-    [data-slot="option-description"] {
+    [data-slot="option-description"],
+    [data-slot="question-custom-input"] {
       color: light-dark(var(--text-strong), #ffffff);
     }
   }

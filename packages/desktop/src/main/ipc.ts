@@ -40,6 +40,7 @@ import {
 } from "./extra-agents"
 import { getStore } from "./store"
 import { getPromptHistoryStore, type PromptHistoryKind } from "./prompt-history"
+import { cleanResourceTarget, getResourceUsage } from "./resource-usage"
 import type { UpdaterController } from "./updater-controller"
 import { createUpdaterSubscriptions } from "./updater-subscriptions"
 import { getPinchZoomEnabled, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
@@ -85,6 +86,7 @@ import {
   testCliAgent,
 } from "./cli-agents"
 import { write as writeLog } from "./logging"
+import { relaunchApp } from "./relaunch"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -165,6 +167,32 @@ type Deps = {
 
 export function registerIpcHandlers(deps: Deps) {
   getGptProController()
+  const gptStateSubscriptions = new Map<string, () => void>()
+  ipcMain.handle("gpt-pro-state-read", (_event, id: string) => getGptProController().stateRead(id))
+  ipcMain.handle("gpt-pro-state-list", () => getGptProController().stateList())
+  ipcMain.handle("gpt-pro-state-subscribe", (event, subscriptionID: string) => {
+    if (typeof subscriptionID !== "string" || subscriptionID.length > 100) throw new Error("Invalid state subscription")
+    const sender = event.sender
+    const key = `${sender.id}:${subscriptionID}`
+    gptStateSubscriptions.get(key)?.()
+    const controller = getGptProController()
+    const unsubscribe = controller.subscribeState((state) => {
+      if (!sender.isDestroyed()) sender.send("gpt-pro-state-changed", { subscriptionID, state })
+    })
+    const cleanup = () => {
+      unsubscribe()
+      sender.removeListener("destroyed", cleanup)
+      gptStateSubscriptions.delete(key)
+    }
+    gptStateSubscriptions.set(key, cleanup)
+    sender.once("destroyed", cleanup)
+    writeLog("gpt-pro", `[gpt-pro-state] renderer subscribed renderer=${sender.id}`)
+    // Register before snapshotting: an update cannot fall into a handshake gap.
+    return controller.stateList()
+  })
+  ipcMain.on("gpt-pro-state-unsubscribe", (event, subscriptionID: string) => {
+    gptStateSubscriptions.get(`${event.sender.id}:${subscriptionID}`)?.()
+  })
   ipcMain.handle("gpt-pro-config", () => getGptProController().config())
   ipcMain.handle("gpt-pro-set-config", (_event, config: GptProConfig) => getGptProController().setConfig(config))
   ipcMain.handle("gpt-pro-command", (_event, command: GptProCommand) => getGptProController().command(command))
@@ -334,6 +362,9 @@ export function registerIpcHandlers(deps: Deps) {
     const store = getStore(name)
     return Object.keys(store.store).length
   })
+
+  ipcMain.handle("get-resource-usage", () => getResourceUsage())
+  ipcMain.handle("clean-resource-target", (_event: IpcMainInvokeEvent, id: string) => cleanResourceTarget(id))
 
   ipcMain.handle(
     "open-directory-picker",
@@ -548,8 +579,24 @@ export function registerIpcHandlers(deps: Deps) {
   })
 
   ipcMain.on("relaunch", () => {
-    app.relaunch()
-    app.exit(0)
+    writeLog("lifecycle", "renderer relaunch cleanup started")
+    let completed = false
+    const finish = (reason: "complete" | "deadline" | "failed") => {
+      if (completed) return
+      completed = true
+      clearTimeout(deadline)
+      if (reason === "deadline") writeLog("lifecycle", "renderer relaunch cleanup deadline reached", undefined, "warn")
+      if (reason === "failed") writeLog("lifecycle", "renderer relaunch cleanup failed", undefined, "warn")
+      relaunchApp(app)
+      app.exit(0)
+    }
+    const deadline = setTimeout(() => finish("deadline"), 15_000)
+    void Promise.resolve()
+      .then(() => deps.killSidecar())
+      .catch(() => {
+        finish("failed")
+      })
+      .then(() => finish("complete"))
   })
 
   ipcMain.handle("get-zoom-factor", (event: IpcMainInvokeEvent) => event.sender.getZoomFactor())

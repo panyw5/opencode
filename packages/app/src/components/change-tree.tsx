@@ -69,8 +69,9 @@ export default function ChangeTree(props: {
             <>
               <button
                 type="button"
-                class="w-full min-w-0 h-6 flex items-center justify-start gap-x-1.5 rounded-md px-1.5 py-0 text-left hover:bg-surface-raised-base-hover active:bg-surface-base-active transition-colors cursor-pointer [contain:layout_style_paint]"
-                classList={{ "bg-surface-base-active": props.active === node.path }}
+                data-component="file-tree-node"
+                data-active={props.active === node.path}
+                class="w-full min-w-0 h-6 flex items-center justify-start gap-x-1.5 rounded-md px-1.5 py-0 text-left cursor-pointer [contain:layout_style_paint]"
                 style={`padding-left: ${Math.max(0, 8 + level * 12 - 4)}px`}
                 aria-expanded={isOpen(node)}
                 onClick={() => toggle(node, !isOpen(node))}
@@ -95,8 +96,9 @@ export default function ChangeTree(props: {
         >
           <button
             type="button"
-            class="w-full min-w-0 h-6 flex items-center justify-start gap-x-1.5 rounded-md px-1.5 py-0 text-left hover:bg-surface-raised-base-hover active:bg-surface-base-active transition-colors cursor-pointer [contain:layout_style_paint]"
-            classList={{ "bg-surface-base-active": props.active === node.path }}
+            data-component="file-tree-node"
+            data-active={props.active === node.path}
+            class="w-full min-w-0 h-6 flex items-center justify-start gap-x-1.5 rounded-md px-1.5 py-0 text-left cursor-pointer [contain:layout_style_paint]"
             style={`padding-left: ${Math.max(0, 8 + level * 12 - 24)}px`}
             onClick={() => props.onFileClick?.(node.path)}
           >

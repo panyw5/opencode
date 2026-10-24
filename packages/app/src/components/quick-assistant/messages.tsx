@@ -3,9 +3,11 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { Markdown } from "@opencode-ai/ui/markdown"
 import { showToast } from "@opencode-ai/ui/toast"
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
+import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { quickAssistantMessageContent, render, splitInjectedSessionContext } from "./helpers"
 import { quickAssistantToolName } from "./tool-label"
+import { createQuickAssistantReadingAnchor } from "./reading-anchor"
 import {
   bindBottomFollowWheel,
   createBottomFollow,
@@ -74,7 +76,27 @@ function CopyMessageButton(props: { text: string }) {
 export function QuickAssistantMessages(props: Props) {
   const language = useLanguage()
   let viewport: HTMLDivElement | undefined
+  const [view, setView] = createStore<{ viewport?: HTMLDivElement }>({})
   const follow = createBottomFollow()
+  const anchor = createQuickAssistantReadingAnchor({
+    viewport: () => viewport,
+    following: follow.following,
+    written: (node) => follow.written(node),
+    log: (message) => console.debug(message),
+  })
+  let readingSnapshot: ReturnType<typeof anchor.snapshot>
+  const beforeDomUpdate = (node: HTMLDivElement) => {
+    const restore = anchor.beforeUpdate(node)
+    return () => {
+      restore()
+      readingSnapshot = anchor.snapshot()
+    }
+  }
+  const readingTakeover = (reason: string) => {
+    if (!follow.pause()) return
+    readingSnapshot = anchor.snapshot()
+    console.debug(`[quick-assistant] bottom-follow paused reason=${reason}`)
+  }
   let frame: number | undefined
   let observer: ResizeObserver | undefined
   let content: HTMLDivElement | undefined
@@ -91,6 +113,9 @@ export function QuickAssistantMessages(props: Props) {
       frame = undefined
     }
     viewport = undefined
+    setView("viewport", undefined)
+    anchor.reset()
+    readingSnapshot = undefined
     if (clearContent) content = undefined
   }
 
@@ -104,13 +129,20 @@ export function QuickAssistantMessages(props: Props) {
       .join("|"),
   )
 
-  const scheduleBottomFollow = () => {
+  const scheduleBottomFollow = (reason: string) => {
     if (!follow.following() || frame !== undefined) return
     frame = requestAnimationFrame(() => {
       frame = undefined
       if (!follow.following() || !viewport) return
+      const before = viewport.scrollTop
       viewport.scrollTop = viewport.scrollHeight
       follow.written(viewport)
+      readingSnapshot = anchor.snapshot()
+      if (Math.abs(viewport.scrollTop - before) > 1) {
+        console.debug(
+          `[quick-assistant] bottom-follow write reason=${reason} from=${before} to=${viewport.scrollTop} height=${viewport.scrollHeight} client=${viewport.clientHeight}`,
+        )
+      }
     })
   }
 
@@ -121,7 +153,7 @@ export function QuickAssistantMessages(props: Props) {
     }
     scrollKey()
     props.busy
-    scheduleBottomFollow()
+    scheduleBottomFollow("messages")
   })
 
   onCleanup(detachViewport)
@@ -132,16 +164,23 @@ export function QuickAssistantMessages(props: Props) {
         ref={(node) => {
           detachViewport(false)
           viewport = node
+          setView("viewport", node)
           follow.reset()
-          observer = new ResizeObserver(() => {
-            scheduleBottomFollow()
+          observer = new ResizeObserver((entries) => {
+            console.debug(
+              `[quick-assistant] layout resize following=${follow.following()} targets=${entries.map((entry) => `${entry.target === node ? "viewport" : "content"}:${Math.round(entry.contentRect.height)}`).join(",")}`,
+            )
+            if (!follow.following() && readingSnapshot) anchor.restoreSnapshot(readingSnapshot)
+            readingSnapshot = anchor.snapshot()
+            scheduleBottomFollow("resize")
           })
           observeBottomFollowTargets(observer, node, content)
           removeWheelListener = bindBottomFollowWheel(node, follow, () => {
+            readingSnapshot = anchor.snapshot()
             console.debug("[quick-assistant] bottom-follow paused wheel-up")
           })
           console.debug("[quick-assistant] bottom-follow mounted")
-          scheduleBottomFollow()
+          scheduleBottomFollow("mount")
         }}
         data-component="quick-assistant-viewport"
         style={{ "overflow-anchor": "none" }}
@@ -150,9 +189,21 @@ export function QuickAssistantMessages(props: Props) {
           "flex-1": props.waiting,
           "max-h-[calc(100dvh-200px)] shrink": !props.waiting,
         }}
+        onPointerDown={(event) => {
+          if (event.pointerType === "touch" || event.target === event.currentTarget) readingTakeover("pointer")
+        }}
+        onKeyDown={(event) => {
+          if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return
+          if (["ArrowUp", "PageUp", "Home"].includes(event.key) || (event.key === " " && event.shiftKey)) {
+            readingTakeover("keyboard")
+          }
+        }}
         onScroll={(event) => {
           const before = follow.following()
-          follow.scrolled(event.currentTarget)
+          if (!anchor.scrolled(event.currentTarget)) {
+            follow.scrolled(event.currentTarget)
+            readingSnapshot = anchor.snapshot()
+          }
           if (before !== follow.following()) {
             console.debug(`[quick-assistant] bottom-follow ${follow.following() ? "resumed" : "paused"}`)
           }
@@ -193,7 +244,12 @@ export function QuickAssistantMessages(props: Props) {
                 })
               })
               return (
-                <div data-component="quick-assistant-message" data-role={item.role} class="flex flex-col gap-2">
+                <div
+                  data-component="quick-assistant-message"
+                  data-message-id={item.id}
+                  data-role={item.role}
+                  class="flex flex-col gap-2"
+                >
                   <Show when={display().context}>
                     {(context) => (
                       <details
@@ -234,6 +290,14 @@ export function QuickAssistantMessages(props: Props) {
                         <Markdown
                           text={display().message || (item.role === "assistant" && props.busy ? "Thinking..." : "")}
                           math={item.role === "user" ? "full" : "defer"}
+                          viewport={view.viewport}
+                          anchorBlocks
+                          onBeforeDomUpdate={beforeDomUpdate}
+                          onStage={(_, stage) => {
+                            console.debug(
+                              `[quick-assistant] markdown stage message=${item.id} role=${item.role} stage=${stage ?? "unmounted"}`,
+                            )
+                          }}
                         />
                       </div>
                       <Show when={text().length > 0}>

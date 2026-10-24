@@ -1,7 +1,7 @@
 import { createEffect, createMemo, For, lazy, onCleanup, Show, Suspense } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { ToolPart } from "@opencode-ai/sdk/v2"
-import { gptProTerminal, type GptProAPI, type GptProJob } from "@opencode-ai/util/gpt-pro"
+import { type GptProAPI } from "@opencode-ai/util/gpt-pro"
 import { BasicTool } from "./basic-tool"
 import { Button } from "./button"
 import { FileIcon } from "./file-icon"
@@ -10,7 +10,9 @@ import { handoffGptPro } from "./gpt-pro-handoff"
 import { resolveGptProView, type GptProCachedResult } from "./gpt-pro-result"
 import { useI18n } from "../context/i18n"
 import { GptProErrorNotice } from "./gpt-pro-error-notice"
-import { gptProCanResume, type GptProIssueCode } from "@opencode-ai/util/gpt-pro-error"
+import { gptProDiagnostic, type GptProIssueCode } from "@opencode-ai/util/gpt-pro-error"
+import { gptProCapabilities, type GptProHistoricalSnapshot } from "@opencode-ai/util/gpt-pro-state"
+import { gptProStateStore, useGptProConsultation } from "./gpt-pro-state"
 
 const AttachmentPreviewDialog = lazy(() =>
   import("./gpt-pro-attachment-preview").then((module) => ({ default: module.AttachmentPreviewDialog })),
@@ -20,6 +22,7 @@ const GptProResultPreviewDialog = lazy(() =>
 )
 
 type Props = {
+  client?: GptProAPI
   status?: string
   input: Record<string, unknown>
   metadata: Record<string, unknown>
@@ -43,7 +46,7 @@ export type AttachmentPreviewState = {
   error: string
   file?: AttachmentPreviewData
 }
-const api = () =>
+const desktopApi = () =>
   typeof window === "undefined" ? undefined : (window as unknown as { api?: { gptPro?: GptProAPI } }).api?.gptPro
 
 function displayName(value: string) {
@@ -153,14 +156,32 @@ function previewPath(name: string, mime: string) {
 }
 
 export function GptProTool(props: Props) {
+  const api = () => props.client ?? desktopApi()
   const t = useI18n().t
-  const id = createMemo(() =>
-    typeof props.metadata.consultation_id === "string" ? props.metadata.consultation_id : undefined,
-  )
+  const historical = createMemo<GptProHistoricalSnapshot>(() => ({
+    kind: "historical",
+    id: typeof props.metadata.consultation_id === "string" ? props.metadata.consultation_id : undefined,
+    phase: String(props.metadata.phase ?? props.status ?? ""),
+    error: gptProDiagnostic(props.error ?? props.metadata.error ?? ""),
+    url: typeof props.metadata.url === "string" ? props.metadata.url : undefined,
+  }))
+  const id = createMemo(() => historical().id)
+  const entry = useGptProConsultation(api, id)
+  const execution = () => {
+    const value = entry().state
+    return value?.kind === "execution" ? value.job : undefined
+  }
+  const archive = () => {
+    const value = entry().state
+    return value?.kind === "archive" ? value.result : undefined
+  }
+  const capabilities = () => gptProCapabilities(entry().state, entry().freshness === "current" && !entry().pending)
+  const resolvedID = () => execution()?.id ?? archive()?.id ?? id()
+  const historyOnly = () => !api() || !id()
   const [state, set] = createStore({
     error: "",
     busy: false,
-    job: undefined as GptProJob | undefined,
+    historyOpen: !api() && !!id(),
     preview: { open: false, loading: false, error: "", file: undefined as AttachmentPreviewData | undefined },
     result: {
       open: false,
@@ -173,7 +194,7 @@ export function GptProTool(props: Props) {
       result: undefined as GptProCachedResult | undefined,
     },
   })
-  const previewJobID = () => gptProPreviewJobID(state.job?.id, id())
+  const previewJobID = resolvedID
   let previewRequest = 0
   let resultRequest = 0
   const closePreview = () => {
@@ -182,7 +203,9 @@ export function GptProTool(props: Props) {
     set("preview", { open: false, loading: false, error: "", file: undefined })
   }
   createEffect(() => {
-    console.debug(`[gpt-pro-tool] tool mounted job=${id() ?? "unknown"}`)
+    console.debug(
+      `[gpt-pro-tool] state observed job=${id() ?? "unknown"} source=${entry().state?.kind ?? "historical"} freshness=${entry().freshness}`,
+    )
   })
   onCleanup(() => {
     console.debug(
@@ -191,15 +214,16 @@ export function GptProTool(props: Props) {
     previewRequest++
     resultRequest++
   })
-  const localStatus = () => state.job && (state.job.id !== id() || props.status !== "running")
-  const phase = () =>
-    String((localStatus() ? state.job!.phase : props.metadata.phase) ?? state.job?.phase ?? props.status ?? "")
-  const queueReason = () =>
-    String((localStatus() ? state.job?.queueReason : props.metadata.queue_reason) ?? "")
+  const phase = () => execution()?.phase ?? archive()?.phase ?? (historyOnly() ? (historical().phase ?? "") : "")
+  const queueReason = () => execution()?.queueReason ?? (historyOnly() ? String(props.metadata.queue_reason ?? "") : "")
   const queueOwnerConsultationID = () =>
-    String((localStatus() ? state.job?.queueOwnerConsultationID : props.metadata.queue_owner_consultation_id) ?? "")
+    execution()?.queueOwnerConsultationID ??
+    (historyOnly() ? String(props.metadata.queue_owner_consultation_id ?? "") : "")
   const phaseLabel = () => {
-    if (phase() === "queued" && queueReason() === "login_import") return t("ui.tool.gptPro.error.login_import_pending.title")
+    if (!phase())
+      return t(entry().freshness === "loading" ? "ui.tool.gptPro.state.loading" : "ui.tool.gptPro.state.unavailable")
+    if (phase() === "queued" && queueReason() === "login_import")
+      return t("ui.tool.gptPro.error.login_import_pending.title")
     if (phase() === "queued" && queueReason() === "capacity") return t("ui.tool.gptPro.queueReason.capacity")
     if (phase() === "queued" && queueReason() === "page_capacity") return t("ui.tool.gptPro.queueReason.pageCapacity")
     if (phase() === "queued" && queueReason() === "owner_busy")
@@ -217,85 +241,23 @@ export function GptProTool(props: Props) {
   const error = () =>
     String(
       state.error ||
-        (localStatus() ? (state.job?.error ?? "") : (props.error ?? props.metadata.error ?? "")) ||
+        (!id() ? (props.error ?? "") : "") ||
+        (entry().freshness === "current" ? (execution()?.error ?? "") : "") ||
         attachments()
           .filter((item) => item.error)
           .map((item) => `Attachment ${item.name}: ${item.error}`)
           .join("\n"),
     )
-  const canResume = () =>
-    gptProCanResume({
-      error: error(),
-      phase: phase(),
-      code: state.error ? undefined : localStatus() ? state.job?.errorCode : props.metadata.error_code,
-      sendAttempted: state.job?.sendAttempted ?? props.metadata.send_attempted === true,
-      submitted: state.job?.submitted ?? props.metadata.submitted === true,
-      userID: state.job?.userID ?? (typeof props.metadata.user_id === "string" ? props.metadata.user_id : undefined),
-    })
-  const attachments = createMemo(() => {
-    const jobAttachments = state.job?.attachments
-    if (Array.isArray(jobAttachments)) return attachmentViews(jobAttachments)
+  const historicalAttachments = () => {
     const metadataAttachments = props.metadata.attachments
     if (Array.isArray(metadataAttachments) && metadataAttachments.length) return attachmentViews(metadataAttachments)
     const inputAttachments = attachmentViews(props.input.attachments)
     if (inputAttachments.length) return inputAttachments
-    return fallbackAttachmentViews(props.input.files, status() === "error")
-  })
-  createEffect(() => {
-    const jobID = id()
-    const client = api()
-    if (!jobID || !client || props.status === "running") return
-    let disposed = false
-    console.debug(`[gpt-pro-tool] refreshing saved card id=${jobID}`)
-    // Archived tool metadata is a snapshot; another card may have resumed this job.
-    void client
-      .command({ action: "status", id: jobID })
-      .then((job) => {
-        if (!disposed && !state.busy) {
-          console.debug(`[gpt-pro-tool] saved card refreshed id=${job.id} phase=${job.phase}`)
-          set("job", job)
-        }
-      })
-      .catch(() => {
-        if (!disposed)
-          console.debug(`[gpt-pro-tool] saved consultation unavailable id=${jobID}; historical metadata retained`)
-        // Old jobs may have left the bounded history; keep their stored metadata.
-      })
-    onCleanup(() => {
-      disposed = true
-    })
-  })
-  createEffect(() => {
-    const job = state.job
-    if (!job || props.status === "running" || (gptProTerminal(job.phase) && job.phase !== "paused" && !job.stopPending))
-      return
-    const jobID = job.id
-    let disposed = false
-    let polling = false
-    const timer = setInterval(() => {
-      const client = api()
-      if (state.busy || polling || !client) return
-      polling = true
-      void client
-        .command({ action: "status", id: jobID })
-        .then((next) => {
-          if (!disposed && !state.busy && state.job?.id === jobID && next.updatedAt >= state.job.updatedAt) {
-            set("job", next)
-            if (state.error === t("ui.tool.gptPro.statusError")) set("error", "")
-          }
-        })
-        .catch(() => {
-          if (!disposed) set("error", t("ui.tool.gptPro.statusError"))
-        })
-        .finally(() => {
-          polling = false
-        })
-    }, 1000)
-    onCleanup(() => {
-      disposed = true
-      clearInterval(timer)
-    })
-  })
+    return fallbackAttachmentViews(props.input.files, props.status === "error")
+  }
+  const attachments = createMemo(() =>
+    historyOnly() ? historicalAttachments() : attachmentViews(execution()?.attachments),
+  )
   const command = async (
     action: "open" | "stop" | "pause" | "resume" | "intervene" | "status" | "background",
     prompt?: string,
@@ -303,11 +265,10 @@ export function GptProTool(props: Props) {
     if (!id() || !api()) return
     set({ busy: true, error: "" })
     try {
-      const job = await api()!.command({ action, id: state.job?.id ?? id(), prompt })
-      set("job", job)
+      const job = await gptProStateStore(api()!).command({ action, id: resolvedID(), prompt })
       return job
     } catch (error) {
-      console.warn(`[gpt-pro-tool] command failed action=${action} id=${state.job?.id ?? id()} phase=${phase()}`)
+      console.warn(`[gpt-pro-tool] command failed action=${action} id=${resolvedID()} phase=${phase()}`)
       set("error", String(error))
     } finally {
       set("busy", false)
@@ -315,7 +276,7 @@ export function GptProTool(props: Props) {
   }
   const viewConversation = async () => {
     const client = api()
-    const jobID = state.job?.id ?? id()
+    const jobID = resolvedID()
     if (!client || !jobID) return
     const request = ++resultRequest
     set({ busy: true, error: "" })
@@ -324,7 +285,7 @@ export function GptProTool(props: Props) {
       loading: false,
       opening: false,
       error: "",
-      originalURL: typeof props.metadata.url === "string" ? props.metadata.url : state.job?.url,
+      originalURL: execution()?.url ?? archive()?.url,
       jobID,
       result: undefined,
     })
@@ -357,10 +318,7 @@ export function GptProTool(props: Props) {
           opening: false,
           error: resolution.error || t("ui.tool.gptPro.resultUnavailable"),
           errorCode: resolution.errorCode,
-          originalURL:
-            resolution.url ||
-            (typeof props.metadata.url === "string" ? props.metadata.url : state.job?.url) ||
-            undefined,
+          originalURL: resolution.url || execution()?.url || archive()?.url || undefined,
           jobID: resolution.id,
           result: undefined,
         })
@@ -375,8 +333,7 @@ export function GptProTool(props: Props) {
         jobID: undefined,
         result: undefined,
       })
-      set("job", resolution.job)
-      set("job", await handoffGptPro(client, resolution.job.id))
+      await handoffGptPro(client, resolution.job.id)
       set("busy", false)
     } catch (error) {
       if (request !== resultRequest) return
@@ -447,7 +404,13 @@ export function GptProTool(props: Props) {
   const canPreview = (attachment: AttachmentView) =>
     !!previewJobID() && !!api()?.attachmentPreview && !!attachment.attachmentID
   return (
-    <div data-component="gpt-pro-tool">
+    <div
+      data-component="gpt-pro-tool"
+      data-job-id={id()}
+      data-phase={phase()}
+      data-state-source={entry().state?.kind ?? "historical"}
+      data-freshness={entry().freshness}
+    >
       <BasicTool
         icon="brain"
         status={status()}
@@ -473,24 +436,24 @@ export function GptProTool(props: Props) {
               <span data-slot="basic-tool-tool-subtitle" data-queue-reason={queueReason() || undefined}>
                 {phaseLabel()}
               </span>
-              <Show when={state.job?.background ?? props.metadata.background}>
+              <Show when={entry().state?.kind === "archive" || entry().freshness === "stale"}>
+                <span class="text-11-regular text-text-weak" data-testid="gpt-pro-state-provenance">
+                  {t(entry().freshness === "stale" ? "ui.tool.gptPro.state.stale" : "ui.tool.gptPro.state.archive")}
+                </span>
+              </Show>
+              <Show when={execution()?.background}>
                 <span class="text-11-regular text-text-weak" data-testid="gpt-pro-background-badge">
                   {t("ui.tool.gptPro.background")}
                 </span>
               </Show>
-              <Show when={state.job?.stopPending ?? props.metadata.stop_pending}>
+              <Show when={execution()?.stopPending}>
                 <span class="text-11-regular text-text-weak" role="status">
                   {t("ui.tool.gptPro.stopPending")}
                 </span>
               </Show>
             </div>
             <span data-slot="basic-tool-tool-action">
-              <Show
-                when={
-                  ["queued", "preparing", "sending", "generating"].includes(phase()) &&
-                  !(state.job?.background ?? props.metadata.background)
-                }
-              >
+              <Show when={capabilities().background}>
                 <Button
                   size="small"
                   variant="ghost"
@@ -504,7 +467,7 @@ export function GptProTool(props: Props) {
                   {t("ui.tool.gptPro.toBackground")}
                 </Button>
               </Show>
-              <Show when={["preparing", "sending", "generating"].includes(phase())}>
+              <Show when={capabilities().pause}>
                 <Button
                   size="small"
                   variant="ghost"
@@ -531,7 +494,7 @@ export function GptProTool(props: Props) {
               >
                 {t("ui.tool.gptPro.view")}
               </Button>
-              <Show when={canResume()}>
+              <Show when={capabilities().resume}>
                 <Button
                   size="small"
                   variant="ghost"
@@ -546,7 +509,7 @@ export function GptProTool(props: Props) {
                   {t("ui.tool.gptPro.resume")}
                 </Button>
               </Show>
-              <Show when={["queued", "preparing", "sending", "generating", "paused"].includes(phase())}>
+              <Show when={capabilities().stop}>
                 <Button
                   size="small"
                   variant="ghost"
@@ -560,6 +523,17 @@ export function GptProTool(props: Props) {
                   {t("ui.tool.gptPro.stop")}
                 </Button>
               </Show>
+              <Button
+                size="small"
+                variant="ghost"
+                data-testid="gpt-pro-history-toggle"
+                onClick={(event: MouseEvent) => {
+                  event.stopPropagation()
+                  set("historyOpen", !state.historyOpen)
+                }}
+              >
+                {t("ui.tool.gptPro.state.history")}
+              </Button>
             </span>
           </div>
         }
@@ -642,15 +616,52 @@ export function GptProTool(props: Props) {
           />
         </Show>
       </Suspense>
-      <GptProErrorNotice
-        error={error()}
-        code={state.error ? undefined : localStatus() ? state.job?.errorCode : props.metadata.error_code}
-        phase={phase()}
-        queueReason={queueReason()}
-        needsHuman={(state.job?.recovery ?? (props.metadata.recovery as GptProJob["recovery"]))?.needsHuman}
-        busy={state.busy}
-        onOpenPage={id() && api() ? () => void command("open") : undefined}
-      />
+      <Show when={state.error}>
+        <section data-testid="gpt-pro-operation-error" class="text-12-regular text-text-weak">
+          <div>{t("ui.tool.gptPro.state.operationFailed")}</div>
+          <GptProErrorNotice error={state.error} />
+        </section>
+      </Show>
+      <Show
+        when={
+          (!id() && (props.error || attachments().some((item) => item.error))) ||
+          (entry().freshness === "current" && execution())
+        }
+      >
+        <GptProErrorNotice
+          error={state.error ? (execution()?.error ?? "") : error()}
+          code={execution()?.errorCode ?? undefined}
+          phase={phase()}
+          queueReason={queueReason()}
+          needsHuman={execution()?.recovery?.needsHuman}
+          busy={state.busy}
+          onOpenPage={id() && api() ? () => void command("open") : undefined}
+        />
+      </Show>
+      <Show when={state.historyOpen}>
+        <section data-testid="gpt-pro-historical-record" class="p-3 text-12-regular text-text-weak">
+          <div>
+            {t("ui.tool.gptPro.state.historical")}: {historical().phase}
+          </div>
+          <Show when={!historyOnly() && historicalAttachments().length}>
+            <div>
+              {historicalAttachments()
+                .map((attachment) => attachment.name)
+                .join(", ")}
+            </div>
+          </Show>
+          <pre class="whitespace-pre-wrap break-words" data-testid="gpt-pro-historical-error">
+            {gptProDiagnostic(
+              props.error ??
+                props.metadata.error ??
+                historicalAttachments()
+                  .filter((item) => item.error)
+                  .map((item) => item.error)
+                  .join("\n"),
+            )}
+          </pre>
+        </section>
+      </Show>
     </div>
   )
 }

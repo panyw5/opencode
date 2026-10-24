@@ -17,7 +17,17 @@ const configNames = [
   "chevron-left",
   "magnifying-glass",
   "trash",
+  "wifi",
 ]
+
+test("renders a Wi-Fi glyph for the remote-access entry in every icon pack", () => {
+  for (const pack of ["legacy", "phosphor", "tabler", "lucide"] as const) {
+    const icon = resolveIcon("wifi", pack)
+    expect(icon.pack).toBe(pack)
+    expect(icon.body).toContain("<path")
+    expect(icon.body.length).toBeGreaterThan(20)
+  }
+})
 
 test("keeps browser maximize on four diagonal outward arrows across icon packs", () => {
   const icon = resolveIcon("browser-maximize", "legacy")

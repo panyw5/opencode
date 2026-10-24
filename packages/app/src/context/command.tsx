@@ -7,6 +7,7 @@ import { useSettings } from "@/context/settings"
 import { dict as en } from "@/i18n/en"
 import { Persist, persisted } from "@/utils/persist"
 import { composerBoundary, isMainComposerCommand } from "@/components/prompt-input/composer-boundary"
+import { keybindScopeMatches, type CommandKeybindScope } from "./command-focus"
 
 const IS_MAC = typeof navigator === "object" && /(Mac|iPod|iPhone|iPad)/.test(navigator.platform)
 
@@ -112,6 +113,7 @@ export interface CommandOption {
   category?: string
   keywords?: string
   keybind?: KeybindConfig
+  keybindScope?: CommandKeybindScope
   slash?: string
   suggested?: boolean
   disabled?: boolean
@@ -410,6 +412,12 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
       const isPalette = palette().has(sig)
       const option = keymap().get(sig)
       const id = isPalette ? PALETTE_ID : option?.id
+      if (!isPalette && !keybindScopeMatches(option?.keybindScope, event.target)) {
+        console.debug(
+          `[command-keybind] scope blocked id=${id ?? "none"} required=${option?.keybindScope} signature=${sig}`,
+        )
+        return false
+      }
       if (composerBoundary(event.target)?.dataset.promptKind === "quick" && isMainComposerCommand(id)) {
         console.debug(`[prompt-isolation] keybind blocked foreign main command=${id} signature=${sig}`)
         event.preventDefault()

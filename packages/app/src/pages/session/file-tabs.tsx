@@ -120,6 +120,12 @@ export function FileTabContent(props: { tab: string; forceMount?: boolean }) {
   }
 
   const path = createMemo(() => file.pathFromTab(props.tab))
+  createEffect(() => {
+    const target = path()
+    if (!target || activeFileTab() !== props.tab || !view().filePreview.opened()) return
+    const release = file.watch(target)
+    onCleanup(release)
+  })
   const state = createMemo(() => {
     const p = path()
     if (!p) return
@@ -135,6 +141,30 @@ export function FileTabContent(props: { tab: string; forceMount?: boolean }) {
     return `${sdk.directory.replace(/[\\/]+$/, "")}/${p}`
   })
   const html = createMemo(() => /\.html?$/i.test(path() ?? ""))
+  const refresh = async () => {
+    const target = path()
+    if (!target || state()?.loading) return
+    console.debug(`[file-preview] refresh start path=${target}`)
+    await file.refresh(target)
+    const result = file.get(target)
+    console.debug(
+      `[file-preview] refresh complete path=${target} loaded=${!!result?.loaded} error=${result?.error ?? "none"}`,
+    )
+  }
+  const refreshAction = () => (
+    <Tooltip value={language.t("common.refresh")} placement="bottom">
+      <IconButton
+        icon="refresh-small"
+        variant="ghost"
+        class="h-8 w-8 rounded-md"
+        onClick={() => void refresh()}
+        disabled={state()?.loading}
+        aria-busy={!!state()?.loading}
+        aria-label={language.t("common.refresh")}
+        data-action="file-preview-refresh"
+      />
+    </Tooltip>
+  )
   // Hand the file to the embedded browser panel: it renders the page natively
   // (the preview here shows source). Opening the panel first matters — tab
   // visibility follows opened() + active(), and the side panel docks are
@@ -272,6 +302,7 @@ export function FileTabContent(props: { tab: string; forceMount?: boolean }) {
   const fileActions = (
     <>
       {viewerMenu()}
+      {refreshAction()}
       <Show when={html()}>
         <Tooltip value={language.t("panel.browser.openFile")} placement="bottom">
           <IconButton
@@ -336,27 +367,30 @@ export function FileTabContent(props: { tab: string; forceMount?: boolean }) {
     }
 
     // The sidecar's preview text is trimmed; local desktop copies must preserve the original whitespace.
-    const source = server.isLocal() && platform.readLocalFile ? platform.readLocalFile(fullPath()!) : Promise.resolve(text)
-    void source.then((value) => {
-      if (value === null) throw new Error("Unable to read original file")
-      console.debug(`[file-preview] copy content resolved path=${target} chars=${value.length}`)
-      return clipboard.writeText(value)
-    }).then(
-      () => {
-        console.debug(`[file-preview] copied content path=${target}`)
-        markCopied("content")
-      },
-      (err: unknown) => {
-        console.debug(
-          `[file-preview] copy content failed path=${target} err=${err instanceof Error ? err.message : String(err)}`,
-        )
-        showToast({
-          variant: "error",
-          title: language.t("common.requestFailed"),
-          description: err instanceof Error ? err.message : String(err),
-        })
-      },
-    )
+    const source =
+      server.isLocal() && platform.readLocalFile ? platform.readLocalFile(fullPath()!) : Promise.resolve(text)
+    void source
+      .then((value) => {
+        if (value === null) throw new Error("Unable to read original file")
+        console.debug(`[file-preview] copy content resolved path=${target} chars=${value.length}`)
+        return clipboard.writeText(value)
+      })
+      .then(
+        () => {
+          console.debug(`[file-preview] copied content path=${target}`)
+          markCopied("content")
+        },
+        (err: unknown) => {
+          console.debug(
+            `[file-preview] copy content failed path=${target} err=${err instanceof Error ? err.message : String(err)}`,
+          )
+          showToast({
+            variant: "error",
+            title: language.t("common.requestFailed"),
+            description: err instanceof Error ? err.message : String(err),
+          })
+        },
+      )
   }
   onCleanup(() => {
     if (copiedTimer) clearTimeout(copiedTimer)
@@ -852,7 +886,14 @@ export function FileTabContent(props: { tab: string; forceMount?: boolean }) {
               <Match when={state()?.loading}>
                 <div class="px-6 py-4 text-text-weak">{language.t("common.loading")}...</div>
               </Match>
-              <Match when={state()?.error}>{(err) => <div class="px-6 py-4 text-text-weak">{err()}</div>}</Match>
+              <Match when={state()?.error}>
+                {(err) => (
+                  <div class="flex items-center gap-2 px-6 py-4 text-text-weak">
+                    <span>{err()}</span>
+                    {refreshAction()}
+                  </div>
+                )}
+              </Match>
             </Switch>
           </ScrollView>
         }

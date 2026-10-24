@@ -160,7 +160,7 @@ function matchLegacyOpenApi(input: Record<string, unknown>) {
         normalizeLegacyErrorResponses(operation)
       }
       normalizeLegacyOperation(operation, path, method)
-      if ((path === "/event" || path === "/global/event") && method === "get") {
+      if ((path === "/event" || path === "/global/event" || path === "/file/watch") && method === "get") {
         // HttpApi has no first-class SSE response schema, and these handlers are
         // raw/streaming routes. Document the actual wire protocol explicitly.
         operation.responses!["200"] = {
@@ -168,9 +168,11 @@ function matchLegacyOpenApi(input: Record<string, unknown>) {
           content: {
             "text/event-stream": {
               schema:
-                path === "/event"
-                  ? { $ref: "#/components/schemas/Event" }
-                  : { $ref: "#/components/schemas/GlobalEvent" },
+                path === "/file/watch"
+                  ? operation.responses!["200"].content!["application/json"].schema
+                  : path === "/event"
+                    ? { $ref: "#/components/schemas/Event" }
+                    : { $ref: "#/components/schemas/GlobalEvent" },
             },
           },
         }
@@ -276,7 +278,9 @@ function applyLegacySchemaOverrides(spec: OpenApiSpec) {
   if (schemas.GlobalSession?.properties?.project)
     schemas.GlobalSession.properties.project = nullable(schemas.GlobalSession.properties.project)
   if (schemas.ScheduledTaskUpdateInput?.properties?.sessionID)
-    schemas.ScheduledTaskUpdateInput.properties.sessionID = nullable(schemas.ScheduledTaskUpdateInput.properties.sessionID)
+    schemas.ScheduledTaskUpdateInput.properties.sessionID = nullable(
+      schemas.ScheduledTaskUpdateInput.properties.sessionID,
+    )
   const providerOptions = schemas.ProviderConfig?.properties?.options
   if (providerOptions) providerOptions.additionalProperties = {}
   const model = schemas.ProviderConfig?.properties?.models?.additionalProperties

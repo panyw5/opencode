@@ -11,6 +11,7 @@ describe("theme content contrast", () => {
         const tokens = resolveThemeVariant(theme[mode], mode === "dark")
         const background = tokens["background-base"] as HexColor
         for (const surface of contentSurfaces) {
+          if (!tokens[surface]) continue
           const fill = opaqueColor(tokens[surface], tokens, background)
           expect(fill, `${id} ${mode} ${surface}`).toBeDefined()
           for (const key of [

@@ -49,6 +49,9 @@ export function shouldDeferToolPart(part: Part, defaultOpen?: boolean) {
   // A presented artifact has a stable media card geometry. Never replace it
   // with the generic 50px tool placeholder while it approaches the viewport.
   if (part.tool === "present_file" || part.tool === "present_diagram" || part.tool === "present_task") return false
+  // Consultation cards have attachments and recovery notices, not a fixed
+  // collapsed-tool height. Remount the real card instead of a 50px skeleton.
+  if (part.tool === "gpt_pro_consult") return false
   if (defaultOpen) return false
   const status = part.state.status
   if (status === "pending" || status === "running") return false

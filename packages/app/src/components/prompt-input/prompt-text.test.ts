@@ -20,4 +20,14 @@ describe("prompt text expansion", () => {
     ]
     expect(promptText(prompt)).toContain("the work-feishu channel (bot: Alice)")
   })
+
+  test("converts skill pills to an explicit skill-use instruction", () => {
+    expect(
+      promptText([
+        { type: "text", content: "Review this with ", start: 0, end: 18 },
+        { type: "skill", name: "code-review", content: "/code-review", start: 18, end: 30 },
+        { type: "text", content: " please", start: 30, end: 37 },
+      ]),
+    ).toBe("Review this with Use the code-review skill. please")
+  })
 })

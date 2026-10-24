@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import type { ContextItem, Prompt } from "@/context/prompt"
+import { pendingSessionKey, pendingSessionSubmissions } from "./pending-session"
 
 let createPromptSubmit: typeof import("./submit").createPromptSubmit
 let sendFollowupDraft: typeof import("./submit").sendFollowupDraft
@@ -40,6 +41,10 @@ let selected = "/repo/worktree-a"
 let variant: string | undefined
 let integration: string | undefined
 let sessionCreateGate: { promise: Promise<void>; resolve: () => void } | undefined
+let sessionCreateError: Error | undefined
+let sessionCreateCalls = 0
+const sentMessageIDs: string[] = []
+const sentPartIDs: string[][] = []
 let promptGate: Promise<void> | undefined
 let abortGate: Promise<void> | undefined
 let onPrompt: (() => void) | undefined
@@ -52,7 +57,9 @@ const clientFor = (directory: string, track = true) => {
   return {
     session: {
       create: async (_parameters?: unknown, options?: { body?: { cwd?: string } }) => {
+        sessionCreateCalls++
         await sessionCreateGate?.promise
+        if (sessionCreateError) throw sessionCreateError
         createdSessions.push(directory)
         sessionCreateOptions.push({ directory, body: options?.body })
         return {
@@ -68,7 +75,9 @@ const clientFor = (directory: string, track = true) => {
       },
       messages: async () => ({ data: messagePages[directory] ?? [] }),
       prompt: async () => ({ data: undefined }),
-      promptAsync: async (input: { sessionID: string }) => {
+      promptAsync: async (input: { sessionID: string; messageID: string; parts: { id: string }[] }) => {
+        sentMessageIDs.push(input.messageID)
+        sentPartIDs.push(input.parts.map((part) => part.id))
         sentPrompts.push({ directory, sessionID: input.sessionID })
         onPrompt?.()
         await promptGate
@@ -292,6 +301,7 @@ afterAll(() => {
 })
 
 beforeEach(() => {
+  for (const key of Object.keys(pendingSessionSubmissions.entries)) pendingSessionSubmissions.finish(key)
   createdClients.length = 0
   createdSessions.length = 0
   sessionCreateOptions.length = 0
@@ -318,11 +328,129 @@ beforeEach(() => {
   variant = undefined
   integration = undefined
   sessionCreateGate = undefined
+  sessionCreateError = undefined
+  sessionCreateCalls = 0
+  sentMessageIDs.length = 0
+  sentPartIDs.length = 0
+  promptGate = undefined
+  onPrompt = undefined
   for (const key of Object.keys(storedSessions)) delete storedSessions[key]
   for (const key of Object.keys(messagePages)) delete messagePages[key]
 })
 
 describe("prompt submit worktree selection", () => {
+  const newPromptSubmit = () =>
+    createPromptSubmit({
+      info: () => undefined,
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: () => 2,
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      resetInputUndo: () => undefined,
+      newSessionWorktree: () => selected,
+    })
+
+  test("shows the first message and clears only its draft before session creation; duplicate submit is ignored", async () => {
+    let resolve!: () => void
+    sessionCreateGate = {
+      promise: new Promise<void>((done) => {
+        resolve = done
+      }),
+      resolve: () => resolve(),
+    }
+    const submit = newPromptSubmit()
+    const event = { preventDefault() {} } as Event
+    const operation = submit.handleSubmit(event)
+    const key = pendingSessionKey("http://localhost:4096", current, "draft-1")
+    const entry = pendingSessionSubmissions.entries[key]!
+    expect(entry.phase).toBe("preparing")
+    expect(entry.parts.find((part) => part.type === "text")?.text).toBe("ls")
+    expect(promptResetScopes).toEqual([{ dir: current, id: "draft-1" }])
+    expect(createdSessions).toHaveLength(0)
+    expect(sentPrompts).toHaveLength(0)
+    expect(sessionTabEvents).toHaveLength(0)
+    await submit.handleSubmit(event)
+    expect(sessionCreateCalls).toBe(1)
+    sessionCreateGate.resolve()
+    await operation
+    await Bun.sleep(0)
+    expect(sentMessageIDs).toEqual([entry.message.id])
+    expect(optimistic).toHaveLength(1)
+    expect(optimistic[0]).toMatchObject({ message: { id: entry.message.id }, sessionID: "session-1" })
+    expect(pendingSessionSubmissions.entries[key]?.sessionID).toBe("session-1")
+    expect(promptResetScopes).toHaveLength(1)
+  })
+
+  test("keeps a failed first message and retries once with the original message ID", async () => {
+    sessionCreateError = new Error("create unavailable")
+    const submit = newPromptSubmit()
+    await submit.handleSubmit({ preventDefault() {} } as Event)
+    const key = pendingSessionKey("http://localhost:4096", current, "draft-1")
+    const entry = pendingSessionSubmissions.entries[key]!
+    const messageID = entry.message.id
+    expect(entry.phase).toBe("failed")
+    expect(entry.error).toBe("create unavailable")
+    expect(sentPrompts).toHaveLength(0)
+    sessionCreateError = undefined
+    entry.retry()
+    entry.retry()
+    await Bun.sleep(0)
+    expect(sessionCreateCalls).toBe(2)
+    expect(createdSessions).toHaveLength(1)
+    expect(sentMessageIDs).toEqual([messageID])
+    expect(optimistic).toHaveLength(1)
+  })
+
+  test("background first-message creation does not navigate away from a different draft", async () => {
+    let resolve!: () => void
+    sessionCreateGate = {
+      promise: new Promise<void>((done) => {
+        resolve = done
+      }),
+      resolve: () => resolve(),
+    }
+    const submit = newPromptSubmit()
+    const operation = submit.handleSubmit({ preventDefault() {} } as Event)
+    params.draftID = "draft-2"
+    sessionCreateGate.resolve()
+    await operation
+    await Bun.sleep(0)
+    expect(sessionTabEvents).toEqual(["promote:/repo/worktree-a:session-1:draft-1:/repo/worktree-a"])
+    expect(promptResetScopes).toEqual([{ dir: current, id: "draft-1" }])
+    expect(sentPrompts).toHaveLength(1)
+    expect(pendingSessionSubmissions.get("http://localhost:4096", current, params)).toBeUndefined()
+  })
+
+  test("a failed send retries the existing session and keeps the same message and part IDs", async () => {
+    onPrompt = () => {
+      throw new Error("send unavailable")
+    }
+    const submit = newPromptSubmit()
+    await submit.handleSubmit({ preventDefault() {} } as Event)
+    const key = pendingSessionKey("http://localhost:4096", current, "draft-1")
+    for (let attempt = 0; attempt < 100 && pendingSessionSubmissions.entries[key]?.phase !== "failed"; attempt++) {
+      await Bun.sleep(10)
+    }
+    const entry = pendingSessionSubmissions.entries[key]!
+    expect(entry.phase).toBe("failed")
+    expect(createdSessions).toHaveLength(1)
+    onPrompt = undefined
+    entry.retry()
+    entry.retry()
+    await Bun.sleep(0)
+    expect(sessionCreateCalls).toBe(1)
+    expect(sentMessageIDs).toEqual([entry.message.id, entry.message.id])
+    expect(sentPartIDs[1]).toEqual(sentPartIDs[0])
+  })
+
   test("promotes a submitted draft in the background after the user opens another draft", async () => {
     let resolve!: () => void
     sessionCreateGate = {

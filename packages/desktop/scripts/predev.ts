@@ -2,6 +2,7 @@ import { $ } from "bun"
 import { getCurrentSidecar, windowsify, copyBinaryToSidecarFolder } from "./utils"
 
 await $`bun ./scripts/copy-icons.ts ${process.env.OPENCODE_CHANNEL ?? "dev"}`
+await $`bun ./scripts/build-remote-web.ts`
 
 const RUST_TARGET = Bun.env.RUST_TARGET
 
@@ -53,9 +54,7 @@ if (!shouldBuildBaseline) {
   if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
-await $`bun script/build-node.ts`
-  .cwd("../opencode")
-  .env({ ...Bun.env, OPENCODE_CHANNEL: "local" })
+await $`bun script/build-node.ts`.cwd("../opencode").env({ ...Bun.env, OPENCODE_CHANNEL: "local" })
 
 const binaryPath = windowsify(`../opencode/dist/${binary}/bin/opencode`)
 

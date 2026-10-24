@@ -30,6 +30,8 @@ export type TimelineRowMap = {
   ToolGroup: {
     userMessageID: string
     groups: PartGroup[]
+    continuing?: boolean
+    end?: number
     previousAssistantPart: boolean
     topSpacing?: boolean
   }
@@ -63,6 +65,8 @@ export namespace TimelineRow {
   export class ToolGroup extends Data.TaggedClass("ToolGroup")<{
     userMessageID: string
     groups: PartGroup[]
+    continuing?: boolean
+    end?: number
     previousAssistantPart: boolean
     topSpacing?: boolean
   }> {}
@@ -252,12 +256,14 @@ export namespace Timeline {
         )
       })
     }
-    const flushToolGroups = () => {
+    const flushToolGroups = (continuing = false, end?: number) => {
       if (pendingToolGroups.length === 0) return
       rows.push(
         new TimelineRow.ToolGroup({
           userMessageID: userMessage.id,
           groups: pendingToolGroups,
+          continuing,
+          end,
           previousAssistantPart: pendingToolPrevious,
           topSpacing: true,
         }),
@@ -267,7 +273,7 @@ export namespace Timeline {
     }
     assistantItems.forEach((item) => {
       if (item.type === "interrupted") {
-        flushToolGroups()
+        flushToolGroups(false, assistantMessages[interruptedMessageIndex]?.time.completed)
         rows.push(
           new TimelineRow.TurnDivider({
             userMessageID: userMessage.id,
@@ -283,10 +289,16 @@ export namespace Timeline {
         return
       }
 
-      flushToolGroups()
-
       const ref = item.group.type === "part" ? item.group.ref : item.group.refs[0]
       const firstPart = ref ? assistantPartByRef.get(`${ref.messageID}\n${ref.partID}`) : undefined
+      const boundary =
+        firstPart?.type === "text" || firstPart?.type === "reasoning"
+          ? firstPart.time?.start
+          : firstPart?.type === "tool" && firstPart.state.status !== "pending"
+            ? firstPart.state.time.start
+            : undefined
+      flushToolGroups(false, boundary)
+
       const topSpacing = assistantGroupIndex > 0 || firstPart?.type === "tool"
 
       rows.push(
@@ -299,7 +311,10 @@ export namespace Timeline {
       )
       assistantGroupIndex += 1
     })
-    flushToolGroups()
+    // Only the trailing group can receive another tool after the model's next
+    // step. A completed tool does not mean this activity group has finished.
+    const continuing = isActive && status !== "idle" && !error
+    flushToolGroups(continuing, continuing ? undefined : assistantMessages.at(-1)?.time.completed)
 
     if (isActive && status === "busy" && !error && (showReasoning ? assistantPartRefs.length === 0 : true)) {
       const reasoningParts = assistantMessages.flatMap((message) =>

@@ -15,6 +15,12 @@
       "diffAdd": "#a3be8c",
       "diffDelete": "#bf616a"
     },
+    "surfaces": {
+      "shell": "#e0e3e8",
+      "canvas": "#eceff4",
+      "raised": "#f5f8fd",
+      "inset": "#d7dadf"
+    },
     "overrides": {
       "syntax-comment": "#646b7b",
       "syntax-keyword": "#4b6d97",
@@ -36,6 +42,12 @@
       "info": "#81a1c1",
       "diffAdd": "#81a1c1",
       "diffDelete": "#bf616a"
+    },
+    "surfaces": {
+      "shell": "#272d39",
+      "canvas": "#2e3440",
+      "raised": "#3c424f",
+      "inset": "#212632"
     },
     "overrides": {
       "syntax-comment": "#616e88",

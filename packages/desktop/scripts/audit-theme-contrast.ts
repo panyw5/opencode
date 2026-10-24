@@ -9,6 +9,7 @@ const strict = Bun.argv.includes("--strict")
 const settings = Bun.argv.includes("--settings")
 const keybinds = Bun.argv.includes("--keybinds")
 const controls = Bun.argv.includes("--controls")
+const materials = Bun.argv.includes("--materials")
 const selected = Bun.env.THEME_AUDIT_IDS?.split(",") ?? Object.keys(DEFAULT_THEMES).sort()
 
 // Measure the rendered colors, including transparent backgrounds and inherited opacity.
@@ -166,13 +167,45 @@ await withCdp(async (cdp, target) => {
         await switchMode(id, mode)
         await cdp.call("Input.dispatchMouseEvent", { type: "mouseMoved", x: 900, y: 600 })
         await Bun.sleep(180)
-        if (controls) {
+        if (controls || materials) {
           const page = await cdp.evaluate<ReturnType<typeof inspect>>(`(${inspect.toString()})()`)
+          if (materials) {
+            const collapsed = await cdp.evaluate(`(() => {
+              const panel=document.querySelector('[data-component="sidebar-panel"]');
+              return !!panel && panel.getBoundingClientRect().right<100;
+            })()`)
+            if (collapsed) {
+              await cdp.evaluate(
+                `document.querySelector('[data-action="project-switch"][aria-current="true"]').click()`,
+              )
+              try {
+                await Bun.sleep(250)
+                const sidebar = await cdp.evaluate<ReturnType<typeof inspect>>(`(${inspect.toString()})()`)
+                page.icons.push(...sidebar.icons)
+                page.texts.push(...sidebar.texts)
+                await screenshot(`${id}-${mode}-sidebar-materials`)
+              } finally {
+                await cdp.evaluate(
+                  `document.querySelector('[data-action="project-switch"][aria-current="true"]').click()`,
+                )
+                await Bun.sleep(250)
+              }
+            }
+          }
           const failures = [...page.icons, ...page.texts].filter((item) => item.ratio < item.threshold)
-          results.push({ id, mode, ...page, failures })
+          const layers = materials
+            ? await cdp.evaluate(`(() => {
+                const root=getComputedStyle(document.documentElement);
+                const tokens=Object.fromEntries(['background-base','background-stronger','surface-raised-base','surface-inset-base','input-base','text-strong','text-base','text-weak','text-weaker'].map(k=>[k,root.getPropertyValue('--'+k).trim()]));
+                const components=Object.fromEntries(['[data-slot="prompt-shell"]','[data-dock-surface="tray"]','.shiki','[data-component="sidebar-panel"]'].map(s=>{const el=document.querySelector(s);return [s,el?{background:getComputedStyle(el).backgroundColor,border:getComputedStyle(el).borderColor}:null]}));
+                return {tokens,components};
+              })()`)
+            : undefined
+          if (materials) await screenshot(`${id}-${mode}-materials`)
+          results.push({ id, mode, ...page, layers, failures })
           await Bun.write(`${output}/results.json`, JSON.stringify(results, null, 2))
           log(
-            `${id} ${mode} controls icons=${page.icons.length} texts=${page.texts.length} failures=${failures.length}`,
+            `${id} ${mode} ${materials ? "materials" : "controls"} icons=${page.icons.length} texts=${page.texts.length} failures=${failures.length}${materials ? ` layers=${JSON.stringify(layers)}` : ""}`,
           )
           continue
         }
@@ -279,7 +312,8 @@ await withCdp(async (cdp, target) => {
     log(`completed variants=${results.length} failures=${failures.length} output=${output}`)
     if (
       strict &&
-      (failures.length || (!settings && !keybinds && !controls && results.some((result) => result.tooltips.length < 3)))
+      (failures.length ||
+        (!settings && !keybinds && !controls && !materials && results.some((result) => result.tooltips.length < 3)))
     ) {
       throw new Error(`Incomplete tooltip coverage or ${failures.length} contrast failures; see ${output}/results.json`)
     }

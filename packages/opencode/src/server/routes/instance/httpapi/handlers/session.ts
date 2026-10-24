@@ -10,6 +10,8 @@ import { Session } from "@/session/session"
 import { SessionCompaction } from "@/session/compaction"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
+import { setContextLocale } from "@/session/context-locale"
+import { parseUILocale, UI_LOCALE_HEADER } from "@opencode-ai/core/locale"
 import { SessionInput } from "@/session/input"
 import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
@@ -1170,11 +1172,20 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return true
     })
 
+    const captureContextLocale = Effect.fn("SessionHttpApi.captureContextLocale")(function* (sessionID: SessionID) {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const locale = parseUILocale(request.headers[UI_LOCALE_HEADER])
+      if (!locale) return
+      setContextLocale(sessionID, locale)
+      log.info("request context locale captured", { sessionID, locale })
+    })
+
     const prompt = Effect.fn("SessionHttpApi.prompt")(function* (ctx: {
       params: { sessionID: SessionID }
       payload: typeof PromptPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
+      yield* captureContextLocale(ctx.params.sessionID)
       const message = yield* promptSvc
         .prompt({
           ...ctx.payload,
@@ -1214,6 +1225,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof PromptPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
+      yield* captureContextLocale(ctx.params.sessionID)
       yield* promptSvc.prompt({ ...ctx.payload, sessionID: ctx.params.sessionID }).pipe(
         Effect.catchCause((cause) =>
           Effect.gen(function* () {
@@ -1293,6 +1305,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof CommandPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
+      yield* captureContextLocale(ctx.params.sessionID)
       return yield* promptSvc
         .command({ ...ctx.payload, sessionID: ctx.params.sessionID })
         .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
@@ -1303,6 +1316,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof ShellPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
+      yield* captureContextLocale(ctx.params.sessionID)
       return yield* SessionError.mapBusy(promptSvc.shell({ ...ctx.payload, sessionID: ctx.params.sessionID }))
     })
 

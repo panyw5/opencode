@@ -102,8 +102,9 @@ export type GptProProbeStatus = {
   detail?: string
 }
 
-/** P0 diagnostics only; no unattended consultation is exposed yet. */
+/** Desktop consultation commands and the versioned, read-only UI state feed. */
 export type GptProAPI = {
+  state?: import("./gpt-pro-state").GptProStateAPI
   open(): Promise<GptProProbeStatus>
   status(): Promise<GptProProbeStatus>
   runtimeStatus?(): Promise<GptProRuntimeStatus>
@@ -207,6 +208,8 @@ export type GptProPhase =
   | "interrupted"
   | "send_uncertain"
 export type GptProJob = {
+  /** Durable UI state version, independent of answer-content revision. */
+  stateVersion?: number
   id: string
   /** Page identity is distinct from profileID; multiple pages may share login. */
   pageID?: string

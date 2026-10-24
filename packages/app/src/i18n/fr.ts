@@ -262,6 +262,7 @@ export const dict = {
   "prompt.dropzone.file.label": "Déposez pour @mentionner le fichier",
   "prompt.slash.badge.custom": "personnalisé",
   "prompt.slash.badge.skill": "skill",
+  "prompt.skill.pill": "Compétence : {{name}}",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.active": "actif",
   "prompt.context.includeActiveFile": "Inclure le fichier actif",

@@ -9,6 +9,7 @@ import { PINCH_ZOOM_ENABLED_KEY } from "./constants"
 import { exportDebugLogs, write as writeLog } from "./logging"
 import { getStore } from "./store"
 import { createUnresponsiveSampler } from "./unresponsive"
+import { relaunchApp } from "./relaunch"
 
 const root = dirname(fileURLToPath(import.meta.url))
 const rendererRoot = join(root, "../renderer")
@@ -37,7 +38,7 @@ protocol.registerSchemesAsPrivileged([
 
 let backgroundColor: string | undefined
 let relaunchHandler = () => {
-  app.relaunch()
+  relaunchApp(app)
   app.exit(0)
 }
 const titlebarThemes = new WeakMap<BrowserWindow, Partial<TitlebarTheme>>()

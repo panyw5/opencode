@@ -34,10 +34,11 @@
     "message": "Google の Cookie、パスワード、チャット履歴、API 認証情報は転送しません。セッションをファイルに保存することもありません。"
   },
   "connect": { "message": "セッションをインポート" },
+  "connectImported": { "message": "インポート完了" },
   "statusApproval": { "message": "インポート前に許可してください。" },
   "statusReading": { "message": "セッションを読み取り中…" },
   "statusImporting": { "message": "インポート中…" },
-  "statusImported": { "message": "インポートしました。OpenCode の GPT-Pro 設定ページで確認してください。" },
+  "statusImported": { "message": "OpenCode の GPT-Pro 設定ページに戻り、ログイン状態を確認してください。" },
   "errorTab": {
     "message": "OpenCode から新しい OpenCode-ChatGPT 接続ページ（127.0.0.1）を開き、そのページで拡張機能を開いてください。"
   },

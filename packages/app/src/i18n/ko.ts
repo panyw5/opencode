@@ -265,6 +265,7 @@ export const dict = {
   "prompt.dropzone.file.label": "드롭하여 파일 @멘션 추가",
   "prompt.slash.badge.custom": "사용자 지정",
   "prompt.slash.badge.skill": "스킬",
+  "prompt.skill.pill": "스킬: {{name}}",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.active": "활성",
   "prompt.context.includeActiveFile": "활성 파일 포함",

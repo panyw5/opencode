@@ -6,6 +6,7 @@ import { copyBinaryToSidecarFolder, getCurrentSidecar, resolveChannel, windowsif
 const channel = resolveChannel()
 await $`bun ./scripts/copy-icons.ts ${channel}`
 await $`bun ./scripts/copy-metainfo.ts ${channel}`
+await $`bun ./scripts/build-remote-web.ts`
 
 await $`bun ../../script/sync-version.ts`
 

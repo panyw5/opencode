@@ -14,9 +14,9 @@ import {
   createEffect,
   createMemo,
   createRenderEffect,
-  createResource,
   For,
   onCleanup,
+  on,
   Show,
   untrack,
 } from "solid-js"
@@ -39,6 +39,7 @@ import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { useSessionTabs } from "@/context/session-tabs"
 import { HomePathInput } from "@/pages/home-path-input"
+import HomeResourceUsage from "@/pages/home-resource-usage"
 import "./home.css"
 
 const HOME_SESSION_LIMIT = 6
@@ -90,24 +91,30 @@ export default function Home() {
     const latest = latestProject()
     return latest ? [latest] : []
   })
-  createResource(
-    () => (sync.ready ? warmed() : undefined),
-    async (dirs) => {
-      const started = performance.now()
-      console.debug(
-        `[home-perf] warm-start sinceClick=${typeof navClickAt === "number" ? `${(started - navClickAt).toFixed(1)}ms` : "n/a"} dirs=${dirs.length}`,
-      )
-      await Promise.allSettled(
-        dirs.map(async (dir) => {
-          sync.child(dir, { bootstrap: true })
-          await Promise.race([
-            sync.project.loadSessions(dir, { silent: true }),
-            new Promise((resolve) => setTimeout(resolve, 1500)),
-          ])
-        }),
-      )
-      console.debug(`[home-perf] warm-end duration=${(performance.now() - started).toFixed(1)}ms dirs=${dirs.length}`)
-    },
+  // Fire-and-forget warmup: an effect instead of a createResource, whose value
+  // was never read and would only add resource lifecycle overhead.
+  createEffect(
+    on(
+      () => (sync.ready ? warmed() : undefined),
+      (dirs) => {
+        if (!dirs) return
+        const started = performance.now()
+        console.debug(
+          `[home-perf] warm-start sinceClick=${typeof navClickAt === "number" ? `${(started - navClickAt).toFixed(1)}ms` : "n/a"} dirs=${dirs.length}`,
+        )
+        void Promise.allSettled(
+          dirs.map(async (dir) => {
+            sync.child(dir, { bootstrap: true })
+            await Promise.race([
+              sync.project.loadSessions(dir, { silent: true }),
+              new Promise((resolve) => setTimeout(resolve, 1500)),
+            ])
+          }),
+        ).then(() => {
+          console.debug(`[home-perf] warm-end duration=${(performance.now() - started).toFixed(1)}ms dirs=${dirs.length}`)
+        })
+      },
+    ),
   )
 
   const loadRecentSessions = async () => {
@@ -560,15 +567,17 @@ export default function Home() {
             <Logo class="home-logo h-auto w-36 opacity-70" />
             <h1 class="sr-only">{language.t("home.title")}</h1>
           </div>
-          <Button
-            size="normal"
-            variant="ghost"
-            class="home-server shrink-0 text-12-regular text-text-weak"
-            onClick={() => dialog.show(() => <DialogSelectServer />)}
-          >
-            <span class={`size-2 rounded-full ${serverDotClass()}`} aria-hidden="true" />
-            {server.name}
-          </Button>
+          <Show when={!platform.remoteMode}>
+            <Button
+              size="normal"
+              variant="ghost"
+              class="home-server shrink-0 text-12-regular text-text-weak"
+              onClick={() => dialog.show(() => <DialogSelectServer />)}
+            >
+              <span class={`size-2 rounded-full ${serverDotClass()}`} aria-hidden="true" />
+              {server.name}
+            </Button>
+          </Show>
         </header>
 
         <section class="home-command-deck relative z-10 mt-8 rounded-2xl border border-border-weak-base bg-surface-raised-base p-4 shadow-sm sm:p-5">
@@ -859,6 +868,12 @@ export default function Home() {
             </Show>
           </section>
         </div>
+
+        <Show when={platform.platform === "desktop" && !!platform.resourceUsage}>
+          <div class="mt-9 grid min-w-0 gap-x-8 gap-y-9 lg:grid-cols-2">
+            <HomeResourceUsage />
+          </div>
+        </Show>
       </main>
     </div>
   )

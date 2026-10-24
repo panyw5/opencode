@@ -1,6 +1,6 @@
-import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, ImPart, Prompt } from "@/context/prompt"
+import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, ImPart, Prompt, SkillPart } from "@/context/prompt"
 
-type Inline = AgentPart | FileAttachmentPart | ImPart
+type Inline = AgentPart | FileAttachmentPart | ImPart | SkillPart
 
 const tone = {
   quote: "var(--syntax-comment)",
@@ -31,7 +31,7 @@ const text = (value: string, at: number) => ({
 })
 
 const inline = (part: Prompt[number]): part is Inline =>
-  part.type === "file" || part.type === "agent" || part.type === "im"
+  part.type === "file" || part.type === "agent" || part.type === "im" || part.type === "skill"
 
 const image = (part: Prompt[number]): part is ImageAttachmentPart => part.type === "image"
 
@@ -40,6 +40,7 @@ const clone = (part: Inline, at: number): Inline => {
     return { ...part, start: at, end: at + part.content.length }
   }
   if (part.type === "im") return { ...part, start: at, end: at + part.content.length }
+  if (part.type === "skill") return { ...part, start: at, end: at + part.content.length }
   return {
     ...part,
     start: at,
@@ -92,9 +93,7 @@ function mark(value: string) {
 }
 
 export function value(prompt: Prompt) {
-  return prompt
-    .flatMap((part) => (part.type === "image" ? [] : [part.content]))
-    .join("")
+  return prompt.flatMap((part) => (part.type === "image" ? [] : [part.content])).join("")
 }
 
 export function merge(raw: string, prev: Prompt): Prompt {

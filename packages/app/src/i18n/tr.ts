@@ -286,6 +286,7 @@ export const dict = {
   "prompt.dropzone.file.label": "@bahsetmek için dosyayı bırakın",
   "prompt.slash.badge.custom": "özel",
   "prompt.slash.badge.skill": "beceri",
+  "prompt.skill.pill": "Beceri: {{name}}",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.active": "aktif",
   "prompt.context.includeActiveFile": "Aktif dosyayı dahil et",

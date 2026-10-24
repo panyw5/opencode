@@ -9,11 +9,7 @@ import {
   toolHydrationKey,
 } from "./deferred-tool-helpers"
 
-const tool = (input: {
-  id?: string
-  tool?: string
-  status?: ToolPart["state"]["status"]
-}): ToolPart =>
+const tool = (input: { id?: string; tool?: string; status?: ToolPart["state"]["status"] }): ToolPart =>
   ({
     id: input.id ?? "part_1",
     type: "tool",
@@ -30,13 +26,15 @@ const tool = (input: {
               input: {},
               time: { start: 1 },
             }
-          : {
-              status: "completed",
-              input: {},
-              output: "ok",
-              metadata: {},
-              time: { start: 1, end: 2 },
-            },
+          : input.status === "error"
+            ? { status: "error", input: {}, error: "failed", time: { start: 1, end: 2 } }
+            : {
+                status: "completed",
+                input: {},
+                output: "ok",
+                metadata: {},
+                time: { start: 1, end: 2 },
+              },
   }) as ToolPart
 
 describe("shouldDeferToolPart", () => {
@@ -47,6 +45,12 @@ describe("shouldDeferToolPart", () => {
   })
   test("defers collapsed completed tools", () => {
     expect(shouldDeferToolPart(tool({ status: "completed" }))).toBe(true)
+  })
+
+  test("never replaces saved GPT-Pro cards with a fixed-height skeleton", () => {
+    for (const status of ["completed", "error", "pending", "running"] as const) {
+      expect(shouldDeferToolPart(tool({ tool: "gpt_pro_consult", status }))).toBe(false)
+    }
   })
 
   test("does not defer running or pending tools", () => {

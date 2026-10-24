@@ -5,11 +5,24 @@ type Store = {
   set(key: string, value: unknown): unknown
 }
 
-export function createGptProPersistence(store: Store, log: (message: string) => void) {
+export function createGptProPersistence(
+  store: Store,
+  log: (message: string) => void,
+  archive?: { save(jobs: GptProJob[]): void; read(id: string, owners?: string[]): GptProJob | undefined },
+) {
   const started = performance.now()
   // electron-store parses the entire history on get(), including completed results.
   // Configuration changes go through setConfig; notification polls must stay in memory.
   let config = { ...((store.get("config") as GptProConfig | undefined) ?? DEFAULT_GPT_PRO_CONFIG) }
+  const archiveJobs = (jobs: GptProJob[]) => {
+    try {
+      archive?.save(jobs)
+    } catch (error) {
+      // The primary durable write already succeeded. Do not roll the controller
+      // back to a sending state merely because the secondary archive failed.
+      log(`result archive save failed jobs=${jobs.length} error=${String(error)}`)
+    }
+  }
   log(`config cache initialized enabled=${config.enabled} durationMs=${(performance.now() - started).toFixed(2)}`)
   return {
     load() {
@@ -22,17 +35,20 @@ export function createGptProPersistence(store: Store, log: (message: string) => 
           ) as GptProJob[])
         : []
       log(`history loaded jobs=${jobs.length} durationMs=${(performance.now() - started).toFixed(2)}`)
+      archiveJobs(jobs)
       return jobs
     },
     save(jobs: GptProJob[]) {
       const started = performance.now()
       store.set("jobs", jobs)
+      archiveJobs(jobs)
       const elapsed = performance.now() - started
       if (elapsed >= 16) log(`history save slow jobs=${jobs.length} durationMs=${elapsed.toFixed(2)}`)
     },
     config(): GptProConfig {
       return { ...config }
     },
+    readResult: archive?.read,
     setConfig(next: GptProConfig) {
       const copy = { ...next }
       // Publish only after the durable write succeeds, so failed settings writes don't take effect.

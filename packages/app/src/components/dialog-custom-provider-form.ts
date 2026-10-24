@@ -122,6 +122,7 @@ export type HeaderRow = {
 export type FormState = {
   providerID: string
   npm?: string
+  autoV1?: boolean
   name: string
   baseURL: string
   apiKey: string
@@ -369,7 +370,7 @@ export function validateCustomProvider(input: ValidateArgs) {
         name,
         ...(env ? { env: [env] } : {}),
         options: {
-          baseURL: resolveProviderBaseURL(baseURL, npm),
+          baseURL: resolveProviderBaseURL(baseURL, npm, input.form.autoV1),
           headers: headerConfig,
         },
         models: modelConfig,

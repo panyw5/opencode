@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { Marked } from "marked"
 import { parseMarkdown as parseNativeMarkdown } from "../../../desktop/src/main/markdown"
 import {
+  applyLineAnnotations,
+  beginMarkdownDomUpdate,
   initialMarkdownEager,
   initialMarkdownMathSeen,
   markdownCacheMode,
@@ -17,10 +19,100 @@ import {
   normalizeCodeLanguage,
   preserveCodeLanguage,
   prepareMarkdown,
+  prepareMarkdownTracked,
+  parseAnchoredMarkdown,
+  fallbackAnchoredMarkdown,
   protectBareAutolinks,
   protectMathExpressions,
   renderMathExpressions,
 } from "../context/marked"
+
+describe("anchored lazy Markdown", () => {
+  const source = [
+    "## Before",
+    "",
+    "Paragraph with $x^2$ and [a reference][ref].",
+    "",
+    "$$",
+    "p_i=\\frac{e_{2i-1}+ie_{2i}}{\\sqrt 2}",
+    "$$",
+    "",
+    "- first",
+    "- second",
+    "",
+    "```ts",
+    "const value = 1",
+    "```",
+    "",
+    "[ref]: https://example.com",
+    "",
+    "## After",
+  ].join("\n")
+
+  test("keeps source block identities while formulas upgrade", async () => {
+    const parser = new Marked()
+    const lite = await parseAnchoredMarkdown(source, (text) => parser.parse(text))
+    const full = await parseAnchoredMarkdown(
+      source,
+      (text) => parser.parse(text),
+      (html) => renderMathExpressions(html, "html"),
+    )
+    const lines = (html: string) => [...html.matchAll(/data-ml="(\d+)"/g)].map((match) => Number(match[1]))
+    expect(lines(lite)).toEqual([1, 3, 7, 9, 12, 18])
+    expect(lines(full)).toEqual(lines(lite))
+    expect(lite).not.toContain("katex-display")
+    expect(full).toContain("katex-display")
+    expect(lite).toContain('<a href="https://example.com">a reference</a>')
+    expect(full).toContain('<a href="https://example.com">a reference</a>')
+    expect(lite).toContain('<code class="language-ts">')
+  })
+
+  test("attaches source IDs to prepared code/math wrappers and removes markers", () => {
+    const root = document.createElement("div")
+    root.innerHTML =
+      '<span data-ml="4"></span><div data-component="markdown-code"><pre>code</pre></div><span data-ml="9"></span><div data-component="markdown-math">formula</div>'
+    applyLineAnnotations(root)
+    expect(root.querySelector("[data-ml]")).toBeNull()
+    expect([...root.children].map((element) => element.getAttribute("data-source-line"))).toEqual(["4", "9"])
+  })
+
+  test("does not share unannotated cache entries", () => {
+    expect(markdownCacheMode({ math: "defer", anchored: true })).not.toBe(markdownCacheMode({ math: "defer" }))
+  })
+
+  test("retains source identities and new source text when full parsing rejects", async () => {
+    const parser = new Marked()
+    const updated = `${source}\n\nNew response content with $a<b$ and <script>alert(1)</script>.`
+    const lite = await parseAnchoredMarkdown(updated, (text) => parser.parse(text))
+    const failed = await parseAnchoredMarkdown(updated, async () => {
+      throw new Error("full parser unavailable")
+    }).catch(() => fallbackAnchoredMarkdown(updated))
+    const markers = (html: string) => [...html.matchAll(/data-ml="(\d+)"/g)].map((match) => match[1])
+    expect(markers(failed)).toEqual(markers(lite))
+    const root = document.createElement("div")
+    root.innerHTML = failed
+    applyLineAnnotations(root)
+    expect(root.querySelector("script")).toBeNull()
+    expect(root.querySelector("[data-opencode-math-tex]")).toBeNull()
+    expect(root.textContent).toContain("New response content with $a<b$")
+    expect(root.textContent).toContain("p_i=\\frac{e_{2i-1}+ie_{2i}}{\\sqrt 2}")
+    expect(root.querySelectorAll("[data-source-line]").length).toBe(markers(lite).length)
+  })
+
+  test("commit hooks capture the old DOM and finish synchronously once after mutation", () => {
+    const root = document.createElement("div")
+    root.textContent = "before"
+    const steps: string[] = []
+    const finish = beginMarkdownDomUpdate(root, (container) => {
+      steps.push(container.textContent ?? "")
+      return () => steps.push(container.textContent ?? "")
+    })
+    root.textContent = "after"
+    finish()
+    finish()
+    expect(steps).toEqual(["before", "after"])
+  })
+})
 
 describe("highlighted code language", () => {
   test("keeps fenced language for Markdown selection copy", () => {
@@ -335,6 +427,46 @@ $$
     expect(texes).toEqual(["x<y", "a>0", "i<n"])
     expect(html).not.toContain("$x<y$")
     expect(html).not.toContain("$a>0$")
+  })
+
+  test("keeps blockquote markers out of display math and preserves following markdown", async () => {
+    const tex = String.raw`e^{3\pi ia}L+e^{2\pi ia}A+e^{\pi ia}B+C=0.`
+    for (const [open, close] of [
+      ["$$", "$$"],
+      ["\\[", "\\]"],
+    ]) {
+      for (const prefix of ["> ", "> > ", "   > "]) {
+        const markdown = `${prefix}Contour\n${prefix}${open}\n${prefix}${tex}\n${prefix}${close}\n${prefix}**After** [link](https://example.com)\n\nOutside`
+        const prepared = prepareMarkdown(markdown)
+        for (const parse of [(text: string) => new Marked().parse(text), parseNativeMarkdown]) {
+          const html = renderMathExpressions(await parse(prepared), "html")
+          expect(html).toContain("<blockquote>")
+          expect(html).toContain("<strong>After</strong>")
+          expect(html).toContain('<a href="https://example.com"')
+          expect(html).toContain(`data-opencode-math-tex="${tex.replace(/\\/g, "&#92;")}"`)
+          expect(html).not.toContain("katex-error")
+          expect(html).not.toContain("&gt;")
+          expect(html).not.toContain("&lt;div")
+        }
+        const tracked = prepareMarkdownTracked(markdown)
+        const outside = tracked.text.split("\n").indexOf("Outside")
+        expect(tracked.originLineOf(outside)).toBe(markdown.split("\n").indexOf("Outside"))
+      }
+    }
+  })
+
+  test("removes only the enclosing quote depth, never genuine math comparisons", async () => {
+    for (const markdown of [
+      "> $$\n> x>0,\\quad y<1\n> >0\n> $$",
+      "> > $$\n> > x>0,\\quad y<1\n> > >0\n> > $$",
+      "$$\nx>0,\\quad y<1\n>0\n$$",
+    ]) {
+      const html = renderMathExpressions(await parseNativeMarkdown(prepareMarkdown(markdown)), "html")
+      expect(html).toContain('data-opencode-math-tex="x&gt;0,&#92;quad y&lt;1&#10;&gt;0"')
+      expect(html).not.toContain("katex-error")
+    }
+    const fenced = "> ```tex\n> $$\n> x>0\n> $$\n> ```"
+    expect(protectMathExpressions(fenced)).toBe(fenced)
   })
 
   test("does not expose inline math placeholders in indented list items", async () => {

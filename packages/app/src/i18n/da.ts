@@ -280,6 +280,7 @@ export const dict = {
   "prompt.dropzone.file.label": "Slip for at @nævne fil",
   "prompt.slash.badge.custom": "brugerdefineret",
   "prompt.slash.badge.skill": "skill",
+  "prompt.skill.pill": "Færdighed: {{name}}",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.context.active": "aktiv",
   "prompt.context.includeActiveFile": "Inkluder aktiv fil",

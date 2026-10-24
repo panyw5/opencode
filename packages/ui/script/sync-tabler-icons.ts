@@ -91,6 +91,7 @@ const tablerByName: Record<string, { file: string; style?: Style }> = {
   check: { file: "check" },
   photo: { file: "photo" },
   share: { file: "share" },
+  wifi: { file: "wifi" },
   shield: { file: "shield" },
   download: { file: "download" },
   "shopping-bag": { file: "shopping-bag" },

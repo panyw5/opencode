@@ -1,29 +1,13 @@
 import * as i18n from "@solid-primitives/i18n"
-import { createEffect, createMemo, createResource } from "solid-js"
+import { createEffect, createMemo, createSignal, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { Persist, persisted } from "@/utils/persist"
 import { dict as en } from "@/i18n/en"
 import { dict as uiEn } from "@opencode-ai/ui/i18n/en"
+import { UI_LOCALES, type UILocale } from "@opencode-ai/core/locale"
 
-export type Locale =
-  | "en"
-  | "zh"
-  | "zht"
-  | "ko"
-  | "de"
-  | "es"
-  | "fr"
-  | "da"
-  | "ja"
-  | "pl"
-  | "ru"
-  | "ar"
-  | "no"
-  | "br"
-  | "th"
-  | "bs"
-  | "tr"
+export type Locale = UILocale
 
 type RawDictionary = typeof en & typeof uiEn
 type Dictionary = i18n.Flatten<RawDictionary>
@@ -33,25 +17,7 @@ function cookie(locale: Locale) {
   return `oc_locale=${encodeURIComponent(locale)}; Path=/; Max-Age=31536000; SameSite=Lax`
 }
 
-const LOCALES: readonly Locale[] = [
-  "en",
-  "zh",
-  "zht",
-  "ko",
-  "de",
-  "es",
-  "fr",
-  "da",
-  "ja",
-  "pl",
-  "ru",
-  "bs",
-  "ar",
-  "no",
-  "br",
-  "th",
-  "tr",
-]
+const LOCALES: readonly Locale[] = UI_LOCALES
 
 const INTL: Record<Locale, string> = {
   en: "en",
@@ -204,8 +170,16 @@ export const { use: useLanguage, provider: LanguageProvider } = createSimpleCont
     const locale = createMemo<Locale>(() => normalizeLocale(store.locale))
     const intl = createMemo(() => INTL[locale()])
 
-    const [dict] = createResource(locale, loadDict, {
-      initialValue: dicts.get(initial) ?? base,
+    // Signal-based dictionary loading: a createResource here would flip the
+    // router-level Suspense fallback over the whole app on every locale switch;
+    // with a signal the previous dictionary stays rendered until the next one
+    // resolves.
+    const [dict, setDict] = createSignal<Dictionary>(dicts.get(initial) ?? base)
+    createEffect(() => {
+      const next = locale()
+      void loadDict(next).then((value) => {
+        if (next === untrack(locale)) setDict(() => value)
+      })
     })
 
     const t = i18n.translator(() => dict() ?? base, i18n.resolveTemplate) as (

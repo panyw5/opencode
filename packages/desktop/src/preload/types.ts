@@ -1,4 +1,5 @@
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
+import type { RemoteAccessApi } from "@opencode-ai/app/remote/types"
 
 export type InitStep = { phase: "server_waiting" } | { phase: "sqlite_waiting" } | { phase: "done" }
 
@@ -287,7 +288,22 @@ export type BrowserBounds = import("@opencode-ai/app/browser/types").BrowserBoun
 export type BrowserViewState = import("@opencode-ai/app/browser/types").BrowserViewState
 export type BrowserAPI = import("@opencode-ai/app/browser/types").WindowBrowserApi
 
+export type ResourceUsageTargetId = "opencode-cache" | "opencode-logs" | "desktop-cache" | "desktop-logs"
+
+export type ResourceUsageTarget = {
+  id: ResourceUsageTargetId
+  path: string
+  bytes: number
+}
+
+export type ResourceUsage = {
+  memoryBytes: number
+  cpuPercent: number
+  targets: ResourceUsageTarget[]
+}
+
 export type ElectronAPI = {
+  remoteAccess: RemoteAccessApi
   gptPro: import("@opencode-ai/util/gpt-pro").GptProAPI
   killSidecar: () => Promise<void>
   browser: BrowserAPI
@@ -314,6 +330,8 @@ export type ElectronAPI = {
   storeClear: (name: string) => Promise<void>
   storeKeys: (name: string) => Promise<string[]>
   storeLength: (name: string) => Promise<number>
+  getResourceUsage: () => Promise<ResourceUsage>
+  cleanResourceTarget: (id: ResourceUsageTargetId) => Promise<ResourceUsage | null>
   promptHistoryAppend: (kind: "normal" | "shell", entry: string) => Promise<{ added: boolean }>
   promptHistoryPage: (
     kind: "normal" | "shell",

@@ -16,6 +16,27 @@ html[data-theme="chatgpt"] {
   --radius-4xl: 1.75rem; /* 28px — composer / input box         */
 }
 
+/* Reference materials: chrome, sidebar, canvas, composer, and attached tray. */
+html[data-theme="chatgpt"][data-color-scheme="dark"] {
+  & main {
+    background-color: var(--background-stronger);
+  }
+
+  & [data-component="sidebar-panel"] {
+    background-color: var(--background-weak);
+  }
+
+  & [data-dock-surface="shell"] {
+    background-color: var(--input-base);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  & [data-dock-surface="tray"] {
+    background-color: var(--surface-raised-base);
+  }
+}
+
 /* ─── Buttons / cards / dialogs ─── */
 html[data-theme="chatgpt"] [data-component="button"] {
   border-radius: var(--radius-lg);
