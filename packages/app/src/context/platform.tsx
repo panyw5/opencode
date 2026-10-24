@@ -236,6 +236,20 @@ export type ExtraAgentInfo = {
   error?: string
 }
 
+export type ResourceUsageTargetId = "opencode-cache" | "opencode-logs" | "desktop-cache" | "desktop-logs"
+
+export type ResourceUsageTarget = {
+  id: ResourceUsageTargetId
+  path: string
+  bytes: number
+}
+
+export type ResourceUsage = {
+  memoryBytes: number
+  cpuPercent: number
+  targets: ResourceUsageTarget[]
+}
+
 export type Platform = {
   /** Platform discriminator */
   platform: "web" | "desktop"
@@ -483,6 +497,12 @@ export type Platform = {
 
   /** Invoke a desktop menu action handler (desktop only) */
   runDesktopMenuAction?(action: import("@/desktop-menu").DesktopMenuAction): Promise<void> | void
+
+  /** Live memory/CPU usage of the app and cleanable cache sizes (desktop only) */
+  resourceUsage?(): Promise<ResourceUsage>
+
+  /** Delete one cleanable cache target and return refreshed usage (desktop only) */
+  cleanResourceTarget?(id: ResourceUsageTargetId): Promise<ResourceUsage | null>
 }
 
 export type DisplayBackend = "auto" | "wayland"

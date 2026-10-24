@@ -40,6 +40,7 @@ import {
 } from "./extra-agents"
 import { getStore } from "./store"
 import { getPromptHistoryStore, type PromptHistoryKind } from "./prompt-history"
+import { cleanResourceTarget, getResourceUsage } from "./resource-usage"
 import type { UpdaterController } from "./updater-controller"
 import { createUpdaterSubscriptions } from "./updater-subscriptions"
 import { getPinchZoomEnabled, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
@@ -361,6 +362,9 @@ export function registerIpcHandlers(deps: Deps) {
     const store = getStore(name)
     return Object.keys(store.store).length
   })
+
+  ipcMain.handle("get-resource-usage", () => getResourceUsage())
+  ipcMain.handle("clean-resource-target", (_event: IpcMainInvokeEvent, id: string) => cleanResourceTarget(id))
 
   ipcMain.handle(
     "open-directory-picker",

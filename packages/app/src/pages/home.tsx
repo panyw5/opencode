@@ -39,6 +39,7 @@ import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { useSessionTabs } from "@/context/session-tabs"
 import { HomePathInput } from "@/pages/home-path-input"
+import HomeResourceUsage from "@/pages/home-resource-usage"
 import "./home.css"
 
 const HOME_SESSION_LIMIT = 6
@@ -867,6 +868,12 @@ export default function Home() {
             </Show>
           </section>
         </div>
+
+        <Show when={platform.platform === "desktop" && !!platform.resourceUsage}>
+          <div class="mt-9 grid min-w-0 gap-x-8 gap-y-9 lg:grid-cols-2">
+            <HomeResourceUsage />
+          </div>
+        </Show>
       </main>
     </div>
   )

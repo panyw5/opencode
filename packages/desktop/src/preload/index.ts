@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
-import type { BrowserViewState, ElectronAPI, InitStep, SqliteMigrationProgress } from "./types"
+import type { BrowserViewState, ElectronAPI, InitStep, ResourceUsageTargetId, SqliteMigrationProgress } from "./types"
 import type { RemoteAccessStatus } from "@opencode-ai/app/remote/types"
 import type { GptProStateEvent } from "@opencode-ai/util/gpt-pro-state"
 
@@ -162,6 +162,8 @@ const api: ElectronAPI = {
   storeClear: (name) => ipcRenderer.invoke("store-clear", name),
   storeKeys: (name) => ipcRenderer.invoke("store-keys", name),
   storeLength: (name) => ipcRenderer.invoke("store-length", name),
+  getResourceUsage: () => ipcRenderer.invoke("get-resource-usage"),
+  cleanResourceTarget: (id: ResourceUsageTargetId) => ipcRenderer.invoke("clean-resource-target", id),
   promptHistoryAppend: (kind, entry) => ipcRenderer.invoke("prompt-history-append", kind, entry),
   promptHistoryPage: (kind, offset, limit) => ipcRenderer.invoke("prompt-history-page", kind, offset, limit),
 

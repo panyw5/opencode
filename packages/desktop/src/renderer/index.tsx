@@ -301,6 +301,10 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
 
     exportDebugLogs: () => desktopApi.exportDebugLogs(),
 
+    resourceUsage: () => desktopApi.getResourceUsage(),
+
+    cleanResourceTarget: (id) => desktopApi.cleanResourceTarget(id),
+
     recordFatalRendererError: (error) => desktopApi.recordFatalRendererError(error),
 
     restart: async () => {
