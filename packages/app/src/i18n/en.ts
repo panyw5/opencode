@@ -59,6 +59,8 @@ export const dict = {
   "config.extensions.install.cleanupPending": "Old packages or data are retained pending safe cleanup",
   "config.extensions.install.status": "Check status",
   "config.extensions.install.statusFailed": "Status could not be read; do not assume the change failed",
+  "config.extensions.catalog.description": "Breakpoint debugging for .wls files: run in a persistent Wolfram kernel, inspect variables, and evaluate expressions in a REPL. Requires a local wolframscript; on restricted networks you can also drag a downloaded .tgz archive here to install.",
+  "config.extensions.catalog.install": "Install",
   "config.extensions.install.local": "Local archive (dropped)",
   "config.extensions.install.localArchive": "Dropped archive",
   "config.extensions.install.localDigestComputed": "Computed SHA-256",

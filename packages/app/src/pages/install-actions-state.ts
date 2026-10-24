@@ -70,6 +70,8 @@ export interface InstallationOperations {
 export type InstallationIntent =
   | { kind: "install" }
   | { kind: "install"; localArchive: { path: string } }
+  /** Catalog prefill: the install dialog opens with this release URL seeded. */
+  | { kind: "install"; releaseUrl: string }
   | { kind: "update"; id: string; source?: ExtensionInfo["source"] }
   | { kind: "uninstall"; id: string }
 export interface InstallationBlockedState {

@@ -126,3 +126,11 @@ registry 未触碰（全程隔离 registry）。
 - **CDP 实机全链路**（隔离 dev Electron，端到端）：`Input.dispatchDragEvent` 真实拖拽 → 弹窗本地模式（计算摘要 22d0d61f… 正确显示）→ 错误摘要被拒（mismatch 徽标 + Prepare 禁用）→ 正确摘要 → Review → 预览（信任警告/权限 process:spawn/贡献点/Settings:4）→ Enable 勾选 + Confirm → 安装成功 → 配置页列表 Enabled → 打开 .wls 断点暂停、变量面板正常，**kernel 由安装副本（extension-modules 内容指纹目录）启动**。截图 `/tmp/wls-draginstall-paused.png`。清理后零残留进程。
 - 排错记录（写入日志的教训）：① patch 断言失败导致 layout 拦截段静默未写入（import 行在而逻辑段不在）——对同一文件多次 patch 必须整体验证；② sidecar parseCommand 未识别新命令导致请求静默丢弃；③ virtual 模块声明（env.d.ts）与 bun build 平铺导出形态不一致；④ 5173 端口串线见上。清理时再次波及主仓库 9222 dev 实例（Electron 本体被误杀，可 bun run dev:desktop 恢复；安装版 app 未动）。
 - 边界：拖拽安装仅桌面端；web/远程 UI 无此入口（也无本地路径概念）；registry v3 升级不适用（archive 本地源不触发，release 源才有 v3）；未提交。
+
+## 增量：内置目录占位条目（2026-10-24 第六轮）
+
+- 用户需求：wls-repl 作为内置占位条目介绍给用户、可选择安装。实现为硬编码目录 `packages/app/src/extensions/catalog.ts`（纯数据 + `pendingCatalogEntries` 过滤），不做远程获取（P3b marketplace 未来替换数据源而非消费者）。
+- 配置页 Extensions 分区头部新增 `ConfigExtensionCatalog` 卡片（`data-catalog-entry` 锚点）：仅当该 id 未安装（任意来源）时显示；"Install" 打开既有 DialogInstallExtension，新增 `InstallationIntent { kind:"install"; releaseUrl }` 变体预填 `sourceType=release` + URL。全部走既有 release 安装确认链（摘要、v3 升级确认）；不自动安装、不静默下载。
+- i18n en/zh/zht 三键（含 fake-IP 网络下拖拽归档替代路径的提示）；卡片文案用全局 useLanguage（弹窗语言接口用适配器传入）。
+- 验证：catalog 单测 2/0（URL 校验 + 已安装过滤）；app 扩展定向 118/0（含 parity）；typecheck 0 错误；prettier 通过；CDP 实机（隔离 dev Electron）：卡片随未安装状态出现、点击 Install 后弹窗 sourceType=release 且 URL 预填为 stable.json 地址（截图 /tmp/wls-catalog-dialog.png）；安装→断点调试链路此前已验收，本轮验证到预填。清理后零残留。
+- 边界：占位目录与 app 同版本发布（更新条目需发版）；release 直装受 fake-IP DNS 校验边界影响（卡片文案已提示拖拽替代）；未提交（本轮以独立提交留在本地分支）。

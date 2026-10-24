@@ -48,6 +48,7 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
   const releaseUpdate = () => props.intent.kind === "update" && props.intent.source?.type === "release"
   const npmUpdate = () => props.intent.kind === "update" && props.intent.source?.type === "npm"
   const localInstall = () => props.intent.kind === "install" && "localArchive" in props.intent
+  const catalogInstall = () => props.intent.kind === "install" && "releaseUrl" in props.intent
   const initialSource =
     props.intent.kind === "update" && props.intent.source?.type === "archive"
       ? "archive"
@@ -60,7 +61,7 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
     input: {
       sourceType: initialSource,
       spec: "",
-      url: "",
+      url: catalogInstall() && "releaseUrl" in props.intent ? props.intent.releaseUrl : "",
       sha256: "",
       version: "",
       purgeData: false,

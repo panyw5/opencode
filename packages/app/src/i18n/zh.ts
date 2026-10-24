@@ -60,6 +60,8 @@ export const dict = {
   "config.extensions.install.cleanupPending": "旧包或数据仍保留，等待安全清理",
   "config.extensions.install.status": "查询状态",
   "config.extensions.install.statusFailed": "无法读取状态，请勿据此认定变更失败",
+  "config.extensions.catalog.description": "为 .wls 文件提供断点调试：在常驻 Wolfram 内核中运行、检视变量，并在 REPL 中求值表达式。需要本机安装 wolframscript；网络受限时可改为此处拖入下载好的 .tgz 归档安装。",
+  "config.extensions.catalog.install": "安装",
   "config.extensions.install.local": "本地归档（拖入）",
   "config.extensions.install.localArchive": "拖入的归档",
   "config.extensions.install.localDigestComputed": "计算的 SHA-256",

@@ -144,6 +144,7 @@ import {
 import { ConfigIM } from "./config-im"
 import { useExtensionHost } from "@/extensions/host"
 import { ExtensionArchiveDropTarget } from "./config-extension-archive-drop"
+import { ConfigExtensionCatalog } from "./config-extension-catalog"
 import { ConfigExtensionDetail } from "./config-extension-detail"
 import { ConfigExtensionInstallActions } from "./config-extension-install-actions"
 import { extensionPick, extensionSelection, extensionSelectionKey, parseExtensionPick } from "./config-extensions"
@@ -8727,6 +8728,7 @@ export default function ConfigPage() {
                       icon={sectionIcon("extensions")}
                     />
                     <ExtensionArchiveDropTarget />
+                    <ConfigExtensionCatalog operations={extensionHost} connection={() => globalSDK.client} />
                     <div class="mt-4">
                       <ConfigExtensionInstallActions
                         operations={extensionHost}
