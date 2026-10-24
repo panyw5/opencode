@@ -145,7 +145,7 @@ import { ConfigIM } from "./config-im"
 import { useExtensionHost } from "@/extensions/host"
 import { pendingCatalogEntries } from "@/extensions/catalog"
 import { ExtensionArchiveDropTarget } from "./config-extension-archive-drop"
-import { ConfigExtensionCatalogDetail, ConfigExtensionCatalogEntry } from "./config-extension-catalog"
+import { ConfigExtensionCatalogDetail } from "./config-extension-catalog"
 import { ConfigExtensionDetail } from "./config-extension-detail"
 import { ConfigExtensionInstallActions } from "./config-extension-install-actions"
 import {
@@ -8741,19 +8741,6 @@ export default function ConfigPage() {
                       icon={sectionIcon("extensions")}
                     />
                     <ExtensionArchiveDropTarget />
-                    <Show when={catalogEntries().length > 0}>
-                      <div class="mt-3 flex flex-col gap-1" data-extension-catalog="">
-                        <For each={catalogEntries()}>
-                          {(entry) => (
-                            <ConfigExtensionCatalogEntry
-                              entry={entry}
-                              active={state.pick === catalogPick(entry.id)}
-                              onSelect={() => selectMiddlePick(catalogPick(entry.id))}
-                            />
-                          )}
-                        </For>
-                      </div>
-                    </Show>
                     <div class="mt-4">
                       <ConfigExtensionInstallActions
                         operations={extensionHost}
@@ -9492,7 +9479,9 @@ export default function ConfigPage() {
                         <For
                           each={extensionHost.extensions()}
                           fallback={
-                            <div class="px-3 py-4 text-12-regular text-text-weak">{t("config.extensions.empty")}</div>
+                            <Show when={catalogEntries().length === 0} fallback={<div class="h-1" />}>
+                              <div class="px-3 py-4 text-12-regular text-text-weak">{t("config.extensions.empty")}</div>
+                            </Show>
                           }
                         >
                           {(item) => (
@@ -9503,6 +9492,17 @@ export default function ConfigPage() {
                               note={t(`config.extensions.state.${item.state}`)}
                               warn={item.state === "error" || item.state === "incompatible"}
                               onClick={() => selectMiddlePick(extensionPick(item.id))}
+                            />
+                          )}
+                        </For>
+                        <For each={catalogEntries()}>
+                          {(entry) => (
+                            <ListButton
+                              active={state.pick === catalogPick(entry.id)}
+                              title={entry.name}
+                              meta={entry.author}
+                              note={t("config.extensions.catalog.notInstalled")}
+                              onClick={() => selectMiddlePick(catalogPick(entry.id))}
                             />
                           )}
                         </For>

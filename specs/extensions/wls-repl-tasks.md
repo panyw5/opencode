@@ -148,3 +148,9 @@ registry 未触碰（全程隔离 registry）。
 - UI：详情面板 Install 按钮驱动流程，阶段标签（读取描述/下载归档/校验通过/准备/提交/完成）内联展示；无 desktop 通道时显示拖拽归档提示（降级）。
 - 验证：单测 6 个（descriptor 解析/拒绝矩阵、注入 fetch 的全流程、摘要不符中止、id 不符中止）；app 124/0 含 parity；typecheck 0 错误。**CDP 实机（隔离实例）：目录 Install 一键真装成功**（renderer 代理下载 GitHub descriptor+归档 → staging → local prepare/commit → Enabled），打开 .wls 断点暂停正常，kernel 由安装副本启动（截图 /tmp/wls-catalog-installed.png）。
 - 过程教训：CDP 判断"超时"实为 flow 完成后 DOM 卸载导致轮询元素消失（误报）；多实例残留在 9255 造成旧 main/新 renderer 混合假象——清理必须 lsof 确认端口归属。未提交（本轮独立提交）。
+
+## 增量：目录条目并入中栏列表（2026-10-25 修正二）
+
+- 用户反馈：目录条目未安装时也应作为普通列表行放进中栏扩展列表，点击后右栏显示详情（去掉分区头部的独立大卡片）。
+- 实现：中栏列表在已安装 `For` 之后追加目录 `For`，复用 `ListButton`（title=name、meta=author、note="未安装"、active 联动 `catalog:<id>` pick）；无已安装扩展且目录有条目时抑制"尚未链接扩展"空态；右栏 `ConfigExtensionCatalogDetail` 不变；移除旧的 header 卡片与 `ConfigExtensionCatalogEntry` 组件。i18n 补 `catalog.notInstalled`。
+- 验证：app 124/0、typecheck 0 错误；CDP 实机：列表行 `WolframScript REPL | Not installed | panyw5`，点击右栏详情出现（截图 /tmp/wls-catalog-list.png）。已提交。

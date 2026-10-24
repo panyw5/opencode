@@ -63,6 +63,7 @@ export const dict = {
   "config.extensions.catalog.description":
     "為 .wls 檔案提供斷點調試：在常駐 Wolfram 內核中運行、檢視變數，並在 REPL 中求值表達式。需要本機安裝 wolframscript；網路受限時可改為此處拖入下載好的 .tgz 歸檔安裝。",
   "config.extensions.catalog.source": "安裝來源",
+  "config.extensions.catalog.notInstalled": "未安裝",
   "config.extensions.catalog.flowDescriptor": "正在讀取發布描述…",
   "config.extensions.catalog.flowArtifact": "正在下載歸檔…",
   "config.extensions.catalog.flowReady": "歸檔校驗通過",

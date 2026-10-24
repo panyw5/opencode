@@ -6,28 +6,6 @@ import type { CatalogEntry } from "../extensions/catalog"
 import { usePlatform } from "../context/platform"
 import type { InstallationOperations } from "./install-actions-state"
 
-export interface ConfigExtensionCatalogEntryProps {
-  entry: CatalogEntry
-  active: boolean
-  onSelect: () => void
-}
-
-/** Middle-column list row: title and author only; details live in the right pane. */
-export function ConfigExtensionCatalogEntry(props: ConfigExtensionCatalogEntryProps) {
-  return (
-    <button
-      type="button"
-      data-catalog-entry={props.entry.id}
-      class="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-base-hover"
-      classList={{ "bg-surface-base-active": props.active }}
-      onClick={props.onSelect}
-    >
-      <span class="text-13-medium text-text-strong">{props.entry.name}</span>
-      <span class="text-12-regular text-text-weak">{props.entry.author}</span>
-    </button>
-  )
-}
-
 export interface ConfigExtensionCatalogDetailProps {
   entry: CatalogEntry
   operations: InstallationOperations

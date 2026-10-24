@@ -62,6 +62,7 @@ export const dict = {
   "config.extensions.catalog.description":
     "Breakpoint debugging for .wls files: run in a persistent Wolfram kernel, inspect variables, and evaluate expressions in a REPL. Requires a local wolframscript; on restricted networks you can also drag a downloaded .tgz archive here to install.",
   "config.extensions.catalog.source": "Install source",
+  "config.extensions.catalog.notInstalled": "Not installed",
   "config.extensions.catalog.flowDescriptor": "Reading release descriptor…",
   "config.extensions.catalog.flowArtifact": "Downloading archive…",
   "config.extensions.catalog.flowReady": "Archive verified",
