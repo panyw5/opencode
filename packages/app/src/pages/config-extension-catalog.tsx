@@ -8,6 +8,8 @@ import { usePlatform } from "../context/platform"
 import type { InstallationOperations } from "./install-actions-state"
 
 export interface ExtensionCardRowProps {
+  /** Stable identifier exposed as data-extension-row for tests and debugging. */
+  rowId?: string
   title: string
   subtitle: string
   note: string
@@ -30,6 +32,7 @@ export function ExtensionCardRow(props: ExtensionCardRowProps) {
     <div
       role="button"
       tabIndex={0}
+      data-extension-row={props.rowId}
       class="relative cursor-pointer overflow-hidden rounded-[14px] border bg-background-base/65 shadow-[inset_0_1px_0_color-mix(in_srgb,white_5%,transparent)] transition-colors"
       classList={{
         "border-border-base bg-surface-base/40": props.active,

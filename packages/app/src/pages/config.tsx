@@ -9476,29 +9476,31 @@ export default function ConfigPage() {
                           </div>
                         }
                       >
-                        <For
-                          each={extensionHost.extensions()}
-                          fallback={
-                            <Show when={catalogEntries().length === 0} fallback={<div class="h-1" />}>
-                              <div class="px-3 py-4 text-12-regular text-text-weak">{t("config.extensions.empty")}</div>
-                            </Show>
-                          }
-                        >
-                          {(item) => (
-                            <ExtensionCardRow
-                              active={state.pick === extensionPick(item.id)}
-                              title={item.displayName}
-                              subtitle={`${item.id} · v${item.version}`}
-                              note={t(`config.extensions.state.${item.state}`)}
-                              warn={item.state === "error" || item.state === "incompatible"}
-                              onSelect={() => selectMiddlePick(extensionPick(item.id))}
-                            />
-                          )}
-                        </For>
                         <div class="flex flex-col gap-2">
+                          <For
+                            each={extensionHost.extensions()}
+                            fallback={
+                              <Show when={catalogEntries().length === 0} fallback={<div class="h-1" />}>
+                                <div class="px-3 py-4 text-12-regular text-text-weak">{t("config.extensions.empty")}</div>
+                              </Show>
+                            }
+                          >
+                            {(item) => (
+                              <ExtensionCardRow
+                                rowId={item.id}
+                                active={state.pick === extensionPick(item.id)}
+                                title={item.displayName}
+                                subtitle={`${item.id} · v${item.version}`}
+                                note={t(`config.extensions.state.${item.state}`)}
+                                warn={item.state === "error" || item.state === "incompatible"}
+                                onSelect={() => selectMiddlePick(extensionPick(item.id))}
+                              />
+                            )}
+                          </For>
                           <For each={catalogEntries()}>
                             {(entry) => (
                               <ExtensionCardRow
+                                rowId={entry.id}
                                 active={state.pick === catalogPick(entry.id)}
                                 title={entry.name}
                                 subtitle={entry.author}
