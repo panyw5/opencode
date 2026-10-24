@@ -9,7 +9,7 @@ import { TextField } from "@opencode-ai/ui/text-field"
 import { useMutation } from "@tanstack/solid-query"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useNavigate } from "@solidjs/router"
-import { createEffect, createMemo, createResource, createSignal, onCleanup, Show, For } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, Show, For } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { ServerHealthIndicator, ServerRow } from "@/components/server/server-row"
 import { useLanguage } from "@/context/language"
@@ -48,25 +48,23 @@ function showRequestError(language: ReturnType<typeof useLanguage>, err: unknown
 function useDefaultServer() {
   const language = useLanguage()
   const platform = usePlatform()
-  const [defaultKey, defaultUrlActions] = createResource(
-    async () => {
-      try {
-        const key = await platform.getDefaultServer?.()
-        if (!key) return null
-        return key
-      } catch (err) {
-        showRequestError(language, err)
-        return null
-      }
-    },
-    { initialValue: null },
-  )
+  // Signal-based load: a createResource read in the dialog JSX would suspend
+  // the dialog-level Suspense fallback and hide the whole server list until
+  // the IPC round-trip resolves.
+  const [defaultKey, setDefaultKey] = createSignal<ServerConnection.Key | null>(null)
+  createEffect(() => {
+    if (!platform.getDefaultServer) return
+    void platform
+      .getDefaultServer()
+      .then((key) => setDefaultKey(key ?? null))
+      .catch((err) => showRequestError(language, err))
+  })
 
   const canDefault = createMemo(() => !!platform.getDefaultServer && !!platform.setDefaultServer)
   const setDefault = async (key: ServerConnection.Key | null) => {
     try {
       await platform.setDefaultServer?.(key)
-      defaultUrlActions.mutate(key)
+      setDefaultKey(key)
     } catch (err) {
       showRequestError(language, err)
     }

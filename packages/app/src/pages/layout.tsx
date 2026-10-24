@@ -3,7 +3,6 @@ import {
   createEffect,
   createMemo,
   createSignal,
-  createResource,
   For,
   on,
   onCleanup,
@@ -920,32 +919,42 @@ export default function Layout(props: ParentProps) {
     return workspaceIds(project)
   })
 
-  const [autoselecting] = createResource(async () => {
-    await ready.promise
-    await layout.ready.promise
-    if (!untrack(() => state.autoselect)) return
-    if (onConfigRoute()) {
-      console.debug("[layout] skipping auto-selection for config route")
-      return
-    }
-    if (routeDir()) {
-      console.debug(`[layout] skipping auto-selection for explicit route directory=${routeDir()}`)
-      return
-    }
+  // Signal-based one-shot task: the resource's value was never read (only
+  // `.loading` gated startup UI), so a plain signal avoids the createResource
+  // machinery without changing the gating behavior.
+  const [autoselectDone, setAutoselectDone] = createSignal(false)
+  void (async () => {
+    try {
+      await ready.promise
+      await layout.ready.promise
+      if (!untrack(() => state.autoselect)) return
+      if (onConfigRoute()) {
+        console.debug("[layout] skipping auto-selection for config route")
+        return
+      }
+      if (routeDir()) {
+        console.debug(`[layout] skipping auto-selection for explicit route directory=${routeDir()}`)
+        return
+      }
 
-    const list = layout.projects.list()
-    const last = server.projects.last()
+      const list = layout.projects.list()
+      const last = server.projects.last()
 
-    if (list.length === 0) {
-      // Ownership cutover: do not auto-resurrect a closed project via
-      // lastProject. The user must explicitly open a project.
-      return
+      if (list.length === 0) {
+        // Ownership cutover: do not auto-resurrect a closed project via
+        // lastProject. The user must explicitly open a project.
+        return
+      }
+
+      const next = list.find((project) => project.worktree === last) ?? list[0]
+      if (!next) return
+      await openProject(next.worktree, true)
+    } catch (err) {
+      console.warn("[layout] auto-selection failed", err)
+    } finally {
+      setAutoselectDone(true)
     }
-
-    const next = list.find((project) => project.worktree === last) ?? list[0]
-    if (!next) return
-    await openProject(next.worktree, true)
-  })
+  })()
 
   const workspaceName = (directory: string, projectId?: string, branch?: string) => {
     const key = workspaceKey(directory)
@@ -1039,7 +1048,7 @@ export default function Layout(props: ParentProps) {
   const startup = createMemo(() => {
     const page = pageReady()
     const layout = layoutReady()
-    const selecting = autoselecting.loading
+    const selecting = !autoselectDone()
     const dir = routeDir()
     if (!page || !layout || selecting) {
       return false
@@ -3629,7 +3638,7 @@ export default function Layout(props: ParentProps) {
 
   createEffect(
     on(
-      () => [visibleSessionDirs(), routeDir(), autoselecting.loading] as const,
+      () => [visibleSessionDirs(), routeDir(), !autoselectDone()] as const,
       ([dirs, dir, selecting]) => {
         if (selecting) return
         if (dirs.length === 0) return
@@ -4915,7 +4924,7 @@ export default function Layout(props: ParentProps) {
                     "overflow-y-hidden": onConfigRoute(),
                   }}
                 >
-                  <Show when={!autoselecting.loading} fallback={<div class="size-full" />}>
+                  <Show when={autoselectDone()} fallback={<div class="size-full" />}>
                     <Show
                       when={!projectContentLoading()}
                       fallback={

@@ -1,5 +1,5 @@
 import * as i18n from "@solid-primitives/i18n"
-import { createEffect, createMemo, createResource } from "solid-js"
+import { createEffect, createMemo, createSignal, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { Persist, persisted } from "@/utils/persist"
@@ -170,8 +170,16 @@ export const { use: useLanguage, provider: LanguageProvider } = createSimpleCont
     const locale = createMemo<Locale>(() => normalizeLocale(store.locale))
     const intl = createMemo(() => INTL[locale()])
 
-    const [dict] = createResource(locale, loadDict, {
-      initialValue: dicts.get(initial) ?? base,
+    // Signal-based dictionary loading: a createResource here would flip the
+    // router-level Suspense fallback over the whole app on every locale switch;
+    // with a signal the previous dictionary stays rendered until the next one
+    // resolves.
+    const [dict, setDict] = createSignal<Dictionary>(dicts.get(initial) ?? base)
+    createEffect(() => {
+      const next = locale()
+      void loadDict(next).then((value) => {
+        if (next === untrack(locale)) setDict(() => value)
+      })
     })
 
     const t = i18n.translator(() => dict() ?? base, i18n.resolveTemplate) as (
