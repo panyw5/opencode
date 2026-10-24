@@ -966,6 +966,25 @@ export const dict = {
   "home.upcomingTasks.status.ready": "就绪",
   "home.upcomingTasks.status.running": "运行中",
   "home.upcomingTasks.status.error": "需要处理",
+  "home.resourceUsage": "资源占用",
+  "home.resourceUsage.memory": "内存",
+  "home.resourceUsage.cpu": "CPU",
+  "home.resourceUsage.target.opencode-cache": "OpenCode 缓存",
+  "home.resourceUsage.target.opencode-logs": "会话日志",
+  "home.resourceUsage.target.desktop-cache": "应用缓存",
+  "home.resourceUsage.target.desktop-logs": "应用日志",
+  "home.resourceUsage.target.opencode-cache.desc":
+    "OpenCode 及 CLI 共用的二进制、技能数据与元数据缓存，清理后会自动重建。",
+  "home.resourceUsage.target.opencode-logs.desc":
+    "OpenCode 会话与 CLI 产生的诊断日志，不影响会话记录、项目和数据库。",
+  "home.resourceUsage.target.desktop-cache.desc":
+    "桌面端自身缓存的网页资源（网络、GPU、代码缓存等），不影响设置与登录状态。",
+  "home.resourceUsage.target.desktop-logs.desc": "桌面端自身的运行日志，可随时安全删除。",
+  "home.resourceUsage.clean": "清理",
+  "home.resourceUsage.cleaning": "清理中…",
+  "home.resourceUsage.clean.done": "清理完成",
+  "home.resourceUsage.clean.failed": "清理失败",
+  "home.resourceUsage.error": "无法读取资源占用",
 
   "session.tab.session": "会话",
   "session.tab.review": "审查",

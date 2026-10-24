@@ -1022,6 +1022,25 @@ export const dict = {
   "home.upcomingTasks.status.ready": "Ready",
   "home.upcomingTasks.status.running": "Running",
   "home.upcomingTasks.status.error": "Needs attention",
+  "home.resourceUsage": "Resource usage",
+  "home.resourceUsage.memory": "Memory",
+  "home.resourceUsage.cpu": "CPU",
+  "home.resourceUsage.target.opencode-cache": "OpenCode cache",
+  "home.resourceUsage.target.opencode-logs": "Session logs",
+  "home.resourceUsage.target.desktop-cache": "App cache",
+  "home.resourceUsage.target.desktop-logs": "App logs",
+  "home.resourceUsage.target.opencode-cache.desc":
+    "Binaries, skill data and metadata cached by OpenCode, shared with the CLI. Removed files are rebuilt automatically.",
+  "home.resourceUsage.target.opencode-logs.desc":
+    "Diagnostic logs from OpenCode sessions and the CLI. Sessions, projects and the database are not affected.",
+  "home.resourceUsage.target.desktop-cache.desc":
+    "Web content cached by the desktop app itself, such as network, GPU and code caches. Settings and sign-ins are kept.",
+  "home.resourceUsage.target.desktop-logs.desc": "Log files written by the desktop app. Safe to delete at any time.",
+  "home.resourceUsage.clean": "Clean",
+  "home.resourceUsage.cleaning": "Cleaning…",
+  "home.resourceUsage.clean.done": "Cache cleaned",
+  "home.resourceUsage.clean.failed": "Failed to clean cache",
+  "home.resourceUsage.error": "Could not read resource usage",
 
   "session.tab.session": "Session",
   "session.tab.review": "Review",
