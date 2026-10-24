@@ -76,6 +76,14 @@ export const PRESENT_TASK_EXCERPT_HEIGHT = 89
 export const PRESENT_TASK_MOBILE_EXCERPT_HEIGHT = 89
 export const PRESENT_FILE_MOBILE_BREAKPOINT = 560
 
+/**
+ * Mirrors the code-collapse window in ui/components/markdown.tsx: fenced code
+ * taller than the collapse window renders clipped, so its estimated
+ * contribution must cap at the window instead of the raw line count.
+ */
+export const CODE_WINDOW_RATIO = 0.8
+export const CODE_WINDOW_MARGIN = 80
+
 export const MIN_ROW_ESTIMATE = 40
 export const MAX_VIEWPORT_MULTIPLIER = 3
 const DEFAULT_VIEWPORT_HEIGHT = 800
@@ -176,14 +184,47 @@ export function estimateTextLines(text: string, width: number, charWidth: number
   return Math.max(1, lines)
 }
 
+/**
+ * Split markdown text into prose (with fence blocks removed) and the number of
+ * lines that render inside fenced code blocks. Fence markers count as code
+ * lines; an unterminated fence (streaming tail) counts everything after it.
+ */
+export function splitFenceContent(text: string) {
+  let codeLines = 0
+  const prose: string[] = []
+  let fence: string | null = null
+  for (const line of text.split(/\r\n|\r|\n/)) {
+    const marker = line.trimStart().match(/^(`{3,}|~{3,})/)
+    if (marker) {
+      const ch = marker[1][0]
+      if (!fence) fence = ch
+      else if (fence === ch) fence = null
+      codeLines++
+      continue
+    }
+    if (fence) codeLines++
+    else prose.push(line)
+  }
+  return { prose: prose.join("\n"), codeLines }
+}
+
 function estimateTextHeight(
   text: string | undefined,
   width: number,
-  options: { textLineHeight?: number; charWidth?: number },
+  options: { textLineHeight?: number; charWidth?: number; viewportHeight?: number },
   widthInset = TEXT_WIDTH_INSET,
 ) {
-  const lines = estimateTextLines(text ?? "", width, options.charWidth ?? DEFAULT_CHAR_WIDTH, widthInset)
-  return lines * (options.textLineHeight ?? DEFAULT_TEXT_LINE_HEIGHT)
+  const lineHeight = options.textLineHeight ?? DEFAULT_TEXT_LINE_HEIGHT
+  const { prose, codeLines } = splitFenceContent(text ?? "")
+  const lines = estimateTextLines(prose, width, options.charWidth ?? DEFAULT_CHAR_WIDTH, widthInset)
+  // Clipped code blocks never render past the collapse window, so cap the
+  // code contribution there; prose above and below still wraps normally.
+  const viewportHeight =
+    options.viewportHeight !== undefined && options.viewportHeight > 0
+      ? options.viewportHeight
+      : DEFAULT_VIEWPORT_HEIGHT
+  const codeWindow = viewportHeight * CODE_WINDOW_RATIO + CODE_WINDOW_MARGIN
+  return lines * lineHeight + Math.min(codeLines * lineHeight, codeWindow)
 }
 
 function estimateToolPartHeight(part: ToolPart, width: number, options: EstimateRowHeightOptions) {

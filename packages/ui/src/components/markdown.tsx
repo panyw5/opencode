@@ -85,6 +85,109 @@ export function upgradeStreamingMath(
 
 const max = 200
 const cache = new Map<string, Entry>()
+
+// Tall code blocks render inside a fixed-height window instead of pushing the
+// whole timeline open. The window is a share of the enclosing session scroll
+// viewport. While the block is streaming the window stays anchored to the
+// bottom (like a terminal); once done, a toggle expands the full block.
+const codeCollapseWindowRatio = 0.8
+const codeCollapseFallbackHeight = 320
+const codeCollapseMargin = 80
+const expandedCodeBlocks = new Map<string, boolean>()
+
+function codeCollapseWindow(wrapper: HTMLElement) {
+  const viewport = view(wrapper)
+  const fromViewport = viewport ? Math.round(viewport.clientHeight * codeCollapseWindowRatio) : 0
+  return Math.max(fromViewport, codeCollapseFallbackHeight)
+}
+
+function applyCodeCollapseWindow(wrapper: HTMLElement) {
+  wrapper.style.setProperty("--markdown-code-max-height", `${codeCollapseWindow(wrapper)}px`)
+}
+
+function setExpandedCodeBlock(key: string, value: boolean) {
+  expandedCodeBlocks.delete(key)
+  expandedCodeBlocks.set(key, value)
+  if (expandedCodeBlocks.size <= 500) return
+  const first = expandedCodeBlocks.keys().next().value
+  if (first !== undefined) expandedCodeBlocks.delete(first)
+}
+
+function expandLabels(labels: CopyLabels) {
+  return {
+    expand: labels.expand ?? "Show all",
+    collapse: labels.collapse ?? "Show less",
+  }
+}
+
+function setExpandButtonState(button: HTMLButtonElement, labels: CopyLabels, expanded: boolean) {
+  const text = expanded ? expandLabels(labels).collapse : expandLabels(labels).expand
+  button.setAttribute("data-expanded", expanded ? "true" : "false")
+  button.setAttribute("aria-label", text)
+  const label = button.querySelector("[data-slot='markdown-expand-label']")
+  if (label) label.textContent = text
+}
+
+function ensureExpandButton(wrapper: HTMLElement, labels: CopyLabels, expanded: boolean) {
+  let button = wrapper.querySelector<HTMLButtonElement>(":scope > [data-slot='markdown-expand-button']")
+  if (!button) {
+    button = document.createElement("button")
+    button.type = "button"
+    button.setAttribute("data-slot", "markdown-expand-button")
+    button.setAttribute("aria-label", "")
+    const label = document.createElement("span")
+    label.setAttribute("data-slot", "markdown-expand-label")
+    button.appendChild(label)
+    button.appendChild(createIcon("chevron-down", "expand-icon"))
+    wrapper.appendChild(button)
+  }
+  setExpandButtonState(button, labels, expanded)
+}
+
+export function toggleCodeExpand(wrapper: HTMLElement, button: HTMLButtonElement, labels: CopyLabels) {
+  const code = wrapper.querySelector("pre code") ?? wrapper.querySelector("pre")
+  const key = checksum(code?.textContent ?? "")
+  const expanded = button.getAttribute("data-expanded") !== "true"
+  if (key) setExpandedCodeBlock(key, expanded)
+  applyCodeCollapseWindow(wrapper)
+  if (expanded) wrapper.setAttribute("data-code-expanded", "true")
+  else wrapper.removeAttribute("data-code-expanded")
+  const pre = wrapper.querySelector("pre")
+  if (pre) pre.scrollTop = 0
+  setExpandButtonState(button, labels, expanded)
+}
+
+export function updateCodeCollapse(root: HTMLElement, streaming: boolean, labels: CopyLabels) {
+  for (const wrapper of Array.from(root.querySelectorAll<HTMLElement>('[data-component="markdown-code"]'))) {
+    const pre = wrapper.querySelector("pre")
+    if (!pre) continue
+    const text = pre.querySelector("code")?.textContent ?? pre.textContent ?? ""
+    const key = text ? checksum(text) : ""
+    const maxHeight = codeCollapseWindow(wrapper)
+    if (!key || pre.scrollHeight <= maxHeight + codeCollapseMargin) {
+      delete wrapper.dataset.codeCollapse
+      delete wrapper.dataset.codeStreaming
+      delete wrapper.dataset.codeExpanded
+      wrapper.querySelector(":scope > [data-slot='markdown-expand-button']")?.remove()
+      continue
+    }
+    wrapper.dataset.codeCollapse = "true"
+    applyCodeCollapseWindow(wrapper)
+    if (streaming) {
+      wrapper.dataset.codeStreaming = "true"
+      delete wrapper.dataset.codeExpanded
+      wrapper.querySelector(":scope > [data-slot='markdown-expand-button']")?.remove()
+      pre.scrollTop = pre.scrollHeight
+      continue
+    }
+    delete wrapper.dataset.codeStreaming
+    const expanded = expandedCodeBlocks.get(key) === true
+    if (expanded) wrapper.dataset.codeExpanded = "true"
+    else delete wrapper.dataset.codeExpanded
+    pre.scrollTop = 0
+    ensureExpandButton(wrapper, labels, expanded)
+  }
+}
 const anchoredUpgrades = new Map<HTMLElement, { viewport?: HTMLElement; promote: () => void }>()
 let anchoredUpgradeFrame: number | undefined
 
@@ -191,6 +294,8 @@ function snap(node: HTMLElement | null) {
 type CopyLabels = {
   copy: string
   copied: string
+  expand?: string
+  collapse?: string
 }
 
 export type FileLink = {
@@ -478,6 +583,14 @@ function setupCodeCopy(root: HTMLDivElement, labels: CopyLabels) {
     const target = event.target
     if (!(target instanceof Element)) return
 
+    const expandButton = target.closest('[data-slot="markdown-expand-button"]')
+    if (expandButton instanceof HTMLButtonElement) {
+      const wrapper = expandButton.closest('[data-component="markdown-code"]')
+      if (!(wrapper instanceof HTMLElement)) return
+      toggleCodeExpand(wrapper, expandButton, labels)
+      return
+    }
+
     const button = target.closest('[data-slot="markdown-copy-button"]')
     if (!(button instanceof HTMLButtonElement)) return
     const wrapper = button.closest('[data-component="markdown-code"],[data-component="markdown-math"]')
@@ -507,6 +620,13 @@ function setupCodeCopy(root: HTMLDivElement, labels: CopyLabels) {
   const buttons = Array.from(root.querySelectorAll('[data-slot="markdown-copy-button"]'))
   for (const button of buttons) {
     if (button instanceof HTMLButtonElement) updateLabel(button)
+  }
+
+  const expandButtons = Array.from(root.querySelectorAll('[data-slot="markdown-expand-button"]'))
+  for (const button of expandButtons) {
+    if (button instanceof HTMLButtonElement) {
+      setExpandButtonState(button, labels, button.getAttribute("data-expanded") === "true")
+    }
   }
 
   root.addEventListener("click", handleClick)
@@ -743,7 +863,7 @@ function stable(el: Element) {
   return math(el) || el.querySelector(".katex,.katex-display,.katex-html,.katex-mathml") !== null
 }
 
-const markdownEnhancementSelector = '[data-slot="markdown-copy-button"]'
+const markdownEnhancementSelector = '[data-slot="markdown-copy-button"],[data-slot="markdown-expand-button"]'
 
 function markdownNodeEqual(current: Node, incoming: Node) {
   if (current.isEqualNode(incoming)) return true
@@ -853,6 +973,8 @@ export function Markdown(
   const labels = createMemo(() => ({
     copy: i18n.t("ui.message.copy"),
     copied: i18n.t("ui.message.copied"),
+    expand: i18n.t("ui.message.expandAll"),
+    collapse: i18n.t("ui.message.showLess"),
   }))
 
   const visible = createMemo(() => eager() || seen())
@@ -1263,6 +1385,8 @@ export function Markdown(
           pane.scrollTop += delta
         }
       }
+
+      updateCodeCollapse(container, !!isStreaming, next)
 
       cancelCopySetup?.()
       const setup = () => {

@@ -184,6 +184,64 @@
     position: relative;
   }
 
+  [data-component="markdown-code"][data-code-collapse="true"] > pre {
+    overflow: hidden;
+  }
+
+  [data-component="markdown-code"][data-code-collapse="true"]:not([data-code-expanded="true"]) > pre {
+    max-height: var(--markdown-code-max-height, 320px);
+  }
+
+  /* Completed blocks fade at the clipped edge to hint at hidden code. Streaming
+     blocks stay anchored to the live tail, so the active lines stay readable. */
+  [data-component="markdown-code"][data-code-collapse="true"]:not([data-code-expanded="true"]):not([data-code-streaming="true"])
+    > pre {
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent);
+  }
+
+  [data-slot="markdown-expand-button"] {
+    position: absolute;
+    left: 50%;
+    bottom: 8px;
+    transform: translateX(-50%);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: calc(100% - 16px);
+    padding: 2px 10px;
+    border: 1px solid var(--border-weak-base);
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--background-base) 92%, transparent);
+    box-shadow: var(--shadow-xs-border-base);
+    color: var(--text-base);
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-large);
+    white-space: nowrap;
+    cursor: pointer;
+    z-index: 2;
+  }
+
+  [data-slot="markdown-expand-button"]:hover {
+    background: var(--surface-base-hover);
+    border-color: var(--border-strong-base);
+    color: var(--text-strong);
+  }
+
+  [data-slot="markdown-expand-button"]:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-xs-border-focus);
+  }
+
+  [data-slot="markdown-expand-button"] [data-slot="expand-icon"] {
+    transition: transform 0.15s ease;
+  }
+
+  [data-slot="markdown-expand-button"][data-expanded="true"] [data-slot="expand-icon"] {
+    transform: rotate(180deg);
+  }
+
   [data-component="markdown-math"] {
     position: relative;
     max-width: 100%;

@@ -334,6 +334,7 @@ export const dict: Record<string, string> = {
   "ui.message.sendQueuedNow": "Send now",
   "ui.message.attachment.alt": "attachment",
   "ui.message.showMore": "Show more",
+  "ui.message.expandAll": "Show all",
   "ui.message.injection.hookPrompt": "{{hook}} injected prompt",
   "ui.message.injection.hookPromptFallback": "SessionStart injected prompt",
   "ui.message.injection.commandPrompt": "{{command}} command prompt",

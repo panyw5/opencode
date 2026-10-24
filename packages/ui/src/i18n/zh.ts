@@ -315,6 +315,7 @@ export const dict = {
   "ui.message.sendQueuedNow": "立刻发送",
   "ui.message.attachment.alt": "附件",
   "ui.message.showMore": "展开更多",
+  "ui.message.expandAll": "展开全部",
   "ui.message.injection.hookPrompt": "{{hook}} 注入提示词",
   "ui.message.injection.hookPromptFallback": "SessionStart 注入提示词",
   "ui.message.injection.commandPrompt": "{{command}} 命令提示词",
