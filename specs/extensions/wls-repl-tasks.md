@@ -159,3 +159,8 @@ registry 未触碰（全程隔离 registry）。
 
 - 用户反馈：卡片样式参考其它配置页的卡片。复用 `ProjectListGroup`（AGENTS.md 分区）的视觉语言：`rounded-[14px]` 卡片、图标方块（dot-grid）、状态 pill（NOT INSTALLED）、chevron、顶部渐变高光线；active 态对齐 open 态。
 - 中栏列表的 ListButton 行替换为 `ConfigExtensionCatalogEntry` 卡片（恢复导出，新增 note prop）。CDP 实机确认渲染与点击联动（截图 /tmp/wls-catalog-cardstyle.png）。已提交。
+
+## 修正：卸载弹窗按钮文案（2026-10-25，用户反馈）
+
+- 用户发现 Remove extension 弹窗的准备按钮显示 "Review installation"。根因：按钮标签固定用 `install.preview` 键，不区分操作类型。
+- 修复：`previewLabel()` 按 intent.kind 返回 preview/previewUpdate/previewUninstall 三键（en/zh/zht 新增），`installationTranslationKeys` 同步注册。CDP 实机验证安装弹窗 "Review installation"、卸载弹窗 "Review uninstallation"。

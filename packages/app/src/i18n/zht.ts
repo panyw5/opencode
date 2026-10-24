@@ -23,6 +23,8 @@ export const dict = {
   "config.extensions.install.url": "封存 URL",
   "config.extensions.install.sha256": "SHA-256 校驗值",
   "config.extensions.install.preview": "預覽安裝",
+  "config.extensions.install.previewUpdate": "預覽更新",
+  "config.extensions.install.previewUninstall": "預覽移除",
   "config.extensions.install.confirm": "確認操作",
   "config.extensions.install.back": "返回",
   "config.extensions.install.cancel": "取消",

@@ -85,6 +85,12 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
   const initialIntent = intentIdentity()
   const t = (key: InstallationTranslationKey) => props.language.t(key)
   const blocked = () => state.stale || installationBlocked(props)
+  const previewLabel = () =>
+    props.intent.kind === "uninstall"
+      ? "config.extensions.install.previewUninstall"
+      : props.intent.kind === "update"
+        ? "config.extensions.install.previewUpdate"
+        : "config.extensions.install.preview"
   // The host marks this extension busy during our own prepare. Busy disables interaction,
   // but must not invalidate that operation; safe mode or unsaved settings still do.
   const invalidated = () => installationBlocked({ ...props, busy: false })
@@ -377,7 +383,7 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
               disabled={blocked() || pending() || (state.input.sourceType === "local" && !digestConfirmed())}
               onClick={() => void prepare()}
             >
-              {t(pending() ? "config.extensions.install.busy" : "config.extensions.install.preview")}
+              {t(pending() ? "config.extensions.install.busy" : previewLabel())}
             </Button>
           </div>
           <Show when={state.input.sourceType === "archive" || state.input.sourceType === "local"}>
@@ -578,7 +584,7 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
             disabled={blocked() || pending()}
             onClick={() => void prepare()}
           >
-            {t(pending() ? "config.extensions.install.busy" : "config.extensions.install.preview")}
+            {t(pending() ? "config.extensions.install.busy" : previewLabel())}
           </Button>
         </Show>
         <Button data-action="extension-install-close" onClick={close}>

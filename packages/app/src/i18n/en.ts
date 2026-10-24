@@ -21,6 +21,8 @@ export const dict = {
   "config.extensions.install.url": "Archive URL",
   "config.extensions.install.sha256": "SHA-256 checksum",
   "config.extensions.install.preview": "Review installation",
+  "config.extensions.install.previewUpdate": "Review update",
+  "config.extensions.install.previewUninstall": "Review uninstallation",
   "config.extensions.install.confirm": "Confirm operation",
   "config.extensions.install.back": "Back",
   "config.extensions.install.cancel": "Cancel",

@@ -222,6 +222,8 @@ export const installationTranslationKeys = [
   "config.extensions.install.url",
   "config.extensions.install.sha256",
   "config.extensions.install.preview",
+  "config.extensions.install.previewUpdate",
+  "config.extensions.install.previewUninstall",
   "config.extensions.install.confirm",
   "config.extensions.install.back",
   "config.extensions.install.cancel",
