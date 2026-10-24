@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto"
 import path from "node:path"
 import { Global } from "@opencode-ai/core/global"
 import { provisionData, quarantineData } from "../../src/extension/data"
+import { ExtensionID } from "../../src/extension/schema"
 
 const ids: string[] = []
 afterEach(async () => {
@@ -62,6 +63,53 @@ test("an empty namespace still preserves ownership from another registry's sourc
   expect(await readFile(owner, "utf8")).toBe(before)
   await expect(provisionData(different)).rejects.toThrow("another source")
   const moved = await quarantineData(value)
+  expect(await moved.finish()).toBe(true)
+})
+
+test("release data ownership follows descriptor and extension id, never resolved artifact snapshots", async () => {
+  const value = identity()
+  const release = {
+    ...value,
+    source: {
+      type: "release" as const,
+      descriptor: "https://example.com/stable.json",
+      extensionID: ExtensionID.make(value.id),
+      version: "1.2.3",
+      artifact: "https://cdn.example.com/extension.tgz",
+      sha256: "a".repeat(64),
+      descriptorSha256: "b".repeat(64),
+    },
+  }
+  await provisionData(release)
+  const data = path.join(Global.Path.data, "extensions", "data", value.id)
+  await mkdir(data, { recursive: true })
+  await writeFile(path.join(data, "keep"), "private")
+  const owner = path.join(Global.Path.data, "extensions", "data-ownership", `${value.id}.json`)
+  const before = await readFile(owner, "utf8")
+  const updated = {
+    ...release,
+    source: {
+      ...release.source,
+      version: "2.0.0",
+      artifact: "https://other-cdn.example.com/extension-2.tgz",
+      sha256: "c".repeat(64),
+      descriptorSha256: "d".repeat(64),
+    },
+  }
+  await provisionData(updated)
+  expect(await readFile(owner, "utf8")).toBe(before)
+  for (const source of [
+    { ...release.source, descriptor: "https://other.example.com/stable.json" },
+    { ...release.source, extensionID: ExtensionID.make("test.other") },
+    value.source,
+  ]) {
+    const different = { ...release, source }
+    await expect(provisionData(different)).rejects.toThrow("another source")
+    await expect(quarantineData(different)).rejects.toThrow("ownership")
+    expect(await readFile(path.join(data, "keep"), "utf8")).toBe("private")
+    expect(await readFile(owner, "utf8")).toBe(before)
+  }
+  const moved = await quarantineData(updated)
   expect(await moved.finish()).toBe(true)
 })
 

@@ -16,7 +16,7 @@ export type RegistryWatch = (
 
 export type RegistryObserverOptions = {
   file: string
-  /** Opaque token: v2:<revision>, v1:<content SHA-256>, or missing. */
+  /** Opaque token: v2/v3:<revision>, v1:<content SHA-256>, or missing. */
   refresh: (revision: string) => Promise<void>
   intervalMs?: number
   debounceMs?: number
@@ -54,13 +54,13 @@ async function revision(file: string): Promise<string> {
   }
   if (
     "version" in store &&
-    store.version === 2 &&
+    (store.version === 2 || store.version === 3) &&
     "revision" in store &&
     typeof store.revision === "number" &&
     Number.isSafeInteger(store.revision) &&
     store.revision >= 0
   ) {
-    return `v2:${store.revision}`
+    return `v${store.version}:${store.revision}`
   }
   throw new Error(`Invalid extension registry version or revision: ${file}`)
 }

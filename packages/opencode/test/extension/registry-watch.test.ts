@@ -29,8 +29,8 @@ function observer(options: Parameters<typeof createRegistryObserver>[0]) {
   return result
 }
 
-async function put(file: string, revision: number) {
-  await writeFile(file, JSON.stringify({ version: 2, revision, extensions: {} }))
+async function put(file: string, revision: number, version = 2) {
+  await writeFile(file, JSON.stringify({ version, revision, extensions: {} }))
 }
 
 async function until(condition: () => boolean) {
@@ -105,6 +105,68 @@ describe("registry observer", () => {
     await put(file, 4)
     expect(await readFile(file, "utf8")).toBe(original)
     expect(await readdir(directory)).toEqual(["registry.json"])
+  })
+
+  test("v3 tokens include format version even when the numeric revision is unchanged", async () => {
+    const { file, directory } = await fixture()
+    await put(file, 4)
+    const calls: string[] = []
+    const instance = observer({
+      file,
+      watch: fakeWatch().watch,
+      refresh: async (revision) => {
+        calls.push(revision)
+      },
+    })
+    await instance.start()
+    await instance.refresh()
+    await put(file, 4, 3)
+    await instance.refresh()
+    await instance.refresh()
+    await put(file, 5, 3)
+    await instance.refresh()
+    expect(calls).toEqual(["v2:4", "v3:4", "v3:5"])
+    expect(JSON.parse(await readFile(file, "utf8")).version).toBe(3)
+    expect(await readdir(directory)).toEqual(["registry.json"])
+  })
+
+  test("v3 polling retries failed refreshes and rejects invalid versions and revisions", async () => {
+    const { file } = await fixture()
+    await put(file, 0, 3)
+    const calls: string[] = []
+    const errors: unknown[] = []
+    let fail = true
+    const instance = observer({
+      file,
+      watch: fakeWatch().watch,
+      intervalMs: 10,
+      refresh: async (revision) => {
+        if (fail) {
+          fail = false
+          throw new Error("reload failed")
+        }
+        calls.push(revision)
+      },
+      onError: (error) => errors.push(error),
+    })
+    await instance.start()
+    await put(file, 1, 3)
+    await until(() => calls.length === 1)
+    for (const contents of [
+      { version: 4, revision: 2 },
+      { version: 3, revision: -1 },
+      { version: 3, revision: 0.5 },
+      { version: 3, revision: Number.MAX_SAFE_INTEGER + 1 },
+    ]) {
+      const text = JSON.stringify({ ...contents, extensions: {} })
+      await writeFile(file, text)
+      await expect(instance.refresh()).rejects.toThrow("version or revision")
+      expect(await readFile(file, "utf8")).toBe(text)
+    }
+    await put(file, 2, 3)
+    await until(() => calls.length === 2)
+    expect(calls).toEqual(["v3:1", "v3:2"])
+    expect(errors.length).toBeGreaterThanOrEqual(5)
   })
 
   test("native directory watching survives repeated atomic rename replacements", async () => {

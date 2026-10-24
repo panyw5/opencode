@@ -108,10 +108,47 @@ export const ArchiveSource = Schema.Struct({
   sha256: Schema.String,
 }).annotate({ identifier: "ExtensionArchiveSource" })
 
-export const Source = Schema.Union([PathSource, NpmSource, ArchiveSource])
+export const LegacySource = Schema.Union([PathSource, NpmSource, ArchiveSource])
+
+// Persist only canonical public locations. Signed artifact queries are private
+// operation state, never part of the registry, SDK, or stable source identity.
+const ReleaseLocation = Schema.String.check(
+  Schema.makeFilter(
+    (value) => {
+      try {
+        const url = new URL(value)
+        return (
+          url.protocol === "https:" &&
+          !url.username &&
+          !url.password &&
+          !url.search &&
+          !url.hash &&
+          !value.includes("?") &&
+          !value.includes("#") &&
+          url.href === value
+        )
+      } catch {
+        return false
+      }
+    },
+    { description: "Expected a canonical HTTPS URL without credentials, query, or fragment" },
+  ),
+)
+const ReleaseDigest = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))
+export const ReleaseSource = Schema.Struct({
+  type: Schema.Literal("release"),
+  descriptor: ReleaseLocation,
+  extensionID: ExtensionID,
+  version: Schema.String,
+  artifact: ReleaseLocation,
+  sha256: ReleaseDigest,
+  descriptorSha256: ReleaseDigest,
+}).annotate({ identifier: "ExtensionReleaseSource" })
+
+export const Source = Schema.Union([LegacySource, ReleaseSource])
 export type Source = Types.DeepMutable<Schema.Schema.Type<typeof Source>>
 
-export const RegistryRow = Schema.Struct({
+const registryRow = {
   name: Schema.String,
   version: Schema.String,
   source: Source,
@@ -123,7 +160,8 @@ export const RegistryRow = Schema.Struct({
   installId: Schema.optional(Schema.String),
   updatedAt: Schema.optional(Schema.Number),
   secretKeys: Schema.optional(Schema.Array(Schema.String)),
-}).annotate({ identifier: "ExtensionRegistryRow" })
+}
+export const RegistryRow = Schema.Struct(registryRow).annotate({ identifier: "ExtensionRegistryRow" })
 export type RegistryRow = Types.DeepMutable<Schema.Schema.Type<typeof RegistryRow>>
 
 export const OperationReceipt = Schema.Struct({
@@ -141,7 +179,7 @@ export const OperationReceipt = Schema.Struct({
 }).annotate({ identifier: "ExtensionOperationReceipt" })
 export type OperationReceipt = Types.DeepMutable<Schema.Schema.Type<typeof OperationReceipt>>
 
-export const RetainedData = Schema.Struct({
+const retainedData = {
   name: Schema.String,
   source: Source,
   settings: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
@@ -150,16 +188,28 @@ export const RetainedData = Schema.Struct({
   purging: Schema.optional(Schema.Boolean),
   purgeRevision: Schema.optional(Schema.Number),
   purgedAt: Schema.optional(Schema.Number),
-}).annotate({ identifier: "ExtensionRetainedData" })
+}
+export const RetainedData = Schema.Struct(retainedData).annotate({ identifier: "ExtensionRetainedData" })
 export type RetainedData = Types.DeepMutable<Schema.Schema.Type<typeof RetainedData>>
 
-export const RegistryStore = Schema.Struct({
-  version: Schema.Literals([1, 2]),
-  extensions: Schema.Record(ExtensionID, RegistryRow),
+const registryStore = {
   revision: Schema.optional(Schema.Number),
   receipts: Schema.optional(Schema.Record(Schema.String, OperationReceipt)),
-  retained: Schema.optional(Schema.Record(ExtensionID, RetainedData)),
-}).annotate({ identifier: "ExtensionRegistry" })
+}
+export const RegistryStore = Schema.Union([
+  Schema.Struct({
+    ...registryStore,
+    version: Schema.Literals([1, 2]),
+    extensions: Schema.Record(ExtensionID, Schema.Struct({ ...registryRow, source: LegacySource })),
+    retained: Schema.optional(Schema.Record(ExtensionID, Schema.Struct({ ...retainedData, source: LegacySource }))),
+  }),
+  Schema.Struct({
+    ...registryStore,
+    version: Schema.Literal(3),
+    extensions: Schema.Record(ExtensionID, RegistryRow),
+    retained: Schema.optional(Schema.Record(ExtensionID, RetainedData)),
+  }),
+]).annotate({ identifier: "ExtensionRegistry" })
 export type RegistryStore = Types.DeepMutable<Schema.Schema.Type<typeof RegistryStore>>
 
 export const State = Schema.Literals(["ready", "disabled", "error", "incompatible"])

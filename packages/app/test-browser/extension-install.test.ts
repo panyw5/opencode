@@ -22,7 +22,7 @@ test("extension installation contracts pass in an isolated Solid JSX process", a
     ])
     if (code !== 0) console.error(`[extension-install-test] code=${code}\n${out}\n${err}`)
     expect(code).toBe(0)
-    expect(`${out}\n${err}`).toContain("11 pass")
+    expect(`${out}\n${err}`).toContain("18 pass")
   } finally {
     clearTimeout(timer)
   }

@@ -8,6 +8,7 @@ import { effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"
 import { Extension } from "@/extension"
 import { installation } from "@/extension/install-service"
+import { normalizeReleaseUrl } from "@/extension/release"
 import type { InstallRequest, InstallPreview, InstallResult, InstallSource } from "@/extension/install"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ExtensionID, type Info, type Source } from "@/extension/schema"
@@ -39,6 +40,8 @@ function location(value: string) {
 function sourceLabel(source: Source) {
   if (source.type === "path") return text(source.path)
   if (source.type === "npm") return `npm:${text(source.spec)} (${location(source.registry)})`
+  if (source.type === "release")
+    return `release:${location(source.descriptor)} (${text(source.extensionID)}@${text(source.version)}; artifact:${location(source.artifact)}; sha256:${text(source.sha256)}; descriptor-sha256:${text(source.descriptorSha256)})`
   return `${location(source.location)} (sha256:${text(source.sha256)})`
 }
 
@@ -48,7 +51,42 @@ export function formatExtensionList(items: Info[]) {
     .join("\n")
 }
 
-export function extensionInstallSource(value: string, sha256?: string, archiveOnly = false): InstallSource {
+export function formatExtensionListJSON(items: Info[]) {
+  return JSON.stringify(
+    items.map((item) => ({
+      ...item,
+      source:
+        item.source.type === "release"
+          ? {
+              ...item.source,
+              descriptor: location(item.source.descriptor),
+              artifact: location(item.source.artifact),
+            }
+          : item.source.type === "archive"
+            ? { ...item.source, location: location(item.source.location) }
+            : item.source.type === "npm"
+              ? { ...item.source, registry: location(item.source.registry) }
+              : item.source,
+    })),
+    null,
+    2,
+  )
+}
+
+export function extensionInstallSource(
+  value: string,
+  sha256?: string,
+  archiveOnly = false,
+  release = false,
+): InstallSource {
+  if (release) {
+    if (sha256 !== undefined) throw new Error("--release and --sha256 are mutually exclusive")
+    try {
+      return { type: "release", url: normalizeReleaseUrl(value) }
+    } catch {
+      throw new Error("--release requires a credential-free HTTPS descriptor URL without query or fragment")
+    }
+  }
   if (!value || /[\s\\\x00-\x1f\x7f]/.test(value)) {
     // Spaces are valid in local filenames, but never in a registry spec or URL.
     if (!value || /[\x00-\x1f\x7f]/.test(value) || !/\.tgz$/i.test(value) || /^\w+:/.test(value))
@@ -99,6 +137,12 @@ export function formatInstallPreview(preview: InstallPreview, enable = false, pu
     `Permissions removed: ${preview.permissionsRemoved.map(text).join(", ") || "none"}`,
   ]
   if (preview.versionChange) lines.push(`Version change: ${preview.versionChange}`)
+  if (preview.registryUpgrade)
+    lines.push(
+      `Registry upgrade: ${preview.registryUpgrade.from} -> ${preview.registryUpgrade.to} (affects the entire registry).`,
+      "Stop all older OpenCode processes sharing this registry, data directory or cache directory before confirming; older processes cannot read the upgraded registry.",
+      "This is your manual declaration, not machine-verified proof. Uninstalling release extensions will not downgrade the v3 registry.",
+    )
   if (preview.kind === "uninstall")
     lines.push(
       purgeData
@@ -155,7 +199,7 @@ const mutationsAllowed = Effect.gen(function* () {
     return yield* fail("Extensions are disabled; extension mutations are not allowed")
 })
 
-function applyInstallation(request: InstallRequest, yes: boolean, enable = false) {
+function applyInstallation(request: InstallRequest, yes: boolean, enable = false, allowRegistryUpgrade = false) {
   return Effect.gen(function* () {
     yield* mutationsAllowed
     // Hold the same process-wide observer/runtime lease as the HTTP service. Do not create a separate runtime.
@@ -163,28 +207,49 @@ function applyInstallation(request: InstallRequest, yes: boolean, enable = false
     const installer = installation()
     const preview = yield* installAttempt(() => installer.prepare(request))
     UI.println(formatInstallPreview(preview, enable, request.kind === "uninstall" && !!request.purgeData))
-    let confirmed = yes
-    if (!confirmed && process.stdin.isTTY && process.stdout.isTTY) {
-      const answer = yield* Effect.tryPromise({
-        try: () => prompts.confirm({ message: `Confirm extension ${request.kind}?`, initialValue: false }),
+    const interactive = !!process.stdin.isTTY && !!process.stdout.isTTY
+    const confirm = (message: string) =>
+      Effect.tryPromise({
+        try: () => prompts.confirm({ message, initialValue: false }),
         catch: () => "Extension confirmation failed",
       }).pipe(
+        Effect.map((answer) => !prompts.isCancel(answer) && answer === true),
         Effect.catch((message) =>
           installAttempt(() => installer.cancel(preview.operationId, preview.token)).pipe(
             Effect.andThen(fail(message)),
           ),
         ),
       )
-      confirmed = !prompts.isCancel(answer) && answer === true
+    let confirmed = yes
+    if (!confirmed && interactive) confirmed = yield* confirm(`Confirm extension ${request.kind}?`)
+    let acceptRegistryUpgrade = false
+    if (confirmed && preview.registryUpgrade) {
+      // --yes acknowledges the operation only, never a registry-wide compatibility break.
+      acceptRegistryUpgrade = interactive
+        ? yield* confirm(
+            "All older OpenCode processes sharing this registry, data directory or cache directory are stopped. Confirm this manual declaration (not machine-verified proof) and upgrade the entire registry from v2 to v3; older processes will no longer read it and uninstall will not downgrade it?",
+          )
+        : yes && allowRegistryUpgrade
+      if (!acceptRegistryUpgrade) {
+        confirmed = false
+        UI.println(
+          "Registry upgrade not confirmed. Non-interactive upgrades require both --yes and --allow-registry-upgrade after stopping all older processes sharing this registry, data directory or cache directory. This flag is a manual declaration, not machine-verified proof; uninstall will not downgrade the v3 registry.",
+        )
+      }
     }
     if (!confirmed) {
       const result = yield* installAttempt(() => installer.cancel(preview.operationId, preview.token))
-      if (!yes && !process.stdin.isTTY)
-        UI.println("Non-interactive input: use --yes to confirm after reviewing the preview.")
+      if (!yes && !interactive) UI.println("Non-interactive input: use --yes to confirm after reviewing the preview.")
       UI.println(formatInstallResult(result))
       return
     }
-    const result = yield* installAttempt(() => installer.commit(preview.operationId, preview.token, { enable }))
+    const result = yield* installAttempt(() =>
+      installer.commit(
+        preview.operationId,
+        preview.token,
+        request.kind === "uninstall" ? {} : { enable, acceptRegistryUpgrade },
+      ),
+    )
     UI.println(formatInstallResult(result))
     if (result.committed !== true) return yield* fail("Extension change was not confirmed committed")
   })
@@ -192,16 +257,23 @@ function applyInstallation(request: InstallRequest, yes: boolean, enable = false
 
 const InstallCommand = effectCmd({
   command: "install <source>",
-  describe: "install an npm package or verified .tgz archive",
+  describe: "install an npm package, verified .tgz archive or explicit release descriptor",
   instance: false,
   builder: (yargs) =>
     yargs
       .positional("source", {
         type: "string",
         demandOption: true,
-        describe: "npm spec, HTTPS .tgz URL or local .tgz file",
+        describe: "npm spec, HTTPS/local .tgz archive, or descriptor URL with --release",
       })
-      .option("sha256", { type: "string", describe: "required SHA-256 for archives" })
+      .option("release", { type: "boolean", default: false, describe: "interpret source as a release descriptor URL" })
+      .option("sha256", { type: "string", describe: "required SHA-256 for archives (incompatible with --release)" })
+      .option("allow-registry-upgrade", {
+        type: "boolean",
+        default: false,
+        describe:
+          "with --yes, declare older processes sharing registry/data/cache stopped; permit irreversible v3 upgrade",
+      })
       .option("yes", {
         type: "boolean",
         default: false,
@@ -216,17 +288,17 @@ const InstallCommand = effectCmd({
     yield* mutationsAllowed
     let source: InstallSource
     try {
-      source = extensionInstallSource(String(args.source), args.sha256)
+      source = extensionInstallSource(String(args.source), args.sha256, false, args.release)
     } catch (error) {
       return yield* fail(errorMessage(error))
     }
-    yield* applyInstallation({ kind: "install", source }, args.yes, args.enable)
+    yield* applyInstallation({ kind: "install", source }, args.yes, args.enable, args.allowRegistryUpgrade)
   }),
 })
 
 const UpdateCommand = effectCmd({
   command: "update <id>",
-  describe: "update an extension to an exact npm version or verified archive",
+  describe: "update an extension to an exact npm version, verified archive or current release",
   instance: false,
   builder: (yargs) =>
     yargs
@@ -234,6 +306,17 @@ const UpdateCommand = effectCmd({
       .option("version", { type: "string", describe: "exact npm version" })
       .option("source", { type: "string", describe: "replacement HTTPS/local .tgz archive" })
       .option("sha256", { type: "string", describe: "required SHA-256 for replacement archives" })
+      .option("release-current", {
+        type: "boolean",
+        default: false,
+        describe: "update from the installed release descriptor (incompatible with version/source/sha256)",
+      })
+      .option("allow-registry-upgrade", {
+        type: "boolean",
+        default: false,
+        describe:
+          "with --yes, declare older processes sharing registry/data/cache stopped; permit irreversible v3 upgrade",
+      })
       .option("yes", { type: "boolean", default: false, describe: "explicitly confirm the preview" }),
   handler: Effect.fn("Cli.extension.update")(function* (args) {
     yield* mutationsAllowed
@@ -245,20 +328,26 @@ const UpdateCommand = effectCmd({
     }
     let request: InstallRequest
     try {
-      if ((args.version === undefined) === (args.source === undefined))
-        throw new Error("Specify exactly one of --version or --source")
-      if (args.source !== undefined)
-        request = { kind: "update", id, source: extensionInstallSource(args.source, args.sha256, true) }
-      else {
-        if (args.sha256 !== undefined) throw new Error("--sha256 requires --source")
-        if (!args.version || semver.valid(args.version) !== args.version)
-          throw new Error("--version must be an exact semantic version")
-        request = { kind: "update", id, version: args.version }
+      if (args.releaseCurrent) {
+        if (args.version !== undefined || args.source !== undefined || args.sha256 !== undefined)
+          throw new Error("--release-current is mutually exclusive with --version, --source and --sha256")
+        request = { kind: "update", id, target: "release-current" }
+      } else {
+        if ((args.version === undefined) === (args.source === undefined))
+          throw new Error("Specify exactly one of --version, --source or --release-current")
+        if (args.source !== undefined)
+          request = { kind: "update", id, source: extensionInstallSource(args.source, args.sha256, true) }
+        else {
+          if (args.sha256 !== undefined) throw new Error("--sha256 requires --source")
+          if (!args.version || semver.valid(args.version) !== args.version)
+            throw new Error("--version must be an exact semantic version")
+          request = { kind: "update", id, version: args.version }
+        }
       }
     } catch (error) {
       return yield* fail(errorMessage(error))
     }
-    yield* applyInstallation(request, args.yes)
+    yield* applyInstallation(request, args.yes, false, args.allowRegistryUpgrade)
   }),
 })
 
@@ -321,16 +410,7 @@ const ListCommand = effectCmd({
     const extension = yield* Extension.Service
     const items = yield* orFail(extension.list())
     if (args.json) {
-      const safe = items.map((item) => ({
-        ...item,
-        source:
-          item.source.type === "archive"
-            ? { ...item.source, location: location(item.source.location) }
-            : item.source.type === "npm"
-              ? { ...item.source, registry: location(item.source.registry) }
-              : item.source,
-      }))
-      process.stdout.write(`${JSON.stringify(safe, null, 2)}\n`)
+      process.stdout.write(`${formatExtensionListJSON(items)}\n`)
       return
     }
     if (!items.length) {

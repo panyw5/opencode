@@ -1,4 +1,5 @@
 import { Button } from "@opencode-ai/ui/button"
+import type { ExtensionInfo } from "../extensions/types"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Show } from "solid-js"
 import { DialogInstallExtension, type ExtensionInstallationProps } from "../components/dialog-install-extension"
@@ -13,7 +14,7 @@ import {
 
 export interface ConfigExtensionInstallActionsProps extends InstallationBlockedState {
   /** Omit item to render the list-level Install button. */
-  item?: { id: string; source?: { type: string } }
+  item?: Pick<ExtensionInfo, "id" | "source">
   operations: InstallationOperations
   language: InstallationLanguage
   connection: () => unknown
@@ -67,7 +68,7 @@ export function ConfigExtensionInstallActions(props: ConfigExtensionInstallActio
             <Button
               data-action="extension-update-open"
               disabled={updateBlocked()}
-              onClick={() => open({ kind: "update", id: item().id })}
+              onClick={() => open({ kind: "update", id: item().id, source: item().source })}
             >
               {props.language.t("config.extensions.install.update")}
             </Button>

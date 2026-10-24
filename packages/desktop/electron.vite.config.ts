@@ -7,10 +7,7 @@ import path from "node:path"
 const OPENCODE_SERVER_DIST = path.resolve(import.meta.dirname, "../opencode/dist/node")
 
 function restoreStandardBackdropFilter(css: string) {
-  return css.replace(
-    /(-webkit-backdrop-filter\s*:\s*([^;{}]+);)(?!\s*backdrop-filter\s*:)/g,
-    "$1backdrop-filter:$2;",
-  )
+  return css.replace(/(-webkit-backdrop-filter\s*:\s*([^;{}]+);)(?!\s*backdrop-filter\s*:)/g, "$1backdrop-filter:$2;")
 }
 
 function preserveBackdropFilter() {
@@ -122,6 +119,12 @@ const require = __cjs_mod__.createRequire(import.meta.url);
     },
   },
   renderer: {
+    server: {
+      // Strict port so a colliding foreign dev server (e.g. another project
+      // bound to *:5173) can never silently serve stale modules to the app.
+      port: Number(process.env.OPENCODE_RENDERER_PORT) || 5173,
+      strictPort: true,
+    },
     resolve: {
       alias: {
         "@opencode-ai/ui/font-loader": path.resolve(import.meta.dirname, "../ui/src/font-loader.desktop.ts"),

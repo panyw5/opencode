@@ -2,6 +2,8 @@
 
 更新时间：2026-10-14。工作树 `.claude/worktrees/extensions-p0`，分支 `claude/extensions-p2-design`。
 
+> 2026-10-18 核对说明：本文以下为P2交付历史，不代表当前HEAD、版本或未提交状态。P3a主实现现已提交为 `86619dfa4a`，仍未标记完整交付；最新按钮布局收尾、验证结果和集成待办见 `specs/extensions/progress.md` 与 `specs/extensions/p3a-tasks.md`。本轮未重生成或重新验收本页全部产物，旧验收结果不自动升级为当前发布证据。
+
 ## 当前交付说明（权威摘要）
 
 **P2 已提交，不再是未跟踪候选清单。** `eeac7a5adc`（2026-10-07）交付 125 个文件，包含服务端运行时/RPC/设置/watcher、Web 宿主/贡献点/保存桥、配置页入口和启停管理、测试夹具、SDK v2 与 hello-viewer 产物，以及历史任务记录。P0/P1 已此前提交；`660c95bdd3` 为独立 JPEG 测试修复。

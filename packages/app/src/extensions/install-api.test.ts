@@ -147,6 +147,59 @@ describe("extension installation API", () => {
     expect(client.prepare).toHaveBeenCalledWith({ extensionPrepareInput: request }, { redirect: "error" })
   })
 
+  test("preserves release prepare, fixed-current update, and v3 preview fields", async () => {
+    const data: PreparedInstallation = {
+      ...prepared(),
+      source: {
+        type: "release",
+        descriptor: "https://publisher.example/stable.json",
+        extensionID: "example.viewer",
+        version: "2.0.0",
+        artifact: "https://cdn.example/viewer.tgz",
+        sha256: "a".repeat(64),
+        descriptorSha256: "b".repeat(64),
+      },
+      expectedRegistryVersion: 2,
+      registryUpgrade: { from: 2, to: 3 },
+    }
+    const { api, client } = setup(() => ({ data }))
+    for (const request of [
+      { kind: "install", source: { type: "release", url: "https://publisher.example/stable.json" } },
+      { kind: "update", id: "example.viewer", target: "release-current" },
+    ] satisfies InstallationRequest[]) {
+      expect(await api.prepare(request)).toBe(data)
+      expect(client.prepare).toHaveBeenLastCalledWith({ extensionPrepareInput: request }, { redirect: "error" })
+    }
+    expect(client.install).not.toHaveBeenCalled()
+    expect(client.update).not.toHaveBeenCalled()
+  })
+
+  test("forwards explicit registry upgrade consent to install and update but never uninstall", async () => {
+    const { api, client } = setup()
+    for (const acceptRegistryUpgrade of [true, false]) {
+      await api.commit(prepared("install"), { acceptRegistryUpgrade })
+      expect(client.install).toHaveBeenLastCalledWith(
+        { operationId: "operation-123", "x-opencode-extension-token": token, enable: false, acceptRegistryUpgrade },
+        { redirect: "error" },
+      )
+      await api.commit(prepared("update"), { enable: true, acceptRegistryUpgrade })
+      expect(client.update).toHaveBeenLastCalledWith(
+        {
+          operationId: "operation-123",
+          "x-opencode-extension-token": token,
+          id: "example.viewer",
+          acceptRegistryUpgrade,
+        },
+        { redirect: "error" },
+      )
+    }
+    await api.commit(prepared("uninstall"), { acceptRegistryUpgrade: true })
+    expect(client.uninstall).toHaveBeenLastCalledWith(
+      { operationId: "operation-123", "x-opencode-extension-token": token, id: "example.viewer" },
+      { redirect: "error" },
+    )
+  })
+
   test("prepares uninstall with its target and preserves explicit purgeData values", async () => {
     const data = prepared("uninstall")
     const { api, client } = setup(() => ({ data }))

@@ -1,10 +1,53 @@
 # Extensions 实施进度
 
-更新时间：2026-10-17
+更新时间：2026-10-24
 
-## P3a 当前实施摘要（优先于下方历史状态）
+## P4 首个业务扩展：wls-repl 断点调试 REPL（2026-10-24）
 
-- 基线 `3a0d101b22`（dev 1.18.58）；P3a 正在实施，**尚未提交、未合入 dev、未推送，不标记完整交付**。P3b 市场留后续。
+- 新增 `packages/extensions/wls-repl/`（`local.wls-repl`）：`.wls` replace-mode viewer + 常驻 wolframscript kernel + 行断点调试。断点机制为本轮全新设计：kernel 内 `Read[HoldComplete[Expression]]` 语句切分 + `StreamPosition` 行号映射 + 暂停循环（变量快照/inspect/continue/step/abort）；控制通道实测 stdin/FIFO/socket 全不可用后改用控制文件 + `!tail -f` 跟随读，协议行 RS+nonce+JSON。bridge 独立 `WLSBridge`` context，用户代码跑 `User`` context。
+- 验证：包内测试 **16/0**（假 kernel 7 + 真实 wolframscript 集成 6 + 前端 3）；typecheck、vite/bun 构建、隔离 registry link、dev Electron（TEST_ONBOARDING + CDP 9255）实机全链路通过：断点暂停/变量面板/检视求值/Step/Continue/空闲 REPL 状态保持/Restart/Stop（ps 确认进程清零）/服务器热重载自动回收/配置页条目与设置。截图在 /tmp，证据明细见 `specs/extensions/wls-repl-tasks.md`。
+- 过程中确认并修复：wolframscript 忽略 SIGTERM（三级停止 + await 内 SIGKILL）、宿主暴死孤儿 kernel（kernel-pids.json 按宿主 pid 清扫）、`Definition::ssym` 求值陷阱、bridge 符号污染 Global` 的 shdw 告警、暂停循环 While 参数笔误、stderr 噪音过滤正则两轮修正。
+- 边界：只读视图（编辑走源码视图）、无 Step Into、断点不跨刷新、Windows/Linux 未验收（tail/ps Unix 依赖）。bun.lock 新增本包条目并顺带完成 release 工作遗留的 1.18.58 版本元数据同步。本轮不暂存、不提交、不推送；真实用户 registry 未触碰。
+- 第二轮增量（同日）：`wolfram_eval` Agent 工具落地（实例 hooks + `kernel.evalAwait` 内部 RPC + `exposeTool` 设置；带 `path` 复用用户文件 kernel 实现共享变量，否则目录级 kernel），变量面板去冗余。测试 **21/0**（含真实集成：用户 kernel `q=6` → 工具 `q*7`=42、目录 kernel 独立、状态保持），dev Electron 回归通过、截图 `/tmp/wls-tool-vars-clean.png`。未发起真实模型请求；清理时误杀主仓库 dev 实例的 bun wrapper（Electron 本体与 9222 存活）。
+- 第三轮增量（同日）：自包含归档独立安装闭环。kit/plugin 移入 devDependencies + `files` 白名单后 `npm pack --offline` 产出 80KB 零运行时依赖归档；隔离 CLI 安装 committed/synced；dev Electron 隔离 registry 安装后打开 `.wls` 全链路正常，kernel 经确认由安装副本（内容指纹目录）启动；配置页 Update/Remove 可用，两步确认移除后 kernel 进程清零。npm 公网安装仍受 kit 未发布限制，release URL 公网分发未做上传。
+- 第四轮增量（同日）：扩展发布至用户授权的新公开仓库 panyw5/opencode-wls（dist 随仓库提交），GitHub release v1.18.58 上传归档、stable.json descriptor 发布至仓库根并公网可达。`--release` 在线安装首次实测：CLI 需 `--release` 标志（README 已修正）；本机 fake-IP 代理 DNS（GitHub 域名解析为 198.18.0.0/15）被 `publicAddress` 按设计拒绝，属环境边界而非缺陷，未绕过。替代闭环完成：curl 下载 release 资产+摘要核对+本地归档入口安装同一字节，隔离 CLI committed/synced，dev Electron GUI 断点链路复验通过（kernel 由安装副本启动）。真实公网 `--release` 正向安装待非 fake-IP 网络复测。
+- 第五轮增量（同日）：桌面拖拽安装 .tgz。desktop 专用 IPC 通道（preload→main 重算 sha256→sidecar parentPort→进程内 installation()），HTTP 的 local CLI-only 边界原样保留；dialog 本地模式强制摘要核对（错误摘要禁用 Prepare），Extensions 分区为 .tgz 拖拽消费者，web 自动降级；附带 renderer dev server strictPort 修复端口串线。测试 +11 单测全绿，typecheck/prettier/build 通过；CDP 实机端到端：真实拖拽→摘要核对→预览→确认→安装→启用→断点调试全链路正常（kernel 由安装副本启动）。截图 /tmp/wls-draginstall-paused.png。仅桌面端；未提交。
+
+## 独立扩展模板（2026-10-21）
+
+- 新增可整体复制的 `templates/extensions/server-only/`：Node>=22目标、零外部依赖，无workspace/catalog，纯JS ping RPC、Node测试、标准npm offline/ignore-scripts打包及同次发布描述生成。源码不含artifacts/node_modules，不依赖未确认公开发布的kit。使用说明在模板README及 `specs/extensions/release-authoring.md`。
+- 实测Node8/0、宿主模板/author/resolver组合33/0、opencode typecheck与格式检查通过；项目外副本真实npm测试/打包成功，descriptor与宿主从实际归档生成结果一致。最终包隔离CLI安装/启用及真实RPC成功，专用服务已停止。
+- 当前验证环境macOS、Node25.9.0/npm11.12.1；Node22及Windows/Linux未运行验收，公网正向发布仍未做。不创建GitHub仓库，不install/publish、不提交推送，不触及真实用户registry。
+
+## 配置导航复核（2026-10-20）
+
+- 上轮Extensions无法切换已定位为加载壳而非真实分区：directory为空时壳没有click回调；本轮复现的持久默认server指向已停止的47297，修正仅本轮浏览器测试连接后真实页面、Extensions导航、发布安装弹窗及直达/重载均通过。正常日志lazy约73ms、真实ConfigPage约86ms挂载，不修改jump逻辑。
+- 加载壳新增来源标记/字符串日志、aria-busy和Loading，占位分区禁用；新增真实Solid禁用→可点击契约及整页E2E用例。App typecheck、unit1719/0、browser64/0通过；E2E runner未跑，真实Ego Chromium路由/弹窗检查通过，按钮和输入框均34px、间距8px，截图已查看。
+- 此项解除Vite导航/入口阻塞，不等于公网正向安装或三形态交付；Electron/内嵌/跨平台/完整多服务器仍未验收。专用服务和浏览器已关闭，无真实registry安装/迁移、不提交推送。详见 `specs/extensions/release-install-tasks.md`。
+- 发布样例核对：零依赖server-only包经macOS无AppleDouble/xattr的ustar打包，真实作者工具生成描述、隔离CLI本地安装/启用及真实Basic API RPC全部通过；author＋resolver离线测试30/0。默认macOS tar被正确拒绝，已在 `specs/extensions/release-authoring.md` 补最小代码与正确打包命令。不是公网release正向验收，不上传GitHub/npm。
+
+## 发布地址安装（2026-10-19，当前工作树未提交）
+
+- 核心链路已实现：release描述地址、自动SHA-256、稳定来源及release-current更新、prepare内容冻结、显式确认原子升registry v3、HTTP/SDK/CLI/UI与本地描述生成器；不是已发布版本，不标记完整交付。设计见 `specs/extensions/release-install-design.md`，任务/证据见 `specs/extensions/release-install-tasks.md`，作者说明见 `specs/extensions/release-authoring.md`。
+- 本轮最终主区组合：扩展目录＋HTTP扩展/安装＋鉴权 **644/0（26文件）**；App **1719/0（208文件）**、browser **63/0（17文件，wrapper内部18项不叠加）**；kit17/0、示例14/0；opencode/App/SDK/kit/示例5项typecheck通过。SDK生成/编译、OpenAPI两次逐字节一致、App生产构建通过（既有chunk/导入警告）。
+- 真实隔离API健康/空清单及私网descriptor拒绝通过；Vite配置页Extensions导航未成功切换，根因未确认，完整GUI验收阻塞。真实表单＋内存fixture只验证显示，不计公网/服务端正向安装成功。专用服务/浏览器已关闭；Electron/内嵌二进制/公网正向/跨平台矩阵未验收，不借用P3a旧截图。
+- v3影响整个registry，首次明确确认旧进程停机前提，普通--yes不授权升版，卸载不降级。旧进程已加载代码不会被版本门禁停止；人工声明不等于存活证明。无签名/沙箱/自动来源迁移。
+- 已有三个包版本及模型快照哈希未变，右侧34px按钮布局保留。本轮不暂存、不提交、不推送、不合并、不发布外部资产；当前HEAD仍为86619dfa4a，后续提交/集成需另行授权。
+
+## 当前核对与收尾（2026-10-18历史记录）
+
+- 实际分支 `claude/extensions-p2-design`，HEAD `86619dfa4a`（`feat(extensions): add managed installation, updates, and removal`，57 文件，+14793/−194）。P3a 主实现已本地提交，但**未标记完整交付、未合入本地 dev**；原会话记录未推送，本轮未联网核实远端，也不提交、不推送、不合并。
+- 本地 `HEAD...dev` 为 20/7：扩展分支独有20条提交，dev独有7条；本轮未fetch，集成前需重新核对、同步及回归，不能称已包含最新dev。
+- 安装确认页布局收尾：预览安装移至npm包名/版本输入框右侧，archive模式位于URL右侧，SHA-256独立下一行；卸载保留底部预览入口。按钮与可见输入框边框高度均为34px，保留原有pending/blocked门禁、prepare与确认逻辑。新增结构/高度契约，隔离Solid子进程由11项增至12项；外层wrapper仍计1项，不能重复累计。
+- 当前工作区包含本轮表单/测试/进度文档收尾，以及先前已有的三个包版本 `1.18.57→1.18.58` 和模型快照变更；后两类未被本轮改写，快照未做模型清单语义验收，不混同按钮修正或已提交实现。
+- 修改前本轮重新验证：后端扩展439/0（23文件）、App1710/0（207文件）、browser-condition63/0（17文件）、extension-kit17/0、hello-viewer14/0；App/opencode/kit typecheck通过。该后端选择范围不同于历史516/1skip组合，不替代HTTP/鉴权等完整组合。
+- 布局修改后：App全量1710/0（207文件）、browser-condition63/0（17文件）、安装弹窗wrapper单独1/0（内部12项契约，不与browser计数叠加）、App typecheck通过；真实Chromium隔离页挂载当前源码表单，npm与archive模式测得输入框/按钮均34px、上下沿一致、间距8px，截图已查看。仅布局验收，未连接安装服务或执行安装；验证页已关闭，现有桌面开发进程未重启。
+- 未完成：公网npm/HTTPS真实包、多服务器A→B→A、完整故障/超时及Linux/Windows验收；P3b市场、P4业务扩展未开始。Node/Windows/无FFI清理延后、同进程信任与secret存储边界不变。详见 `specs/extensions/p3a-tasks.md`。
+- 设计历史记录（2026-10-18）：当时仅建立 `specs/extensions/release-install-design.md` 草案，未实施自动摘要。后续2026-10-19已获批并在工作树实现，状态以上方“发布地址安装”及其任务记录为准；不将未完成实机验收或未发布能力标记完整交付。
+
+## P3a 实施历史摘要（2026-10-17；提交状态以上方为准）
+
+- 基线 `3a0d101b22`（dev 1.18.58）；下列为提交前实施记录，主实现现已提交为 `86619dfa4a`，仍未标记完整交付。P3b 市场留后续。
 - npm/自包含tgz获取、registry v2/revision/receipt、prepare/confirm/commit、runtime fence/quiesce、registry观察器与安装服务、HTTP/SDK/CLI、配置页安装/更新/移除确认已实现并接通。
 - 审查收敛：8个候选中7项修复；npm祖先自身peer解析保留fail closed（原可解析前提不普遍成立，不宣称已支持）。补齐工具/普通hooks在途与旧闭包代际跟踪、真实缓存失效重试/首装空缓存、retained来源隔离、broken安装修复、CLI开发链接热重载、committed状态恢复strict sync与path unlink入口。
 - 审查后主线程回归：服务端扩展/安装/鉴权/snapshot组合449 pass、1 skip、0 fail（22文件）；App全量1710/0、UI全量282/0、browser-condition63/0（安装wrapper内部11项），App/opencode typecheck和生产App构建通过（大chunk警告）。SDK契约未改变；审查前opencode/App/SDK/UI/kit/示例typecheck通过，OpenAPI两次生成一致。

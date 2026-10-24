@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@opencode-ai/wls-repl-extension",
+  "version": "1.18.58",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    "./web": "./dist/web/index.js",
+    "./server": "./dist/server.js"
+  },
+  "opencode": {
+    "manifestVersion": 1,
+    "id": "local.wls-repl",
+    "displayName": "WolframScript REPL",
+    "description": "Run .wls files in a persistent wolframscript kernel with line breakpoints and variable inspection.",
+    "web": {
+      "apiVersion": 1,
+      "styles": [
+        "./dist/web/index.css"
+      ]
+    },
+    "activation": [
+      "onFileViewer:wls-repl"
+    ],
+    "contributes": {
+      "fileViewers": [
+        {
+          "id": "wls-repl",
+          "title": "WolframScript REPL",
+          "extensions": [
+            "wls"
+          ],
+          "priority": 100,
+          "mode": "replace"
+        }
+      ],
+      "settings": {
+        "wolframscriptPath": {
+          "type": "string",
+          "title": "wolframscript path",
+          "description": "Executable used to start the Wolfram kernel.",
+          "default": "wolframscript"
+        },
+        "statementTimeoutSeconds": {
+          "type": "number",
+          "title": "statement timeout (seconds)",
+          "description": "Per-statement evaluation timeout during a run.",
+          "default": 60
+        },
+        "maxKernels": {
+          "type": "number",
+          "title": "max kernels",
+          "description": "Maximum concurrently running wolframscript kernels.",
+          "default": 2
+        },
+        "exposeTool": {
+          "type": "string",
+          "title": "expose wolfram_eval tool",
+          "description": "Whether agents can use the wolfram_eval tool.",
+          "enum": [
+            "always",
+            "never"
+          ],
+          "default": "always"
+        }
+      }
+    },
+    "permissions": [
+      "process:spawn"
+    ]
+  },
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build && bun run build:server",
+    "build:server": "bun build src/server.ts --outfile dist/server.js --target=node --format=esm && cp src/bridge.wls dist/bridge.wls",
+    "typecheck": "tsgo --noEmit",
+    "test": "bun test test"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@opencode-ai/ui": "workspace:*",
+    "@opencode-ai/extension-kit": "workspace:*",
+    "@opencode-ai/plugin": "workspace:*",
+    "@tsconfig/node22": "catalog:",
+    "@typescript/native-preview": "catalog:",
+    "solid-js": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plugin-solid": "catalog:"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ]
+}

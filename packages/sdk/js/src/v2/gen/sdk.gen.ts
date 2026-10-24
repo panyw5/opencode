@@ -843,6 +843,7 @@ export class ExtensionInstallation extends HeyApiClient {
       "x-opencode-extension-token": string
       operationId?: string
       enable?: boolean
+      acceptRegistryUpgrade?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -854,6 +855,7 @@ export class ExtensionInstallation extends HeyApiClient {
             { in: "headers", key: "x-opencode-extension-token" },
             { in: "body", key: "operationId" },
             { in: "body", key: "enable" },
+            { in: "body", key: "acceptRegistryUpgrade" },
           ],
         },
       ],
@@ -882,6 +884,7 @@ export class ExtensionInstallation extends HeyApiClient {
       "x-opencode-extension-token": string
       id: string
       operationId?: string
+      acceptRegistryUpgrade?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -893,6 +896,7 @@ export class ExtensionInstallation extends HeyApiClient {
             { in: "headers", key: "x-opencode-extension-token" },
             { in: "path", key: "id" },
             { in: "body", key: "operationId" },
+            { in: "body", key: "acceptRegistryUpgrade" },
           ],
         },
       ],

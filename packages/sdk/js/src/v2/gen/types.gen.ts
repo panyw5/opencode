@@ -150,6 +150,16 @@ export type ExtensionArchiveSource = {
   sha256: string
 }
 
+export type ExtensionReleaseSource = {
+  type: "release"
+  descriptor: string
+  extensionID: string
+  version: string
+  artifact: string
+  sha256: string
+  descriptorSha256: string
+}
+
 export type ExtensionFileViewerContribution = {
   id: string
   title: string
@@ -216,7 +226,7 @@ export type ExtensionInfo = {
   displayName: string
   description?: string
   icon?: string
-  source: ExtensionPathSource | ExtensionNpmSource | ExtensionArchiveSource
+  source: ExtensionPathSource | ExtensionNpmSource | ExtensionArchiveSource | ExtensionReleaseSource
   enabled: boolean
   state: "ready" | "disabled" | "error" | "incompatible"
   error?: string
@@ -249,6 +259,12 @@ export type ExtensionPrepareInput =
             url: string
             sha256: string
           }
+        | {
+            type: "release"
+            url: string
+          }
+      version?: unknown
+      target?: unknown
     }
   | {
       kind: "update"
@@ -263,16 +279,34 @@ export type ExtensionPrepareInput =
             url: string
             sha256: string
           }
+        | {
+            type: "release"
+            url: string
+          }
+      version?: unknown
+      target?: unknown
     }
   | {
       kind: "update"
       id: string
       version: string
+      source?: unknown
+      target?: unknown
+    }
+  | {
+      kind: "update"
+      id: string
+      target: "release-current"
+      source?: unknown
+      version?: unknown
     }
   | {
       kind: "uninstall"
       id: string
       purgeData?: boolean
+      source?: unknown
+      version?: unknown
+      target?: unknown
     }
 
 export type ExtensionPreparedOperation = {
@@ -290,8 +324,13 @@ export type ExtensionPreparedOperation = {
   permissionsAdded: Array<string>
   permissionsRemoved: Array<string>
   contributes: ExtensionContributes
-  source: ExtensionPathSource | ExtensionNpmSource | ExtensionArchiveSource
+  source: ExtensionPathSource | ExtensionNpmSource | ExtensionArchiveSource | ExtensionReleaseSource
   expectedRevision?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  expectedRegistryVersion?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  registryUpgrade?: {
+    from: 2
+    to: 3
+  }
   hasServer: boolean
   enable: boolean
   installId?: string
@@ -348,8 +387,13 @@ export type ExtensionOperationStatus =
       permissionsAdded: Array<string>
       permissionsRemoved: Array<string>
       contributes: ExtensionContributes
-      source: ExtensionPathSource | ExtensionNpmSource | ExtensionArchiveSource
+      source: ExtensionPathSource | ExtensionNpmSource | ExtensionArchiveSource | ExtensionReleaseSource
       expectedRevision?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      expectedRegistryVersion?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      registryUpgrade?: {
+        from: 2
+        to: 3
+      }
       hasServer: boolean
       enable: boolean
       installId?: string
@@ -5154,6 +5198,7 @@ export type ExtensionInstallationInstallData = {
   body?: {
     operationId: string
     enable?: boolean
+    acceptRegistryUpgrade?: boolean
   }
   headers: {
     "x-opencode-extension-token": string
@@ -5202,6 +5247,7 @@ export type ExtensionInstallationInstallResponse =
 export type ExtensionInstallationUpdateData = {
   body?: {
     operationId: string
+    acceptRegistryUpgrade?: boolean
   }
   headers: {
     "x-opencode-extension-token": string

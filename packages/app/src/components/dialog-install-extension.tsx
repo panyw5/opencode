@@ -5,8 +5,10 @@ import { Dialog } from "@opencode-ai/ui/dialog"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { For, Show, createRenderEffect, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
+import { digestMatches } from "../extensions/install-local"
 import {
   installationBlocked,
+  installationDownloadHost,
   installationPublicResult,
   installationRequest,
   installationSourceLabel,
@@ -24,6 +26,14 @@ import {
 export interface ExtensionInstallationProps extends InstallationBlockedState {
   intent: InstallationIntent
   operations: InstallationOperations
+  /** Desktop bridge for local-archive mode: digest lookup and archive ops. */
+  localArchiveBridge?: {
+    digest: (
+      path: string,
+    ) => Promise<
+      { ok: true; value: { path: string; size: number; sha256: string } } | { ok: false; error: { message: string } }
+    >
+  }
   language: InstallationLanguage
   /** Stable identity for the current server/client. Any transition permanently invalidates this dialog. */
   connection: () => unknown
@@ -35,20 +45,43 @@ export interface ExtensionInstallationProps extends InstallationBlockedState {
 
 /** Exported separately so the real Solid form can be exercised without mocking the dialog provider. */
 export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
+  const releaseUpdate = () => props.intent.kind === "update" && props.intent.source?.type === "release"
+  const npmUpdate = () => props.intent.kind === "update" && props.intent.source?.type === "npm"
+  const localInstall = () => props.intent.kind === "install" && "localArchive" in props.intent
+  const initialSource =
+    props.intent.kind === "update" && props.intent.source?.type === "archive"
+      ? "archive"
+      : npmUpdate()
+        ? "npm"
+        : localInstall()
+          ? "local"
+          : "release"
   const [state, setState] = createStore({
-    input: { sourceType: "npm", spec: "", url: "", sha256: "", version: "", purgeData: false } as InstallationInput,
+    input: {
+      sourceType: initialSource,
+      spec: "",
+      url: "",
+      sha256: "",
+      version: "",
+      purgeData: false,
+      localPath: localInstall() && "localArchive" in props.intent ? props.intent.localArchive.path : "",
+    } as InstallationInput,
+    localDigest: undefined as string | undefined,
+    localDigestError: undefined as string | undefined,
     phase: "edit" as "edit" | "preparing" | "preview" | "committing" | "status" | "result",
     prepared: undefined as PreparedInstallation | undefined,
     result: undefined as InstallationResult | undefined,
     error: undefined as InstallationTranslationKey | undefined,
     enable: false,
+    acceptRegistryUpgrade: false,
     stale: false,
   })
   let alive = true
   let serial = 0
   let owned: { prepared: PreparedInstallation; operations: InstallationOperations; submitted: boolean } | undefined
   const initialConnection = props.connection()
-  const initialIntent = `${props.intent.kind}:${"id" in props.intent ? props.intent.id : ""}`
+  const intentIdentity = () => JSON.stringify(props.intent)
+  const initialIntent = intentIdentity()
   const t = (key: InstallationTranslationKey) => props.language.t(key)
   const blocked = () => state.stale || installationBlocked(props)
   // The host marks this extension busy during our own prepare. Busy disables interaction,
@@ -71,7 +104,7 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
   onCleanup(closed)
   createRenderEffect(() => {
     const connection = props.connection()
-    const intent = `${props.intent.kind}:${"id" in props.intent ? props.intent.id : ""}`
+    const intent = intentIdentity()
     if (connection === initialConnection && intent === initialIntent) return
     serial++
     cancelOwned()
@@ -89,6 +122,31 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
     cancelOwned()
     setState({ prepared: undefined, phase: "edit" })
   })
+  // Local-archive mode: fetch the actual digest once so the user compares it
+  // against the published checksum instead of typing blind.
+  createRenderEffect(() => {
+    if (state.input.sourceType !== "local" || state.localDigest || state.localDigestError) return
+    const path = state.input.localPath
+    if (!path) return
+    const bridge = props.localArchiveBridge
+    if (!bridge) {
+      setState("localDigestError", "config.extensions.install.localDigestPending")
+      return
+    }
+    const ticket = ++serial
+    void bridge
+      .digest(path)
+      .then((response) => {
+        if (!current(ticket)) return
+        if (response.ok) setState({ localDigest: response.value.sha256, localDigestError: undefined })
+        else setState("localDigestError", "config.extensions.install.failed")
+      })
+      .catch(() => {
+        if (current(ticket)) setState("localDigestError", "config.extensions.install.failed")
+      })
+  })
+  const digestConfirmed = () => state.localDigest !== undefined && digestMatches(state.input.sha256, state.localDigest)
+
   const current = (ticket: number) =>
     alive && !state.stale && serial === ticket && props.connection() === initialConnection
   const close = () => {
@@ -111,7 +169,7 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
     }
     const ticket = ++serial
     const operations = props.operations
-    setState({ phase: "preparing", error: undefined })
+    setState({ phase: "preparing", error: undefined, acceptRegistryUpgrade: false })
     try {
       const prepared = await operations.prepareInstallation(request)
       if (!current(ticket) || invalidated()) {
@@ -131,7 +189,14 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
   }
   const commit = async () => {
     const operation = owned
-    if (!alive || blocked() || state.phase !== "preview" || !operation) return
+    if (
+      !alive ||
+      blocked() ||
+      state.phase !== "preview" ||
+      !operation ||
+      (operation.prepared.registryUpgrade && !state.acceptRegistryUpgrade)
+    )
+      return
     const expiresAt = Number(operation.prepared.expiresAt)
     if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
       cancelOwned()
@@ -142,7 +207,10 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
     operation.submitted = true
     setState({ phase: "committing", error: undefined })
     try {
-      const result = await operation.operations.commitInstallation(operation.prepared, { enable: state.enable })
+      const result = await operation.operations.commitInstallation(operation.prepared, {
+        enable: state.enable,
+        ...(operation.prepared.registryUpgrade ? { acceptRegistryUpgrade: state.acceptRegistryUpgrade } : {}),
+      })
       if (current(ticket)) finish(result, operation.prepared)
     } catch {
       // A lost response is not proof that the registry write failed. Keep the capability for status, never retry install.
@@ -225,58 +293,134 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
               data-field="source-type"
               class="rounded border border-border-weak-base bg-surface-base p-2"
               value={state.input.sourceType}
-              disabled={blocked()}
+              disabled={blocked() || releaseUpdate()}
               onChange={(event) => edit("sourceType", event.currentTarget.value as InstallationInput["sourceType"])}
             >
+              <option value="release">{t("config.extensions.install.release")}</option>
               <option value="npm">{t("config.extensions.install.npm")}</option>
               <option value="archive">{t("config.extensions.install.archive")}</option>
-              <Show when={props.intent.kind === "update"}>
+              <Show when={localInstall()}>
+                <option value="local">{t("config.extensions.install.local")}</option>
+              </Show>
+              <Show when={npmUpdate()}>
                 <option value="version">{t("config.extensions.install.version")}</option>
               </Show>
             </select>
           </label>
-          <Show when={state.input.sourceType === "npm"}>
-            <TextField
-              aria-label={t("config.extensions.install.spec")}
-              label={t("config.extensions.install.spec")}
-              value={state.input.spec}
-              disabled={blocked()}
-              onChange={(value) => edit("spec", value)}
-            />
+          <Show when={releaseUpdate()}>
+            <p data-field="release-current">{t("config.extensions.install.releaseCurrent")}</p>
           </Show>
-          <Show when={state.input.sourceType === "version"}>
-            <TextField
-              aria-label={t("config.extensions.install.version")}
-              label={t("config.extensions.install.version")}
-              value={state.input.version}
-              disabled={blocked()}
-              onChange={(value) => edit("version", value)}
-            />
-          </Show>
-          <Show when={state.input.sourceType === "archive"}>
-            <TextField
-              aria-label={t("config.extensions.install.url")}
-              label={t("config.extensions.install.url")}
-              value={state.input.url}
-              disabled={blocked()}
-              onChange={(value) => edit("url", value)}
-            />
-            <TextField
-              aria-label={t("config.extensions.install.sha256")}
-              label={t("config.extensions.install.sha256")}
-              value={state.input.sha256}
-              disabled={blocked()}
-              onChange={(value) => edit("sha256", value)}
-            />
+          <div class="flex items-end gap-2" data-field="installation-source">
+            <div class="min-w-0 flex-1">
+              <Show when={state.input.sourceType === "npm"}>
+                <TextField
+                  aria-label={t("config.extensions.install.spec")}
+                  label={t("config.extensions.install.spec")}
+                  value={state.input.spec}
+                  disabled={blocked()}
+                  onChange={(value) => edit("spec", value)}
+                />
+              </Show>
+              <Show when={state.input.sourceType === "version"}>
+                <TextField
+                  aria-label={t("config.extensions.install.version")}
+                  label={t("config.extensions.install.version")}
+                  value={state.input.version}
+                  disabled={blocked()}
+                  onChange={(value) => edit("version", value)}
+                />
+              </Show>
+              <Show when={state.input.sourceType === "release"}>
+                <TextField
+                  aria-label={t("config.extensions.install.releaseUrl")}
+                  label={t("config.extensions.install.releaseUrl")}
+                  value={
+                    props.intent.kind === "update" && props.intent.source?.type === "release"
+                      ? installationSourceLabel(props.intent.source)
+                      : state.input.url
+                  }
+                  readOnly={releaseUpdate()}
+                  disabled={blocked()}
+                  onChange={(value) => {
+                    if (!releaseUpdate()) edit("url", value)
+                  }}
+                />
+              </Show>
+              <Show
+                when={state.input.sourceType !== "local"}
+                fallback={
+                  <TextField
+                    aria-label={t("config.extensions.install.localArchive")}
+                    label={t("config.extensions.install.localArchive")}
+                    value={state.input.localPath}
+                    readOnly
+                    disabled={blocked()}
+                  />
+                }
+              >
+                <Show when={state.input.sourceType === "archive"}>
+                  <TextField
+                    aria-label={t("config.extensions.install.url")}
+                    label={t("config.extensions.install.url")}
+                    value={state.input.url}
+                    disabled={blocked()}
+                    onChange={(value) => edit("url", value)}
+                  />
+                </Show>
+              </Show>
+            </div>
+            <Button
+              class="shrink-0"
+              style={{ height: "34px" }}
+              data-action="extension-install-prepare"
+              disabled={blocked() || pending() || (state.input.sourceType === "local" && !digestConfirmed())}
+              onClick={() => void prepare()}
+            >
+              {t(pending() ? "config.extensions.install.busy" : "config.extensions.install.preview")}
+            </Button>
+          </div>
+          <Show when={state.input.sourceType === "archive" || state.input.sourceType === "local"}>
+            <div class="flex flex-col gap-1" data-field="installation-sha256">
+              <TextField
+                aria-label={t("config.extensions.install.sha256")}
+                label={t("config.extensions.install.sha256")}
+                value={state.input.sha256}
+                disabled={blocked()}
+                onChange={(value) => edit("sha256", value)}
+              />
+              <Show when={state.input.sourceType === "local"}>
+                <Show
+                  when={state.localDigest}
+                  fallback={
+                    <p data-field="local-digest" class="text-12-regular text-text-weak">
+                      {state.localDigestError
+                        ? t("config.extensions.install.failed")
+                        : t("config.extensions.install.localDigestPending")}
+                    </p>
+                  }
+                >
+                  <p data-field="local-digest" class="text-12-regular text-text-weak">
+                    {t("config.extensions.install.localDigestComputed")}:{" "}
+                    <code class="break-all font-mono">{state.localDigest}</code>
+                  </p>
+                  <p
+                    data-field="local-digest-state"
+                    class="text-12-regular"
+                    classList={{
+                      "text-text-success-base": digestConfirmed(),
+                      "text-text-danger-base": !digestConfirmed() && state.input.sha256.length > 0,
+                      "text-text-weak": !digestConfirmed() && state.input.sha256.length === 0,
+                    }}
+                  >
+                    {digestConfirmed()
+                      ? t("config.extensions.install.localDigestMatch")
+                      : t("config.extensions.install.localDigestMismatch")}
+                  </p>
+                </Show>
+              </Show>
+            </div>
           </Show>
         </Show>
-        <Button
-          data-action="extension-install-prepare"
-          disabled={blocked() || pending()}
-          onClick={() => void prepare()}
-        >
-          {t(pending() ? "config.extensions.install.busy" : "config.extensions.install.preview")}
-        </Button>
       </Show>
       <Show when={!state.result ? state.prepared : undefined}>
         {(prepared) => (
@@ -302,8 +446,20 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
             </div>
             <section>
               <h3 class="text-13-medium text-text-strong">{t("config.extensions.install.source")}</h3>
-              <p class="break-all">{installationSourceLabel(prepared().source)}</p>
+              <p class="break-all">
+                {state.input.sourceType === "local"
+                  ? state.input.localPath
+                  : installationSourceLabel(prepared().source)}
+              </p>
             </section>
+            <Show when={prepared().source.type === "release"}>
+              <section data-preview="release-integrity" class="flex flex-col gap-1">
+                <h3 class="text-13-medium text-text-strong">{t("config.extensions.install.downloadHost")}</h3>
+                <p class="break-all">{installationDownloadHost(prepared().source)}</p>
+                <p>{t("config.extensions.install.integrityMatched")}</p>
+                <p>{t("config.extensions.install.publisherUnsigned")}</p>
+              </section>
+            </Show>
             <p role="alert" data-preview="trust" class="text-text-danger-base">
               {t("config.extensions.install.unverified")}
             </p>
@@ -345,6 +501,19 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
                 )}
               </p>
             </Show>
+            <Show when={prepared().registryUpgrade}>
+              <section data-preview="registry-upgrade" class="flex flex-col gap-2">
+                <p role="alert">{t("config.extensions.install.registryUpgradeWarning")}</p>
+                <Checkbox
+                  data-field="accept-registry-upgrade"
+                  checked={state.acceptRegistryUpgrade}
+                  disabled={blocked() || pending()}
+                  onChange={(value) => setState("acceptRegistryUpgrade", value)}
+                >
+                  {t("config.extensions.install.acceptRegistryUpgrade")}
+                </Checkbox>
+              </section>
+            </Show>
             <div class="flex justify-end gap-2">
               <Button data-action="extension-install-back" disabled={pending()} onClick={back}>
                 {t("config.extensions.install.back")}
@@ -352,7 +521,7 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
               <Button
                 data-action="extension-install-confirm"
                 variant="primary"
-                disabled={blocked() || pending()}
+                disabled={blocked() || pending() || (!!prepared().registryUpgrade && !state.acceptRegistryUpgrade)}
                 onClick={() => void commit()}
               >
                 {t(pending() ? "config.extensions.install.busy" : "config.extensions.install.confirm")}
@@ -394,7 +563,23 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
           </div>
         )}
       </Show>
-      <div class="flex justify-end">
+      <div class="flex justify-end gap-2">
+        <Show
+          when={
+            props.intent.kind === "uninstall" &&
+            (state.phase === "edit" || state.phase === "preparing") &&
+            !state.result
+          }
+        >
+          <Button
+            size="small"
+            data-action="extension-install-prepare"
+            disabled={blocked() || pending()}
+            onClick={() => void prepare()}
+          >
+            {t(pending() ? "config.extensions.install.busy" : "config.extensions.install.preview")}
+          </Button>
+        </Show>
         <Button data-action="extension-install-close" onClick={close}>
           {t(state.result ? "config.extensions.install.close" : "config.extensions.install.cancel")}
         </Button>

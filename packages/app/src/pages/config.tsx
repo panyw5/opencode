@@ -140,6 +140,7 @@ import {
 } from "./config-channels"
 import { ConfigIM } from "./config-im"
 import { useExtensionHost } from "@/extensions/host"
+import { ExtensionArchiveDropTarget } from "./config-extension-archive-drop"
 import { ConfigExtensionDetail } from "./config-extension-detail"
 import { ConfigExtensionInstallActions } from "./config-extension-install-actions"
 import { extensionPick, extensionSelection, extensionSelectionKey, parseExtensionPick } from "./config-extensions"
@@ -8462,6 +8463,7 @@ export default function ConfigPage() {
                       description={t("config.extensions.header")}
                       icon={sectionIcon("extensions")}
                     />
+                    <ExtensionArchiveDropTarget />
                     <div class="mt-4">
                       <ConfigExtensionInstallActions
                         operations={extensionHost}

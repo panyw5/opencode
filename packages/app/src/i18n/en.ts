@@ -2,6 +2,18 @@ export const dict = {
   "config.extensions.install.title": "Install extension",
   "config.extensions.install.update": "Update extension",
   "config.extensions.install.uninstall": "Remove extension",
+  "config.extensions.install.release": "Release URL",
+  "config.extensions.install.releaseUrl": "Extension release URL",
+  "config.extensions.install.releaseCurrent":
+    "Update to the version currently published at this saved release URL. The source cannot be changed here.",
+  "config.extensions.install.downloadHost": "Package download host",
+  "config.extensions.install.integrityMatched":
+    "Package SHA-256 matches the release descriptor. This is a content consistency check, not a safety certification.",
+  "config.extensions.install.publisherUnsigned": "Publisher identity has not been verified by a digital signature.",
+  "config.extensions.install.registryUpgradeWarning":
+    "This operation upgrades the entire shared extension registry from v2 to v3. Uninstalling does not downgrade it. Older OpenCode processes cannot read v3. Stop all older processes sharing this registry, extension data, or cache before continuing. This is your declaration; the app cannot verify that those processes have stopped.",
+  "config.extensions.install.acceptRegistryUpgrade":
+    "I have stopped all older processes sharing the registry, extension data, or cache, and accept the registry upgrade to v3.",
   "config.extensions.install.npm": "npm package",
   "config.extensions.install.archive": "HTTPS .tgz archive",
   "config.extensions.install.version": "Version",
@@ -47,6 +59,13 @@ export const dict = {
   "config.extensions.install.cleanupPending": "Old packages or data are retained pending safe cleanup",
   "config.extensions.install.status": "Check status",
   "config.extensions.install.statusFailed": "Status could not be read; do not assume the change failed",
+  "config.extensions.install.local": "Local archive (dropped)",
+  "config.extensions.install.localArchive": "Dropped archive",
+  "config.extensions.install.localDigestComputed": "Computed SHA-256",
+  "config.extensions.install.localDigestMatch": "Checksum matches the dropped archive.",
+  "config.extensions.install.localDigestMismatch": "Checksum does not match the dropped archive yet.",
+  "config.extensions.install.localDigestPending": "Reading the archive…",
+  "config.extensions.install.localDropHint": "Drop a .tgz extension archive here to install it",
   "gptPro.card.login": "ChatGPT identity",
   "gptPro.card.model": "Current model",
   "gptPro.card.userSelected": "Uses your selection in ChatGPT",

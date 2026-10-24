@@ -12,6 +12,7 @@ import { generationOwnership, operationOwnership } from "./cleanup"
 import { archiveLimits, extractArchive } from "./archive"
 import { downloadArchive, downloadPackage, readLocalArchive, requestJson, type DownloadOptions } from "./download"
 import { resolveNpm, materializeNpm, validateNpmRoot, type PreparedNpm } from "./npm"
+import { normalizeReleaseUrl, resolveRelease } from "./release"
 
 const TTL = 10 * 60 * 1000
 const MAX_OPERATIONS = 4
@@ -21,10 +22,12 @@ export type InstallSource =
   | { type: "npm"; spec: string }
   | { type: "archive"; url: string; sha256: string }
   | { type: "local"; path: string; sha256: string }
+  | { type: "release"; url: string }
 export type InstallRequest =
   | { kind: "install"; source: InstallSource }
-  | { kind: "update"; id: string; source: InstallSource; version?: never }
-  | { kind: "update"; id: string; version: string; source?: never }
+  | { kind: "update"; id: string; source: InstallSource; version?: never; target?: never }
+  | { kind: "update"; id: string; version: string; source?: never; target?: never }
+  | { kind: "update"; id: string; target: "release-current"; source?: never; version?: never }
   | { kind: "uninstall"; id: string; purgeData?: boolean }
 
 export type InstallPreview = {
@@ -45,6 +48,8 @@ export type InstallPreview = {
   contributes: Loaded["contributes"]
   source: Source
   expectedRevision?: number
+  expectedRegistryVersion?: number
+  registryUpgrade?: { from: 2; to: 3 }
   hasServer: boolean
   enable: boolean
   installId?: string
@@ -75,6 +80,7 @@ export type InstallerOptions = {
   download?: (input: DownloadOptions & ({ sha256: string } | { integrity: string })) => Promise<Uint8Array>
   readLocal?: typeof readLocalArchive
   resolveNpm?: typeof resolveNpm
+  resolveRelease?: typeof resolveRelease
   materializeNpm?: typeof materializeNpm
   extract?: typeof extractArchive
   now?: () => number
@@ -143,7 +149,26 @@ function fingerprint(manifest: Loaded) {
   const { dir: _dir, webRoot: _root, ...content } = manifest
   return hash(JSON.stringify(content))
 }
-function publicSource(source: InstallSource, npm?: PreparedNpm): Source {
+function publicSource(
+  source: InstallSource,
+  npm?: PreparedNpm,
+  release?: Awaited<ReturnType<typeof resolveRelease>>,
+): Source {
+  if (source.type === "release") {
+    if (!release) invalid()
+    const artifact = new URL(release.artifact.url)
+    artifact.search = ""
+    artifact.hash = ""
+    return {
+      type: "release",
+      descriptor: release.descriptor,
+      extensionID: extensionID(release.id),
+      version: release.version,
+      artifact: artifact.href,
+      sha256: release.artifact.sha256,
+      descriptorSha256: release.descriptorSha256,
+    }
+  }
   if (source.type === "npm") {
     if (!npm) invalid()
     return { type: "npm", spec: `${npm.name}@${npm.version}`, registry: npm.registry, integrity: npm.integrity }
@@ -160,6 +185,14 @@ function requestSource(value: unknown): InstallSource {
   if (source.type === "npm") {
     if (typeof source.spec !== "string" || !source.spec || source.spec.length > 1024) invalid("Invalid npm spec")
     return { type: "npm", spec: source.spec }
+  }
+  if (source.type === "release") {
+    if (typeof source.url !== "string") invalid("Invalid release descriptor URL")
+    try {
+      return { type: "release", url: normalizeReleaseUrl(source.url) }
+    } catch {
+      invalid("Invalid release descriptor URL")
+    }
   }
   if (source.type !== "archive" && source.type !== "local") invalid("Unsupported extension source")
   if (typeof source.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(source.sha256)) invalid("SHA-256 is required")
@@ -369,6 +402,8 @@ export function createInstaller(options: InstallerOptions = {}) {
   async function prepare(request: InstallRequest): Promise<InstallPreview & { token: string }> {
     if (closed) throw new InstallError("conflict", "Extension installer is closed")
     if (!request || typeof request !== "object" || !["install", "update", "uninstall"].includes(request.kind)) invalid()
+    if (request.kind === "update" && ["source", "version", "target"].filter((key) => key in request).length !== 1)
+      invalid("Choose one update target")
     await sweep()
     if (preparing + [...operations.values()].filter((op) => op.preview && !op.result).length >= MAX_OPERATIONS) {
       throw new InstallError("busy", "Too many pending extension operations")
@@ -410,9 +445,11 @@ export function createInstaller(options: InstallerOptions = {}) {
         let previous: RegistryRow | undefined
         let old: Loaded | undefined
         let expectedID: ExtensionID | undefined
+        let registryVersion: number | undefined
         if (request.kind !== "install") {
           expectedID = extensionID(request.id)
           const snapshot = await Registry.snapshot(expectedID, target)
+          registryVersion = snapshot.registryVersion
           if (!snapshot.row) throw new InstallError("conflict", "Extension is not installed")
           previous = snapshot.row
           op.previous = previous
@@ -438,12 +475,17 @@ export function createInstaller(options: InstallerOptions = {}) {
             contributes: {},
             source: previous!.source,
             expectedRevision: previous!.revision ?? 0,
+            expectedRegistryVersion: registryVersion,
             hasServer: !!old?.serverEntry,
             enable: false,
             installId: previous!.installId,
           }
         } else {
-          if (request.kind === "update" && !request.source) {
+          if (request.kind === "update" && request.target !== undefined) {
+            if (request.target !== "release-current" || previous!.source.type !== "release")
+              invalid("A release update requires an installed release source")
+            source = requestSource({ type: "release", url: previous!.source.descriptor })
+          } else if (request.kind === "update" && !request.source) {
             if (
               previous!.source.type !== "npm" ||
               typeof request.version !== "string" ||
@@ -453,7 +495,15 @@ export function createInstaller(options: InstallerOptions = {}) {
             source = { type: "npm", spec: `${previous!.name}@${request.version}` }
           } else source = requestSource(request.source)
           let input: Uint8Array
-          if (source.type === "npm") {
+          let release: Awaited<ReturnType<typeof resolveRelease>> | undefined
+          if (source.type === "release") {
+            release = await (options.resolveRelease ?? resolveRelease)(source.url, { signal })
+            input = await (options.download ?? downloadArchive)({
+              url: release.artifact.url,
+              sha256: release.artifact.sha256,
+              signal,
+            })
+          } else if (source.type === "npm") {
             op.npm = await (options.resolveNpm ?? resolveNpm)(source.spec, {
               transport: requestJson,
               signal,
@@ -470,7 +520,9 @@ export function createInstaller(options: InstallerOptions = {}) {
           signal.throwIfAborted()
           if (!(input instanceof Uint8Array) || input.byteLength > archiveLimits.compressedBytes)
             invalid("Archive compressed size limit exceeded")
-          if (source.type !== "npm" && hash(input) !== source.sha256) invalid("Archive integrity mismatch")
+          const expectedDigest =
+            source.type === "release" ? release!.artifact.sha256 : source.type === "npm" ? undefined : source.sha256
+          if (expectedDigest && hash(input) !== expectedDigest) invalid("Archive integrity mismatch")
           const candidate = path.join(stage, "package")
           await extract({ input, directory: candidate, signal, policy: source.type === "npm" ? "npm" : "archive" })
           if (op.npm) await validateNpmRoot(op.npm, candidate, signal)
@@ -478,6 +530,8 @@ export function createInstaller(options: InstallerOptions = {}) {
           const manifest = op.manifest
           if (op.npm && (manifest.name !== op.npm.name || manifest.version !== op.npm.version))
             invalid("npm candidate identity mismatch")
+          if (release && (manifest.id !== release.id || manifest.version !== release.version))
+            invalid("Release candidate identity mismatch")
           if (request.kind === "update") {
             if (manifest.id !== expectedID || manifest.name !== previous!.name)
               throw new InstallError("conflict", "Update must retain the installed extension identity")
@@ -487,6 +541,9 @@ export function createInstaller(options: InstallerOptions = {}) {
             throw new InstallError("conflict", "Extension is already installed")
           if (request.kind === "update" && snapshot.row?.revision !== previous!.revision)
             throw new InstallError("conflict", "Extension changed during preparation")
+          if (registryVersion !== undefined && snapshot.registryVersion !== registryVersion)
+            throw new InstallError("conflict", "Registry format changed during preparation")
+          registryVersion = snapshot.registryVersion
           op.retainedRevision = snapshot.retained?.revision
           op.fingerprint = fingerprint(manifest)
           op.tree = await treeDigest(candidate, signal)
@@ -515,8 +572,10 @@ export function createInstaller(options: InstallerOptions = {}) {
             permissionsAdded: permissions.filter((permission) => !before.includes(permission)),
             permissionsRemoved: before.filter((permission) => !permissions.includes(permission)),
             contributes: manifest.contributes,
-            source: publicSource(source, op.npm),
+            source: publicSource(source, op.npm, release),
             expectedRevision: previous ? (previous.revision ?? 0) : undefined,
+            expectedRegistryVersion: registryVersion,
+            ...(release && registryVersion === 2 ? { registryUpgrade: { from: 2 as const, to: 3 as const } } : {}),
             hasServer: !!manifest.serverEntry,
             enable: previous?.enabled ?? false,
             installId: randomUUID(),
@@ -552,7 +611,11 @@ export function createInstaller(options: InstallerOptions = {}) {
     }
   }
 
-  async function commit(operationId: string, token: string, input: { enable?: boolean } = {}): Promise<InstallResult> {
+  async function commit(
+    operationId: string,
+    token: string,
+    input: { enable?: boolean; acceptRegistryUpgrade?: boolean } = {},
+  ): Promise<InstallResult> {
     return locked(operationId, async () => {
       const op = await capability(operationId, token)
       if (!op) return recovered(operationId, token)
@@ -560,7 +623,11 @@ export function createInstaller(options: InstallerOptions = {}) {
       if (op.result) return clone(op.result)
       if (!op.preview || !op.stage) throw new InstallError("conflict", "Operation is not prepared")
       if (input.enable !== undefined && typeof input.enable !== "boolean") invalid("Invalid enable option")
+      if (input.acceptRegistryUpgrade !== undefined && typeof input.acceptRegistryUpgrade !== "boolean")
+        invalid("Invalid registry upgrade confirmation")
       const preview = op.preview
+      if (preview.registryUpgrade && input.acceptRegistryUpgrade !== true)
+        throw new InstallError("conflict", "Registry format upgrade requires explicit confirmation")
       const receipt: OperationReceipt = {
         id: op.id,
         kind: op.kind,
@@ -580,6 +647,7 @@ export function createInstaller(options: InstallerOptions = {}) {
           if (now() >= op.expiresAt) throw new InstallError("expired", "Extension operation expired")
           const snapshot = await Registry.snapshot(preview.id, target)
           if (
+            snapshot.registryVersion !== preview.expectedRegistryVersion ||
             (snapshot.row ? (snapshot.row.revision ?? 0) : undefined) !== preview.expectedRevision ||
             (!snapshot.row && snapshot.retained?.revision !== op.retainedRevision)
           )
@@ -652,6 +720,7 @@ export function createInstaller(options: InstallerOptions = {}) {
           if (now() >= op.expiresAt) throw new InstallError("expired", "Extension operation expired")
           const fenced = await Registry.snapshot(preview.id, target)
           if (
+            fenced.registryVersion !== preview.expectedRegistryVersion ||
             (fenced.row ? (fenced.row.revision ?? 0) : undefined) !== preview.expectedRevision ||
             (!fenced.row && fenced.retained?.revision !== op.retainedRevision)
           )
@@ -659,7 +728,13 @@ export function createInstaller(options: InstallerOptions = {}) {
           if (op.kind === "uninstall") {
             // Data and generations are deliberately retained. A coordinator may later prove them safe to collect.
             await Registry.commitRemoval(
-              { id: preview.id, expectedRevision: preview.expectedRevision!, receipt, purgeData: false },
+              {
+                id: preview.id,
+                expectedRevision: preview.expectedRevision!,
+                expectedRegistryVersion: preview.expectedRegistryVersion,
+                receipt,
+                purgeData: false,
+              },
               target,
             )
           } else {
@@ -669,6 +744,8 @@ export function createInstaller(options: InstallerOptions = {}) {
                 row: next!,
                 expectedRevision: preview.expectedRevision,
                 expectedRetainedRevision: op.retainedRevision,
+                expectedRegistryVersion: preview.expectedRegistryVersion,
+                acceptRegistryUpgrade: input.acceptRegistryUpgrade,
                 receipt,
               },
               undefined,

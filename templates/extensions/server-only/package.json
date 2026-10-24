@@ -1,0 +1,28 @@
+{
+  "name": "opencode-extension-starter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A standalone, dependency-free OpenCode server extension starter.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    "./server": "./src/server.js"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "pack": "node scripts/release.mjs --pack-only",
+    "release": "node scripts/release.mjs"
+  },
+  "opencode": {
+    "manifestVersion": 1,
+    "id": "example.extension-starter",
+    "displayName": "Extension Starter",
+    "description": "A minimal server-only extension with a ping RPC.",
+    "permissions": []
+  }
+}

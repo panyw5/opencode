@@ -8,16 +8,53 @@ export const ExtensionOperationHeaders = Schema.Struct({
 export const ExtensionInstallSource = Schema.Union([
   Schema.Struct({ type: Schema.Literal("npm"), spec: Schema.String }),
   Schema.Struct({ type: Schema.Literal("archive"), url: Schema.String, sha256: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("release"), url: Schema.String }),
 ])
 export const ExtensionPrepareInput = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("install"), source: ExtensionInstallSource }),
-  Schema.Struct({ kind: Schema.Literal("update"), id: ExtensionID, source: ExtensionInstallSource }),
-  Schema.Struct({ kind: Schema.Literal("update"), id: ExtensionID, version: Schema.String }),
-  Schema.Struct({ kind: Schema.Literal("uninstall"), id: ExtensionID, purgeData: Schema.optional(Schema.Boolean) }),
+  Schema.Struct({
+    kind: Schema.Literal("install"),
+    source: ExtensionInstallSource,
+    version: Schema.optionalKey(Schema.Never),
+    target: Schema.optionalKey(Schema.Never),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("update"),
+    id: ExtensionID,
+    source: ExtensionInstallSource,
+    version: Schema.optionalKey(Schema.Never),
+    target: Schema.optionalKey(Schema.Never),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("update"),
+    id: ExtensionID,
+    version: Schema.String,
+    source: Schema.optionalKey(Schema.Never),
+    target: Schema.optionalKey(Schema.Never),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("update"),
+    id: ExtensionID,
+    target: Schema.Literal("release-current"),
+    source: Schema.optionalKey(Schema.Never),
+    version: Schema.optionalKey(Schema.Never),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("uninstall"),
+    id: ExtensionID,
+    purgeData: Schema.optional(Schema.Boolean),
+    source: Schema.optionalKey(Schema.Never),
+    version: Schema.optionalKey(Schema.Never),
+    target: Schema.optionalKey(Schema.Never),
+  }),
 ]).annotate({ identifier: "ExtensionPrepareInput" })
 export const ExtensionInstallInput = Schema.Struct({
   operationId: OperationID,
   enable: Schema.optional(Schema.Boolean),
+  acceptRegistryUpgrade: Schema.optional(Schema.Boolean),
+})
+export const ExtensionUpdateInput = Schema.Struct({
+  operationId: OperationID,
+  acceptRegistryUpgrade: Schema.optional(Schema.Boolean),
 })
 export const ExtensionCommitInput = Schema.Struct({ operationId: OperationID })
 
@@ -38,6 +75,8 @@ const preview = {
   contributes: Contributes,
   source: Source,
   expectedRevision: Schema.optional(Schema.Number),
+  expectedRegistryVersion: Schema.optional(Schema.Number),
+  registryUpgrade: Schema.optional(Schema.Struct({ from: Schema.Literal(2), to: Schema.Literal(3) })),
   hasServer: Schema.Boolean,
   enable: Schema.Boolean,
   installId: Schema.optional(Schema.String),

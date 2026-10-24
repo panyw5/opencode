@@ -5,11 +5,13 @@ export function SectionButton(props: {
   title: string
   description?: string
   icon: IconProps["name"]
+  disabled?: boolean
   onClick?: () => void
 }) {
   return (
     <button
       type="button"
+      disabled={props.disabled}
       aria-current={props.current ? "page" : undefined}
       class="group relative flex min-h-14 w-full items-center gap-3 overflow-hidden rounded-lg border px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow] duration-150 focus:outline-none focus-visible:border-border-strong"
       classList={{

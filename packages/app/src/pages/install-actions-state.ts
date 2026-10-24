@@ -2,10 +2,16 @@ import type { ExtensionInfo, FileViewerContribution } from "../extensions/types"
 
 type WireNumber = number | "NaN" | "Infinity" | "-Infinity"
 
-export type InstallationSource = { type: "npm"; spec: string } | { type: "archive"; url: string; sha256: string }
+export type InstallationSource =
+  | { type: "npm"; spec: string }
+  | { type: "archive"; url: string; sha256: string }
+  | { type: "release"; url: string }
+  /** Desktop-only: a local .tgz path, installed through the desktop IPC channel. */
+  | { type: "local"; path: string; sha256: string }
 export type InstallationRequest =
   | { kind: "install"; source: InstallationSource }
   | { kind: "update"; id: string; version: string }
+  | { kind: "update"; id: string; target: "release-current" }
   | { kind: "update"; id: string; source: InstallationSource }
   | { kind: "uninstall"; id: string; purgeData?: boolean }
 
@@ -28,11 +34,10 @@ export interface PreparedInstallation {
     fileViewers?: Array<Omit<FileViewerContribution, "priority"> & { priority?: number }>
     settings?: Record<string, unknown>
   }
-  source:
-    | { type: "npm"; spec: string; registry: string; integrity: string }
-    | { type: "archive"; location: string; sha256: string }
-    | { type: "path"; path: string }
+  source: NonNullable<ExtensionInfo["source"]>
   expectedRevision?: WireNumber
+  expectedRegistryVersion?: WireNumber
+  registryUpgrade?: { from: 2; to: 3 }
   hasServer: boolean
   enable: boolean
   installId?: string
@@ -52,15 +57,20 @@ export interface InstallationResult {
 export type InstallationStatus =
   | (Omit<PreparedInstallation, "token"> & { state: "prepared"; committed: false })
   | InstallationResult
+export interface InstallationCommitInput {
+  enable?: boolean
+  acceptRegistryUpgrade?: boolean
+}
 export interface InstallationOperations {
   prepareInstallation(request: InstallationRequest): Promise<PreparedInstallation>
-  commitInstallation(prepared: PreparedInstallation, input?: { enable?: boolean }): Promise<InstallationResult>
+  commitInstallation(prepared: PreparedInstallation, input?: InstallationCommitInput): Promise<InstallationResult>
   cancelInstallation(prepared: PreparedInstallation): Promise<InstallationResult>
   installationStatus(prepared: PreparedInstallation): Promise<InstallationStatus>
 }
 export type InstallationIntent =
   | { kind: "install" }
-  | { kind: "update"; id: string }
+  | { kind: "install"; localArchive: { path: string } }
+  | { kind: "update"; id: string; source?: ExtensionInfo["source"] }
   | { kind: "uninstall"; id: string }
 export interface InstallationBlockedState {
   enabled?: boolean
@@ -73,22 +83,33 @@ export function installationBlocked(state: InstallationBlockedState) {
   return state.enabled === false || !!(state.busy || state.dirty || state.saving || state.blocked)
 }
 export type InstallationInput = {
-  sourceType: "npm" | "archive" | "version"
+  sourceType: "release" | "npm" | "archive" | "version" | "local"
   spec: string
   url: string
   sha256: string
   version: string
   purgeData: boolean
+  localPath: string
 }
 export function installationRequest(
   intent: InstallationIntent,
   input: InstallationInput,
 ): InstallationRequest | undefined {
-  if (intent.kind === "uninstall") return { ...intent, purgeData: input.purgeData }
+  if (intent.kind === "uninstall") return { kind: "uninstall", id: intent.id, purgeData: input.purgeData }
+  if (intent.kind === "update" && intent.source?.type === "path") return
+  if (intent.kind === "update" && intent.source?.type === "release")
+    return { kind: "update", id: intent.id, target: "release-current" }
   if (input.sourceType === "version") {
     const version = input.version.trim()
-    if (intent.kind !== "update" || !version || version.length > 256 || /[\s\x00-\x1f\x7f]/.test(version)) return
-    return { ...intent, version }
+    if (
+      intent.kind !== "update" ||
+      intent.source?.type !== "npm" ||
+      !version ||
+      version.length > 256 ||
+      /[\s\x00-\x1f\x7f]/.test(version)
+    )
+      return
+    return { kind: "update", id: intent.id, version }
   }
   let source: InstallationSource
   if (input.sourceType === "npm") {
@@ -100,32 +121,58 @@ export function installationRequest(
     )
       return
     source = { type: "npm", spec }
-  } else {
+  } else if (input.sourceType === "archive" || input.sourceType === "release") {
     const url = input.url.trim()
     const sha256 = input.sha256.trim()
-    if (!/^[a-f0-9]{64}$/i.test(sha256) || /[\s\\\x00-\x1f\x7f]/.test(url) || url.length > 16384) return
+    if (/[\s\\\x00-\x1f\x7f]/.test(url) || url.length > 16384) return
     try {
       const parsed = new URL(url)
       if (!/^https:\/\//i.test(url) || parsed.protocol !== "https:" || parsed.username || parsed.password) return
+      if (input.sourceType === "release" && (parsed.search || parsed.hash || /[?#]/.test(url))) return
+      if (input.sourceType === "archive" && !/^[a-f0-9]{64}$/i.test(sha256)) return
+      source =
+        input.sourceType === "release"
+          ? { type: "release", url: parsed.href }
+          : { type: "archive", url, sha256: sha256.toLowerCase() }
     } catch {
       return
     }
-    source = { type: "archive", url, sha256: sha256.toLowerCase() }
-  }
-  return intent.kind === "install" ? { kind: "install", source } : { ...intent, source }
+  } else if (input.sourceType === "local") {
+    const path = input.localPath.trim()
+    const sha256 = input.sha256.trim()
+    if (
+      intent.kind !== "install" ||
+      !path ||
+      path.length > 4096 ||
+      !/\.tgz$/i.test(path) ||
+      !/^[a-f0-9]{64}$/i.test(sha256)
+    )
+      return
+    source = { type: "local", path, sha256: sha256.toLowerCase() }
+  } else return
+  return intent.kind === "install" ? { kind: "install", source } : { kind: "update", id: intent.id, source }
 }
 export function installationSourceLabel(source: PreparedInstallation["source"]) {
   if (source.type === "npm") return source.spec
   if (source.type === "path") return source.path
+  const location = source.type === "release" ? source.descriptor : source.location
   try {
-    const url = new URL(source.location)
+    const url = new URL(location)
     url.username = ""
     url.password = ""
     url.search = ""
     url.hash = ""
     return url.href
   } catch {
-    return source.location
+    return ""
+  }
+}
+export function installationDownloadHost(source: PreparedInstallation["source"]) {
+  if (source.type !== "release") return ""
+  try {
+    return new URL(source.artifact).host
+  } catch {
+    return ""
   }
 }
 // Do not forward service objects wholesale: capabilities must never reach callbacks, logs or the DOM.
@@ -158,6 +205,14 @@ export const installationTranslationKeys = [
   "config.extensions.install.title",
   "config.extensions.install.update",
   "config.extensions.install.uninstall",
+  "config.extensions.install.release",
+  "config.extensions.install.releaseUrl",
+  "config.extensions.install.releaseCurrent",
+  "config.extensions.install.downloadHost",
+  "config.extensions.install.integrityMatched",
+  "config.extensions.install.publisherUnsigned",
+  "config.extensions.install.registryUpgradeWarning",
+  "config.extensions.install.acceptRegistryUpgrade",
   "config.extensions.install.npm",
   "config.extensions.install.archive",
   "config.extensions.install.version",
@@ -202,6 +257,13 @@ export const installationTranslationKeys = [
   "config.extensions.install.cleanupPending",
   "config.extensions.install.status",
   "config.extensions.install.statusFailed",
+  "config.extensions.install.local",
+  "config.extensions.install.localArchive",
+  "config.extensions.install.localDigestComputed",
+  "config.extensions.install.localDigestMatch",
+  "config.extensions.install.localDigestMismatch",
+  "config.extensions.install.localDigestPending",
+  "config.extensions.install.localDropHint",
 ] as const
 export type InstallationTranslationKey = (typeof installationTranslationKeys)[number]
 export type InstallationLanguage = { t: (key: InstallationTranslationKey) => string }

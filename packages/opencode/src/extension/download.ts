@@ -371,14 +371,13 @@ export async function downloadPackage(input: DownloadOptions & { integrity: stri
   return download(input, sri(input.integrity))
 }
 
-export async function requestJson(
-  url: string,
-  options: {
-    signal?: AbortSignal
-    maxBytes?: number
-    transport?: DownloadTransport
-  } = {},
-): Promise<unknown> {
+export type RequestJsonOptions = {
+  signal?: AbortSignal
+  maxBytes?: number
+  transport?: DownloadTransport
+}
+
+async function readJsonDocument(url: string, options: RequestJsonOptions) {
   const maxBytes = limit(options.maxBytes, 16 * 1024 * 1024, 0)
   const bytes = await download({
     url,
@@ -387,10 +386,24 @@ export async function requestJson(
     limits: { maxBytes: options.maxBytes === undefined ? 4 * 1024 * 1024 : maxBytes },
   })
   try {
-    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes))
+    const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes))
+    return { value, bytes }
   } catch {
     return fail("network", "Invalid extension package metadata JSON")
   }
+}
+
+export async function requestJson(url: string, options: RequestJsonOptions = {}): Promise<unknown> {
+  return (await readJsonDocument(url, options)).value
+}
+
+/** Hash the exact HTTP entity bytes, not the parsed or reserialized JSON document. */
+export async function requestJsonDocument(
+  url: string,
+  options: RequestJsonOptions = {},
+): Promise<{ value: unknown; sha256: string }> {
+  const { value, bytes } = await readJsonDocument(url, options)
+  return { value, sha256: createHash("sha256").update(bytes).digest("hex") }
 }
 
 export async function readLocalArchive(input: {

@@ -178,17 +178,22 @@ function ConfigRouteFrame(props: ParentProps) {
 // Skeleton shell shown while Config page lazy-loads.
 // MUST stay in sync with pages/config.tsx sidebar and middle column styles
 // (font sizes, titles, descriptions) to avoid a visual flash on first render.
-function ConfigLoadingShell() {
+function ConfigLoadingShell(props: { source: "directory" | "suspense" }) {
   const language = useLanguage()
   const platform = usePlatform()
   const showClawsSection = () => platform.platform === "desktop"
 
   onMount(() => {
-    console.info(`[config-perf] loading-shell mount sinceClick=${configPerfSinceClick()}`)
+    console.info(`[config-perf] loading-shell mount source=${props.source} sinceClick=${configPerfSinceClick()}`)
   })
 
   return (
-    <div class="size-full overflow-hidden bg-background-base">
+    <div
+      class="size-full overflow-hidden bg-background-base"
+      data-component="config-loading-shell"
+      data-loading-source={props.source}
+      aria-busy="true"
+    >
       <div class="flex h-full min-h-0 flex-col bg-[radial-gradient(circle_at_5%_0%,color-mix(in_srgb,var(--surface-brand-base)_7%,transparent),transparent_32%),linear-gradient(135deg,color-mix(in_srgb,var(--surface-brand-base)_3%,var(--background-base)),var(--background-base)_45%)] xl:flex-row">
         <aside class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(165deg,color-mix(in_srgb,var(--surface-brand-base)_7%,var(--surface-base)),color-mix(in_srgb,var(--surface-brand-base)_3%,var(--background-base))_46%,var(--background-base))] xl:w-[236px] xl:border-r xl:border-b-0">
           <div class="flex h-full min-h-0 flex-col">
@@ -207,6 +212,7 @@ function ConfigLoadingShell() {
                   {(section) => (
                     <SectionButton
                       current={false}
+                      disabled
                       title={"key" in section ? language.t(section.key) : section.label}
                       description={language.t(section.descriptionKey)}
                       icon={section.icon}
@@ -221,6 +227,7 @@ function ConfigLoadingShell() {
                     <Show when={section.id !== "claws" || showClawsSection()}>
                       <SectionButton
                         current={false}
+                        disabled
                         title={"key" in section ? language.t(section.key) : section.label}
                         description={language.t(section.descriptionKey)}
                         icon={section.icon}
@@ -247,7 +254,11 @@ function ConfigLoadingShell() {
               </div>
             </div>
           </section>
-          <main class="min-h-0 min-w-0 flex-1 bg-[linear-gradient(155deg,color-mix(in_srgb,var(--surface-brand-base)_2%,var(--background-base)),var(--background-base)_38%)]" />
+          <main class="min-h-0 min-w-0 flex-1 bg-[linear-gradient(155deg,color-mix(in_srgb,var(--surface-brand-base)_2%,var(--background-base)),var(--background-base)_38%)]">
+            <p role="status" class="p-5 text-13-regular text-text-weak">
+              {language.t("common.loading")}
+            </p>
+          </main>
         </div>
       </div>
     </div>
@@ -346,7 +357,7 @@ const ConfigRoute = () => (
         return <ErrorPage error={error} />
       }}
     >
-      <Suspense fallback={<ConfigLoadingShell />}>
+      <Suspense fallback={<ConfigLoadingShell source="suspense" />}>
         <Config />
       </Suspense>
     </ErrorBoundary>
@@ -364,7 +375,7 @@ function GlobalConfigRoute() {
   })
 
   return (
-    <Show when={directory()} keyed fallback={<ConfigLoadingShell />}>
+    <Show when={directory()} keyed fallback={<ConfigLoadingShell source="directory" />}>
       {(directory) => (
         <SDKProvider directory={() => directory}>
           <SyncProvider>

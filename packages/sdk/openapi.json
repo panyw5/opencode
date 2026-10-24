@@ -800,6 +800,9 @@
                   },
                   "enable": {
                     "type": "boolean"
+                  },
+                  "acceptRegistryUpgrade": {
+                    "type": "boolean"
                   }
                 },
                 "required": ["operationId"],
@@ -919,6 +922,9 @@
                   "operationId": {
                     "type": "string",
                     "pattern": "^[a-f0-9-]{36}$"
+                  },
+                  "acceptRegistryUpgrade": {
+                    "type": "boolean"
                   }
                 },
                 "required": ["operationId"],
@@ -19439,6 +19445,38 @@
         "required": ["type", "location", "sha256"],
         "additionalProperties": false
       },
+      "ExtensionReleaseSource": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["release"]
+          },
+          "descriptor": {
+            "type": "string"
+          },
+          "extensionID": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*(\\.[a-z0-9][a-z0-9-]*)+$"
+          },
+          "version": {
+            "type": "string"
+          },
+          "artifact": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "descriptorSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": ["type", "descriptor", "extensionID", "version", "artifact", "sha256", "descriptorSha256"],
+        "additionalProperties": false
+      },
       "ExtensionFileViewerContribution": {
         "type": "object",
         "properties": {
@@ -19713,6 +19751,9 @@
               },
               {
                 "$ref": "#/components/schemas/ExtensionArchiveSource"
+              },
+              {
+                "$ref": "#/components/schemas/ExtensionReleaseSource"
               }
             ]
           },
@@ -19835,8 +19876,28 @@
                     },
                     "required": ["type", "url", "sha256"],
                     "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": ["release"]
+                      },
+                      "url": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["type", "url"],
+                    "additionalProperties": false
                   }
                 ]
+              },
+              "version": {
+                "not": {}
+              },
+              "target": {
+                "not": {}
               }
             },
             "required": ["kind", "source"],
@@ -19885,8 +19946,28 @@
                     },
                     "required": ["type", "url", "sha256"],
                     "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": ["release"]
+                      },
+                      "url": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["type", "url"],
+                    "additionalProperties": false
                   }
                 ]
+              },
+              "version": {
+                "not": {}
+              },
+              "target": {
+                "not": {}
               }
             },
             "required": ["kind", "id", "source"],
@@ -19905,9 +19986,40 @@
               },
               "version": {
                 "type": "string"
+              },
+              "source": {
+                "not": {}
+              },
+              "target": {
+                "not": {}
               }
             },
             "required": ["kind", "id", "version"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["update"]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]*(\\.[a-z0-9][a-z0-9-]*)+$"
+              },
+              "target": {
+                "type": "string",
+                "enum": ["release-current"]
+              },
+              "source": {
+                "not": {}
+              },
+              "version": {
+                "not": {}
+              }
+            },
+            "required": ["kind", "id", "target"],
             "additionalProperties": false
           },
           {
@@ -19923,6 +20035,15 @@
               },
               "purgeData": {
                 "type": "boolean"
+              },
+              "source": {
+                "not": {}
+              },
+              "version": {
+                "not": {}
+              },
+              "target": {
+                "not": {}
               }
             },
             "required": ["kind", "id"],
@@ -20018,6 +20139,9 @@
               },
               {
                 "$ref": "#/components/schemas/ExtensionArchiveSource"
+              },
+              {
+                "$ref": "#/components/schemas/ExtensionReleaseSource"
               }
             ]
           },
@@ -20043,6 +20167,44 @@
                 "enum": ["Infinity", "-Infinity", "NaN"]
               }
             ]
+          },
+          "expectedRegistryVersion": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "registryUpgrade": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "number",
+                "enum": [2]
+              },
+              "to": {
+                "type": "number",
+                "enum": [3]
+              }
+            },
+            "required": ["from", "to"],
+            "additionalProperties": false
           },
           "hasServer": {
             "type": "boolean"
@@ -20288,6 +20450,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/ExtensionArchiveSource"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ExtensionReleaseSource"
                   }
                 ]
               },
@@ -20313,6 +20478,44 @@
                     "enum": ["Infinity", "-Infinity", "NaN"]
                   }
                 ]
+              },
+              "expectedRegistryVersion": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "registryUpgrade": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "number",
+                    "enum": [2]
+                  },
+                  "to": {
+                    "type": "number",
+                    "enum": [3]
+                  }
+                },
+                "required": ["from", "to"],
+                "additionalProperties": false
               },
               "hasServer": {
                 "type": "boolean"

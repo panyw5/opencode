@@ -44,6 +44,15 @@ export type ExtensionInfo = {
     | { type: "path"; path: string }
     | { type: "npm"; spec: string; registry: string; integrity: string }
     | { type: "archive"; location: string; sha256: string }
+    | {
+        type: "release"
+        descriptor: string
+        extensionID: string
+        version: string
+        artifact: string
+        sha256: string
+        descriptorSha256: string
+      }
   permissions?: string[]
   revision?: number
   installId?: string

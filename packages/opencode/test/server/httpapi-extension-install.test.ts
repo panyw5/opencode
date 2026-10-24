@@ -114,11 +114,124 @@ describe("extension installation HTTP", () => {
     expect(calls).toBe(0)
   })
 
+  test("release install and release-current update preserve their typed request selectors", async () => {
+    const release = {
+      ...preview,
+      source: {
+        type: "release" as const,
+        descriptor: "https://example.com/releases/current",
+        extensionID: id,
+        version: "1.0.0",
+        artifact: "https://cdn.example.com/test.tgz",
+        sha256: "c".repeat(64),
+        descriptorSha256: "d".repeat(64),
+      },
+      expectedRegistryVersion: 2,
+      registryUpgrade: { from: 2 as const, to: 3 as const },
+    }
+    const seen: Parameters<InstallationService["prepare"]>[0][] = []
+    adapter({
+      async prepare(input) {
+        seen.push(input)
+        return { ...release, kind: input.kind }
+      },
+    })
+    const install = { kind: "install", source: { type: "release", url: "https://example.com/releases/current" } }
+    let response = await request("/global/extension/prepare", install)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      source: release.source,
+      expectedRegistryVersion: 2,
+      registryUpgrade: { from: 2, to: 3 },
+    })
+    expect(seen[0]).toEqual(install)
+    const update = { kind: "update", id, target: "release-current" }
+    response = await request("/global/extension/prepare", update)
+    expect(response.status).toBe(200)
+    expect(seen[1]).toEqual(update)
+  })
+
+  test("raw source, version and target selectors are mutually exclusive before installer access", async () => {
+    adapter()
+    const source = { type: "release", url: "https://example.com/releases/current" }
+    for (const body of [
+      { kind: "update", id, source, target: "release-current" },
+      { kind: "update", id, version: "2.0.0", target: "release-current" },
+      { kind: "update", id, source, version: "2.0.0", target: "release-current" },
+      { kind: "update", id, source, target: null },
+      { kind: "update", id },
+      { kind: "install", source, target: "release-current" },
+      { kind: "install", source, version: "2.0.0" },
+      { kind: "uninstall", id, target: "release-current" },
+      { kind: "uninstall", id, source },
+    ]) {
+      const response = await request("/global/extension/prepare", body)
+      expect(response.status).toBe(400)
+    }
+    expect(calls).toBe(0)
+  })
+
+  test("install and update forward only explicit registry upgrade acceptance with the header capability", async () => {
+    for (const kind of ["install", "update"] as const) {
+      for (const acceptRegistryUpgrade of [undefined, false, true]) {
+        const commits: Parameters<InstallationService["commit"]>[] = []
+        adapter({
+          async status() {
+            return { ...preview, kind, state: "prepared", committed: false }
+          },
+          async commit(...args) {
+            commits.push(args)
+            return { ...result, kind }
+          },
+        })
+        const response = await request(
+          kind === "install" ? "/global/extension/install" : `/global/extension/${id}/update`,
+          {
+            operationId,
+            ...(acceptRegistryUpgrade === undefined ? {} : { acceptRegistryUpgrade }),
+            ...(kind === "install" ? { enable: true } : {}),
+          },
+        )
+        expect(response.status).toBe(200)
+        expect(commits).toHaveLength(1)
+        expect(commits[0]?.slice(0, 2)).toEqual([operationId, token])
+        expect(commits[0]?.[2]?.acceptRegistryUpgrade).toBe(acceptRegistryUpgrade)
+        expect(commits[0]?.[2]?.enable).toBe(kind === "install" ? true : undefined)
+      }
+    }
+  })
+
+  test("uninstall rejects raw registry upgrade and enable fields rather than silently stripping them", async () => {
+    adapter({
+      async status() {
+        calls++
+        return { ...preview, kind: "uninstall", state: "prepared", committed: false }
+      },
+    })
+    for (const options of [{ acceptRegistryUpgrade: true }, { acceptRegistryUpgrade: false }, { enable: false }]) {
+      const response = await request(`/global/extension/${id}`, { operationId, ...options }, token, "DELETE")
+      expect(response.status).toBe(400)
+    }
+    expect(calls).toBe(0)
+    const response = await request(`/global/extension/${id}`, { operationId }, token, "DELETE")
+    expect(response.status).toBe(200)
+    expect(calls).toBe(2)
+  })
+
   test("a confirmation cannot be used against a different action or extension", async () => {
     adapter()
     const response = await request(`/global/extension/${id}/update`, { operationId })
     expect(response.status).toBe(409)
     expect(calls).toBe(1)
+    adapter({
+      async status() {
+        calls++
+        return { ...preview, kind: "update", state: "prepared", committed: false }
+      },
+    })
+    const wrongID = await request("/global/extension/test.other/update", { operationId, acceptRegistryUpgrade: true })
+    expect(wrongID.status).toBe(409)
+    expect(calls).toBe(2)
   })
 
   test("capability is required in a header, never a body token", async () => {

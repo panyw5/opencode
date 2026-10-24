@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { installationTranslationKeys } from "../pages/install-actions-state"
 import { dict as en } from "./en"
 import { dict as ar } from "./ar"
 import { dict as br } from "./br"
@@ -37,6 +38,20 @@ const searchIndexKeys = [
 ] as const
 
 describe("i18n parity", () => {
+  test("English, Simplified Chinese, and Traditional Chinese cover exactly the installation keys", () => {
+    const expected = [...installationTranslationKeys].sort()
+    for (const locale of [en, zh, zht]) {
+      expect(
+        Object.keys(locale)
+          .filter((key) => key.startsWith("config.extensions.install."))
+          .sort(),
+      ).toEqual(expected)
+      for (const key of installationTranslationKeys) expect(locale[key].trim()).not.toBe("")
+    }
+    for (const locale of [zh, zht]) {
+      for (const key of installationTranslationKeys) expect(locale[key]).not.toBe(en[key])
+    }
+  })
   test("all non-English locales translate project task status controls", () => {
     for (const locale of [...locales, uk]) {
       for (const key of [

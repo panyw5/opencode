@@ -36,6 +36,26 @@ const preview = (kind: InstallationIntent["kind"] = "install"): PreparedInstalla
   hasServer: true,
   enable: false,
 })
+const npmSource = {
+  type: "npm" as const,
+  spec: "@test/viewer@3.0.0",
+  registry: "https://registry.npmjs.org/",
+  integrity: "sha512-test",
+}
+const releasePreview = (kind: InstallationIntent["kind"] = "install", upgrade = true): PreparedInstallation => ({
+  ...preview(kind),
+  source: {
+    type: "release",
+    descriptor: "https://publisher.example/viewer/stable.json",
+    extensionID: "test.viewer",
+    version: "2.0.0",
+    artifact: "https://cdn.example/viewer-2.0.0.tgz",
+    sha256: "a".repeat(64),
+    descriptorSha256: "b".repeat(64),
+  },
+  expectedRegistryVersion: upgrade ? 2 : 3,
+  registryUpgrade: upgrade ? { from: 2, to: 3 } : undefined,
+})
 const result = (over: Partial<InstallationResult> = {}): InstallationResult => ({
   operationId: "operation-1",
   kind: "install",
@@ -72,6 +92,8 @@ function mount(
   const [connection, setConnection] = createSignal<unknown>("A")
   const [block, setBlock] = createSignal(!!options.blocked)
   const [busy, setBusy] = createSignal(!!options.busy)
+  const [dirty, setDirty] = createSignal(!!options.dirty)
+  const [saving, setSaving] = createSignal(!!options.saving)
   const calls = { prepare: [] as unknown[], commit: [] as unknown[], cancel: [] as unknown[], status: [] as unknown[] }
   const notices: InstallationResult[] = []
   let closed = () => {}
@@ -107,8 +129,12 @@ function mount(
         get busy() {
           return busy()
         },
-        dirty: options.dirty,
-        saving: options.saving,
+        get dirty() {
+          return dirty()
+        },
+        get saving() {
+          return saving()
+        },
         get blocked() {
           return block()
         },
@@ -127,6 +153,8 @@ function mount(
     setConnection,
     setBlock,
     setBusy,
+    setDirty,
+    setSaving,
     closed: () => closed(),
     dispose: () => {
       dispose()
@@ -149,12 +177,40 @@ const select = (app: App, value: string) => {
   el.dispatchEvent(new Event("change", { bubbles: true }))
 }
 const prepare = async (app: App) => {
+  select(app, "npm")
   type(app, "spec", "@test/viewer@2.0.0")
   button(app, "prepare").click()
   await tick()
 }
 
 describe("extension installation UI contracts", () => {
+  test("prepare sits beside the source input at matching height and remains available for uninstall", () => {
+    const app = mount({ intent: { kind: "update", id: "test.viewer", source: npmSource } })
+    const uninstall = mount({ intent: { kind: "uninstall", id: "test.viewer" } })
+    try {
+      for (const [source, field] of [
+        ["release", "releaseUrl"],
+        ["npm", "spec"],
+        ["version", "version"],
+        ["archive", "url"],
+      ] as const) {
+        select(app, source)
+        const input = app.container.querySelector(`input[aria-label="config.extensions.install.${field}"]`)!
+        const row = input.closest('[data-field="installation-source"]')!
+        const action = button(app, "prepare")
+        expect(row).not.toBeNull()
+        expect(row.classList.contains("items-end")).toBe(true)
+        expect(row.lastElementChild).toBe(action)
+        expect(action.style.height).toBe("34px")
+        expect(app.container.querySelectorAll('[data-action="extension-install-prepare"]')).toHaveLength(1)
+      }
+      expect(uninstall.container.querySelector('[data-field="installation-source"]')).toBeNull()
+      expect(button(uninstall, "prepare").parentElement).toBe(button(uninstall, "close").parentElement)
+    } finally {
+      app.dispose()
+      uninstall.dispose()
+    }
+  })
   test("npm prepare is separate from commit, shows complete review and defaults disabled", async () => {
     const app = mount()
     try {
@@ -174,6 +230,194 @@ describe("extension installation UI contracts", () => {
       expect(app.calls.commit).toHaveLength(1)
       expect(app.calls.commit[0]).toMatchObject({ input: { enable: false } })
       expect(app.container.querySelector('[data-result="committed"]')).not.toBeNull()
+      expect(JSON.stringify(app.notices)).not.toContain("private-capability")
+    } finally {
+      app.dispose()
+    }
+  })
+  test("release accepts one URL without a checksum and reviews descriptor/download trust separately", async () => {
+    const app = mount({ prepared: Promise.resolve(releasePreview("install", false)) })
+    try {
+      expect(app.container.querySelector<HTMLSelectElement>("select")?.value).toBe("release")
+      expect(app.container.querySelector('input[aria-label="config.extensions.install.sha256"]')).toBeNull()
+      for (const url of [
+        "http://publisher.example/stable.json",
+        "https://user:secret@publisher.example/stable.json",
+        "https://publisher.example/stable.json?secret=value",
+        "https://publisher.example/stable.json#hash",
+      ]) {
+        type(app, "releaseUrl", url)
+        button(app, "prepare").click()
+        await tick()
+      }
+      expect(app.calls.prepare).toHaveLength(0)
+      type(app, "releaseUrl", "https://publisher.example/viewer/stable.json")
+      button(app, "prepare").click()
+      await tick()
+      expect(app.calls.prepare).toEqual([
+        { kind: "install", source: { type: "release", url: "https://publisher.example/viewer/stable.json" } },
+      ])
+      expect(app.container.textContent).toContain("https://publisher.example/viewer/stable.json")
+      const review = app.container.querySelector('[data-preview="release-integrity"]')!
+      expect(review.textContent).toContain("cdn.example")
+      expect(review.textContent).toContain("integrityMatched")
+      expect(review.textContent).toContain("publisherUnsigned")
+      expect(app.container.querySelector('[data-field="accept-registry-upgrade"]')).toBeNull()
+      expect(button(app, "confirm").disabled).toBe(false)
+      expect(app.container.innerHTML).not.toContain("private-capability")
+    } finally {
+      app.dispose()
+    }
+  })
+  test("registry upgrade requires a separate initially unchecked consent, resets on every prepare, and submits true", async () => {
+    for (const kind of ["install", "update"] as const) {
+      const prepared = releasePreview(kind)
+      const app = mount({
+        intent: kind === "update" ? { kind, id: "test.viewer", source: prepared.source } : { kind },
+        prepared: Promise.resolve(prepared),
+      })
+      try {
+        if (kind === "install") type(app, "releaseUrl", "https://publisher.example/viewer/stable.json")
+        button(app, "prepare").click()
+        await tick()
+        const checkbox = () =>
+          app.container.querySelector<HTMLInputElement>('[data-field="accept-registry-upgrade"] input')!
+        expect(checkbox().checked).toBe(false)
+        expect(button(app, "confirm").disabled).toBe(true)
+        button(app, "confirm").click()
+        expect(app.calls.commit).toHaveLength(0)
+        checkbox().click()
+        expect(button(app, "confirm").disabled).toBe(false)
+        button(app, "back").click()
+        button(app, "prepare").click()
+        await tick()
+        expect(checkbox().checked).toBe(false)
+        expect(button(app, "confirm").disabled).toBe(true)
+        checkbox().click()
+        button(app, "confirm").click()
+        await tick()
+        expect(app.calls.commit).toHaveLength(1)
+        expect(app.calls.commit[0]).toMatchObject({ input: { enable: false, acceptRegistryUpgrade: true } })
+      } finally {
+        app.dispose()
+      }
+    }
+  })
+  test("release update pins the saved descriptor and version-only is available only for npm", async () => {
+    const prepared = releasePreview("update", false)
+    const app = mount({
+      intent: { kind: "update", id: "test.viewer", source: prepared.source },
+      prepared: Promise.resolve(prepared),
+    })
+    try {
+      const source = app.container.querySelector<HTMLSelectElement>("select")!
+      const input = app.container.querySelector<HTMLInputElement>(
+        'input[aria-label="config.extensions.install.releaseUrl"]',
+      )!
+      expect(source.disabled).toBe(true)
+      expect(input.readOnly).toBe(true)
+      expect(input.value).toBe("https://publisher.example/viewer/stable.json")
+      expect(source.querySelector('option[value="version"]')).toBeNull()
+      type(app, "releaseUrl", "https://attacker.example/stable.json")
+      button(app, "prepare").click()
+      await tick()
+      expect(app.calls.prepare).toEqual([{ kind: "update", id: "test.viewer", target: "release-current" }])
+    } finally {
+      app.dispose()
+    }
+    for (const source of [
+      undefined,
+      { type: "archive" as const, location: "https://publisher.example/old.tgz", sha256: "a".repeat(64) },
+      { type: "path" as const, path: "/tmp/dev" },
+    ]) {
+      const other = mount({ intent: { kind: "update", id: "test.viewer", source } })
+      try {
+        expect(other.container.querySelector('option[value="version"]')).toBeNull()
+        if (source?.type === "archive")
+          expect(other.container.querySelector<HTMLSelectElement>("select")?.value).toBe("archive")
+      } finally {
+        other.dispose()
+      }
+    }
+  })
+  test("update entry passes the installed public release source into the dialog intent", () => {
+    const source = releasePreview().source
+    const container = document.createElement("div")
+    document.body.append(container)
+    const intents: InstallationIntent[] = []
+    const dispose = render(
+      () =>
+        createComponent(ConfigExtensionInstallActions, {
+          item: { id: "test.viewer", source },
+          operations: {} as InstallationOperations,
+          language,
+          connection: () => "A",
+          showInstallation: (intent) => {
+            intents.push(intent)
+          },
+        }),
+      container,
+    )
+    try {
+      container.querySelector<HTMLButtonElement>('[data-action="extension-update-open"]')!.click()
+      expect(intents).toEqual([{ kind: "update", id: "test.viewer", source }])
+    } finally {
+      dispose()
+      container.remove()
+    }
+  })
+  test("release late prepare and consent cannot survive close, server switch, dirty, or saving", async () => {
+    for (const invalidate of ["close", "server", "dirty", "saving"] as const) {
+      const gate = deferred<PreparedInstallation>()
+      const app = mount({ prepared: gate.promise })
+      try {
+        type(app, "releaseUrl", "https://publisher.example/viewer/stable.json")
+        button(app, "prepare").click()
+        if (invalidate === "close") app.closed()
+        if (invalidate === "server") {
+          app.setConnection("B")
+          app.setConnection("A")
+        }
+        if (invalidate === "dirty") app.setDirty(true)
+        if (invalidate === "saving") app.setSaving(true)
+        gate.resolve(releasePreview())
+        await tick()
+        expect(app.calls.cancel).toHaveLength(1)
+        expect(app.calls.commit).toHaveLength(0)
+        expect(app.container.querySelector('[data-field="accept-registry-upgrade"]')).toBeNull()
+        expect(app.container.querySelector('[data-action="extension-install-confirm"]')).toBeNull()
+      } finally {
+        app.dispose()
+      }
+    }
+  })
+  test("release lost commit uses status and preserves the original consent-bound capability", async () => {
+    const prepared = releasePreview()
+    const { token: _token, ...fields } = prepared
+    const app = mount({
+      prepared: Promise.resolve(prepared),
+      failCommit: true,
+      status: { ...fields, state: "prepared", committed: false },
+    })
+    try {
+      type(app, "releaseUrl", "https://publisher.example/viewer/stable.json")
+      button(app, "prepare").click()
+      await tick()
+      app.container.querySelector<HTMLInputElement>('[data-field="accept-registry-upgrade"] input')!.click()
+      button(app, "confirm").click()
+      await tick()
+      expect(app.container.querySelector('[data-result="unknown"]')).not.toBeNull()
+      expect(app.container.querySelector('[data-action="extension-install-prepare"]')).toBeNull()
+      button(app, "status").click()
+      await tick()
+      expect(button(app, "confirm").disabled).toBe(false)
+      button(app, "confirm").click()
+      await tick()
+      expect(app.calls.prepare).toHaveLength(1)
+      expect(app.calls.commit[1]).toMatchObject({
+        prepared: { token: "private-capability" },
+        input: { acceptRegistryUpgrade: true },
+      })
       expect(JSON.stringify(app.notices)).not.toContain("private-capability")
     } finally {
       app.dispose()
@@ -206,7 +450,7 @@ describe("extension installation UI contracts", () => {
     }
   })
   test("update version preview explicitly shows downgrade and previous version", async () => {
-    const app = mount({ intent: { kind: "update", id: "test.viewer" } })
+    const app = mount({ intent: { kind: "update", id: "test.viewer", source: npmSource } })
     try {
       select(app, "version")
       type(app, "version", "2.0.0")
@@ -277,7 +521,7 @@ describe("extension installation UI contracts", () => {
     const dispose = render(
       () =>
         createComponent(ConfigExtensionInstallActions, {
-          item: { id: "test.viewer", source: { type: "path" } },
+          item: { id: "test.viewer", source: { type: "path", path: "/tmp/viewer" } },
           operations: {} as InstallationOperations,
           language,
           connection: () => "A",
@@ -304,6 +548,7 @@ describe("extension installation UI contracts", () => {
     const gate = deferred<PreparedInstallation>()
     const app = mount({ prepared: gate.promise })
     try {
+      select(app, "npm")
       type(app, "spec", "test-one")
       button(app, "prepare").click()
       type(app, "spec", "test-two")
@@ -318,6 +563,7 @@ describe("extension installation UI contracts", () => {
     const ownGate = deferred<PreparedInstallation>()
     const own = mount({ prepared: ownGate.promise })
     try {
+      select(own, "npm")
       type(own, "spec", "test")
       button(own, "prepare").click()
       own.setBusy(true)
@@ -335,6 +581,7 @@ describe("extension installation UI contracts", () => {
     const gate = deferred<PreparedInstallation>()
     const app = mount({ prepared: gate.promise })
     try {
+      select(app, "npm")
       type(app, "spec", "test")
       button(app, "prepare").click()
       app.setConnection("B")
@@ -352,6 +599,7 @@ describe("extension installation UI contracts", () => {
   test("close/dispose cancels uncommitted previews including pending prepare but not submitted commits", async () => {
     const gate = deferred<PreparedInstallation>()
     const app = mount({ prepared: gate.promise })
+    select(app, "npm")
     type(app, "spec", "test")
     button(app, "prepare").click()
     app.closed()

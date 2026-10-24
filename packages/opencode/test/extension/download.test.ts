@@ -11,6 +11,7 @@ import {
   downloadPackage,
   readLocalArchive,
   requestJson,
+  requestJsonDocument,
   type DownloadAddress,
   type DownloadResponse,
   type DownloadTransport,
@@ -526,6 +527,152 @@ describe("extension archive download", () => {
       "routable",
     )
     expect(privateHost.requests).toHaveLength(0)
+  })
+})
+
+describe("extension JSON documents", () => {
+  function document(body: Uint8Array, headers: DownloadResponse["headers"] = {}) {
+    return fixture({
+      request: async () =>
+        response({
+          headers,
+          body: (async function* () {
+            yield body.subarray(0, 1)
+            yield body.subarray(1)
+          })(),
+        }),
+    })
+  }
+
+  test("hashes exact raw bytes, distinguishing equivalent JSON whitespace, escapes and BOM", async () => {
+    const variants = ['{"name":"café"}', '{ "name": "café" }\n', '{"name":"caf\\u00e9"}', '﻿{"name":"café"}']
+    const hashes = new Set<string>()
+    for (const value of variants) {
+      const bytes = Buffer.from(value)
+      const f = document(bytes)
+      const result = await requestJsonDocument(url, { transport: f.transport })
+      expect(result).toEqual({ value: { name: "café" }, sha256: hash(bytes) })
+      expect(f.requests[0]!.address).toBe(publicIP.address)
+      hashes.add(result.sha256)
+    }
+    expect(hashes.size).toBe(variants.length)
+  })
+
+  test.each([
+    Buffer.from([0x7b, 0x22, 0x78, 0x22, 0x3a, 0x22, 0xff, 0x22, 0x7d]),
+    Buffer.from([0xff, 0xfe, 0x7b, 0x00, 0x7d, 0x00]),
+    Buffer.from([0x22, 0xc0, 0xaf, 0x22]),
+    Buffer.from([0x22, 0xe2, 0x82]),
+    Buffer.from('{"url":"https://host/?token=private-token",}'),
+    Buffer.from("<html>private-token</html>"),
+    Buffer.alloc(0),
+  ])("rejects invalid UTF-8 and JSON without exposing response content (%#)", async (bytes) => {
+    for (const fetch of [requestJson, requestJsonDocument]) {
+      const f = document(bytes)
+      const error = await failure(fetch(url, { transport: f.transport }))
+      expect(error.code).toBe("network")
+      expect(error.message).toContain("metadata JSON")
+      expect(String(error)).not.toContain("private-token")
+      expect(error.cause).toBeUndefined()
+    }
+  })
+
+  test("does not transparently decompress encoded JSON", async () => {
+    const f = document(gzipSync(Buffer.from('{"safe":true}')), { "content-encoding": "gzip" })
+    await expect(requestJsonDocument(url, { transport: f.transport })).rejects.toThrow("metadata JSON")
+  })
+
+  test("bounds declared and streamed raw bytes, including at the exact limit", async () => {
+    const bytes = Buffer.from("{}")
+    const f = document(bytes)
+    expect(await requestJsonDocument(url, { maxBytes: 2, transport: f.transport })).toEqual({
+      value: {},
+      sha256: hash(bytes),
+    })
+    await expect(requestJsonDocument(url, { maxBytes: 1, transport: f.transport })).rejects.toThrow("byte limit")
+    const declared = document(bytes, { "content-length": String(64 * 1024 + 1) })
+    await expect(requestJsonDocument(url, { maxBytes: 64 * 1024, transport: declared.transport })).rejects.toThrow(
+      "byte limit",
+    )
+    const defaultLimit = document(bytes, { "content-length": String(4 * 1024 * 1024 + 1) })
+    await expect(requestJsonDocument(url, { transport: defaultLimit.transport })).rejects.toThrow("byte limit")
+    for (const maxBytes of [-1, NaN, 1.5, 16 * 1024 * 1024 + 1]) {
+      const invalid = document(bytes)
+      await expect(requestJsonDocument(url, { maxBytes, transport: invalid.transport })).rejects.toThrow("limit")
+      expect(invalid.requests).toHaveLength(0)
+    }
+  })
+
+  test("keeps npm metadata's explicit 16MiB allowance without adding a release-sized cap", async () => {
+    const bytes = Buffer.from(`"${"x".repeat(4 * 1024 * 1024)}"`)
+    for (const fetch of [requestJson, requestJsonDocument]) {
+      const f = document(bytes)
+      await expect(fetch(url, { transport: f.transport })).rejects.toThrow("byte limit")
+      const result = await fetch(url, { maxBytes: 16 * 1024 * 1024, transport: f.transport })
+      expect(typeof (fetch === requestJson ? result : (result as { value: unknown }).value)).toBe("string")
+    }
+  })
+
+  test("inherits public-address checks, mixed DNS rejection, redirects and pinned connections", async () => {
+    for (const unsafe of ["http://host/document", "https://127.0.0.1/document", "https://user:secret@host/document"]) {
+      const f = document(Buffer.from("{}"))
+      await expect(requestJsonDocument(unsafe, { transport: f.transport })).rejects.toBeInstanceOf(ArchiveDownloadError)
+      expect(f.lookups).toHaveLength(0)
+      expect(f.requests).toHaveLength(0)
+    }
+    const mixed = fixture({ lookup: async () => [publicIP, { address: "10.0.0.1", family: 4 }] })
+    expect((await failure(requestJsonDocument(url, { transport: mixed.transport }))).code).toBe("address")
+    expect(mixed.requests).toHaveLength(0)
+    const redirected = fixture({
+      request: async (input) => {
+        expect(input.address).toBe(publicIP.address)
+        if (redirected.requests.length === 1)
+          return response({ status: 302, headers: { location: "https://cdn.example.test/document" } })
+        return response({
+          body: (async function* () {
+            yield Buffer.from("{}")
+          })(),
+        })
+      },
+    })
+    expect((await requestJsonDocument(url, { transport: redirected.transport })).value).toEqual({})
+    expect(redirected.lookups).toEqual(["packages.example.test", "cdn.example.test"])
+    for (const location of [
+      "http://host/document",
+      "https://127.0.0.1/document",
+      "https://user:secret@host/document",
+    ]) {
+      const f = fixture({ request: async () => response({ status: 302, headers: { location } }) })
+      await expect(requestJsonDocument(url, { transport: f.transport })).rejects.toBeInstanceOf(ArchiveDownloadError)
+      expect(f.requests).toHaveLength(1)
+    }
+    const loop = fixture({ request: async () => response({ status: 302, headers: { location: "/again" } }) })
+    expect((await failure(requestJsonDocument(url, { transport: loop.transport }))).code).toBe("redirect")
+    expect(loop.requests).toHaveLength(4)
+  })
+
+  test("inherits cancellation and sanitized network errors", async () => {
+    const controller = new AbortController()
+    controller.abort(new Error("https://host/?token=private-token"))
+    const aborted = document(Buffer.from("{}"))
+    const error = await failure(requestJsonDocument(url, { signal: controller.signal, transport: aborted.transport }))
+    expect(error.name).toBe("AbortError")
+    expect(String(error)).not.toContain("private-token")
+    expect(aborted.lookups).toHaveLength(0)
+    const pending = fixture({ lookup: () => new Promise(() => {}) })
+    const active = new AbortController()
+    const promise = requestJsonDocument(url, { signal: active.signal, transport: pending.transport })
+    active.abort()
+    expect((await failure(promise)).name).toBe("AbortError")
+    const failed = fixture({
+      request: async () => {
+        throw new Error("https://host/?token=private-token")
+      },
+    })
+    const failureError = await failure(requestJsonDocument(url, { transport: failed.transport }))
+    expect(failureError.code).toBe("network")
+    expect(String(failureError)).not.toContain("private-token")
+    expect(failureError.cause).toBeUndefined()
   })
 })
 

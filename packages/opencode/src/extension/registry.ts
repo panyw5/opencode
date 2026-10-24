@@ -1,6 +1,7 @@
 import path from "node:path"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { randomUUID } from "node:crypto"
+import { Schema } from "effect"
 import { ConfigParse } from "@/config/parse"
 import { Filesystem } from "@/util/filesystem"
 import { Flock } from "@opencode-ai/core/util/flock"
@@ -11,14 +12,24 @@ import { publish, publishError } from "./event"
 import { assertDevelopmentDirectory, canonicalRegistryFile, generationPath, ownedGeneration } from "./paths"
 import {
   RegistryStore,
+  ReleaseSource,
   type Contributes,
   type ExtensionID,
   type Info,
   type RegistryRow,
+  type RetainedData,
   type OperationReceipt,
   type Source,
-  type RegistryStore as Store,
+  type RegistryStore as VersionedStore,
 } from "./schema"
+
+// The decoded format is version-discriminated. A locked write transaction needs
+// mutable rows while atomically moving from v2 to v3; writeStore revalidates the
+// complete version/source pair before any bytes are written.
+type Store = Omit<VersionedStore, "extensions" | "retained"> & {
+  extensions: Record<ExtensionID, RegistryRow>
+  retained?: Record<ExtensionID, RetainedData>
+}
 
 export class NotFoundError extends Error {
   override readonly name = "ExtensionNotFoundError"
@@ -91,6 +102,7 @@ async function readStore(target = file()): Promise<Store> {
 }
 
 async function writeStore(target: string, store: Store) {
+  Schema.decodeUnknownSync(RegistryStore)(store)
   await mkdir(path.dirname(target), { recursive: true })
   const temp = path.join(path.dirname(target), `.${path.basename(target)}.${process.pid}.${randomUUID()}.tmp`)
   try {
@@ -108,9 +120,20 @@ function nextRevision(store: Store) {
 }
 
 export function sourceIdentity(source: Source) {
-  if (source.type === "npm") return `npm:${source.registry}:${source.spec.replace(/@[^@/]+$/, "")}`
-  if (source.type === "archive") return `archive:${source.location}`
-  return `path:${Filesystem.resolve(source.path)}`
+  switch (source.type) {
+    case "npm":
+      return `npm:${source.registry}:${source.spec.replace(/@[^@/]+$/, "")}`
+    case "archive":
+      return `archive:${source.location}`
+    case "path":
+      return `path:${Filesystem.resolve(source.path)}`
+    case "release":
+      return `release:${JSON.stringify([source.descriptor, source.extensionID])}`
+    default: {
+      const unsupported: never = source
+      throw new ConflictError("Unsupported extension source")
+    }
+  }
 }
 
 export function installedManifest(row: RegistryRow, manifest: Loaded): Loaded {
@@ -419,14 +442,14 @@ export function assertSettingsCompatible(id: ExtensionID, current: RegistryRow, 
 export async function snapshot(id: ExtensionID, target = file()) {
   return Flock.withLock(lock(target), async () => {
     const store = await readStore(target)
-    return { row: store.extensions[id], retained: store.retained?.[id] }
+    return { registryVersion: store.version, row: store.extensions[id], retained: store.retained?.[id] }
   })
 }
 
 export async function snapshotAll(target = file()) {
   return Flock.withLock(lock(target), async () => {
     const store = await readStore(target)
-    return { revision: store.revision ?? 0, rows: store.extensions }
+    return { registryVersion: store.version, revision: store.revision ?? 0, rows: store.extensions }
   })
 }
 
@@ -580,6 +603,8 @@ export async function commitInstallation(
     row: RegistryRow
     expectedRevision: number | undefined
     expectedRetainedRevision?: number
+    expectedRegistryVersion?: number
+    acceptRegistryUpgrade?: boolean
     receipt: OperationReceipt
   },
   base: (manifest: Loaded) => string = () => "",
@@ -614,6 +639,24 @@ export async function commitInstallation(
         throw new ConflictError("Extension installation has changed since the operation committed")
       }
       return existing
+    }
+    if (input.row.source.type === "release") {
+      if (input.expectedRegistryVersion === undefined) {
+        throw new ConflictError("Release installation requires an expected registry version")
+      }
+      if (
+        !Schema.is(ReleaseSource)(input.row.source) ||
+        input.row.source.extensionID !== input.id ||
+        input.row.source.version !== input.row.version
+      ) {
+        throw new ConflictError("Invalid release source identity")
+      }
+    }
+    if (input.expectedRegistryVersion !== undefined && input.expectedRegistryVersion !== store.version) {
+      throw new ConflictError("Extension registry version changed; prepare the operation again")
+    }
+    if (input.row.source.type === "release" && store.version === 2 && input.acceptRegistryUpgrade !== true) {
+      throw new ConflictError("Extension registry upgrade requires explicit confirmation")
     }
     const current = store.extensions[input.id]
     if ((current ? (current.revision ?? 0) : undefined) !== input.expectedRevision) {
@@ -669,6 +712,7 @@ export async function commitInstallation(
       revision: nextRevision(store),
       updatedAt: Date.now(),
     }
+    if (input.row.source.type === "release") store.version = 3
     store.extensions[input.id] = next
     store.receipts ??= {}
     store.receipts[input.receipt.id] = input.receipt
@@ -684,6 +728,7 @@ export async function commitRemoval(
   input: {
     id: ExtensionID
     expectedRevision: number
+    expectedRegistryVersion?: number
     receipt: OperationReceipt
     purgeData: boolean
   },
@@ -704,6 +749,9 @@ export async function commitRemoval(
         throw new ConflictError("Extension operation identity changed")
       }
       return
+    }
+    if (input.expectedRegistryVersion !== undefined && input.expectedRegistryVersion !== store.version) {
+      throw new ConflictError("Extension registry version changed; prepare the operation again")
     }
     const current = store.extensions[input.id]
     if (!current || (current.revision ?? 0) !== input.expectedRevision) {

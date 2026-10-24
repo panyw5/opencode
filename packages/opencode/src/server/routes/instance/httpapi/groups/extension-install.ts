@@ -5,6 +5,7 @@ import {
   ExtensionOperationHeaders,
   ExtensionPrepareInput,
   ExtensionInstallInput,
+  ExtensionUpdateInput,
   ExtensionCommitInput,
   ExtensionPreparedOperation,
   ExtensionInstallResult,
@@ -47,7 +48,7 @@ export const ExtensionInstallApi = HttpApi.make("extension-install").add(
       HttpApiEndpoint.post("update", ExtensionInstallPaths.update, {
         headers: ExtensionOperationHeaders,
         params: { id: ExtensionID },
-        payload: ExtensionCommitInput,
+        payload: ExtensionUpdateInput,
         success: described(ExtensionInstallResult, "Update commit result"),
         error: errors,
       }).annotateMerge(

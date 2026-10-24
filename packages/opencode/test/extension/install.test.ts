@@ -72,6 +72,100 @@ async function install(context: Awaited<ReturnType<typeof setup>>, version = "1.
 }
 
 describe("extension installation transactions", () => {
+  test("release freezes the approved artifact, hides query data and requires a separate v3 confirmation", async () => {
+    const first = await fixture()
+    const second = await fixture("2.0.0")
+    let current = first
+    let resolves = 0
+    let downloads = 0
+    const context = await setup({
+      resolveRelease: async (descriptor) => {
+        resolves++
+        return {
+          descriptor,
+          id,
+          version: current.pkg.version,
+          artifact: {
+            url: `https://cdn.example.com/${current.pkg.version}.tgz?signature=PRIVATE`,
+            sha256: sha(current.bytes),
+          },
+          descriptorSha256: sha(Buffer.from(JSON.stringify(current.pkg))),
+        }
+      },
+      download: async () => {
+        downloads++
+        return current.bytes
+      },
+    })
+    const prepared = await context.installer.prepare({
+      kind: "install",
+      source: { type: "release", url: "https://example.com/stable.json" },
+    })
+    expect(prepared.registryUpgrade).toEqual({ from: 2, to: 3 })
+    expect(prepared.expectedRegistryVersion).toBe(2)
+    expect(prepared.source).toMatchObject({ type: "release", artifact: "https://cdn.example.com/1.0.0.tgz" })
+    const metadata = await readFile(path.join(context.root, "staging", prepared.operationId, "operation.json"), "utf8")
+    expect(metadata).not.toContain("PRIVATE")
+    expect(JSON.stringify(prepared)).not.toContain("signature")
+    expect((await Registry.snapshot(id, context.registry)).registryVersion).toBe(2)
+    await expect(context.installer.commit(prepared.operationId, prepared.token)).rejects.toThrow(
+      "explicit confirmation",
+    )
+    current = second
+    const committed = await context.installer.commit(prepared.operationId, prepared.token, {
+      acceptRegistryUpgrade: true,
+    })
+    expect(committed.committed).toBe(true)
+    expect(resolves).toBe(1)
+    expect(downloads).toBe(1)
+    const store = JSON.parse(await readFile(context.registry, "utf8"))
+    expect(store.version).toBe(3)
+    expect(store.extensions[id].version).toBe("1.0.0")
+    expect(JSON.stringify(store)).not.toContain("PRIVATE")
+    expect(await context.installer.commit(prepared.operationId, prepared.token)).toEqual(committed)
+    const update = await context.installer.prepare({ kind: "update", id, target: "release-current" })
+    expect(update.registryUpgrade).toBeUndefined()
+    expect(update.version).toBe("2.0.0")
+    expect((await context.installer.commit(update.operationId, update.token)).committed).toBe(true)
+    expect((await Registry.snapshot(id, context.registry)).row?.version).toBe("2.0.0")
+  })
+
+  test("release rejects mismatched descriptors and ambiguous update targets without changing the registry", async () => {
+    const payload = await fixture()
+    const context = await setup({
+      resolveRelease: async (descriptor) => ({
+        descriptor,
+        id,
+        version: "9.0.0",
+        artifact: { url: "https://example.com/package.tgz", sha256: sha(payload.bytes) },
+        descriptorSha256: "a".repeat(64),
+      }),
+      download: async () => payload.bytes,
+    })
+    await expect(
+      context.installer.prepare({
+        kind: "install",
+        source: { type: "release", url: "https://example.com/stable.json" },
+      }),
+    ).rejects.toThrow("identity mismatch")
+    expect((await Registry.snapshot(id, context.registry)).registryVersion).toBe(2)
+    expect((await Registry.snapshot(id, context.registry)).row).toBeUndefined()
+    await expect(
+      context.installer.prepare({ kind: "update", id, target: "release-current", version: "1.0.0" } as never),
+    ).rejects.toThrow("one update target")
+  })
+
+  test("a registry format change invalidates a prepared operation on another extension", async () => {
+    const context = await setup()
+    const prepared = await context.installer.prepare({ kind: "install", source: await context.archive() })
+    await writeFile(
+      context.registry,
+      JSON.stringify({ version: 3, revision: 0, extensions: {}, receipts: {}, retained: {} }),
+    )
+    await expect(context.installer.commit(prepared.operationId, prepared.token)).rejects.toThrow("prepare")
+    expect((await Registry.snapshot(id, context.registry)).row).toBeUndefined()
+  })
+
   test("offline local tgz is previewed without executing entries; defaults disabled and has atomic receipt", async () => {
     const context = await setup()
     const prepared = await context.installer.prepare({ kind: "install", source: await context.archive() })

@@ -38,6 +38,8 @@ import { registerWslIpcHandlers } from "./wsl/ipc"
 import { createSshServersController } from "./ssh/servers"
 import { spawnSshSidecar } from "./ssh/sidecar"
 import { registerSshIpcHandlers } from "./ssh/ipc"
+import { registerExtensionArchiveIpcHandlers, type ExtensionArchiveServer } from "./extension-archive"
+import type { ExtensionArchiveOp, LocalSidecarServer } from "./server"
 import {
   createLoadingWindow,
   createMainWindow,
@@ -70,6 +72,7 @@ const DATABASE_UPGRADE_PROMPT_KEY = "databaseUpgradePrompt.20260710"
 let logger: ReturnType<typeof initLogging>
 let mainWindow: BrowserWindow | null = null
 let server: SidecarListener | null = null
+let extensionArchiveChannel: LocalSidecarServer["extensionArchive"] | null = null
 let isQuitting = false
 let sidecarGeneration = 0
 
@@ -337,6 +340,11 @@ const main = Effect.gen(function* () {
   registerSshIpcHandlers(sshController)
   app.on("before-quit", () => sshController.stopAll())
 
+  registerExtensionArchiveIpcHandlers({
+    server: (): ExtensionArchiveServer =>
+      server && extensionArchiveChannel ? { extensionArchive: extensionArchiveChannel } : null,
+  })
+
   yield* Effect.promise(() => app.whenReady())
 
   if (!TEST_ONBOARDING) migrate()
@@ -414,7 +422,7 @@ const main = Effect.gen(function* () {
     useEnvProxy()
 
     logger.log("spawning sidecar", { url })
-    const { listener, health } = await spawnLocalServer(hostname, port, password, {
+    const { listener, health, extensionArchive } = await spawnLocalServer(hostname, port, password, {
       needsMigration: migrateDatabase,
       startupPaths,
       onSqliteProgress: (progress) => initEmitter.emit("sqlite", progress),
@@ -430,6 +438,7 @@ const main = Effect.gen(function* () {
       },
     })
     server = listener
+    extensionArchiveChannel = extensionArchive
     if (mode === "startup") {
       Effect.runSync(
         Deferred.succeed(serverReady, {

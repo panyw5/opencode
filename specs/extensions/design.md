@@ -2,6 +2,8 @@
 
 状态：设计稿，待评审。本文只规定方案，不代表相关功能已实现。
 
+补充设计（2026-10-18，实施更新2026-10-19）：免手填 SHA-256 的发布地址安装方案见 `specs/extensions/release-install-design.md`。release来源、自动摘要、显式registry v3及客户端核心已在工作树实现，**未提交、未发布，完整实机交付未完成**；证据与限制见 `specs/extensions/release-install-tasks.md`。本文旧分发章节不作为最新实现状态，当前交付以 `specs/extensions/progress.md` 为准，P3a历史见 `specs/extensions/p3a-tasks.md`。
+
 项目路径：`/Users/lelouch/apps/opencode`
 
 覆盖范围：扩展包格式、安装与注册表、server 运行时、HTTP API、前端扩展宿主（ExtensionHost）、前端扩展 API、宿主改造、开发工具链、WolframScript Notebook 案例、安全模型、分阶段实施。

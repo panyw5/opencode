@@ -412,4 +412,13 @@ export type ElectronAPI = {
     url: string,
     options?: { method?: string; headers?: Record<string, string>; body?: string },
   ) => Promise<{ ok: boolean; status: number; statusText: string; body: string }>
+  extensionArchiveDigest: (
+    path: string,
+  ) => Promise<
+    { ok: true; value: { path: string; size: number; sha256: string } } | { ok: false; error: { message: string } }
+  >
+  extensionArchiveOp: (
+    op: "prepare" | "commit" | "status" | "cancel",
+    payload: Record<string, unknown>,
+  ) => Promise<{ ok: true; value: unknown } | { ok: false; error: { code?: string; message: string } }>
 }

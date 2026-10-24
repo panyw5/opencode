@@ -30,6 +30,7 @@ import { createExtensionApi, createExtensionBridge, listenExtensionEvents } from
 import {
   createInstallationApi,
   synchronizeInstallation,
+  type InstallationCommitInput,
   type InstallationRequest,
   type PreparedInstallation,
   type InstallationResult,
@@ -73,7 +74,7 @@ export type ExtensionHost = {
   // settings updates) on the extension, so the UI can block re-entry.
   mutating(id: string): boolean
   prepareInstallation(request: InstallationRequest): Promise<PreparedInstallation>
-  commitInstallation(prepared: PreparedInstallation, input?: { enable?: boolean }): Promise<InstallationResult>
+  commitInstallation(prepared: PreparedInstallation, input?: InstallationCommitInput): Promise<InstallationResult>
   installationStatus(prepared: PreparedInstallation): Promise<InstallationStatus>
   cancelInstallation(prepared: PreparedInstallation): Promise<InstallationResult>
 }
@@ -695,7 +696,7 @@ export function ExtensionHostProvider(props: ParentProps) {
       release()
     }
   }
-  const commitInstallation = async (prepared: PreparedInstallation, input: { enable?: boolean } = {}) => {
+  const commitInstallation = async (prepared: PreparedInstallation, input: InstallationCommitInput = {}) => {
     if (mode().disabled) throw new Error("Extension installation is unavailable in safe mode")
     const connection = requireInstallationConnection(prepared)
     const release = beginMutation(prepared.id, connection.url)

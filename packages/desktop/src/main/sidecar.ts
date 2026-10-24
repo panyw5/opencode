@@ -17,13 +17,34 @@ type StartCommand = {
 }
 
 type StopCommand = { type: "stop" }
-type SidecarCommand = StartCommand | StopCommand
+
+/**
+ * Managed local-archive extension operation, driven by the desktop main
+ * process (drag-and-drop install). Runs the same installation service as
+ * the CLI inside this server process; the HTTP API stays CLI-only for
+ * local paths. The digest is re-verified by the installation service.
+ */
+type ExtensionArchiveCommand = {
+  type: "extension-archive"
+  id: string
+  op: "prepare" | "commit" | "status" | "cancel"
+  payload: Record<string, unknown>
+}
+
+type SidecarCommand = StartCommand | StopCommand | ExtensionArchiveCommand
 
 type SidecarMessage =
   | { type: "sqlite"; progress: SqliteMigrationProgress }
   | { type: "ready" }
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
+  | {
+      type: "extension-archive-result"
+      id: string
+      ok: boolean
+      value?: unknown
+      error?: { code?: string; message: string }
+    }
 
 type ParentPort = {
   postMessage(message: SidecarMessage): void
@@ -55,12 +76,77 @@ parentPort.on("message", (event) => {
     void stop()
     return
   }
+  if (command.type === "extension-archive") {
+    void extensionArchive(command)
+    return
+  }
   void start(command)
 })
 
+type InstallRequestLike = {
+  kind: string
+  source?: unknown
+  id?: string
+  version?: string
+  target?: string
+  purgeData?: boolean
+}
+
+/**
+ * Runs one managed-installation operation in-process. Mirrors the HTTP
+ * adapter's mapping so both surfaces report the same failure codes.
+ */
+async function extensionArchive(command: Extract<SidecarCommand, { type: "extension-archive" }>) {
+  const reply = (ok: boolean, value?: unknown, error?: { code?: string; message: string }) =>
+    parentPort.postMessage({ type: "extension-archive-result", id: command.id, ok, value, error })
+  try {
+    const { installation } = await import("virtual:opencode-server")
+    const installer = installation() as {
+      prepare(request: InstallRequestLike): Promise<Record<string, unknown>>
+      commit(operationId: string, token: string, input?: Record<string, unknown>): Promise<unknown>
+      status(operationId: string, token: string): Promise<unknown>
+      cancel(operationId: string, token?: string): Promise<unknown>
+    }
+    const payload = command.payload as {
+      request?: InstallRequestLike
+      operationId?: string
+      token?: string
+      input?: Record<string, unknown>
+    }
+    if (command.op === "prepare") {
+      if (!payload.request) return reply(false, undefined, { code: "invalid", message: "missing request" })
+      const prepared = await installer.prepare(payload.request)
+      reply(true, prepared)
+      return
+    }
+    const { operationId, token } = payload
+    if (typeof operationId !== "string" || typeof token !== "string") {
+      return reply(false, undefined, { code: "invalid", message: "missing operation credentials" })
+    }
+    if (command.op === "commit") {
+      reply(true, await installer.commit(operationId, token, payload.input ?? {}))
+      return
+    }
+    if (command.op === "status") {
+      reply(true, await installer.status(operationId, token))
+      return
+    }
+    reply(true, await installer.cancel(operationId, token))
+  } catch (error) {
+    const code =
+      error && typeof error === "object" && "code" in error ? String((error as { code: unknown }).code) : undefined
+    reply(false, undefined, {
+      code,
+      message: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
 async function start(command: StartCommand) {
   try {
-    console.error(`sidecar lifecycle start pid=${String(process.pid)} port=${String(command.port)} migrate=${String(command.needsMigration)}`)
+    console.error(
+      `sidecar lifecycle start pid=${String(process.pid)} port=${String(command.port)} migrate=${String(command.needsMigration)}`,
+    )
     prepareSidecarEnv(command.password)
     ensureLoopbackNoProxy()
     useSystemCertificates()
@@ -169,7 +255,17 @@ function callSetGlobalProxyFromEnv(nodeHttp: object) {
 
 function parseCommand(value: unknown): SidecarCommand | undefined {
   if (!value || typeof value !== "object") return undefined
-  const command = value as Partial<StartCommand | StopCommand>
+  const command = value as Partial<StartCommand | StopCommand | ExtensionArchiveCommand>
+  if (command.type === "extension-archive") {
+    const archive = command as Partial<ExtensionArchiveCommand>
+    if (
+      typeof archive.id !== "string" ||
+      (archive.op !== "prepare" && archive.op !== "commit" && archive.op !== "status" && archive.op !== "cancel")
+    )
+      return undefined
+    if (!archive.payload || typeof archive.payload !== "object") return undefined
+    return archive as ExtensionArchiveCommand
+  }
   if (command.type === "stop") return { type: "stop" }
   if (command.type !== "start") return undefined
   if (typeof command.hostname !== "string") return undefined

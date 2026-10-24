@@ -44,40 +44,58 @@ export const extensionInstallHandlers = HttpApiBuilder.group(RootHttpApi, "exten
         yield* allowed()
         return yield* Effect.tryPromise({ try: () => fn(adapter ?? installation()), catch: mapped })
       })
+    const rawPayload = Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const raw = yield* request.json.pipe(
+        Effect.mapError(() => new InvalidRequestError({ message: "Invalid extension request" })),
+      )
+      if (!raw || typeof raw !== "object" || Array.isArray(raw))
+        return yield* new InvalidRequestError({ message: "Invalid extension request" })
+      return raw as Record<string, unknown>
+    })
     const token = (headers: { "x-opencode-extension-token": string }) => headers["x-opencode-extension-token"]
     const commit =
       (kind: InstallRequest["kind"]) =>
       (ctx: {
         headers: { "x-opencode-extension-token": string }
-        payload: { operationId: string; enable?: boolean }
+        payload: { operationId: string; enable?: boolean; acceptRegistryUpgrade?: boolean }
         params?: { id: string }
       }) =>
-        run(async (service) => {
-          const capability = token(ctx.headers)
-          const status = await service.status(ctx.payload.operationId, capability)
-          if (status.kind !== kind || (ctx.params?.id && status.id !== ctx.params.id)) {
-            throw new InstallError("conflict", "Operation does not match this endpoint")
-          }
-          return service.commit(
-            ctx.payload.operationId,
-            capability,
-            kind === "install" ? { enable: ctx.payload.enable } : {},
-          )
+        Effect.gen(function* () {
+          yield* allowed()
+          // Decoders may strip unknown properties; inspect the original envelope before committing.
+          const raw = yield* rawPayload
+          if (kind === "uninstall" && ("enable" in raw || "acceptRegistryUpgrade" in raw))
+            return yield* new InvalidRequestError({ message: "Removal does not accept installation options" })
+          return yield* run(async (service) => {
+            const capability = token(ctx.headers)
+            const status = await service.status(ctx.payload.operationId, capability)
+            if (status.kind !== kind || (ctx.params?.id && status.id !== ctx.params.id)) {
+              throw new InstallError("conflict", "Operation does not match this endpoint")
+            }
+            return service.commit(
+              ctx.payload.operationId,
+              capability,
+              kind === "uninstall"
+                ? {}
+                : kind === "install"
+                  ? { enable: ctx.payload.enable, acceptRegistryUpgrade: ctx.payload.acceptRegistryUpgrade }
+                  : { acceptRegistryUpgrade: ctx.payload.acceptRegistryUpgrade },
+            )
+          })
         })
     return handlers
       .handle("prepare", (ctx) =>
         Effect.gen(function* () {
           yield* allowed()
-          const request = yield* HttpServerRequest.HttpServerRequest
-          const raw = yield* request.json.pipe(
-            Effect.mapError(() => new InvalidRequestError({ message: "Invalid extension request" })),
-          )
-          if (!raw || typeof raw !== "object")
-            return yield* new InvalidRequestError({ message: "Invalid extension request" })
-          const value = raw as Record<string, unknown>
-          if (value.kind === "update" && "source" in value && "version" in value) {
-            return yield* new InvalidRequestError({ message: "Choose source or version, not both" })
+          const value = yield* rawPayload
+          if (value.kind === "update" && ["source", "version", "target"].filter((key) => key in value).length !== 1) {
+            return yield* new InvalidRequestError({ message: "Choose exactly one of source, version or target" })
           }
+          if (value.kind === "install" && ("version" in value || "target" in value))
+            return yield* new InvalidRequestError({ message: "Installation requires a source, not version or target" })
+          if (value.kind === "uninstall" && ["source", "version", "target"].some((key) => key in value))
+            return yield* new InvalidRequestError({ message: "Removal does not accept a source, version or target" })
           if (
             value.source &&
             typeof value.source === "object" &&

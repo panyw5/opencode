@@ -78,6 +78,7 @@ import { ComponentMountProfile } from "@/utils/component-mount-profile"
 import { createMediaQuery } from "@solid-primitives/media"
 
 import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { takeArchiveDrop } from "@/extensions/install-local"
 import { triggerFileFind } from "@opencode-ai/ui/pierre/file-find"
 import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
 import { DialogSelectProvider } from "@/components/dialog-select-provider"
@@ -2726,6 +2727,13 @@ export default function Layout(props: ParentProps) {
       })
       const files = detail.paths.filter((path) => !dirs.includes(path))
       console.debug(`[drag-drop] classified dirs=${dirs.length} files=${files.length}`)
+
+      // A drop consisting solely of .tgz archives claims the extension
+      // install flow (desktop) when the Extensions config section is open.
+      if (dirs.length === 0 && files.length > 0 && takeArchiveDrop(files)) {
+        console.debug(`[drag-drop] archive drop consumed files=${files.length}`)
+        return
+      }
 
       if (dirs.length > 0) {
         for (const dir of dirs) {

@@ -435,6 +435,19 @@ export type Platform = {
   /** Filter paths to return only directories (desktop only) */
   filterDirectories?(paths: string[]): Promise<string[]>
 
+  /** Digest of a local .tgz extension archive (desktop only) */
+  extensionArchiveDigest?(
+    path: string,
+  ): Promise<
+    { ok: true; value: { path: string; size: number; sha256: string } } | { ok: false; error: { message: string } }
+  >
+
+  /** Managed local-archive install operation (desktop only) */
+  extensionArchiveOp?(
+    op: "prepare" | "commit" | "status" | "cancel",
+    payload: Record<string, unknown>,
+  ): Promise<{ ok: true; value: unknown } | { ok: false; error: { code?: string; message: string } }>
+
   /** Read image from clipboard (desktop only) */
   readClipboardImage?(): Promise<File | null>
 

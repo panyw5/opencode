@@ -1,0 +1,128 @@
+# wls-repl（WolframScript REPL + 断点调试）任务记录
+
+状态：**v1 + wolfram_eval 工具已实现并完成验收**（2026-10-24，本工作树未提交）。这是扩展系统
+P4 计划中的首个业务扩展（design.md §11 的 `.wls` 方向变体：断点调试 REPL + 共享 kernel 工具）。
+
+## 交付物
+
+- `packages/extensions/wls-repl/`：manifest（`local.wls-repl`，replace-mode viewer 匹配
+  `.wls`，设置 wolframscriptPath/statementTimeoutSeconds/maxKernels）、`src/bridge.wls`、
+  `src/server.ts`、`src/web.tsx`、`src/web.css`、测试 3 文件、已构建 `dist/` 产物。
+- `bun.lock`：新增 wls-repl workspace 条目；顺带把工作树中已改为 1.18.58 的
+  extension-kit/hello-viewer 版本元数据同步进锁文件（此前 release 工作未完成的对齐）。
+
+## 设计要点（相对 design.md 的新增决策）
+
+- 断点机制为全新设计（design.md §11 只有 notebook 的 eval 桥，无断点概念）：
+  kernel 内动态插桩 —— `Read[s, HoldComplete[Expression]]` 逐条切分 + `StreamPosition`
+  行号映射，断点命中即进入阻塞暂停循环，经 stdout 协议行上报变量快照并服务
+  inspect/continue/step/abort 指令。
+- 控制通道改道：spike 实测 stdin/FIFO/socket 全不可用（见包 README 的"关键事实"），
+  改为控制文件 + `!tail -f` 跟随读。
+- bridge 独立 `WLSBridge`` context + `Off[General::shdw]`；用户代码跑在 `User`` context。
+- 协议行 `RS + 8 位 hex nonce + 压缩 JSON`，防用户 Print 伪造。
+
+## 验证证据（2026-10-24，macOS / wolframscript 13.3.1 ARM）
+
+自动化（`bun test test`，16/0）：
+
+| 文件 | 覆盖 |
+| --- | --- |
+| `test/server.test.ts`（7） | 假 kernel：ctl 命令写入、协议路由/状态机、busy 门禁、非法输入、dispose、kernel-exit、maxKernels LRU 逐出 |
+| `test/bridge-integration.test.ts`（6） | 真实 wolframscript：断点暂停+变量快照+检视+继续+结果行、step/abort、语句超时中止、语法错误、Stop 终止进程、死亡宿主孤儿清扫 |
+| `test/web.test.ts`（3） | 定义文本美化（`HoldPattern[a] :> 1` → `a = 1` 等） |
+
+实机（隔离 dev Electron：`OPENCODE_TEST_ONBOARDING=1` + `OPENCODE_CDP_PORT=9255`，唯一
+临时 userData/XDG，隔离 registry `opencode extension link`；全部由本人经 CDP 操作）：
+
+- 打开 `.wls` 自动懒激活，viewer 渲染（状态徽标/行号/控制台/输入框）。
+- gutter 点击设置断点（7、9 行红点）；Run → 停在首个断点，当前行高亮，变量面板显示
+  `nums = {1, 4, 9, 16, 25}`、`total` 等实时值；Continue 后 `total = 55` 更新。
+- 暂停态 `inspect>` 输入 `total * 2` → 110；Step 单语句推进（9→10，`mean = 11` 出现）。
+- 跑完后空闲 `In>` REPL：`mean * 3` → 33（状态保持）。
+- Stop → status "kernel stopped"、console "kernel exited (code 0)"、`ps` 确认 0 残留。
+- Restart → 状态重置提示；服务器模块热重载（重建 dist）自动 dispose 旧 kernel 并重载。
+- 配置页 Extensions 分区显示条目 + 三项设置 + Disable/Update/Remove 操作。
+- 截图：`/tmp/wls-paused-final.png`、`/tmp/wls-paused-clean.png`、`/tmp/wls-config-page.png`。
+
+## 修复过程中确认的缺陷（均已修复并有回归）
+
+1. 暂停循环 `While` 多一个参数 → 整个暂停机制失效（spike 抓到）。
+2. `Definition[Symbol[name]]` 触发 `Definition::ssym`；`With`/`Evaluate` 传入会先取 own
+   value。最终惯用法 `ToExpression[...] + RuleDelayed`。
+3. bridge Module/Table 名污染 `Global`` → 用户变量 `b`/`t` 撞名 `shdw` 告警。
+4. wolframscript 忽略 SIGTERM + unref 升级定时器在宿主快速退出时不触发 → 测试孤儿泄漏；
+   改为 shutdown 命令 → SIGTERM → await 路径内 SIGKILL。
+5. 宿主被直接 kill 时不 dispose → detached kernel 孤儿；`kernel-pids.json` 记录
+   hostPid，激活时清扫宿主已死的 kernel（并发活宿主不误杀，`ps` 命令行校验）。
+6. stderr 噪音过滤正则 `$` 锚点/前导空格两轮修正。
+
+## 明确边界（v1 不含）
+
+编辑器/保存桥、notebook(.wlnb)、`wolfram_eval` Agent 工具（design §11 的共享 kernel 工
+具，作为下一增量）、Step Into、断点跨刷新持久化、语法高亮/CodeMirror、Windows/Linux 验
+收（`tail`/`ps` 为 Unix 依赖）、多服务器矩阵。未提交、未推送、未合入 dev；真实用户
+registry 未触碰（全程隔离 registry）。
+
+## 增量：`wolfram_eval` Agent 工具 + 变量面板修正（2026-10-24 第二轮）
+
+- 实例级 `server()` hooks 注册 `wolfram_eval`（`@opencode-ai/plugin` 的 tool 契约）：
+  `code` 必填、`path` 可选；带 `path` 复用该文件 kernel（Agent 与用户共享变量，验证
+  design.md §11 的组合目标），否则用目录级共享 kernel（`.wolfram-tool` 键）。运行时
+  `instanceHooks` 先 `ensureService` 再 `callServer`，工具执行时 `input.extension.service`
+  必然可用（无模块级状态）。
+- 服务新增内部 RPC `kernel.evalAwait`：发 eval 并等待同 id 的 `eval-result`/
+  `inspect-result` 协议行后返回（工具无法消费事件流）；超时 = 语句超时 + 30s 冷启动余量。
+- 设置 `exposeTool`（enum always/never，默认 always）在工具执行时实时读取；manifest 权限
+  增加 `tools`；结果文本截断 4000 字符。
+- 变量面板去掉 `name = name = value` 冗余（own-value 剥前缀，函数定义保留签名）。
+- 验证：包内测试 **21/0**（假 kernel 工具执行/禁用不 spawn + 真实集成：用户文件 kernel
+  定义 `q = 6` 后工具 `q * 7` → 42、目录 kernel 独立、`r = 5`→`r + 1` → 6 状态保持）；
+  typecheck/prettier/构建通过；dev Electron 回归：viewer 正常、断点暂停、变量面板显示
+  `nums => {1, 4, 9, 16, 25}`（截图 `/tmp/wls-tool-vars-clean.png`），实例 hooks 注册无错
+  误日志。未发起真实模型请求调用工具（执行路径由直连测试覆盖）。
+- 清理注意：本轮结束清理 dev 实例时误杀了主仓库 9222 dev 实例的 `bun` wrapper（其
+  Electron 本体存活且 9222 仍响应，需要时可重新 `bun run dev:desktop`）。
+
+## 增量：自包含归档独立安装（2026-10-24 第三轮）
+
+- 依赖结构改为可分发：`@opencode-ai/extension-kit`/`plugin` 移入 devDependencies（仅构建期需要），新增 `files: ["dist", "README.md"]` 白名单。产物自包含已核实：`dist/server.js` 仅 `node:*` 导入，`dist/web/index.js` 零裸导入。
+- `npm pack --offline` 产出 80KB 归档（package/dist + package.json + README，bridge.wls 随 dist）；sha256 `b668519c…e5345`（随构建变化，不作为固定值）。
+- 隔离 CLI 安装：`state=committed committed=true synced=true cleanupPending=false`，`extension list` 显示 ready、来源为 tgz+sha256。
+- dev Electron（TEST_ONBOARDING 隔离 registry）安装归档后：打开 `.wls` 自动激活、断点 Run → paused line 7、变量面板 `nums => {1,4,9,16,25}`；`ps` 证实 kernel 由 `extension-modules/local.wls-repl/<内容指纹>-<uuid>/dist/bridge.wls`（安装副本，非源码目录）启动；配置页显示 Disable/Update/Remove 与全部四项设置。
+- 受管移除实测：两步确认（review → Confirm operation）后条目消失，kernel 进程清零（dispose 清理链在安装来源上同样有效）。
+- 仍不可行/未做：npm 公网安装（kit 未发布）；release URL 公网安装（需先上传归档+发布 descriptor，未做上传决策）；本轮归档与安装全部在临时隔离环境（/tmp/wls-pkg、mktemp HOME/XDG、TEST_ONBOARDING root），日常 registry 未触碰；未提交。
+
+## 增量：GitHub 公开仓库与 release 分发（2026-10-24 第四轮）
+
+- 新仓库 https://github.com/panyw5/opencode-wls （PUBLIC，用户创建并明确授权推送）：
+  扩展包整体为仓库根目录（src/test/dist/tsconfig/vite.config/README/LICENSE/.gitignore），
+  两个提交（初始内容 + stable.json/README 修正）。dist 保留提交——web 构建依赖 kit 的
+  vite 插件（未公开发布），monorepo 外暂不可构建，README 已注明。
+- 分发链路：仓库内 `npm pack --offline` 产出 81759 字节归档 → `gh release create
+  v1.18.58` 上传资产 → `script/extension-release.ts` 生成 `stable.json`（artifact URL
+  指向 release 资产，sha256 `22d0d61f…2432`）→ 提交到仓库根，raw URL 公网可达（200）。
+  curl 复核资产下载 200、字节数与摘要逐位一致。
+- **首次真实公网 `--release` 在线安装尝试失败并定位为环境边界**：CLI 无 `--release`
+  标志时把 descriptor URL 当归档直链拒绝（需补标志，README 已修正）；带标志后下载器
+  报 `DNS returned a non-public address`——本机代理为 fake-IP 模式（GitHub 全部域名解析
+  为 198.18.0.0/15），`publicAddress` 按设计拒绝该段，默认 transport 用 node:dns 系统
+  解析、无代理路径。这是公网正向验收的首个真实发现，未绕过安全校验。
+- **替代闭环完成**：curl 经系统代理下载 release 资产 → 摘要与 descriptor 完全一致 →
+  本地归档入口安装同一字节：隔离 CLI `committed/synced`，list 显示 ready 且来源为
+  tgz+sha256；dev Electron（隔离 registry）安装后打开 `.wls` 自动激活、断点 Run →
+  paused line 7、变量面板正常，kernel 由安装副本（`extension-modules/<id>/<指纹>-<uuid>/dist/bridge.wls`）启动。
+- 未做：真实公网 `--release` 在线正向安装（需非 fake-IP 网络，如手机热点或代理 real-IP
+  模式后复测）；npm 公网安装（kit 未发布）。所有安装均在临时隔离环境，日常 registry
+  未触碰；monorepo 侧改动仍未暂存/提交。
+
+## 增量：桌面拖拽安装 .tgz（2026-10-24 第五轮）
+
+- 用户需求：拖入 .tgz 完成安装（替代手填 sha256 的 CLI 流程）。设计原则：拖拽承担"选文件"，**不承担"免确认"**——摘要核对仍强制。
+- 安全边界保持：HTTP prepare 仍拒绝 local（"CLI-only" 边界原样），新增**桌面 sidecar IPC 通道**：renderer → preload（window.api.extensionArchiveDigest/Op）→ main（重算 sha256 作为可信校验）→ sidecar parentPort 命令（extension-archive prepare/commit/status/cancel）→ sidecar 进程内调用与 CLI/HTTP 同一 `installation()` 服务（node.ts 新增该导出）。digest 由主进程读文件计算并显示，用户与发布页核对一致才启用 Prepare；服务端 prepare 最终校验。
+- 渲染层：`InstallationSource` 增 local 变体（desktop-only，HTTP install-api.ts 显式拒绝）；dialog 增本地模式（路径只读 + 计算摘要展示 + 期望摘要输入 + 匹配徽标）；config Extensions 分区挂 `ExtensionArchiveDropTarget`（模块级单例消费者注册表 `takeArchiveDrop`，layout drop handler 在文件全为 .tgz 时优先交给它，否则落回附件路由）；web 环境自动降级（platform 方法缺失即不注册）。
+- 附带修复：electron.vite renderer dev server 加 `strictPort` + `OPENCODE_RENDERER_PORT` 覆盖——本机另一项目 dev server 绑 `*:5173` 造成模块串线（页面从错误 server 取到陈旧 layout transform），strictPort 使冲突显式失败。
+- 验证：新增单测 11 个（digestMatches/local operations/drop 注册表/archive digest）全绿；app 115 定向测试 0 fail；desktop archive-digest+server 21/0；app/desktop typecheck、prettier、electron-vite build、build-node 通过。
+- **CDP 实机全链路**（隔离 dev Electron，端到端）：`Input.dispatchDragEvent` 真实拖拽 → 弹窗本地模式（计算摘要 22d0d61f… 正确显示）→ 错误摘要被拒（mismatch 徽标 + Prepare 禁用）→ 正确摘要 → Review → 预览（信任警告/权限 process:spawn/贡献点/Settings:4）→ Enable 勾选 + Confirm → 安装成功 → 配置页列表 Enabled → 打开 .wls 断点暂停、变量面板正常，**kernel 由安装副本（extension-modules 内容指纹目录）启动**。截图 `/tmp/wls-draginstall-paused.png`。清理后零残留进程。
+- 排错记录（写入日志的教训）：① patch 断言失败导致 layout 拦截段静默未写入（import 行在而逻辑段不在）——对同一文件多次 patch 必须整体验证；② sidecar parseCommand 未识别新命令导致请求静默丢弃；③ virtual 模块声明（env.d.ts）与 bun build 平铺导出形态不一致；④ 5173 端口串线见上。清理时再次波及主仓库 9222 dev 实例（Electron 本体被误杀，可 bun run dev:desktop 恢复；安装版 app 未动）。
+- 边界：拖拽安装仅桌面端；web/远程 UI 无此入口（也无本地路径概念）；registry v3 升级不适用（archive 本地源不触发，release 源才有 v3）；未提交。
