@@ -2118,6 +2118,29 @@ export default function Page() {
     )
   }
 
+  const revealFileLocation = (raw: string, path: string) => {
+    if (platform.platform !== "desktop" || !server.isLocal() || (!platform.openInFinder && !platform.openPath)) {
+      console.warn(
+        `[file-link] reveal unavailable session=${params.id ?? "none"} platform=${platform.platform} local=${String(server.isLocal())}`,
+      )
+      return
+    }
+    const target = absoluteFileLinkPath(sdk.directory, raw, path)
+    console.debug(`[file-link] reveal session=${params.id ?? "none"} target=${target}`)
+    void Promise.resolve()
+      .then(() => (platform.openInFinder ? platform.openInFinder(target) : platform.openPath!(parentDirectory(target))))
+      .then(() => console.debug(`[file-link] revealed session=${params.id ?? "none"} target=${target}`))
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err)
+        console.warn(`[file-link] reveal failed session=${params.id ?? "none"} target=${target} err=${message}`)
+        showToast({
+          variant: "error",
+          title: language.t("common.requestFailed"),
+          description: message,
+        })
+      })
+  }
+
   const handleFileLinkClick = (event: MouseEvent) => {
     const entry = fileLinkFromTarget(event.target)
     if (!entry) return
@@ -2130,26 +2153,7 @@ export default function Page() {
 
     if (event.metaKey || event.ctrlKey) {
       // Cmd+click / Ctrl+click: open the file's folder in the OS file manager.
-      if (platform.platform !== "desktop" || !server.isLocal() || (!platform.openInFinder && !platform.openPath)) {
-        console.warn(
-          `[file-link] reveal unavailable session=${params.id ?? "none"} platform=${platform.platform} local=${String(server.isLocal())}`,
-        )
-        return
-      }
-      const target = absoluteFileLinkPath(sdk.directory, entry.raw, entry.path)
-      console.debug(`[file-link] reveal session=${params.id ?? "none"} target=${target}`)
-      const open = platform.openInFinder ? platform.openInFinder(target) : platform.openPath!(parentDirectory(target))
-      void Promise.resolve(open)
-        .then(() => console.debug(`[file-link] revealed session=${params.id ?? "none"} target=${target}`))
-        .catch((err: unknown) => {
-          const message = err instanceof Error ? err.message : String(err)
-          console.warn(`[file-link] reveal failed session=${params.id ?? "none"} target=${target} err=${message}`)
-          showToast({
-            variant: "error",
-            title: language.t("common.requestFailed"),
-            description: message,
-          })
-        })
+      revealFileLocation(entry.raw, entry.path)
       return
     }
     openFileLinkPreview(entry.raw, entry.path, entry.line, entry.endLine)
@@ -2350,7 +2354,19 @@ export default function Page() {
     )
   }
 
-  const openTurnReviewDiff = (input: { userMessageID: string; file: string }) => openTurnReview(input)
+  const openTurnReviewDiff = (input: { userMessageID: string; file: string; event: MouseEvent }) => {
+    const mod = input.event.metaKey ? "cmd" : input.event.ctrlKey ? "ctrl" : "none"
+    console.debug(
+      `[turn-review] card click session=${params.id ?? "none"} turn=${input.userMessageID} file=${input.file} mod=${mod}`,
+    )
+    if (input.event.metaKey || input.event.ctrlKey) {
+      input.event.preventDefault()
+      input.event.stopPropagation()
+      revealFileLocation(input.file, file.normalize(input.file))
+      return
+    }
+    openTurnReview(input)
+  }
   const openTurnReviewAll = (userMessageID: string) => openTurnReview({ userMessageID })
 
   createEffect(() => {
