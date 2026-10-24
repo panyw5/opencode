@@ -84,7 +84,7 @@ import { PromptContextItems } from "./prompt-input/context-items"
 import { useComponentMountProfile } from "@/utils/component-mount-profile"
 import { PromptImageAttachments } from "./prompt-input/image-attachments"
 import { PromptDragOverlay } from "./prompt-input/drag-overlay"
-import { promptPlaceholder } from "./prompt-input/placeholder"
+import { promptPlaceholder, promptPlaceholderSuggestions } from "./prompt-input/placeholder"
 import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import { createPromptPair } from "./prompt-input/autocomplete-pair"
 import { createModelAutocomplete, createAutocompleteSettings } from "./prompt-input/autocomplete-model"
@@ -127,39 +127,6 @@ interface PromptInputProps {
   onScrollToBottom?: () => void
   scrollState?: { overflow: boolean; bottom: boolean }
 }
-
-const BASE_PLACEHOLDER_SUGGESTIONS = [
-  "prompt.suggestion.hint.sendKeepView",
-  "prompt.suggestion.hint.expandEditor",
-  "prompt.suggestion.hint.sessionTabMenu",
-  "prompt.suggestion.hint.sessionListMenu",
-  "prompt.suggestion.hint.newSessionProjectPicker",
-  "prompt.suggestion.hint.externalAgents",
-  "prompt.suggestion.hint.dragDrop",
-  "prompt.suggestion.hint.mentions",
-  "prompt.suggestion.hint.stopAfterTool",
-  "prompt.suggestion.hint.customizeShortcuts",
-  "prompt.suggestion.hint.backgroundTasks",
-  "prompt.suggestion.hint.backgroundShell",
-  "prompt.suggestion.hint.backgroundShellManager",
-  "prompt.suggestion.hint.backgroundSubagent",
-  "prompt.suggestion.hint.intervene",
-  "prompt.suggestion.hint.advisorIntervention",
-  "prompt.suggestion.hint.scheduledTasks",
-  "prompt.suggestion.hint.switchProject",
-  "prompt.suggestion.hint.worktrees",
-  "prompt.suggestion.hint.dropFolder",
-  "prompt.suggestion.hint.reorderProjects",
-  "prompt.suggestion.hint.questionPanel",
-  "prompt.suggestion.hint.sessionStatus",
-  "prompt.suggestion.hint.projectTasks",
-  "prompt.suggestion.hint.search",
-  "prompt.suggestion.hint.filePaths",
-  "prompt.suggestion.hint.readingMode",
-  "prompt.suggestion.hint.configHub",
-] as const
-
-const TEMP_ATTACHMENT_PLACEHOLDER_SUGGESTIONS = ["prompt.suggestion.hint.tempAttachment"] as const
 
 const NON_EMPTY_TEXT = /[^\s\u200B]/
 const promptTooltipDelay = 350
@@ -474,9 +441,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
   const win = createMemo(() => platform.platform === "desktop" && platform.os === "windows")
   const placeholderSuggestions = createMemo(() =>
-    platform.createTempMarkdownAttachment
-      ? [...TEMP_ATTACHMENT_PLACEHOLDER_SUGGESTIONS, ...BASE_PLACEHOLDER_SUGGESTIONS]
-      : BASE_PLACEHOLDER_SUGGESTIONS,
+    promptPlaceholderSuggestions({
+      desktop: platform.platform === "desktop",
+      remoteMode: platform.remoteMode,
+      remoteAccess: !!platform.remoteAccess,
+      tempAttachment: !!platform.createTempMarkdownAttachment,
+    }),
   )
   const { params, tabs, view } = useSessionLayout()
   useComponentMountProfile(() => ({

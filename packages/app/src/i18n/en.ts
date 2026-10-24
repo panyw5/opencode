@@ -540,7 +540,7 @@ export const dict = {
   "prompt.suggestion.hint.newSessionProjectPicker":
     "From Home, use the New session shortcut to choose any project and start a session there.",
   "prompt.suggestion.hint.externalAgents":
-    "Enable external agents in Settings, then @mention one here to give it a task.",
+    "Configure and enable advisors under Config > External agents; installed, enabled advisors can be called with @.",
   "prompt.suggestion.hint.dragDrop": "Drop images, PDFs, or text files here to attach context.",
   "prompt.suggestion.hint.mentions": "Type @ to mention files, advisors, or agents; / for commands and skills.",
   "prompt.suggestion.hint.stopAfterTool":
@@ -561,22 +561,29 @@ export const dict = {
   "prompt.suggestion.hint.scheduledTasks":
     "Ask an agent to create a scheduled task, then find recent scheduled tasks on Home.",
   "prompt.suggestion.hint.switchProject": "Use the Switch project shortcut to jump between projects quickly.",
-  "prompt.suggestion.hint.worktrees":
-    "When starting a session, choose the main branch, an existing worktree, or a new one.",
+  "prompt.suggestion.hint.worktrees": "When starting a session, choose the main workspace or an existing worktree.",
   "prompt.suggestion.hint.dropFolder": "Drop a folder onto the window to open it as a project.",
   "prompt.suggestion.hint.reorderProjects":
     "Drag project icons in the sidebar to arrange them in your preferred order.",
   "prompt.suggestion.hint.questionPanel": "Question panels support keyboard controls, collapsing, and pasted images.",
   "prompt.suggestion.hint.sessionStatus":
-    "Open Session status to inspect and copy the session's file changes and details.",
+    "Open Session status to inspect file changes and copy the session ID and project path.",
   "prompt.suggestion.hint.projectTasks":
-    "Use Project tasks to track work across sessions and Session tasks for the current conversation.",
+    "Use Project tasks to manage work across sessions and Session tasks for the current conversation's Todo list.",
   "prompt.suggestion.hint.search": "Use Page find or Global find to search; enable indexing before using Global find.",
   "prompt.suggestion.hint.filePaths":
-    "Click a file path to preview it, or Cmd/Ctrl-click to open it in your editor or file manager.",
+    "Click a file path to preview it; on the local desktop app, Cmd/Ctrl-click to reveal it in the file manager.",
   "prompt.suggestion.hint.readingMode": "Turn on Reading mode for a distraction-free conversation view.",
   "prompt.suggestion.hint.configHub":
     "Configure providers, agents, skills, commands, plugins, and MCP servers together on the Config page.",
+  "prompt.suggestion.hint.remoteAccess":
+    "Enable Remote access in Settings to use your computer's OpenCode from your phone's browser.",
+  "prompt.suggestion.hint.quickAssistant":
+    "Use Quick assistant for a separate conversation alongside your main session.",
+  "prompt.suggestion.hint.sessionReferences":
+    "Click the quote button below the prompt input to reference recently visited sessions.",
+  "prompt.suggestion.hint.contextMenus":
+    "Right-click conversation hyperlinks, session tabs, project icons, or file preview tabs to open their menus.",
 
   "prompt.example.1": "Fix a TODO in the codebase",
   "prompt.example.2": "What is the tech stack of this project?",
