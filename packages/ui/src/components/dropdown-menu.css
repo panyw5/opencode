@@ -1,6 +1,11 @@
 [data-component="dropdown-menu-content"],
 [data-component="dropdown-menu-sub-content"] {
-  --dropdown-menu-item-hover-bg: var(--surface-base-hover);
+  /* Item feedback must be an ink overlay relative to the real panel color:
+     themed --surface-base-hover is derived from the canvas and can be
+     near-identical to the raised panel desktop menus render on. */
+  --dropdown-menu-item-hover-bg: color-mix(in srgb, var(--text-strong) 10%, transparent);
+  --dropdown-menu-item-active-bg: color-mix(in srgb, var(--text-strong) 16%, transparent);
+  --dropdown-menu-item-inset: inset 0 0 0 1px color-mix(in srgb, var(--text-strong) 14%, transparent);
   --dropdown-menu-frosted-bg: light-dark(
     color-mix(in srgb, var(--background-stronger) 82%, transparent),
     color-mix(in srgb, var(--background-stronger) 70%, transparent)
@@ -61,9 +66,18 @@
     letter-spacing: var(--letter-spacing-normal);
     color: var(--text-strong);
 
-    &:hover,
-    &[data-highlighted] {
+    &:is(:hover, [data-highlighted], [data-expanded], :active):not([data-disabled]) {
       background: var(--dropdown-menu-item-hover-bg);
+      box-shadow: var(--dropdown-menu-item-inset);
+
+      [data-slot="dropdown-menu-item-description"] {
+        color: var(--text-strong);
+      }
+    }
+
+    &:active:not([data-disabled]) {
+      background: var(--dropdown-menu-item-active-bg);
+      transition-duration: 0s;
     }
 
     &[data-disabled] {
@@ -75,12 +89,6 @@
   [data-slot="dropdown-menu-checkbox-item"],
   [data-slot="dropdown-menu-radio-item"] {
     padding-right: 30px;
-  }
-
-  [data-slot="dropdown-menu-sub-trigger"] {
-    &[data-expanded] {
-      background: var(--dropdown-menu-item-hover-bg);
-    }
   }
 
   [data-slot="dropdown-menu-item-indicator"] {
@@ -133,8 +141,12 @@ html[data-platform="desktop"][data-os="windows"] [data-component="dropdown-menu-
   -webkit-backdrop-filter: none;
 }
 
-html[data-platform="desktop"][data-os="windows"] [data-component="dropdown-menu-content"] [data-slot="dropdown-menu-arrow"],
-html[data-platform="desktop"][data-os="windows"] [data-component="dropdown-menu-sub-content"] [data-slot="dropdown-menu-arrow"] {
+html[data-platform="desktop"][data-os="windows"]
+  [data-component="dropdown-menu-content"]
+  [data-slot="dropdown-menu-arrow"],
+html[data-platform="desktop"][data-os="windows"]
+  [data-component="dropdown-menu-sub-content"]
+  [data-slot="dropdown-menu-arrow"] {
   fill: var(--background-stronger);
 }
 

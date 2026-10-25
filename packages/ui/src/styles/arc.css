@@ -808,36 +808,11 @@ html[data-theme="arc"] [data-component="dialog-overlay"] {
 /* ───────────────────────────────────────────────────────────── */
 
 @media (prefers-reduced-motion: no-preference) {
-  html[data-theme="arc"] [data-component="dropdown-menu-content"] [data-slot="dropdown-menu-item"],
-  html[data-theme="arc"] [data-component="dropdown-menu-content"] [data-slot="dropdown-menu-checkbox-item"],
-  html[data-theme="arc"] [data-component="dropdown-menu-content"] [data-slot="dropdown-menu-radio-item"],
-  html[data-theme="arc"] [data-component="dropdown-menu-content"] [data-slot="dropdown-menu-sub-trigger"],
-  html[data-theme="arc"] [data-component="context-menu-content"] [data-slot="context-menu-item"],
-  html[data-theme="arc"] [data-component="context-menu-content"] [data-slot="context-menu-checkbox-item"],
-  html[data-theme="arc"] [data-component="context-menu-content"] [data-slot="context-menu-radio-item"],
   html[data-theme="arc"] [data-component="select-content"] [data-slot="select-select-item"] {
     transition:
       background-color 120ms ease-out,
       color 120ms ease-out;
   }
-}
-
-html[data-theme="arc"] [data-component="dropdown-menu-content"] [data-slot="dropdown-menu-item"][data-highlighted],
-html[data-theme="arc"]
-  [data-component="dropdown-menu-content"]
-  [data-slot="dropdown-menu-checkbox-item"][data-highlighted],
-html[data-theme="arc"]
-  [data-component="dropdown-menu-content"]
-  [data-slot="dropdown-menu-radio-item"][data-highlighted],
-html[data-theme="arc"]
-  [data-component="dropdown-menu-content"]
-  [data-slot="dropdown-menu-sub-trigger"][data-highlighted],
-html[data-theme="arc"] [data-component="context-menu-content"] [data-slot="context-menu-item"][data-highlighted],
-html[data-theme="arc"]
-  [data-component="context-menu-content"]
-  [data-slot="context-menu-checkbox-item"][data-highlighted],
-html[data-theme="arc"] [data-component="context-menu-content"] [data-slot="context-menu-radio-item"][data-highlighted] {
-  background: var(--surface-raised-base-hover);
 }
 
 html[data-theme="arc"] [data-component="select-content"] [data-slot="select-select-item"]:hover,

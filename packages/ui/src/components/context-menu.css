@@ -1,6 +1,11 @@
 [data-component="context-menu-content"],
 [data-component="context-menu-sub-content"] {
-  --context-menu-item-hover-bg: var(--surface-base-hover);
+  /* Item feedback must be an ink overlay relative to the real panel color:
+     themed --surface-base-hover is derived from the canvas and can be
+     near-identical to the raised panel desktop menus render on. */
+  --context-menu-item-hover-bg: color-mix(in srgb, var(--text-strong) 10%, transparent);
+  --context-menu-item-active-bg: color-mix(in srgb, var(--text-strong) 16%, transparent);
+  --context-menu-item-inset: inset 0 0 0 1px color-mix(in srgb, var(--text-strong) 14%, transparent);
   --context-menu-frosted-bg: light-dark(
     color-mix(in srgb, var(--background-stronger) 82%, transparent),
     rgb(12 12 14 / 0.34)
@@ -68,22 +73,23 @@
     transition-timing-function: var(--transition-easing);
     user-select: none;
 
-    &:hover,
-    &[data-highlighted] {
+    &:is(:hover, [data-highlighted], [data-expanded], :active):not([data-disabled]) {
       background-color: var(--context-menu-item-hover-bg);
+      box-shadow: var(--context-menu-item-inset);
+
+      [data-slot="context-menu-item-description"] {
+        color: var(--text-strong);
+      }
+    }
+
+    &:active:not([data-disabled]) {
+      background-color: var(--context-menu-item-active-bg);
+      transition-duration: 0s;
     }
 
     &[data-disabled] {
       color: var(--text-weak);
       pointer-events: none;
-    }
-  }
-
-  [data-slot="context-menu-sub-trigger"] {
-    &[data-expanded] {
-      background: var(--context-menu-item-hover-bg);
-      outline: none;
-      border: none;
     }
   }
 
@@ -137,8 +143,12 @@ html[data-platform="desktop"][data-os="windows"] [data-component="context-menu-s
   -webkit-backdrop-filter: none;
 }
 
-html[data-platform="desktop"][data-os="windows"] [data-component="context-menu-content"] [data-slot="context-menu-arrow"],
-html[data-platform="desktop"][data-os="windows"] [data-component="context-menu-sub-content"] [data-slot="context-menu-arrow"] {
+html[data-platform="desktop"][data-os="windows"]
+  [data-component="context-menu-content"]
+  [data-slot="context-menu-arrow"],
+html[data-platform="desktop"][data-os="windows"]
+  [data-component="context-menu-sub-content"]
+  [data-slot="context-menu-arrow"] {
   fill: var(--surface-raised-stronger-non-alpha);
 }
 
