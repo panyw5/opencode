@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto"
 import { Context, Effect, Layer } from "effect"
+import { Log } from "@opencode-ai/core/util/log"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import type { Loaded } from "./manifest"
 import { ExtensionRegistry } from "./registry"
@@ -82,6 +83,22 @@ export const layer = Layer.effect(
         (await import("./install-service")).observeInstallations(),
       )
       yield* Effect.addFinalizer(() => Effect.promise(stopObserving))
+      // Resume cleanups that were deferred by live processes (process-pinned
+      // generations, pending purges). Without this a reinstall of the same
+      // extension conflicts with its retained record until a manual wipe.
+      yield* Effect.promise(async () => {
+        const mod = await import("./install-service")
+        try {
+          const report = await mod.recoverInstallations()
+          if (report.cleanupPending) {
+            Log.create({ service: "extension" }).info("extension cleanup still pending after recovery")
+          }
+        } catch (error) {
+          Log.create({ service: "extension" }).error("extension cleanup recovery failed", {
+            error: String(error),
+          })
+        }
+      })
     }
     const refreshWatcher = () => watcher?.refresh().catch(() => undefined)
     const list = () =>
