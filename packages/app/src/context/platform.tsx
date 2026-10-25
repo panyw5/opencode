@@ -465,7 +465,7 @@ export type Platform = {
 
   /** Managed local-archive install operation (desktop only) */
   extensionArchiveOp?(
-    op: "prepare" | "commit" | "status" | "cancel",
+    op: "prepare" | "commit" | "status" | "cancel" | "cleanup-retained",
     payload: Record<string, unknown>,
   ): Promise<{ ok: true; value: unknown } | { ok: false; error: { code?: string; message: string } }>
 

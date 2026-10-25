@@ -115,7 +115,7 @@ export async function runCatalogInstall(
       bytes: Uint8Array,
     ) => Promise<{ ok: true; value: { path: string } } | { ok: false; error: { message: string } }>
     op: (
-      op: "prepare" | "commit" | "status" | "cancel",
+      op: "prepare" | "commit" | "status" | "cancel" | "cleanup-retained",
       payload: Record<string, unknown>,
     ) => Promise<{ ok: true; value: unknown } | { ok: false; error: { code?: string; message: string } }>
     cleanup: (path: string) => Promise<unknown>
@@ -130,6 +130,12 @@ export async function runCatalogInstall(
   }
   onStage("artifact")
   const { bytes } = await fetchArtifactVerified(descriptor, doFetch)
+
+  // A deferred uninstall may have left a retained tombstone whose archive
+  // identity (a temporary staging path) would reject this reinstall at the
+  // source-identity check. When the tombstone's bytes match what we just
+  // verified, consume it first; anything else is left to the normal checks.
+  await io.op("cleanup-retained", { extensionID: descriptor.id, sha256: descriptor.artifactSha256 })
 
   onStage("ready")
   const staged = await io.stage(bytes)

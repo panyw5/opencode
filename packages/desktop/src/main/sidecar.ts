@@ -27,7 +27,7 @@ type StopCommand = { type: "stop" }
 type ExtensionArchiveCommand = {
   type: "extension-archive"
   id: string
-  op: "prepare" | "commit" | "status" | "cancel"
+  op: "prepare" | "commit" | "status" | "cancel" | "cleanup-retained"
   payload: Record<string, unknown>
 }
 
@@ -112,12 +112,44 @@ async function extensionArchive(command: Extract<SidecarCommand, { type: "extens
       operationId?: string
       token?: string
       input?: Record<string, unknown>
+      extensionID?: string
+      sha256?: string
     }
     if (command.op === "prepare") {
       if (!payload.request) return reply(false, undefined, { code: "invalid", message: "missing request" })
       const prepared = await installer.prepare(payload.request)
       reply(true, prepared)
       return
+    }
+    if (command.op === "cleanup-retained") {
+      // Consumes a retained tombstone left behind by a deferred uninstall when
+      // the newly requested archive is byte-identical (same sha256). Anything
+      // else is a no-op so source-identity protections stay in charge.
+      if (typeof payload.extensionID !== "string" || typeof payload.sha256 !== "string") {
+        return reply(false, undefined, { code: "invalid", message: "extensionID and sha256 are required" })
+      }
+      try {
+        const { ExtensionRegistry, purgeRetainedData } = await import("virtual:opencode-server")
+        const registryFile = ExtensionRegistry.registryFile()
+        const state = await ExtensionRegistry.snapshot(payload.extensionID as never, registryFile)
+        const retained = state.retained as
+          | { source?: { type?: string; sha256?: string }; revision?: number }
+          | undefined
+        if (
+          retained &&
+          retained.source?.type === "archive" &&
+          retained.source.sha256?.toLowerCase() === payload.sha256.toLowerCase()
+        ) {
+          const result = await purgeRetainedData(registryFile, payload.extensionID as never, retained.revision)
+          reply(true, { cleanupPending: result.cleanupPending })
+          return
+        }
+        reply(true, { cleanupPending: false, matched: false })
+        return
+      } catch (error) {
+        reply(false, undefined, { message: error instanceof Error ? error.message : String(error) })
+        return
+      }
     }
     const { operationId, token } = payload
     if (typeof operationId !== "string" || typeof token !== "string") {

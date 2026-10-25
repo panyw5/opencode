@@ -436,7 +436,7 @@ export type ElectronAPI = {
     { ok: true; value: { path: string; size: number; sha256: string } } | { ok: false; error: { message: string } }
   >
   extensionArchiveOp: (
-    op: "prepare" | "commit" | "status" | "cancel",
+    op: "prepare" | "commit" | "status" | "cancel" | "cleanup-retained",
     payload: Record<string, unknown>,
   ) => Promise<{ ok: true; value: unknown } | { ok: false; error: { code?: string; message: string } }>
   extensionArchiveStage: (

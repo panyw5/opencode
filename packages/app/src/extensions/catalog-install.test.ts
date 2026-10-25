@@ -83,12 +83,13 @@ describe("runCatalogInstall", () => {
       () => {},
       fakeFetch(JSON.stringify(descriptor)),
     )
-    expect(calls.map((call) => call.op)).toEqual(["prepare", "commit"])
-    expect(calls[0]!.payload.request).toMatchObject({
+    expect(calls.map((call) => call.op)).toEqual(["cleanup-retained", "prepare", "commit"])
+    expect(calls[0]!.payload).toMatchObject({ extensionID: "local.wls-repl", sha256: artifactSha256 })
+    expect(calls[1]!.payload.request).toMatchObject({
       kind: "install",
       source: { type: "local", path: "/tmp/staged.tgz", sha256: artifactSha256 },
     })
-    expect(calls[1]!.payload).toMatchObject({ operationId: "op-1", token: "tok", input: { enable: true } })
+    expect(calls[2]!.payload).toMatchObject({ operationId: "op-1", token: "tok", input: { enable: true } })
     expect(cleanups).toEqual(["/tmp/staged.tgz"])
     void result
   })

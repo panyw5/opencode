@@ -66,7 +66,7 @@ export function installationCleanup(registry = ExtensionRegistry.registryFile())
   })
 }
 
-async function purgeRetainedData(registry: string, id: ExtensionID, expectedRevision?: number) {
+export async function purgeRetainedData(registry: string, id: ExtensionID, expectedRevision?: number) {
   const exclusive = await ExtensionLeases.withExclusiveData(registry, id, async () => {
     const state = await ExtensionRegistry.snapshot(id, registry)
     if (state.row || !state.retained) return { cleanupPending: true }

@@ -26,7 +26,7 @@ type SidecarMessage =
       error?: { code?: string; message: string }
     }
 
-export type ExtensionArchiveOp = "prepare" | "commit" | "status" | "cancel"
+export type ExtensionArchiveOp = "prepare" | "commit" | "status" | "cancel" | "cleanup-retained"
 
 export type SidecarListener = { stop: () => Promise<void> }
 

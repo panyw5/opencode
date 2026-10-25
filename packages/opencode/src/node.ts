@@ -33,3 +33,5 @@ export { JsonMigration }
 // local paths.
 export { installation } from "@/extension/install-service"
 export type { InstallationService } from "@/extension/install-service"
+export { ExtensionRegistry } from "@/extension/registry"
+export { purgeRetainedData } from "@/extension/install-service"

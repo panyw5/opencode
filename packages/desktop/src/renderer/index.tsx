@@ -440,7 +440,7 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
         : undefined,
     extensionArchiveOp:
       typeof desktopApi.extensionArchiveOp === "function"
-        ? (op: "prepare" | "commit" | "status" | "cancel", payload: Record<string, unknown>) =>
+        ? (op: "prepare" | "commit" | "status" | "cancel" | "cleanup-retained", payload: Record<string, unknown>) =>
             desktopApi.extensionArchiveOp(op, payload)
         : undefined,
     extensionArchiveStage:

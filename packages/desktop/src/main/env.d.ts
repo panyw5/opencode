@@ -29,4 +29,6 @@ declare module "virtual:opencode-server" {
   }
   export const bootstrap: typeof import("../../../opencode/dist/types/src/node").bootstrap
   export const installation: typeof import("../../../opencode/dist/types/src/node").installation
+  export const ExtensionRegistry: typeof import("../../../opencode/dist/types/src/node").ExtensionRegistry
+  export const purgeRetainedData: typeof import("../../../opencode/dist/types/src/node").purgeRetainedData
 }
