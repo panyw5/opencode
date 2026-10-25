@@ -243,7 +243,7 @@ export default function ProjectTasks() {
           </Button>
         </div>
       </Show>
-      <div class="grid min-h-0 flex-1 grid-rows-[minmax(180px,38%)_minmax(0,1fr)] lg:grid-cols-[340px_minmax(0,1fr)] lg:grid-rows-1">
+      <div class="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(180px,38%)_minmax(0,1fr)] lg:grid-cols-[340px_minmax(0,1fr)] lg:grid-rows-1">
         <aside class="flex min-h-0 flex-col border-b border-border-weak-base lg:border-r lg:border-b-0">
           <div class="flex shrink-0 flex-col gap-2 border-b border-border-weak-base p-3">
             <Show when={!routeDirectory()}>

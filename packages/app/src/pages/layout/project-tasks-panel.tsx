@@ -629,18 +629,42 @@ export function ProjectTaskDetailDialog(props: {
       <ProjectTaskDetailFrame
         embedded={props.embedded}
         title={
-          <div class="flex min-w-0 flex-col">
-            <div class="inline-flex w-fit max-w-full min-w-0 items-center gap-3">
-              <Show when={props.embedded} fallback={<div class="min-w-0 truncate">{title()}</div>}>
+          <div class="flex w-full min-w-0 flex-col">
+            <div
+              data-slot="project-task-title-row"
+              class="flex w-full min-w-0 flex-wrap items-center gap-3 sm:flex-nowrap"
+              ref={(element) => {
+                const frame = requestAnimationFrame(() => {
+                  console.debug(
+                    `[project-task] title-layout task=${props.task.id} embedded=${!!props.embedded} rowWidth=${element.clientWidth} titleWidth=${element.querySelector<HTMLElement>('[data-slot="project-task-title"]')?.clientWidth} projectWidth=${element.querySelector<HTMLElement>('[data-slot="project-task-project-name"]')?.clientWidth}`,
+                  )
+                })
+                onCleanup(() => cancelAnimationFrame(frame))
+              }}
+            >
+              <Show
+                when={props.embedded}
+                fallback={
+                  <div data-slot="project-task-title" class="min-w-0 w-full truncate sm:w-0 sm:flex-1" title={title()}>
+                    {title()}
+                  </div>
+                }
+              >
                 <input
-                  class="min-w-0 w-full rounded border border-border-weak-base bg-transparent px-2 py-1 text-16-medium outline-none focus:border-border-focus"
+                  data-slot="project-task-title"
+                  class="min-w-0 w-full rounded border border-border-weak-base bg-transparent px-2 py-1 text-16-medium outline-none focus:border-border-focus sm:w-0 sm:flex-1"
                   aria-label={language.t("projectTask.field.title")}
+                  title={state.titleDraft}
                   value={state.titleDraft}
                   disabled={state.pending || state.loading}
                   onInput={(event) => setState("titleDraft", event.currentTarget.value)}
                 />
               </Show>
-              <span class="max-w-[40%] shrink-0 truncate rounded-full bg-surface-base px-2.5 py-0.5 text-16-medium leading-6 text-text-weak">
+              <span
+                data-slot="project-task-project-name"
+                class="max-w-full shrink-0 truncate rounded-full bg-surface-base px-2.5 py-0.5 text-16-medium leading-6 text-text-weak sm:max-w-[45%]"
+                title={props.projectName || getFilename(props.directory) || props.directory}
+              >
                 {props.projectName || getFilename(props.directory) || props.directory}
               </span>
             </div>
