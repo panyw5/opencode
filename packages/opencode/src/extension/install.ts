@@ -777,8 +777,8 @@ export function createInstaller(options: InstallerOptions = {}) {
             })
             await finishOperation(op)
             if (error instanceof InstallError) throw error
-            if (error instanceof Registry.ConflictError || error instanceof Registry.SettingsError)
-              throw new InstallError("conflict", "Extension changed or requires explicit settings migration")
+            if (error instanceof Registry.ConflictError) throw new InstallError("conflict", error.message)
+            if (error instanceof Registry.SettingsError) throw new InstallError("conflict", error.message)
             throw new InstallError("failed", "Extension commit failed; no registry change was confirmed")
           }
         }

@@ -683,11 +683,25 @@ export async function commitInstallation(
     // The runtime's data/cache directories are keyed by id, not source. Until
     // data namespaces can be migrated explicitly, a new source must not gain
     // access to the previous installation's retained files.
+    // For archive sources the acquisition location is a temporary path, so
+    // byte identity (sha256) decides inheritance here: reinstalling the same
+    // archive after a deferred uninstall inherits its data, a different
+    // archive does not. Other source types keep the exact-identity rule.
+    const retainedIdentityMatches = (() => {
+      if (!retained) return true
+      if (sourceIdentity(retained.source) === sourceIdentity(input.row.source)) return true
+      // Archive acquisitions normally differ by their temporary location;
+      // byte identity (sha256) is the durable sameness for them.
+      if (retained.source.type === "archive" && input.row.source.type === "archive") {
+        return retained.source.sha256 === input.row.source.sha256
+      }
+      return false
+    })()
     if (
       !current &&
       retained &&
       retained.purgedAt === undefined &&
-      (retained.name !== input.row.name || sourceIdentity(retained.source) !== sourceIdentity(input.row.source))
+      (retained.name !== input.row.name || !retainedIdentityMatches)
     ) {
       throw new ConflictError("Extension data belongs to a different installation")
     }

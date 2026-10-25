@@ -131,11 +131,21 @@ export async function runCatalogInstall(
   onStage("artifact")
   const { bytes } = await fetchArtifactVerified(descriptor, doFetch)
 
-  // A deferred uninstall may have left a retained tombstone whose archive
-  // identity (a temporary staging path) would reject this reinstall at the
-  // source-identity check. When the tombstone's bytes match what we just
-  // verified, consume it first; anything else is left to the normal checks.
-  await io.op("cleanup-retained", { extensionID: descriptor.id, sha256: descriptor.artifactSha256 })
+  // A deferred uninstall may leave a retained tombstone. When its purge is
+  // still mid-flight the sidecar reports cleanupPending and we wait briefly;
+  // otherwise the install's purge-aware CAS settles the tombstone itself.
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const response = await io.op("cleanup-retained", {
+      extensionID: descriptor.id,
+      sha256: descriptor.artifactSha256,
+    })
+    const value = response.ok ? (response.value as { cleanupPending?: boolean }) : undefined
+    if (!value?.cleanupPending) break
+    if (attempt === 9) {
+      throw new Error("Previous uninstall cleanup did not finish in time; restart the app and retry")
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+  }
 
   onStage("ready")
   const staged = await io.stage(bytes)

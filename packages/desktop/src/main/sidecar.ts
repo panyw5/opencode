@@ -122,29 +122,19 @@ async function extensionArchive(command: Extract<SidecarCommand, { type: "extens
       return
     }
     if (command.op === "cleanup-retained") {
-      // Consumes a retained tombstone left behind by a deferred uninstall when
-      // the newly requested archive is byte-identical (same sha256). Anything
-      // else is a no-op so source-identity protections stay in charge.
-      if (typeof payload.extensionID !== "string" || typeof payload.sha256 !== "string") {
-        return reply(false, undefined, { code: "invalid", message: "extensionID and sha256 are required" })
+      // Reports whether a retained tombstone's data purge is still mid-flight.
+      // The install's purge-aware CAS settles the tombstone itself; data purge
+      // stays an uninstall-time concern — never here, where a live process may
+      // legitimately hold the data lease.
+      if (typeof payload.extensionID !== "string") {
+        return reply(false, undefined, { code: "invalid", message: "extensionID is required" })
       }
       try {
-        const { ExtensionRegistry, purgeRetainedData } = await import("virtual:opencode-server")
+        const { ExtensionRegistry } = await import("virtual:opencode-server")
         const registryFile = ExtensionRegistry.registryFile()
         const state = await ExtensionRegistry.snapshot(payload.extensionID as never, registryFile)
-        const retained = state.retained as
-          | { source?: { type?: string; sha256?: string }; revision?: number }
-          | undefined
-        if (
-          retained &&
-          retained.source?.type === "archive" &&
-          retained.source.sha256?.toLowerCase() === payload.sha256.toLowerCase()
-        ) {
-          const result = await purgeRetainedData(registryFile, payload.extensionID as never, retained.revision)
-          reply(true, { cleanupPending: result.cleanupPending })
-          return
-        }
-        reply(true, { cleanupPending: false, matched: false })
+        const retained = state.retained as { purging?: boolean } | undefined
+        reply(true, { cleanupPending: retained?.purging === true })
         return
       } catch (error) {
         reply(false, undefined, { message: error instanceof Error ? error.message : String(error) })
@@ -156,7 +146,18 @@ async function extensionArchive(command: Extract<SidecarCommand, { type: "extens
       return reply(false, undefined, { code: "invalid", message: "missing operation credentials" })
     }
     if (command.op === "commit") {
-      reply(true, await installer.commit(operationId, token, payload.input ?? {}))
+      try {
+        reply(true, await installer.commit(operationId, token, payload.input ?? {}))
+      } catch (error) {
+        // InstallError messages are curated at the source; forward the real
+        // conflict reason instead of the generic collapse message.
+        const err = error as { name?: string; code?: string; message?: string }
+        if (err?.name === "ExtensionInstallError" || err?.code) {
+          reply(false, undefined, { code: err.code, message: err.message ?? String(error) })
+          return
+        }
+        throw error
+      }
       return
     }
     if (command.op === "status") {
@@ -292,7 +293,11 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
     const archive = command as Partial<ExtensionArchiveCommand>
     if (
       typeof archive.id !== "string" ||
-      (archive.op !== "prepare" && archive.op !== "commit" && archive.op !== "status" && archive.op !== "cancel")
+      (archive.op !== "prepare" &&
+        archive.op !== "commit" &&
+        archive.op !== "status" &&
+        archive.op !== "cancel" &&
+        archive.op !== "cleanup-retained")
     )
       return undefined
     if (!archive.payload || typeof archive.payload !== "object") return undefined
