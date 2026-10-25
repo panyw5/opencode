@@ -965,6 +965,8 @@ export const dict = {
   "home.favorite.add": "添加到收藏",
   "home.favorite.remove": "取消收藏",
   "home.upcomingTasks": "即将运行的定时任务",
+  "home.recentProjectTasks": "最近项目任务",
+  "home.recentProjectTasks.empty": "还没有最近项目任务",
   "home.upcomingTasks.manage": "管理",
   "home.upcomingTasks.empty": "近期没有即将运行的定时任务",
   "home.upcomingTasks.status.scheduled": "已安排",

@@ -1023,6 +1023,8 @@ export const dict = {
   "home.favorite.add": "Add to favorites",
   "home.favorite.remove": "Remove from favorites",
   "home.upcomingTasks": "Upcoming scheduled tasks",
+  "home.recentProjectTasks": "Recent project tasks",
+  "home.recentProjectTasks.empty": "No recent project tasks yet",
   "home.upcomingTasks.manage": "Manage",
   "home.upcomingTasks.empty": "No scheduled tasks are coming up",
   "home.upcomingTasks.status.scheduled": "Scheduled",

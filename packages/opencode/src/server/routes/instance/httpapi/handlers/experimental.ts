@@ -6,6 +6,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { LocationLifecycle } from "@/project/location-lifecycle"
 import { MCP } from "@/mcp"
 import { Project } from "@/project/project"
+import * as ProjectTaskRepository from "@/project-task/repository"
 import { Session } from "@/session/session"
 import type { SessionID } from "@/session/schema"
 import { SessionContentSearch } from "@/session/content-search"
@@ -291,6 +292,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     })
 
     return handlers
+      .handle("recentProjectTasks", ({ query }) => ProjectTaskRepository.recent(query.limit))
       .handle("console", getConsole)
       .handle("consoleOrgs", listConsoleOrgs)
       .handle("consoleSwitch", switchConsole)

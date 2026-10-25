@@ -1,4 +1,4 @@
-import type { GlobalSession, ScheduledTask, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { GlobalSession, RecentProjectTask, ScheduledTask, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { getFilename } from "@opencode-ai/core/util/path"
 import { Button } from "@opencode-ai/ui/button"
@@ -40,11 +40,13 @@ import { useServer } from "@/context/server"
 import { useSessionTabs } from "@/context/session-tabs"
 import { HomePathInput } from "@/pages/home-path-input"
 import HomeResourceUsage from "@/pages/home-resource-usage"
+import { ProjectTaskDetailDialog } from "@/pages/layout/project-tasks-panel"
 import "./home.css"
 
 const HOME_SESSION_LIMIT = 6
 const HOME_FAVORITE_LIMIT = 6
 const HOME_TASK_LIMIT = 10
+const HOME_PROJECT_TASK_LIMIT = 6
 
 function SectionHeader(props: { id: string; title: string; action?: string; onAction?: () => void }) {
   return (
@@ -152,6 +154,10 @@ export default function Home() {
     tasksLoaded: false,
     tasksLoading: true,
     tasksError: false,
+    projectTasks: [] as RecentProjectTask[],
+    projectTasksLoaded: false,
+    projectTasksLoading: true,
+    projectTasksError: false,
   })
   const homeSessions = createMemo(() => dashboard.sessions.slice(0, HOME_SESSION_LIMIT))
   const homeFavorites = createMemo(() => dashboard.favorites.slice(0, HOME_FAVORITE_LIMIT))
@@ -267,6 +273,41 @@ export default function Home() {
   }
 
   let dashboardDomain: string | undefined
+
+  let projectTasksGeneration = 0
+  async function refreshProjectTasks(reset = false) {
+    const generation = ++projectTasksGeneration
+    if (reset) {
+      setDashboard("projectTasks", [])
+      setDashboard("projectTasksLoaded", false)
+    }
+    setDashboard("projectTasksLoading", !dashboard.projectTasksLoaded)
+    setDashboard("projectTasksError", false)
+    console.debug(`[home-project-tasks] load-start generation=${generation} reset=${reset}`)
+    try {
+      const result = await sdk.client.experimental.recentProjectTasks({ limit: String(HOME_PROJECT_TASK_LIMIT) })
+      if (generation !== projectTasksGeneration) return
+      setDashboard("projectTasks", reconcile(result.data ?? [], { key: "id" }))
+      setDashboard("projectTasksLoaded", true)
+      console.debug(`[home-project-tasks] load-end generation=${generation} count=${result.data?.length ?? 0}`)
+    } catch (error) {
+      if (generation !== projectTasksGeneration) return
+      setDashboard("projectTasksError", true)
+      console.error(`[home-project-tasks] load-failed generation=${generation}`, error)
+    } finally {
+      if (generation === projectTasksGeneration) setDashboard("projectTasksLoading", false)
+    }
+  }
+
+  let projectTasksTimer: ReturnType<typeof setTimeout> | undefined
+  function queueProjectTasksRefresh() {
+    if (projectTasksTimer) return
+    projectTasksTimer = setTimeout(() => {
+      projectTasksTimer = undefined
+      void refreshProjectTasks()
+    }, 250)
+  }
+
   createEffect(() => {
     if (!sync.ready) return
     const domain = server.domain
@@ -278,6 +319,7 @@ export default function Home() {
       void refreshSessions(reset)
       void refreshFavorites(reset)
       void refreshTasks(reset)
+      void refreshProjectTasks(reset)
     })
   })
 
@@ -399,6 +441,13 @@ export default function Home() {
   })
 
   const stop = sdk.listenAll((event) => {
+    if (
+      event.details.type.startsWith("project-task.") ||
+      ["session.created", "session.updated", "session.deleted", "todo.updated"].includes(event.details.type)
+    ) {
+      console.debug(`[home-project-tasks] event=${event.details.type} action=queue-refresh`)
+      queueProjectTasksRefresh()
+    }
     if (event.details.type.startsWith("scheduled-task.")) {
       console.debug(`[home-refresh] event=${event.details.type} action=refresh-tasks`)
       void refreshTasks()
@@ -426,6 +475,8 @@ export default function Home() {
     sessionsGeneration++
     favoritesGeneration++
     tasksGeneration++
+    projectTasksGeneration++
+    if (projectTasksTimer) clearTimeout(projectTasksTimer)
     if (statusTimer) clearTimeout(statusTimer)
     stop()
   })
@@ -480,6 +531,25 @@ export default function Home() {
       modal: false,
       preventScroll: false,
     })
+  }
+
+  function openProjectTask(task: RecentProjectTask) {
+    console.debug(`[home-project-tasks] open taskID=${task.id} directory=${task.directory}`)
+    dialog.show(() => (
+      <ProjectTaskDetailDialog
+        task={task}
+        directory={task.directory}
+        projectName={task.projectName || getFilename(task.directory)}
+        client={sdk.createClient({ directory: task.directory, throwOnError: true })}
+        onChanged={() => refreshProjectTasks()}
+      />
+    ))
+  }
+
+  const projectTaskStatus = (task: RecentProjectTask) => {
+    if (task.status === "in_progress") return language.t("projectTask.status.inProgress")
+    if (task.status === "done") return language.t("projectTask.status.done")
+    return language.t("projectTask.status.open")
   }
 
   function showFavoriteSessions() {
@@ -784,6 +854,89 @@ export default function Home() {
                               class="shrink-0 text-icon-weak group-hover:text-icon-base"
                             />
                           </div>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </Show>
+              </Show>
+            </Show>
+          </section>
+
+          <section class="home-section min-w-0" aria-labelledby="home-recent-project-tasks">
+            <SectionHeader id="home-recent-project-tasks" title={language.t("home.recentProjectTasks")} />
+            <Show
+              when={!dashboard.projectTasksLoading}
+              fallback={
+                <div class="flex min-h-28 items-center justify-center">
+                  <Spinner />
+                </div>
+              }
+            >
+              <Show
+                when={!dashboard.projectTasksError}
+                fallback={
+                  <button
+                    type="button"
+                    class="mt-3 w-full rounded-lg px-3 py-7 text-center text-12-regular text-text-danger outline-none hover:bg-surface-base-hover focus-visible:bg-surface-base-hover"
+                    onClick={() => void refreshProjectTasks()}
+                  >
+                    {language.t("home.section.loadError")}
+                  </button>
+                }
+              >
+                <Show
+                  when={dashboard.projectTasks.length > 0}
+                  fallback={
+                    <div class="px-3 py-8 text-center text-12-regular text-text-weak">
+                      {language.t("home.recentProjectTasks.empty")}
+                    </div>
+                  }
+                >
+                  <ul class="home-work-list flex flex-col gap-2" data-component="home-recent-project-tasks">
+                    <For each={dashboard.projectTasks}>
+                      {(task) => (
+                        <li>
+                          <button
+                            type="button"
+                            data-task-id={task.id}
+                            class="home-work-row group flex w-full items-center gap-3 px-3.5 py-3 text-left outline-none"
+                            onClick={() => openProjectTask(task)}
+                          >
+                            <span class="home-work-icon flex size-8 shrink-0 items-center justify-center rounded-lg">
+                              <Icon name="checklist" size="small" />
+                            </span>
+                            <span class="min-w-0 flex-1">
+                              <span class="block truncate text-12-medium text-text-strong">{task.title}</span>
+                              <span
+                                class="mt-0.5 block truncate text-11-regular text-text-weak"
+                                title={displayPath(task.directory)}
+                              >
+                                {task.projectName || getFilename(task.directory) || displayPath(task.directory)}
+                              </span>
+                              <span class="mt-0.5 block truncate text-11-regular text-text-weaker">
+                                {language.t("projectTask.sessions.count", { count: task.sessionCount })}
+                                <Show when={task.progress.total > 0}>
+                                  {" "}
+                                  · {task.progress.completed}/{task.progress.total}
+                                </Show>
+                              </span>
+                            </span>
+                            <span class="flex shrink-0 flex-col items-end gap-0.5 text-11-regular text-text-weak">
+                              <span>{projectTaskStatus(task)}</span>
+                              <span
+                                class="text-text-weaker"
+                                title={new Date(task.recentAt).toLocaleString(language.intl())}
+                              >
+                                {relativeTime(task.recentAt)}
+                              </span>
+                            </span>
+                            <Icon
+                              name="arrow-right"
+                              size="small"
+                              class="shrink-0 text-icon-weak group-hover:text-icon-base"
+                            />
+                          </button>
                         </li>
                       )}
                     </For>

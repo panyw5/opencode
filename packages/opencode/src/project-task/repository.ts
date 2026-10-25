@@ -1,5 +1,7 @@
 import { Database, and, asc, desc, eq, inArray, isNotNull, isNull } from "@/storage/db"
 import { ProjectID } from "@/project/schema"
+import { ProjectTable } from "@/project/project.sql"
+import { sql } from "drizzle-orm"
 import { SessionTable, TodoTable } from "@/session/session.sql"
 import { SessionID } from "@/session/schema"
 import type { Todo } from "@/session/todo"
@@ -11,6 +13,7 @@ import {
   Detail,
   Info,
   Progress,
+  RecentInfo,
   ProjectTaskID,
   SessionTodoBundle,
   Status,
@@ -229,6 +232,50 @@ export function list(input: {
   return Effect.gen(function* () {
     const rows = yield* listRows(input)
     return rows.map((meta) => toInfo(meta, meta.legacyDescription))
+  })
+}
+
+/** Dashboard summaries do not read or migrate description files across projects. */
+export function recent(limit = 6): Effect.Effect<RecentInfo[]> {
+  return Effect.sync(() => {
+    ensureDescriptionPathColumn()
+    const activity = Database.use((db) =>
+      db
+        .select({
+          taskID: SessionTable.mounted_task_id,
+          lastSessionAt: sql<number>`max(${SessionTable.time_updated})`.as("last_session_at"),
+        })
+        .from(SessionTable)
+        .where(isNotNull(SessionTable.mounted_task_id))
+        .groupBy(SessionTable.mounted_task_id)
+        .as("task_activity"),
+    )
+    const recentAt = sql<number>`max(${ProjectTaskTable.time_created}, coalesce(${activity.lastSessionAt}, 0))`
+    const rows = Database.use((db) =>
+      db
+        .select({ task: ProjectTaskTable, worktree: ProjectTable.worktree, projectName: ProjectTable.name, recentAt })
+        .from(ProjectTaskTable)
+        .innerJoin(ProjectTable, eq(ProjectTaskTable.project_id, ProjectTable.id))
+        .leftJoin(activity, eq(activity.taskID, ProjectTaskTable.id))
+        .where(and(isNull(ProjectTaskTable.time_archived), eq(ProjectTable.visibility, "user")))
+        .orderBy(desc(recentAt), desc(ProjectTaskTable.time_created), asc(ProjectTaskTable.id))
+        .limit(Math.max(1, Math.min(100, Math.floor(limit))))
+        .all(),
+    )
+    const aggregates = aggregatesForTasks(rows.map(({ task }) => task.id))
+    const tasks = rows.map(({ task, worktree, projectName, recentAt }) => {
+      const agg = aggregates.get(task.id) ?? emptyAggregates()
+      return {
+        ...toInfo(rowMeta(task, agg.sessionCount, agg.progress, agg.directories, agg.lastSessionAt), ""),
+        directory: worktree === "/" ? (agg.directories[0] ?? worktree) : worktree,
+        ...(projectName ? { projectName } : {}),
+        recentAt,
+      }
+    })
+    console.debug(
+      `[project-task] recent limit=${limit} count=${tasks.length} ids=${tasks.map((task) => task.id).join(",")}`,
+    )
+    return tasks
   })
 }
 

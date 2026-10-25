@@ -42,6 +42,8 @@ import type {
   ExperimentalConsoleListOrgsErrors,
   ExperimentalConsoleListOrgsResponses,
   ExperimentalConsoleSwitchOrgResponses,
+  ExperimentalRecentProjectTasksErrors,
+  ExperimentalRecentProjectTasksResponses,
   ExperimentalResourceListErrors,
   ExperimentalResourceListResponses,
   ExperimentalSessionBackgroundErrors,
@@ -1706,6 +1708,29 @@ export class Workspace extends HeyApiClient {
 }
 
 export class Experimental extends HeyApiClient {
+  /**
+   * List recent project tasks
+   *
+   * List unarchived tasks across projects, ordered by creation or latest linked session activity. Description bodies are empty in these summaries.
+   */
+  public recentProjectTasks<ThrowOnError extends boolean = false>(
+    parameters?: {
+      limit?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "limit" }] }])
+    return (options?.client ?? this.client).get<
+      ExperimentalRecentProjectTasksResponses,
+      ExperimentalRecentProjectTasksErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/project-task/recent",
+      ...options,
+      ...params,
+    })
+  }
+
   private _console?: Console
   get console(): Console {
     return (this._console ??= new Console({ client: this.client }))
