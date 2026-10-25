@@ -112,7 +112,16 @@ export function ConfigExtensionCatalogDetail(props: ConfigExtensionCatalogDetail
         (stage, message) => setFlow({ stage, message }),
       )
     } catch (error) {
-      setFlow({ stage: "error", message: error instanceof Error ? error.message : String(error) })
+      const code = (error as { code?: string }).code
+      setFlow({
+        stage: "error",
+        message:
+          code === "conflict"
+            ? language.t("config.extensions.catalog.conflictCleanup")
+            : error instanceof Error
+              ? error.message
+              : String(error),
+      })
     }
   }
 
