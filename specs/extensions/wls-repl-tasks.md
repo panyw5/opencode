@@ -170,3 +170,9 @@ registry 未触碰（全程隔离 registry）。
 - 用户反馈：已安装扩展的行还是旧 ListButton 样式。将卡片组件泛化为 `ExtensionCardRow`（title/subtitle/note/warn props），已安装行（subtitle=`id · v版本`、note=状态、warn 红色 pill）与目录行（subtitle=author、note=未安装）共用。
 - 期间用户窗口再次出现 ConfigExtensionCatalogEntry 缺失导出的 SyntaxError——根因同前：其窗口连接的 dev server 被清理后模块图失效；新实例即恢复。以后给用户开检查实例前先杀旧 server。
 - 验证：app 118/0、typecheck 0 错误；CDP 实机：目录卡片点击 → 一键安装 → 目录卡片消失、已安装行以同款卡片显示"已启用"（截图 /tmp/wls-uniform-installed.png）。已提交。
+
+## 修正：重装 conflict 的真正根因（2026-10-25，用户二次反馈）
+
+- 用户重启后重装仍 conflict——排除"进程 pin"解释。深挖发现 **`recoverInstallations` 自 P3a 写好后从未接线**（无任何生产调用点，仅测试使用）：卸载时 kernel 存活导致 purge 延后（cleanupPending=true + retained 记录），重启后无人恢复清理，retained 永久阻塞同 id 重装。P3a 文档声称的"重启后恢复清理完成"实际从未生效——P3a 未标记完整交付状态下的集成遗漏。
+- 修复：extensions 启动 layer（watcher/observeInstallations 旁）调用 `recoverInstallations()`，失败/仍 pending 记日志不阻塞启动。install-service 测试 12/0、全量 587/0。dist/node 重新构建（sidecar 生效需此步，dev 重启不会自动重编）。
+- 用户操作：重启开发版（sidecar 携带修复）→ 启动恢复清理 retained → 目录重新安装。
