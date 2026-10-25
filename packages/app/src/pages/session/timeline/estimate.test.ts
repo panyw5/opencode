@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import type { Part, ToolPart } from "@opencode-ai/sdk/v2"
 import {
+  CODE_WINDOW_MARGIN,
+  CODE_WINDOW_RATIO,
   capRowEstimate,
   clampRowEstimate,
   COLLAPSED_TOOL_HEIGHT,
@@ -444,6 +446,36 @@ describe("estimateRowHeight text-driven rows", () => {
 
   test("Error respects the real card max-height", () => {
     expect(estimateRowHeight({ _tag: "Error", text: "x\n".repeat(500) }, WIDTH, base)).toBe(ERROR_CARD_MAX_HEIGHT)
+  })
+})
+
+describe("estimateRowHeight fenced code window", () => {
+  const textRowHeight = (text: string) => {
+    const part = textPart(text)
+    return estimateRowHeight(
+      { _tag: "AssistantPart", group: { type: "part" as const, ref: { messageID: "msg_1", partID: part.id } } },
+      WIDTH,
+      { ...base, parts: lookup(part), viewportHeight: 800 },
+    )
+  }
+
+  test("caps huge fenced code at the collapse window instead of the raw line count", () => {
+    const code = "```ts\n" + "line\n".repeat(400) + "```"
+    expect(textRowHeight(code)).toBe(TEXT_PART_MARGIN + lineHeight + (800 * CODE_WINDOW_RATIO + CODE_WINDOW_MARGIN))
+  })
+
+  test("counts prose around a fence normally and only caps the code section", () => {
+    const text = "intro\n```js\n" + "line\n".repeat(300) + "```\noutro"
+    expect(textRowHeight(text)).toBe(TEXT_PART_MARGIN + 2 * lineHeight + (800 * CODE_WINDOW_RATIO + CODE_WINDOW_MARGIN))
+  })
+
+  test("keeps the conservative line-count estimate for prose without fences", () => {
+    expect(textRowHeight("word\n".repeat(400))).toBeGreaterThan(800 * CODE_WINDOW_RATIO + CODE_WINDOW_MARGIN)
+  })
+
+  test("tilde fences count as code too", () => {
+    const code = "~~~\n" + "line\n".repeat(400) + "~~~"
+    expect(textRowHeight(code)).toBe(TEXT_PART_MARGIN + lineHeight + (800 * CODE_WINDOW_RATIO + CODE_WINDOW_MARGIN))
   })
 })
 

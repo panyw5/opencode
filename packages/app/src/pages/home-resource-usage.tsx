@@ -1,6 +1,7 @@
 import { Button } from "@opencode-ai/ui/button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { showToast } from "@opencode-ai/ui/toast"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { usePlatform, type ResourceUsage, type ResourceUsageTargetId } from "@/context/platform"
@@ -12,6 +13,27 @@ const TARGET_LABEL_KEYS: Record<ResourceUsageTargetId, string> = {
   "opencode-logs": "home.resourceUsage.target.opencode-logs",
   "desktop-cache": "home.resourceUsage.target.desktop-cache",
   "desktop-logs": "home.resourceUsage.target.desktop-logs",
+}
+
+const TARGET_DESC_KEYS: Record<ResourceUsageTargetId, string> = {
+  "opencode-cache": "home.resourceUsage.target.opencode-cache.desc",
+  "opencode-logs": "home.resourceUsage.target.opencode-logs.desc",
+  "desktop-cache": "home.resourceUsage.target.desktop-cache.desc",
+  "desktop-logs": "home.resourceUsage.target.desktop-logs.desc",
+}
+
+function InfoMark(props: { title: string }) {
+  return (
+    <Tooltip placement="top" openDelay={0} value={<span class="block max-w-72 text-11-regular">{props.title}</span>}>
+      <span class="flex size-4 shrink-0 items-center justify-center rounded-full text-icon-weak transition-colors hover:text-icon-base">
+        <svg viewBox="0 0 16 16" fill="none" class="size-3.5" aria-hidden="true">
+          <circle cx="8" cy="8" r="6.4" stroke="currentColor" stroke-width="1.2" />
+          <path d="M8 7.4V11.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+          <circle cx="8" cy="5" r="0.9" fill="currentColor" />
+        </svg>
+      </span>
+    </Tooltip>
+  )
 }
 
 function formatBytes(bytes: number) {
@@ -112,8 +134,11 @@ export default function HomeResourceUsage() {
                 {(target) => (
                   <li class="flex items-center gap-3 rounded-lg border border-border-weaker-base bg-surface-base/60 px-2.5 py-1.5">
                     <span class="min-w-0 flex-1">
-                      <span class="block truncate text-12-regular text-text-strong">
-                        {language.t(TARGET_LABEL_KEYS[target.id])}
+                      <span class="flex items-center gap-1">
+                        <span class="truncate text-12-regular text-text-strong">
+                          {language.t(TARGET_LABEL_KEYS[target.id])}
+                        </span>
+                        <InfoMark title={language.t(TARGET_DESC_KEYS[target.id])} />
                       </span>
                       <span class="mt-0.5 block truncate text-10-regular text-text-weaker" title={target.path}>
                         {target.path}

@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { decorateMarkdown, prepareMarkdownDom, reconcileMarkdownDom } from "@opencode-ai/ui/markdown"
+import {
+  decorateMarkdown,
+  prepareMarkdownDom,
+  reconcileMarkdownDom,
+  toggleCodeExpand,
+  updateCodeCollapse,
+} from "@opencode-ai/ui/markdown"
 
 const labels = { copy: "Copy", copied: "Copied" }
 
@@ -76,5 +82,51 @@ describe("markdown decoration", () => {
     expect(math.querySelector("button")).toBe(top)
     expect(math.getAttribute("data-opencode-math-tex")).toBe("x")
     expect(code.querySelectorAll("button")).toHaveLength(1)
+  })
+
+  test("clips tall streaming code to a bottom-anchored window and adds a toggle when done", () => {
+    const labels = { copy: "Copy", copied: "Copied", expand: "Show all", collapse: "Show less" }
+    const root = document.createElement("div")
+    root.innerHTML = `<div data-component="markdown-code"><pre><code>${"line\n".repeat(60)}</code></pre></div>`
+    const wrapper = root.querySelector<HTMLElement>('[data-component="markdown-code"]')!
+    const pre = wrapper.querySelector("pre")!
+    Object.defineProperty(pre, "scrollHeight", { get: () => 800 })
+    let scrollTop = 0
+    Object.defineProperty(pre, "scrollTop", { get: () => scrollTop, set: (v) => (scrollTop = v) })
+
+    updateCodeCollapse(root, true, labels)
+    expect(wrapper.getAttribute("data-code-collapse")).toBe("true")
+    expect(wrapper.getAttribute("data-code-streaming")).toBe("true")
+    expect(wrapper.querySelector('[data-slot="markdown-expand-button"]')).toBeNull()
+    expect(scrollTop).toBe(800)
+
+    updateCodeCollapse(root, false, labels)
+    expect(wrapper.getAttribute("data-code-streaming")).toBeNull()
+    expect(wrapper.getAttribute("data-code-expanded")).toBeNull()
+    expect(scrollTop).toBe(0)
+    const button = wrapper.querySelector<HTMLButtonElement>('[data-slot="markdown-expand-button"]')!
+    expect(button).not.toBeNull()
+    expect(button.textContent).toContain("Show all")
+
+    toggleCodeExpand(wrapper, button, labels)
+    expect(wrapper.getAttribute("data-code-expanded")).toBe("true")
+    expect(button.textContent).toContain("Show less")
+    toggleCodeExpand(wrapper, button, labels)
+    expect(wrapper.getAttribute("data-code-expanded")).toBeNull()
+    expect(button.textContent).toContain("Show all")
+  })
+
+  test("keeps short code blocks untouched by the collapse logic", () => {
+    const labels = { copy: "Copy", copied: "Copied", expand: "Show more", collapse: "Show less" }
+    const root = document.createElement("div")
+    root.innerHTML = '<div data-component="markdown-code"><pre><code>tiny</code></pre></div>'
+    const wrapper = root.querySelector<HTMLElement>('[data-component="markdown-code"]')!
+    const pre = wrapper.querySelector("pre")!
+    Object.defineProperty(pre, "scrollHeight", { get: () => 40 })
+
+    updateCodeCollapse(root, true, labels)
+    updateCodeCollapse(root, false, labels)
+    expect(wrapper.getAttribute("data-code-collapse")).toBeNull()
+    expect(wrapper.querySelector('[data-slot="markdown-expand-button"]')).toBeNull()
   })
 })

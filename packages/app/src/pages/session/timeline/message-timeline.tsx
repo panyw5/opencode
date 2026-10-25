@@ -162,7 +162,7 @@ const localFileSizes = new Map<string, number>()
 
 function TimelineDiffSummaryRow(props: {
   diffs: SummaryDiff[]
-  onReviewDiff?: (file: string) => void
+  onReviewDiff?: (file: string, event: MouseEvent) => void
   onReviewAll?: () => void
 }) {
   const language = useLanguage()
@@ -230,7 +230,7 @@ function TimelineDiffSummaryRow(props: {
               data-slot="session-turn-diff-card"
               aria-label={diff.file}
               title={diff.file}
-              onClick={() => props.onReviewDiff?.(diff.file)}
+              onClick={(event) => props.onReviewDiff?.(diff.file, event)}
             >
               <FileIcon node={{ path: diff.file, type: "file" }} class="size-8 shrink-0" />
               <span data-slot="session-turn-diff-details">
@@ -304,7 +304,7 @@ export function MessageTimeline(props: {
   anchor: (id: string) => string
   onContentReady?: (detail: { rows: number; cached: boolean }) => void
   onViewportTurnChange?: (userMessageID: string | undefined) => void
-  onReviewTurnDiff?: (input: { userMessageID: string; file: string }) => void
+  onReviewTurnDiff?: (input: { userMessageID: string; file: string; event: MouseEvent }) => void
   onReviewTurnAll?: (userMessageID: string) => void
   onSelectionToPrompt: (text: string) => void
 }) {
@@ -1911,7 +1911,9 @@ export function MessageTimeline(props: {
             <div class="w-full px-4 md:px-5">
               <TimelineDiffSummaryRow
                 diffs={item().diffs}
-                onReviewDiff={(file) => props.onReviewTurnDiff?.({ userMessageID: item().userMessageID, file })}
+                onReviewDiff={(file, event) =>
+                  props.onReviewTurnDiff?.({ userMessageID: item().userMessageID, file, event })
+                }
                 onReviewAll={() => props.onReviewTurnAll?.(item().userMessageID)}
               />
             </div>
