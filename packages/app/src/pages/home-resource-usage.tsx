@@ -115,24 +115,24 @@ export default function HomeResourceUsage() {
       >
         {(data) => (
           <>
-            <div class="grid grid-cols-2 gap-1.5">
-              <div class="flex min-w-0 flex-col gap-0.5 rounded-lg border border-border-weaker-base bg-surface-base/60 px-2.5 py-2">
+            <div class="grid grid-cols-2 gap-3">
+              <div class="home-resource-metric flex min-w-0 flex-col gap-1">
                 <div class="truncate text-11-regular text-text-weak">{language.t("home.resourceUsage.memory")}</div>
-                <div class="truncate text-13-medium text-text-strong tabular-nums">
+                <div class="home-resource-value truncate text-text-strong tabular-nums">
                   {formatBytes(data().memoryBytes)}
                 </div>
               </div>
-              <div class="flex min-w-0 flex-col gap-0.5 rounded-lg border border-border-weaker-base bg-surface-base/60 px-2.5 py-2">
+              <div class="home-resource-metric flex min-w-0 flex-col gap-1">
                 <div class="truncate text-11-regular text-text-weak">{language.t("home.resourceUsage.cpu")}</div>
-                <div class="truncate text-13-medium text-text-strong tabular-nums">
+                <div class="home-resource-value truncate text-text-strong tabular-nums">
                   {formatPercent(data().cpuPercent)}
                 </div>
               </div>
             </div>
-            <ul class="mt-2 flex flex-col gap-1">
+            <ul class="mt-3 flex flex-col">
               <For each={data().targets}>
                 {(target) => (
-                  <li class="flex items-center gap-3 rounded-lg border border-border-weaker-base bg-surface-base/60 px-2.5 py-1.5">
+                  <li class="home-resource-target flex items-center gap-3 py-2.5">
                     <span class="min-w-0 flex-1">
                       <span class="flex items-center gap-1">
                         <span class="truncate text-12-regular text-text-strong">

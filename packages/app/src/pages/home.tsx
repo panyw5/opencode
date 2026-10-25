@@ -9,17 +9,7 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useNavigate } from "@solidjs/router"
 import { DateTime } from "luxon"
-import {
-  batch,
-  createEffect,
-  createMemo,
-  createRenderEffect,
-  For,
-  onCleanup,
-  on,
-  Show,
-  untrack,
-} from "solid-js"
+import { batch, createEffect, createMemo, createRenderEffect, For, onCleanup, on, Show, untrack } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { DialogFavoriteSessions } from "@/components/dialog-favorite-sessions"
 import { DialogRecentSessions } from "@/components/dialog-recent-sessions"
@@ -111,7 +101,9 @@ export default function Home() {
             ])
           }),
         ).then(() => {
-          console.debug(`[home-perf] warm-end duration=${(performance.now() - started).toFixed(1)}ms dirs=${dirs.length}`)
+          console.debug(
+            `[home-perf] warm-end duration=${(performance.now() - started).toFixed(1)}ms dirs=${dirs.length}`,
+          )
         })
       },
     ),
@@ -561,10 +553,10 @@ export default function Home() {
       data-component="home-shell"
       class="size-full overflow-y-auto bg-background-base"
     >
-      <main data-component="home-dashboard" class="mx-auto w-full max-w-6xl px-4 py-7 sm:px-6 md:py-10 lg:px-8">
+      <main data-component="home-dashboard" class="mx-auto w-full max-w-7xl px-4 py-7 sm:px-6 md:py-10 lg:px-8">
         <header class="home-masthead flex items-start justify-between gap-6">
           <div class="min-w-0">
-            <Logo class="home-logo h-auto w-36 opacity-70" />
+            <Logo class="h-auto w-36 opacity-80" />
             <h1 class="sr-only">{language.t("home.title")}</h1>
           </div>
           <Show when={!platform.remoteMode}>
@@ -580,14 +572,14 @@ export default function Home() {
           </Show>
         </header>
 
-        <section class="home-command-deck relative z-10 mt-8 rounded-2xl border border-border-weak-base bg-surface-raised-base p-4 shadow-sm sm:p-5">
+        <section class="home-command-deck relative z-10 mt-6">
           <div class="mb-4">
             <h2 class="text-15-medium text-text-strong">{language.t("home.quickAdd.title")}</h2>
           </div>
           <HomePathInput home={homedir()} onOpen={openProject} onBrowse={() => void chooseProject()} />
         </section>
 
-        <div class="mt-9 grid min-w-0 grid-flow-row-dense gap-x-8 gap-y-9 lg:grid-cols-2">
+        <div class="mt-6 grid min-w-0 grid-flow-row-dense gap-6 lg:grid-cols-2">
           <Show when={dashboard.favoritesLoading || dashboard.favoritesError || dashboard.favorites.length > 0}>
             <section class="home-section min-w-0" aria-labelledby="home-favorite-sessions">
               <SectionHeader
@@ -667,10 +659,7 @@ export default function Home() {
             </section>
           </Show>
 
-          <section
-            class="home-section home-section-primary min-w-0 lg:row-span-2"
-            aria-labelledby="home-recent-sessions"
-          >
+          <section class="home-section min-w-0 lg:row-span-2" aria-labelledby="home-recent-sessions">
             <SectionHeader
               id="home-recent-sessions"
               title={language.t("home.recentSessions")}

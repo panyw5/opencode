@@ -209,11 +209,13 @@ export function HomePathInput(props: { home: string; onOpen: (directory: string)
             <div
               id="home-path-options"
               role="listbox"
-              class="absolute inset-x-0 top-[calc(100%+0.375rem)] z-20 max-h-72 overflow-y-auto rounded-xl border border-border-weak-base bg-surface-raised-base p-1.5 shadow-lg"
+              class="absolute inset-x-0 top-[calc(100%+0.375rem)] z-20 max-h-72 overflow-y-auto rounded-xl border border-border-weak-base bg-surface-raised-base p-1.5"
             >
               <Show
                 when={!entries.loading}
-                fallback={<div class="px-3 py-6 text-center text-12-regular text-text-weak">{language.t("common.loading")}</div>}
+                fallback={
+                  <div class="px-3 py-6 text-center text-12-regular text-text-weak">{language.t("common.loading")}</div>
+                }
               >
                 <Show
                   when={filtered().length > 0}
@@ -237,7 +239,8 @@ export function HomePathInput(props: { home: string; onOpen: (directory: string)
                         class="home-path-option flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-13-regular outline-none transition-colors"
                         classList={{
                           "bg-surface-base-active text-text-strong": state.highlighted === index(),
-                          "text-text-base hover:bg-surface-base-hover active:bg-surface-base-active": state.highlighted !== index(),
+                          "text-text-base hover:bg-surface-base-hover active:bg-surface-base-active":
+                            state.highlighted !== index(),
                         }}
                         onMouseEnter={() => setState("highlighted", index())}
                         onMouseDown={(event) => event.preventDefault()}
