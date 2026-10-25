@@ -6,6 +6,8 @@ import { Server } from "../../src/server/server"
 import { ExperimentalPaths } from "../../src/server/routes/instance/httpapi/groups/experimental"
 import { Session } from "@/session/session"
 import { SessionTable } from "@/session/session.sql"
+import * as ProjectTaskRepository from "@/project-task/repository"
+import type { RecentInfo } from "@/project-task/schema"
 import { Database } from "@/storage/db"
 import * as Log from "@opencode-ai/core/util/log"
 import { Worktree } from "../../src/worktree"
@@ -132,6 +134,48 @@ afterEach(async () => {
 })
 
 describe("experimental HttpApi", () => {
+  it.instance("serves the global project task management list including archived tasks on request", () =>
+    Effect.gen(function* () {
+      const tmp = yield* TestInstance
+      const session = yield* createSession()
+      yield* request("/project/open", tmp.directory, { method: "POST" })
+      const open = yield* ProjectTaskRepository.create(session.projectID, { title: "Open" }, 100)
+      const archived = yield* ProjectTaskRepository.create(
+        session.projectID,
+        { title: "Archived", status: "archived" },
+        200,
+      )
+      const active = yield* request(ExperimentalPaths.projectTasks, tmp.directory)
+      expect(active.status).toBe(200)
+      expect((yield* json<RecentInfo[]>(active)).map((task) => task.id)).toEqual([open.id])
+      const all = yield* request(`${ExperimentalPaths.projectTasks}?includeArchived=true`, tmp.directory)
+      expect(all.status).toBe(200)
+      expect((yield* json<RecentInfo[]>(all)).map((task) => task.id)).toEqual([archived.id, open.id])
+      const invalid = yield* request(`${ExperimentalPaths.projectTasks}?includeArchived=invalid`, tmp.directory)
+      expect(invalid.status).toBe(400)
+    }),
+  )
+
+  it.instance("serves recent project task summaries and validates the limit", () =>
+    Effect.gen(function* () {
+      const tmp = yield* TestInstance
+      const session = yield* createSession()
+      expect((yield* request("/project/open", tmp.directory, { method: "POST" })).status).toBe(200)
+      const first = yield* ProjectTaskRepository.create(session.projectID, { title: "First" }, 100)
+      const second = yield* ProjectTaskRepository.create(session.projectID, { title: "Second" }, 200)
+      const response = yield* request(`${ExperimentalPaths.projectTask}?limit=1`, tmp.directory)
+      expect(response.status).toBe(200)
+      const tasks = yield* json<RecentInfo[]>(response)
+      expect(tasks.map((task) => task.id)).toEqual([second.id])
+      expect(tasks[0].recentAt).toBe(200)
+      const all = yield* request(ExperimentalPaths.projectTask, tmp.directory)
+      expect((yield* json<RecentInfo[]>(all)).map((task) => task.id)).toEqual([second.id, first.id])
+      for (const limit of ["0", "101", "1.5", "NaN"]) {
+        expect((yield* request(`${ExperimentalPaths.projectTask}?limit=${limit}`, tmp.directory)).status).toBe(400)
+      }
+    }),
+  )
+
   it.instance(
     "serves read-only experimental endpoints through the default server app",
     () =>

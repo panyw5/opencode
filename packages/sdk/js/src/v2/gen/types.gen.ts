@@ -1612,6 +1612,27 @@ export type Provider = {
   }
 }
 
+export type RecentProjectTask = {
+  id: string
+  projectID: string
+  title: string
+  description: string
+  descriptionPath: string
+  status: ProjectTaskStatus
+  sessionCount: number
+  lastSessionAt?: number
+  progress: ProjectTaskProgress
+  sessionDirectories: Array<string>
+  time: {
+    created: number
+    updated: number
+    archived?: number
+  }
+  directory: string
+  projectName?: string
+  recentAt: number
+}
+
 export type ConsoleState = {
   consoleManagedProviders: Array<string>
   activeOrgName?: string
@@ -4987,6 +5008,63 @@ export type ConfigProvidersResponses = {
 }
 
 export type ConfigProvidersResponse = ConfigProvidersResponses[keyof ConfigProvidersResponses]
+
+export type ExperimentalProjectTasksData = {
+  body?: never
+  path?: never
+  query?: {
+    includeArchived?: "true" | "false"
+  }
+  url: "/experimental/project-task"
+}
+
+export type ExperimentalProjectTasksErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ExperimentalProjectTasksError = ExperimentalProjectTasksErrors[keyof ExperimentalProjectTasksErrors]
+
+export type ExperimentalProjectTasksResponses = {
+  /**
+   * Project task summaries across projects
+   */
+  200: Array<RecentProjectTask>
+}
+
+export type ExperimentalProjectTasksResponse =
+  ExperimentalProjectTasksResponses[keyof ExperimentalProjectTasksResponses]
+
+export type ExperimentalRecentProjectTasksData = {
+  body?: never
+  path?: never
+  query?: {
+    limit?: string
+  }
+  url: "/experimental/project-task/recent"
+}
+
+export type ExperimentalRecentProjectTasksErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ExperimentalRecentProjectTasksError =
+  ExperimentalRecentProjectTasksErrors[keyof ExperimentalRecentProjectTasksErrors]
+
+export type ExperimentalRecentProjectTasksResponses = {
+  /**
+   * Recent project tasks
+   */
+  200: Array<RecentProjectTask>
+}
+
+export type ExperimentalRecentProjectTasksResponse =
+  ExperimentalRecentProjectTasksResponses[keyof ExperimentalRecentProjectTasksResponses]
 
 export type ExperimentalConsoleGetData = {
   body?: never

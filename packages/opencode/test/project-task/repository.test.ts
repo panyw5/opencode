@@ -96,6 +96,102 @@ describe("ProjectTaskRepository", () => {
     cleanup()
   })
 
+  it.live("global management lists more than 100 tasks and optionally includes archived tasks", () =>
+    Effect.gen(function* () {
+      seedProject()
+      for (let index = 0; index < 105; index++) {
+        yield* ProjectTaskRepository.create(projectID, { title: `Task ${index}` }, index + 1)
+      }
+      const archived = yield* ProjectTaskRepository.create(projectID, { title: "Archived", status: "archived" }, 1000)
+      expect(yield* ProjectTaskRepository.listGlobal()).toHaveLength(105)
+      const all = yield* ProjectTaskRepository.listGlobal({ includeArchived: true })
+      expect(all).toHaveLength(106)
+      expect(all[0].id).toBe(archived.id)
+      expect(yield* ProjectTaskRepository.recent()).toHaveLength(6)
+    }),
+  )
+
+  it.live("recent tasks mix creation and linked session activity, not task edits", () =>
+    Effect.gen(function* () {
+      seedProject()
+      const active = yield* ProjectTaskRepository.create(projectID, { title: "Old active" }, 100)
+      const newest = yield* ProjectTaskRepository.create(projectID, { title: "New unmounted" }, 900)
+      const edited = yield* ProjectTaskRepository.create(projectID, { title: "Edited only" }, 200)
+      const archived = yield* ProjectTaskRepository.create(projectID, { title: "Archived", status: "archived" }, 2000)
+      const done = yield* ProjectTaskRepository.create(projectID, { title: "Completed", status: "done" }, 300)
+      const parent = seedSession({ mountedTaskID: active.id, updated: 400 })
+      seedSession({ mountedTaskID: active.id, parentID: parent, updated: 1000, archived: 1100 })
+      seedSession({ mountedTaskID: newest.id, updated: 500 })
+      seedSession({ mountedTaskID: archived.id, updated: 3000 })
+      seedSession({ updated: 5000 })
+      seedTodos(parent, ["completed", "pending"])
+      yield* ProjectTaskRepository.update(edited.id, { title: "Recent edit" }, 4000)
+
+      const tasks = yield* ProjectTaskRepository.recent(3)
+      expect(tasks.map((task) => task.id)).toEqual([active.id, newest.id, done.id])
+      expect(tasks.map((task) => task.recentAt)).toEqual([1000, 900, 300])
+      expect(tasks[0].directory).toBe(directory)
+      expect(tasks[0].sessionCount).toBe(1)
+      expect(tasks[0].progress.total).toBe(2)
+      expect(tasks[0].description).toBe("")
+      expect((yield* ProjectTaskRepository.recent(1)).map((task) => task.id)).toEqual([active.id])
+
+      Database.use((db) => db.delete(SessionTable).where(eq(SessionTable.mounted_task_id, active.id)).run())
+      expect((yield* ProjectTaskRepository.recent(2)).map((task) => task.id)).toEqual([newest.id, done.id])
+    }),
+  )
+
+  it.live("recent tasks span projects and exclude internal projects", () =>
+    Effect.gen(function* () {
+      seedProject()
+      const otherID = ProjectID.make("proj_recent_other")
+      const hiddenID = ProjectID.make("proj_recent_internal")
+      Database.use((db) =>
+        db
+          .insert(ProjectTable)
+          .values([
+            {
+              id: otherID,
+              worktree: "/tmp/other-project",
+              name: "Other project",
+              sandboxes: [],
+              time_created: 0,
+              time_updated: 0,
+            },
+            {
+              id: hiddenID,
+              worktree: "/tmp/internal",
+              visibility: "internal",
+              sandboxes: [],
+              time_created: 0,
+              time_updated: 0,
+            },
+          ])
+          .run(),
+      )
+      yield* Effect.gen(function* () {
+        const first = yield* ProjectTaskRepository.create(projectID, { title: "First" }, 100)
+        const second = yield* ProjectTaskRepository.create(otherID, { title: "Second" }, 200)
+        yield* ProjectTaskRepository.create(hiddenID, { title: "Hidden" }, 300)
+        const tasks = yield* ProjectTaskRepository.recent()
+        expect(tasks.map((task) => task.id)).toEqual([second.id, first.id])
+        expect(tasks[0].directory).toBe("/tmp/other-project")
+        expect(tasks[0].projectName).toBe("Other project")
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() =>
+            Database.use((db) => {
+              db.delete(ProjectTaskTable).where(eq(ProjectTaskTable.project_id, otherID)).run()
+              db.delete(ProjectTaskTable).where(eq(ProjectTaskTable.project_id, hiddenID)).run()
+              db.delete(ProjectTable).where(eq(ProjectTable.id, otherID)).run()
+              db.delete(ProjectTable).where(eq(ProjectTable.id, hiddenID)).run()
+            }),
+          ),
+        ),
+      )
+    }),
+  )
+
   test("create list update archive with progress aggregation", async () => {
     seedProject()
 

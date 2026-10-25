@@ -3,6 +3,7 @@ import { MCP } from "@/mcp"
 import { ProviderID, ModelID } from "@/provider/schema"
 import { Session } from "@/session/session"
 import { SessionID } from "@/session/schema"
+import { RecentInfo } from "@/project-task/schema"
 import { Worktree } from "@/worktree"
 import { NonNegativeInt } from "@opencode-ai/core/schema"
 import { Schema } from "effect"
@@ -121,6 +122,8 @@ export const SessionContentSearchAction = Schema.Struct({
 })
 
 export const ExperimentalPaths = {
+  projectTasks: "/experimental/project-task",
+  projectTask: "/experimental/project-task/recent",
   console: "/experimental/console",
   consoleOrgs: "/experimental/console/orgs",
   consoleSwitch: "/experimental/console/switch",
@@ -139,6 +142,32 @@ export const ExperimentalApi = HttpApi.make("experimental")
   .add(
     HttpApiGroup.make("experimental")
       .add(
+        HttpApiEndpoint.get("projectTasks", ExperimentalPaths.projectTasks, {
+          query: Schema.Struct({ includeArchived: Schema.optional(QueryBoolean) }),
+          success: described(Schema.Array(RecentInfo), "Project task summaries across projects"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "experimental.projectTasks",
+            summary: "List project tasks across projects",
+            description:
+              "List all user project task summaries, optionally including archived tasks. Description bodies are empty in these summaries.",
+          }),
+        ),
+        HttpApiEndpoint.get("recentProjectTasks", ExperimentalPaths.projectTask, {
+          query: Schema.Struct({
+            limit: Schema.optional(
+              Schema.NumberFromString.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 100 })),
+            ),
+          }),
+          success: described(Schema.Array(RecentInfo), "Recent project tasks"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "experimental.recentProjectTasks",
+            summary: "List recent project tasks",
+            description:
+              "List unarchived tasks across projects, ordered by creation or latest linked session activity. Description bodies are empty in these summaries.",
+          }),
+        ),
         HttpApiEndpoint.get("console", ExperimentalPaths.console, {
           query: WorkspaceRoutingQuery,
           success: described(ConsoleStateResponse, "Active Console provider metadata"),

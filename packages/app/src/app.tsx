@@ -76,6 +76,7 @@ const Config = lazy(() => {
   })
 })
 const Scheduled = lazy(() => import("@/pages/scheduled"))
+const ProjectTasks = lazy(() => import("@/pages/project-tasks"))
 const Loading = () => <div class="size-full" />
 
 // Config is not needed for the session shell. In the Windows Electron
@@ -642,6 +643,7 @@ function ServerScopedApp(
             >
               <Route path="/" component={HomeRoute} />
               <Route path="/scheduled" component={Scheduled} />
+              <Route path="/project-tasks" component={ProjectTasks} />
               <Route path="/config" component={GlobalConfigRoute} />
               <Route path="/:dir" component={DirectoryLayout}>
                 <Route path="/" component={ProjectIndexRoute} />
@@ -649,6 +651,7 @@ function ServerScopedApp(
                 <Route path="/session/new/:draftID" component={SessionRoute} />
                 <Route path="/session/:id" component={SessionRoute} />
                 <Route path="/scheduled" component={Scheduled} />
+                <Route path="/project-tasks" component={ProjectTasks} />
                 <Route path="/config" component={ConfigRoute} />
               </Route>
             </Dynamic>

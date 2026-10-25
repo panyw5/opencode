@@ -401,7 +401,7 @@ export default function Layout(props: ParentProps) {
       () => [pageReady(), location.pathname] as const,
       ([isReady, pathname]) => {
         if (!isReady) return
-        if (!/\/(?:config|scheduled|session)(?:\/|$)/.test(pathname)) return
+        if (!/\/(?:config|scheduled|project-tasks|session)(?:\/|$)/.test(pathname)) return
         if (untrack(() => store.sidebarPanel) === "project") return
         setStore("sidebarPanel", "project")
       },

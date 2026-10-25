@@ -59,6 +59,14 @@ export const Info = Schema.Struct({
 }).annotate({ identifier: "ProjectTask" })
 export type Info = Types.DeepMutable<Schema.Schema.Type<typeof Info>>
 
+export const RecentInfo = Schema.Struct({
+  ...Info.fields,
+  directory: Schema.String,
+  projectName: Schema.optional(Schema.String),
+  recentAt: NonNegativeInt,
+}).annotate({ identifier: "RecentProjectTask" })
+export type RecentInfo = Types.DeepMutable<Schema.Schema.Type<typeof RecentInfo>>
+
 export const SessionTodoBundle = Schema.Struct({
   sessionID: SessionID,
   title: Schema.String,
