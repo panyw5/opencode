@@ -1,6 +1,6 @@
 import path from "node:path"
 import { constants } from "node:fs"
-import { cp, lstat, mkdir, open, readdir, realpath, rename, rm, writeFile } from "node:fs/promises"
+import { cp, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises"
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto"
 import semver from "semver"
 import * as Registry from "./registry"

@@ -9,7 +9,13 @@ import { UI } from "../ui"
 import { Extension } from "@/extension"
 import { installation } from "@/extension/install-service"
 import { normalizeReleaseUrl } from "@/extension/release"
-import type { InstallRequest, InstallPreview, InstallResult, InstallSource } from "@/extension/install"
+import {
+  InstallError,
+  type InstallPreview,
+  type InstallRequest,
+  type InstallResult,
+  type InstallSource,
+} from "@/extension/install"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ExtensionID, type Info, type Source } from "@/extension/schema"
 import { errorMessage } from "@/util/error"
@@ -174,6 +180,9 @@ export function formatInstallResult(result: InstallResult) {
 }
 
 function installFailure(error: unknown) {
+  // InstallError messages are curated at the source (no URLs, credentials or
+  // paths) and carry per-situation guidance; pass them through verbatim.
+  if (error instanceof InstallError) return error.message
   const code = error && typeof error === "object" && "code" in error ? error.code : undefined
   // Never forward arbitrary transport/runtime errors: they may contain signed URLs or credentials.
   const messages: Record<string, string> = {

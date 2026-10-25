@@ -17,14 +17,17 @@ export function resetExtensionInstallAdapter() {
 
 function mapped(error: unknown) {
   if (error instanceof InstallError) {
+    // InstallError messages are curated at the source; pass them through so
+    // per-situation guidance (cleanup pending, already in progress, ...) and
+    // the generic fallbacks stay in sync from one place.
     switch (error.code) {
       case "invalid":
-        return new InvalidRequestError({ message: "Invalid extension operation" })
+        return new InvalidRequestError({ message: error.message })
       case "unauthorized":
-        return new ForbiddenError({ message: "Invalid operation confirmation" })
+        return new ForbiddenError({ message: error.message })
       case "busy":
       case "conflict":
-        return new ConflictError({ message: "Extension changed or is busy; prepare again" })
+        return new ConflictError({ message: error.message })
       case "expired":
         return new HttpApiError.Gone({})
     }

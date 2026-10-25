@@ -161,6 +161,8 @@ type Monitor = {
 }
 const monitors = new Map<string, Monitor>()
 
+let recoverInFlight: Promise<unknown> | undefined
+
 export async function observeInstallations() {
   const registry = ExtensionRegistry.registryFile()
   let monitor = monitors.get(registry)
@@ -208,6 +210,16 @@ export async function observeInstallations() {
         }
         await ExtensionWatcher.refresh()
         previous = next
+        // Registry writes (receipts, retained tombstones) can unblock deferred
+        // cleanups; re-run recovery with in-flight deduplication so a burst of
+        // writes collapses into one recovery pass.
+        if (!recoverInFlight) {
+          recoverInFlight = recoverInstallations(registry)
+            .catch(() => undefined)
+            .finally(() => {
+              recoverInFlight = undefined
+            })
+        }
       },
       onError: () => {
         // Diagnostics must not make server startup depend on a healthy registry.
