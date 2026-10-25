@@ -663,10 +663,15 @@ export async function commitInstallation(
       throw new ConflictError("Extension changed; prepare the operation again")
     }
     const retained = store.retained?.[input.id]
-    if (retained?.purging) throw new ConflictError("Extension data cleanup must finish before installation")
-    if (!current && retained?.revision !== input.expectedRetainedRevision) {
+    if (retained?.purging)
+      throw new ConflictError("Previous uninstall cleanup is still running; retry the installation once it finishes")
+    if (!current && retained && retained.revision !== input.expectedRetainedRevision) {
       throw new ConflictError("Extension data changed; prepare the operation again")
     }
+    // A retained tombstone without an active purge no longer blocks the
+    // installation: it is consumed independently by the cleanup state machine
+    // (recovery purges or finishes it), so a reinstall after a deferred
+    // uninstall cannot be permanently blocked by its own retained record.
     if (
       current &&
       (current.name !== input.row.name ||

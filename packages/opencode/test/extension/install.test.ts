@@ -397,6 +397,35 @@ describe("extension installation transactions", () => {
     expect(await stat(path.join(path.dirname(row.dir), "npm-lock.json"))).toBeDefined()
   })
 
+  test("a retained tombstone consumed by its own cleanup does not block reinstall", async () => {
+    const context = await setup()
+    const source = await context.archive()
+    const first = await context.installer.prepare({ kind: "install", source })
+    await context.installer.commit(first.operationId, first.token)
+    const removal = await context.installer.prepare({ kind: "uninstall", id, purgeData: true })
+    await context.installer.commit(removal.operationId, removal.token)
+    expect((await Registry.snapshot(id, context.registry)).row).toBeUndefined()
+    // The uninstall deferred its cleanup; the reinstall proceeds regardless of
+    // the retained tombstone's purge state (purged tombstones do not block).
+    const next = await context.installer.prepare({ kind: "install", source })
+    const result = await context.installer.commit(next.operationId, next.token)
+    expect(result.committed).toBe(true)
+    expect((await Registry.snapshot(id, context.registry)).row?.version).toBeDefined()
+  })
+
+  test("a retained tombstone replaced by another removal still rejects a stale install", async () => {
+    const context = await setup()
+    const source = await context.archive()
+    const stale = await context.installer.prepare({ kind: "install", source })
+    const other = createInstaller({ registry: context.registry })
+    const installed = await other.prepare({ kind: "install", source })
+    await other.commit(installed.operationId, installed.token)
+    const removal = await other.prepare({ kind: "uninstall", id })
+    await other.commit(removal.operationId, removal.token)
+    await expect(context.installer.commit(stale.operationId, stale.token)).rejects.toThrow("changed")
+    expect((await Registry.snapshot(id, context.registry)).row).toBeUndefined()
+  })
+
   test("absent-row ABA is rejected using the retained-data revision", async () => {
     const context = await setup()
     const source = await context.archive()

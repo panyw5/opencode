@@ -646,10 +646,11 @@ export function createInstaller(options: InstallerOptions = {}) {
         try {
           if (now() >= op.expiresAt) throw new InstallError("expired", "Extension operation expired")
           const snapshot = await Registry.snapshot(preview.id, target)
+          // Purge-aware: a tombstone consumed by its own cleanup is safe to proceed.
           if (
             snapshot.registryVersion !== preview.expectedRegistryVersion ||
             (snapshot.row ? (snapshot.row.revision ?? 0) : undefined) !== preview.expectedRevision ||
-            (!snapshot.row && snapshot.retained?.revision !== op.retainedRevision)
+            (!snapshot.row && snapshot.retained && snapshot.retained.revision !== op.retainedRevision)
           )
             throw new InstallError("conflict", "Extension changed; prepare the operation again")
           await record(op, "committing")
