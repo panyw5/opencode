@@ -30,18 +30,22 @@ const emptyProgress = (): Progress => ({
   cancelled: 0,
 })
 
-let descriptionPathColumnReady = false
+let descriptionPathColumnDatabase: ReturnType<typeof Database.Client> | undefined
 
-/** Older DBs may lack description_path; add it once per process. */
+/** Older DBs may lack description_path; check once per database connection. */
 export function ensureDescriptionPathColumn(): void {
-  if (descriptionPathColumnReady) return
+  const client = Database.Client()
+  if (descriptionPathColumnDatabase === client) return
+  console.debug("[project-task] description-column-check start")
   Database.use((db) => {
     const columns = db.all("PRAGMA table_info(project_task)") as Array<{ name: string }>
     if (!columns.some((column) => column.name === "description_path")) {
+      console.debug("[project-task] description-column-check adding-missing-column")
       db.run("ALTER TABLE project_task ADD COLUMN description_path text")
     }
   })
-  descriptionPathColumnReady = true
+  descriptionPathColumnDatabase = client
+  console.debug("[project-task] description-column-check ready")
 }
 
 export function accumulateTodo(progress: Progress, status: string): void {
@@ -237,7 +241,12 @@ export function list(input: {
 
 /** Dashboard summaries do not read or migrate description files across projects. */
 export function recent(limit = 6): Effect.Effect<RecentInfo[]> {
+  return listGlobal({ limit: Math.max(1, Math.min(100, Math.floor(limit))) })
+}
+
+export function listGlobal(input: { includeArchived?: boolean; limit?: number } = {}): Effect.Effect<RecentInfo[]> {
   return Effect.sync(() => {
+    console.debug(`[project-task] global-list-start archived=${!!input.includeArchived} limit=${input.limit ?? "all"}`)
     ensureDescriptionPathColumn()
     const activity = Database.use((db) =>
       db
@@ -251,15 +260,17 @@ export function recent(limit = 6): Effect.Effect<RecentInfo[]> {
         .as("task_activity"),
     )
     const recentAt = sql<number>`max(${ProjectTaskTable.time_created}, coalesce(${activity.lastSessionAt}, 0))`
+    const conditions = [eq(ProjectTable.visibility, "user")]
+    if (!input.includeArchived) conditions.push(isNull(ProjectTaskTable.time_archived))
     const rows = Database.use((db) =>
       db
         .select({ task: ProjectTaskTable, worktree: ProjectTable.worktree, projectName: ProjectTable.name, recentAt })
         .from(ProjectTaskTable)
         .innerJoin(ProjectTable, eq(ProjectTaskTable.project_id, ProjectTable.id))
         .leftJoin(activity, eq(activity.taskID, ProjectTaskTable.id))
-        .where(and(isNull(ProjectTaskTable.time_archived), eq(ProjectTable.visibility, "user")))
+        .where(and(...conditions))
         .orderBy(desc(recentAt), desc(ProjectTaskTable.time_created), asc(ProjectTaskTable.id))
-        .limit(Math.max(1, Math.min(100, Math.floor(limit))))
+        .limit(input.limit ?? -1)
         .all(),
     )
     const aggregates = aggregatesForTasks(rows.map(({ task }) => task.id))
@@ -273,7 +284,7 @@ export function recent(limit = 6): Effect.Effect<RecentInfo[]> {
       }
     })
     console.debug(
-      `[project-task] recent limit=${limit} count=${tasks.length} ids=${tasks.map((task) => task.id).join(",")}`,
+      `[project-task] global-list-end limit=${input.limit ?? "all"} count=${tasks.length} ids=${tasks.slice(0, 10).map((task) => task.id).join(",")}`,
     )
     return tasks
   })

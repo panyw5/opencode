@@ -864,7 +864,12 @@ export default function Home() {
           </section>
 
           <section class="home-section min-w-0" aria-labelledby="home-recent-project-tasks">
-            <SectionHeader id="home-recent-project-tasks" title={language.t("home.recentProjectTasks")} />
+            <SectionHeader
+              id="home-recent-project-tasks"
+              title={language.t("home.recentProjectTasks")}
+              action={language.t("home.recentProjectTasks.manage")}
+              onAction={() => navigate("/project-tasks")}
+            />
             <Show
               when={!dashboard.projectTasksLoading}
               fallback={

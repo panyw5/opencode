@@ -1,6 +1,7 @@
 import type { ProjectTask, ProjectTaskDetail, ProjectTaskStatus } from "@opencode-ai/sdk/v2/client"
 import { base64Encode, checksum } from "@opencode-ai/core/util/encode"
-import { Dialog } from "@opencode-ai/ui/dialog"
+import { Dialog, type DialogProps } from "@opencode-ai/ui/dialog"
+import { Button } from "@opencode-ai/ui/button"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
@@ -16,6 +17,7 @@ import {
   For,
   onCleanup,
   onMount,
+  on,
   Show,
   type Accessor,
   type JSX,
@@ -105,8 +107,9 @@ function removeNewProjectTaskDraft(directory: string) {
   }
 }
 
-function NewProjectTaskDialog(props: {
+export function NewProjectTaskDialog(props: {
   directory: string
+  projectPicker?: JSX.Element
   onCreate: (name: string, content: string) => Promise<void>
   searchFilesAndDirectories: (query: string) => Promise<string[]>
 }): JSX.Element {
@@ -151,26 +154,29 @@ function NewProjectTaskDialog(props: {
       onDiscard={() => removeNewProjectTaskDraft(props.directory)}
       save={save}
       before={
-        <label class="flex shrink-0 flex-col gap-2">
-          <span class="text-12-medium text-text-base">{language.t("projectTask.field.title")}</span>
-          <input
-            value={name()}
-            autofocus
-            spellcheck={false}
-            class="h-10 rounded-lg border border-border-weak-base bg-background-base px-3 text-14-regular text-text-strong outline-none transition-colors placeholder:text-text-weak focus:border-border-focus disabled:cursor-not-allowed disabled:opacity-60"
-            classList={{ "border-border-critical-base": !!nameError() }}
-            placeholder={language.t("projectTask.field.titlePlaceholder")}
-            onInput={(event) => {
-              const value = event.currentTarget.value
-              setName(value)
-              persistDraft({ name: value })
-              if (nameError()) setNameError(undefined)
-            }}
-          />
-          <Show when={nameError()}>
-            {(message) => <span class="text-12-regular text-text-danger-base">{message()}</span>}
-          </Show>
-        </label>
+        <>
+          {props.projectPicker}
+          <label class="flex shrink-0 flex-col gap-2">
+            <span class="text-12-medium text-text-base">{language.t("projectTask.field.title")}</span>
+            <input
+              value={name()}
+              autofocus
+              spellcheck={false}
+              class="h-10 rounded-lg border border-border-weak-base bg-background-base px-3 text-14-regular text-text-strong outline-none transition-colors placeholder:text-text-weak focus:border-border-focus disabled:cursor-not-allowed disabled:opacity-60"
+              classList={{ "border-border-critical-base": !!nameError() }}
+              placeholder={language.t("projectTask.field.titlePlaceholder")}
+              onInput={(event) => {
+                const value = event.currentTarget.value
+                setName(value)
+                persistDraft({ name: value })
+                if (nameError()) setNameError(undefined)
+              }}
+            />
+            <Show when={nameError()}>
+              {(message) => <span class="text-12-regular text-text-danger-base">{message()}</span>}
+            </Show>
+          </label>
+        </>
       }
     />
   )
@@ -240,12 +246,29 @@ export type ProjectTaskEditorStash = {
   snapshot: ProjectTaskDetailSnapshot
 }
 
+function ProjectTaskDetailFrame(props: DialogProps & { embedded?: boolean }) {
+  if (!props.embedded) return <Dialog {...props} />
+  return (
+    <section data-component="project-task-embedded" class="flex size-full min-h-0 min-w-0 flex-col overflow-hidden">
+      <header class="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-border-weak-base p-4">
+        <div class="min-w-0 flex-1 text-18-medium text-text-strong">{props.title}</div>
+        {props.action}
+      </header>
+      <div class="flex min-h-0 flex-1 flex-col overflow-hidden">{props.children}</div>
+    </section>
+  )
+}
+
 export function ProjectTaskDetailDialog(props: {
   task: ProjectTask
   directory: string
   projectName?: string
   client: ReturnType<ReturnType<typeof useGlobalSDK>["createClient"]>
   onChanged: () => void | Promise<void>
+  embedded?: boolean
+  onClose?: () => void
+  onBeforeLeave?: (guard: (() => Promise<boolean>) | undefined) => void
+  refreshToken?: number
   /** Restored editing state from a previous minimize; wins over fresh load. */
   initialState?: ProjectTaskDetailSnapshot
   minimizeLabel?: string
@@ -261,6 +284,7 @@ export function ProjectTaskDetailDialog(props: {
   let idCopiedTimer: ReturnType<typeof setTimeout> | undefined
   const restored = props.initialState
   const [state, setState] = createStore({
+    titleDraft: props.task.title,
     detail: undefined as ProjectTaskDetail | undefined,
     loading: true,
     pending: false,
@@ -328,6 +352,7 @@ export function ProjectTaskDetailDialog(props: {
         const content = state.document === "progress" ? (result.data.progressContent ?? "") : result.data.description
         setState({
           detail: result.data,
+          titleDraft: result.data.title,
           draft: restored ? restored.draft : content,
           saved: content,
           dirty: restored ? restored.draft !== content : false,
@@ -371,9 +396,13 @@ export function ProjectTaskDetailDialog(props: {
     if (!window.confirm(language.t("projectTask.archive.confirm", { title: props.task.title }))) return
     setState({ pending: true, error: "" })
     try {
-      await props.client.projectTask.archive({ taskID: props.task.id })
+      console.debug(`[project-task] archive-start task=${props.task.id} embedded=${!!props.embedded}`)
+      const result = await props.client.projectTask.archive({ taskID: props.task.id })
+      if (result.data && state.detail) setState("detail", { ...state.detail, ...result.data, sessions: [] })
       await props.onChanged()
-      dialog.close()
+      if (!props.embedded) dialog.close()
+      setState("pending", false)
+      console.debug(`[project-task] archive-success task=${props.task.id}`)
     } catch (error) {
       setState("error", error instanceof Error ? error.message : String(error))
       setState("pending", false)
@@ -384,7 +413,13 @@ export function ProjectTaskDetailDialog(props: {
     if (state.pending || state.loading) return false
     const document = state.document
     const draft = state.draft
-    if (!state.dirty && state.draft === state.saved) {
+    const titleDraft = state.titleDraft.trim()
+    const titleChanged = props.embedded && titleDraft !== title()
+    if (titleChanged && !titleDraft) {
+      setState("error", language.t("projectTask.error.titleRequired"))
+      return false
+    }
+    if (!titleChanged && !state.dirty && state.draft === state.saved) {
       console.debug(
         `[project-task] document-save skipped task=${props.task.id} document=${document} preview=${String(!!options?.preview)}`,
       )
@@ -398,7 +433,10 @@ export function ProjectTaskDetailDialog(props: {
     try {
       const result = await props.client.projectTask.update({
         taskID: props.task.id,
-        projectTaskUpdateInput: document === "progress" ? { progressContent: draft } : { description: draft },
+        projectTaskUpdateInput: {
+          ...(titleChanged ? { title: titleDraft } : {}),
+          ...(document === "progress" ? { progressContent: draft } : { description: draft }),
+        },
       })
       if (!result.data) throw new Error(language.t("common.requestFailed"))
       if (document === "progress") {
@@ -450,6 +488,7 @@ export function ProjectTaskDetailDialog(props: {
 
   async function setStatus(next: ProjectTaskStatus) {
     if (state.pending || state.loading) return
+    console.debug(`[project-task] status-start task=${props.task.id} status=${next}`)
     setState({ pending: true, error: "" })
     try {
       const result = await props.client.projectTask.update({
@@ -462,7 +501,9 @@ export function ProjectTaskDetailDialog(props: {
         setState("detail", { ...result.data, sessions: [] })
       }
       await props.onChanged()
+      console.debug(`[project-task] status-success task=${props.task.id} status=${next}`)
     } catch (error) {
+      console.error(`[project-task] status-failed task=${props.task.id} status=${next}`, error)
       setState("error", error instanceof Error ? error.message : String(error))
     } finally {
       setState("pending", false)
@@ -473,14 +514,14 @@ export function ProjectTaskDetailDialog(props: {
     console.debug(
       `[project-task] linked-session open task=${props.task.id} session=${sessionID} directory=${directory}`,
     )
-    dialog.close()
+    if (!props.embedded) dialog.close()
     navigate(`/${base64Encode(directory)}/session/${sessionID}`)
   }
 
   function newSession() {
     console.debug(`[project-task] detail new-session taskID=${props.task.id} directory=${props.directory}`)
     newProjectTaskSession(props.task.id, props.directory, sessionTabs, navigate)
-    dialog.close()
+    if (!props.embedded) dialog.close()
   }
 
   const copyTaskID = () => {
@@ -531,15 +572,34 @@ export function ProjectTaskDetailDialog(props: {
 
   const closeDialog = async () => {
     if (state.pending) return
-    if (state.dirty) {
+    if (state.dirty || (props.embedded && state.titleDraft.trim() !== title())) {
       const ok = await saveDocument()
       if (!ok) return
     }
-    dialog.close()
+    if (props.embedded) props.onClose?.()
+    else dialog.close()
   }
 
-  onMount(() => void load())
+  onMount(() => {
+    void load()
+    props.onBeforeLeave?.(async () => {
+      if (state.pending || state.loading) return false
+      if (!state.dirty && state.titleDraft.trim() === title()) return true
+      return saveDocument()
+    })
+  })
+  createEffect(
+    on(
+      () => props.refreshToken,
+      () => {
+        if (props.embedded && !state.loading && !state.pending && !state.dirty && state.titleDraft.trim() === title())
+          void load()
+      },
+      { defer: true },
+    ),
+  )
   onCleanup(() => {
+    props.onBeforeLeave?.(undefined)
     if (idCopiedTimer) clearTimeout(idCopiedTimer)
   })
 
@@ -566,11 +626,20 @@ export function ProjectTaskDetailDialog(props: {
           }
         `}
       />
-      <Dialog
+      <ProjectTaskDetailFrame
+        embedded={props.embedded}
         title={
           <div class="flex min-w-0 flex-col">
             <div class="inline-flex w-fit max-w-full min-w-0 items-center gap-3">
-              <div class="min-w-0 truncate">{title()}</div>
+              <Show when={props.embedded} fallback={<div class="min-w-0 truncate">{title()}</div>}>
+                <input
+                  class="min-w-0 w-full rounded border border-border-weak-base bg-transparent px-2 py-1 text-16-medium outline-none focus:border-border-focus"
+                  aria-label={language.t("projectTask.field.title")}
+                  value={state.titleDraft}
+                  disabled={state.pending || state.loading}
+                  onInput={(event) => setState("titleDraft", event.currentTarget.value)}
+                />
+              </Show>
               <span class="max-w-[40%] shrink-0 truncate rounded-full bg-surface-base px-2.5 py-0.5 text-16-medium leading-6 text-text-weak">
                 {props.projectName || getFilename(props.directory) || props.directory}
               </span>
@@ -602,6 +671,11 @@ export function ProjectTaskDetailDialog(props: {
         data-maximized={maximized() ? "" : undefined}
         action={
           <div class="flex items-center gap-2">
+            <Show when={props.embedded && state.mode === "preview" && state.titleDraft.trim() !== title()}>
+              <Button size="small" disabled={state.pending || state.loading} onClick={() => void saveDocument()}>
+                {language.t("trellis.tasks.save")}
+              </Button>
+            </Show>
             <Show when={props.onMinimize}>
               <Tooltip placement="bottom" value={props.minimizeLabel ?? ""}>
                 <IconButton
@@ -619,23 +693,25 @@ export function ProjectTaskDetailDialog(props: {
                 icon="archive"
                 variant="ghost"
                 size="large"
-                disabled={state.pending}
+                disabled={state.pending || state.loading || status() === "archived"}
                 aria-label={language.t("projectTask.archive")}
                 onClick={() => void archive()}
               />
             </Tooltip>
-            <Tooltip
-              placement="bottom"
-              value={maximized() ? language.t("trellis.tasks.restore") : language.t("trellis.tasks.maximize")}
-            >
-              <IconButton
-                icon={maximized() ? "collapse" : "expand"}
-                variant="ghost"
-                size="large"
-                aria-label={maximized() ? language.t("trellis.tasks.restore") : language.t("trellis.tasks.maximize")}
-                onClick={() => setMaximized((v) => !v)}
-              />
-            </Tooltip>
+            <Show when={!props.embedded}>
+              <Tooltip
+                placement="bottom"
+                value={maximized() ? language.t("trellis.tasks.restore") : language.t("trellis.tasks.maximize")}
+              >
+                <IconButton
+                  icon={maximized() ? "collapse" : "expand"}
+                  variant="ghost"
+                  size="large"
+                  aria-label={maximized() ? language.t("trellis.tasks.restore") : language.t("trellis.tasks.maximize")}
+                  onClick={() => setMaximized((v) => !v)}
+                />
+              </Tooltip>
+            </Show>
             <Tooltip placement="bottom" value={language.t("trellis.tasks.close")}>
               <IconButton
                 icon="close"
@@ -698,6 +774,24 @@ export function ProjectTaskDetailDialog(props: {
               )}
             </For>
             <div data-component="project-task-editor-toolbar" class="ml-auto flex items-center gap-2">
+              <Show when={props.embedded && state.mode === "edit"}>
+                <Button
+                  size="small"
+                  variant="ghost"
+                  disabled={state.pending || state.loading}
+                  onClick={() => void saveAndPreview()}
+                >
+                  {language.t("trellis.tasks.preview")}
+                </Button>
+                <Button
+                  size="small"
+                  data-action="project-task-save-document"
+                  disabled={state.pending || state.loading || (!state.dirty && state.titleDraft.trim() === title())}
+                  onClick={() => void saveDocument()}
+                >
+                  {state.pending ? language.t("trellis.tasks.saving") : language.t("trellis.tasks.save")}
+                </Button>
+              </Show>
               <OpenInApp
                 path={documentPath()}
                 logPrefix={`project-task-editor taskID=${props.task.id} document=${state.document}`}
@@ -755,7 +849,7 @@ export function ProjectTaskDetailDialog(props: {
             </Show>
           </div>
 
-          <Show when={state.mode === "edit"}>
+          <Show when={state.mode === "edit" && !props.embedded}>
             <div class="flex shrink-0 items-center justify-between gap-3">
               <div class="flex items-center gap-2 text-11-regular text-text-weak">
                 <span class="rounded-md border border-border-weak-base bg-background-base px-1.5 py-0.5">⌘</span>
@@ -803,7 +897,7 @@ export function ProjectTaskDetailDialog(props: {
                   type="button"
                   data-action="project-task-new-session"
                   class="inline-flex shrink-0 items-center gap-1 rounded-md border border-border-weak-base bg-background-base px-2 py-1 text-12-medium text-text-base transition-colors hover:bg-surface-base-hover disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={state.pending || !props.directory}
+                  disabled={state.pending || !props.directory || status() === "archived"}
                   onClick={newSession}
                 >
                   <Icon name="new-session" size="small" />
@@ -868,7 +962,7 @@ export function ProjectTaskDetailDialog(props: {
             </section>
           </Show>
         </div>
-      </Dialog>
+      </ProjectTaskDetailFrame>
     </>
   )
 }

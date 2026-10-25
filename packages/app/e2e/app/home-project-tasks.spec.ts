@@ -5,9 +5,11 @@ test("home lists new tasks, refreshes linked activity and opens task detail", as
   await withProject(async ({ directory, trackSession }) => {
     const sdk = createSdk(directory)
     const older = (
-      await sdk.projectTask.create({ title: "Home activity task", description: "Full home task description" })
+      await sdk.projectTask.create({
+        projectTaskCreateInput: { title: "Home activity task", description: "Full home task description" },
+      })
     ).data!
-    const newer = (await sdk.projectTask.create({ title: "Home newly added task" })).data!
+    const newer = (await sdk.projectTask.create({ projectTaskCreateInput: { title: "Home newly added task" } })).data!
     try {
       await page.goto("/")
       const section = page.getByRole("region", { name: "Recent project tasks" })
@@ -17,7 +19,7 @@ test("home lists new tasks, refreshes linked activity and opens task detail", as
 
       const session = (await sdk.session.create({ title: "Home linked activity" })).data!
       trackSession(session.id)
-      await sdk.projectTask.mount({ sessionID: session.id, taskID: older.id })
+      await sdk.projectTask.mount({ sessionID: session.id, projectTaskMountInput: { taskID: older.id } })
       await expect(rows.first()).toHaveAttribute("data-task-id", older.id)
       await expect(rows.first().getByText("1 sessions")).toBeVisible()
       await rows.first().click()
@@ -37,7 +39,7 @@ test("home lists new tasks, refreshes linked activity and opens task detail", as
 test("home recent project tasks can retry a failed request", async ({ page, withProject }) => {
   await withProject(async ({ directory }) => {
     const sdk = createSdk(directory)
-    const task = (await sdk.projectTask.create({ title: "Home retry task" })).data!
+    const task = (await sdk.projectTask.create({ projectTaskCreateInput: { title: "Home retry task" } })).data!
     let requests = 0
     await page.route("**/experimental/project-task/recent?*", (route) => {
       requests++

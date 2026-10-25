@@ -292,6 +292,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     })
 
     return handlers
+      .handle("projectTasks", ({ query }) => ProjectTaskRepository.listGlobal(query))
       .handle("recentProjectTasks", ({ query }) => ProjectTaskRepository.recent(query.limit))
       .handle("console", getConsole)
       .handle("consoleOrgs", listConsoleOrgs)

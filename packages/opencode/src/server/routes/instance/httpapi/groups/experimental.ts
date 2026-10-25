@@ -122,6 +122,7 @@ export const SessionContentSearchAction = Schema.Struct({
 })
 
 export const ExperimentalPaths = {
+  projectTasks: "/experimental/project-task",
   projectTask: "/experimental/project-task/recent",
   console: "/experimental/console",
   consoleOrgs: "/experimental/console/orgs",
@@ -141,6 +142,17 @@ export const ExperimentalApi = HttpApi.make("experimental")
   .add(
     HttpApiGroup.make("experimental")
       .add(
+        HttpApiEndpoint.get("projectTasks", ExperimentalPaths.projectTasks, {
+          query: Schema.Struct({ includeArchived: Schema.optional(QueryBoolean) }),
+          success: described(Schema.Array(RecentInfo), "Project task summaries across projects"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "experimental.projectTasks",
+            summary: "List project tasks across projects",
+            description:
+              "List all user project task summaries, optionally including archived tasks. Description bodies are empty in these summaries.",
+          }),
+        ),
         HttpApiEndpoint.get("recentProjectTasks", ExperimentalPaths.projectTask, {
           query: Schema.Struct({
             limit: Schema.optional(

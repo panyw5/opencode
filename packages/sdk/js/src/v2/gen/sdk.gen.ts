@@ -42,6 +42,8 @@ import type {
   ExperimentalConsoleListOrgsErrors,
   ExperimentalConsoleListOrgsResponses,
   ExperimentalConsoleSwitchOrgResponses,
+  ExperimentalProjectTasksErrors,
+  ExperimentalProjectTasksResponses,
   ExperimentalRecentProjectTasksErrors,
   ExperimentalRecentProjectTasksResponses,
   ExperimentalResourceListErrors,
@@ -1708,6 +1710,29 @@ export class Workspace extends HeyApiClient {
 }
 
 export class Experimental extends HeyApiClient {
+  /**
+   * List project tasks across projects
+   *
+   * List all user project task summaries, optionally including archived tasks. Description bodies are empty in these summaries.
+   */
+  public projectTasks<ThrowOnError extends boolean = false>(
+    parameters?: {
+      includeArchived?: "true" | "false"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "includeArchived" }] }])
+    return (options?.client ?? this.client).get<
+      ExperimentalProjectTasksResponses,
+      ExperimentalProjectTasksErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/project-task",
+      ...options,
+      ...params,
+    })
+  }
+
   /**
    * List recent project tasks
    *

@@ -134,6 +134,28 @@ afterEach(async () => {
 })
 
 describe("experimental HttpApi", () => {
+  it.instance("serves the global project task management list including archived tasks on request", () =>
+    Effect.gen(function* () {
+      const tmp = yield* TestInstance
+      const session = yield* createSession()
+      yield* request("/project/open", tmp.directory, { method: "POST" })
+      const open = yield* ProjectTaskRepository.create(session.projectID, { title: "Open" }, 100)
+      const archived = yield* ProjectTaskRepository.create(
+        session.projectID,
+        { title: "Archived", status: "archived" },
+        200,
+      )
+      const active = yield* request(ExperimentalPaths.projectTasks, tmp.directory)
+      expect(active.status).toBe(200)
+      expect((yield* json<RecentInfo[]>(active)).map((task) => task.id)).toEqual([open.id])
+      const all = yield* request(`${ExperimentalPaths.projectTasks}?includeArchived=true`, tmp.directory)
+      expect(all.status).toBe(200)
+      expect((yield* json<RecentInfo[]>(all)).map((task) => task.id)).toEqual([archived.id, open.id])
+      const invalid = yield* request(`${ExperimentalPaths.projectTasks}?includeArchived=invalid`, tmp.directory)
+      expect(invalid.status).toBe(400)
+    }),
+  )
+
   it.instance("serves recent project task summaries and validates the limit", () =>
     Effect.gen(function* () {
       const tmp = yield* TestInstance

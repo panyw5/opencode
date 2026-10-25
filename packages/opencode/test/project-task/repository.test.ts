@@ -96,6 +96,21 @@ describe("ProjectTaskRepository", () => {
     cleanup()
   })
 
+  it.live("global management lists more than 100 tasks and optionally includes archived tasks", () =>
+    Effect.gen(function* () {
+      seedProject()
+      for (let index = 0; index < 105; index++) {
+        yield* ProjectTaskRepository.create(projectID, { title: `Task ${index}` }, index + 1)
+      }
+      const archived = yield* ProjectTaskRepository.create(projectID, { title: "Archived", status: "archived" }, 1000)
+      expect(yield* ProjectTaskRepository.listGlobal()).toHaveLength(105)
+      const all = yield* ProjectTaskRepository.listGlobal({ includeArchived: true })
+      expect(all).toHaveLength(106)
+      expect(all[0].id).toBe(archived.id)
+      expect(yield* ProjectTaskRepository.recent()).toHaveLength(6)
+    }),
+  )
+
   it.live("recent tasks mix creation and linked session activity, not task edits", () =>
     Effect.gen(function* () {
       seedProject()

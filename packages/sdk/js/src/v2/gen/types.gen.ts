@@ -5009,6 +5009,34 @@ export type ConfigProvidersResponses = {
 
 export type ConfigProvidersResponse = ConfigProvidersResponses[keyof ConfigProvidersResponses]
 
+export type ExperimentalProjectTasksData = {
+  body?: never
+  path?: never
+  query?: {
+    includeArchived?: "true" | "false"
+  }
+  url: "/experimental/project-task"
+}
+
+export type ExperimentalProjectTasksErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ExperimentalProjectTasksError = ExperimentalProjectTasksErrors[keyof ExperimentalProjectTasksErrors]
+
+export type ExperimentalProjectTasksResponses = {
+  /**
+   * Project task summaries across projects
+   */
+  200: Array<RecentProjectTask>
+}
+
+export type ExperimentalProjectTasksResponse =
+  ExperimentalProjectTasksResponses[keyof ExperimentalProjectTasksResponses]
+
 export type ExperimentalRecentProjectTasksData = {
   body?: never
   path?: never
