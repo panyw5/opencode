@@ -187,3 +187,15 @@ registry 未触碰（全程隔离 registry）。
 4. **评估后放弃**：prepare 阶段的跨进程 staging 互斥——按扩展 id 互斥会阻塞合法并发装/卸意图，且 commit CAS + generation lease 已正确裁决竞争（"loser cannot remove winner" 被 pin）；prepared receipt 持久化进 registry——与 ~30 处 registry.json 精确断言和观察者假设广泛冲突，且 staging 目录本身已是 prepared 状态的持久化（operation.json + cleanup.recover 的 lease-gated 恢复已存在）。
 
 验证：全量 589/0、typecheck 0 错误、dist/node 重编。保留边界：leases/flock 双锁体系、非原生 runtime lease busy、quiesce blockers sticky、registry v3 格式——均未动（另案）。
+
+## 状态机重构收尾：重装场景三连修复（2026-10-25 深夜）
+
+状态机重构后实机复现"卸载→立即重装"仍失败，逐层定位出三个独立缺陷（每层都是上层的错误文案掩盖了真实原因）：
+
+1. **sidecar parseCommand 未放行 `cleanup-retained` op**：命令被静默丢弃，main 的 pending promise 永不返回（UI 表现为卡在某阶段）。教训：新增 op 必须同步 sidecar 运行时白名单。
+2. **sidecar commit 错误透传缺失**：`ExtensionInstallError` 被 main 进程 catch 后归一为通用 "Extension changed..."，真实原因（"Extension data belongs to a different installation"）不可见。现在 InstallError 的 code+message 原样回传（消息在源头精修，无敏感内容）。
+3. **根因——retained 继承的 archive 身份用临时路径**：`sourceIdentity(archive)=archive:${location}`，而 location 是 staging 临时文件路径，同一字节内容的两次安装路径必不同 → 卸载后的同包重装被判"不同安装"。修复：继承判定改为 **location 匹配 OR sha256 匹配**（archive tombstone）——字节相同即继承；真正不同的包仍拒绝（防止数据跨来源泄漏的保护保留）。曾尝试纯 sha256 身份（全局 sourceIdentity），被 41 个测试否决（update 场景不同版本 sha 必不同）；OR 语义通过全量 589/0。
+
+附带：catalog 流程对 in-flight purge 做短暂等待重试（此前立即失败）。
+
+**实机闭环验证**（隔离 dev，最终构建）：目录一键安装(ENABLED) → Remove(purge, deferred) → **立即重装成功**（relisted=true、flow 无错误、截图 /tmp/wls-reinstall-success.png）。此前该场景连续失败的观察技巧教训：flow 完成后 DOM 即卸载，轮询元素消失会被误读为 timeout；错误文案映射(code→固定文案)会掩盖根因——两者在本次调试中都造成了误导。
