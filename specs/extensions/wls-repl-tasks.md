@@ -176,3 +176,14 @@ registry 未触碰（全程隔离 registry）。
 - 用户重启后重装仍 conflict——排除"进程 pin"解释。深挖发现 **`recoverInstallations` 自 P3a 写好后从未接线**（无任何生产调用点，仅测试使用）：卸载时 kernel 存活导致 purge 延后（cleanupPending=true + retained 记录），重启后无人恢复清理，retained 永久阻塞同 id 重装。P3a 文档声称的"重启后恢复清理完成"实际从未生效——P3a 未标记完整交付状态下的集成遗漏。
 - 修复：extensions 启动 layer（watcher/observeInstallations 旁）调用 `recoverInstallations()`，失败/仍 pending 记日志不阻塞启动。install-service 测试 12/0、全量 587/0。dist/node 重新构建（sidecar 生效需此步，dev 重启不会自动重编）。
 - 用户操作：重启开发版（sidecar 携带修复）→ 启动恢复清理 retained → 目录重新安装。
+
+## 状态机重构（2026-10-25，用户要求系统性整理）
+
+用户明确要求：重新整理安装/卸载/启动载入流程，不补丁式修复，状态管理避免竞态。全量探索（安装状态机、registry 状态布局、清理机械、三入口、测试基线 ~355 用例）后交付：
+
+1. **重装与 retained 解耦（purge-aware CAS）**：install.ts 的 commit/fenced CAS 区分两种 retained 变化——tombstone 被自身清理消费（消失）→ 安全放行；被另一个 removal 改写 → ABA 拒绝。registry.ts 的 purging-in-progress 报独立可行动错误（"cleanup still running; retry"）。commitInstallation 保留 `!current && retained && revision !== expected` 的 ABA 检查（purged tombstone 不阻塞）。commitRemoval 的 expectedRetainedRevision 参数保持（曾误删致 "data changed"，已复原）。
+2. **observer 增量恢复**：registry 每次 diff 后去重触发 recoverInstallations（写 receipt/retained 可解锁被推迟的清理，不再等重启）。
+3. **错误透传**：InstallError 的消息在源头精修（无 URL/凭据/路径），CLI/HTTP 透传而非替换为按 code 的固定文案。
+4. **评估后放弃**：prepare 阶段的跨进程 staging 互斥——按扩展 id 互斥会阻塞合法并发装/卸意图，且 commit CAS + generation lease 已正确裁决竞争（"loser cannot remove winner" 被 pin）；prepared receipt 持久化进 registry——与 ~30 处 registry.json 精确断言和观察者假设广泛冲突，且 staging 目录本身已是 prepared 状态的持久化（operation.json + cleanup.recover 的 lease-gated 恢复已存在）。
+
+验证：全量 589/0、typecheck 0 错误、dist/node 重编。保留边界：leases/flock 双锁体系、非原生 runtime lease busy、quiesce blockers sticky、registry v3 格式——均未动（另案）。
