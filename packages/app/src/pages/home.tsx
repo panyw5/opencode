@@ -623,7 +623,7 @@ export default function Home() {
       data-component="home-shell"
       class="size-full overflow-y-auto bg-background-base"
     >
-      <main data-component="home-dashboard" class="mx-auto w-full max-w-7xl px-4 py-7 sm:px-6 md:py-10 lg:px-8">
+      <main data-component="home-dashboard" class="mx-auto w-full px-4 py-7 sm:px-6 md:py-10 lg:px-8">
         <header class="home-masthead flex items-start justify-between gap-6">
           <div class="min-w-0">
             <Logo class="h-auto w-36 opacity-80" />
@@ -649,17 +649,237 @@ export default function Home() {
           <HomePathInput home={homedir()} onOpen={openProject} onBrowse={() => void chooseProject()} />
         </section>
 
-        <div class="mt-6 grid min-w-0 grid-flow-row-dense gap-6 lg:grid-cols-2">
-          <Show when={dashboard.favoritesLoading || dashboard.favoritesError || dashboard.favorites.length > 0}>
-            <section class="home-section min-w-0" aria-labelledby="home-favorite-sessions">
+        <div class="home-dashboard-columns mt-6">
+          <div class="home-dashboard-column">
+            <div class="home-session-stack">
+              <Show when={dashboard.favoritesLoading || dashboard.favoritesError || dashboard.favorites.length > 0}>
+                <section class="home-section min-w-0" aria-labelledby="home-favorite-sessions">
+                  <SectionHeader
+                    id="home-favorite-sessions"
+                    title={language.t("home.favoriteSessions")}
+                    action={language.t("home.favoriteSessions.viewAll")}
+                    onAction={showFavoriteSessions}
+                  />
+                  <Show
+                    when={!dashboard.favoritesLoading}
+                    fallback={
+                      <div class="flex min-h-28 items-center justify-center">
+                        <Spinner />
+                      </div>
+                    }
+                  >
+                    <Show
+                      when={!dashboard.favoritesError}
+                      fallback={
+                        <button
+                          type="button"
+                          class="mt-3 w-full rounded-lg px-3 py-7 text-center text-12-regular text-text-danger outline-none transition-colors hover:bg-surface-base-hover active:bg-surface-base-active focus-visible:bg-surface-base-hover"
+                          onClick={() => void refreshFavorites()}
+                        >
+                          {language.t("home.section.loadError")}
+                        </button>
+                      }
+                    >
+                      <ul class="home-work-list flex flex-col gap-2">
+                        <For each={homeFavorites()}>
+                          {(session) => (
+                            <li>
+                              <div
+                                role="button"
+                                tabIndex={0}
+                                data-kind="favorite"
+                                class="home-work-row group w-full cursor-pointer text-left outline-none"
+                                onClick={() => openSession(session)}
+                                onKeyDown={(event) => {
+                                  if (event.key !== "Enter" && event.key !== " ") return
+                                  event.preventDefault()
+                                  openSession(session)
+                                }}
+                              >
+                                <span class="home-work-icon flex shrink-0 items-center justify-center">
+                                  <Icon name="star-active" size="small" />
+                                </span>
+                                <span class="home-card-content">
+                                  <span class="home-card-title text-13-medium text-text-strong">
+                                    {session.title?.trim() || session.id.slice(0, 8)}
+                                  </span>
+                                </span>
+                                <button
+                                  type="button"
+                                  class="home-favorite-toggle -mr-1 flex size-7 shrink-0 items-center justify-center rounded-md text-icon-warning-base outline-none transition-colors hover:bg-surface-base-hover active:bg-surface-base-active focus-visible:bg-surface-base-hover"
+                                  aria-label={language.t("home.favorite.remove")}
+                                  aria-pressed="true"
+                                  title={language.t("home.favorite.remove")}
+                                  onClick={(event) => void toggleFavorite(session, event)}
+                                >
+                                  <Icon name="star-active" size="small" />
+                                </button>
+                                <span class="home-card-footer">
+                                  <span class="home-card-project" title={displayPath(session.directory)}>
+                                    <Icon name="folder" size="small" class="shrink-0" />
+                                    <span class="truncate">
+                                      {session.project?.name ||
+                                        getFilename(session.project?.worktree ?? session.directory) ||
+                                        displayPath(session.directory)}
+                                    </span>
+                                  </span>
+                                  <span class="home-card-time">
+                                    {relativeTime(
+                                      session.time.favorited ?? session.time.updated ?? session.time.created,
+                                    )}
+                                  </span>
+                                </span>
+                              </div>
+                            </li>
+                          )}
+                        </For>
+                      </ul>
+                    </Show>
+                  </Show>
+                </section>
+              </Show>
+
+              <section class="home-section min-w-0" aria-labelledby="home-recent-sessions">
+                <SectionHeader
+                  id="home-recent-sessions"
+                  title={language.t("home.recentSessions")}
+                  action={language.t("home.recentSessions.viewAll")}
+                  onAction={showRecentSessions}
+                />
+                <Show
+                  when={!dashboard.sessionsLoading}
+                  fallback={
+                    <div class="flex min-h-36 items-center justify-center">
+                      <Spinner />
+                    </div>
+                  }
+                >
+                  <Show
+                    when={!dashboard.sessionsError}
+                    fallback={
+                      <button
+                        type="button"
+                        class="mt-3 w-full rounded-lg px-3 py-8 text-center text-12-regular text-text-danger outline-none transition-colors hover:bg-surface-base-hover active:bg-surface-base-active focus-visible:bg-surface-base-hover"
+                        onClick={() => void refreshSessions()}
+                      >
+                        {language.t("home.section.loadError")}
+                      </button>
+                    }
+                  >
+                    <Show
+                      when={dashboard.sessions.length > 0}
+                      fallback={
+                        <div class="px-3 py-10 text-center text-12-regular text-text-weak">
+                          {language.t("home.recentSessions.empty")}
+                        </div>
+                      }
+                    >
+                      <ul class="home-work-list flex flex-col gap-2">
+                        <For each={homeSessions()}>
+                          {(session) => (
+                            <li>
+                              <div
+                                role="button"
+                                tabIndex={0}
+                                class="home-work-row group w-full cursor-pointer text-left outline-none"
+                                onClick={() => openSession(session)}
+                                onKeyDown={(event) => {
+                                  if (event.key !== "Enter" && event.key !== " ") return
+                                  event.preventDefault()
+                                  openSession(session)
+                                }}
+                              >
+                                <span class="home-work-icon flex size-8 shrink-0 items-center justify-center rounded-lg">
+                                  <Icon name="speech-bubble" size="small" />
+                                </span>
+                                <span class="home-card-content">
+                                  <span class="home-card-title text-13-medium text-text-strong">
+                                    {session.title?.trim() || session.id.slice(0, 8)}
+                                  </span>
+                                  <span class="home-card-description block truncate text-12-regular">
+                                    {latestUserMessages[session.id] ?? language.t("home.recentSessions.noUserMessage")}
+                                  </span>
+                                </span>
+                                <button
+                                  type="button"
+                                  class={`home-favorite-toggle -mr-1 flex size-7 shrink-0 items-center justify-center rounded-md outline-none transition-colors hover:bg-surface-base-hover active:bg-surface-base-active focus-visible:bg-surface-base-hover ${
+                                    typeof session.time.favorited === "number" && session.time.favorited > 0
+                                      ? "text-icon-warning-base"
+                                      : "text-icon-weak opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                                  }`}
+                                  aria-label={
+                                    typeof session.time.favorited === "number" && session.time.favorited > 0
+                                      ? language.t("home.favorite.remove")
+                                      : language.t("home.favorite.add")
+                                  }
+                                  aria-pressed={
+                                    typeof session.time.favorited === "number" && session.time.favorited > 0
+                                  }
+                                  title={
+                                    typeof session.time.favorited === "number" && session.time.favorited > 0
+                                      ? language.t("home.favorite.remove")
+                                      : language.t("home.favorite.add")
+                                  }
+                                  onClick={(event) => void toggleFavorite(session, event)}
+                                >
+                                  <Icon
+                                    name={
+                                      typeof session.time.favorited === "number" && session.time.favorited > 0
+                                        ? "star-active"
+                                        : "star"
+                                    }
+                                    size="small"
+                                  />
+                                </button>
+                                <span class="home-card-footer">
+                                  <span class="home-card-project" title={displayPath(session.directory)}>
+                                    <Icon name="folder" size="small" class="shrink-0" />
+                                    <span class="truncate">
+                                      {session.project?.name ||
+                                        getFilename(session.project?.worktree ?? session.directory) ||
+                                        displayPath(session.directory)}
+                                    </span>
+                                  </span>
+                                  <Show when={sessionBadge(session)}>
+                                    {(badge) => (
+                                      <span
+                                        class={`flex shrink-0 items-center gap-1 text-11-regular ${badge().textTone}`}
+                                      >
+                                        <span class={`size-1.5 rounded-full ${badge().tone}`} aria-hidden="true" />
+                                        {badge().label}
+                                      </span>
+                                    )}
+                                  </Show>
+                                  <span class="home-card-time">
+                                    {relativeTime(session.time.updated ?? session.time.created)}
+                                  </span>
+                                  <Icon name="arrow-right" size="small" class="home-card-arrow shrink-0" />
+                                </span>
+                              </div>
+                            </li>
+                          )}
+                        </For>
+                      </ul>
+                    </Show>
+                  </Show>
+                </Show>
+              </section>
+            </div>
+            <Show when={platform.platform === "desktop" && !!platform.resourceUsage}>
+              <HomeResourceUsage />
+            </Show>
+          </div>
+
+          <div class="home-dashboard-column">
+            <section class="home-section min-w-0" aria-labelledby="home-recent-project-tasks">
               <SectionHeader
-                id="home-favorite-sessions"
-                title={language.t("home.favoriteSessions")}
-                action={language.t("home.favoriteSessions.viewAll")}
-                onAction={showFavoriteSessions}
+                id="home-recent-project-tasks"
+                title={language.t("home.recentProjectTasks")}
+                action={language.t("home.recentProjectTasks.manage")}
+                onAction={() => navigate("/project-tasks")}
               />
               <Show
-                when={!dashboard.favoritesLoading}
+                when={!dashboard.projectTasksLoading}
                 fallback={
                   <div class="flex min-h-28 items-center justify-center">
                     <Spinner />
@@ -667,357 +887,162 @@ export default function Home() {
                 }
               >
                 <Show
-                  when={!dashboard.favoritesError}
+                  when={!dashboard.projectTasksError}
                   fallback={
                     <button
                       type="button"
-                      class="mt-3 w-full rounded-lg px-3 py-7 text-center text-12-regular text-text-danger outline-none transition-colors hover:bg-surface-base-hover active:bg-surface-base-active focus-visible:bg-surface-base-hover"
-                      onClick={() => void refreshFavorites()}
+                      class="mt-3 w-full rounded-lg px-3 py-7 text-center text-12-regular text-text-danger outline-none hover:bg-surface-base-hover focus-visible:bg-surface-base-hover"
+                      onClick={() => void refreshProjectTasks()}
                     >
                       {language.t("home.section.loadError")}
                     </button>
                   }
                 >
-                  <ul class="home-work-list flex flex-col gap-2">
-                    <For each={homeFavorites()}>
-                      {(session) => (
-                        <li>
-                          <div
-                            role="button"
-                            tabIndex={0}
-                            class="home-work-row group flex w-full cursor-pointer items-center gap-3 px-3.5 py-3 text-left outline-none"
-                            onClick={() => openSession(session)}
-                            onKeyDown={(event) => {
-                              if (event.key !== "Enter" && event.key !== " ") return
-                              event.preventDefault()
-                              openSession(session)
-                            }}
-                          >
-                            <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-icon-warning-base/15 text-icon-warning-base transition-colors group-hover:bg-icon-warning-base/25">
-                              <Icon name="star-active" size="small" />
-                            </span>
-                            <span class="min-w-0 flex-1">
-                              <span class="block truncate text-13-medium text-text-strong">
-                                {session.title?.trim() || session.id.slice(0, 8)}
-                              </span>
-                              <span class="mt-0.5 block truncate text-11-regular text-text-weak">
-                                {session.project?.name ||
-                                  getFilename(session.project?.worktree ?? session.directory) ||
-                                  displayPath(session.directory)}
-                              </span>
-                            </span>
-                            <span class="shrink-0 text-right text-11-regular text-text-weaker">
-                              {relativeTime(session.time.favorited ?? session.time.updated ?? session.time.created)}
-                            </span>
+                  <Show
+                    when={dashboard.projectTasks.length > 0}
+                    fallback={
+                      <div class="px-3 py-8 text-center text-12-regular text-text-weak">
+                        {language.t("home.recentProjectTasks.empty")}
+                      </div>
+                    }
+                  >
+                    <ul class="home-work-list flex flex-col gap-2" data-component="home-recent-project-tasks">
+                      <For each={dashboard.projectTasks}>
+                        {(task) => (
+                          <li>
                             <button
                               type="button"
-                              class="home-favorite-toggle -mr-1 flex size-7 shrink-0 items-center justify-center rounded-md text-icon-warning-base outline-none transition-colors hover:bg-surface-base-hover active:bg-surface-base-active focus-visible:bg-surface-base-hover"
-                              aria-label={language.t("home.favorite.remove")}
-                              aria-pressed="true"
-                              title={language.t("home.favorite.remove")}
-                              onClick={(event) => void toggleFavorite(session, event)}
+                              data-task-id={task.id}
+                              data-kind="project-task"
+                              class="home-work-row group w-full text-left outline-none"
+                              onClick={() => openProjectTask(task)}
                             >
-                              <Icon name="star-active" size="small" />
+                              <span class="home-work-icon flex size-8 shrink-0 items-center justify-center rounded-lg">
+                                <Icon name="checklist" size="small" />
+                              </span>
+                              <span class="home-card-content">
+                                <span class="home-card-title text-13-medium text-text-strong">{task.title}</span>
+                                <span
+                                  class="home-card-description block truncate text-11-regular"
+                                  title={displayPath(task.directory)}
+                                >
+                                  {task.projectName || getFilename(task.directory) || displayPath(task.directory)}
+                                </span>
+                              </span>
+                              <Icon name="arrow-right" size="small" class="home-card-arrow shrink-0" />
+                              <span class="home-card-footer">
+                                <span class="home-card-status" data-status={task.status}>
+                                  {projectTaskStatus(task)}
+                                </span>
+                                <span class="shrink-0">
+                                  {language.t("projectTask.sessions.count", { count: task.sessionCount })}
+                                </span>
+                                <Show when={task.progress.total > 0}>
+                                  <span class="home-card-progress" aria-hidden="true">
+                                    <span
+                                      style={{
+                                        width: `${Math.min(100, Math.max(0, (task.progress.completed / task.progress.total) * 100))}%`,
+                                      }}
+                                    />
+                                  </span>
+                                  <span class="shrink-0 tabular-nums">
+                                    {task.progress.completed}/{task.progress.total}
+                                  </span>
+                                </Show>
+                                <span
+                                  class="home-card-time"
+                                  title={new Date(task.recentAt).toLocaleString(language.intl())}
+                                >
+                                  {relativeTime(task.recentAt)}
+                                </span>
+                              </span>
                             </button>
-                          </div>
-                        </li>
-                      )}
-                    </For>
-                  </ul>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </Show>
                 </Show>
               </Show>
             </section>
-          </Show>
 
-          <section class="home-section min-w-0 lg:row-span-2" aria-labelledby="home-recent-sessions">
-            <SectionHeader
-              id="home-recent-sessions"
-              title={language.t("home.recentSessions")}
-              action={language.t("home.recentSessions.viewAll")}
-              onAction={showRecentSessions}
-            />
-            <Show
-              when={!dashboard.sessionsLoading}
-              fallback={
-                <div class="flex min-h-36 items-center justify-center">
-                  <Spinner />
-                </div>
-              }
-            >
+            <section class="home-section min-w-0" aria-labelledby="home-upcoming-tasks">
+              <SectionHeader
+                id="home-upcoming-tasks"
+                title={language.t("home.upcomingTasks")}
+                action={language.t("home.upcomingTasks.manage")}
+                onAction={() => navigate("/scheduled")}
+              />
               <Show
-                when={!dashboard.sessionsError}
+                when={!dashboard.tasksLoading}
                 fallback={
-                  <button
-                    type="button"
-                    class="mt-3 w-full rounded-lg px-3 py-8 text-center text-12-regular text-text-danger outline-none transition-colors hover:bg-surface-base-hover active:bg-surface-base-active focus-visible:bg-surface-base-hover"
-                    onClick={() => void refreshSessions()}
-                  >
-                    {language.t("home.section.loadError")}
-                  </button>
+                  <div class="flex min-h-28 items-center justify-center">
+                    <Spinner />
+                  </div>
                 }
               >
                 <Show
-                  when={dashboard.sessions.length > 0}
+                  when={!dashboard.tasksError}
                   fallback={
-                    <div class="px-3 py-10 text-center text-12-regular text-text-weak">
-                      {language.t("home.recentSessions.empty")}
-                    </div>
+                    <button
+                      type="button"
+                      class="mt-3 w-full rounded-lg px-3 py-7 text-center text-12-regular text-text-danger outline-none transition-colors hover:bg-surface-base-hover active:bg-surface-base-active focus-visible:bg-surface-base-hover"
+                      onClick={() => void refreshTasks()}
+                    >
+                      {language.t("home.section.loadError")}
+                    </button>
                   }
                 >
-                  <ul class="home-work-list flex flex-col gap-2">
-                    <For each={homeSessions()}>
-                      {(session) => (
-                        <li>
-                          <div
-                            role="button"
-                            tabIndex={0}
-                            class="home-work-row group flex w-full cursor-pointer items-center gap-3 px-3.5 py-3 text-left outline-none"
-                            onClick={() => openSession(session)}
-                            onKeyDown={(event) => {
-                              if (event.key !== "Enter" && event.key !== " ") return
-                              event.preventDefault()
-                              openSession(session)
-                            }}
-                          >
-                            <span class="home-work-icon flex size-8 shrink-0 items-center justify-center rounded-lg">
-                              <Icon name="speech-bubble" size="small" />
-                            </span>
-                            <span class="min-w-0 flex-1">
-                              <span class="block truncate text-13-medium text-text-strong">
-                                {session.title?.trim() || session.id.slice(0, 8)}
-                              </span>
-                              <span class="mt-0.5 block truncate text-12-regular text-text-base">
-                                {latestUserMessages[session.id] ?? language.t("home.recentSessions.noUserMessage")}
-                              </span>
-                              <span class="mt-0.5 block truncate text-11-regular text-text-weak">
-                                {session.project?.name ||
-                                  getFilename(session.project?.worktree ?? session.directory) ||
-                                  displayPath(session.directory)}
-                              </span>
-                            </span>
-                            <span class="flex shrink-0 flex-col items-end gap-0.5">
-                              <Show when={sessionBadge(session)}>
-                                {(badge) => (
-                                  <span class={`flex items-center gap-1.5 text-11-regular ${badge().textTone}`}>
-                                    <span class={`size-2 shrink-0 rounded-full ${badge().tone}`} aria-hidden="true" />
-                                    {badge().label}
-                                  </span>
-                                )}
-                              </Show>
-                              <span class="text-11-regular text-text-weaker">
-                                {relativeTime(session.time.updated ?? session.time.created)}
-                              </span>
-                            </span>
+                  <Show
+                    when={dashboard.tasks.length > 0}
+                    fallback={
+                      <div class="px-3 py-8 text-center text-12-regular text-text-weak">
+                        {language.t("home.upcomingTasks.empty")}
+                      </div>
+                    }
+                  >
+                    <ul class="home-work-list flex flex-col gap-2">
+                      <For each={dashboard.tasks}>
+                        {(task) => (
+                          <li>
                             <button
                               type="button"
-                              class={`home-favorite-toggle -mr-1 flex size-7 shrink-0 items-center justify-center rounded-md outline-none transition-colors hover:bg-surface-base-hover active:bg-surface-base-active focus-visible:bg-surface-base-hover ${
-                                typeof session.time.favorited === "number" && session.time.favorited > 0
-                                  ? "text-icon-warning-base"
-                                  : "text-icon-weak opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                              }`}
-                              aria-label={
-                                typeof session.time.favorited === "number" && session.time.favorited > 0
-                                  ? language.t("home.favorite.remove")
-                                  : language.t("home.favorite.add")
-                              }
-                              aria-pressed={typeof session.time.favorited === "number" && session.time.favorited > 0}
-                              title={
-                                typeof session.time.favorited === "number" && session.time.favorited > 0
-                                  ? language.t("home.favorite.remove")
-                                  : language.t("home.favorite.add")
-                              }
-                              onClick={(event) => void toggleFavorite(session, event)}
+                              data-kind="scheduled"
+                              class="home-work-row group w-full text-left outline-none"
+                              onClick={() => navigate(`/scheduled?task=${encodeURIComponent(task.id)}`)}
                             >
-                              <Icon
-                                name={
-                                  typeof session.time.favorited === "number" && session.time.favorited > 0
-                                    ? "star-active"
-                                    : "star"
-                                }
-                                size="small"
-                              />
+                              <span class="home-work-icon flex size-8 shrink-0 items-center justify-center rounded-lg">
+                                <Icon name="clock" size="small" />
+                              </span>
+                              <span class="home-card-content">
+                                <span class="home-card-title text-13-medium text-text-strong">{task.name}</span>
+                                <span class="home-card-description block truncate text-11-regular">
+                                  {task.projectName || displayPath(task.directory)}
+                                </span>
+                              </span>
+                              <Icon name="arrow-right" size="small" class="home-card-arrow shrink-0" />
+                              <span class="home-card-footer">
+                                <span class="home-card-status">
+                                  <span class={`size-1.5 shrink-0 rounded-full ${taskTone(task)}`} aria-hidden="true" />
+                                  <span>{taskStatus(task)}</span>
+                                </span>
+                                <span
+                                  class="home-card-time"
+                                  title={new Date(task.nextRunAt!).toLocaleString(language.intl())}
+                                >
+                                  {relativeTime(task.nextRunAt!)}
+                                </span>
+                              </span>
                             </button>
-                            <Icon
-                              name="arrow-right"
-                              size="small"
-                              class="shrink-0 text-icon-weak group-hover:text-icon-base"
-                            />
-                          </div>
-                        </li>
-                      )}
-                    </For>
-                  </ul>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </Show>
                 </Show>
               </Show>
-            </Show>
-          </section>
-
-          <section class="home-section min-w-0" aria-labelledby="home-recent-project-tasks">
-            <SectionHeader
-              id="home-recent-project-tasks"
-              title={language.t("home.recentProjectTasks")}
-              action={language.t("home.recentProjectTasks.manage")}
-              onAction={() => navigate("/project-tasks")}
-            />
-            <Show
-              when={!dashboard.projectTasksLoading}
-              fallback={
-                <div class="flex min-h-28 items-center justify-center">
-                  <Spinner />
-                </div>
-              }
-            >
-              <Show
-                when={!dashboard.projectTasksError}
-                fallback={
-                  <button
-                    type="button"
-                    class="mt-3 w-full rounded-lg px-3 py-7 text-center text-12-regular text-text-danger outline-none hover:bg-surface-base-hover focus-visible:bg-surface-base-hover"
-                    onClick={() => void refreshProjectTasks()}
-                  >
-                    {language.t("home.section.loadError")}
-                  </button>
-                }
-              >
-                <Show
-                  when={dashboard.projectTasks.length > 0}
-                  fallback={
-                    <div class="px-3 py-8 text-center text-12-regular text-text-weak">
-                      {language.t("home.recentProjectTasks.empty")}
-                    </div>
-                  }
-                >
-                  <ul class="home-work-list flex flex-col gap-2" data-component="home-recent-project-tasks">
-                    <For each={dashboard.projectTasks}>
-                      {(task) => (
-                        <li>
-                          <button
-                            type="button"
-                            data-task-id={task.id}
-                            class="home-work-row group flex w-full items-center gap-3 px-3.5 py-3 text-left outline-none"
-                            onClick={() => openProjectTask(task)}
-                          >
-                            <span class="home-work-icon flex size-8 shrink-0 items-center justify-center rounded-lg">
-                              <Icon name="checklist" size="small" />
-                            </span>
-                            <span class="min-w-0 flex-1">
-                              <span class="block truncate text-12-medium text-text-strong">{task.title}</span>
-                              <span
-                                class="mt-0.5 block truncate text-11-regular text-text-weak"
-                                title={displayPath(task.directory)}
-                              >
-                                {task.projectName || getFilename(task.directory) || displayPath(task.directory)}
-                              </span>
-                              <span class="mt-0.5 block truncate text-11-regular text-text-weaker">
-                                {language.t("projectTask.sessions.count", { count: task.sessionCount })}
-                                <Show when={task.progress.total > 0}>
-                                  {" "}
-                                  · {task.progress.completed}/{task.progress.total}
-                                </Show>
-                              </span>
-                            </span>
-                            <span class="flex shrink-0 flex-col items-end gap-0.5 text-11-regular text-text-weak">
-                              <span>{projectTaskStatus(task)}</span>
-                              <span
-                                class="text-text-weaker"
-                                title={new Date(task.recentAt).toLocaleString(language.intl())}
-                              >
-                                {relativeTime(task.recentAt)}
-                              </span>
-                            </span>
-                            <Icon
-                              name="arrow-right"
-                              size="small"
-                              class="shrink-0 text-icon-weak group-hover:text-icon-base"
-                            />
-                          </button>
-                        </li>
-                      )}
-                    </For>
-                  </ul>
-                </Show>
-              </Show>
-            </Show>
-          </section>
-
-          <section class="home-section min-w-0" aria-labelledby="home-upcoming-tasks">
-            <SectionHeader
-              id="home-upcoming-tasks"
-              title={language.t("home.upcomingTasks")}
-              action={language.t("home.upcomingTasks.manage")}
-              onAction={() => navigate("/scheduled")}
-            />
-            <Show
-              when={!dashboard.tasksLoading}
-              fallback={
-                <div class="flex min-h-28 items-center justify-center">
-                  <Spinner />
-                </div>
-              }
-            >
-              <Show
-                when={!dashboard.tasksError}
-                fallback={
-                  <button
-                    type="button"
-                    class="mt-3 w-full rounded-lg px-3 py-7 text-center text-12-regular text-text-danger outline-none transition-colors hover:bg-surface-base-hover active:bg-surface-base-active focus-visible:bg-surface-base-hover"
-                    onClick={() => void refreshTasks()}
-                  >
-                    {language.t("home.section.loadError")}
-                  </button>
-                }
-              >
-                <Show
-                  when={dashboard.tasks.length > 0}
-                  fallback={
-                    <div class="px-3 py-8 text-center text-12-regular text-text-weak">
-                      {language.t("home.upcomingTasks.empty")}
-                    </div>
-                  }
-                >
-                  <ul class="home-work-list flex flex-col gap-2">
-                    <For each={dashboard.tasks}>
-                      {(task) => (
-                        <li>
-                          <button
-                            type="button"
-                            class="home-work-row group flex w-full items-center gap-3 px-3.5 py-3 text-left outline-none"
-                            onClick={() => navigate(`/scheduled?task=${encodeURIComponent(task.id)}`)}
-                          >
-                            <span class="home-work-icon flex size-8 shrink-0 items-center justify-center rounded-lg">
-                              <Icon name="clock" size="small" />
-                            </span>
-                            <span class="min-w-0 flex-1">
-                              <span class="block truncate text-12-medium text-text-strong">{task.name}</span>
-                              <span class="mt-0.5 block truncate text-11-regular text-text-weak">
-                                {task.projectName || displayPath(task.directory)}
-                              </span>
-                            </span>
-                            <span class="flex shrink-0 flex-col items-end gap-0.5 text-11-regular text-text-weaker">
-                              <span class="flex items-center gap-1.5">
-                                <span class={`size-2 shrink-0 rounded-full ${taskTone(task)}`} aria-hidden="true" />
-                                <span class="text-text-weak">{taskStatus(task)}</span>
-                              </span>
-                              <span
-                                class="mt-0.5 block"
-                                title={new Date(task.nextRunAt!).toLocaleString(language.intl())}
-                              >
-                                {relativeTime(task.nextRunAt!)}
-                              </span>
-                            </span>
-                          </button>
-                        </li>
-                      )}
-                    </For>
-                  </ul>
-                </Show>
-              </Show>
-            </Show>
-          </section>
-
-          <Show when={platform.platform === "desktop" && !!platform.resourceUsage}>
-            <HomeResourceUsage />
-          </Show>
+            </section>
+          </div>
         </div>
       </main>
     </div>

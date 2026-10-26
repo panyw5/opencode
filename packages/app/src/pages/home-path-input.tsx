@@ -178,103 +178,107 @@ export function HomePathInput(props: { home: string; onOpen: (directory: string)
 
   return (
     <div ref={(node) => (rootRef = node)} data-component="home-path-input" class="home-path-launcher relative">
-      <div class="flex flex-col gap-2 sm:flex-row">
-        <div class="relative min-w-0 flex-1">
-          <div class="pointer-events-none absolute left-3 top-1/2 z-[1] flex size-5 -translate-y-1/2 items-center justify-center text-icon-weak">
-            <Icon name="terminal" size="normal" />
-          </div>
-          <input
-            ref={(node) => (inputRef = node)}
-            role="combobox"
-            aria-label={language.t("home.quickAdd.label")}
-            aria-autocomplete="list"
-            aria-controls="home-path-options"
-            aria-expanded={dropdownOpen()}
-            aria-activedescendant={dropdownOpen() ? activeID() : undefined}
-            value={state.query}
-            onFocus={() => setState("open", true)}
-            onInput={(event) => {
-              const query = normalizeDirectoryPath(event.currentTarget.value)
-              setState({ query, open: true })
-            }}
-            onKeyDown={handleKeyDown}
-            spellcheck={false}
-            autocomplete="off"
-            autocorrect="off"
-            autocapitalize="off"
-            placeholder={language.t("home.quickAdd.placeholder")}
-            class="home-path-field h-11 w-full rounded-lg border border-border-weak-base bg-background-base pl-10 pr-3 text-14-mono text-text-strong outline-none transition-colors placeholder:text-text-weaker focus:border-border-strong-base focus:ring-1 focus:ring-border-strong-base"
-          />
-          <Show when={dropdownOpen()}>
-            <div
-              id="home-path-options"
-              role="listbox"
-              class="absolute inset-x-0 top-[calc(100%+0.375rem)] z-20 max-h-72 overflow-y-auto rounded-xl border border-border-weak-base bg-surface-raised-base p-1.5"
-            >
-              <Show
-                when={!entries.loading}
-                fallback={
-                  <div class="px-3 py-6 text-center text-12-regular text-text-weak">{language.t("common.loading")}</div>
-                }
+      <div class="home-path-controls flex flex-col gap-2 sm:flex-row">
+        <div class="flex min-w-0 flex-1 gap-2">
+          <div class="relative min-w-0 flex-1">
+            <div class="pointer-events-none absolute left-3 top-1/2 z-[1] flex size-5 -translate-y-1/2 items-center justify-center text-icon-weak">
+              <Icon name="terminal" size="normal" />
+            </div>
+            <input
+              ref={(node) => (inputRef = node)}
+              role="combobox"
+              aria-label={language.t("home.quickAdd.label")}
+              aria-autocomplete="list"
+              aria-controls="home-path-options"
+              aria-expanded={dropdownOpen()}
+              aria-activedescendant={dropdownOpen() ? activeID() : undefined}
+              value={state.query}
+              onFocus={() => setState("open", true)}
+              onInput={(event) => {
+                const query = normalizeDirectoryPath(event.currentTarget.value)
+                setState({ query, open: true })
+              }}
+              onKeyDown={handleKeyDown}
+              spellcheck={false}
+              autocomplete="off"
+              autocorrect="off"
+              autocapitalize="off"
+              placeholder={language.t("home.quickAdd.placeholder")}
+              class="home-path-field h-11 w-full rounded-lg border border-border-weak-base bg-background-base pl-10 pr-3 text-14-mono text-text-strong outline-none transition-colors placeholder:text-text-weaker focus:border-border-strong-base focus:ring-1 focus:ring-border-strong-base"
+            />
+            <Show when={dropdownOpen()}>
+              <div
+                id="home-path-options"
+                role="listbox"
+                class="absolute inset-x-0 top-[calc(100%+0.375rem)] z-20 max-h-72 overflow-y-auto rounded-xl border border-border-weak-base bg-surface-raised-base p-1.5"
               >
                 <Show
-                  when={filtered().length > 0}
+                  when={!entries.loading}
                   fallback={
                     <div class="px-3 py-6 text-center text-12-regular text-text-weak">
-                      {language.t("home.quickAdd.noMatches")}
+                      {language.t("common.loading")}
                     </div>
                   }
                 >
-                  <For each={filtered()}>
-                    {(entry, index) => (
-                      <button
-                        ref={(node) => {
-                          if (node) optionRefs.set(index(), node)
-                          else optionRefs.delete(index())
-                        }}
-                        id={`home-path-option-${index()}`}
-                        type="button"
-                        role="option"
-                        aria-selected={state.highlighted === index()}
-                        class="home-path-option flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-13-regular outline-none transition-colors"
-                        classList={{
-                          "bg-surface-base-active text-text-strong": state.highlighted === index(),
-                          "text-text-base hover:bg-surface-base-hover active:bg-surface-base-active":
-                            state.highlighted !== index(),
-                        }}
-                        onMouseEnter={() => setState("highlighted", index())}
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => void submit(entry.path)}
-                      >
-                        <FileIcon node={{ path: entry.path, type: "directory" }} class="size-4 shrink-0" />
-                        <span class="min-w-0 flex-1 truncate font-mono">{entry.name}</span>
-                        <span class="shrink-0 text-11-regular text-text-weaker">Enter</span>
-                      </button>
-                    )}
-                  </For>
+                  <Show
+                    when={filtered().length > 0}
+                    fallback={
+                      <div class="px-3 py-6 text-center text-12-regular text-text-weak">
+                        {language.t("home.quickAdd.noMatches")}
+                      </div>
+                    }
+                  >
+                    <For each={filtered()}>
+                      {(entry, index) => (
+                        <button
+                          ref={(node) => {
+                            if (node) optionRefs.set(index(), node)
+                            else optionRefs.delete(index())
+                          }}
+                          id={`home-path-option-${index()}`}
+                          type="button"
+                          role="option"
+                          aria-selected={state.highlighted === index()}
+                          class="home-path-option flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-13-regular outline-none transition-colors"
+                          classList={{
+                            "bg-surface-base-active text-text-strong": state.highlighted === index(),
+                            "text-text-base hover:bg-surface-base-hover active:bg-surface-base-active":
+                              state.highlighted !== index(),
+                          }}
+                          onMouseEnter={() => setState("highlighted", index())}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => void submit(entry.path)}
+                        >
+                          <FileIcon node={{ path: entry.path, type: "directory" }} class="size-4 shrink-0" />
+                          <span class="min-w-0 flex-1 truncate font-mono">{entry.name}</span>
+                          <span class="shrink-0 text-11-regular text-text-weaker">Enter</span>
+                        </button>
+                      )}
+                    </For>
+                  </Show>
                 </Show>
-              </Show>
-            </div>
-          </Show>
+              </div>
+            </Show>
+          </div>
+          <Button
+            size="large"
+            variant="secondary"
+            class="!h-11 shrink-0 justify-center px-3"
+            aria-label={language.t("home.quickAdd.browse")}
+            onClick={props.onBrowse}
+          >
+            <Icon name="folder" size="small" />
+          </Button>
         </div>
         <div class="flex shrink-0 items-center gap-2">
           <Button
             size="large"
             variant="primary"
-            class="!h-11 min-w-24 flex-1 justify-center sm:flex-none"
+            class="home-path-open !h-11 min-w-24 flex-1 justify-center sm:flex-none"
             disabled={state.selecting || !targetPath()}
             onClick={() => void submit()}
           >
             {state.selecting ? language.t("common.loading") : language.t("home.quickAdd.add")}
-          </Button>
-          <Button
-            size="large"
-            variant="secondary"
-            class="!h-11 justify-center px-3"
-            aria-label={language.t("home.quickAdd.browse")}
-            onClick={props.onBrowse}
-          >
-            <Icon name="folder" size="small" />
           </Button>
         </div>
       </div>

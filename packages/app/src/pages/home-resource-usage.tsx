@@ -4,7 +4,12 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
-import { usePlatform, type ResourceUsage, type ResourceUsageTargetId } from "@/context/platform"
+import {
+  usePlatform,
+  type ResourceUsage,
+  type ResourceUsageTarget,
+  type ResourceUsageTargetId,
+} from "@/context/platform"
 
 const REFRESH_INTERVAL = 5000
 
@@ -20,6 +25,23 @@ const TARGET_DESC_KEYS: Record<ResourceUsageTargetId, string> = {
   "opencode-logs": "home.resourceUsage.target.opencode-logs.desc",
   "desktop-cache": "home.resourceUsage.target.desktop-cache.desc",
   "desktop-logs": "home.resourceUsage.target.desktop-logs.desc",
+}
+
+const RESOURCE_TARGETS: ResourceUsageTarget[] = (Object.keys(TARGET_LABEL_KEYS) as ResourceUsageTargetId[]).map(
+  (id) => ({
+    id,
+    path: "",
+    bytes: 0,
+  }),
+)
+
+function ValueLoading() {
+  return (
+    <span class="home-resource-loading" aria-hidden="true">
+      <span class="invisible">00.0 GB</span>
+      <Spinner />
+    </span>
+  )
 }
 
 function InfoMark(props: { title: string }) {
@@ -63,10 +85,19 @@ export default function HomeResourceUsage() {
   // Suspense boundary on every refetch and remount the whole home route.
   async function refresh() {
     if (!platform.resourceUsage) return
+    const initial = !usage()
+    const started = performance.now()
+    if (initial) console.debug("[home-resource] initial-load-start")
     try {
       setUsage(await platform.resourceUsage())
+      if (initial)
+        console.debug(
+          `[home-resource] initial-load-end duration=${(performance.now() - started).toFixed(1)}ms targets=${usage()?.targets.length ?? 0}`,
+        )
     } catch (error) {
-      console.error("[home-resource] refresh failed", error)
+      console.error(
+        `[home-resource] refresh-failed initial=${initial} error=${error instanceof Error ? error.message : String(error)}`,
+      )
     }
   }
 
@@ -81,13 +112,21 @@ export default function HomeResourceUsage() {
 
   async function clean(id: ResourceUsageTargetId) {
     if (!platform.cleanResourceTarget || cleaningId()) return
+    console.debug(`[home-resource] clean-start target=${id}`)
     setCleaningId(id)
     try {
       const next = await platform.cleanResourceTarget(id)
-      if (!next) return
+      if (!next) {
+        console.debug(`[home-resource] clean-cancelled target=${id}`)
+        return
+      }
       setUsage(next)
+      console.debug(`[home-resource] clean-end target=${id}`)
       showToast({ variant: "success", title: language.t("home.resourceUsage.clean.done") })
     } catch (error) {
+      console.error(
+        `[home-resource] clean-failed target=${id} error=${error instanceof Error ? error.message : String(error)}`,
+      )
       showToast({
         variant: "error",
         title: language.t("home.resourceUsage.clean.failed"),
@@ -98,73 +137,97 @@ export default function HomeResourceUsage() {
     }
   }
 
+  async function openFolder(target: ResourceUsageTarget) {
+    if (!platform.openPath) return
+    console.debug(`[home-resource] open-folder-start target=${target.id} path=${target.path}`)
+    try {
+      await platform.openPath(target.path)
+      console.debug(`[home-resource] open-folder-end target=${target.id} path=${target.path}`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[home-resource] open-folder-failed target=${target.id} path=${target.path} error=${message}`)
+      showToast({ variant: "error", title: language.t("common.requestFailed"), description: message })
+    }
+  }
+
   return (
-    <section class="home-section min-w-0" aria-labelledby="home-resource-usage">
+    <section class="home-section min-w-0" aria-labelledby="home-resource-usage" aria-busy={!usage()}>
       <div class="home-section-header flex min-h-8 items-center justify-between gap-3 pb-2">
         <h2 id="home-resource-usage" class="text-13-medium text-text-strong">
           {language.t("home.resourceUsage")}
         </h2>
       </div>
-      <Show
-        when={usage()}
-        fallback={
-          <div class="flex min-h-28 items-center justify-center">
-            <Spinner />
+      <div class="grid grid-cols-2 gap-3">
+        <div class="home-resource-metric flex min-w-0 flex-col gap-1">
+          <div class="truncate text-11-regular text-text-weak">{language.t("home.resourceUsage.memory")}</div>
+          <div class="home-resource-value truncate text-text-strong tabular-nums">
+            <Show when={usage()} fallback={<ValueLoading />}>
+              {(data) => formatBytes(data().memoryBytes)}
+            </Show>
           </div>
-        }
-      >
-        {(data) => (
-          <>
-            <div class="grid grid-cols-2 gap-3">
-              <div class="home-resource-metric flex min-w-0 flex-col gap-1">
-                <div class="truncate text-11-regular text-text-weak">{language.t("home.resourceUsage.memory")}</div>
-                <div class="home-resource-value truncate text-text-strong tabular-nums">
-                  {formatBytes(data().memoryBytes)}
-                </div>
-              </div>
-              <div class="home-resource-metric flex min-w-0 flex-col gap-1">
-                <div class="truncate text-11-regular text-text-weak">{language.t("home.resourceUsage.cpu")}</div>
-                <div class="home-resource-value truncate text-text-strong tabular-nums">
-                  {formatPercent(data().cpuPercent)}
-                </div>
-              </div>
-            </div>
-            <ul class="mt-3 flex flex-col">
-              <For each={data().targets}>
-                {(target) => (
-                  <li class="home-resource-target flex items-center gap-3 py-2.5">
-                    <span class="min-w-0 flex-1">
-                      <span class="flex items-center gap-1">
-                        <span class="truncate text-12-regular text-text-strong">
-                          {language.t(TARGET_LABEL_KEYS[target.id])}
-                        </span>
-                        <InfoMark title={language.t(TARGET_DESC_KEYS[target.id])} />
-                      </span>
-                      <span class="mt-0.5 block truncate text-10-regular text-text-weaker" title={target.path}>
-                        {target.path}
-                      </span>
-                    </span>
-                    <span class="shrink-0 text-12-regular text-text-weak tabular-nums">
-                      {formatBytes(target.bytes)}
-                    </span>
+        </div>
+        <div class="home-resource-metric flex min-w-0 flex-col gap-1">
+          <div class="truncate text-11-regular text-text-weak">{language.t("home.resourceUsage.cpu")}</div>
+          <div class="home-resource-value truncate text-text-strong tabular-nums">
+            <Show when={usage()} fallback={<ValueLoading />}>
+              {(data) => formatPercent(data().cpuPercent)}
+            </Show>
+          </div>
+        </div>
+      </div>
+      <ul class="home-resource-targets mt-3">
+        <For each={RESOURCE_TARGETS}>
+          {(target) => {
+            const current = () => usage()?.targets.find((value) => value.id === target.id) ?? target
+            return (
+              <li class="home-resource-target" data-resource-id={target.id}>
+                <span class="flex min-w-0 items-center gap-1">
+                  <span class="truncate text-12-regular text-text-strong">
+                    {language.t(TARGET_LABEL_KEYS[target.id])}
+                  </span>
+                  <InfoMark title={language.t(TARGET_DESC_KEYS[target.id])} />
+                </span>
+                <div class="home-resource-target-footer">
+                  <span class="home-resource-target-value text-text-strong tabular-nums">
+                    <Show when={usage()} fallback={<ValueLoading />}>
+                      {formatBytes(current().bytes)}
+                    </Show>
+                  </span>
+                  <div class="home-resource-target-actions">
+                    <Tooltip value={current().path || language.t("config.action.openFolder")} placement="top">
+                      <Button
+                        size="small"
+                        variant="ghost"
+                        icon="folder"
+                        class="shrink-0 px-2 text-text-weak"
+                        aria-label={
+                          current().path
+                            ? `${language.t("config.action.openFolder")}: ${current().path}`
+                            : language.t("config.action.openFolder")
+                        }
+                        disabled={!current().path || !platform.openPath}
+                        onClick={() => void openFolder(current())}
+                      />
+                    </Tooltip>
                     <Button
                       size="small"
                       variant="ghost"
-                      class="-mr-1 shrink-0 px-2 text-11-regular text-text-weak"
-                      disabled={cleaningId() !== null || target.bytes === 0}
+                      icon="trash"
+                      class="shrink-0 px-2 text-11-regular text-text-weak"
+                      disabled={cleaningId() !== null || current().bytes === 0}
                       onClick={() => void clean(target.id)}
                     >
                       {cleaningId() === target.id
                         ? language.t("home.resourceUsage.cleaning")
                         : language.t("home.resourceUsage.clean")}
                     </Button>
-                  </li>
-                )}
-              </For>
-            </ul>
-          </>
-        )}
-      </Show>
+                  </div>
+                </div>
+              </li>
+            )
+          }}
+        </For>
+      </ul>
     </section>
   )
 }
