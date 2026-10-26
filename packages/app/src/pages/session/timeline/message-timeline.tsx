@@ -91,6 +91,7 @@ import { timelineRowCache } from "./row-cache"
 import { DEFAULT_TIMELINE_OVERSCAN, timelineOverscan } from "./windows-performance"
 import { createSessionFind } from "./session-find"
 import { createLiveBottomFollow } from "./live-bottom"
+import { createBottomElasticity } from "./bottom-elasticity"
 import { isLongMathText, pickIdlePrewarmRow } from "./idle-prewarm"
 import { FileSearchBar } from "@opencode-ai/ui/file-search"
 import { isInjectionTextPart, splitMathInitializationPrompt } from "@opencode-ai/ui/injected-prompt-model"
@@ -528,6 +529,33 @@ export function MessageTimeline(props: {
     if (!target || target.kind === "reading" || target.kind === "live") return undefined
     return props.navigationState().viewportTarget ?? target
   }
+  const bottomMotion = typeof window === "undefined" ? undefined : window.matchMedia("(prefers-reduced-motion: reduce)")
+  const bottomElasticity = createBottomElasticity({
+    root: listRoot,
+    enabled: () => !bottomMotion?.matches && !activeNavigation(),
+    write: (root, offset, phase) => {
+      // Move the viewport and its rows together so relative reading anchors stay unchanged.
+      if (phase) {
+        root.dataset.bottomElasticity = phase
+        root.style.setProperty("--timeline-bottom-offset", `${offset}px`)
+      } else {
+        delete root.dataset.bottomElasticity
+        root.style.removeProperty("--timeline-bottom-offset")
+      }
+    },
+  })
+  onMount(() => {
+    const cancel = () => bottomElasticity.cancel()
+    bottomMotion?.addEventListener("change", cancel)
+    onCleanup(() => bottomMotion?.removeEventListener("change", cancel))
+  })
+  createEffect(
+    on(
+      () => [sessionID(), props.navigationState().generation] as const,
+      () => bottomElasticity.cancel(),
+    ),
+  )
+  onCleanup(() => bottomElasticity.cancel())
   const scrollLedger = createScrollLedger({
     initialTop: 0,
     fastSpeed: FAST_SCROLL_SPEED,
@@ -1481,7 +1509,20 @@ export function MessageTimeline(props: {
     }
     return false
   }
+  const canPullBottom = (root: HTMLElement, target: EventTarget | null) => {
+    const nested = boundaryTarget(root, target)
+    return (
+      nested === root ||
+      atPhysicalBottom({
+        scrollTop: nested.scrollTop,
+        scrollHeight: nested.scrollHeight,
+        clientHeight: nested.clientHeight,
+        threshold: 1,
+      })
+    )
+  }
   let touchGesture: number | undefined
+  let touchOrigin: number | undefined
   let inputProvenance: { kind: "wheel" | "touch" | "controlled"; direction: "up" | "down" | "other" } | undefined
   const handleScroll = (
     geometry: { scrollTop: number; scrollHeight: number; clientHeight: number },
@@ -2218,7 +2259,22 @@ export function MessageTimeline(props: {
             deltaMode: event.deltaMode,
             rootHeight: listSize().height,
           })
-          if (delta && markBoundaryGesture(event.currentTarget, event.target, delta)) {
+          const marked = delta !== 0 && markBoundaryGesture(event.currentTarget, event.target, delta)
+          if (
+            marked &&
+            delta > 0 &&
+            !event.defaultPrevented &&
+            !event.ctrlKey &&
+            !event.metaKey &&
+            !event.shiftKey &&
+            Math.abs(event.deltaY) > Math.abs(event.deltaX) &&
+            canPullBottom(event.currentTarget, event.target)
+          ) {
+            bottomElasticity.pull(delta)
+          } else {
+            bottomElasticity.cancel()
+          }
+          if (marked) {
             inputProvenance = { kind: "wheel", direction: delta < 0 ? "up" : "down" }
             lastWheelAt = performance.now()
             prewarmRetry = 0
@@ -2232,25 +2288,51 @@ export function MessageTimeline(props: {
           }
         }}
         onTouchStart={(event) => {
+          bottomElasticity.cancel()
           touchSequence += 1
-          touchGesture = event.touches[0]?.clientY
+          touchGesture = event.touches.length === 1 ? event.touches[0]?.clientY : undefined
+          touchOrigin = event.touches.length === 1 ? event.touches[0]?.clientX : undefined
           markBoundaryGesture(event.currentTarget, event.target, 0, "touch")
         }}
         onTouchMove={(event) => {
           const next = event.touches[0]?.clientY
-          if (touchGesture === undefined || next === undefined) return
+          if (event.touches.length !== 1 || touchGesture === undefined || next === undefined) {
+            touchGesture = undefined
+            touchOrigin = undefined
+            bottomElasticity.cancel()
+            return
+          }
           markToolHydrationScrollActivity()
           const delta = touchGesture - next
-          if (markBoundaryGesture(event.currentTarget, event.target, delta, "touch"))
-            inputProvenance = { kind: "touch", direction: delta < 0 ? "up" : "down" }
+          const marked = markBoundaryGesture(event.currentTarget, event.target, delta, "touch")
+          if (marked) inputProvenance = { kind: "touch", direction: delta < 0 ? "up" : "down" }
+          if (
+            marked &&
+            !event.defaultPrevented &&
+            delta > 0 &&
+            Math.abs(delta) > Math.abs((touchOrigin ?? event.touches[0].clientX) - event.touches[0].clientX) &&
+            canPullBottom(event.currentTarget, event.target)
+          ) {
+            bottomElasticity.pull(delta, "touch")
+          } else {
+            bottomElasticity.cancel()
+          }
           touchGesture = next
+          touchOrigin = event.touches[0].clientX
         }}
-        onTouchEnd={() => (touchGesture = undefined)}
+        onTouchEnd={() => {
+          touchGesture = undefined
+          touchOrigin = undefined
+          bottomElasticity.release()
+        }}
         onTouchCancel={() => {
           touchGesture = undefined
+          touchOrigin = undefined
           inputProvenance = undefined
+          bottomElasticity.cancel()
         }}
         onPointerDown={(event) => {
+          bottomElasticity.cancel()
           if (event.target === event.currentTarget)
             props.onMarkScrollGesture(event.currentTarget, { kind: "other", top: event.currentTarget.scrollTop })
         }}
@@ -2259,7 +2341,9 @@ export function MessageTimeline(props: {
           if (!selection || selection.isCollapsed || !selection.anchorNode) return
           if (event.currentTarget.contains(selection.anchorNode)) props.onReadingTakeover?.()
         }}
+        onKeyDown={() => bottomElasticity.cancel()}
         onScrollInput={(root, input) => {
+          bottomElasticity.cancel()
           props.onMarkScrollGesture(root, input ?? { kind: "other", top: root.scrollTop })
           inputProvenance = {
             kind: "controlled",

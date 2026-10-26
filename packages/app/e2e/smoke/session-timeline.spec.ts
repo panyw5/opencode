@@ -20,7 +20,17 @@ type SmokeState = {
   forbiddenText: string[]
 }
 
+type ElasticitySample = {
+  phase?: string
+  offset: number
+  top: number
+  height: number
+  anchor: number
+  composer: number
+}
+
 type SmokeWindow = Window & {
+  __bottomElasticitySamples?: ElasticitySample[]
   __timelineSmokeState?: () => SmokeState
   __timelineSmokeErrorToasts?: string[]
   __timelineSmokeForbiddenText?: string[]
@@ -60,6 +70,86 @@ test.describe("smoke: session timeline", () => {
     await expectPatchDiffExpandable(page)
   })
 
+  for (const reducedMotion of ["no-preference", "reduce"] as const) {
+    test(`bottom elasticity respects ${reducedMotion} without moving scroll geometry`, async ({ page }) => {
+      await page.emulateMedia({ reducedMotion })
+      await mockOpenCodeServer(page, {
+        sessions: fixture.sessions,
+        provider: fixture.provider,
+        directory: fixture.directory,
+        project: fixture.project,
+        pageMessages,
+      })
+      await configureSmokePage(page, fixture.directory)
+      await navigateToSession(page, fixture.directory, fixture.targetID, fixture.expected.targetTitle)
+      await expectSessionReady(page)
+      const scroller = page.locator(
+        '[data-component="message-timeline"] > [data-component="scroll-view"] > [data-slot="scroll-view-viewport"]',
+      )
+      await scroller.evaluate((root) => (root.scrollTop = root.scrollHeight))
+      await expect
+        .poll(() => scroller.evaluate((root) => root.scrollHeight - root.clientHeight - root.scrollTop))
+        .toBeLessThanOrEqual(1)
+      const overlay = page.locator('[data-component="sidebar-dismiss-overlay"]')
+      if (await overlay.isVisible()) await overlay.click({ force: true })
+      // Record in-page before sending wheel input so transient pulling frames cannot be missed.
+      await scroller.evaluate((root) => {
+        const state = window as SmokeWindow
+        const content = root.querySelector<HTMLElement>("[data-timeline-virtual-content]")!
+        const composer = document.querySelector<HTMLElement>('[data-component="prompt-input"]')!
+        const samples: ElasticitySample[] = []
+        state.__bottomElasticitySamples = samples
+        const start = performance.now()
+        const sample = () => {
+          const transform = getComputedStyle(root).transform
+          samples.push({
+            phase: (root as HTMLElement).dataset.bottomElasticity,
+            offset: transform === "none" ? 0 : new DOMMatrix(transform).m42,
+            top: root.scrollTop,
+            height: root.scrollHeight,
+            anchor: content.getBoundingClientRect().top - root.getBoundingClientRect().top,
+            composer: composer.getBoundingClientRect().top,
+          })
+          if (performance.now() - start < 1500) requestAnimationFrame(sample)
+        }
+        sample()
+      })
+      const box = await scroller.boundingBox()
+      if (!box) throw new Error("Timeline viewport is not visible")
+      // Use the right gutter rather than a nested code block that may consume the wheel.
+      await page.mouse.move(box.x + box.width - 24, box.y + box.height / 2)
+      await page.mouse.wheel(0, 160)
+      if (reducedMotion === "no-preference") {
+        await expect
+          .poll(() =>
+            page.evaluate(() => (window as SmokeWindow).__bottomElasticitySamples?.some((s) => s.offset < -1)),
+          )
+          .toBe(true)
+        await expect(scroller).not.toHaveAttribute("data-bottom-elasticity")
+      } else {
+        await expect
+          .poll(() => page.evaluate(() => (window as SmokeWindow).__bottomElasticitySamples?.length ?? 0))
+          .toBeGreaterThan(30)
+      }
+      const samples = await page.evaluate(() => (window as SmokeWindow).__bottomElasticitySamples!)
+      expect(samples.length).toBeGreaterThan(0)
+      if (reducedMotion === "reduce") {
+        expect(samples.every((sample) => sample.offset === 0 && !sample.phase)).toBe(true)
+      } else {
+        expect(samples.some((sample) => sample.phase === "pulling")).toBe(true)
+        expect(samples.some((sample) => sample.phase === "settling")).toBe(true)
+      }
+      for (const sample of samples) {
+        expect(sample.offset).toBeGreaterThanOrEqual(-20)
+        expect(sample.offset).toBeLessThanOrEqual(0)
+        expect(Math.abs(sample.top - samples[0].top)).toBeLessThanOrEqual(1)
+        expect(sample.height).toBe(samples[0].height)
+        expect(Math.abs(sample.anchor - samples[0].anchor)).toBeLessThanOrEqual(1)
+        expect(Math.abs(sample.composer - samples[0].composer)).toBeLessThanOrEqual(1)
+      }
+    })
+  }
+
   test("renders seeded timeline in order while paging through history", async ({ page }) => {
     const errors = trackPageErrors(page)
     await mockOpenCodeServer(page, {
@@ -92,10 +182,7 @@ async function expectPatchDiffExpandable(page: Page) {
   for (let attempt = 0; attempt < 40 && (await tool.count()) === 0; attempt++) {
     await page.mouse.wheel(0, -600)
     await page.evaluate(
-      () =>
-        new Promise<void>((resolve) =>
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-        ),
+      () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
     )
   }
   await expect(tool).toBeVisible()

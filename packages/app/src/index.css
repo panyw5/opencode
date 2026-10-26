@@ -1422,6 +1422,22 @@
   }
 }
 
+[data-component="message-timeline"] > [data-component="scroll-view"] > [data-slot="scroll-view-viewport"] {
+  overscroll-behavior-y: none;
+}
+
+[data-component="message-timeline"] [data-slot="scroll-view-viewport"][data-bottom-elasticity] {
+  transform: translateY(var(--timeline-bottom-offset, 0px));
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="message-timeline"] [data-slot="scroll-view-viewport"][data-bottom-elasticity] {
+    transform: none;
+    will-change: auto;
+  }
+}
+
 html[data-platform="desktop"][data-color-scheme="dark"] [data-component="collapsible"].tool-collapsible {
   border: 1px solid var(--gray-dark-5);
 }
