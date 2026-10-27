@@ -36,6 +36,63 @@ test("home lists new tasks, refreshes linked activity and opens task detail", as
   })
 })
 
+test("project task detail title uses the available header width", async ({ page, withProject }) => {
+  await withProject(async ({ directory }) => {
+    const sdk = createSdk(directory)
+    const title = "重构 macOS 独立构建与桌面发布流程"
+    const task = (await sdk.projectTask.create({ projectTaskCreateInput: { title } })).data!
+    try {
+      await page.setViewportSize({ width: 1440, height: 1000 })
+      await page.goto("/")
+      await page.locator(`[data-task-id="${task.id}"]`).click()
+      const dialog = page.getByRole("dialog")
+      const heading = dialog.locator('[data-slot="project-task-title"]')
+      await expect(heading).toHaveText(title)
+      await expect
+        .poll(() => heading.evaluate((element) => element.scrollWidth <= element.clientWidth))
+        .toBe(true)
+      await expect
+        .poll(() =>
+          dialog.locator('[data-slot="project-task-title-row"]').evaluate((element) => {
+            const title = element.querySelector('[data-slot="project-task-title"]')!.getBoundingClientRect()
+            const project = element.querySelector('[data-slot="project-task-project-name"]')!.getBoundingClientRect()
+            const actions = element
+              .closest('[data-slot="dialog-header"]')!
+              .querySelector('[data-slot="project-task-actions"]')!
+              .getBoundingClientRect()
+            return (
+              Math.abs(project.left - title.right - parseFloat(getComputedStyle(element).columnGap)) < 1 &&
+              Math.abs(title.top + title.height / 2 - (actions.top + actions.height / 2)) < 1
+            )
+          }),
+        )
+        .toBe(true)
+
+      for (const width of [760, 480]) {
+        await page.setViewportSize({ width, height: 1000 })
+        await expect
+          .poll(() =>
+            dialog.locator('[data-slot="dialog-header"]').evaluate((element) => {
+              const header = element.getBoundingClientRect()
+              const title = element.querySelector('[data-slot="project-task-title"]')!.getBoundingClientRect()
+              return (
+                element.scrollWidth <= element.clientWidth &&
+                title.width > 0 &&
+                [...element.querySelectorAll("button")].every((button) => {
+                  const rect = button.getBoundingClientRect()
+                  return rect.left >= header.left && rect.right <= header.right
+                })
+              )
+            }),
+          )
+          .toBe(true)
+      }
+    } finally {
+      await sdk.projectTask.archive({ taskID: task.id })
+    }
+  })
+})
+
 test("home recent project tasks can retry a failed request", async ({ page, withProject }) => {
   await withProject(async ({ directory }) => {
     const sdk = createSdk(directory)

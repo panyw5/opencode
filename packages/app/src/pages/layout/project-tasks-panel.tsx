@@ -618,6 +618,17 @@ export function ProjectTaskDetailDialog(props: {
             max-height: 100% !important;
             overflow: hidden !important;
           }
+          [data-component="dialog"][data-project-task-dialog] [data-slot="dialog-header"] {
+            align-items: flex-start;
+            gap: 12px;
+          }
+          [data-component="dialog"][data-project-task-dialog] [data-slot="dialog-title-group"] {
+            flex: 1;
+          }
+          [data-component="dialog"][data-project-task-dialog] [data-slot="dialog-title"] {
+            min-width: 0;
+            width: 100%;
+          }
           [data-component="dialog"][data-project-task-dialog] [data-slot="dialog-body"] {
             min-height: 0;
             flex: 1 1 auto;
@@ -632,11 +643,16 @@ export function ProjectTaskDetailDialog(props: {
           <div class="flex w-full min-w-0 flex-col">
             <div
               data-slot="project-task-title-row"
-              class="flex w-full min-w-0 flex-wrap items-center gap-3 sm:flex-nowrap"
+              class="flex min-h-8 w-full min-w-0 flex-wrap items-center gap-3 sm:flex-nowrap"
               ref={(element) => {
                 const frame = requestAnimationFrame(() => {
+                  const title = element.querySelector<HTMLElement>('[data-slot="project-task-title"]')
+                  const project = element.querySelector<HTMLElement>('[data-slot="project-task-project-name"]')
+                  const actions = element
+                    .closest('[data-slot="dialog-header"]')
+                    ?.querySelector<HTMLElement>('[data-slot="project-task-actions"]')
                   console.debug(
-                    `[project-task] title-layout task=${props.task.id} embedded=${!!props.embedded} rowWidth=${element.clientWidth} titleWidth=${element.querySelector<HTMLElement>('[data-slot="project-task-title"]')?.clientWidth} projectWidth=${element.querySelector<HTMLElement>('[data-slot="project-task-project-name"]')?.clientWidth}`,
+                    `[project-task] title-layout task=${props.task.id} embedded=${!!props.embedded} rowWidth=${element.clientWidth} titleWidth=${title?.clientWidth} projectWidth=${project?.clientWidth} projectGap=${title && project ? project.getBoundingClientRect().left - title.getBoundingClientRect().right : "none"} actionsTop=${actions?.getBoundingClientRect().top} rowTop=${element.getBoundingClientRect().top}`,
                   )
                 })
                 onCleanup(() => cancelAnimationFrame(frame))
@@ -645,7 +661,7 @@ export function ProjectTaskDetailDialog(props: {
               <Show
                 when={props.embedded}
                 fallback={
-                  <div data-slot="project-task-title" class="min-w-0 w-full truncate sm:w-0 sm:flex-1" title={title()}>
+                  <div data-slot="project-task-title" class="min-w-0 max-w-full truncate" title={title()}>
                     {title()}
                   </div>
                 }
@@ -694,7 +710,7 @@ export function ProjectTaskDetailDialog(props: {
         data-project-task-dialog={dialogKey()}
         data-maximized={maximized() ? "" : undefined}
         action={
-          <div class="flex items-center gap-2">
+          <div data-slot="project-task-actions" class="flex min-h-8 shrink-0 items-center gap-2">
             <Show when={props.embedded && state.mode === "preview" && state.titleDraft.trim() !== title()}>
               <Button size="small" disabled={state.pending || state.loading} onClick={() => void saveDocument()}>
                 {language.t("trellis.tasks.save")}
