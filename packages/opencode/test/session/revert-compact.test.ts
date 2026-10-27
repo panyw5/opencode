@@ -12,6 +12,12 @@ import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { provideTmpdirInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+import { Bus } from "../../src/bus"
+import { Storage } from "../../src/storage/storage"
+import { SyncEvent } from "../../src/sync"
+import { SessionHistory } from "../../src/session/history"
+import { SessionRunState } from "../../src/session/run-state"
+import { SessionSummary } from "../../src/session/summary"
 
 void Log.init({ print: false })
 
@@ -23,16 +29,44 @@ const env = Layer.mergeAll(
 )
 
 const it = testEffect(env)
+const failureIt = testEffect(
+  Layer.mergeAll(
+    Session.defaultLayer,
+    Snapshot.defaultLayer,
+    CrossSpawnSpawner.defaultLayer,
+    SessionRevert.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          Session.defaultLayer,
+          Snapshot.defaultLayer,
+          Storage.defaultLayer,
+          Bus.layer,
+          SyncEvent.defaultLayer,
+          SessionHistory.defaultLayer,
+          SessionRunState.defaultLayer,
+          Layer.mock(SessionSummary.Service, {
+            invalidate: () => Effect.void,
+            computeDiff: () => Effect.die(new Error("injected diff failure")),
+          }),
+        ),
+      ),
+    ),
+  ),
+)
 
-const user = Effect.fn("test.user")(function* (sessionID: SessionID, agent = "default") {
+const user = Effect.fn("test.user")(function* (
+  sessionID: SessionID,
+  agent = "default",
+  input?: { id: MessageID; created: number },
+) {
   const session = yield* Session.Service
   return yield* session.updateMessage({
-    id: MessageID.ascending(),
+    id: input?.id ?? MessageID.ascending(),
     role: "user" as const,
     sessionID,
     agent,
     model: { providerID: ProviderID.make("openai"), modelID: ModelID.make("gpt-4") },
-    time: { created: Date.now() },
+    time: { created: input?.created ?? Date.now() },
   })
 })
 
@@ -97,6 +131,130 @@ const tokens = {
 }
 
 describe("revert + compact workflow", () => {
+  failureIt.live(
+    "restores filesystem and leaves metadata unchanged when reset fails before commit",
+    provideTmpdirInstance(
+      (directory) =>
+        Effect.gen(function* () {
+          const session = yield* Session.Service
+          const snapshot = yield* Snapshot.Service
+          const revert = yield* SessionRevert.Service
+          const file = path.join(directory, "checkpoint.txt")
+          yield* write(file, "before")
+          const before = yield* snapshot.track()
+          if (!before) throw new Error("expected git snapshot")
+          const info = yield* session.create({})
+          const first = yield* user(info.id)
+          yield* text(info.id, first.id, "change file")
+          yield* write(file, "after")
+          const patch = yield* snapshot.patch(before)
+          yield* session.updatePart({
+            id: PartID.ascending(),
+            messageID: first.id,
+            sessionID: info.id,
+            type: "patch",
+            hash: patch.hash,
+            files: patch.files,
+          })
+          const failed = yield* revert.revert({ sessionID: info.id, messageID: first.id }).pipe(
+            Effect.as(false),
+            Effect.catchCause(() => Effect.succeed(true)),
+          )
+          expect(failed).toBe(true)
+          expect(yield* read(file)).toBe("after")
+          expect((yield* session.get(info.id)).revert).toBeUndefined()
+        }),
+      { git: true },
+    ),
+  )
+
+  it.instance("cleanup uses chronological order rather than mixed identifier order", () =>
+    Effect.gen(function* () {
+      const session = yield* Session.Service
+      const revert = yield* SessionRevert.Service
+      const info = yield* session.create({})
+      const first = yield* user(info.id, "default", { id: MessageID.make("msg_z_earliest"), created: 1 })
+      const target = yield* user(info.id, "default", { id: MessageID.make("msg_m_boundary"), created: 2 })
+      const last = yield* user(info.id, "default", { id: MessageID.make("msg_a_latest"), created: 3 })
+      yield* revert.revert({ sessionID: info.id, messageID: target.id })
+      yield* revert.cleanup(yield* session.get(info.id))
+      expect((yield* session.messages({ sessionID: info.id })).map((row) => row.info.id)).toEqual([first.id])
+      expect((yield* session.get(info.id)).revert).toBeUndefined()
+      expect(last.id < target.id).toBe(true)
+    }),
+  )
+
+  it.instance("an assistant boundary resolves to its own user, not an intervening user", () =>
+    Effect.gen(function* () {
+      const session = yield* Session.Service
+      const revert = yield* SessionRevert.Service
+      const info = yield* session.create({})
+      const first = yield* user(info.id, "default", { id: MessageID.make("msg_z_parent"), created: 1 })
+      yield* user(info.id, "default", { id: MessageID.make("msg_a_intervening"), created: 2 })
+      const reply = yield* assistant(info.id, first.id, "/tmp")
+      expect((yield* revert.revert({ sessionID: info.id, messageID: reply.id })).revert?.messageID).toBe(first.id)
+    }),
+  )
+
+  it.instance("cleanup re-reads the committed boundary rather than trusting a stale caller snapshot", () =>
+    Effect.gen(function* () {
+      const session = yield* Session.Service
+      const revert = yield* SessionRevert.Service
+      const info = yield* session.create({})
+      const first = yield* user(info.id)
+      const last = yield* user(info.id)
+      const stale = yield* revert.revert({ sessionID: info.id, messageID: last.id })
+      yield* revert.revert({ sessionID: info.id, messageID: first.id })
+      yield* revert.cleanup(stale)
+      expect(yield* session.messages({ sessionID: info.id })).toEqual([])
+    }),
+  )
+
+  it.instance("a missing cleanup anchor fails closed without deleting any message", () =>
+    Effect.gen(function* () {
+      const session = yield* Session.Service
+      const revert = yield* SessionRevert.Service
+      const info = yield* session.create({})
+      const first = yield* user(info.id)
+      yield* session.setRevert({
+        sessionID: info.id,
+        revert: { messageID: MessageID.ascending() },
+        summary: { additions: 0, deletions: 0, files: 0 },
+      })
+      const failed = yield* revert.cleanup(yield* session.get(info.id)).pipe(
+        Effect.as(false),
+        Effect.catchCause(() => Effect.succeed(true)),
+      )
+      expect(failed).toBe(true)
+      expect((yield* session.messages({ sessionID: info.id })).map((row) => row.info.id)).toEqual([first.id])
+      expect((yield* session.get(info.id)).revert).toBeDefined()
+    }),
+  )
+
+  it.instance("rejects a missing boundary without changing an existing revert", () =>
+    Effect.gen(function* () {
+      const session = yield* Session.Service
+      const revert = yield* SessionRevert.Service
+      const info = yield* session.create({})
+      const first = yield* user(info.id)
+      yield* text(info.id, first.id, "keep this boundary")
+      yield* revert.revert({ sessionID: info.id, messageID: first.id })
+      const missing = yield* revert.revert({ sessionID: info.id, messageID: MessageID.ascending() }).pipe(Effect.flip)
+      expect(missing._tag).toBe("NotFoundError")
+      expect((yield* session.get(info.id)).revert?.messageID).toBe(first.id)
+    }),
+  )
+
+  it.instance("can revert a message before any parts have been written", () =>
+    Effect.gen(function* () {
+      const session = yield* Session.Service
+      const revert = yield* SessionRevert.Service
+      const info = yield* session.create({})
+      const first = yield* user(info.id)
+      expect((yield* revert.revert({ sessionID: info.id, messageID: first.id })).revert?.messageID).toBe(first.id)
+    }),
+  )
+
   it.live(
     "should properly handle compact command after revert",
     provideTmpdirInstance(

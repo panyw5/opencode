@@ -1,4 +1,4 @@
-import { Effect, Layer, Context, Schema } from "effect"
+import { Effect, Exit, Layer, Context, Schema } from "effect"
 import { Bus } from "../bus"
 import { Snapshot } from "../snapshot"
 import { Storage } from "@/storage/storage"
@@ -9,6 +9,7 @@ import { MessageV2 } from "./message-v2"
 import { SessionID, MessageID, PartID } from "./schema"
 import { SessionRunState } from "./run-state"
 import { SessionSummary } from "./summary"
+import { SessionHistory } from "./history"
 
 const log = Log.create({ service: "session.revert" })
 
@@ -20,7 +21,7 @@ export const RevertInput = Schema.Struct({
 export type RevertInput = Schema.Schema.Type<typeof RevertInput>
 
 export interface Interface {
-  readonly revert: (input: RevertInput) => Effect.Effect<Session.Info, Session.BusyError>
+  readonly revert: (input: RevertInput) => Effect.Effect<Session.Info, Session.BusyError | Storage.NotFoundError>
   readonly unrevert: (input: { sessionID: SessionID }) => Effect.Effect<Session.Info, Session.BusyError>
   readonly cleanup: (session: Session.Info) => Effect.Effect<void>
 }
@@ -37,42 +38,38 @@ export const layer = Layer.effect(
     const summary = yield* SessionSummary.Service
     const state = yield* SessionRunState.Service
     const sync = yield* SyncEvent.Service
+    const history = yield* SessionHistory.Service
 
-    const revert = Effect.fn("SessionRevert.revert")(function* (input: RevertInput) {
+    const revertUnlocked = Effect.fn("SessionRevert.revert")(function* (input: RevertInput) {
       log.info("revert start", input)
       yield* state.assertNotBusy(input.sessionID)
       const all = yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
-      let lastUser: MessageV2.User | undefined
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
-
-      let rev: Session.Info["revert"]
-      const patches: Snapshot.Patch[] = []
-      for (const msg of all) {
-        if (msg.info.role === "user") lastUser = msg.info
-        const remaining = []
-        for (const part of msg.parts) {
-          if (rev) {
-            if (part.type === "patch") patches.push(part)
-            continue
-          }
-
-          if (!rev) {
-            if ((msg.info.id === input.messageID && !input.partID) || part.id === input.partID) {
-              const partID = remaining.some((item) => ["text", "tool"].includes(item.type)) ? input.partID : undefined
-              rev = {
-                messageID: !partID && lastUser ? lastUser.id : msg.info.id,
-                partID,
-              }
-            }
-            remaining.push(part)
-          }
-        }
-      }
-
-      if (!rev) {
+      const target = all.findIndex((msg) => msg.info.id === input.messageID)
+      const part = input.partID ? all[target]?.parts.findIndex((part) => part.id === input.partID) : undefined
+      if (target < 0 || part === -1) {
         log.warn("revert boundary not found", { ...input, messages: all.length })
-        return session
+        return yield* new Storage.NotFoundError({
+          message: `Revert boundary not found: ${input.messageID}${input.partID ? `/${input.partID}` : ""}`,
+        })
       }
+      const message = all[target]
+      const partial =
+        part !== undefined && message.parts.slice(0, part).some((part) => part.type === "text" || part.type === "tool")
+      const parentID = message.info.role === "assistant" ? message.info.parentID : message.info.id
+      const parent = all.findIndex((msg) => msg.info.id === parentID && msg.info.role === "user")
+      const boundary = partial ? target : parent >= 0 ? parent : target
+      const rev: NonNullable<Session.Info["revert"]> = {
+        messageID: all[boundary].info.id,
+        ...(partial ? { partID: input.partID } : {}),
+      }
+      const range = all.slice(boundary)
+      const patches = range.flatMap((msg, index) =>
+        (index === 0 && partial ? msg.parts.slice(part) : msg.parts).filter(
+          (part): part is Snapshot.Patch & MessageV2.Part => part.type === "patch",
+        ),
+      )
+      yield* state.invalidate(input.sessionID)
       yield* summary.invalidate(input.sessionID)
 
       log.info("revert boundary resolved", {
@@ -85,63 +82,103 @@ export const layer = Layer.effect(
         patches: patches.length,
       })
 
-      rev.snapshot = session.revert?.snapshot ?? (yield* snap.track())
-      if (session.revert?.snapshot) yield* snap.restore(session.revert.snapshot)
-      yield* snap.revert(patches)
-      if (rev.snapshot) rev.diff = yield* snap.diff(rev.snapshot)
-      const range = all.filter((msg) => msg.info.id >= rev.messageID)
-      const diffs = yield* summary.computeDiff({ messages: range })
-      yield* storage.write(["session_diff", input.sessionID], diffs).pipe(Effect.ignore)
-      yield* bus.publish(Session.Event.Diff, { sessionID: input.sessionID, diff: diffs })
-      yield* sessions.setRevert({
-        sessionID: input.sessionID,
-        revert: rev,
-        summary: {
-          additions: diffs.reduce((sum, x) => sum + x.additions, 0),
-          deletions: diffs.reduce((sum, x) => sum + x.deletions, 0),
-          files: diffs.length,
-        },
-      })
-      const result = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
-      log.info("revert complete", {
-        sessionID: input.sessionID,
-        messageID: result.revert?.messageID,
-        partID: result.revert?.partID,
-      })
-      return result
+      const checkpoint = yield* snap.track()
+      let committed = false
+      return yield* Effect.gen(function* () {
+        rev.snapshot = session.revert?.snapshot ?? checkpoint
+        if (session.revert?.snapshot) yield* snap.restore(session.revert.snapshot)
+        yield* snap.revert(patches)
+        if (rev.snapshot) rev.diff = yield* snap.diff(rev.snapshot)
+        const diffs = yield* summary.computeDiff({ messages: range })
+        yield* sessions.setRevert({
+          sessionID: input.sessionID,
+          revert: rev,
+          summary: {
+            additions: diffs.reduce((sum, x) => sum + x.additions, 0),
+            deletions: diffs.reduce((sum, x) => sum + x.deletions, 0),
+            files: diffs.length,
+          },
+        })
+        committed = true
+        yield* storage.write(["session_diff", input.sessionID], diffs).pipe(Effect.ignore)
+        yield* bus.publish(Session.Event.Diff, { sessionID: input.sessionID, diff: diffs })
+        const result = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+        log.info("revert complete", {
+          sessionID: input.sessionID,
+          messageID: result.revert?.messageID,
+          partID: result.revert?.partID,
+        })
+        return result
+      }).pipe(
+        Effect.onExit((exit) => {
+          if (Exit.isSuccess(exit) || committed || !checkpoint) return Effect.void
+          log.warn("revert failed before commit; restoring checkpoint", { sessionID: input.sessionID, checkpoint })
+          return snap.restore(checkpoint).pipe(
+            Effect.tap(() => Effect.sync(() => log.info("revert checkpoint restored", { sessionID: input.sessionID }))),
+            Effect.catchCause((cause) =>
+              Effect.sync(() =>
+                log.error("revert checkpoint restore failed", { sessionID: input.sessionID, cause: String(cause) }),
+              ),
+            ),
+          )
+        }),
+      )
     })
 
-    const unrevert = Effect.fn("SessionRevert.unrevert")(function* (input: { sessionID: SessionID }) {
+    const unrevertUnlocked = Effect.fn("SessionRevert.unrevert")(function* (input: { sessionID: SessionID }) {
       log.info("unreverting", input)
       yield* state.assertNotBusy(input.sessionID)
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       if (!session.revert) return session
+      const reverted = session.revert
+      yield* state.invalidate(input.sessionID)
       yield* summary.invalidate(input.sessionID)
-      if (session.revert.snapshot) yield* snap.restore(session.revert.snapshot)
-      yield* sessions.clearRevert(input.sessionID)
-      return yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      const checkpoint = yield* snap.track()
+      let committed = false
+      return yield* Effect.gen(function* () {
+        if (reverted.snapshot) yield* snap.restore(reverted.snapshot)
+        yield* sessions.clearRevert(input.sessionID)
+        committed = true
+        return yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      }).pipe(
+        Effect.onExit((exit) => {
+          if (Exit.isSuccess(exit) || committed || !checkpoint) return Effect.void
+          log.warn("unrevert failed before commit; restoring checkpoint", { sessionID: input.sessionID, checkpoint })
+          return snap
+            .restore(checkpoint)
+            .pipe(
+              Effect.catchCause((cause) =>
+                Effect.sync(() =>
+                  log.error("unrevert checkpoint restore failed", { sessionID: input.sessionID, cause: String(cause) }),
+                ),
+              ),
+            )
+        }),
+      )
     })
 
-    const cleanup = Effect.fn("SessionRevert.cleanup")(function* (session: Session.Info) {
+    const cleanupUnlocked = Effect.fn("SessionRevert.cleanup")(function* (input: Session.Info) {
+      const session = yield* sessions.get(input.id).pipe(Effect.orDie)
       if (!session.revert) return
       const sessionID = session.id
       yield* summary.invalidate(sessionID)
       const msgs = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
       const messageID = session.revert.messageID
-      const remove = [] as MessageV2.WithParts[]
-      let target: MessageV2.WithParts | undefined
-      for (const msg of msgs) {
-        if (msg.info.id < messageID) continue
-        if (msg.info.id > messageID) {
-          remove.push(msg)
-          continue
-        }
-        if (session.revert.partID) {
-          target = msg
-          continue
-        }
-        remove.push(msg)
+      const index = msgs.findIndex((msg) => msg.info.id === messageID)
+      const target = msgs[index]
+      const partIndex = session.revert.partID
+        ? target?.parts.findIndex((part) => part.id === session.revert!.partID)
+        : undefined
+      if (index < 0 || partIndex === -1) {
+        log.error("cleanup boundary missing; refusing to guess suffix", {
+          sessionID,
+          messageID,
+          partID: session.revert.partID,
+        })
+        return yield* Effect.die(new Storage.NotFoundError({ message: `Cleanup boundary not found: ${messageID}` }))
       }
+      // Delete the boundary last, so interrupted cleanup still has an exact anchor.
+      const remove = msgs.slice(index + (session.revert.partID ? 1 : 0)).reverse()
       log.info("cleanup start", {
         sessionID,
         messageID,
@@ -185,6 +222,12 @@ export const layer = Layer.effect(
       log.info("cleanup complete", { sessionID, messageID, removeMessages: remove.length })
     })
 
+    const revert = (input: RevertInput) =>
+      history.withLock(input.sessionID, revertUnlocked(input).pipe(Effect.uninterruptible))
+    const unrevert = (input: { sessionID: SessionID }) =>
+      history.withLock(input.sessionID, unrevertUnlocked(input).pipe(Effect.uninterruptible))
+    const cleanup = (input: Session.Info) =>
+      history.withLock(input.id, cleanupUnlocked(input).pipe(Effect.uninterruptible))
     return Service.of({ revert, unrevert, cleanup })
   }),
 )
@@ -198,6 +241,7 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Bus.layer),
     Layer.provide(SessionSummary.defaultLayer),
     Layer.provide(SyncEvent.defaultLayer),
+    Layer.provide(SessionHistory.defaultLayer),
   ),
 )
 
