@@ -52,10 +52,14 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
       if (!surface) return
       const style = getComputedStyle(surface)
       console.debug(
-        `[prompt-popover] opened kind=${kind} background=${style.backgroundColor} blur=${style.backdropFilter}`,
+        `[prompt-popover] opened kind=${kind} background=${style.backgroundColor} border=${style.borderColor} shadow=${style.boxShadow} blur=${style.backdropFilter}`,
       )
     })
     onCleanup(() => cancelAnimationFrame(frame))
+  })
+  createEffect(() => {
+    if (props.popover !== "at") return
+    console.debug(`[prompt-at] loading indicator state=${props.atLoading ? "loading" : "idle"} placement=header`)
   })
 
   return (
@@ -68,34 +72,54 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
         data-component="prompt-popover"
         class="absolute inset-x-0 -top-2 -translate-y-full origin-bottom-left max-h-80 min-h-10
                  overflow-hidden flex flex-col p-2 rounded-[12px]
-                 bg-surface-raised-stronger-non-alpha border border-white/10 shadow-[var(--shadow-lg-border-base)]"
+                 bg-surface-raised-stronger-non-alpha border border-border-weak-base/60 shadow-[var(--shadow-lg)]"
         onMouseDown={(e) => e.preventDefault()}
       >
-        <Show when={props.popover === "at" && props.setAtCategory}>
-          <div class="flex gap-1 shrink-0 overflow-x-auto no-scrollbar pb-2" role="tablist">
-            <For each={atCategories}>
-              {(category) => (
-                <button
-                  type="button"
-                  role="tab"
-                  tabIndex={-1}
-                  aria-selected={props.atCategory === category}
-                  class="shrink-0 whitespace-nowrap rounded-md px-2 py-1 text-12-regular text-text-strong"
-                  classList={{ "bg-surface-raised-base-active": props.atCategory === category }}
-                  onClick={() => props.setAtCategory?.(category)}
-                >
-                  {props.t(`prompt.at.category.${category}`)}
-                </button>
-              )}
-            </For>
+        <Show when={props.popover === "at"}>
+          <div data-slot="prompt-at-header" class="flex items-center gap-3 shrink-0 pb-2">
+            <Show when={props.setAtCategory}>
+              <div class="flex gap-1.5 min-w-0 flex-1 overflow-x-auto no-scrollbar" role="tablist">
+                <For each={atCategories}>
+                  {(category) => (
+                    <button
+                      type="button"
+                      role="tab"
+                      tabIndex={-1}
+                      aria-selected={props.atCategory === category}
+                      class="inline-flex min-h-9 shrink-0 items-center justify-center whitespace-nowrap rounded-full border px-3 py-1.5 text-12-medium transition-colors duration-150 motion-reduce:transition-none"
+                      classList={{
+                        "bg-surface-interactive-weak-hover border-border-selected/30 text-text-strong":
+                          props.atCategory === category,
+                        "border-transparent text-text-weak hover:bg-surface-base-hover hover:border-border-weak-base/60 hover:text-text-strong":
+                          props.atCategory !== category,
+                      }}
+                      onClick={() => props.setAtCategory?.(category)}
+                      onMouseEnter={() =>
+                        console.debug(
+                          `[prompt-at] category hover category=${category} selected=${props.atCategory === category}`,
+                        )
+                      }
+                    >
+                      {props.t(`prompt.at.category.${category}`)}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
+            <Show when={props.atLoading}>
+              <div
+                data-slot="prompt-at-loading"
+                role="status"
+                class="ml-auto shrink-0 whitespace-nowrap px-2 py-1 text-12-regular text-text-weak"
+              >
+                {props.t("prompt.at.loading")}
+              </div>
+            </Show>
           </div>
         </Show>
         <div data-prompt-popover-list class="min-h-0 overflow-y-auto no-scrollbar">
           <Switch>
             <Match when={props.popover === "at"}>
-              <Show when={props.atLoading}>
-                <div class="text-text-weak px-2 py-1">{props.t("prompt.at.loading")}</div>
-              </Show>
               <Show when={props.atError}>
                 <div class="text-text-weak px-2 py-1">{props.t("prompt.at.loadFailed")}</div>
               </Show>
