@@ -208,6 +208,15 @@ describe("tool.registry", () => {
     }),
   )
 
+  it.instance("shows session_transcript for reading any session", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+
+      expect(ids).toContain("session_transcript")
+    }),
+  )
+
   it.instance("hides task background parameter unless experimental background subagents are enabled", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service

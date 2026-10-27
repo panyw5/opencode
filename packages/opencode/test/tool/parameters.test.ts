@@ -23,6 +23,7 @@ import { Parameters as Skill } from "../../src/tool/skill"
 import { Parameters as Task } from "../../src/tool/task"
 import { Parameters as TaskList } from "../../src/tool/task_list"
 import { Parameters as TaskTranscript } from "../../src/tool/task_transcript"
+import { Parameters as SessionTranscript } from "../../src/tool/session_transcript"
 import { Parameters as Todo } from "../../src/tool/todo"
 import { Parameters as WebFetch } from "../../src/tool/webfetch"
 import { Parameters as WebSearch } from "../../src/tool/websearch"
@@ -56,6 +57,7 @@ describe("tool parameters", () => {
     test("task", () => expect(toJsonSchema(Task)).toMatchSnapshot())
     test("task_list", () => expect(toJsonSchema(TaskList)).toMatchSnapshot())
     test("task_transcript", () => expect(toJsonSchema(TaskTranscript)).toMatchSnapshot())
+    test("session_transcript", () => expect(toJsonSchema(SessionTranscript)).toMatchSnapshot())
     test("todo", () => expect(toJsonSchema(Todo)).toMatchSnapshot())
     test("webfetch", () => expect(toJsonSchema(WebFetch)).toMatchSnapshot())
     test("websearch", () => expect(toJsonSchema(WebSearch)).toMatchSnapshot())
@@ -265,6 +267,21 @@ describe("tool parameters", () => {
     })
     test("rejects limits over 50", () => {
       expect(accepts(TaskTranscript, { task_id: "ses_123", limit: 51 })).toBe(false)
+    })
+  })
+
+  describe("session_transcript", () => {
+    test("accepts session_id with optional pagination and content filters", () => {
+      const parsed = parse(SessionTranscript, { session_id: "ses_123", cursor: "opaque", limit: 10, include: ["tool"] })
+      expect(parsed.cursor).toBe("opaque")
+      expect(parsed.limit).toBe(10)
+      expect(parsed.include).toEqual(["tool"])
+    })
+    test("rejects limits over 50", () => {
+      expect(accepts(SessionTranscript, { session_id: "ses_123", limit: 51 })).toBe(false)
+    })
+    test("rejects missing session_id", () => {
+      expect(accepts(SessionTranscript, {})).toBe(false)
     })
   })
 

@@ -1,0 +1,21 @@
+# PURPOSE
+Inspect the persisted transcript of ANY session by id, including root sessions and sessions from other directories or projects.
+
+Use this when the user references another session (for example a `@session` mention) and you need to read what it actually contains. Unlike `task_transcript`, this tool is NOT limited to child tasks of the current session.
+
+# GUIDELINES
+## PARAMETERS
+- `session_id` — REQUIRED, string. The id of any session to read (`ses_...`).
+- `cursor` — optional, string. The `next_cursor` value returned by a previous call. Omit it on the first call.
+- `limit` — optional, integer. Messages to return per page. Default 20, maximum 50. Prefer the default or a small page; do NOT read the whole transcript unless it is necessary.
+- `include` — optional, array of these values: `text`, `tool`, `reasoning`. Which content to return. Default is `text` + `tool`. `reasoning` is excluded unless you list it explicitly.
+
+## PAGINATION
+The first call (no `cursor`) returns the most RECENT page. Each response reports `more` and, when older messages exist, `next_cursor`. To read backwards through history, pass the previous response's `next_cursor` as `cursor`; repeat until `more` is `false`.
+
+## RESPONSE
+- Header: `session_id`, `title`, `directory`, `messages` (entries in this page), `more`, and `next_cursor` when present.
+- Each entry starts with `[role] message_id: ... created: ...`. An assistant entry may add `finish: ...` or `error: ...`.
+- Message content appears as `text:` blocks; reasoning as `reasoning:` blocks (only when requested).
+- Tool entries appear as `tool: <name> (<status>)` followed by `input: <value>`, plus `output:` when the status is completed, `error:` when it failed, or `title:` while it is still running.
+- Each field is clipped to 4000 characters. Page further to see the rest rather than expecting full history in one call.

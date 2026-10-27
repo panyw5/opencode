@@ -25,7 +25,7 @@ exports[`tool parameters JSON Schema (wire shape) bash 1`] = `
       "type": "boolean",
     },
     "command": {
-      "description": "The command to execute",
+      "description": "Raw command text for one invocation of the selected shell. Literal newlines and heredocs are supported; do not JSON-escape shell syntax.",
       "type": "string",
     },
     "description": {
@@ -357,6 +357,23 @@ exports[`tool parameters JSON Schema (wire shape) task 1`] = `
 }
 `;
 
+exports[`tool parameters JSON Schema (wire shape) task_list 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "scope": {
+      "description": "List direct children only, or all descendants (default descendants)",
+      "enum": [
+        "children",
+        "descendants",
+      ],
+      "type": "string",
+    },
+  },
+  "type": "object",
+}
+`;
+
 exports[`tool parameters JSON Schema (wire shape) task_transcript 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -396,19 +413,41 @@ exports[`tool parameters JSON Schema (wire shape) task_transcript 1`] = `
 }
 `;
 
-exports[`tool parameters JSON Schema (wire shape) task_list 1`] = `
+exports[`tool parameters JSON Schema (wire shape) session_transcript 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
-    "scope": {
-      "description": "List direct children only, or all descendants (default descendants)",
-      "enum": [
-        "children",
-        "descendants",
-      ],
+    "cursor": {
+      "description": "Opaque next_cursor returned by a previous call, to read older messages",
+      "type": "string",
+    },
+    "include": {
+      "description": "Content to include; defaults to text and tool. Reasoning is excluded unless explicitly requested.",
+      "items": {
+        "enum": [
+          "text",
+          "tool",
+          "reasoning",
+        ],
+        "type": "string",
+      },
+      "type": "array",
+    },
+    "limit": {
+      "description": "Messages to return (default 20, maximum 50)",
+      "exclusiveMinimum": 0,
+      "maximum": 50,
+      "type": "integer",
+    },
+    "session_id": {
+      "description": "The id of any session to read (root or child, any directory)",
+      "pattern": "^ses",
       "type": "string",
     },
   },
+  "required": [
+    "session_id",
+  ],
   "type": "object",
 }
 `;
