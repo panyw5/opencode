@@ -10,7 +10,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
 import { Binary } from "@opencode-ai/core/util/binary"
 import { useParams } from "@solidjs/router"
-import { batch, createEffect, createMemo, onCleanup, onMount, Show } from "solid-js"
+import { batch, createEffect, createMemo, For, onCleanup, Show, untrack, type JSX } from "solid-js"
 import { createStore, reconcile, type SetStoreFunction } from "solid-js/store"
 import { useCommand } from "@/context/command"
 import { useGlobalSDK } from "@/context/global-sdk"
@@ -60,6 +60,13 @@ import { buildRequestParts } from "../prompt-input/build-request-parts"
 import { promptText } from "../prompt-input/prompt-text"
 import { clonePromptParts } from "../prompt-input/history"
 import { QUICK_ASSISTANT_SELECTION_EVENT, appendSelectionToPrompt } from "@/utils/selection-prompt"
+import {
+  activeAfterClose,
+  assistantWindowTitle,
+  initialAssistantWindows,
+  migrateAssistantWindows,
+  type AssistantWindow,
+} from "./windows"
 
 function errorName(err: unknown) {
   if (!err || typeof err !== "object") return undefined
@@ -80,21 +87,12 @@ const QUICK_AGENT = "assistant"
 const QUICK_ASSISTANT_MESSAGE_LIMIT = 80
 const QUICK_ASSISTANT_SETTLE_MS = 3_000
 const QUICK_ASSISTANT_STALE_MS = 300_000
+const QUICK_ASSISTANT_EXIT_MS = 220
 
-type Saved = {
-  open: boolean
-  session: Record<string, string | undefined>
-  context: boolean
-  maximized?: boolean
-  variant?: string
+type WindowControls = {
+  stop: () => Promise<boolean>
+  select: (text: string) => void
 }
-
-const initial = {
-  open: false,
-  session: {},
-  context: false,
-  maximized: false,
-} satisfies Saved
 
 function quickAssistantConfig() {
   return {
@@ -230,19 +228,6 @@ function seed(setStore: SetStoreFunction<State>, session: Session) {
   })
 }
 
-function patchSession(setStore: SetStoreFunction<State>, sessionID: string, next: Partial<Session>) {
-  setStore("session", (list: Session[]) => {
-    const result = Binary.search(list, sessionID, (item) => item.id)
-    if (!result.found) return list
-    const copy = [...list]
-    copy[result.index] = {
-      ...copy[result.index],
-      ...next,
-    }
-    return copy
-  })
-}
-
 function join(root: string, child: string) {
   const slash = /^[A-Za-z]:\\|\\\\/.test(root) || root.includes("\\") ? "\\" : "/"
   return root.replace(/[\\/]+$/, "") + slash + child
@@ -259,19 +244,296 @@ function same(a: string, b: string, win: boolean) {
 }
 
 export function QuickAssistant() {
+  const platform = usePlatform()
+  if (platform.platform !== "desktop") return null
   const params = useParams()
+  const language = useLanguage()
+  const settings = useSettings()
   const command = useCommand()
+  const [saved, setSaved, , ready] = persisted(
+    { ...Persist.global("quick-assistant", ["quick-assistant.v1"]), migrate: migrateAssistantWindows },
+    createStore(initialAssistantWindows()),
+  )
+  const [status, setStatus] = createStore<
+    Record<string, { busy: boolean; waiting: boolean; closing: boolean } | undefined>
+  >({})
+  const [panel, setPanel] = createStore({ present: false, entering: false, minimumHeight: 0, tabScroll: 0 })
+  createEffect(() => {
+    if (saved.open) {
+      console.debug("[quick-assistant] panel slide-in requested motion=always")
+      const entering = !untrack(() => panel.present)
+      setPanel({ present: true, entering })
+      if (!entering) return
+      // Paint the off-screen position before transitioning in, without replaying on tab switches.
+      let frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => setPanel("entering", false))
+      })
+      onCleanup(() => cancelAnimationFrame(frame))
+      return
+    }
+    console.debug("[quick-assistant] panel slide-out requested motion=always")
+    setPanel("entering", false)
+    // Leave enough time for the 180ms CSS exit transition before removing the UI.
+    const timer = setTimeout(() => {
+      console.debug("[quick-assistant] panel slide-out complete; unmounting UI")
+      setPanel({ present: false, minimumHeight: 0, tabScroll: 0 })
+    }, QUICK_ASSISTANT_EXIT_MS)
+    onCleanup(() => clearTimeout(timer))
+  })
+  const controls = new Map<string, WindowControls>()
+  const enabled = () => settings.assistant.model() !== "disabled"
+  const add = () => {
+    if (!ready()) return
+    const current = document.querySelector<HTMLElement>('[data-component="quick-assistant-panel"]:not([hidden])')
+    const list = current?.querySelector<HTMLElement>('[data-component="quick-assistant-tabs"] [role="tablist"]')
+    const height = current?.getBoundingClientRect().height
+    const id = crypto.randomUUID()
+    const number = saved.next
+    batch(() => {
+      if (height) setPanel({ minimumHeight: height, tabScroll: list?.scrollTop ?? 0 })
+      setSaved("windows", (items) => [...items, { id, number, context: false }])
+      setSaved("active", id)
+      setSaved("next", number + 1)
+      setSaved("open", true)
+    })
+    console.debug(
+      `[quick-assistant] window added window=${id} number=${number} count=${saved.windows.length} preservedHeight=${height ?? 0} tabScroll=${panel.tabScroll}`,
+    )
+  }
+  const open = () => {
+    if (!ready()) return
+    if (!saved.windows.length) return add()
+    setSaved("open", true)
+    console.debug(`[quick-assistant] windows opened active=${saved.active} count=${saved.windows.length}`)
+  }
+  const close = async (id: string) => {
+    if (status[id]?.closing) return
+    setStatus(id, "closing", true)
+    console.debug(`[quick-assistant] window close start window=${id}`)
+    try {
+      const control = controls.get(id)
+      if (control && !(await control.stop())) return
+      if (saved.windows.length === 1 && saved.open) {
+        setSaved("open", false)
+        await new Promise((resolve) => setTimeout(resolve, QUICK_ASSISTANT_EXIT_MS))
+      }
+      batch(() => {
+        setSaved("active", activeAfterClose(saved.windows, saved.active, id))
+        setSaved("windows", (items) => items.filter((item) => item.id !== id))
+        if (!saved.windows.length) setSaved("open", false)
+      })
+      console.debug(
+        `[quick-assistant] window closed window=${id} active=${saved.active ?? "none"} count=${saved.windows.length}`,
+      )
+    } finally {
+      if (saved.windows.some((item) => item.id === id)) setStatus(id, "closing", false)
+      else setStatus(id, undefined)
+    }
+  }
+  const onSelection = (event: Event) => {
+    const text = (event as CustomEvent<unknown>).detail
+    if (typeof text !== "string" || !text.trim()) {
+      console.warn(`[session-selection] quick assistant ignored invalid selection type=${typeof text}`)
+      return
+    }
+    if (!ready()) {
+      console.debug("[session-selection] quick assistant ignored selection reason=storage-loading")
+      return
+    }
+    if (!saved.windows.length) add()
+    controls.get(saved.active ?? "")?.select(text)
+    open()
+  }
+  window.addEventListener(QUICK_ASSISTANT_SELECTION_EVENT, onSelection)
+  console.debug("[session-selection] quick assistant listener enabled")
+  onCleanup(() => {
+    window.removeEventListener(QUICK_ASSISTANT_SELECTION_EVENT, onSelection)
+    console.debug("[session-selection] quick assistant listener disabled")
+  })
+  command.register("quick-assistant", () => [
+    {
+      id: "assistant.quick.toggle",
+      title: language.t("command.assistant.quick.toggle"),
+      description: language.t("command.assistant.quick.toggle.description"),
+      keywords: `${language.t("command.assistant.quick.toggle")} ${language.t("command.assistant.quick.toggle.description")}`,
+      category: language.t("command.category.session"),
+      keybind: "mod+shift+j",
+      disabled: !enabled() || !ready(),
+      onSelect: () => (saved.open ? setSaved("open", false) : open()),
+    },
+  ])
+  const tabs = () => (
+    <div
+      data-component="quick-assistant-tabs"
+      class="absolute right-full top-8 -mr-px flex w-36 max-sm:w-20 flex-col gap-1"
+      style={{ "max-height": "calc(100% - 2rem)" }}
+    >
+      <div
+        role="tablist"
+        aria-label={language.t("quickAssistant.windows")}
+        aria-orientation="vertical"
+        class="flex min-h-0 min-w-0 flex-col gap-1 overflow-x-hidden overflow-y-auto"
+        style={{ "overflow-anchor": "none" }}
+        ref={(node) => {
+          const top = untrack(() => panel.tabScroll)
+          queueMicrotask(() => {
+            if (node.isConnected) node.scrollTop = top
+          })
+        }}
+      >
+        <For each={saved.windows}>
+          {(item) => (
+            <div class="group relative min-w-0 shrink-0">
+              <button
+                type="button"
+                role="tab"
+                id={`quick-assistant-tab-${item.id}`}
+                aria-controls={`quick-assistant-window-${item.id}`}
+                aria-selected={saved.active === item.id}
+                aria-label={item.title || language.t("quickAssistant.window", { number: item.number })}
+                title={item.title || language.t("quickAssistant.window", { number: item.number })}
+                tabIndex={saved.active === item.id ? 0 : -1}
+                class="flex h-9 w-full min-w-0 items-center gap-2 rounded-l-full border border-r-0 border-border-weak-base bg-background-stronger/95 pl-3 pr-7 text-left text-12-medium text-text-weak transition-colors hover:bg-surface-base-hover aria-selected:bg-surface-base-active aria-selected:text-text-strong max-sm:h-10 max-sm:pl-2"
+                onClick={() => {
+                  setSaved("active", item.id)
+                  console.debug(`[quick-assistant] window selected window=${item.id}`)
+                }}
+                onKeyDown={(event) => {
+                  const index = saved.windows.findIndex((tab) => tab.id === item.id)
+                  const next =
+                    event.key === "Home"
+                      ? 0
+                      : event.key === "End"
+                        ? saved.windows.length - 1
+                        : event.key === "ArrowDown"
+                          ? (index + 1) % saved.windows.length
+                          : event.key === "ArrowUp"
+                            ? (index + saved.windows.length - 1) % saved.windows.length
+                            : undefined
+                  if (next === undefined) return
+                  event.preventDefault()
+                  setSaved("active", saved.windows[next].id)
+                  document.getElementById(`quick-assistant-tab-${saved.active}`)?.focus()
+                }}
+              >
+                <Icon name="bubble-5" class="size-4 shrink-0 max-sm:hidden" />
+                <span data-slot="quick-assistant-tab-title" class="min-w-0 truncate">
+                  {item.title || language.t("quickAssistant.window", { number: item.number })}
+                </span>
+                <Show when={status[item.id]?.busy || status[item.id]?.waiting}>
+                  <span
+                    class="absolute bottom-1.5 right-1 size-1.5 rounded-full bg-success-base"
+                    classList={{ "animate-pulse": status[item.id]?.busy }}
+                  />
+                </Show>
+              </button>
+              <button
+                type="button"
+                data-action="quick-assistant-close-window"
+                class="absolute right-0.5 top-1/2 -translate-y-1/2 flex size-5 items-center justify-center rounded-full bg-background-stronger text-icon-weak hover:bg-surface-base-hover hover:text-icon-base disabled:opacity-40"
+                aria-label={language.t("quickAssistant.window.close", { number: item.number })}
+                title={language.t("quickAssistant.window.close", { number: item.number })}
+                disabled={status[item.id]?.closing}
+                onClick={() => void close(item.id)}
+              >
+                <Icon name="close" class="size-3" />
+              </button>
+            </div>
+          )}
+        </For>
+      </div>
+      <button
+        type="button"
+        data-action="quick-assistant-add-window"
+        class="flex h-8 w-12 shrink-0 self-end items-center justify-center rounded-full border border-border-weak-base bg-background-stronger/95 text-icon-weak transition-colors hover:bg-surface-base-hover hover:text-icon-base"
+        aria-label={language.t("quickAssistant.window.new")}
+        title={language.t("quickAssistant.window.new")}
+        onClick={add}
+      >
+        <Icon name="plus" class="size-4" />
+      </button>
+    </div>
+  )
+  return (
+    <Show when={ready()}>
+      <Show when={!saved.open && enabled() && params.dir}>
+        <button
+          type="button"
+          data-component="quick-assistant-launcher"
+          class="relative z-40 pointer-events-auto flex items-center gap-2 rounded-full border border-border-weak-base bg-background-stronger/95 px-3 py-2 shadow-[var(--shadow-lg-border-base)]"
+          onClick={open}
+        >
+          <Icon name="bubble-5" class="size-4 text-icon-base" />
+          <span class="text-12-medium text-text-strong">{language.t("quickAssistant.windows")}</span>
+          <Show when={Object.values(status).some((item) => item?.busy || item?.waiting)}>
+            <span class="size-2 rounded-full bg-success-base animate-pulse" />
+          </Show>
+        </button>
+      </Show>
+      {/* Keep drafts, recovery timers, and stream subscriptions alive across tab switches. */}
+      <For each={saved.windows}>
+        {(item) => (
+          <QuickAssistantWindow
+            saved={item}
+            active={saved.active === item.id}
+            open={saved.open}
+            present={panel.present}
+            entering={panel.entering}
+            minimumHeight={panel.minimumHeight}
+            maximized={saved.maximized}
+            primary={saved.windows[0]?.id === item.id}
+            tabs={tabs}
+            onOpen={open}
+            onClose={() => setSaved("open", false)}
+            onNew={add}
+            onMaximize={() => setSaved("maximized", !saved.maximized)}
+            onSession={(session) => setSaved("windows", (tab) => tab.id === item.id, "session", session)}
+            onTitle={(title) => setSaved("windows", (tab) => tab.id === item.id, "title", title)}
+            onContext={(context) => setSaved("windows", (tab) => tab.id === item.id, "context", context)}
+            onVariant={(variant) => setSaved("windows", (tab) => tab.id === item.id, "variant", variant)}
+            onStatus={(busy, waiting) =>
+              setStatus(item.id, (previous) => ({ closing: previous?.closing ?? false, busy, waiting }))
+            }
+            register={(control) => {
+              controls.set(item.id, control)
+              return () => controls.delete(item.id)
+            }}
+          />
+        )}
+      </For>
+    </Show>
+  )
+}
+
+function QuickAssistantWindow(props: {
+  saved: AssistantWindow
+  active: boolean
+  open: boolean
+  present: boolean
+  entering: boolean
+  minimumHeight: number
+  maximized: boolean
+  primary: boolean
+  tabs: () => JSX.Element
+  onOpen: () => void
+  onClose: () => void
+  onNew: () => void
+  onMaximize: () => void
+  onSession: (id: string | undefined) => void
+  onTitle: (title: string) => void
+  onContext: (value: boolean) => void
+  onVariant: (value: string | undefined) => void
+  onStatus: (busy: boolean, waiting: boolean) => void
+  register: (control: WindowControls) => () => void
+}) {
+  const params = useParams()
   const globalSDK = useGlobalSDK()
   const globalSync = useGlobalSync()
   const server = useServer()
   const language = useLanguage()
   const platform = usePlatform()
   const settings = useSettings()
-  if (platform.platform !== "desktop") return null
-  const [saved, setSaved] = persisted(
-    Persist.global("quick-assistant", ["quick-assistant.v1"]),
-    createStore<Saved>(initial),
-  )
+  const saved = props.saved
   const [state, setState] = createStore({
     prompt: emptyQuickPrompt(),
     history: [] as Prompt[],
@@ -303,12 +565,37 @@ export function QuickAssistant() {
   })
   const data = createMemo(() => child()?.[0])
   const setData = createMemo(() => child()?.[1])
-  const key = () => "__quick__"
-  const sessionID = createMemo(() => saved.session[key()])
+  const sessionID = createMemo(() => saved.session)
   const list = createMemo(() => {
     const id = sessionID()
     if (!id) return [] as Message[]
     return data()?.message[id] ?? []
+  })
+  const session = createMemo(() => data()?.session.find((item) => item.id === sessionID()))
+  createEffect(() => {
+    const current = root()
+    const id = sessionID()
+    if (!current || !id) return
+    console.debug(`[quick-assistant] title metadata load window=${saved.id} session=${id}`)
+    void globalSync.session.info
+      .ensure(current, id)
+      .catch((error) =>
+        console.warn(
+          `[quick-assistant] title metadata load failed window=${saved.id} session=${id} error=${String(error)}`,
+        ),
+      )
+  })
+  createEffect(() => {
+    const first = list().find((item) => item.role === "user")
+    const text = first
+      ? (data()?.part[first.id] ?? []).flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
+      : ""
+    const title = assistantWindowTitle(session()?.title, splitInjectedSessionContext(text).message)
+    if (!title || title === saved.title) return
+    console.debug(
+      `[quick-assistant] window title updated window=${saved.id} session=${sessionID() ?? "none"} chars=${title.length}`,
+    )
+    props.onTitle(title)
   })
   const busy = createMemo(() => {
     const id = sessionID()
@@ -346,19 +633,44 @@ export function QuickAssistant() {
     if (!missing.size) return
     console.debug(`[quick-assistant] request ancestry load count=${missing.size}`)
     void loadQuickRequestSessions([...missing], (id) => globalSync.session.info.ensure(current, id)).catch((error) =>
-      console.error("[quick-assistant] request ancestry load failed", error),
+      console.error(`[quick-assistant] request ancestry load failed error=${String(error)}`),
     )
   })
   createEffect(() => {
-    console.debug("[quick-assistant] pending tree requests", {
-      sessionID: sessionID(),
-      permissions: permissions().map((request) => ({ id: request.id, sessionID: request.sessionID })),
-      questions: questions().map((request) => ({ id: request.id, sessionID: request.sessionID })),
-    })
+    console.debug(
+      `[quick-assistant] pending tree requests window=${saved.id} session=${sessionID() ?? "none"} permissions=${permissions().length} questions=${questions().length}`,
+    )
   })
   const waiting = createMemo(() => permissions().length > 0 || questions().length > 0)
   const interacting = createMemo(() => busy() || waiting())
-  const enabled = createMemo(() => settings.assistant.model() !== "disabled")
+  const titleAttempts = new Set<string>()
+  createEffect(() => {
+    const id = sessionID()
+    const current = root()
+    const setStore = setData()
+    if (!props.open || !props.active || !id || !current || !setStore || busy() || state.loading) return
+    // Older assistants were explicitly named, which disables normal backend auto-titling.
+    if (session()?.title !== "Quick Assistant" || !list().some((item) => item.role === "user") || titleAttempts.has(id))
+      return
+    titleAttempts.add(id)
+    console.debug(`[quick-assistant] legacy title generation start window=${saved.id} session=${id}`)
+    void globalSDK
+      .createClient({ directory: current, throwOnError: true })
+      .session.generateTitle({ sessionID: id })
+      .then((result) => {
+        if (!result.data) return
+        seed(setStore, result.data)
+        console.debug(
+          `[quick-assistant] legacy title generation complete window=${saved.id} session=${id} chars=${result.data.title.length}`,
+        )
+      })
+      .catch((error) =>
+        console.warn(
+          `[quick-assistant] legacy title generation failed window=${saved.id} session=${id} error=${String(error)}`,
+        ),
+      )
+  })
+  createEffect(() => props.onStatus(busy() || state.loading, waiting()))
   const chosen = createMemo(() => {
     const store = data()
     const model = settings.assistant.model()
@@ -379,7 +691,7 @@ export function QuickAssistant() {
   })
   const setVariant = (value: string | undefined) => {
     console.debug(`[quick-assistant] variant ${value ? `set ${value}` : "cleared"}`)
-    setSaved("variant", value)
+    props.onVariant(value)
   }
   const currentChild = createMemo(() => {
     const current = activeDir()
@@ -412,10 +724,11 @@ export function QuickAssistant() {
     console.debug(
       `[quick-assistant] context ${next ? "enabled" : "disabled"} source_session=${params.id ?? ""} source_directory=${activeDir()}`,
     )
-    setSaved("context", next)
+    props.onContext(next)
   }
 
   createEffect(() => {
+    if (!props.primary) return
     const next = root()
     if (!next) return
     if (platform.platform !== "desktop") return
@@ -436,7 +749,7 @@ export function QuickAssistant() {
     const id = sessionID()
     if (!id) return
     const setStore = setData()
-    setSaved("session", key(), undefined)
+    props.onSession(undefined)
     if (!setStore) return
     batch(() => {
       setStore("session_status", (items) => {
@@ -593,26 +906,12 @@ export function QuickAssistant() {
 
   onCleanup(clearTimers)
 
-  onMount(() => {
-    const onSelection = (event: Event) => {
-      const text = (event as CustomEvent<unknown>).detail
-      if (typeof text !== "string" || !text.trim()) {
-        console.warn(`[session-selection] quick assistant ignored invalid selection type=${typeof text}`)
-        return
-      }
-      console.debug(`[session-selection] quick assistant received length=${text.length}`)
-      const next = appendSelectionToPrompt(state.prompt, text)
-      setState("prompt", reconcile(next.prompt))
-      setSaved("open", true)
-      console.debug(`[session-selection] quick assistant prompt updated cursor=${next.cursor}`)
-    }
-    window.addEventListener(QUICK_ASSISTANT_SELECTION_EVENT, onSelection)
-    console.debug("[session-selection] quick assistant listener enabled")
-    onCleanup(() => {
-      window.removeEventListener(QUICK_ASSISTANT_SELECTION_EVENT, onSelection)
-      console.debug("[session-selection] quick assistant listener disabled")
-    })
-  })
+  const select = (text: string) => {
+    console.debug(`[session-selection] quick assistant received window=${saved.id} length=${text.length}`)
+    const next = appendSelectionToPrompt(state.prompt, text)
+    setState("prompt", reconcile(next.prompt))
+    console.debug(`[session-selection] quick assistant prompt updated window=${saved.id} cursor=${next.cursor}`)
+  }
 
   const ensureSession = async (
     client: ReturnType<typeof globalSDK.createClient>,
@@ -633,34 +932,19 @@ export function QuickAssistant() {
     console.debug(`[quick-assistant] session validated session=${created.id} created=${resolved.created ? 1 : 0}`)
     if (!resolved.created) return created.id
     seed(setStore, created)
-    patchSession(setStore, created.id, { title: "Quick Assistant" })
-    setSaved("session", key(), created.id)
-    void client.session.update({ sessionID: created.id, title: "Quick Assistant" }).catch(() => {})
+    props.onSession(created.id)
     return created.id
-  }
-
-  const open = () => {
-    console.debug("[quick-assistant] panel opened")
-    setSaved("open", true)
   }
 
   const close = () => {
     console.debug("[quick-assistant] panel closed")
-    setSaved("open", false)
+    props.onClose()
   }
 
   const toggleMaximize = () => {
-    const next = !saved.maximized
+    const next = !props.maximized
     console.debug(`[quick-assistant] maximize ${next ? "enabled" : "disabled"} messages=${list().length}`)
-    setSaved("maximized", next)
-  }
-
-  const toggle = () => {
-    if (saved.open) {
-      close()
-      return
-    }
-    open()
+    props.onMaximize()
   }
 
   const stop = async () => {
@@ -680,7 +964,7 @@ export function QuickAssistant() {
           return true
         })
         .catch((err: unknown) => {
-          console.error(`[quick-assistant] stop failed session=${id}`, err)
+          console.error(`[quick-assistant] stop failed session=${id} error=${String(err)}`)
           showToast({
             title: "Quick Assistant",
             description: formatServerError(err, language.t, language.t("common.requestFailed")),
@@ -696,30 +980,18 @@ export function QuickAssistant() {
     return true
   }
 
-  const reset = async () => {
-    console.debug(`[quick-assistant] reset start session=${sessionID() ?? ""} messages=${list().length}`)
-    if (!(await stop())) return
-    clearSession()
-    setState("prompt", emptyQuickPrompt())
-    console.debug("[quick-assistant] reset complete draft=0")
-  }
-
-  command.register("quick-assistant", () => [
-    {
-      id: "assistant.quick.toggle",
-      title: language.t("command.assistant.quick.toggle"),
-      description: language.t("command.assistant.quick.toggle.description"),
-      keywords: `${language.t("command.assistant.quick.toggle")} ${language.t("command.assistant.quick.toggle.description")}`,
-      category: language.t("command.category.session"),
-      keybind: "mod+shift+j",
-      disabled: !enabled(),
-      onSelect: toggle,
-    },
-  ])
+  onCleanup(props.register({ stop, select }))
+  onCleanup(() => {
+    sendSequence += 1
+  })
 
   createEffect(() => {
-    if (!saved.open) return
-    queueMicrotask(() => input?.focus())
+    if (!props.open || !props.active) return
+    queueMicrotask(() => {
+      if (!props.open || !props.active) return
+      if (document.activeElement?.closest('[data-component="quick-assistant-tabs"]')) return
+      input?.focus()
+    })
   })
 
   createEffect(() => {
@@ -773,14 +1045,14 @@ export function QuickAssistant() {
       if (event.properties.sessionID !== id) return
       markIdle(id, setStore)
       clearTimers()
-      console.error(`[quick-assistant] stream error session=${id}`, event.properties.error)
+      console.error(`[quick-assistant] stream error session=${id} error=${JSON.stringify(event.properties.error)}`)
       showToast({
         title: "Quick Assistant",
         description: formatServerError(event.properties.error, language.t, language.t("common.requestFailed")),
       })
     })
 
-    return off
+    onCleanup(off)
   })
 
   async function submit() {
@@ -885,7 +1157,7 @@ export function QuickAssistant() {
         )
       } catch (error) {
         if (!activeSend()) return
-        console.error(`[quick-assistant] context load failed source_session=${sourceID}`, error)
+        console.error(`[quick-assistant] context load failed source_session=${sourceID} error=${String(error)}`)
         setState("loading", false)
         restoreDraft("context-failed")
         showToast({ title: "Quick Assistant", description: language.t("quickAssistant.context.loadFailed") })
@@ -898,7 +1170,7 @@ export function QuickAssistant() {
     const client = globalSDK.createClient({ directory: current, throwOnError: true })
     const id = await ensureSession(client, setStore).catch((err: unknown) => {
       if (!activeSend()) return undefined
-      console.error("[quick-assistant] session setup failed", err)
+      console.error(`[quick-assistant] session setup failed error=${String(err)}`)
       showToast({
         title: "Quick Assistant",
         description: formatServerError(err, language.t, language.t("common.requestFailed")),
@@ -943,11 +1215,9 @@ export function QuickAssistant() {
     const invocation = text.match(/^\/([^\s]+)(?:\s([\s\S]*))?$/)
     const custom = invocation ? store.command.find((item) => item.name === invocation[1]) : undefined
     const commandContext = custom ? splitInjectedSessionContext(body).context : undefined
-    console.debug("[quick-assistant] request built", {
-      sessionID: id,
-      parts: requestParts.map((part) => part.type),
-      command: custom?.name,
-    })
+    console.debug(
+      `[quick-assistant] request built window=${saved.id} session=${id} parts=${requestParts.map((part) => part.type).join(",")} command=${custom?.name ?? "none"}`,
+    )
 
     batch(() => {
       setStore("session_status", id, { type: "busy" })
@@ -962,7 +1232,6 @@ export function QuickAssistant() {
         }
       })
       setStore("part", messageID, optimisticParts)
-      setSaved("open", true)
     })
     console.debug(
       `[quick-assistant] send dispatched session=${id} message=${messageID} next_draft=${quickPromptText(state.prompt).length}`,
@@ -991,13 +1260,17 @@ export function QuickAssistant() {
             parts: requestParts,
           })
     )
-      .then(() => console.debug("[quick-assistant] request accepted", { sessionID: id, messageID }))
+      .then(() =>
+        console.debug(`[quick-assistant] request accepted window=${saved.id} session=${id} message=${messageID}`),
+      )
       .catch((err: unknown) => {
         if (!activeSend()) {
           console.debug(`[quick-assistant] stale send failure ignored session=${id} message=${messageID}`)
           return
         }
-        console.error("[quick-assistant] request failed", { sessionID: id, messageID, error: err })
+        console.error(
+          `[quick-assistant] request failed window=${saved.id} session=${id} message=${messageID} error=${String(err)}`,
+        )
         const aborted = errorName(err) === "AbortError"
         if (!aborted) restoreDraft("request-failed")
         batch(() => {
@@ -1040,9 +1313,8 @@ export function QuickAssistant() {
     finishIfSettled(id)
   }
 
-  const dock = createMemo(() => enabled() && !!activeDir())
-  const bare = createMemo(() => !waiting() && list().length === 0)
-  const expanded = createMemo(() => list().length > 0 && !!saved.maximized)
+  const bare = createMemo(() => !waiting() && list().length === 0 && !props.minimumHeight)
+  const expanded = createMemo(() => props.maximized)
 
   const removePermission = (request: PermissionRequest) => {
     const setStore = setData()
@@ -1060,40 +1332,27 @@ export function QuickAssistant() {
 
   return (
     <>
-      <Show when={!saved.open && dock()}>
-        <button
-          type="button"
-          data-component="quick-assistant-launcher"
-          class="relative z-40 pointer-events-auto flex items-center gap-2 rounded-full border border-border-weak-base px-3 py-2 shadow-[var(--shadow-lg-border-base)]"
-          style={{
-            "background-color":
-              platform.platform === "desktop" && platform.os === "windows"
-                ? "var(--surface-raised-stronger-non-alpha)"
-                : "color-mix(in srgb, var(--background-stronger) 92%, transparent)",
-            "backdrop-filter":
-              platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(24px) saturate(150%)",
-            "-webkit-backdrop-filter":
-              platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(24px) saturate(150%)",
-          }}
-          onClick={open}
-        >
-          <Icon name="bubble-5" class="size-4 text-icon-base" />
-          <span class="text-12-medium text-text-strong">Assistant</span>
-          <Show when={busy()}>
-            <span class="size-2 rounded-full bg-success-base animate-pulse" />
-          </Show>
-        </button>
-      </Show>
-
-      <Show when={saved.open}>
+      <Show when={props.present}>
         <div
           data-component="quick-assistant-panel"
+          data-state={props.open ? "open" : "closed"}
+          data-entering={props.entering}
+          inert={!props.open}
+          onTransitionEnd={(event) => {
+            if (event.target !== event.currentTarget || event.propertyName !== "transform") return
+            console.debug(`[quick-assistant] panel slide complete window=${saved.id} open=${props.open}`)
+          }}
+          data-window-id={saved.id}
+          id={`quick-assistant-window-${saved.id}`}
+          role="tabpanel"
+          aria-labelledby={`quick-assistant-tab-${saved.id}`}
+          hidden={!props.active}
           data-command-scope="quick-assistant"
           tabIndex={-1}
           onPointerDown={(event) => {
             if (event.button === 0 && !event.defaultPrevented) focusCommandScope(event.currentTarget, event.target)
           }}
-          class="fixed right-5 bottom-5 z-40 pointer-events-auto max-h-[calc(100dvh-72px)] rounded-[calc(var(--radius-4xl)+0.75rem+1px)] transition-[width] duration-[180ms] ease-[cubic-bezier(0.16,1,0.3,1)] outline-none"
+          class="fixed right-5 bottom-5 z-40 pointer-events-auto max-h-[calc(100dvh-72px)] rounded-[calc(var(--radius-4xl)+0.75rem+1px)] outline-none"
           ref={(element) =>
             requestAnimationFrame(() => {
               if (!element.isConnected) return
@@ -1105,8 +1364,8 @@ export function QuickAssistant() {
           }
           classList={{
             "h-[calc(100dvh-72px)]": waiting(),
-            "w-[min(1040px,calc(100vw-24px))]": expanded(),
-            "w-[min(520px,calc(100vw-24px))]": !expanded(),
+            "w-[min(1040px,calc(100vw-192px))] max-sm:w-[calc(100vw-128px)]": expanded(),
+            "w-[min(520px,calc(100vw-192px))] max-sm:w-[calc(100vw-128px)]": !expanded(),
             "border border-border-weak-base shadow-[var(--shadow-lg)]": !bare(),
           }}
           style={
@@ -1124,6 +1383,7 @@ export function QuickAssistant() {
                 }
           }
         >
+          <Show when={props.active}>{props.tabs()}</Show>
           <Show when={list().length > 0}>
             <button
               type="button"
@@ -1138,13 +1398,20 @@ export function QuickAssistant() {
           <button
             type="button"
             class="absolute -right-3.5 -top-3.5 z-10 flex size-7 items-center justify-center rounded-full border border-border-weak-base bg-background-base/90 text-icon-weak shadow-xs-border transition hover:border-border-strong-base hover:bg-surface-base-hover hover:text-icon-base"
+            data-action="quick-assistant-hide"
             aria-label={language.t("common.close")}
             title={language.t("common.close")}
             onClick={close}
           >
             <Icon name="close" size="small" class="text-icon-weak" />
           </button>
-          <div class="flex max-h-[calc(100dvh-72px)] flex-col rounded-[inherit]" classList={{ "h-full": waiting() }}>
+          <div
+            class="flex max-h-[calc(100dvh-72px)] flex-col justify-end rounded-[inherit]"
+            classList={{ "h-full": waiting() }}
+            style={{
+              "min-height": props.minimumHeight ? `min(${props.minimumHeight - 2}px, calc(100dvh - 74px))` : undefined,
+            }}
+          >
             <QuickAssistantMessages list={list()} parts={data()?.part} busy={busy()} waiting={waiting()} />
             <QuickAssistantRequests
               client={globalSDK.createClient({ directory: root(), throwOnError: true })}
@@ -1161,7 +1428,7 @@ export function QuickAssistant() {
                 prompt={state.prompt}
                 history={state.history}
                 directory={activeDir() || root()}
-                scope={JSON.stringify([root(), sessionID()])}
+                scope={JSON.stringify([root(), saved.id, sessionID()])}
                 agents={data()?.agent ?? []}
                 commands={data()?.command ?? []}
                 busy={interacting()}
@@ -1174,7 +1441,7 @@ export function QuickAssistant() {
                 onPrompt={(next) => setState("prompt", reconcile(next))}
                 onClose={close}
                 onStop={() => void stop()}
-                onNewSession={() => void reset()}
+                onNewSession={props.onNew}
                 onContext={toggleContext}
                 onVariant={setVariant}
                 onSend={() => void submit()}

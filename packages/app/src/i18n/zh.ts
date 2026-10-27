@@ -926,6 +926,10 @@ export const dict = {
 
   "quickAssistant.waiting.permission": "等待权限确认",
   "quickAssistant.tools": "工具调用",
+  "quickAssistant.windows": "快捷助手",
+  "quickAssistant.window": "助手 {{number}}",
+  "quickAssistant.window.new": "新增快捷助手",
+  "quickAssistant.window.close": "关闭助手 {{number}}",
   "quickAssistant.tool.pending": "等待执行",
   "quickAssistant.tool.running": "执行中",
   "quickAssistant.tool.completed": "已完成",

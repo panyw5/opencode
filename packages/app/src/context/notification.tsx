@@ -51,7 +51,6 @@ const NOTIFICATION_TTL_MS = 1000 * 60 * 60 * 24 * 30
 const ERROR_SOUND_LOG = "opencode.error-sound.dat"
 const ERROR_SOUND_KEY = "error-sound.v1"
 const ERROR_SOUND_MAX = 200
-const QUICK_ASSISTANT_TITLE = "Quick Assistant"
 const QUICK_ASSISTANT_DIR = "quick-assistant"
 
 type ErrorSoundLog = {
@@ -455,10 +454,9 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
       return sessionID === activeSession
     }
 
-    const isQuickAssistantSession = (directory: string, session: { title?: string } | undefined) => {
+    const isQuickAssistantSession = (directory: string) => {
       const config = globalSync.data.path.config
       if (!config) return false
-      if (session?.title !== QUICK_ASSISTANT_TITLE) return false
       return normalizePath(directory) === normalizePath(joinPath(config, QUICK_ASSISTANT_DIR))
     }
 
@@ -482,7 +480,7 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
           console.debug(`[notification] idle skip reason=not-notifiable directory=${directory} session=${sessionID ?? "none"}`)
           return
         }
-        if (isQuickAssistantSession(directory, session)) {
+        if (isQuickAssistantSession(directory)) {
           console.debug(`[notification] idle skip reason=quick-assistant directory=${directory} session=${sessionID ?? "none"}`)
           return
         }

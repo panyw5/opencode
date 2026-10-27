@@ -416,14 +416,16 @@
     box-shadow: 0 2px 8px color-mix(in srgb, var(--text-strong) 24%, transparent);
   }
 
-  [data-component="session-tab-permission-capsule"] [data-component="button"][data-variant="primary"]:hover:not(:disabled),
+  [data-component="session-tab-permission-capsule"]
+    [data-component="button"][data-variant="primary"]:hover:not(:disabled),
   [data-component="session-tab-permission-capsule"]
     [data-component="button"][data-variant="primary"]:focus-visible:not(:disabled) {
     transform: translateY(-1px);
     box-shadow: 0 4px 12px color-mix(in srgb, var(--text-strong) 38%, transparent);
   }
 
-  [data-component="session-tab-permission-capsule"] [data-component="button"][data-variant="ghost"]:hover:not(:disabled),
+  [data-component="session-tab-permission-capsule"]
+    [data-component="button"][data-variant="ghost"]:hover:not(:disabled),
   [data-component="session-tab-permission-capsule"]
     [data-component="button"][data-variant="ghost"]:focus-visible:not(:disabled) {
     border-color: color-mix(in srgb, var(--border-strong-base) 72%, transparent);
@@ -653,7 +655,11 @@
     padding: 3px;
     border-radius: 14px;
     background-color: light-dark(
-      color-mix(in oklab, var(--background-stronger) 55%, color-mix(in oklab, var(--surface-base-hover) 45%, transparent)),
+      color-mix(
+        in oklab,
+        var(--background-stronger) 55%,
+        color-mix(in oklab, var(--surface-base-hover) 45%, transparent)
+      ),
       color-mix(in oklab, var(--color-surface-raised-base) 20%, transparent)
     );
     border: 1px solid light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.06));
@@ -675,7 +681,10 @@
   }
 
   [data-component="icon-button"].sidebar-action-button[data-variant="ghost"]:is(:hover, :focus-visible):not(:disabled) {
-    background-color: light-dark(var(--background-stronger), color-mix(in oklab, var(--color-surface-raised-base) 55%, transparent));
+    background-color: light-dark(
+      var(--background-stronger),
+      color-mix(in oklab, var(--color-surface-raised-base) 55%, transparent)
+    );
     color: var(--icon-strong-base);
     box-shadow:
       0 1px 2px light-dark(rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.4)),
@@ -683,7 +692,10 @@
   }
 
   [data-component="icon-button"].sidebar-action-button[data-variant="ghost"]:active:not(:disabled) {
-    background-color: light-dark(var(--background-stronger), color-mix(in oklab, var(--color-surface-raised-base) 45%, transparent));
+    background-color: light-dark(
+      var(--background-stronger),
+      color-mix(in oklab, var(--color-surface-raised-base) 45%, transparent)
+    );
     transform: scale(0.95);
     box-shadow: none;
   }
@@ -699,7 +711,8 @@
     transition: color 140ms ease-out;
   }
 
-  [data-component="icon-button"].sidebar-action-button[data-variant="ghost"]:is(:hover, :focus-visible):not(:disabled) [data-slot="icon-svg"] {
+  [data-component="icon-button"].sidebar-action-button[data-variant="ghost"]:is(:hover, :focus-visible):not(:disabled)
+    [data-slot="icon-svg"] {
     color: var(--icon-strong-base);
   }
 
@@ -716,11 +729,16 @@
     color: var(--text-strong);
   }
 
-  [data-component="icon-button"].sidebar-action-button-primary[data-variant="ghost"]:is(:hover, :focus-visible):not(:disabled) {
+  [data-component="icon-button"].sidebar-action-button-primary[data-variant="ghost"]:is(:hover, :focus-visible):not(
+      :disabled
+    ) {
     background-color: var(--surface-brand-hover);
   }
 
-  [data-component="icon-button"].sidebar-action-button-primary[data-variant="ghost"]:is(:hover, :focus-visible):not(:disabled) [data-slot="icon-svg"] {
+  [data-component="icon-button"].sidebar-action-button-primary[data-variant="ghost"]:is(:hover, :focus-visible):not(
+      :disabled
+    )
+    [data-slot="icon-svg"] {
     color: var(--icon-on-brand-hover);
   }
 
@@ -738,7 +756,9 @@
       color 140ms ease-out;
   }
 
-  [data-component="icon-button"].file-preview-open-button[data-variant="ghost"]:is(:hover, :focus-visible):not(:disabled) {
+  [data-component="icon-button"].file-preview-open-button[data-variant="ghost"]:is(:hover, :focus-visible):not(
+      :disabled
+    ) {
     background-color: var(--surface-base-hover);
   }
 
@@ -748,11 +768,11 @@
 
   html[data-theme="aether"] [data-component="sidebar-session"] {
     --sidebar-session-accent: light-dark(#2f2f2f, #c98a6d);
-    --sidebar-session-hover-bg: light-dark(#F8E4D8, #2c2924);
-    --sidebar-session-hover-border: light-dark(#E9BDA8, rgba(201, 138, 109, 0.14));
-    --sidebar-session-active-bg-top: light-dark(#F3D4C4, rgb(65, 65, 65));
-    --sidebar-session-active-bg-bottom: light-dark(#EBC5B2, rgb(65, 65, 65));
-    --sidebar-session-active-border: light-dark(#DFA58C, rgba(201, 138, 109, 0.2));
+    --sidebar-session-hover-bg: light-dark(#f8e4d8, #2c2924);
+    --sidebar-session-hover-border: light-dark(#e9bda8, rgba(201, 138, 109, 0.14));
+    --sidebar-session-active-bg-top: light-dark(#f3d4c4, rgb(65, 65, 65));
+    --sidebar-session-active-bg-bottom: light-dark(#ebc5b2, rgb(65, 65, 65));
+    --sidebar-session-active-border: light-dark(#dfa58c, rgba(201, 138, 109, 0.2));
     --sidebar-session-active-shadow: light-dark(rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.34));
   }
 
@@ -809,7 +829,7 @@
 
   html[data-theme="aether"] [data-component="sidebar-session"][data-active="true"]:hover,
   html[data-theme="aether"] [data-component="sidebar-session"][data-active="true"]:has(:focus-visible) {
-    background: light-dark(#E9BDA8, rgb(65, 65, 65));
+    background: light-dark(#e9bda8, rgb(65, 65, 65));
   }
 
   /* Arc: stronger overlay on active+hover */
@@ -1077,6 +1097,25 @@
   html[data-theme="arc"] [data-component="markdown"] img,
   html[data-theme="arc"] [data-slot="answer-image-thumbnail"] {
     border-radius: var(--arc-session-radius-md);
+  }
+
+  [data-component="quick-assistant-panel"][data-state] {
+    transform: translateX(0);
+    transition:
+      transform 240ms cubic-bezier(0.16, 1, 0.3, 1),
+      width 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  [data-component="quick-assistant-panel"][data-state="closed"] {
+    pointer-events: none;
+    /* Include the tabs and their shadows in the off-screen distance. */
+    transform: translateX(calc(100% + 192px));
+    transition: transform 180ms cubic-bezier(0.4, 0, 1, 1);
+  }
+
+  [data-component="quick-assistant-panel"][data-state="open"][data-entering="true"] {
+    transform: translateX(calc(100% + 192px));
+    transition: none;
   }
 
   [data-component="quick-assistant-message"][data-role="user"] > [data-slot="quick-assistant-bubble"] {
@@ -1442,14 +1481,17 @@ html[data-platform="desktop"][data-color-scheme="dark"] [data-component="collaps
   border: 1px solid var(--gray-dark-5);
 }
 
-
 /* Session title text-brightness shimmer */
 @keyframes session-title-text-shimmer {
   0% {
-    background-position: 100% center, 0 0;
+    background-position:
+      100% center,
+      0 0;
   }
   100% {
-    background-position: -100% center, 0 0;
+    background-position:
+      -100% center,
+      0 0;
   }
 }
 

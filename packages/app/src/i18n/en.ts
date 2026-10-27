@@ -983,6 +983,10 @@ export const dict = {
 
   "quickAssistant.waiting.permission": "Waiting for permission confirmation",
   "quickAssistant.tools": "Tool calls",
+  "quickAssistant.windows": "Quick assistants",
+  "quickAssistant.window": "Assistant {{number}}",
+  "quickAssistant.window.new": "New quick assistant",
+  "quickAssistant.window.close": "Close assistant {{number}}",
   "quickAssistant.tool.pending": "Pending",
   "quickAssistant.tool.running": "Running",
   "quickAssistant.tool.completed": "Completed",
