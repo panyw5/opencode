@@ -28,34 +28,38 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
               return (
                 <div
                   data-component="session-reference"
-                  class="shrink-0 flex flex-col gap-1 rounded-md p-2 w-72 max-w-[calc(100vw-64px)] bg-background-stronger shadow-xs-border"
+                  data-session-id={item.sessionID}
+                  data-directory={item.directory}
+                  class="shrink-0 flex flex-col gap-1.5 rounded-xl border border-border-weak-base/70 p-3 w-72 max-w-[calc(100vw-64px)] bg-background-stronger transition-colors duration-150 hover:border-border-base"
                 >
                   <div class="flex items-center gap-2">
-                    <Icon name="speech-bubble" size="small" class="shrink-0 text-icon-weak" />
+                    <div class="flex size-6 shrink-0 items-center justify-center rounded-md bg-surface-raised-base">
+                      <Icon name="speech-bubble" size="small" class="text-icon-weak" />
+                    </div>
                     <A
-                      class="truncate text-12-medium text-text-strong hover:underline"
+                      class="min-w-0 flex-1 truncate text-12-medium text-text-strong hover:underline"
                       href={`/${base64Encode(item.directory)}/session/${item.sessionID}`}
                       title={props.t("prompt.session.open")}
                     >
-                      {item.title || item.sessionID}
+                      {item.title || props.t("prompt.session.menuTitle")}
                     </A>
                     <IconButton
                       type="button"
                       icon="close-small"
                       variant="ghost"
-                      class="ml-auto shrink-0 size-5"
+                      class="ml-auto shrink-0 size-5 rounded-full opacity-60 transition-opacity hover:opacity-100 focus-visible:opacity-100"
                       aria-label={props.t("prompt.session.remove")}
                       onClick={() => props.remove(item)}
                     />
                   </div>
-                  <div class="truncate text-11-regular text-text-weak" title={`${item.directory}\n${item.sessionID}`}>
-                    {getFilename(item.directory)} · {item.sessionID}
+                  <div class="pl-8 truncate text-11-regular text-text-weak" title={item.directory}>
+                    {getFilename(item.directory)}
                   </div>
-                  <div class="text-12-regular text-text-base line-clamp-2 whitespace-pre-wrap" title={item.summary}>
+                  <div
+                    class="mt-1 border-l-2 border-border-base/60 pl-2 text-12-regular leading-relaxed text-text-weak line-clamp-2 whitespace-pre-wrap"
+                    title={item.summary}
+                  >
                     {item.summary || props.t("prompt.session.noMessages")}
-                  </div>
-                  <div class="text-11-regular text-text-weak">
-                    {props.t("prompt.session.snapshot")} · {new Date(item.updatedAt).toLocaleString()}
                   </div>
                 </div>
               )

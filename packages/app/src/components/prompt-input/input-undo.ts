@@ -38,6 +38,11 @@ function equal(a: Prompt, b: Prompt) {
     if (!x || !y || x.type !== y.type) return false
     if (x.type === "text" && x.content !== (y.type === "text" ? y.content : "")) return false
     if (x.type === "agent" && x.name !== (y.type === "agent" ? y.name : "")) return false
+    if (
+      x.type === "session" &&
+      (y.type !== "session" || x.content !== y.content || JSON.stringify(x.reference) !== JSON.stringify(y.reference))
+    )
+      return false
     if (x.type === "image" && x.id !== (y.type === "image" ? y.id : "")) return false
     if (x.type === "file") {
       if (y.type !== "file" || x.path !== y.path) return false

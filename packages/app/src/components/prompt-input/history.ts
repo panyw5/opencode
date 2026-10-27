@@ -38,6 +38,7 @@ export function clonePromptParts(prompt: Prompt): Prompt {
     if (part.type === "agent") return { ...part }
     if (part.type === "im") return { ...part }
     if (part.type === "skill") return { ...part }
+    if (part.type === "session") return { ...part, reference: { ...part.reference } }
     return {
       ...part,
       selection: part.selection ? { ...part.selection } : undefined,
@@ -138,6 +139,13 @@ function isPromptEqual(promptA: PromptHistoryStoredEntry, promptB: PromptHistory
       if (!sameSelection) return false
     }
     if (partA.type === "agent" && partA.name !== (partB.type === "agent" ? partB.name : "")) return false
+    if (
+      partA.type === "session" &&
+      (partB.type !== "session" ||
+        partA.content !== partB.content ||
+        JSON.stringify(partA.reference) !== JSON.stringify(partB.reference))
+    )
+      return false
     if (partA.type === "image" && partA.id !== (partB.type === "image" ? partB.id : "")) return false
   }
   if (entryA.comments.length !== entryB.comments.length) return false

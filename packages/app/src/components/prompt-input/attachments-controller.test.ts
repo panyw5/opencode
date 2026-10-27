@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
-import type { Prompt } from "@/context/prompt"
+import type { ContentPart, Prompt } from "@/context/prompt"
+import { sessionReferenceClipboard } from "./session-reference-clipboard"
 
 mock.module("@/context/language", () => ({ useLanguage: () => ({ t: (key: string) => key }) }))
 mock.module("@/context/platform", () => ({ usePlatform: () => ({ platform: "web" }) }))
@@ -14,7 +15,10 @@ class GatedReader extends nativeReader {
   }
 }
 
-const controller = (id: string) => {
+const controller = (
+  id: string,
+  options?: Partial<Pick<Parameters<typeof createPromptAttachments>[0], "addPart" | "allowSessionReferences">>,
+) => {
   const root = document.createElement("div")
   root.dataset.promptComposer = id
   const editor = document.createElement("div")
@@ -37,6 +41,7 @@ const controller = (id: string) => {
     setDraggingType: () => {},
     focusEditor: () => editor.focus(),
     addPart: () => false,
+    ...options,
   })
   return { state, api, editor, root }
 }
@@ -90,5 +95,68 @@ describe("async attachment isolation", () => {
     gates.shift()!()
     expect(await pending).toBe(false)
     expect(quick.state.prompt).toHaveLength(1)
+  })
+})
+
+describe("session reference paste", () => {
+  const reference = {
+    type: "session" as const,
+    sessionID: "ses_source",
+    directory: "/source",
+    title: "Source",
+    summary: "user: Context",
+    updatedAt: 1700000000000,
+  }
+  const event = (editor: HTMLElement, text: string) => {
+    const result = new Event("paste", { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperties(result, {
+      target: { value: editor },
+      clipboardData: { value: { items: [], getData: (type: string) => (type === "text/plain" ? text : "") } },
+    })
+    return result
+  }
+
+  test("turns copied references into structured capsules rather than pasting the encoded text", async () => {
+    const inserted: ContentPart[] = []
+    const main = controller("main", {
+      addPart: (part) => {
+        inserted.push(part)
+        return true
+      },
+    })
+    const paste = event(main.editor, sessionReferenceClipboard(reference))
+    await main.api.handlePaste(paste)
+    expect(paste.defaultPrevented).toBe(true)
+    expect(inserted).toEqual([{ type: "session", reference, content: "@Source", start: 0, end: 7 }])
+  })
+
+  test("preserves ordinary paste and does not recognize references in shell mode", async () => {
+    const inserted: ContentPart[] = []
+    const main = controller("main", {
+      allowSessionReferences: () => false,
+      addPart: (part) => {
+        inserted.push(part)
+        return true
+      },
+    })
+    const text = sessionReferenceClipboard(reference)
+    await main.api.handlePaste(event(main.editor, text))
+    await main.api.handlePaste(event(main.editor, "ordinary text"))
+    expect(inserted.map((part) => part.type)).toEqual(["text", "text"])
+    expect(inserted[0]).toMatchObject({ content: text })
+    expect(inserted[1]).toMatchObject({ content: "ordinary text" })
+  })
+
+  test("does not paste a reference into another composer", async () => {
+    const inserted: ContentPart[] = []
+    const main = controller("main", {
+      addPart: (part) => {
+        inserted.push(part)
+        return true
+      },
+    })
+    const quick = controller("quick")
+    await main.api.handlePaste(event(quick.editor, sessionReferenceClipboard(reference)))
+    expect(inserted).toEqual([])
   })
 })

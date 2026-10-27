@@ -6,7 +6,8 @@ import { useLanguage } from "@/context/language"
 import { useSessionTabs } from "@/context/session-tabs"
 import { domainFromDirectory } from "@/pages/layout/extra-agents"
 import { setSessionHandoff } from "@/pages/session/handoff"
-import { sessionExcerpt } from "@/components/prompt-input/session-reference"
+import { loadSessionReference, sessionExcerpt } from "@/components/prompt-input/session-reference"
+import { sessionReferenceClipboard } from "@/components/prompt-input/session-reference-clipboard"
 
 export function useNewSessionWithReference() {
   const sdk = useGlobalSDK()
@@ -55,5 +56,32 @@ export function useNewSessionWithReference() {
     }
   }
 
-  return { pending: () => state.pending, create }
+  const copy = async (source: { id: string; directory: string }) => {
+    if (state.pending) return
+    setState("pending", true)
+    console.debug(`[session-reference-clipboard] copy started session=${source.id} directory=${source.directory}`)
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable")
+      const client = sdk
+        .forDomain(domainFromDirectory(source.directory))
+        .createClient({ directory: source.directory, throwOnError: true })
+      const reference = await loadSessionReference(client, source)
+      const text = sessionReferenceClipboard(reference)
+      console.debug(`[session-reference-clipboard] snapshot encoded session=${source.id} characters=${text.length}`)
+      await navigator.clipboard.writeText(text)
+      console.debug(`[session-reference-clipboard] copied session=${source.id}`)
+      showToast({ variant: "success", icon: "circle-check", title: language.t("session.share.copy.copied") })
+    } catch (error) {
+      console.warn(`[session-reference-clipboard] copy failed session=${source.id} error=${String(error)}`)
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setState("pending", false)
+    }
+  }
+
+  return { pending: () => state.pending, create, copy }
 }

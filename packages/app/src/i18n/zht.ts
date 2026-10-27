@@ -4,6 +4,7 @@ type Keys = keyof typeof en
 
 export const dict = {
   "session.referenceNew": "引用並新增工作階段",
+  "session.copyReference": "複製為工作階段引用",
   "projectTask.status.open": "待開始",
   "projectTask.status.inProgress": "進行中",
   "projectTask.status.done": "已完成",

@@ -2,7 +2,14 @@ import { getFilename, pathIdentityKey } from "@opencode-ai/core/util/path"
 import { type AgentPartInput, type FilePartInput, type Part, type TextPartInput } from "@opencode-ai/sdk/v2/client"
 import type { FileSelection } from "@/context/file"
 import { encodeFilePath } from "@/context/file/path"
-import type { AgentPart, ContextItem, FileAttachmentPart, ImageAttachmentPart, Prompt } from "@/context/prompt"
+import type {
+  AgentPart,
+  ContextItem,
+  FileAttachmentPart,
+  ImageAttachmentPart,
+  Prompt,
+  SessionContextItem,
+} from "@/context/prompt"
 import { sessionReferenceText } from "./session-reference"
 import { Identifier } from "@/utils/id"
 import { createCommentMetadata, formatCommentNote } from "@/utils/comment-note"
@@ -167,19 +174,32 @@ export function buildRequestParts(input: BuildRequestPartsInput) {
     } satisfies PromptRequestPart
   })
 
-  const sessions = input.context.flatMap((item) =>
-    item.type === "session"
-      ? [
-          {
-            id: Identifier.ascending("part"),
-            type: "text" as const,
-            text: sessionReferenceText(item),
-            synthetic: true,
-            metadata: { sessionReference: item },
-          },
-        ]
-      : [],
-  )
+  const references = new Map<
+    string,
+    { item: SessionContextItem; sources: { value: string; start: number; end: number }[] }
+  >()
+  const referenceKey = (item: SessionContextItem) => JSON.stringify([item.directory, item.sessionID])
+  for (const item of input.context) {
+    if (item.type !== "session") continue
+    references.set(referenceKey(item), { item, sources: [] })
+  }
+  for (const part of input.prompt) {
+    if (part.type !== "session") continue
+    const key = referenceKey(part.reference)
+    const entry = references.get(key) ?? { item: part.reference, sources: [] }
+    entry.item = part.reference
+    entry.sources.push({ value: part.content, start: part.start, end: part.end })
+    references.set(key, entry)
+  }
+  const sessions = [...references.values()].map(({ item, sources }) => ({
+    id: Identifier.ascending("part"),
+    type: "text" as const,
+    text: sessionReferenceText(item),
+    synthetic: true,
+    metadata: { sessionReference: item, ...(sources.length ? { sessionReferenceSources: sources } : {}) },
+  }))
+  if (sessions.length)
+    console.debug(`[session-reference] request built session=${input.sessionID} references=${sessions.length}`)
   requestParts.push(...files, ...context, ...sessions, ...agents, ...images)
 
   return {

@@ -1257,6 +1257,19 @@ function SessionTab(props: {
             <ContextMenu.ItemLabel>{language.t("session.referenceNew")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
           <ContextMenu.Item
+            data-action="session-tab-copy-reference"
+            data-session={base64Encode(props.tab.id)}
+            disabled={reference.pending()}
+            onSelect={() => void reference.copy(props.tab)}
+          >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="copy" size="small" />
+              </span>
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{language.t("session.copyReference")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+          <ContextMenu.Item
             data-action="session-tab-show-in-sidebar"
             data-session={base64Encode(props.tab.id)}
             onSelect={showInSidebar}

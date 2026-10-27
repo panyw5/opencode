@@ -1,5 +1,6 @@
 import type { AgentPart as MessageAgentPart, FilePart, Part, SubtaskPart, TextPart } from "@opencode-ai/sdk/v2"
-import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, Prompt } from "@/context/prompt"
+import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, Prompt, SessionContextItem } from "@/context/prompt"
+import { readSessionReference } from "@opencode-ai/ui/session-reference"
 
 type Inline =
   | {
@@ -21,6 +22,13 @@ type Inline =
       end: number
       value: string
       name: string
+    }
+  | {
+      type: "session"
+      start: number
+      end: number
+      value: string
+      reference: SessionContextItem
     }
 
 function selectionFromFileUrl(url: string): Extract<Inline, { type: "file" }>["selection"] {
@@ -98,6 +106,29 @@ export function extractPromptFromParts(parts: Part[], opts?: { directory?: strin
   const images: ImageAttachmentPart[] = []
 
   for (const part of parts) {
+    if (part.type === "text") {
+      const reference = readSessionReference(part.metadata)
+      const sources = part.metadata?.sessionReferenceSources
+      if (reference && Array.isArray(sources)) {
+        for (const source of sources) {
+          if (
+            !source ||
+            typeof source !== "object" ||
+            typeof source.value !== "string" ||
+            !Number.isInteger(source.start) ||
+            !Number.isInteger(source.end)
+          )
+            continue
+          inline.push({
+            type: "session",
+            reference: { ...reference },
+            value: source.value,
+            start: source.start,
+            end: source.end,
+          })
+        }
+      }
+    }
     if (part.type === "file") {
       const filePart = part as FilePart
       const sourceText = filePart.source?.text
@@ -208,6 +239,16 @@ export function extractPromptFromParts(parts: Part[], opts?: { directory?: strin
 
     if (item.type === "file") pushFile(item)
     if (item.type === "agent") pushAgent(item)
+    if (item.type === "session") {
+      result.push({
+        type: "session",
+        reference: { ...item.reference },
+        content: item.value,
+        start: position,
+        end: position + item.value.length,
+      })
+      position += item.value.length
+    }
 
     cursor = end
   }

@@ -45,6 +45,11 @@ export interface SkillPart extends PartBase {
   name: string
 }
 
+export interface SessionPart extends PartBase {
+  type: "session"
+  reference: SessionContextItem
+}
+
 export interface ImageAttachmentPart {
   type: "image"
   id: string
@@ -53,7 +58,14 @@ export interface ImageAttachmentPart {
   dataUrl: string
 }
 
-export type ContentPart = TextPart | FileAttachmentPart | AgentPart | ImPart | SkillPart | ImageAttachmentPart
+export type ContentPart =
+  | TextPart
+  | FileAttachmentPart
+  | AgentPart
+  | ImPart
+  | SkillPart
+  | SessionPart
+  | ImageAttachmentPart
 export type Prompt = ContentPart[]
 
 export type FileContextItem = {
@@ -97,6 +109,12 @@ function isPartEqual(partA: ContentPart, partB: ContentPart) {
       return partB.type === "im" && partA.channelName === partB.channelName && partA.botName === partB.botName
     case "skill":
       return partB.type === "skill" && partA.name === partB.name
+    case "session":
+      return (
+        partB.type === "session" &&
+        partA.content === partB.content &&
+        JSON.stringify(partA.reference) === JSON.stringify(partB.reference)
+      )
     case "image":
       return partB.type === "image" && partA.id === partB.id
   }
@@ -121,6 +139,7 @@ function clonePart(part: ContentPart): ContentPart {
   if (part.type === "agent") return { ...part }
   if (part.type === "im") return { ...part }
   if (part.type === "skill") return { ...part }
+  if (part.type === "session") return { ...part, reference: { ...part.reference } }
   return {
     ...part,
     selection: cloneSelection(part.selection),

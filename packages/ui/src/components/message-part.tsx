@@ -1390,22 +1390,21 @@ export function UserMessageDisplay(props: {
               <A
                 data-component="sent-session-reference"
                 href={`/${base64Encode(item.directory)}/session/${item.sessionID}`}
-                title={`${item.directory}\n${item.sessionID}`}
+                title={item.directory}
               >
                 <div data-slot="session-reference-title">
-                  <Icon name="speech-bubble" size="small" />
-                  <span>{item.title || item.sessionID}</span>
+                  <div data-slot="session-reference-icon">
+                    <Icon name="speech-bubble" size="small" />
+                  </div>
+                  <span>{item.title || getFilename(item.directory)}</span>
                   <Icon name="arrow-right" size="small" />
                 </div>
-                <div data-slot="session-reference-meta">
-                  {getFilename(item.directory)} · {item.sessionID}
-                </div>
+                <div data-slot="session-reference-meta">{getFilename(item.directory)}</div>
                 <Show when={item.summary}>
                   <div data-slot="session-reference-summary" title={item.summary}>
                     {item.summary}
                   </div>
                 </Show>
-                <div data-slot="session-reference-meta">{timefmt().format(item.updatedAt)}</div>
               </A>
             )}
           </For>

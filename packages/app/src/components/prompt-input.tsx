@@ -29,6 +29,7 @@ import {
   FileAttachmentPart,
   ImPart,
   SkillPart,
+  SessionPart,
 } from "@/context/prompt"
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
@@ -61,7 +62,13 @@ import { extraAgentByDirectory, extraAgentCapabilities, mainDomain } from "@/pag
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { promptEnabled, promptProbe } from "@/testing/prompt"
-import { createTextFragment, getCursorPosition, setCursorPosition, setRangeEdge } from "./prompt-input/editor-dom"
+import {
+  createTextFragment,
+  getCursorPosition,
+  serialize,
+  setCursorPosition,
+  setRangeEdge,
+} from "./prompt-input/editor-dom"
 import { createPromptAttachments } from "./prompt-input/attachments"
 import { ACCEPTED_FILE_TYPES } from "./prompt-input/files"
 import {
@@ -104,7 +111,13 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { getFilename } from "@opencode-ai/core/util/path"
 import { merge, value } from "./prompt-input/expand"
 import { SessionPickerPopover } from "./prompt-input/session-picker"
-import { sessionExcerpt } from "./prompt-input/session-reference"
+import {
+  loadSessionReference,
+  removeInlineSessionReference,
+  sessionReferenceContext,
+} from "./prompt-input/session-reference"
+import { createSessionPill, readSessionPill } from "./prompt-input/session-pill"
+import { sessionReferencePart } from "./prompt-input/session-reference-clipboard"
 import { type SessionHistoryEntry } from "@/context/session-history"
 import { active as sessionActiveMessage, working as sessionWorking } from "@/pages/session/session-working"
 import type { AssistantMessage, Part } from "@opencode-ai/sdk/v2/client"
@@ -666,15 +679,22 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (store.mode === "shell") return 0
     return prompt.context.items().filter((item) => item.type === "file" && !!item.comment?.trim()).length
   })
-  const sessionReferenceCount = createMemo(() =>
-    store.mode === "normal" ? prompt.context.items().filter((item) => item.type === "session").length : 0,
-  )
-
   const contextItems = createMemo(() => {
     const items = prompt.context.items()
-    if (store.mode !== "shell") return items
+    if (store.mode !== "shell") return sessionReferenceContext(prompt.current(), items)
     return items.filter((item) => item.type === "file" && !item.comment?.trim())
   })
+  const sessionReferenceCount = createMemo(() => contextItems().filter((item) => item.type === "session").length)
+  createEffect(
+    on(
+      () =>
+        contextItems()
+          .filter((item) => item.type === "session")
+          .map((item) => item.key)
+          .join(","),
+      (keys) => console.debug(`[session-reference] cards updated references=${sessionReferenceCount()} keys=${keys}`),
+    ),
+  )
 
   const hasUserPrompt = createMemo(() => {
     const sessionID = params.id
@@ -1204,6 +1224,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               (item): AtReference => ({
                 type: "session",
                 id: item.id,
+                directory: item.directory,
                 name: item.title,
                 display: `${item.title} ${item.id}`,
               }),
@@ -1240,10 +1261,60 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     ),
   )
 
-  const handleAtSelect = (option: AtOption | undefined) => {
+  let sessionMentionRequest = 0
+  onCleanup(() => sessionMentionRequest++)
+
+  const handleAtSelect = async (option: AtOption | undefined) => {
     if (!option) return
     console.debug(`[prompt-at] item selected category=${atSources.category} type=${option.type}`)
-    if (option.type === "session" || option.type === "projectTask" || option.type === "scheduledTask") {
+    if (option.type === "session") {
+      const request = ++sessionMentionRequest
+      const scope = { dir: params.dir, id: params.id ?? params.draftID }
+      const cursor = getCursorPosition(editorRef)
+      const match = value(prompt.current())
+        .slice(0, cursor)
+        .match(/@(\S*)$/)
+      if (!match) return
+      // A live range follows surrounding edits while the snapshot is loading.
+      const range = document.createRange()
+      setRangeEdge(editorRef, range, "start", match.index ?? cursor)
+      setRangeEdge(editorRef, range, "end", cursor)
+      const directory = option.directory ?? sdk.directory
+      closePopover()
+      console.debug(`[prompt-at] session snapshot started session=${option.id}`)
+      try {
+        const client = globalSDK.forDomain(mainDomain).createClient({ directory, throwOnError: true })
+        const reference = await loadSessionReference(client, { id: option.id, directory })
+        if (
+          request !== sessionMentionRequest ||
+          params.dir !== scope.dir ||
+          (params.id ?? params.draftID) !== scope.id ||
+          !editorRef.contains(range.startContainer) ||
+          !editorRef.contains(range.endContainer) ||
+          serialize(range.cloneContents()) !== match[0] ||
+          !mayFocusComposer(editorRef)
+        ) {
+          console.debug(`[prompt-at] session snapshot discarded session=${option.id} reason=prompt-changed`)
+          return
+        }
+        editorRef.focus()
+        const selection = window.getSelection()
+        if (!selection) return
+        selection.removeAllRanges()
+        selection.addRange(range)
+        const inserted = addPart(sessionReferencePart(reference))
+        console.debug(`[prompt-at] session pill attached session=${option.id} inserted=${inserted}`)
+      } catch (error) {
+        console.warn(`[prompt-at] session snapshot failed session=${option.id} error=${String(error)}`)
+        showToast({
+          variant: "error",
+          title: language.t("common.requestFailed"),
+          description: language.t("prompt.session.unavailable"),
+        })
+      }
+      return
+    }
+    if (option.type === "projectTask" || option.type === "scheduledTask") {
       const cursor = getCursorPosition(editorRef)
       const text = prompt
         .current()
@@ -1427,7 +1498,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     onSelect: handleSlashSelect,
   })
 
-  const createPill = (part: FileAttachmentPart | AgentPart | ImPart | SkillPart) => {
+  const createPill = (part: FileAttachmentPart | AgentPart | ImPart | SkillPart | SessionPart) => {
+    if (part.type === "session") return createSessionPill(part)
     const pill = document.createElement("span")
     pill.setAttribute("data-type", part.type)
     if (part.type === "im") {
@@ -1486,6 +1558,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       if (el.dataset.type === "agent") return true
       if (el.dataset.type === "im") return true
       if (el.dataset.type === "skill") return true
+      if (el.dataset.type === "session") return true
       return el.tagName === "BR"
     })
 
@@ -1496,7 +1569,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         editorRef.appendChild(createTextFragment(part.content))
         continue
       }
-      if (part.type === "file" || part.type === "agent" || part.type === "im" || part.type === "skill") {
+      if (
+        part.type === "file" ||
+        part.type === "agent" ||
+        part.type === "im" ||
+        part.type === "skill" ||
+        part.type === "session"
+      ) {
         editorRef.appendChild(createPill(part))
       }
     }
@@ -1679,6 +1758,17 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       if (node.nodeType !== Node.ELEMENT_NODE) return
 
       const el = node as HTMLElement
+      if (el.dataset.type === "session") {
+        flushText()
+        const part = readSessionPill(el, position)
+        if (part) {
+          parts.push(part)
+          position = part.end
+        } else {
+          buffer += el.dataset.content ?? el.textContent ?? ""
+        }
+        return
+      }
       if (el.dataset.type === "file") {
         flushText()
         pushFile(el)
@@ -1794,7 +1884,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const range = selection.getRangeAt(0)
     if (!editorRef.contains(range.startContainer)) return false
 
-    if (part.type === "file" || part.type === "agent" || part.type === "im" || part.type === "skill") {
+    if (
+      part.type === "file" ||
+      part.type === "agent" ||
+      part.type === "im" ||
+      part.type === "skill" ||
+      part.type === "session"
+    ) {
       const cursorPosition = getCursorPosition(editorRef)
       const rawText = prompt
         .current()
@@ -1861,7 +1957,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     // Chromium loses IME tracking when contenteditable DOM is modified
     // with non-editable elements (pills) via Range API.
     // Blur/refocus forces the browser to reinitialize IME handling.
-    if (part.type === "file" || part.type === "agent" || part.type === "im" || part.type === "skill") {
+    if (
+      part.type === "file" ||
+      part.type === "agent" ||
+      part.type === "im" ||
+      part.type === "skill" ||
+      part.type === "session"
+    ) {
       const cursorPos = getCursorPosition(editorRef)
       requestAnimationFrame(() => {
         if (!mayFocusComposer(editorRef)) return
@@ -1998,6 +2100,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     },
     addPart,
     readClipboardImage: platform.readClipboardImage,
+    allowSessionReferences: () => store.mode === "normal",
   })
 
   const { handlePairKeyDown } = createPromptPair({
@@ -2069,23 +2172,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const insertSessionRef = async (entry: SessionHistoryEntry) => {
     const scope = { dir: params.dir!, id: params.id ?? params.draftID }
-    console.debug(`[session-reference] load session=${entry.id}`)
     const client = globalSDK.forDomain(mainDomain).createClient({ directory: entry.directory, throwOnError: true })
-    const session = await client.session.get({ sessionID: entry.id })
-    const messages = await client.session.messages({ sessionID: entry.id, limit: 10 })
-    if (!session.data) throw new Error(language.t("prompt.session.unavailable"))
-    prompt.context.add(
-      {
-        type: "session",
-        sessionID: entry.id,
-        directory: entry.directory,
-        title: session.data.title,
-        updatedAt: session.data.time.updated,
-        summary: sessionExcerpt(messages.data ?? []),
-      },
-      scope,
-    )
-    console.debug(`[session-reference] attached session=${entry.id} messages=${messages.data?.length ?? 0}`)
+    const reference = await loadSessionReference(client, entry)
+    prompt.context.add(reference, scope)
+    console.debug(`[session-reference] attached session=${entry.id} mode=context`)
   }
 
   const expand = () => {
@@ -2634,6 +2724,25 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             }}
             openComment={openComment}
             remove={(item) => {
+              if (item.type === "session") {
+                const prev = prompt.current()
+                const next = removeInlineSessionReference(prev, item, prompt.cursor() ?? promptLength(prev))
+                if (!isPromptEqual(prev, next.prompt)) {
+                  syncInputUndo(next.prompt, next.cursor, prev)
+                  prompt.set(next.prompt, next.cursor)
+                }
+                for (const context of prompt.context.items()) {
+                  if (
+                    context.type !== "session" ||
+                    context.sessionID !== item.sessionID ||
+                    context.directory !== item.directory
+                  )
+                    continue
+                  prompt.context.remove(context.key)
+                }
+                console.debug(`[session-reference] card removed session=${item.sessionID} directory=${item.directory}`)
+                return
+              }
               if (item.type === "file" && item.commentID) comments.remove(item.path, item.commentID)
               prompt.context.remove(item.key)
             }}
@@ -2693,6 +2802,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   "[&_[data-type=agent]]:text-syntax-type": true,
                   "[&_[data-type=im]]:text-syntax-property": true,
                   "[&_[data-type=skill]]:text-syntax-keyword": true,
+                  "[&_[data-type=session]]:text-syntax-property": true,
                   "font-mono!": !compactComposer(),
                 }}
               />

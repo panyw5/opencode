@@ -1251,6 +1251,7 @@ export const dict = {
   "session.share.copy.copyLink": "复制链接",
   "session.copyInfo": "复制会话信息",
   "session.referenceNew": "引用并新建会话",
+  "session.copyReference": "复制为会话引用",
   "session.generateTitle": "生成标题",
   "session.editTitle": "编辑标题",
   "session.editTitle.placeholder": "输入此会话的标题",

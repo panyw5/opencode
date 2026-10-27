@@ -219,7 +219,10 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
   const cmd = head?.startsWith("/") ? head.slice(1) : undefined
   const customCommand = cmd && input.sync.data.command.find((item) => item.name === cmd)
   if (cmd && customCommand) {
-    if (input.draft.context.some((item) => item.type === "session")) {
+    if (
+      input.draft.context.some((item) => item.type === "session") ||
+      input.draft.prompt.some((part) => part.type === "session")
+    ) {
       throw new Error("Session references require a regular prompt, not a slash command.")
     }
     const messageID = input.messageID ?? Identifier.ascending("message")
@@ -608,7 +611,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const hookControlCommand = mode === "normal" ? sessionHookControlCommand(text) : undefined
     if (
       mode === "normal" &&
-      currentContext.some((item) => item.type === "session") &&
+      (currentContext.some((item) => item.type === "session") ||
+        currentPrompt.some((part) => part.type === "session")) &&
       (hookControlCommand ||
         (text.startsWith("/") && sync.data.command.some((item) => item.name === text.split(" ")[0].slice(1))))
     ) {

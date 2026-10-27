@@ -1363,6 +1363,7 @@ export const dict = {
   "session.share.copy.copyLink": "Copy link",
   "session.copyInfo": "Copy session info",
   "session.referenceNew": "Reference in new session",
+  "session.copyReference": "Copy as session reference",
 
   "lsp.tooltip.none": "No LSP servers",
   "lsp.label.connected": "{{count}} LSP",

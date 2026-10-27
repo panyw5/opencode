@@ -7,14 +7,20 @@ export function cycleAtCategory(category: AtCategory, reverse = false): AtCatego
 }
 
 export type AtReference = {
-  [K in "session" | "projectTask" | "scheduledTask"]: { type: K; id: string; name: string; display: string }
+  [K in "session" | "projectTask" | "scheduledTask"]: {
+    type: K
+    id: string
+    name: string
+    display: string
+    directory?: string
+  }
 }["session" | "projectTask" | "scheduledTask"]
 
 export function inAtCategory(type: string, category: AtCategory) {
   return category === "all" || (category === "external" ? type === "consult" : type === category)
 }
 
-export function atReferenceText(item: AtReference) {
+export function atReferenceText(item: Exclude<AtReference, { type: "session" }>) {
   return `@${item.type} ${JSON.stringify(item.name)} (ID: ${item.id}) `
 }
 

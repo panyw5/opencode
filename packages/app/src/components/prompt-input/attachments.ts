@@ -8,6 +8,7 @@ import { getCursorPosition } from "./editor-dom"
 import { attachmentMime } from "./files"
 import { normalizePaste, pasteMode } from "./paste"
 import { composerBoundary, composerOwnsTarget } from "./composer-boundary"
+import { readSessionReferenceClipboard, sessionReferencePart } from "./session-reference-clipboard"
 
 function dataUrl(file: File, mime: string) {
   return new Promise<string>((resolve) => {
@@ -35,6 +36,7 @@ type PromptAttachmentsInput = {
   focusEditor: () => void
   addPart: (part: ContentPart) => boolean
   readClipboardImage?: () => Promise<File | null>
+  allowSessionReferences?: () => boolean
 }
 
 export function createPromptAttachments(input: PromptAttachmentsInput) {
@@ -153,6 +155,19 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     }
 
     if (!plainText) return
+
+    const reference = input.allowSessionReferences?.() !== false ? readSessionReferenceClipboard(plainText) : undefined
+    if (reference) {
+      console.debug(`[session-reference-clipboard] paste recognized session=${reference.sessionID} scope=${scope}`)
+      const part = sessionReferencePart(reference)
+      let inserted = input.addPart(part)
+      if (!inserted) {
+        input.focusEditor()
+        inserted = input.addPart(part)
+      }
+      console.debug(`[session-reference-clipboard] paste attached session=${reference.sessionID} inserted=${inserted}`)
+      if (inserted) return
+    }
 
     const text = normalizePaste(plainText)
 

@@ -964,6 +964,19 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
             <ContextMenu.ItemLabel>{language.t("session.referenceNew")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
           <ContextMenu.Item
+            data-action="session-copy-reference"
+            data-session={base64Encode(props.session.id)}
+            disabled={reference.pending()}
+            onSelect={() => void reference.copy(props.session)}
+          >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="copy" size="small" />
+              </span>
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{language.t("session.copyReference")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+          <ContextMenu.Item
             data-action="session-copy-info"
             data-session={base64Encode(props.session.id)}
             onSelect={copy}

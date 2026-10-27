@@ -31,7 +31,7 @@ export function getNodeLength(node: Node): number {
   if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName === "BR") return 1
   if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).dataset.type === "im")
     return ((node as HTMLElement).dataset.content ?? "@IM").length
-  if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).dataset.type === "skill")
+  if (node.nodeType === Node.ELEMENT_NODE && ["skill", "session"].includes((node as HTMLElement).dataset.type ?? ""))
     return ((node as HTMLElement).dataset.content ?? node.textContent ?? "").length
   return (node.textContent ?? "").replace(/\u200B/g, "").length
 }
@@ -41,7 +41,7 @@ export function serialize(node: Node): string {
   if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName === "BR") return "\n"
   if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).dataset.type === "im")
     return (node as HTMLElement).dataset.content ?? "@IM"
-  if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).dataset.type === "skill")
+  if (node.nodeType === Node.ELEMENT_NODE && ["skill", "session"].includes((node as HTMLElement).dataset.type ?? ""))
     return (node as HTMLElement).dataset.content ?? node.textContent ?? ""
   return Array.from(node.childNodes).map(serialize).join("")
 }
@@ -51,7 +51,7 @@ export function getTextLength(node: Node): number {
   if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName === "BR") return 1
   if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).dataset.type === "im")
     return ((node as HTMLElement).dataset.content ?? "@IM").length
-  if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).dataset.type === "skill")
+  if (node.nodeType === Node.ELEMENT_NODE && ["skill", "session"].includes((node as HTMLElement).dataset.type ?? ""))
     return ((node as HTMLElement).dataset.content ?? node.textContent ?? "").length
   let length = 0
   for (const child of Array.from(node.childNodes)) {
@@ -79,7 +79,7 @@ export function setCursorPosition(parent: HTMLElement, position: number) {
     const isText = node.nodeType === Node.TEXT_NODE
     const isPill =
       node.nodeType === Node.ELEMENT_NODE &&
-      ["file", "agent", "im", "skill"].includes((node as HTMLElement).dataset.type ?? "")
+      ["file", "agent", "im", "skill", "session"].includes((node as HTMLElement).dataset.type ?? "")
     const isBreak = node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName === "BR"
 
     if (isText && remaining <= length) {
@@ -144,7 +144,7 @@ export function setRangeEdge(parent: HTMLElement, range: Range, edge: "start" | 
     const isText = node.nodeType === Node.TEXT_NODE
     const isPill =
       node.nodeType === Node.ELEMENT_NODE &&
-      ["file", "agent", "im", "skill"].includes((node as HTMLElement).dataset.type ?? "")
+      ["file", "agent", "im", "skill", "session"].includes((node as HTMLElement).dataset.type ?? "")
     const isBreak = node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName === "BR"
 
     if (isText && remaining <= length) {

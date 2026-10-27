@@ -25,7 +25,7 @@ describe("at references", () => {
     }
   })
   test("references contain literal names and IDs", () => {
-    for (const type of ["session", "projectTask", "scheduledTask"] as const) {
+    for (const type of ["projectTask", "scheduledTask"] as const) {
       expect(atReferenceText({ type, id: "id-1", name: 'name "quoted"', display: "" })).toBe(
         `@${type} "name \\"quoted\\"" (ID: id-1) `.replaceAll('\\\\"', '\\"'),
       )

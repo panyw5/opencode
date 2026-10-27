@@ -925,6 +925,44 @@ describe("prompt submit intervene", () => {
     expect(contextItems).toEqual([])
   })
 
+  test("preserves inline session snapshots in queued drafts", async () => {
+    params = { dir: "/repo/worktree-a", id: "session-9" }
+    const original = promptValue.slice()
+    const capsule = { type: "session" as const, reference, content: "@Source", start: 0, end: 7 }
+    promptValue.splice(0, promptValue.length, capsule)
+    try {
+      const queued: Array<{ prompt: Prompt; context: ContextItem[] }> = []
+      const submit = createPromptSubmit(baseInput({ onQueue: (draft) => queued.push(draft) }))
+      await submit.handleSubmit({ preventDefault() {} } as Event)
+      expect(queued[0]?.prompt).toEqual([capsule])
+      expect(queued[0]?.context).toEqual([])
+    } finally {
+      promptValue.splice(0, promptValue.length, ...original)
+    }
+  })
+
+  test("rejects slash-command followups with inline session references rather than dropping context", async () => {
+    await expect(
+      sendFollowupDraft({
+        client: clientFor("/repo/main", false) as never,
+        globalSync: {} as never,
+        sync: { data: { command: [{ name: "foo" }] } } as never,
+        draft: {
+          sessionID: "session-9",
+          sessionDirectory: "/repo/main",
+          prompt: [
+            { type: "text", content: "/foo ", start: 0, end: 5 },
+            { type: "session", reference, content: "@Source", start: 5, end: 12 },
+          ],
+          context: [],
+          agent: "agent",
+          model: { providerID: "provider", modelID: "model" },
+        },
+      }),
+    ).rejects.toThrow("Session references require a regular prompt")
+    expect(sentCommands).toEqual([])
+  })
+
   test("transforms only the submitted draft text while preserving queued prompt content", async () => {
     params = { id: "session-9", dir: "/repo/worktree-a" }
     const queued: Array<{ prompt: Prompt }> = []
