@@ -137,6 +137,10 @@ export function applyDirectoryEvent(input: {
     case "session.updated": {
       const info = (event.properties as { info: Session }).info
       const result = Binary.search(input.store.session, info.id, (s) => s.id)
+      if (result.found && input.store.session[result.index].time.updated > info.time.updated) {
+        console.debug(`[session-history] sid=${info.id} stage=stale-session-event-ignored`)
+        break
+      }
       if (info.time.archived) {
         publishSessionLifecycle({ type: "archived", directory: input.directory, session: info })
         const removed = result.found

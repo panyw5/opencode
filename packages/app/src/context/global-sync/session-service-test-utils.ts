@@ -25,6 +25,10 @@ export const sessionInfo = (id = "session", updated = 1): Session =>
   }) as Session
 
 export type FakeSessionClient = {
+  abort: (input: { sessionID: string }) => Promise<{ data?: boolean; error?: unknown }>
+  revert: (input: { sessionID: string; messageID: string }) => Promise<{ data?: Session; error?: unknown }>
+  unrevert: (input: { sessionID: string }) => Promise<{ data?: Session; error?: unknown }>
+  message: (input: { sessionID: string; messageID: string }) => Promise<{ data?: unknown; error?: unknown }>
   get: (input: { sessionID: string }) => Promise<{ data?: Session }>
   messages: (input: { sessionID: string; limit: number; before?: string }) => Promise<{
     data?: Array<{ info: any; parts: any[] }>
@@ -70,10 +74,14 @@ export function createSessionControllerHarness(client: Partial<FakeSessionClient
   let revision = 0
   let pins = 0
   const session = {
+    abort: client.abort ?? (async () => ({ data: true })),
+    revert:
+      client.revert ??
+      (async ({ sessionID, messageID }) => ({ data: { ...sessionInfo(sessionID), revert: { messageID } } })),
+    unrevert: client.unrevert ?? (async ({ sessionID }) => ({ data: sessionInfo(sessionID) })),
+    message: client.message ?? (async () => ({ data: {} })),
     get: client.get ?? (async ({ sessionID }) => ({ data: sessionInfo(sessionID) })),
-    messages:
-      client.messages ??
-      (async () => ({ data: [], response: { headers: { get: () => null } } })),
+    messages: client.messages ?? (async () => ({ data: [], response: { headers: { get: () => null } } })),
     todo: client.todo ?? (async () => ({ data: [] })),
     diff: client.diff ?? (async () => ({ data: [] })),
     status: client.status ?? (async () => ({ data: {} })),

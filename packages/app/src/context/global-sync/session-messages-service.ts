@@ -345,8 +345,20 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
       },
       remove: removeOptimistic,
     },
-    event(directory: string, sessionID: string, strategy: "merge" | "discard", removedMessageID?: string) {
+    event(
+      directory: string,
+      sessionID: string,
+      strategy: "merge" | "discard",
+      removedMessageID?: string,
+      confirmedMessageID?: string,
+    ) {
       bump(directory, sessionID)
+      if (confirmedMessageID) {
+        console.debug(
+          `[session-messages] optimistic-confirmed directory=${directory} sid=${sessionID} message=${confirmedMessageID} source=event`,
+        )
+        clearOptimistic(directory, sessionID, confirmedMessageID)
+      }
       if (removedMessageID) {
         console.debug(
           `[session-messages] optimistic-removed directory=${directory} sid=${sessionID} message=${removedMessageID} pending=${optimistic.get(keyFor(directory, sessionID))?.has(removedMessageID) ?? false}`,

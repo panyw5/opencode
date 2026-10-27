@@ -26,11 +26,19 @@ export function createSessionStatusService(deps: SessionControllerDeps) {
     return deps.child(directory)[0].session_status
   }
 
-  const refresh = async (directory: string, reason: SessionStatusRefreshReason = "manual") => {
+  const refresh = async (
+    directory: string,
+    reason: SessionStatusRefreshReason = "manual",
+    options?: { strict?: boolean },
+  ): Promise<void> => {
     const key = deps.key(directory)
     if (!key || deps.isolated(directory)) return
     const pending = inflight.get(key)
-    if (pending) return pending
+    if (pending) {
+      if (!options?.strict) return pending
+      await pending
+      return refresh(directory, reason, options)
+    }
 
     deps.pin(directory)
     const child = deps.child(directory)
@@ -42,6 +50,7 @@ export function createSessionStatusService(deps: SessionControllerDeps) {
       .sdk(directory)
       .session.status()
       .then(async (response) => {
+        if (response.error) throw response.error
         if (!deps.current(directory, child, revision)) return
         const previous = { ...child[0].session_status }
         const next = mergeSessionStatusRefresh(
@@ -78,6 +87,7 @@ export function createSessionStatusService(deps: SessionControllerDeps) {
         console.debug(
           `[global-sync] refresh session status failed directory=${directory} reason=${reason} err=${error instanceof Error ? error.message : String(error)}`,
         )
+        if (options?.strict) throw error
       })
       .finally(() => {
         if (inflight.get(key) === promise) inflight.delete(key)

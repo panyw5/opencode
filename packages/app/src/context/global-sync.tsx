@@ -943,19 +943,21 @@ function createGlobalSync() {
             .then((x) => setStore("lsp", x.data ?? []))
         },
       })
-      if (completedSession) {
-        void reconcileSessionMessages(logical, [completedSession], "session-completed").catch((error) => {
-          console.warn(
-            `[global-sync] completed session reconcile failed directory=${key} session=${completedSession} error=${error instanceof Error ? error.message : String(error)}`,
-          )
-        })
+      if (completedSession && !sessionService.api.history.pending(logical, completedSession)) {
+        void reconcileSessionMessages(logical, [completedSession], "session-completed", { authoritative: true }).catch(
+          (error) => {
+            console.warn(
+              `[global-sync] completed session reconcile failed directory=${key} session=${completedSession} error=${error instanceof Error ? error.message : String(error)}`,
+            )
+          },
+        )
       }
       if (revertTrace) {
         const current = store.session.find((item) => item.id === revertTrace.sessionID)
         console.debug(
           `[session-revert-sync] stage=event-applied directory=${key} type=${event.type} event=${revertTrace.eventID ?? "none"} sid=${revertTrace.sessionID} message=${revertTrace.messageID ?? "none"} revert=${revertTrace.revertMessageID ?? "none"} cachedMessages=${store.message[revertTrace.sessionID]?.length ?? 0} cachedRevert=${current?.revert?.messageID ?? "none"}`,
         )
-        if (event.type === "session.updated") {
+        if (event.type === "session.updated" && !sessionService.api.history.pending(logical, revertTrace.sessionID)) {
           void reconcileSessionMessages(logical, [revertTrace.sessionID], "session-revert", {
             authoritative: true,
           }).catch((error) => {

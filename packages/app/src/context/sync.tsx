@@ -313,6 +313,29 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       },
       session: {
         get: getSession,
+        revert: {
+          pending(sessionID: string) {
+            return globalSync.session.history.pending(sdk.directory, sessionID)
+          },
+          operation(sessionID: string) {
+            return globalSync.session.history.operation(sdk.directory, sessionID)
+          },
+          async change(input: { sessionID: string; messageID?: string }) {
+            const directory = sdk.directory
+            try {
+              return await globalSync.session.history.change(directory, input)
+            } finally {
+              userMessageIndex.clear(directory, [input.sessionID])
+              if (sdk.directory === directory) {
+                void userMessageIndex.ensure(directory, input.sessionID).catch((error) => {
+                  console.warn(
+                    `[session-history] sid=${input.sessionID} stage=index-refresh-failed error=${String(error)}`,
+                  )
+                })
+              }
+            }
+          },
+        },
         status: {
           get(sessionID: string) {
             return globalSync.session.status.get(sdk.directory, sessionID)

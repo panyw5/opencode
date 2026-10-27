@@ -16,6 +16,22 @@ const response = (messages: Message[], parts: Part[] = []) => ({
 })
 
 describe("session messages controller", () => {
+  test("an SSE confirmation releases optimistic protection before later authoritative snapshots", async () => {
+    const harness = createSessionControllerHarness({ messages: async () => response([]) })
+    const controller = createSessionService(harness.deps)
+    const service = controller.api.messages
+    service.optimistic.add("/project", { sessionID: "session", message: message("confirmed"), parts: [] })
+    controller.event(
+      "/project",
+      sessionDataMutation(
+        { type: "message.updated", properties: { info: { id: "confirmed", sessionID: "session" } } },
+        () => undefined,
+      )!,
+    )
+    expect(service.optimistic.has("/project", "session", "confirmed")).toBe(false)
+    await service.load({ directory: "/project", sessionID: "session", limit: 80, authoritative: true })
+    expect(service.get("/project", "session")).toEqual([])
+  })
   test("coalesces authoritative refreshes and cancels them on session clear", async () => {
     const request = deferred<ReturnType<typeof response>>()
     let calls = 0
