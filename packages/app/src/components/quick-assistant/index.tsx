@@ -257,7 +257,7 @@ export function QuickAssistant() {
   const [status, setStatus] = createStore<
     Record<string, { busy: boolean; waiting: boolean; closing: boolean } | undefined>
   >({})
-  const [panel, setPanel] = createStore({ present: false, entering: false, minimumHeight: 0, tabScroll: 0 })
+  const [panel, setPanel] = createStore({ present: false, entering: false, tabScroll: 0 })
   createEffect(() => {
     if (saved.open) {
       console.debug("[quick-assistant] panel slide-in requested motion=always")
@@ -276,7 +276,7 @@ export function QuickAssistant() {
     // Leave enough time for the 180ms CSS exit transition before removing the UI.
     const timer = setTimeout(() => {
       console.debug("[quick-assistant] panel slide-out complete; unmounting UI")
-      setPanel({ present: false, minimumHeight: 0, tabScroll: 0 })
+      setPanel({ present: false, tabScroll: 0 })
     }, QUICK_ASSISTANT_EXIT_MS)
     onCleanup(() => clearTimeout(timer))
   })
@@ -290,7 +290,7 @@ export function QuickAssistant() {
     const id = crypto.randomUUID()
     const number = saved.next
     batch(() => {
-      if (height) setPanel({ minimumHeight: height, tabScroll: list?.scrollTop ?? 0 })
+      setPanel("tabScroll", list?.scrollTop ?? 0)
       setSaved("windows", (items) => [...items, { id, number, context: false }])
       setSaved("active", id)
       setSaved("next", number + 1)
@@ -362,10 +362,37 @@ export function QuickAssistant() {
       onSelect: () => (saved.open ? setSaved("open", false) : open()),
     },
   ])
+  const updateTabJoin = (list: HTMLElement) => {
+    const panel = list.closest<HTMLElement>('[data-component="quick-assistant-panel"]')
+    const outline = panel?.querySelector<HTMLElement>('[data-slot="quick-assistant-outline"]')
+    const active = list.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+    if (!panel || !outline || !active) return
+    const bounds = panel.getBoundingClientRect()
+    const viewport = list.getBoundingClientRect()
+    const tab = active.getBoundingClientRect()
+    const start = Math.max(tab.top + 1, viewport.top) - bounds.top
+    const end = Math.min(tab.bottom - 1, viewport.bottom) - bounds.top
+    const join = panel.querySelector<HTMLElement>('[data-slot="quick-assistant-tab-join"]')
+    if (join) {
+      join.style.display = end > start ? "block" : "none"
+      join.style.top = `${start - 1}px`
+      join.style.height = `${Math.max(0, end - start)}px`
+    }
+    // Cut the border and its shadow together, without touching the translucent surface.
+    const clip =
+      end > start
+        ? `polygon(-96px -96px, calc(100% + 96px) -96px, calc(100% + 96px) calc(100% + 96px), -96px calc(100% + 96px), -96px ${end}px, 2px ${end}px, 2px ${start}px, -96px ${start}px)`
+        : "none"
+    if (outline.style.clipPath === clip) return
+    outline.style.clipPath = clip
+    console.debug(
+      `[quick-assistant] tab join window=${panel.dataset.windowId} start=${start} end=${end} visible=${end > start ? 1 : 0} background=${getComputedStyle(active).backgroundColor} panelBackground=${getComputedStyle(panel).backgroundColor}`,
+    )
+  }
   const tabs = () => (
     <div
       data-component="quick-assistant-tabs"
-      class="absolute right-full top-8 -mr-px flex w-36 max-sm:w-20 flex-col gap-1"
+      class="absolute right-full top-8 mr-px flex w-36 max-sm:w-20 flex-col gap-1"
       style={{ "max-height": "calc(100% - 2rem)" }}
     >
       <div
@@ -374,10 +401,21 @@ export function QuickAssistant() {
         aria-orientation="vertical"
         class="flex min-h-0 min-w-0 flex-col gap-1 overflow-x-hidden overflow-y-auto"
         style={{ "overflow-anchor": "none" }}
+        onScroll={(event) => {
+          setPanel("tabScroll", event.currentTarget.scrollTop)
+          updateTabJoin(event.currentTarget)
+        }}
         ref={(node) => {
           const top = untrack(() => panel.tabScroll)
+          const observer = new ResizeObserver(() => updateTabJoin(node))
+          observer.observe(node)
+          onCleanup(() => observer.disconnect())
           queueMicrotask(() => {
-            if (node.isConnected) node.scrollTop = top
+            if (!node.isConnected) return
+            node.scrollTop = top
+            const active = node.querySelector('[role="tab"][aria-selected="true"]')
+            if (active) observer.observe(active)
+            updateTabJoin(node)
           })
         }}
       >
@@ -393,7 +431,11 @@ export function QuickAssistant() {
                 aria-label={item.title || language.t("quickAssistant.window", { number: item.number })}
                 title={item.title || language.t("quickAssistant.window", { number: item.number })}
                 tabIndex={saved.active === item.id ? 0 : -1}
-                class="flex h-9 w-full min-w-0 items-center gap-2 rounded-l-full border border-r-0 border-border-weak-base bg-background-stronger/95 pl-3 pr-7 text-left text-12-medium text-text-weak transition-colors hover:bg-surface-base-hover aria-selected:bg-surface-base-active aria-selected:text-text-strong max-sm:h-10 max-sm:pl-2"
+                class="relative isolate flex h-9 w-full min-w-0 items-center gap-2 rounded-l-full border border-r-0 border-border-weak-base bg-surface-base-active pl-3 pr-7 text-left text-12-medium text-text-weak transition-colors hover:bg-surface-base-hover aria-selected:text-text-strong max-sm:h-10 max-sm:pl-2"
+                style={{
+                  "background-color":
+                    saved.active === item.id ? "var(--quick-assistant-surface)" : undefined,
+                }}
                 onClick={() => {
                   setSaved("active", item.id)
                   console.debug(`[quick-assistant] window selected window=${item.id}`)
@@ -430,7 +472,7 @@ export function QuickAssistant() {
               <button
                 type="button"
                 data-action="quick-assistant-close-window"
-                class="absolute right-0.5 top-1/2 -translate-y-1/2 flex size-5 items-center justify-center rounded-full bg-background-stronger text-icon-weak hover:bg-surface-base-hover hover:text-icon-base disabled:opacity-40"
+                class="absolute right-0.5 top-1/2 -translate-y-1/2 flex size-5 items-center justify-center rounded-full bg-transparent text-icon-weak hover:bg-surface-base-hover hover:text-icon-base disabled:opacity-40"
                 aria-label={language.t("quickAssistant.window.close", { number: item.number })}
                 title={language.t("quickAssistant.window.close", { number: item.number })}
                 disabled={status[item.id]?.closing}
@@ -479,7 +521,6 @@ export function QuickAssistant() {
             open={saved.open}
             present={panel.present}
             entering={panel.entering}
-            minimumHeight={panel.minimumHeight}
             maximized={saved.maximized}
             primary={saved.windows[0]?.id === item.id}
             tabs={tabs}
@@ -511,7 +552,6 @@ function QuickAssistantWindow(props: {
   open: boolean
   present: boolean
   entering: boolean
-  minimumHeight: number
   maximized: boolean
   primary: boolean
   tabs: () => JSX.Element
@@ -1313,7 +1353,6 @@ function QuickAssistantWindow(props: {
     finishIfSettled(id)
   }
 
-  const bare = createMemo(() => !waiting() && list().length === 0 && !props.minimumHeight)
   const expanded = createMemo(() => props.maximized)
 
   const removePermission = (request: PermissionRequest) => {
@@ -1352,49 +1391,50 @@ function QuickAssistantWindow(props: {
           onPointerDown={(event) => {
             if (event.button === 0 && !event.defaultPrevented) focusCommandScope(event.currentTarget, event.target)
           }}
-          class="fixed right-5 bottom-5 z-40 pointer-events-auto max-h-[calc(100dvh-72px)] rounded-[calc(var(--radius-4xl)+0.75rem+1px)] outline-none"
+          class="fixed right-5 bottom-5 z-40 pointer-events-auto h-[calc(100dvh-72px)] rounded-[calc(var(--radius-4xl)+0.75rem+1px)] border border-transparent outline-none"
           ref={(element) =>
             requestAnimationFrame(() => {
               if (!element.isConnected) return
               const composer = element.querySelector('[data-prompt-kind="quick"]')
               console.debug(
-                `[quick-assistant] panel geometry radius=${getComputedStyle(element).borderRadius} composerRadius=${composer ? getComputedStyle(composer).borderRadius : "none"} contentOverflow=${getComputedStyle(element.lastElementChild!).overflow}`,
+                `[quick-assistant] panel geometry empty=${list().length === 0 ? 1 : 0} height=${element.getBoundingClientRect().height} background=${getComputedStyle(element).backgroundColor} radius=${getComputedStyle(element).borderRadius} composerRadius=${composer ? getComputedStyle(composer).borderRadius : "none"} contentOverflow=${getComputedStyle(element.lastElementChild!).overflow}`,
               )
             })
           }
           classList={{
-            "h-[calc(100dvh-72px)]": waiting(),
             "w-[min(1040px,calc(100vw-192px))] max-sm:w-[calc(100vw-128px)]": expanded(),
             "w-[min(520px,calc(100vw-192px))] max-sm:w-[calc(100vw-128px)]": !expanded(),
-            "border border-border-weak-base shadow-[var(--shadow-lg)]": !bare(),
           }}
-          style={
-            bare()
-              ? undefined
-              : {
-                  "background-color":
-                    platform.platform === "desktop" && platform.os === "windows"
-                      ? "var(--surface-raised-stronger-non-alpha)"
-                      : "var(--apple-dark-alpha-1)",
-                  "backdrop-filter":
-                    platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",
-                  "-webkit-backdrop-filter":
-                    platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",
-                }
-          }
+          style={{
+            "--quick-assistant-surface":
+              "color-mix(in srgb, var(--background-base) 20%, var(--background-stronger))",
+            "background-color": "var(--quick-assistant-surface)",
+          }}
         >
+          <div
+            data-slot="quick-assistant-outline"
+            aria-hidden="true"
+            class="pointer-events-none absolute -inset-px rounded-[inherit] border border-border-weak-base shadow-[var(--shadow-lg)]"
+          />
+          <div
+            data-slot="quick-assistant-tab-join"
+            aria-hidden="true"
+            class="pointer-events-none absolute -left-px w-px"
+            style={{
+              display: "none",
+              "background-color": "var(--quick-assistant-surface)",
+            }}
+          />
           <Show when={props.active}>{props.tabs()}</Show>
-          <Show when={list().length > 0}>
-            <button
-              type="button"
-              class="absolute -top-3.5 right-5 z-10 flex size-7 items-center justify-center rounded-full border border-border-weak-base bg-background-base/90 text-icon-weak shadow-xs-border transition hover:border-border-strong-base hover:bg-surface-base-hover hover:text-icon-base"
-              aria-label={language.t(expanded() ? "common.restore" : "common.maximize")}
-              title={language.t(expanded() ? "common.restore" : "common.maximize")}
-              onClick={toggleMaximize}
-            >
-              <Icon name={expanded() ? "collapse" : "expand"} size="small" class="text-icon-weak" />
-            </button>
-          </Show>
+          <button
+            type="button"
+            class="absolute -top-3.5 right-5 z-10 flex size-7 items-center justify-center rounded-full border border-border-weak-base bg-background-base/90 text-icon-weak shadow-xs-border transition hover:border-border-strong-base hover:bg-surface-base-hover hover:text-icon-base"
+            aria-label={language.t(expanded() ? "common.restore" : "common.maximize")}
+            title={language.t(expanded() ? "common.restore" : "common.maximize")}
+            onClick={toggleMaximize}
+          >
+            <Icon name={expanded() ? "collapse" : "expand"} size="small" class="text-icon-weak" />
+          </button>
           <button
             type="button"
             class="absolute -right-3.5 -top-3.5 z-10 flex size-7 items-center justify-center rounded-full border border-border-weak-base bg-background-base/90 text-icon-weak shadow-xs-border transition hover:border-border-strong-base hover:bg-surface-base-hover hover:text-icon-base"
@@ -1405,14 +1445,8 @@ function QuickAssistantWindow(props: {
           >
             <Icon name="close" size="small" class="text-icon-weak" />
           </button>
-          <div
-            class="flex max-h-[calc(100dvh-72px)] flex-col justify-end rounded-[inherit]"
-            classList={{ "h-full": waiting() }}
-            style={{
-              "min-height": props.minimumHeight ? `min(${props.minimumHeight - 2}px, calc(100dvh - 74px))` : undefined,
-            }}
-          >
-            <QuickAssistantMessages list={list()} parts={data()?.part} busy={busy()} waiting={waiting()} />
+          <div class="flex h-full min-h-0 flex-col rounded-[inherit]">
+            <QuickAssistantMessages fill list={list()} parts={data()?.part} busy={busy()} waiting={waiting()} />
             <QuickAssistantRequests
               client={globalSDK.createClient({ directory: root(), throwOnError: true })}
               permissions={permissions()}
@@ -1436,6 +1470,7 @@ function QuickAssistantWindow(props: {
                 ready={!!root()}
                 context={saved.context}
                 contextAvailable={!!currentContext()}
+                contextTitle={currentSession()?.title}
                 variants={variantList()}
                 variant={effectiveVariant()}
                 onPrompt={(next) => setState("prompt", reconcile(next))}

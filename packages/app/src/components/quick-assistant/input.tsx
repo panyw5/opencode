@@ -4,7 +4,7 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Select } from "@opencode-ai/ui/select"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useTheme } from "@opencode-ai/ui/theme/context"
-import { createMemo, createUniqueId, Show } from "solid-js"
+import { createEffect, createMemo, createUniqueId, Show } from "solid-js"
 import { ModelSelectorPopover, parseModelRef, useBoundModelState } from "@/components/dialog-select-model"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
@@ -26,6 +26,7 @@ type Props = {
   ready: boolean
   context: boolean
   contextAvailable: boolean
+  contextTitle?: string
   variants: string[]
   variant: string | undefined
   onPrompt: (prompt: Prompt) => void
@@ -87,6 +88,15 @@ export function QuickAssistantInput(props: Props) {
   })
 
   const variantOptions = createMemo(() => ["default", ...props.variants])
+  const contextTitle = () => (props.context && props.contextAvailable ? props.contextTitle?.trim() : undefined)
+  const contextAction = () =>
+    language.t(props.context ? "quickAssistant.context.disable" : "quickAssistant.context.enable")
+  const contextLabel = () => (contextTitle() ? `${contextAction()}: ${contextTitle()}` : contextAction())
+  createEffect(() => {
+    console.debug(
+      `[quick-assistant:input] context display active=${props.context} available=${props.contextAvailable} title=${contextTitle() ?? "none"}`,
+    )
+  })
   const canSend = () => quickPromptCanSend(props)
   const send = () => {
     if (!canSend()) {
@@ -128,7 +138,7 @@ export function QuickAssistantInput(props: Props) {
           onSend={send}
         />
         <div class="flex items-center gap-1.5 px-2 pb-2 pt-1">
-          <Tooltip placement="top" value={language.t("command.session.new")}>
+          <Tooltip placement="top" value={language.t("command.session.new")} class="shrink-0">
             <button
               type="button"
               class="flex size-8 shrink-0 items-center justify-center rounded-full text-icon-weak transition-colors hover:bg-surface-base-hover hover:text-icon-base"
@@ -140,18 +150,26 @@ export function QuickAssistantInput(props: Props) {
           </Tooltip>
           <Tooltip
             placement="top"
-            value={language.t(props.context ? "quickAssistant.context.disable" : "quickAssistant.context.enable")}
+            value={contextLabel()}
+            class={contextTitle() ? "min-w-[min(96px,35%)] flex-1" : "shrink-0"}
           >
             <button
               type="button"
               data-action="quick-assistant-context"
-              class="flex size-8 shrink-0 items-center justify-center rounded-full text-icon-weak transition-colors hover:bg-surface-base-hover hover:text-icon-base disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label={language.t(
-                props.context ? "quickAssistant.context.disable" : "quickAssistant.context.enable",
-              )}
+              class="flex h-8 min-w-0 items-center gap-1.5 rounded-full text-icon-weak transition-colors hover:bg-surface-base-hover hover:text-icon-base disabled:cursor-not-allowed disabled:opacity-40"
+              classList={{
+                "flex-1 justify-start px-2": !!contextTitle(),
+                "w-8 shrink-0 justify-center": !contextTitle(),
+              }}
+              aria-label={contextLabel()}
               aria-pressed={props.context}
               disabled={!props.contextAvailable}
-              onClick={props.onContext}
+              onClick={() => {
+                console.debug(
+                  `[quick-assistant:input] context toggle active=${props.context} title=${contextTitle() ?? "none"}`,
+                )
+                props.onContext()
+              }}
             >
               <Icon
                 name={props.context ? "link" : "link-off"}
@@ -162,9 +180,21 @@ export function QuickAssistantInput(props: Props) {
                     : undefined,
                 }}
               />
+              <Show when={contextTitle()}>
+                {(title) => (
+                  <span
+                    data-slot="quick-assistant-context-title"
+                    class="min-w-0 truncate text-12-medium text-text-weak"
+                  >
+                    {title()}
+                  </span>
+                )}
+              </Show>
             </button>
           </Tooltip>
-          <div class="min-w-0 flex-1" />
+          <Show when={!contextTitle()}>
+            <div class="min-w-0 flex-1" />
+          </Show>
           <ModelSelectorPopover
             model={model}
             showSummary
@@ -186,7 +216,7 @@ export function QuickAssistantInput(props: Props) {
               variant: "ghost",
               size: "normal",
               style: control,
-              class: "prompt-pick min-w-0 max-w-[240px] shrink-0 group",
+              class: "prompt-pick min-w-0 max-w-[min(240px,28%)] shrink group",
               "aria-label": language.t("command.model.choose"),
             }}
           >
@@ -196,22 +226,25 @@ export function QuickAssistantInput(props: Props) {
             </Show>
           </ModelSelectorPopover>
           <Show when={props.variants.length > 0}>
-            <Select
-              size="normal"
-              options={variantOptions()}
-              current={props.variant ?? "default"}
-              label={variantLabel()}
-              onSelect={(x) => props.onVariant(x === "default" ? undefined : x)}
-              class="prompt-pick prompt-variant max-w-[140px] shrink-0 [&_[data-slot=select-select-trigger-icon]]:text-text-weaker"
-              valueClass="truncate text-text-weaker"
-              triggerStyle={control}
-              variant="ghost"
-              triggerProps={{ "aria-label": language.t("command.model.variant.cycle") }}
-            />
+            <div class="min-w-0 max-w-[20%] shrink-0">
+              <Select
+                size="normal"
+                options={variantOptions()}
+                current={props.variant ?? "default"}
+                label={variantLabel()}
+                onSelect={(x) => props.onVariant(x === "default" ? undefined : x)}
+                class="prompt-pick prompt-variant min-w-0 max-w-[140px] [&_[data-slot=select-select-trigger-icon]]:text-text-weaker"
+                valueClass="truncate text-text-weaker"
+                triggerStyle={{ ...control, "max-width": "100%" }}
+                variant="ghost"
+                triggerProps={{ "aria-label": language.t("command.model.variant.cycle") }}
+              />
+            </div>
           </Show>
           <Tooltip
             placement="top"
             value={props.busy ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
+            class="shrink-0"
           >
             <IconButton
               type="button"
@@ -219,8 +252,8 @@ export function QuickAssistantInput(props: Props) {
               data-action="quick-assistant-submit"
               icon={props.busy ? "stop" : claudeTheme() ? "arrow-up" : "arrow-up-bold"}
               variant="primary"
-              iconSize={props.busy ? "normal" : "medium"}
-              class="ml-0.5 size-10 shrink-0 rounded-full shadow-xs-border disabled:cursor-not-allowed disabled:opacity-50"
+              iconSize="normal"
+              class="ml-0.5 size-8 shrink-0 rounded-full shadow-xs-border disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!props.busy && !canSend()}
               aria-label={props.busy ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
             />

@@ -20,6 +20,7 @@ type Props = {
   parts: Record<string, Part[] | undefined> | undefined
   busy: boolean
   waiting: boolean
+  fill?: boolean
 }
 
 export function quickAssistantMessageText(parts: Part[] | undefined) {
@@ -159,7 +160,17 @@ export function QuickAssistantMessages(props: Props) {
   onCleanup(detachViewport)
 
   return (
-    <Show when={props.list.length > 0}>
+    <Show
+      when={props.list.length > 0}
+      fallback={
+        <Show when={props.fill}>
+          <div
+            data-component="quick-assistant-empty"
+            class="min-h-0 flex-1 rounded-t-[calc(var(--radius-4xl)+0.75rem)]"
+          />
+        </Show>
+      }
+    >
       <div
         ref={(node) => {
           detachViewport(false)
@@ -184,10 +195,10 @@ export function QuickAssistantMessages(props: Props) {
         }}
         data-component="quick-assistant-viewport"
         style={{ "overflow-anchor": "none" }}
-        class="min-h-0 overflow-y-auto rounded-t-[calc(var(--radius-4xl)+0.75rem)] bg-background-base/20 px-4 py-4"
+        class="min-h-0 overflow-y-auto rounded-t-[calc(var(--radius-4xl)+0.75rem)] px-4 py-4"
         classList={{
-          "flex-1": props.waiting,
-          "max-h-[calc(100dvh-200px)] shrink": !props.waiting,
+          "flex-1": props.waiting || props.fill,
+          "max-h-[calc(100dvh-200px)] shrink": !props.waiting && !props.fill,
         }}
         onPointerDown={(event) => {
           if (event.pointerType === "touch" || event.target === event.currentTarget) readingTakeover("pointer")
