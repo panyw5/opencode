@@ -5,6 +5,10 @@ import { pendingSessionKey, pendingSessionSubmissions } from "./pending-session"
 let createPromptSubmit: typeof import("./submit").createPromptSubmit
 let sendFollowupDraft: typeof import("./submit").sendFollowupDraft
 const toasts: Array<{ title?: string; description?: string }> = []
+const history = {
+  pending: () => false,
+  send: <T>(_directory: string, _sessionID: string, request: () => Promise<T>) => request(),
+}
 
 const createdClients: string[] = []
 const createdSessions: string[] = []
@@ -239,6 +243,7 @@ beforeAll(async () => {
   mock.module("@/context/global-sync", () => ({
     useGlobalSync: () => ({
       session: {
+        history,
         status: {
           set: () => undefined,
         },
@@ -668,6 +673,7 @@ describe("prompt submit worktree selection", () => {
       client: clientFor("/repo/main", false) as never,
       globalSync: {
         session: {
+          history,
           status: {
             set: (_directory: string, _sessionID: string, status: { type?: string }) => {
               syncEvents.push(`status:${status.type}`)
@@ -749,6 +755,7 @@ describe("prompt submit worktree selection", () => {
       client: client as never,
       globalSync: {
         session: {
+          history,
           messages: {
             page: async () => ({ session: messagePages["/repo/main"].map((item) => item.info) }),
           },

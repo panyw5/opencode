@@ -29,7 +29,6 @@ import { closeFocusedBrowserTab } from "@/browser/close-tab"
 import { decode64 } from "@/utils/base64"
 import { compareMessages, resolveMessage } from "@/utils/message-order"
 import { dict as enDict } from "@/i18n/en"
-import { working as sessionWorking } from "./session-working"
 import { SESSION_HOOK_CONTROL_COMMANDS, sessionHookControlInput } from "./session-hook-controls"
 import { resolveNewSessionDirectory, shouldPreferSidebarForNewSession } from "@/pages/layout/helpers"
 
@@ -98,10 +97,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       preferSidebar: shouldPreferSidebarForNewSession(source, layout.sidebar.opened()),
     })
 
-  const idle = { type: "idle" as const }
-  const status = () => sync.session.status.get(params.id ?? "") ?? idle
   const messages = () => actions.explicitMessages()
-  const busy = () => sessionWorking(status(), messages())
   const userMessages = () => actions.visibleUserMessages()
 
   const showAllFiles = () => {
@@ -568,25 +564,23 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         description: language.t("command.session.undo.description"),
         keywords: kw("command.session.undo", "command.session.undo.description"),
         slash: "undo",
-        disabled: !params.id || userMessages().length === 0,
+        disabled: !params.id || userMessages().length === 0 || sync.session.revert.pending(params.id),
         onSelect: async () => {
           const sessionID = params.id
           if (!sessionID) return
-          if (busy()) {
-            await sdk.client.session.abort({ sessionID }).catch(() => {})
-          }
+          const directory = sdk.directory
+          const previousDraft = JSON.stringify(prompt.current())
           const revert = info()?.revert?.messageID
           const boundary = revert
             ? (resolveMessage(messages(), revert) ?? resolveMessage(userMessages(), revert))
             : undefined
           const message = findLast(userMessages(), (x) => !boundary || compareMessages(x, boundary) < 0)
           if (!message) return
-          await sdk.client.session.revert({ sessionID, messageID: message.id })
           const parts = sync.data.part[message.id]
-          if (parts) {
-            const restored = extractPromptFromParts(parts, { directory: sdk.directory })
-            prompt.set(restored)
-          }
+          const restored = parts ? extractPromptFromParts(parts, { directory }) : undefined
+          await sync.session.revert.change({ sessionID, messageID: message.id })
+          if (params.id !== sessionID || sdk.directory !== directory) return
+          if (restored && JSON.stringify(prompt.current()) === previousDraft) prompt.set(restored)
           const priorMessage = findLast(userMessages(), (x) => compareMessages(x, message) < 0)
           setActiveMessage(priorMessage)
         },
@@ -597,25 +591,33 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         description: language.t("command.session.redo.description"),
         keywords: kw("command.session.redo", "command.session.redo.description"),
         slash: "redo",
-        disabled: !params.id || !info()?.revert?.messageID,
+        disabled: !params.id || !info()?.revert?.messageID || sync.session.revert.pending(params.id),
         onSelect: async () => {
           const sessionID = params.id
           if (!sessionID) return
+          const directory = sdk.directory
+          const previousDraft = JSON.stringify(prompt.current())
           const revertMessageID = info()?.revert?.messageID
           if (!revertMessageID) return
           const boundary = resolveMessage(messages(), revertMessageID) ??
             resolveMessage(userMessages(), revertMessageID) ?? {
               id: revertMessageID,
             }
-          const nextMessage = userMessages().find((x) => compareMessages(x, boundary) > 0)
+          const allUsers = messages().filter((message) => message.role === "user") as UserMessage[]
+          const nextMessage = allUsers.find((x) => compareMessages(x, boundary) > 0)
           if (!nextMessage) {
-            await sdk.client.session.unrevert({ sessionID })
-            prompt.reset()
-            const lastMsg = findLast(userMessages(), (x) => compareMessages(x, boundary) >= 0)
+            await sync.session.revert.change({ sessionID })
+            if (params.id !== sessionID || sdk.directory !== directory) return
+            if (JSON.stringify(prompt.current()) === previousDraft) prompt.reset()
+            const lastMsg = findLast(allUsers, (x) => compareMessages(x, boundary) >= 0)
             setActiveMessage(lastMsg)
             return
           }
-          await sdk.client.session.revert({ sessionID, messageID: nextMessage.id })
+          const parts = sync.data.part[nextMessage.id]
+          const restored = parts ? extractPromptFromParts(parts, { directory }) : undefined
+          await sync.session.revert.change({ sessionID, messageID: nextMessage.id })
+          if (params.id !== sessionID || sdk.directory !== directory) return
+          if (restored && JSON.stringify(prompt.current()) === previousDraft) prompt.set(restored)
           const priorMsg = findLast(userMessages(), (x) => compareMessages(x, nextMessage) < 0)
           setActiveMessage(priorMsg)
         },

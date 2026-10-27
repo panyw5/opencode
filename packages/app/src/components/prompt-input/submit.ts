@@ -253,22 +253,24 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
         return false
       }
 
-      await input.client.session.command({
-        sessionID: input.draft.sessionID,
-        messageID,
-        command: cmd,
-        arguments: tail.join(" "),
-        agent: input.draft.agent,
-        model: `${input.draft.model.providerID}/${input.draft.model.modelID}`,
-        variant: input.draft.variant,
-        parts: images.map((attachment) => ({
-          id: Identifier.ascending("part"),
-          type: "file" as const,
-          mime: attachment.mime,
-          url: attachment.dataUrl,
-          filename: attachment.filename,
-        })),
-      })
+      await input.globalSync.session.history.send(input.draft.sessionDirectory, input.draft.sessionID, () =>
+        input.client.session.command({
+          sessionID: input.draft.sessionID,
+          messageID,
+          command: cmd,
+          arguments: tail.join(" "),
+          agent: input.draft.agent,
+          model: `${input.draft.model.providerID}/${input.draft.model.modelID}`,
+          variant: input.draft.variant,
+          parts: images.map((attachment) => ({
+            id: Identifier.ascending("part"),
+            type: "file" as const,
+            mime: attachment.mime,
+            url: attachment.dataUrl,
+            filename: attachment.filename,
+          })),
+        }),
+      )
       completeOptimisticCommandMessage({
         sync: input.sync,
         directory: input.draft.sessionDirectory,
@@ -361,14 +363,16 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       directory: input.draft.sessionDirectory,
       messageID,
     })
-    await input.client.session.promptAsync({
-      sessionID: input.draft.sessionID,
-      agent: input.draft.agent,
-      model: input.draft.model,
-      messageID,
-      parts: requestParts,
-      variant: input.draft.variant,
-    })
+    await input.globalSync.session.history.send(input.draft.sessionDirectory, input.draft.sessionID, () =>
+      input.client.session.promptAsync({
+        sessionID: input.draft.sessionID,
+        agent: input.draft.agent,
+        model: input.draft.model,
+        messageID,
+        parts: requestParts,
+        variant: input.draft.variant,
+      }),
+    )
     setAccepted()
     console.debug("[prompt-submit]", {
       stage: "request-complete",
@@ -531,6 +535,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
   const handleSubmit = async (event: Event, options?: SubmitOptions) => {
     event.preventDefault()
+    if (params.id && globalSync.session.history.pending(sdk.directory, params.id)) {
+      console.debug(`[session-history] sid=${params.id} stage=submit-blocked`)
+      return
+    }
     const submissionKey = pendingSessionKey(sdk.url, sdk.directory, params.draftID)
     if (!params.id && pendingSessionSubmissions.entries[submissionKey]) {
       console.debug(`[new-session-submit] duplicate ignored key=${submissionKey}`)
@@ -1114,23 +1122,25 @@ export function createPromptSubmit(input: PromptSubmitInput) {
                 variant,
               })
               clearInput()
-              client.session
-                .command({
-                  sessionID: session.id,
-                  messageID,
-                  command: commandName,
-                  arguments: args.join(" "),
-                  agent,
-                  model: `${model.providerID}/${model.modelID}`,
-                  variant,
-                  parts: images.map((attachment) => ({
-                    id: Identifier.ascending("part"),
-                    type: "file" as const,
-                    mime: attachment.mime,
-                    url: attachment.dataUrl,
-                    filename: attachment.filename,
-                  })),
-                })
+              globalSync.session.history
+                .send(sessionDirectory, session.id, () =>
+                  client.session.command({
+                    sessionID: session.id,
+                    messageID,
+                    command: commandName,
+                    arguments: args.join(" "),
+                    agent,
+                    model: `${model.providerID}/${model.modelID}`,
+                    variant,
+                    parts: images.map((attachment) => ({
+                      id: Identifier.ascending("part"),
+                      type: "file" as const,
+                      mime: attachment.mime,
+                      url: attachment.dataUrl,
+                      filename: attachment.filename,
+                    })),
+                  }),
+                )
                 .then(() => {
                   completeOptimisticCommandMessage({
                     sync,

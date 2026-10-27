@@ -3144,24 +3144,6 @@ export default function Page() {
     }
   }
 
-  const merge = (next: NonNullable<ReturnType<typeof info>>) =>
-    sync.set("session", (list) => {
-      const idx = list.findIndex((item) => item.id === next.id)
-      if (idx < 0) return list
-      const out = list.slice()
-      out[idx] = next
-      return out
-    })
-
-  const roll = (sessionID: string, next: NonNullable<ReturnType<typeof info>>["revert"]) =>
-    sync.set("session", (list) => {
-      const idx = list.findIndex((item) => item.id === sessionID)
-      if (idx < 0) return list
-      const out = list.slice()
-      out[idx] = { ...out[idx], revert: next }
-      return out
-    })
-
   const busy = (sessionID: string) => {
     return working(sync.session.status.get(sessionID), sync.data.message[sessionID])
   }
@@ -3205,7 +3187,8 @@ export default function Page() {
   }))
 
   const followupBusy = (sessionID: string) =>
-    followupMutation.isPending && followupMutation.variables?.sessionID === sessionID
+    sync.session.revert.pending(sessionID) ||
+    (followupMutation.isPending && followupMutation.variables?.sessionID === sessionID)
 
   const sendingFollowup = createMemo(() => {
     const id = params.id
@@ -3305,36 +3288,24 @@ export default function Page() {
       })
   }
 
-  const halt = (sessionID: string) =>
-    busy(sessionID) ? sdk.client.session.abort({ sessionID }).catch(() => {}) : Promise.resolve()
-
   const revertMutation = useMutation(() => ({
     mutationFn: async (input: { sessionID: string; messageID: string }) => {
-      const prev = prompt.current().slice()
-      const last = info()?.revert
+      const key = sessionKey()
+      const prev = JSON.stringify(prompt.current())
       const value = draft(input.messageID)
       console.debug(
         `[session-revert] start sid=${input.sessionID} message=${input.messageID} draftParts=${value.length}`,
       )
-      batch(() => {
-        roll(input.sessionID, { messageID: input.messageID })
-        prompt.set(value)
-      })
-      console.debug(`[session-revert] draft applied sid=${input.sessionID} parts=${prompt.current().length}`)
-      await halt(input.sessionID)
-        .then(() => sdk.client.session.revert(input))
-        .then((result) => {
-          if (result.data) merge(result.data)
+      await sync.session.revert
+        .change(input)
+        .then(() => {
+          if (sessionKey() === key && JSON.stringify(prompt.current()) === prev) prompt.set(value)
           console.debug(`[session-revert] persisted sid=${input.sessionID} message=${input.messageID}`)
         })
         .catch((err) => {
           console.warn(
             `[session-revert] failed sid=${input.sessionID} message=${input.messageID} error=${err instanceof Error ? err.message : String(err)}`,
           )
-          batch(() => {
-            roll(input.sessionID, last)
-            prompt.set(prev)
-          })
           fail(err)
         })
     },
@@ -3349,42 +3320,23 @@ export default function Page() {
       const next = current
         ? userMessages().find((item) => compareMessages(item, current) > 0)
         : userMessages().find((item) => item.id > id)
-      const prev = prompt.current().slice()
-      const last = info()?.revert
-
-      batch(() => {
-        roll(sessionID, next ? { messageID: next.id } : undefined)
-        if (next) {
-          prompt.set(draft(next.id))
-          return
-        }
-        prompt.reset()
-      })
-
-      const task = !next
-        ? halt(sessionID).then(() => sdk.client.session.unrevert({ sessionID }))
-        : halt(sessionID).then(() =>
-            sdk.client.session.revert({
-              sessionID,
-              messageID: next.id,
-            }),
-          )
-
-      await task
-        .then((result) => {
-          if (result.data) merge(result.data)
+      const key = sessionKey()
+      const prev = JSON.stringify(prompt.current())
+      const value = next ? draft(next.id) : undefined
+      await sync.session.revert
+        .change({ sessionID, messageID: next?.id })
+        .then(() => {
+          if (sessionKey() !== key || JSON.stringify(prompt.current()) !== prev) return
+          if (value) prompt.set(value)
+          else prompt.reset()
         })
         .catch((err) => {
-          batch(() => {
-            roll(sessionID, last)
-            prompt.set(prev)
-          })
           fail(err)
         })
     },
   }))
 
-  const reverting = createMemo(() => revertMutation.isPending || restoreMutation.isPending)
+  const reverting = createMemo(() => !!params.id && sync.session.revert.pending(params.id))
   const restoring = createMemo(() => (restoreMutation.isPending ? restoreMutation.variables : undefined))
 
   const fork = (input: { sessionID: string; messageID: string }) => {
@@ -3529,6 +3481,7 @@ export default function Page() {
       data-component="session-page"
       data-mobile-tab={store.mobileTab}
       data-session-id={params.id}
+      data-history-phase={params.id ? (sync.session.revert.operation(params.id)?.phase ?? "idle") : "idle"}
       data-render-phase={sessionRenderState().phase}
       onClick={handleFileLinkClick}
       onMouseOver={handleFileLinkHover}

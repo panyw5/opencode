@@ -16,6 +16,11 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { getSessionContextMetrics } from "./session-context-metrics"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
 import { createSessionContextFormatter } from "./session-context-format"
+import {
+  resolveSessionRevertBoundary,
+  visibleBeforeRevert,
+  type SessionRevertBoundary,
+} from "@/pages/session/session-revert-visibility"
 
 const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
   system: "var(--syntax-info)",
@@ -112,12 +117,17 @@ export function SessionContextTab() {
     { equals: same },
   )
 
+  const revertBoundary = createMemo((previous: SessionRevertBoundary | undefined) =>
+    resolveSessionRevertBoundary({
+      sessionKey: `${sync.directory}\n${params.id}`,
+      messageID: info()?.revert?.messageID,
+      messages: messages(),
+      indexed: params.id ? sync.session.userMessageIndex.get(params.id) : undefined,
+      previous,
+    }),
+  )
   const visibleUserMessages = createMemo(
-    () => {
-      const revert = info()?.revert?.messageID
-      if (!revert) return userMessages()
-      return userMessages().filter((m) => m.id < revert)
-    },
+    () => visibleBeforeRevert(userMessages(), revertBoundary()),
     emptyUserMessages,
     { equals: same },
   )

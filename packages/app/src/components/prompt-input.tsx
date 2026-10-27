@@ -3428,6 +3428,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       disabled={
                         store.mode !== "normal" ||
                         store.submitting ||
+                        (!!params.id && globalSync.session.history.pending(sdk.directory, params.id)) ||
                         (!prompt.dirty() && !working() && commentCount() === 0 && sessionReferenceCount() === 0)
                       }
                       tabIndex={store.mode === "normal" ? undefined : -1}
