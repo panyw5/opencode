@@ -235,6 +235,7 @@
     gap: 8px;
     height: 28px;
     padding: 0 2px;
+    margin-bottom: 8px;
   }
 
   [data-component="session-turn-diffs-group"] [data-slot="session-turn-diffs-label"] {
