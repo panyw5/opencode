@@ -69,13 +69,28 @@ describe("session.system", () => {
 
       expect(prompt).toHaveLength(1)
       expect(prompt[0]).toContain("interactive coding agent")
-      expect(prompt[0]).toContain("respect their permissions")
+      expect(prompt[0]).toContain("Respect tool permissions and results")
       expect(prompt[0]).toContain("break the work into a TODO list")
       expect(prompt[0]).toContain("proactively check the code status")
       expect(prompt[0]).toContain("inspect local read-only context")
       expect(prompt[0]).toContain("`[title](url)`")
       expect(prompt[0]).toContain("AVOID using only a bare path or inline code")
-      expect(prompt[0].length).toBeLessThan(2_000)
+      expect(prompt[0].length).toBeLessThan(3_000)
+    }),
+  )
+
+  it.effect("requires a presentation tool instead of diagram code blocks", () =>
+    Effect.sync(() => {
+      const [prompt] = SystemPrompt.provider({} as Provider.Model)
+
+      expect(prompt).toContain("## USING YOUR TOOLS [CRITICAL]")
+      expect(prompt.indexOf("## USING YOUR TOOLS")).toBeLessThan(prompt.indexOf("## Behavior GUIDELINES"))
+      expect(prompt).toContain("`present_diagram`: you MUST call this tool when presenting a diagram")
+      expect(prompt).toContain("Mermaid or SVG code blocks are NOT rendered as diagrams")
+      expect(prompt).toContain("only use diagram code blocks when the user explicitly requests source code")
+      expect(prompt).toContain("Pass raw source without Markdown code fences")
+      expect(prompt).toContain('prefer `syntax: "flowchart"`')
+      expect(prompt).toContain("Use `present_file` for an existing diagram file")
     }),
   )
 

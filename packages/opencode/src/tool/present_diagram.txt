@@ -1,4 +1,4 @@
-Present and render an SVG, Mermaid, or flowchart diagram in chat UI WITHOUT creating a file. Use this tool inside your response at suitable location to help the user understand your answer.
+Present and render an SVG, Mermaid, or flowchart diagram in chat UI WITHOUT creating a file. You MUST call this tool when presenting a diagram; Mermaid or SVG code blocks in your reply are shown as source code, NOT rendered diagrams. Only output a diagram code block when the user explicitly asks for source code. Call this tool where the diagram best helps the user, then continue your explanation.
 
 Pass raw source without Markdown code fences.
 - Use `syntax: "svg"` for a complete SVG document

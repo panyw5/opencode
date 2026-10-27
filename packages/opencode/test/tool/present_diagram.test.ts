@@ -1,7 +1,19 @@
 import { describe, expect, test } from "bun:test"
 import { compileFlowchart, prepareDiagram } from "../../src/tool/present_diagram"
+import description from "../../src/tool/present_diagram.txt"
 
 describe("present_diagram", () => {
+  test("requires tool rendering unless the user explicitly requests source code", () => {
+    expect(description).toContain("You MUST call this tool when presenting a diagram")
+    expect(description).toContain(
+      "Mermaid or SVG code blocks in your reply are shown as source code, NOT rendered diagrams",
+    )
+    expect(description).toContain("Only output a diagram code block when the user explicitly asks for source code")
+    expect(description).toContain("Pass raw source without Markdown code fences")
+    expect(description).toContain("prefer this syntax over Mermaid for simple flowcharts")
+    expect(description).toContain("Use `present_file` if the diagram already exists as a file")
+  })
+
   test("accepts Mermaid without requiring a file", () => {
     const diagram = prepareDiagram({ syntax: "mermaid", source: "flowchart LR\n  A --> B", title: "  Flow  " })
     expect(diagram.syntax).toBe("mermaid")
@@ -59,9 +71,12 @@ describe("present_diagram", () => {
     expect(() => compileFlowchart('{"edges": [{"from": "a", "to": "b", "style": "wavy"}]}')).toThrow(
       "style must be one of",
     )
-    expect(() => compileFlowchart('{"nodes": [{"id": "a", "shape": "blob"}], "edges": [{"from": "a", "to": "b"}]}'))
-      .toThrow("shape must be one of")
-    expect(() => compileFlowchart('{"nodes": [{"id": "a"}, {"id": "a"}], "edges": [{"from": "a", "to": "b"}]}')).not.toThrow()
+    expect(() =>
+      compileFlowchart('{"nodes": [{"id": "a", "shape": "blob"}], "edges": [{"from": "a", "to": "b"}]}'),
+    ).toThrow("shape must be one of")
+    expect(() =>
+      compileFlowchart('{"nodes": [{"id": "a"}, {"id": "a"}], "edges": [{"from": "a", "to": "b"}]}'),
+    ).not.toThrow()
   })
 
   test("remaps reserved Mermaid keywords used as node ids", () => {
