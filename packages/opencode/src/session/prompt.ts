@@ -65,6 +65,7 @@ import {
   isConsultMention,
 } from "@/tool/consult-mention"
 import { SessionRunState } from "./run-state"
+import { SessionHistory } from "./history"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { SessionEvent } from "@opencode-ai/core/session-event"
@@ -176,6 +177,7 @@ export const layer = Layer.effect(
     const scope = yield* Scope.Scope
     const instruction = yield* Instruction.Service
     const state = yield* SessionRunState.Service
+    const history = yield* SessionHistory.Service
     const revert = yield* SessionRevert.Service
     const summary = yield* SessionSummary.Service
     const sys = yield* SystemPrompt.Service
@@ -2279,21 +2281,26 @@ export const layer = Layer.effect(
           revision = yield* state.revision(input.sessionID, lastAssistant(input.sessionID))
         }
       }
-      if (revision !== (yield* state.revision(input.sessionID, lastAssistant(input.sessionID)))) {
-        yield* elog.info("prompt preparation cancelled before message write", { sessionID: input.sessionID, revision })
-        return yield* lastAssistant(input.sessionID)
-      }
-      yield* revert.cleanup(session)
-      // Materialize notifications before the real user message so the user
-      // remains the trigger/latest input for this turn.  The inbox rows are
-      // claimed only after the resulting messages enter a model-input snapshot.
-      yield* promoteInbox(input.sessionID)
-      const message = yield* createUserMessage(input)
-      yield* sessions.touch(input.sessionID)
-      yield* elog.info("prompt message written", {
-        sessionID: input.sessionID,
-        messageID: message.info.id,
-      })
+      const message = yield* history.withLock(
+        input.sessionID,
+        Effect.gen(function* () {
+          if (revision !== (yield* state.revision(input.sessionID, lastAssistant(input.sessionID)))) {
+            yield* elog.info("prompt preparation cancelled before message write", {
+              sessionID: input.sessionID,
+              revision,
+            })
+            return
+          }
+          yield* revert.cleanup(session)
+          // Keep cleanup and the new trigger in the same history mutation.
+          yield* promoteInbox(input.sessionID)
+          const message = yield* createUserMessage(input)
+          yield* sessions.touch(input.sessionID)
+          yield* elog.info("prompt message written", { sessionID: input.sessionID, messageID: message.info.id })
+          return message
+        }),
+      )
+      if (!message) return yield* lastAssistant(input.sessionID)
 
       // The message written above may supersede a question that is still
       // blocking the active run (e.g. a background task result injected while
@@ -3180,7 +3187,12 @@ export const layer = Layer.effect(
 
 export const defaultLayer = Layer.suspend(() =>
   layer.pipe(
-    Layer.provide([Browser.defaultLayer, SessionRunState.defaultLayer, BackgroundGptPro.defaultLayer]),
+    Layer.provide([
+      Browser.defaultLayer,
+      SessionRunState.defaultLayer,
+      BackgroundGptPro.defaultLayer,
+      SessionHistory.defaultLayer,
+    ]),
     Layer.provide(SessionStatus.defaultLayer),
     Layer.provide(SessionCompaction.defaultLayer),
     Layer.provide(SessionProcessor.defaultLayer),

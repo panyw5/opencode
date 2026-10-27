@@ -4,13 +4,14 @@ import { MessageV2 } from "@/session/message-v2"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { SessionRunState } from "@/session/run-state"
+import { SessionHistory } from "@/session/history"
 import { InstanceBootstrap } from "@/project/bootstrap-service"
 import { LocationLifecycle } from "@/project/location-lifecycle"
 import * as Session from "@/session/session"
 import { requireInstance } from "../fixture/fixture"
 import { pollWithTimeout, testEffect } from "../lib/effect"
 
-const it = testEffect(SessionRunState.defaultLayer)
+const it = testEffect(Layer.mergeAll(SessionRunState.defaultLayer, SessionHistory.defaultLayer))
 
 const lifecycleIt = testEffect(
   Layer.mergeAll(SessionRunState.defaultLayer, LocationLifecycle.defaultLayer).pipe(
@@ -41,6 +42,44 @@ function reply(sessionID: SessionID, text: string): MessageV2.WithParts {
 }
 
 describe("SessionRunState", () => {
+  it.instance("history edits fence queued runner admission and invalidate prepared work", () =>
+    Effect.gen(function* () {
+      const service = yield* SessionRunState.Service
+      const history = yield* SessionHistory.Service
+      const sessionID = SessionID.descending()
+      const interrupted = reply(sessionID, "interrupted")
+      const revision = yield* service.revision(sessionID, Effect.succeed(interrupted))
+      const entered = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const edit = yield* history
+        .withLock(
+          sessionID,
+          Effect.gen(function* () {
+            yield* Deferred.succeed(entered, undefined)
+            yield* Deferred.await(release)
+            yield* service.invalidate(sessionID)
+          }),
+        )
+        .pipe(Effect.forkChild)
+      yield* Deferred.await(entered)
+      const calls = yield* Ref.make(0)
+      const run = yield* service
+        .ensureRunning(
+          sessionID,
+          Effect.succeed(interrupted),
+          Ref.update(calls, (n) => n + 1).pipe(Effect.as(interrupted)),
+          revision,
+        )
+        .pipe(Effect.forkChild)
+      yield* Effect.yieldNow
+      expect(yield* Ref.get(calls)).toBe(0)
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(edit)
+      expect(yield* Fiber.join(run)).toBe(interrupted)
+      expect(yield* Ref.get(calls)).toBe(0)
+    }),
+  )
+
   it.instance("shares one runner owner across concurrent callers", () =>
     Effect.gen(function* () {
       const service = yield* SessionRunState.Service

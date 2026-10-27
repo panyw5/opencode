@@ -52,6 +52,7 @@ export const make = <A, E = never>(
     onIdle?: Effect.Effect<void>
     onBusy?: Effect.Effect<void>
     onInterrupt?: Effect.Effect<A, E>
+    admit?: <B, E2>(work: Effect.Effect<B, E2>) => Effect.Effect<B, E2>
   },
 ): Runner<A, E> => {
   const ref = SynchronizedRef.makeUnsafe<State<A, E>>({ _tag: "Idle" })
@@ -60,6 +61,7 @@ export const make = <A, E = never>(
   )
   const onBusy = opts?.onBusy ?? Effect.void
   const onInterrupt = opts?.onInterrupt
+  const admit = opts?.admit ?? (<B, E2>(work: Effect.Effect<B, E2>) => work)
   let ids = 0
   let revision = 0
 
@@ -155,7 +157,7 @@ export const make = <A, E = never>(
           }
         }
       }),
-    ).pipe(Effect.flatten)
+    ).pipe(admit, Effect.flatten)
 
   // Interrupt the in-flight run and start replacement work, keeping every
   // caller already coalesced on the interrupted run attached to the
@@ -222,7 +224,7 @@ export const make = <A, E = never>(
           }
         }
       }),
-    ).pipe(Effect.flatten)
+    ).pipe(admit, Effect.flatten)
 
   const startShell = (work: Effect.Effect<A, E>, ready?: Latch.Latch): Effect.Effect<A, E | Busy> =>
     SynchronizedRef.modifyEffect(
@@ -253,7 +255,7 @@ export const make = <A, E = never>(
           { _tag: "Shell", shell },
         ] as const
       }),
-    ).pipe(Effect.flatten)
+    ).pipe(admit, Effect.flatten)
 
   const cancelWith = (cleanup: Effect.Effect<void>): Effect.Effect<void> =>
     Effect.uninterruptible(

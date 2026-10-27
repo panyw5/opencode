@@ -35,6 +35,7 @@ import { SessionProcessor } from "../../src/session/processor"
 import { SessionPrompt } from "../../src/session/prompt"
 import { SessionRevert } from "../../src/session/revert"
 import { SessionRunState } from "../../src/session/run-state"
+import { SessionHistory } from "../../src/session/history"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
 import { SessionInput } from "../../src/session/input"
@@ -166,7 +167,7 @@ const lsp = Layer.succeed(
 )
 
 const status = SessionStatus.layer.pipe(Layer.provideMerge(Bus.layer))
-const run = SessionRunState.layer.pipe(Layer.provide(status))
+const run = SessionRunState.layer.pipe(Layer.provide(status), Layer.provide(SessionHistory.defaultLayer))
 const infra = Layer.mergeAll(NodeFileSystem.layer, CrossSpawnSpawner.defaultLayer)
 
 const processorCreateStarted: Array<() => void> = []
@@ -249,6 +250,7 @@ function makePrompt(input?: { processor?: "blocking"; browser?: Layer.Layer<Brow
     Layer.provideMerge(deps),
   )
   return SessionPrompt.layer.pipe(
+    Layer.provide(SessionHistory.defaultLayer),
     Layer.provide(browserLayer),
     Layer.provide(BackgroundGptPro.defaultLayer),
     Layer.provideMerge(SessionRevert.defaultLayer),

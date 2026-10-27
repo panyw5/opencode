@@ -52,6 +52,7 @@ import { SessionCompaction } from "../../src/session/compaction"
 import { Instruction } from "../../src/session/instruction"
 import { SessionProcessor } from "../../src/session/processor"
 import { SessionRunState } from "../../src/session/run-state"
+import { SessionHistory } from "../../src/session/history"
 import { SessionStatus } from "../../src/session/status"
 import { SessionInput } from "../../src/session/input"
 import { Snapshot } from "../../src/snapshot"
@@ -68,6 +69,9 @@ import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { ProjectTask } from "@/project-task/service"
+import { IMOwner } from "@/im/owner"
+import { IM } from "@/im/service"
+import { IMSubscription } from "@/im/subscription"
 
 void Log.init({ print: false })
 
@@ -115,7 +119,7 @@ const lsp = Layer.succeed(
 )
 
 const status = SessionStatus.layer.pipe(Layer.provideMerge(Bus.layer))
-const run = SessionRunState.layer.pipe(Layer.provide(status))
+const run = SessionRunState.layer.pipe(Layer.provide(status), Layer.provide(SessionHistory.defaultLayer))
 const infra = Layer.mergeAll(NodeFileSystem.layer, CrossSpawnSpawner.defaultLayer)
 
 function makeHttp() {
@@ -130,6 +134,9 @@ function makeHttp() {
     Plugin.defaultLayer,
     Config.defaultLayer,
     ProviderSvc.defaultLayer,
+    IMOwner.defaultLayer,
+    IM.defaultLayer,
+    IMSubscription.defaultLayer,
     lsp,
     mcp,
     AppFileSystem.defaultLayer,
@@ -174,6 +181,8 @@ function makeHttp() {
     TestLLMServer.layer,
     SessionSummary.defaultLayer,
     SessionPrompt.layer.pipe(
+      Layer.provide(Browser.defaultLayer),
+      Layer.provide(SessionHistory.defaultLayer),
       Layer.provide(BackgroundGptPro.defaultLayer),
       Layer.provide(SessionRevert.defaultLayer),
       Layer.provide(Image.defaultLayer),

@@ -7,12 +7,14 @@ import * as Session from "./session"
 import { MessageV2 } from "./message-v2"
 import { SessionID } from "./schema"
 import { SessionStatus } from "./status"
+import { SessionHistory } from "./history"
 import * as EffectLogger from "@opencode-ai/core/effect/logger"
 
 const elog = EffectLogger.create({ service: "session.run-state" })
 
 export interface Interface {
   readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
+  readonly invalidate: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
   readonly cancel: (sessionID: SessionID, cleanup?: Effect.Effect<void>) => Effect.Effect<void>
   readonly revision: (sessionID: SessionID, onInterrupt: Effect.Effect<MessageV2.WithParts>) => Effect.Effect<number>
   readonly ensureRunning: (
@@ -46,6 +48,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const background = yield* BackgroundJob.Service
     const status = yield* SessionStatus.Service
+    const history = yield* SessionHistory.Service
 
     const state = yield* InstanceState.make(
       Effect.fn("SessionRunState.state")(function* () {
@@ -75,6 +78,7 @@ export const layer = Layer.effect(
       const existing = data.runners.get(sessionID)
       if (existing) return existing
       const next = Runner.make<MessageV2.WithParts>(data.scope, {
+        admit: (work) => history.withLock(sessionID, work),
         onIdle: Effect.gen(function* () {
           yield* status.set(sessionID, { type: "idle" }).pipe(
             Effect.catchCause((cause) =>
@@ -125,6 +129,16 @@ export const layer = Layer.effect(
       )
     })
 
+    const invalidate = (sessionID: SessionID) =>
+      history.withLock(
+        sessionID,
+        Effect.gen(function* () {
+          yield* assertNotBusy(sessionID)
+          yield* (yield* runner(sessionID)).cancel
+          yield* elog.info("history mutation invalidated prepared prompts", { sessionID })
+        }),
+      )
+
     // Hold a location lease for the complete run, not only admission: the
     // runner fiber outlives the HTTP request that started it, and a renderer
     // disconnect must not release backend work. The lease is released exactly
@@ -170,13 +184,14 @@ export const layer = Layer.effect(
     ) {
       return (yield* runner(sessionID, onInterrupt)).revision
     })
-    return Service.of({ assertNotBusy, cancel, revision, ensureRunning, gracefulRestart, startShell })
+    return Service.of({ assertNotBusy, invalidate, cancel, revision, ensureRunning, gracefulRestart, startShell })
   }),
 )
 
 export const defaultLayer = layer.pipe(
   Layer.provide(BackgroundJob.defaultLayer),
   Layer.provide(SessionStatus.defaultLayer),
+  Layer.provide(SessionHistory.defaultLayer),
 )
 
 const cancelBackgroundJobs = Effect.fn("SessionRunState.cancelBackgroundJobs")(function* (

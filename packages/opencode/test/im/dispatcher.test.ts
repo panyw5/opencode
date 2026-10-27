@@ -38,6 +38,7 @@ import { SessionProcessor } from "../../src/session/processor"
 import { SessionPrompt } from "../../src/session/prompt"
 import { SessionRevert } from "../../src/session/revert"
 import { SessionRunState } from "../../src/session/run-state"
+import { SessionHistory } from "../../src/session/history"
 import { SessionStatus } from "../../src/session/status"
 import { SessionSummary } from "../../src/session/summary"
 import { Skill } from "../../src/skill"
@@ -134,7 +135,7 @@ const mcp = Layer.succeed(MCP.Service, MCP.Service.of({
 const infrastructure = Layer.mergeAll(NodeFileSystem.layer, CrossSpawnSpawner.defaultLayer)
 const bus = Bus.defaultLayer
 const status = SessionStatus.layer.pipe(Layer.provideMerge(bus))
-const runState = SessionRunState.layer.pipe(Layer.provide(status))
+const runState = SessionRunState.layer.pipe(Layer.provide(status), Layer.provide(SessionHistory.defaultLayer))
 const summary = Layer.succeed(SessionSummary.Service, SessionSummary.Service.of({ summarize: () => Effect.void, invalidate: () => Effect.void, diff: () => Effect.succeed([]), computeDiff: () => Effect.succeed([]) }))
 
 const dependencies = Layer.mergeAll(
@@ -156,6 +157,8 @@ const truncate = Truncate.layer.pipe(Layer.provideMerge(dependencies))
 const processor = SessionProcessor.layer.pipe(Layer.provide(summary), Layer.provide(Image.defaultLayer), Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })), Layer.provideMerge(dependencies))
 const compaction = SessionCompaction.layer.pipe(Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })), Layer.provideMerge(processor), Layer.provideMerge(dependencies))
 const prompt = SessionPrompt.layer.pipe(
+  Layer.provide(Browser.defaultLayer),
+  Layer.provide(SessionHistory.defaultLayer),
   Layer.provide(BackgroundGptPro.defaultLayer),
   Layer.provideMerge(SessionRevert.defaultLayer), Layer.provide(Image.defaultLayer), Layer.provide(Reference.defaultLayer), Layer.provide(summary),
   Layer.provideMerge(runState), Layer.provideMerge(compaction), Layer.provideMerge(processor), Layer.provideMerge(registry), Layer.provideMerge(truncate),
