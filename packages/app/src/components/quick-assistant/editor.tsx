@@ -353,9 +353,15 @@ export function QuickAssistantEditor(props: {
         }}
         atFlat={at.flat()}
         atActive={at.active() ?? undefined}
-        atKey={atKey}
+        atKey={(item) =>
+          item.type === "session" || item.type === "projectTask" || item.type === "scheduledTask"
+            ? `${item.type}:${item.id}`
+            : atKey(item)
+        }
         setAtActive={at.setActive}
-        onAtSelect={selectAt}
+        onAtSelect={(item) => {
+          if (item.type !== "session" && item.type !== "projectTask" && item.type !== "scheduledTask") selectAt(item)
+        }}
         slashFlat={slash.flat()}
         slashActive={slash.active() ?? undefined}
         setSlashActive={slash.setActive}

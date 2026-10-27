@@ -74,7 +74,15 @@ import {
 } from "./prompt-input/history"
 import { createPromptHistoryStorage, type PromptHistoryKind } from "./prompt-input/history-storage"
 import { createPromptSubmit, type FollowupDraft, type SubmitOptions } from "./prompt-input/submit"
-import { PromptPopover, type AtOption, type SlashCommand } from "./prompt-input/slash-popover"
+import { PromptPopover, type PromptAtOption as AtOption, type SlashCommand } from "./prompt-input/slash-popover"
+import {
+  atReferenceText,
+  cycleAtCategory,
+  inAtCategory,
+  projectSessions,
+  type AtCategory,
+  type AtReference,
+} from "./prompt-input/at-references"
 import {
   filterAgentsForConsultMentions,
   loadReadyConsultMentions,
@@ -1165,8 +1173,91 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return selected
   })
 
+  const [atSources, setAtSources] = createStore({
+    category: "all" as AtCategory,
+    items: [] as AtReference[],
+    loading: false,
+    error: false,
+  })
+  const changeAtCategory = (category: AtCategory) => {
+    console.debug(`[prompt-at] category changed from=${atSources.category} to=${category}`)
+    setAtSources("category", category)
+    const list = popoverRef?.querySelector<HTMLElement>("[data-prompt-popover-list]")
+    if (list) list.scrollTop = 0
+  }
+  createEffect(
+    on(
+      () => [store.popover, sdk.directory] as const,
+      ([popover, directory]) => {
+        if (popover !== "at") return
+        setAtSources({ category: "all", items: [], loading: true, error: false })
+        let cancelled = false
+        onCleanup(() => {
+          cancelled = true
+        })
+        const client = globalSDK.forDomain(mainDomain).createClient({ directory, throwOnError: true })
+        console.debug("[prompt-at] reference load started")
+        void Promise.allSettled([
+          client.project.current().then(async (project) => {
+            const result = await client.session.list({ directory })
+            return projectSessions(result.data ?? [], project.data!.id).map(
+              (item): AtReference => ({
+                type: "session",
+                id: item.id,
+                name: item.title,
+                display: `${item.title} ${item.id}`,
+              }),
+            )
+          }),
+          client.projectTask.list({}).then((result) =>
+            (result.data ?? []).map(
+              (item): AtReference => ({
+                type: "projectTask",
+                id: item.id,
+                name: item.title,
+                display: `${item.title} ${item.id}`,
+              }),
+            ),
+          ),
+          client.scheduledTask.list({ directory }).then((result) =>
+            (result.data ?? []).map(
+              (item): AtReference => ({
+                type: "scheduledTask",
+                id: item.id,
+                name: item.name,
+                display: `${item.name} ${item.id}`,
+              }),
+            ),
+          ),
+        ]).then((results) => {
+          if (cancelled) return
+          const items = results.flatMap((result) => (result.status === "fulfilled" ? result.value : []))
+          const failed = results.filter((result) => result.status === "rejected").length
+          console.debug(`[prompt-at] reference load finished count=${items.length} failed=${failed}`)
+          setAtSources({ items, loading: false, error: failed > 0 })
+        })
+      },
+    ),
+  )
+
   const handleAtSelect = (option: AtOption | undefined) => {
     if (!option) return
+    console.debug(`[prompt-at] item selected category=${atSources.category} type=${option.type}`)
+    if (option.type === "session" || option.type === "projectTask" || option.type === "scheduledTask") {
+      const cursor = getCursorPosition(editorRef)
+      const text = prompt
+        .current()
+        .map((part) => ("content" in part ? part.content : ""))
+        .join("")
+      const match = text.slice(0, cursor).match(/@(\S*)$/)
+      const selection = window.getSelection()
+      if (!selection?.rangeCount || !match) return
+      const range = selection.getRangeAt(0)
+      setRangeEdge(editorRef, range, "start", match.index ?? cursor)
+      setRangeEdge(editorRef, range, "end", cursor)
+      addPart({ type: "text", content: atReferenceText(option), start: 0, end: 0 })
+      return
+    }
     if (option.type === "im") {
       addPart({
         type: "im",
@@ -1188,6 +1279,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (x.type === "im") return `im:${x.channelName ?? "all"}`
     if (x.type === "consult") return `consult:${x.id}`
     if (x.type === "agent") return `agent:${x.name}`
+    if (x.type !== "file") return `${x.type}:${x.id}`
     return `file:${x.path}`
   }
 
@@ -1199,6 +1291,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     onKeyDown: atOnKeyDown,
   } = useFilteredList<AtOption>({
     items: async (query) => {
+      const category = atSources.category
+      const references = atSources.items
+      if (category !== "all")
+        return [...consultList(), ...references].filter((item) => inAtCategory(item.type, category))
       const consults = consultList()
       const agents = agentList()
       const open = recent()
@@ -1234,9 +1330,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             }
           })
       if (!query.trim()) {
-        return [...imOptions(), ...consults, ...agents, ...pinned]
+        return [...imOptions(), ...consults, ...agents, ...pinned, ...references]
       }
-      return [...imOptions(), ...consults, ...agents, ...pinned, ...toFileOptions(safePaths)]
+      return [...imOptions(), ...consults, ...agents, ...pinned, ...toFileOptions(safePaths), ...references]
     },
     key: atKey,
     filterKeys: ["display", "name"],
@@ -2253,9 +2349,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       }
     }
 
-    // Ghost text: Tab accepts, Escape dismisses, any key dismisses
-    // Must check before popover Tab handling so Tab can accept ghost text
-    if (ghostText()) {
+    // The @ menu owns Tab; otherwise ghost text can accept it.
+    if (ghostText() && store.popover !== "at") {
       handleGhostKeyDown(event)
       // If Tab was consumed by ghost text, stop here
       if (event.defaultPrevented) return
@@ -2333,15 +2428,22 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
     if (store.popover) {
       if (event.key === "Tab") {
-        selectPopoverActive()
+        if (isImeComposing(event)) return
+        if (store.popover === "at") {
+          changeAtCategory(cycleAtCategory(atSources.category, event.shiftKey))
+        } else {
+          selectPopoverActive()
+        }
         event.preventDefault()
+        event.stopPropagation()
         return
       }
       const nav = event.key === "ArrowUp" || event.key === "ArrowDown" || event.key === "Enter"
       const ctrlNav = ctrl && (event.key === "n" || event.key === "p")
       if (nav || ctrlNav) {
         if (store.popover === "at") {
-          atOnKeyDown(event)
+          if (event.key === "Enter") selectPopoverActive()
+          else atOnKeyDown(event)
           event.preventDefault()
           return
         }
@@ -2490,6 +2592,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         popover={store.popover}
         setPopoverRef={(el) => (popoverRef = el)}
         atFlat={atFlat()}
+        atCategory={atSources.category}
+        setAtCategory={changeAtCategory}
+        atLoading={atSources.loading}
+        atError={atSources.error}
         atActive={atActive() ?? undefined}
         atKey={atKey}
         setAtActive={setAtActive}

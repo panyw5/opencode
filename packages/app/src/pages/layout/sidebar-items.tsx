@@ -20,6 +20,7 @@ import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
 import { sessionTabsTargetHref, useSessionTabs } from "@/context/session-tabs"
+import { useNewSessionWithReference } from "@/components/session/use-new-session-with-reference"
 import { messageAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
 import { ensureSessionProfile, startSessionProfile } from "@/utils/session-profile"
@@ -449,6 +450,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const globalSDK = useGlobalSDK()
   const globalSync = useGlobalSync()
   const [menu, setMenu] = createStore({ pendingRename: false, copied: false, favoritePending: false })
+  const reference = useNewSessionWithReference()
   let copiedTimer: ReturnType<typeof setTimeout> | undefined
   // Keep module shimmer signal subscribed at SessionItem level so remounts still animate.
   const titleShimmer = createMemo(() => isTitleShimmering(props.session.id))
@@ -948,6 +950,19 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
             props.openEditor(`session:${props.session.id}`, stripScheduledSessionTitle(props.session.title))
           }}
         >
+          <ContextMenu.Item
+            data-action="session-reference-new"
+            data-session={base64Encode(props.session.id)}
+            disabled={reference.pending()}
+            onSelect={() => void reference.create(props.session)}
+          >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="quote-open" size="small" />
+              </span>
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{language.t("session.referenceNew")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
           <ContextMenu.Item
             data-action="session-copy-info"
             data-session={base64Encode(props.session.id)}

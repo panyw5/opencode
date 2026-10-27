@@ -626,6 +626,13 @@ export const dict = {
   "prompt.slash.badge.mcp": "mcp",
   "prompt.at.badge.consult": "consult",
   "prompt.at.im": "IM channel",
+  "prompt.at.category.all": "All",
+  "prompt.at.category.external": "External agents",
+  "prompt.at.category.session": "Conversations",
+  "prompt.at.category.projectTask": "Project tasks",
+  "prompt.at.category.scheduledTask": "Scheduled tasks",
+  "prompt.at.loading": "Loading references…",
+  "prompt.at.loadFailed": "Some references could not be loaded. Reopen to retry.",
   "prompt.context.active": "active",
   "prompt.context.includeActiveFile": "Include active file",
   "session.fileTab.mentionInSession": "Mention this file in session",
@@ -1355,6 +1362,7 @@ export const dict = {
   "session.share.copy.copied": "Copied",
   "session.share.copy.copyLink": "Copy link",
   "session.copyInfo": "Copy session info",
+  "session.referenceNew": "Reference in new session",
 
   "lsp.tooltip.none": "No LSP servers",
   "lsp.label.connected": "{{count}} LSP",
@@ -1565,7 +1573,8 @@ export const dict = {
   "settings.desktop.openclaw.token.placeholder": "Paste token",
 
   "settings.general.section.appearance": "Appearance",
-  "settings.appearance.preview.description": "Choose a theme. Cards preview the main surfaces in the current light or dark mode.",
+  "settings.appearance.preview.description":
+    "Choose a theme. Cards preview the main surfaces in the current light or dark mode.",
   "settings.appearance.preview.sidebar": "Sidebar",
   "settings.appearance.preview.session": "Session",
   "settings.appearance.preview.topbar": "Top bar",

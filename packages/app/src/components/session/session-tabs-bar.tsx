@@ -57,6 +57,7 @@ import {
   type SessionTabGroup,
 } from "./session-tab-groups"
 import { pickWarmDirectories, shouldFetchTabMeta } from "./session-tab-warm"
+import { useNewSessionWithReference } from "./use-new-session-with-reference"
 
 const SESSION_TAB_PERMISSION_EXIT_MS = 160
 
@@ -937,6 +938,7 @@ function SessionTab(props: {
   const permission = usePermission()
   const dialog = useDialog()
   const [state, setState] = createStore({ generatingTitle: false })
+  const reference = useNewSessionWithReference()
   const [child] = globalSync.child(props.tab.directory, { bootstrap: false })
   let triggerEl: HTMLElement | undefined
 
@@ -1241,6 +1243,19 @@ function SessionTab(props: {
       </Show>
       <ContextMenu.Portal>
         <ContextMenu.Content>
+          <ContextMenu.Item
+            data-action="session-tab-reference-new"
+            data-session={base64Encode(props.tab.id)}
+            disabled={reference.pending()}
+            onSelect={() => void reference.create(props.tab)}
+          >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="quote-open" size="small" />
+              </span>
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{language.t("session.referenceNew")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
           <ContextMenu.Item
             data-action="session-tab-show-in-sidebar"
             data-session={base64Encode(props.tab.id)}

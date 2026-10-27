@@ -3,6 +3,7 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "session.referenceNew": "引用並新增工作階段",
   "projectTask.status.open": "待開始",
   "projectTask.status.inProgress": "進行中",
   "projectTask.status.done": "已完成",

@@ -3,6 +3,7 @@
 html {
   :is(
     [data-component="dialog"] [data-slot="dialog-content"],
+    [data-component="prompt-popover"],
     [data-component="popover-content"],
     [data-component="dropdown-menu-content"],
     [data-component="dropdown-menu-sub-content"],

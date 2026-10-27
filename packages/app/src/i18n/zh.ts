@@ -630,6 +630,13 @@ export const dict = {
   "prompt.slash.badge.mcp": "mcp",
   "prompt.at.badge.consult": "参谋",
   "prompt.at.im": "IM 渠道",
+  "prompt.at.category.all": "综合",
+  "prompt.at.category.external": "外部智能体",
+  "prompt.at.category.session": "对话",
+  "prompt.at.category.projectTask": "计划任务",
+  "prompt.at.category.scheduledTask": "定时任务",
+  "prompt.at.loading": "正在加载引用…",
+  "prompt.at.loadFailed": "部分引用加载失败，请重新打开菜单重试。",
   "prompt.context.active": "当前",
   "prompt.context.includeActiveFile": "包含当前文件",
   "session.fileTab.mentionInSession": "在会话中@此文件",
@@ -988,8 +995,7 @@ export const dict = {
   "home.resourceUsage.target.desktop-logs": "应用日志",
   "home.resourceUsage.target.opencode-cache.desc":
     "OpenCode 及 CLI 共用的二进制、技能数据与元数据缓存，清理后会自动重建。",
-  "home.resourceUsage.target.opencode-logs.desc":
-    "OpenCode 会话与 CLI 产生的诊断日志，不影响会话记录、项目和数据库。",
+  "home.resourceUsage.target.opencode-logs.desc": "OpenCode 会话与 CLI 产生的诊断日志，不影响会话记录、项目和数据库。",
   "home.resourceUsage.target.desktop-cache.desc":
     "桌面端自身缓存的网页资源（网络、GPU、代码缓存等），不影响设置与登录状态。",
   "home.resourceUsage.target.desktop-logs.desc": "桌面端自身的运行日志，可随时安全删除。",
@@ -1244,6 +1250,7 @@ export const dict = {
   "session.share.copy.copied": "已复制",
   "session.share.copy.copyLink": "复制链接",
   "session.copyInfo": "复制会话信息",
+  "session.referenceNew": "引用并新建会话",
   "session.generateTitle": "生成标题",
   "session.editTitle": "编辑标题",
   "session.editTitle.placeholder": "输入此会话的标题",

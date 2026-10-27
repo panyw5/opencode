@@ -16,7 +16,7 @@ import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useServer } from "@/context/server"
 import { domainFromDirectory } from "@/pages/layout/extra-agents"
-import { getSessionHandoff, setSessionHandoff } from "@/pages/session/handoff"
+import { getSessionHandoff, setSessionHandoff, takeSessionContextHandoff } from "@/pages/session/handoff"
 import { useSessionKey } from "@/pages/session/session-layout"
 import {
   listBackgroundShells,
@@ -658,6 +658,10 @@ export function SessionComposerRegion(props: {
 
   createEffect(() => {
     if (!prompt.ready()) return
+    for (const item of takeSessionContextHandoff(route.sessionKey())) {
+      prompt.context.add(item)
+      console.debug(`[session-reference-new] attached id=${item.sessionID} target=${route.sessionKey()}`)
+    }
     setSessionHandoff(route.sessionKey(), { prompt: previewPrompt() })
   })
 
