@@ -38,7 +38,11 @@ export const questionCache = new Map<
   { tab: number; answers: QuestionAnswer[]; custom: string[]; customOn: boolean[]; images: ImageAttachmentPart[][] }
 >()
 
-export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit: () => void }> = (props) => {
+export const SessionQuestionDock: Component<{
+  request: QuestionRequest
+  onSubmit: () => void
+  onSubmitFailed?: () => void
+}> = (props) => {
   const sdk = useSDK()
   const sync = useSync()
   const language = useLanguage()
@@ -65,6 +69,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   let replied = false
   let max = ""
   let copiedTimer: ReturnType<typeof setTimeout> | undefined
+  let submittedAt = 0
   const submission = createQuestionSubmissionGuard()
 
   const question = createMemo(() => questions()[store.tab])
@@ -245,6 +250,9 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
 
   const fail = (err: unknown) => {
     const message = err instanceof Error ? err.message : String(err)
+    console.warn(
+      `[question-dock] response failed id=${props.request.id} elapsed=${(performance.now() - submittedAt).toFixed(1)}ms error=${message}`,
+    )
     clearQuestionHandoff(props.request.id)
     if (questionRequestNotFound(err, props.request.id)) {
       console.info(`[question-dock] request already settled id=${props.request.id} session=${props.request.sessionID}`)
@@ -253,6 +261,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
       return
     }
 
+    props.onSubmitFailed?.()
     showToast({ title: language.t("common.requestFailed"), description: message })
   }
 
@@ -262,11 +271,14 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
       return sdk.client.question.reply({ requestID: props.request.id, answers })
     },
     onMutate: (answers: QuestionAnswer[]) => {
+      submittedAt = performance.now()
       props.onSubmit()
       rememberQuestionHandoff({ request: props.request, answers })
     },
     onSuccess: () => {
-      console.debug(`[question-dock] reply success id=${props.request.id} session=${props.request.sessionID}`)
+      console.debug(
+        `[question-dock] reply success id=${props.request.id} session=${props.request.sessionID} elapsed=${(performance.now() - submittedAt).toFixed(1)}ms`,
+      )
       replied = true
       questionCache.delete(props.request.id)
     },
@@ -282,10 +294,13 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
       return sdk.client.question.reject({ requestID: props.request.id })
     },
     onMutate: () => {
+      submittedAt = performance.now()
       props.onSubmit()
     },
     onSuccess: () => {
-      console.debug(`[question-dock] reject success id=${props.request.id} session=${props.request.sessionID}`)
+      console.debug(
+        `[question-dock] reject success id=${props.request.id} session=${props.request.sessionID} elapsed=${(performance.now() - submittedAt).toFixed(1)}ms`,
+      )
       replied = true
       questionCache.delete(props.request.id)
     },
@@ -763,9 +778,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
               />
               <PromptImageAttachments
                 attachments={attachments()}
-                onOpen={(file) =>
-                  dialog.showForOwner(() => <ImagePreview src={file.dataUrl} alt={file.filename} />)
-                }
+                onOpen={(file) => dialog.showForOwner(() => <ImagePreview src={file.dataUrl} alt={file.filename} />)}
                 onRemove={removeImage}
                 removeLabel={language.t("prompt.attachment.remove")}
                 class="px-0 pt-2"

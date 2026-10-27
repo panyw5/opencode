@@ -925,7 +925,16 @@ export function SessionComposerRegion(props: {
           onVisibleChange={(visible) => setExitVisible("question", visible)}
         >
           <Show when={heldQuestion()} keyed>
-            {(request) => <SessionQuestionDock request={request} onSubmit={props.onResponseSubmit} />}
+            {(request) => (
+              <SessionQuestionDock
+                request={request}
+                onSubmit={() => {
+                  props.state.respondQuestion(request)
+                  props.onResponseSubmit()
+                }}
+                onSubmitFailed={() => props.state.restoreQuestion(request)}
+              />
+            )}
           </Show>
         </ComposerDockExit>
 

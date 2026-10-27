@@ -11,7 +11,11 @@ import { useSync } from "@/context/sync"
 import { composerDriver, composerEnabled, composerEvent } from "@/testing/session-composer"
 import { sessionPermissionRequest, sessionQuestionRequest, sessionQuestionRequests } from "./session-request-tree"
 import { working as sessionWorking } from "../session-working"
-import { permissionRequestNotFound, questionInvalidation, questionRequestNotFound } from "./session-question-dock-helpers"
+import {
+  permissionRequestNotFound,
+  questionInvalidation,
+  questionRequestNotFound,
+} from "./session-question-dock-helpers"
 import { todoState } from "./session-composer-state-helpers"
 
 export { todoState }
@@ -25,6 +29,37 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
   const globalSync = useGlobalSync()
   const language = useLanguage()
   const permission = usePermission()
+  // Hide submissions locally without deleting authoritative requests: an HTTP failure
+  // can restore the dock, but cannot resurrect a request already settled by SSE.
+  const [responses, setResponses] = createStore<Record<string, string>>({})
+
+  const respondQuestion = (request: QuestionRequest) => {
+    console.debug(
+      `[question-response] begin id=${request.id} session=${request.sessionID} at=${performance.now().toFixed(1)}`,
+    )
+    setResponses(request.id, request.sessionID)
+  }
+
+  const restoreQuestion = (request: QuestionRequest) => {
+    console.debug(`[question-response] restore id=${request.id} session=${request.sessionID}`)
+    setResponses(
+      produce((draft) => {
+        delete draft[request.id]
+      }),
+    )
+  }
+
+  createEffect(() => {
+    for (const [id, sessionID] of Object.entries(responses)) {
+      if (sync.data.question[sessionID]?.some((request) => request.id === id)) continue
+      console.debug(`[question-response] settled id=${id} session=${sessionID}`)
+      setResponses(
+        produce((draft) => {
+          delete draft[id]
+        }),
+      )
+    }
+  })
 
   const questionInvalidationFor = (request: QuestionRequest) => {
     return questionInvalidation(request, sync.data.message[request.sessionID] ?? [])
@@ -39,7 +74,7 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
       sync.data.session,
       sync.data.question,
       params.id,
-      (request) => !isSkippedQuestion(request),
+      (request) => !responses[request.id] && !isSkippedQuestion(request),
     )
   })
 
@@ -56,12 +91,10 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
 
     // Backend cleanup: reject each superseded question durably
     for (const request of skipped) {
-      sdk.client.question
-        .reject({ requestID: request.id })
-        .catch((err: unknown) => {
-          if (questionRequestNotFound(err, request.id)) return
-          console.warn(`[composer] failed to reject skipped question ${request.id}`, err)
-        })
+      sdk.client.question.reject({ requestID: request.id }).catch((err: unknown) => {
+        if (questionRequestNotFound(err, request.id)) return
+        console.warn(`[composer] failed to reject skipped question ${request.id}`, err)
+      })
     }
 
     // Optimistic local removal
@@ -296,6 +329,8 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
   return {
     blocked,
     questionRequest,
+    respondQuestion,
+    restoreQuestion,
     skippedQuestionRequests,
     skippedQuestionInvalidation: questionInvalidationFor,
     skippedQuestionSessionEnded,
