@@ -10,6 +10,20 @@
 }
 
 @layer components {
+  [data-component="list"].model-selector-list [data-slot="list-viewport"] {
+    gap: 2px;
+
+    /* Keep rows and tooltip wrappers from shrinking in the scroll container. */
+    > * {
+      flex-shrink: 0;
+    }
+
+    [data-slot="list-item"] {
+      min-height: 40px;
+      padding: 10px;
+    }
+  }
+
   [data-component="file-tree-node"] {
     /* Theme surface hover tokens can be indistinguishable from the panel. */
     --file-tree-ink: var(--text-strong);

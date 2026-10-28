@@ -1,6 +1,5 @@
 import { test, expect } from "../fixtures"
 import { promptSelector } from "../selectors"
-import { clickListItem } from "../actions"
 
 test("smoke model selection updates prompt footer", async ({ page, gotoSession }) => {
   await gotoSession()
@@ -21,6 +20,18 @@ test("smoke model selection updates prompt footer", async ({ page, gotoSession }
 
   const selected = dialog.locator('[data-slot="list-item"][data-selected="true"]').first()
   await expect(selected).toBeVisible()
+  await expect(dialog.locator('[data-slot="list-viewport"]')).toHaveCSS("row-gap", "2px")
+  const rows = await dialog.locator('[data-slot="list-item"]').evaluateAll((items) =>
+    items.map((item) => ({
+      height: (item as HTMLElement).offsetHeight,
+      shrink: getComputedStyle(item.parentElement!).flexShrink,
+    })),
+  )
+  expect(rows.length).toBeGreaterThan(0)
+  for (const row of rows) {
+    expect(row.height).toBeGreaterThanOrEqual(40)
+    expect(row.shrink).toBe("0")
+  }
 
   const other = dialog.locator('[data-slot="list-item"]:not([data-selected="true"])').first()
   const target = (await other.count()) > 0 ? other : selected
@@ -32,7 +43,8 @@ test("smoke model selection updates prompt footer", async ({ page, gotoSession }
 
   await input.fill(model)
 
-  await clickListItem(dialog, { key })
+  // The padding above the label must select the model too, not just the text.
+  await dialog.locator(`[data-slot="list-item"][data-key="${key}"]`).click({ position: { x: 4, y: 3 } })
 
   await expect(dialog).toHaveCount(0)
 

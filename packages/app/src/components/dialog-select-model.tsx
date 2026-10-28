@@ -191,7 +191,7 @@ const ModelList: Component<{
 
   return (
     <List
-      class={`flex-1 min-h-0 [&_[data-slot=list-viewport]]:flex-1 [&_[data-slot=list-viewport]]:min-h-0 ${props.class ?? ""}`}
+      class={`model-selector-list flex-1 min-h-0 [&_[data-slot=list-viewport]]:flex-1 [&_[data-slot=list-viewport]]:min-h-0 ${props.class ?? ""}`}
       virtual={false}
       search={{ placeholder: language.t("dialog.model.search.placeholder"), autofocus: true, action: props.action }}
       emptyMessage={language.t("dialog.model.empty")}
@@ -222,6 +222,7 @@ const ModelList: Component<{
               ))
       }
       onSelect={(x) => {
+        logModelOpen("select", { provider: x?.provider.id, model: x?.id })
         model.set(x ? { modelID: x.id, providerID: x.provider.id } : undefined, {
           recent: true,
         })
@@ -369,6 +370,13 @@ export function ModelSelectorPopover(props: {
             if (id !== seq) return
             const el = content
             const box = rect(el)
+            const viewport = el?.querySelector('[data-slot="list-viewport"]')
+            const item = el?.querySelector<HTMLElement>('[data-slot="list-item"]')
+            logModelOpen("row-layout", {
+              height: rect(item ?? undefined)?.height,
+              gap: viewport ? getComputedStyle(viewport).rowGap : undefined,
+              shrink: item ? getComputedStyle(item).flexShrink : undefined,
+            })
             measureCount += 1
             logModelOpen("frame-1", {
               seq: id,
