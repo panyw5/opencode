@@ -980,6 +980,8 @@ export const dict = {
   "session.question.collapse": "折疊",
   "session.question.expand": "展開",
   "session.question.progress": "{{current}}/{{total}} 個問題",
+  "session.question.timeout": "剩餘 {{seconds}} 秒",
+  "session.question.timeoutHint": "到期後自動忽略，不會選擇任何答案。",
   "session.question.skipped.button": "{{count}} 個已跳過問題",
   "session.question.skipped.ended.button": "工作階段已經結束：{{count}} 個已跳過問題",
   "session.question.skipped.ended.badge": "工作階段已經結束",

@@ -1810,6 +1810,8 @@ export const dict = {
   "session.question.collapse": "折叠",
   "session.question.expand": "展开",
   "session.question.progress": "{{current}}/{{total}} 个问题",
+  "session.question.timeout": "剩余 {{seconds}} 秒",
+  "session.question.timeoutHint": "到期后自动忽略，不会选择任何答案。",
   "session.question.skipped.button": "{{count}} 个已跳过问题",
   "session.question.skipped.ended.button": "会话已经结束：{{count}} 个已跳过问题",
   "session.question.skipped.ended.badge": "会话已经结束",

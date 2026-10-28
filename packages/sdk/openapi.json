@@ -14379,6 +14379,10 @@
           },
           "tool": {
             "$ref": "#/components/schemas/QuestionTool"
+          },
+          "expiresAt": {
+            "type": "number",
+            "description": "Absolute response deadline in Unix milliseconds"
           }
         },
         "required": ["id", "sessionID", "questions"],

@@ -1256,6 +1256,8 @@ export const dict = {
   "session.question.collapse": "Collapse",
   "session.question.expand": "Expand",
   "session.question.progress": "{{current}} of {{total}} questions",
+  "session.question.timeout": "{{seconds}}s left",
+  "session.question.timeoutHint": "Dismissed automatically at the deadline. No answer will be selected.",
   "session.question.skipped.button": "{{count}} skipped question(s)",
   "session.question.skipped.ended.button": "Session ended: {{count}} skipped question(s)",
   "session.question.skipped.ended.badge": "Session ended",

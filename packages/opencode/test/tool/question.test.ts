@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Fiber, Layer, Queue, Schema } from "effect"
-import { QuestionTool } from "../../src/tool/question"
+import { Parameters, QuestionTool } from "../../src/tool/question"
 import { Question } from "../../src/question"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { Session } from "../../src/session/session"
@@ -45,6 +45,14 @@ const pending = Effect.fn("QuestionToolTest.pending")(function* (question: Quest
 })
 
 describe("tool.question", () => {
+  test("timeout schema accepts only integer seconds between one second and one day", () => {
+    const decode = Schema.decodeUnknownSync(Parameters)
+    expect(decode({ questions: [] }).timeout).toBeUndefined()
+    expect(decode({ questions: [], timeout: 30 }).timeout).toBe(30)
+    for (const timeout of [0, -1, 1.5, 86401, Infinity, "30"]) {
+      expect(() => decode({ questions: [], timeout })).toThrow()
+    }
+  })
   test("question answer schema accepts image answer parts", () => {
     const answer = Schema.decodeUnknownSync(Question.Answer)([
       "details",
@@ -74,8 +82,10 @@ describe("tool.question", () => {
         },
       ]
 
-      const fiber = yield* tool.execute({ questions }, ctx).pipe(Effect.forkScoped)
+      const fiber = yield* tool.execute({ questions, timeout: 45 }, ctx).pipe(Effect.forkScoped)
       const item = yield* pending(question)
+      expect(item.expiresAt! - Date.now()).toBeGreaterThan(43_000)
+      expect(item.expiresAt! - Date.now()).toBeLessThanOrEqual(45_000)
       yield* question.reply({ requestID: item.id, answers: [["Red"]] })
 
       const result = yield* Fiber.join(fiber)

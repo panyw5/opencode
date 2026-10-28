@@ -29,6 +29,7 @@ const askEffect = Effect.fn("QuestionTest.ask")(function* (input: {
   sessionID: SessionID
   questions: ReadonlyArray<Question.Info>
   tool?: Question.Tool
+  timeout?: number
 }) {
   const question = yield* Question.Service
   return yield* question.ask(input)
@@ -134,6 +135,8 @@ const createQuestionToolPart = Effect.fn("QuestionTest.createQuestionToolPart")(
 const createAssistantQuestionToolPart = Effect.fn("QuestionTest.createAssistantQuestionToolPart")(function* (input: {
   requestID: QuestionID
   questions: ReadonlyArray<Question.Info>
+  expiresAt?: number
+  startedAt?: number
 }) {
   const session = yield* Session.Service
   const info = yield* session.create({})
@@ -146,6 +149,7 @@ const createAssistantQuestionToolPart = Effect.fn("QuestionTest.createAssistantQ
     sessionID: info.id,
     questions: input.questions,
     tool: { messageID, callID },
+    expiresAt: input.expiresAt,
   }
 
   yield* session.updateMessage({
@@ -189,7 +193,7 @@ const createAssistantQuestionToolPart = Effect.fn("QuestionTest.createAssistantQ
       status: "running",
       input: { questions: input.questions },
       metadata: { questionRequest: request },
-      time: { start: Date.now() },
+      time: { start: input.startedAt ?? Date.now() },
     },
   } satisfies MessageV2.ToolPart)
 
@@ -207,6 +211,193 @@ const questionRequestMetadata = Effect.fn("QuestionTest.questionRequestMetadata"
   const request = part.state.metadata?.questionRequest
   return request && typeof request === "object" ? (request as Question.Request) : undefined
 })
+
+it.instance("ask - applies default deadline and honors a model supplied timeout", () =>
+  Effect.gen(function* () {
+    const before = Date.now()
+    const first = yield* askEffect({ sessionID: SessionID.make("ses_default_deadline"), questions: [] }).pipe(
+      Effect.forkScoped,
+    )
+    const [defaultRequest] = yield* waitForPending(1)
+    expect(defaultRequest.expiresAt! - before).toBeGreaterThanOrEqual(Question.DEFAULT_TIMEOUT_SECONDS * 1000)
+    expect(defaultRequest.expiresAt! - Date.now()).toBeLessThanOrEqual(Question.DEFAULT_TIMEOUT_SECONDS * 1000)
+    yield* rejectEffect(defaultRequest.id)
+    yield* Fiber.await(first)
+    const customBefore = Date.now()
+    const second = yield* askEffect({
+      sessionID: SessionID.make("ses_custom_deadline"),
+      questions: [],
+      timeout: 10,
+    }).pipe(Effect.forkScoped)
+    const [custom] = yield* waitForPending(1)
+    expect(custom.expiresAt! - customBefore).toBeGreaterThanOrEqual(10_000)
+    expect(custom.expiresAt! - Date.now()).toBeLessThanOrEqual(10_000)
+    yield* rejectEffect(custom.id)
+    yield* Fiber.await(second)
+  }),
+)
+
+it.instance("timeout - expires without a browser or list polling and rejects late answers", () =>
+  Effect.gen(function* () {
+    const question = yield* Question.Service
+    const bus = yield* Bus.Service
+    const rejected: string[] = []
+    const off = yield* bus.subscribeCallback(Question.Event.Rejected, (event) => {
+      rejected.push(event.properties.requestID)
+    })
+    yield* Effect.addFinalizer(() => Effect.sync(off))
+    const fiber = yield* question
+      .ask({ sessionID: SessionID.make("ses_timeout"), questions: [], timeout: 1 })
+      .pipe(Effect.forkScoped)
+    const [request] = yield* waitForPending(1)
+    const exit = yield* Fiber.await(fiber).pipe(Effect.timeout("4 seconds"))
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      const error = Cause.squash(exit.cause)
+      expect(error).toBeInstanceOf(Question.RejectedError)
+      expect((error as Question.RejectedError).timedOut).toBe(true)
+      expect((error as Error).message).toContain("No answer was selected")
+    }
+    yield* pollWithTimeout(
+      Effect.sync(() => (rejected.length === 1 ? true : undefined)),
+      "timeout event was not delivered",
+    )
+    expect(rejected).toEqual([request.id])
+    expect(yield* question.list()).toEqual([])
+    expect(
+      Exit.isFailure(yield* question.reply({ requestID: request.id, answers: [["late"]] }).pipe(Effect.exit)),
+    ).toBe(true)
+  }),
+)
+
+it.instance("reply - answered requests never emit a later timeout", () =>
+  Effect.gen(function* () {
+    const question = yield* Question.Service
+    const bus = yield* Bus.Service
+    const rejected: string[] = []
+    const off = yield* bus.subscribeCallback(Question.Event.Rejected, (event) => {
+      rejected.push(event.properties.requestID)
+    })
+    yield* Effect.addFinalizer(() => Effect.sync(off))
+    const fiber = yield* question
+      .ask({ sessionID: SessionID.make("ses_answer_before_timeout"), questions: [], timeout: 1 })
+      .pipe(Effect.forkScoped)
+    const [request] = yield* waitForPending(1)
+    yield* question.reply({ requestID: request.id, answers: [["answer"]] })
+    expect(yield* Fiber.join(fiber)).toEqual([["answer"]])
+    // Advancing past the actual deadline is the behavior under test.
+    yield* Effect.sleep("1200 millis")
+    expect(rejected).toEqual([])
+  }),
+)
+
+persistentIt.instance(
+  "recovery - preserves the absolute deadline and expires autonomously",
+  () =>
+    Effect.gen(function* () {
+      const question = yield* Question.Service
+      const session = yield* Session.Service
+      const bus = yield* Bus.Service
+      const rejected = yield* Queue.unbounded<string>()
+      const off = yield* bus.subscribeCallback(Question.Event.Rejected, (event) =>
+        Queue.offerUnsafe(rejected, event.properties.requestID),
+      )
+      yield* Effect.addFinalizer(() => Effect.sync(off))
+      const expiresAt = Date.now() + 2000
+      const tool = yield* createAssistantQuestionToolPart({
+        requestID: QuestionID.make("que_recovered_deadline"),
+        questions: [],
+        expiresAt,
+      })
+      expect((yield* question.list())[0].expiresAt).toBe(expiresAt)
+      expect((yield* question.list())[0].expiresAt).toBe(expiresAt)
+      expect(yield* Queue.take(rejected).pipe(Effect.timeout("5 seconds"))).toBe(tool.request.id)
+      const part = yield* session.getPart({ sessionID: tool.sessionID, messageID: tool.messageID, partID: tool.partID })
+      expect(part?.type).toBe("tool")
+      if (part?.type === "tool" && part.state.status === "error") {
+        expect(part.state.error).toContain("timed out")
+        expect(part.state.metadata?.questionRequest).toBeUndefined()
+      } else expect(part?.type === "tool" ? part.state.status : undefined).toBe("error")
+      expect(yield* question.list()).toEqual([])
+    }),
+  { git: true },
+)
+
+persistentIt.instance(
+  "recovery - old requests use the original tool start and overdue requests stay hidden",
+  () =>
+    Effect.gen(function* () {
+      const question = yield* Question.Service
+      const session = yield* Session.Service
+      const startedAt = Date.now() - Question.DEFAULT_TIMEOUT_SECONDS * 1000 - 1000
+      const tool = yield* createAssistantQuestionToolPart({
+        requestID: QuestionID.make("que_legacy_expired"),
+        questions: [],
+        startedAt,
+      })
+      expect(yield* question.list()).toEqual([])
+      const part = yield* session.getPart({ sessionID: tool.sessionID, messageID: tool.messageID, partID: tool.partID })
+      expect(part?.type === "tool" ? part.state.status : undefined).toBe("error")
+      if (part?.type === "tool" && part.state.status === "error") expect(part.state.error).toContain("timed out")
+      expect(yield* question.list()).toEqual([])
+    }),
+  { git: true },
+)
+
+persistentIt.instance(
+  "recovery - instance reload does not reset a persisted deadline",
+  () =>
+    Effect.gen(function* () {
+      const question = yield* Question.Service
+      const ctx = yield* InstanceRef
+      if (!ctx) return yield* Effect.die(new Error("missing instance"))
+      const expiresAt = Date.now() + 60_000
+      const tool = yield* createAssistantQuestionToolPart({
+        requestID: QuestionID.make("que_reload_deadline"),
+        questions: [],
+        expiresAt,
+      })
+      expect((yield* question.list())[0].expiresAt).toBe(expiresAt)
+      yield* Effect.promise(() => reloadTestInstance({ directory: ctx.directory }))
+      expect((yield* question.list())[0].expiresAt).toBe(expiresAt)
+      yield* question.reject(tool.request.id)
+    }),
+  { git: true },
+)
+
+persistentIt.instance(
+  "timeout - overdue recovered reply and reject settle only once",
+  () =>
+    Effect.gen(function* () {
+      const question = yield* Question.Service
+      const bus = yield* Bus.Service
+      const terminal: string[] = []
+      const off = yield* bus.subscribeCallback(Question.Event.Rejected, (event) => {
+        terminal.push(event.properties.requestID)
+      })
+      yield* Effect.addFinalizer(() => Effect.sync(off))
+      const tool = yield* createAssistantQuestionToolPart({
+        requestID: QuestionID.make("que_expired_race"),
+        questions: [],
+        expiresAt: Date.now() - 1,
+      })
+      const [reply] = yield* Effect.all(
+        [
+          question.reply({ requestID: tool.request.id, answers: [["too late"]] }).pipe(Effect.exit),
+          question.reject(tool.request.id).pipe(Effect.exit),
+        ],
+        { concurrency: "unbounded" },
+      )
+      expect(Exit.isFailure(reply)).toBe(true)
+      yield* pollWithTimeout(
+        Effect.sync(() => (terminal.length === 1 ? true : undefined)),
+        "terminal event was not delivered",
+      )
+      expect(terminal).toEqual([tool.request.id])
+      expect(yield* question.list()).toEqual([])
+    }),
+  { git: true },
+)
 
 it.instance(
   "ask - remains pending until answered",

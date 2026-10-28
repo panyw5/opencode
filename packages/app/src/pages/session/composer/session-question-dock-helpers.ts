@@ -5,6 +5,11 @@ import { sortMessages } from "@/utils/message-order"
 
 export type QuestionImage = ImageAttachmentPart
 
+export function questionSecondsRemaining(expiresAt: number | undefined, now = Date.now()) {
+  if (expiresAt === undefined || !Number.isFinite(expiresAt)) return undefined
+  return Math.max(0, Math.ceil((expiresAt - now) / 1000))
+}
+
 export function createQuestionSubmissionGuard() {
   let locked = false
 

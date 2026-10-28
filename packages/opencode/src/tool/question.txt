@@ -7,4 +7,6 @@ Use this tool when you need to ask the user questions during execution:
 # GUIDELINES:
 - Set `multiple: true` to allow selecting more than one items
 - Answers are returned as arrays of labels
+- The entire request times out after 300 seconds by default. Set top-level `timeout` (integer seconds, 1-86400) when a shorter or longer response window is appropriate.
+- The timeout covers all questions together, not each question separately. On timeout no option is selected; the tool reports that no user response was received. Never interpret a timeout as consent.
 - If you recommend a specific option, make that the first option in the list and add "(Recommended)" at the end of the label

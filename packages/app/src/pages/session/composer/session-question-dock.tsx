@@ -24,6 +24,7 @@ import {
   questionAttachments,
   questionReply,
   questionRequestNotFound,
+  questionSecondsRemaining,
   type QuestionImage as Image,
 } from "./session-question-dock-helpers"
 import { captureQuestionFlipSource } from "./session-question-flip"
@@ -63,6 +64,7 @@ export const SessionQuestionDock: Component<{
     sending: false,
     copiedOption: "",
     focusedOption: -1, // -1 means no option focused, 0-n for options, options.length for custom
+    remaining: questionSecondsRemaining(props.request.expiresAt),
   })
 
   let root: HTMLDivElement | undefined
@@ -86,6 +88,31 @@ export const SessionQuestionDock: Component<{
   })
 
   const last = createMemo(() => store.tab >= total() - 1)
+
+  createEffect(() => {
+    const expiresAt = props.request.expiresAt
+    if (expiresAt === undefined) return
+    console.debug(`[question-dock] countdown start id=${props.request.id} expiresAt=${expiresAt}`)
+    let expired = false
+    const update = () => {
+      const remaining = questionSecondsRemaining(expiresAt)
+      setStore("remaining", remaining)
+      if (remaining !== 0 || expired) return
+      expired = true
+      console.debug(`[question-dock] countdown reached deadline id=${props.request.id}; awaiting backend settlement`)
+    }
+    update()
+    const timer = setInterval(update, 250)
+    const visible = () => {
+      if (!document.hidden) update()
+    }
+    document.addEventListener("visibilitychange", visible)
+    onCleanup(() => {
+      clearInterval(timer)
+      document.removeEventListener("visibilitychange", visible)
+      console.debug(`[question-dock] countdown stopped id=${props.request.id}`)
+    })
+  })
 
   const customUpdate = (value: string, selected: boolean = on()) => {
     const prev = input().trim()
@@ -542,27 +569,46 @@ export const SessionQuestionDock: Component<{
       collapseLabel={language.t("session.question.collapse")}
       header={
         <>
-          <div data-slot="question-header-title">{summary()}</div>
-          <div data-slot="question-progress">
-            <For each={questions()}>
-              {(_, i) => (
-                <button
-                  type="button"
-                  data-slot="question-progress-segment"
-                  data-active={i() === store.tab}
-                  data-answered={questionAnswered(
-                    store.answers[i()],
-                    store.custom[i()],
-                    store.customOn[i()],
-                    store.images[i()],
-                  )}
-                  disabled={store.sending}
-                  onClick={() => jump(i())}
-                  aria-label={`${language.t("ui.tool.questions")} ${i() + 1}`}
-                />
-              )}
-            </For>
+          <div data-slot="question-header-meta">
+            <div data-slot="question-header-title">{summary()}</div>
+            <Show when={store.remaining !== undefined}>
+              <span
+                data-slot="question-countdown"
+                data-urgent={(store.remaining ?? 0) <= 30}
+                role="timer"
+                aria-label={language.t("session.question.timeout", { seconds: store.remaining ?? 0 })}
+                title={language.t("session.question.timeoutHint")}
+              >
+                <Icon name="clock" size="small" />
+                {language.t("session.question.timeout", { seconds: store.remaining ?? 0 })}
+              </span>
+            </Show>
           </div>
+          <Show when={total() > 1}>
+            <div data-slot="question-progress">
+              <For each={questions()}>
+                {(_, i) => (
+                  <button
+                    type="button"
+                    data-slot="question-progress-segment"
+                    data-active={i() === store.tab}
+                    data-answered={questionAnswered(
+                      store.answers[i()],
+                      store.custom[i()],
+                      store.customOn[i()],
+                      store.images[i()],
+                    )}
+                    disabled={store.sending}
+                    onClick={() => jump(i())}
+                    aria-label={`${language.t("ui.tool.questions")} ${i() + 1}`}
+                    aria-current={i() === store.tab ? "step" : undefined}
+                  >
+                    {i() + 1}
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
         </>
       }
       footer={

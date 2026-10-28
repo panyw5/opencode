@@ -1964,11 +1964,28 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
   }
 
   [data-slot="question-header"] {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
-    justify-content: space-between;
     gap: 12px;
     padding: 0 10px;
+
+    &:not(:has([data-slot="question-progress"])) {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    > [data-slot="question-collapse"] {
+      grid-column: -2;
+      justify-self: end;
+    }
+  }
+
+  [data-slot="question-header-meta"] {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    min-width: 0;
   }
 
   [data-slot="question-collapse"] {
@@ -2014,6 +2031,7 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
     line-height: var(--line-height-large);
     color: var(--text-strong);
     min-width: 0;
+    white-space: nowrap;
   }
 
   [data-slot="question-progress"] {
@@ -2023,12 +2041,32 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
     flex-shrink: 0;
   }
 
+  [data-slot="question-countdown"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    color: var(--text-weak);
+    font-size: 14px;
+    font-weight: var(--font-weight-medium);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+
+    &[data-urgent="true"] {
+      color: var(--text-warning-base);
+    }
+  }
+
   [data-slot="question-progress-segment"] {
-    width: 16px;
-    height: 16px;
+    min-width: 28px;
+    height: 28px;
     padding: 0;
-    border: 0;
+    border: 1px solid transparent;
     background: transparent;
+    color: var(--text-weak);
+    font-size: 13px;
+    font-weight: var(--font-weight-medium);
+    font-variant-numeric: tabular-nums;
     border-radius: 999px;
     display: inline-flex;
     align-items: center;
@@ -2036,21 +2074,23 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
     cursor: pointer;
     touch-action: manipulation;
 
-    &::after {
-      content: "";
-      width: 16px;
-      height: 2px;
-      border-radius: 999px;
-      background-color: var(--icon-weak-base);
-      transition: background-color 0.2s ease;
+    &[data-answered="true"] {
+      color: var(--text-interactive-base);
     }
 
-    &[data-active="true"]::after {
-      background-color: var(--icon-strong-base);
+    &:hover:not(:disabled) {
+      background-color: var(--surface-base-hover);
     }
 
-    &[data-answered="true"]::after {
-      background-color: var(--icon-interactive-base);
+    &[data-active="true"] {
+      color: var(--text-strong);
+      border-color: var(--border-interactive-base);
+      background-color: var(--surface-interactive-weak);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--border-interactive-base);
+      outline-offset: 2px;
     }
 
     &:disabled {

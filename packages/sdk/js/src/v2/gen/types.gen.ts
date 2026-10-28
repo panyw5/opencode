@@ -311,6 +311,10 @@ export type QuestionTool = {
 }
 
 export type QuestionRequest = {
+  /**
+   * Absolute response deadline in Unix milliseconds
+   */
+  expiresAt?: number
   id: string
   sessionID: string
   /**

@@ -147,6 +147,14 @@ describe("message-part reasoningPartStreaming", () => {
 })
 
 describe("message-part isDismissedQuestion", () => {
+  test("recognizes timed out questions as dismissed rather than a generic tool failure", () => {
+    expect(
+      isDismissedQuestion({
+        tool: "question",
+        state: { status: "error", error: "The question timed out without a user response. No answer was selected." },
+      }),
+    ).toBe(true)
+  })
   test("recognizes dismissed question tool errors", () => {
     expect(
       isDismissedQuestion({

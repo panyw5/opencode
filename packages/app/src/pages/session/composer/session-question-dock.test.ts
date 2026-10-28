@@ -8,6 +8,7 @@ let questionInvalidation: typeof import("./session-question-dock-helpers").quest
 let questionReply: typeof import("./session-question-dock-helpers").questionReply
 let questionRequestNotFound: typeof import("./session-question-dock-helpers").questionRequestNotFound
 let permissionRequestNotFound: typeof import("./session-question-dock-helpers").permissionRequestNotFound
+let questionSecondsRemaining: typeof import("./session-question-dock-helpers").questionSecondsRemaining
 
 beforeAll(async () => {
   const mod = await import("./session-question-dock-helpers")
@@ -18,6 +19,7 @@ beforeAll(async () => {
   questionReply = mod.questionReply
   questionRequestNotFound = mod.questionRequestNotFound
   permissionRequestNotFound = mod.permissionRequestNotFound
+  questionSecondsRemaining = mod.questionSecondsRemaining
 })
 
 const request = (messageID?: string) =>
@@ -38,6 +40,15 @@ const message = (input: { id: string; role?: "assistant" | "user"; error?: boole
   }) as Message
 
 describe("session question dock helpers", () => {
+  test("countdown uses an absolute deadline, rounds up and never becomes negative", () => {
+    expect(questionSecondsRemaining(undefined, 1000)).toBeUndefined()
+    expect(questionSecondsRemaining(NaN, 1000)).toBeUndefined()
+    expect(questionSecondsRemaining(6000, 1000)).toBe(5)
+    expect(questionSecondsRemaining(6000, 1001)).toBe(5)
+    expect(questionSecondsRemaining(6000, 5001)).toBe(1)
+    expect(questionSecondsRemaining(6000, 6000)).toBe(0)
+    expect(questionSecondsRemaining(6000, 9000)).toBe(0)
+  })
   test("locks synchronously before mutation state updates", () => {
     const guard = createQuestionSubmissionGuard()
 

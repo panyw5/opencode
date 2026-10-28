@@ -34,6 +34,7 @@ function file(part: Question.Part): Omit<MessageV2.FilePart, "id" | "sessionID" 
 
 export const Parameters = Schema.Struct({
   questions: Schema.mutable(Schema.Array(Question.Prompt)).annotate({ description: "Questions to ask" }),
+  timeout: Schema.optional(Question.Timeout),
 })
 
 type Metadata = {
@@ -53,6 +54,7 @@ export const QuestionTool = Tool.define<typeof Parameters, Metadata, Question.Se
           const answers = yield* question.ask({
             sessionID: ctx.sessionID,
             questions: params.questions,
+            timeout: params.timeout,
             tool: ctx.callID ? { messageID: ctx.messageID, callID: ctx.callID } : undefined,
           })
 
