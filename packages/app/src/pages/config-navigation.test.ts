@@ -5,9 +5,49 @@ import {
   resolveConfigReturnHref,
   resolveConfigReturnTarget,
   resolveBrowserSessionTarget,
+  configTabReturnTarget,
+  isConfigRoute,
 } from "./config-navigation"
 
 const tabs: SessionBarTab[] = [{ directory: "/repo", id: "ses_original" }]
+
+describe("config tab", () => {
+  test("recognizes global and project config routes only", () => {
+    for (const path of ["/config", "/config/", "/L3JlcG8/config"]) expect(isConfigRoute(path)).toBe(true)
+    for (const path of ["/", "/L3JlcG8/session/config", "/L3JlcG8/session/ses_original", "/configuration"])
+      expect(isConfigRoute(path)).toBe(false)
+  })
+
+  test("closing returns to a still-open originating session or draft", () => {
+    const origin = {
+      type: "session" as const,
+      directory: "/repo",
+      id: "ses_original",
+      href: "/repo/session/ses_original",
+    }
+    expect(configTabReturnTarget({ origin, tabs, drafts: [] })).toEqual(origin)
+    const draft = { type: "draft" as const, directory: "/repo", id: "draft-1", href: "/repo/session/new/draft-1" }
+    expect(configTabReturnTarget({ origin: draft, tabs, drafts: [draft] })).toEqual(draft)
+  })
+
+  test("closing falls back after the original tab was closed", () => {
+    expect(
+      configTabReturnTarget({
+        origin: { type: "session", directory: "/repo", id: "closed", href: "/repo/session/closed" },
+        tabs,
+        drafts: [],
+      }),
+    ).toEqual({ type: "session", directory: "/repo", id: "ses_original" })
+    expect(configTabReturnTarget({ tabs: [], drafts: [] })).toEqual({ type: "home" })
+  })
+
+  test("closing preserves a home or scheduled origin even with session tabs open", () => {
+    for (const href of ["/", "/scheduled", "/L3JlcG8/scheduled?task=1"]) {
+      const origin = { type: "route" as const, href }
+      expect(configTabReturnTarget({ origin, tabs, drafts: [] })).toEqual(origin)
+    }
+  })
+})
 
 describe("config return navigation", () => {
   test("browser restores the originating session, not another open tab", () => {

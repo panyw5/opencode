@@ -7,6 +7,19 @@ export type ConfigReturnTarget =
   | { type: "draft"; href: string; directory: string; id: string }
   | { type: "route"; href: string }
 
+export function isConfigRoute(pathname: string) {
+  return /^\/(?:[^/]+\/)?config\/?$/.test(pathname)
+}
+
+export function configTabReturnTarget(input: {
+  origin?: Readonly<Partial<ConfigReturnTarget>> | null
+  tabs: SessionBarTab[]
+  drafts: SessionBarDraft[]
+  directory?: string
+}): ConfigReturnTarget | SessionTabsTarget {
+  return resolveConfigReturnTarget(input.origin, input.tabs, input.drafts) ?? pickSessionTabsTarget(input)
+}
+
 /** Browser panels require a session route; home/scheduled origins cannot host them. */
 export function resolveBrowserSessionTarget(input: {
   origin?: Readonly<Partial<ConfigReturnTarget>> | null

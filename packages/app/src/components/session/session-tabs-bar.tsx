@@ -2,7 +2,7 @@ import { For, Show, createEffect, createMemo, on, onCleanup } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { Portal } from "solid-js/web"
 import type { PermissionRequest, Session } from "@opencode-ai/sdk/v2/client"
-import { useLocation, useParams } from "@solidjs/router"
+import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import {
   DragDropProvider,
   DragDropSensors,
@@ -41,6 +41,12 @@ import { usePermission } from "@/context/permission"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useSettings } from "@/context/settings"
 import { useSessionTabs } from "@/context/session-tabs"
+import {
+  configTabReturnTarget,
+  isConfigRoute,
+  resolveConfigReturnTarget,
+  type ConfigReturnTarget,
+} from "@/pages/config-navigation"
 import { closeFocusedBrowserTab } from "@/browser/close-tab"
 import { dict as enDict } from "@/i18n/en"
 import { decode64 } from "@/utils/base64"
@@ -82,12 +88,14 @@ export function SessionTabsBar() {
   const sessionTabs = useSessionTabs()
   const params = useParams()
   const location = useLocation()
+  const navigate = useNavigate()
   type DictKey = keyof typeof enDict
   const kw = (...keys: DictKey[]) => (language.locale() === "en" ? undefined : keys.map((k) => enDict[k]).join(" "))
 
   const [state, setState] = createStore({
     activeDraggable: undefined as string | undefined,
     activeDraggableWidth: undefined as number | undefined,
+    config: undefined as { href: string; directory: string; origin?: ConfigReturnTarget } | undefined,
   })
   let tabsViewport: HTMLDivElement | undefined
   let revealFrame: number | undefined
@@ -129,6 +137,59 @@ export function SessionTabsBar() {
     return decode64(slug) ?? ""
   })
   const onSessionRoute = createMemo(() => /\/session(?:\/|$)/.test(location.pathname))
+  const onConfigRoute = createMemo(() => isConfigRoute(location.pathname))
+  createEffect(
+    on(
+      () => `${location.pathname}${location.search}${location.hash}`,
+      (href, previous) => {
+        if (!onConfigRoute()) return
+        // Section/query navigation may replace router state, but must not lose
+        // the tab's return destination while staying inside configuration.
+        const origin =
+          resolveConfigReturnTarget(location.state, tabs(), drafts()) ??
+          (previous && isConfigRoute(previous.split(/[?#]/)[0]) ? state.config?.origin : undefined)
+        console.debug(`[config-tab] observe href=${href} origin=${origin?.href ?? "fallback"}`)
+        setState("config", { href, directory: routeDir(), origin })
+      },
+    ),
+  )
+  const openConfigTab = () => {
+    const config = state.config
+    if (!config) return
+    console.debug(`[config-tab] activate href=${config.href}`)
+    sessionTabs.cancelNavigation("config-tab")
+    navigate(config.href, { state: config.origin })
+  }
+  const closeConfigTab = async () => {
+    const config = state.config
+    if (!config) return
+    console.debug(`[config-tab] close requested active=${onConfigRoute()} href=${config.href}`)
+    if (onConfigRoute()) {
+      dialog.closeOwnerBound()
+      const target = configTabReturnTarget({
+        origin: config.origin,
+        tabs: tabs(),
+        drafts: drafts(),
+        directory: config.directory,
+      })
+      console.debug(`[config-tab] close return type=${target.type}`)
+      if (target.type === "route") {
+        sessionTabs.cancelNavigation("config-tab-close")
+        navigate(target.href, { replace: true })
+      } else {
+        const result = await sessionTabs.activate(target, { replace: true })
+        console.debug(`[config-tab] close return result=${result}`)
+        if (result === "superseded") return
+        if (result === "failed") {
+          const fallback = await sessionTabs.activate({ type: "home" }, { replace: true })
+          console.debug(`[config-tab] close fallback result=${fallback}`)
+          if (fallback !== "navigated") return
+        }
+      }
+    }
+    setState("config", undefined)
+    console.debug("[config-tab] closed")
+  }
   // While a draft promotes into a real session the router transition keeps
   // params.id stale, so both the draft tab and the "no active tab" state would
   // flash for the whole transition. The handoff envelope marks the promotion;
@@ -189,6 +250,7 @@ export function SessionTabsBar() {
     return visibleSessionBarDrafts(drafts(), pending?.draftID)
   })
   const shown = createMemo(() => {
+    if (state.config) return true
     if (!settings.general.sessionTabsBar()) return false
     return tabs().length > 0 || visibleDrafts().length > 0
   })
@@ -389,14 +451,19 @@ export function SessionTabsBar() {
   const switchBy = (delta: number) => {
     const roots = groups().map((group) => group.tab)
     const draftRoots = visibleDrafts()
-    if (roots.length === 0 && draftRoots.length === 0) return
+    const count = roots.length + draftRoots.length + (state.config ? 1 : 0)
+    if (count === 0) return
     const draftIndex = draftRoots.findIndex((draft) => !params.id && draft.id === params.draftID)
     const sessionIndex = groups().findIndex(
       (group) => isActive(group.tab) || group.children.some((item) => isActive(item.tab)),
     )
-    const index = draftIndex >= 0 ? roots.length + draftIndex : sessionIndex
-    const next = cycleSessionBarIndex(roots.length + draftRoots.length, index, delta)
+    const index = onConfigRoute() ? count - 1 : draftIndex >= 0 ? roots.length + draftIndex : sessionIndex
+    const next = cycleSessionBarIndex(count, index, delta)
     if (next < 0) return
+    if (state.config && next === count - 1) {
+      openConfigTab()
+      return
+    }
     if (next < roots.length) {
       const target = roots[next]
       if (!target) return
@@ -415,6 +482,10 @@ export function SessionTabsBar() {
   }
 
   const closeActive = () => {
+    if (onConfigRoute()) {
+      void closeConfigTab()
+      return
+    }
     if (activeDraft()) {
       closeDraft()
       return
@@ -424,15 +495,29 @@ export function SessionTabsBar() {
   }
 
   command.register(() => [
+    ...(onConfigRoute()
+      ? [
+          {
+            id: "tab.close",
+            title: language.t("command.tab.close"),
+            keywords: kw("command.tab.close"),
+            category: language.t("command.category.file"),
+            keybind: "mod+w",
+            onSelect: () => void closeConfigTab(),
+          },
+        ]
+      : []),
     {
       id: "sessionTabs.close",
       title: language.t("command.sessionTabs.close"),
       keywords: kw("command.sessionTabs.close"),
       category: language.t("command.category.session"),
-      disabled: !activeDraft() && !tabs().some((tab) => isActive(tab)),
+      disabled: !onConfigRoute() && !activeDraft() && !tabs().some((tab) => isActive(tab)),
       onSelect: (source) => {
         if (closeFocusedBrowserTab(source, command.trigger)) return
-        console.debug(`[session-tabs] close active source=${source ?? "unknown"} target=session`)
+        console.debug(
+          `[session-tabs] close active source=${source ?? "unknown"} target=${onConfigRoute() ? "config" : "session"}`,
+        )
         closeActive()
       },
     },
@@ -442,7 +527,7 @@ export function SessionTabsBar() {
       keywords: kw("command.sessionTabs.previous"),
       category: language.t("command.category.session"),
       keybind: "mod+shift+[",
-      disabled: tabs().length === 0 && visibleDrafts().length === 0,
+      disabled: !state.config && tabs().length === 0 && visibleDrafts().length === 0,
       onSelect: () => switchBy(-1),
     },
     {
@@ -451,13 +536,14 @@ export function SessionTabsBar() {
       keywords: kw("command.sessionTabs.next"),
       category: language.t("command.category.session"),
       keybind: "mod+shift+]",
-      disabled: tabs().length === 0 && visibleDrafts().length === 0,
+      disabled: !state.config && tabs().length === 0 && visibleDrafts().length === 0,
       onSelect: () => switchBy(1),
     },
   ])
 
   const keys = createMemo(() => groups().map((group) => sessionBarKey(group.tab)))
   const scrollTarget = createMemo(() => {
+    if (onConfigRoute()) return `config:${state.config?.href}`
     const draft = activeDraft()
     if (draft) return `draft:${draft.id}:${tabs().length}:${visibleDrafts().length}`
     const active = tabs().find((tab) => isActive(tab))
@@ -505,7 +591,7 @@ export function SessionTabsBar() {
     revealFrame = requestAnimationFrame(() => {
       revealFrame = undefined
       tabsViewport
-        ?.querySelector<HTMLElement>('[data-component="session-tab"][data-active="true"]')
+        ?.querySelector<HTMLElement>('[data-active="true"]')
         ?.scrollIntoView({ block: "nearest", inline: "nearest" })
     })
   })
@@ -606,6 +692,11 @@ export function SessionTabsBar() {
           </DropdownMenu>
         </div>
       </Show>
+      <Show when={state.config}>
+        <div class="flex min-w-0 max-w-40 items-center xl:hidden">
+          <ConfigTab active={onConfigRoute()} onOpen={openConfigTab} onClose={() => void closeConfigTab()} />
+        </div>
+      </Show>
       <Show when={shown()}>
         <div class="hidden min-w-0 flex-1 items-center xl:flex">
           <DragDropProvider
@@ -617,31 +708,36 @@ export function SessionTabsBar() {
             <DragDropSensors />
             <ConstrainDragYAxis />
             <div ref={tabsViewport} class="flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto no-scrollbar">
-              <SortableProvider ids={keys()}>
-                <For each={keys()}>
-                  {(key) => (
-                    <SessionTabGroup
-                      tabKey={key}
-                      group={() => groupsByKey().get(key)}
-                      active={(tab) => isActive(tab)}
-                      hasOpenDescendants={hasOpenDescendants}
-                      onOpen={(tab) => void open(tab)}
-                      onClose={close}
-                      onCloseDescendants={closeDescendants}
+              <Show when={settings.general.sessionTabsBar()}>
+                <SortableProvider ids={keys()}>
+                  <For each={keys()}>
+                    {(key) => (
+                      <SessionTabGroup
+                        tabKey={key}
+                        group={() => groupsByKey().get(key)}
+                        active={(tab) => isActive(tab)}
+                        hasOpenDescendants={hasOpenDescendants}
+                        onOpen={(tab) => void open(tab)}
+                        onClose={close}
+                        onCloseDescendants={closeDescendants}
+                      />
+                    )}
+                  </For>
+                </SortableProvider>
+                <For each={visibleDrafts()}>
+                  {(draft) => (
+                    <DraftTab
+                      draft={draft}
+                      active={!params.id && draft.id === params.draftID}
+                      onOpen={() => void openDraft(draft)}
+                      onClose={() => closeDraft(draft)}
                     />
                   )}
                 </For>
-              </SortableProvider>
-              <For each={visibleDrafts()}>
-                {(draft) => (
-                  <DraftTab
-                    draft={draft}
-                    active={!params.id && draft.id === params.draftID}
-                    onOpen={() => void openDraft(draft)}
-                    onClose={() => closeDraft(draft)}
-                  />
-                )}
-              </For>
+              </Show>
+              <Show when={state.config}>
+                <ConfigTab active={onConfigRoute()} onOpen={openConfigTab} onClose={() => void closeConfigTab()} />
+              </Show>
             </div>
             <DragOverlay>
               <Show when={state.activeDraggable} keyed>
@@ -1650,6 +1746,48 @@ function SessionTabPermissionCapsule(props: {
         </Button>
       </div>
     </Portal>
+  )
+}
+
+function ConfigTab(props: { active: boolean; onOpen: () => void; onClose: () => void }) {
+  const language = useLanguage()
+  const command = useCommand()
+  return (
+    <div
+      data-component="config-tab"
+      data-active={props.active ? "true" : undefined}
+      role="button"
+      aria-label={language.t("config.title")}
+      aria-current={props.active ? "page" : undefined}
+      tabIndex={0}
+      class="group relative flex h-7 min-w-28 max-w-80 shrink-0 cursor-pointer select-none items-center gap-1.5 rounded-[10px] pl-2 pr-1 text-13-medium"
+      classList={{
+        "bg-surface-interactive-weak-hover text-text-strong": props.active,
+        "session-tab-inactive text-text-weak hover:bg-surface-base-hover hover:text-text-base": !props.active,
+      }}
+      onClick={props.onOpen}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return
+        event.preventDefault()
+        props.onOpen()
+      }}
+    >
+      <Icon name="settings-gear" size="small" />
+      <span class="min-w-0 flex-1 truncate">{language.t("config.title")}</span>
+      <button
+        type="button"
+        data-action="config-tab-close"
+        class="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-icon-base hover:bg-surface-base-hover hover:text-text-strong"
+        aria-label={language.t("common.closeTab")}
+        title={[language.t("common.closeTab"), command.keybind("tab.close")].filter(Boolean).join(" · ")}
+        onClick={(event) => {
+          event.stopPropagation()
+          props.onClose()
+        }}
+      >
+        <Icon name="close-small" size="small" />
+      </button>
+    </div>
   )
 }
 

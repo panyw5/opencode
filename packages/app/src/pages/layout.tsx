@@ -4608,7 +4608,7 @@ export default function Layout(props: ParentProps) {
       configLabel={() => language.t("config.title")}
       configKeybind={() => command.keybind("config.open")}
       configActive={onConfigRoute}
-      onOpenConfig={platform.remoteMode ? undefined : openConfig}
+      onOpenConfig={platform.remoteMode ? undefined : () => openConfig()}
       onPrefetchConfig={platform.remoteMode ? undefined : prefetchConfigPage}
       settingsLabel={() => language.t("sidebar.settings")}
       settingsKeybind={() => command.keybind("settings.open")}
