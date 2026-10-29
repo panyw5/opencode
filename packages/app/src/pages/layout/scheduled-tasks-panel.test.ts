@@ -20,6 +20,7 @@ describe("scheduled task panel scope", () => {
   test("refreshes only for scheduled task events from the active directory", () => {
     const scope = { projectID: "project", directory: "/Users/example/chat" }
     expect(scheduledTaskEventMatchesScope("/Users/example/chat/", scope)).toBe(true)
+    expect(scheduledTaskEventMatchesScope("/Users/example/chat", { ...scope, directory: "/Users/example/chat/" })).toBe(true)
     expect(scheduledTaskEventMatchesScope("/Users/example/other", scope)).toBe(false)
   })
 })

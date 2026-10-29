@@ -27,7 +27,7 @@ import {
   type Accessor,
   type JSX,
 } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore, reconcile } from "solid-js/store"
 import { CronExpressionField } from "@/components/cron-expression-field"
 import { TimezoneSelectField } from "@/components/timezone-select-field"
 import { MarkdownEditorField } from "@/components/markdown-editor-field"
@@ -40,6 +40,7 @@ import { formatDateTimeLocal, parseDateTimeLocal } from "@/utils/time"
 import { filterTasks } from "./task-search"
 import { TaskSearchField } from "./task-search-field"
 import { sortScheduledTasks, type TaskSort } from "./task-sort"
+import { mergeScheduledTaskRuns } from "./scheduled-task-runs"
 import {
   sameScheduledTaskPanelScope,
   scheduledTaskEventMatchesScope,
@@ -371,14 +372,14 @@ export function ScheduledTaskFormDialog(props: {
     if (!agents.includes(state.agent) && agents[0]) setState("agent", agents[0])
   })
 
-  async function loadRuns(source: string) {
+  async function loadInitialRuns() {
     if (!task) return
-    console.debug(`[scheduled-panel] edit runs load-start task=${task.id} source=${source}`)
-    setState("loadingRuns", true)
+    console.debug(`[scheduled-panel] edit runs load-start task=${task.id} source=open`)
     try {
       const result = await sdk.client.scheduledTask.runs({ taskID: task.id, limit: "20" })
       console.debug(`[scheduled-panel] edit runs load-success task=${task.id} count=${result.data?.length ?? 0}`)
-      setState("runs", result.data ?? [])
+      // Events received during the initial request are newer than its snapshot.
+      setState("runs", reconcile(mergeScheduledTaskRuns(result.data ?? [], state.runs)))
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.error(`[scheduled-panel] edit runs load-failed task=${task.id} error=${message}`)
@@ -388,15 +389,30 @@ export function ScheduledTaskFormDialog(props: {
     }
   }
 
+  const stopRuns = sdk.listenAll((event) => {
+    if (!task || event.details.type !== "scheduled-task.run-updated") return
+    if (!scheduledTaskEventMatchesScope(event.name, { projectID: task.projectID, directory: task.directory })) return
+    const run = event.details.properties
+    if (run.taskID !== task.id) return
+    console.debug(
+      `[scheduled-panel] edit runs event task=${task.id} run=${run.id} status=${run.status} session=${run.sessionID ?? "none"}`,
+    )
+    setState("runs", reconcile(mergeScheduledTaskRuns(state.runs, [run])))
+  })
+  onCleanup(stopRuns)
+
   async function runNow() {
     if (!task || state.pendingAction) return
     console.debug(`[scheduled-panel] edit run-now start task=${task.id}`)
     setState({ pendingAction: true, error: "" })
     try {
-      await sdk.client.scheduledTask.runNow({ taskID: task.id })
-      console.debug(`[scheduled-panel] edit run-now success task=${task.id}`)
-      await loadRuns("run-now")
-      await props.onSaved()
+      const result = await sdk.client.scheduledTask.runNow({ taskID: task.id })
+      const run = result.data
+      console.debug(`[scheduled-panel] edit run-now success task=${task.id} run=${run?.id ?? "none"} refresh=local`)
+      // A live event may already contain the bound session or completed status.
+      if (run && !state.runs.some((item) => item.id === run.id)) {
+        setState("runs", reconcile(mergeScheduledTaskRuns(state.runs, [run])))
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.error(`[scheduled-panel] edit run-now failed task=${task.id} error=${message}`)
@@ -484,7 +500,7 @@ export function ScheduledTaskFormDialog(props: {
     }
   }
 
-  onMount(() => void loadRuns("open"))
+  onMount(() => void loadInitialRuns())
 
   function schedule(): ScheduledTaskSchedule | undefined {
     if (state.scheduleKind === "at") {
@@ -813,13 +829,16 @@ export function ScheduledTaskFormDialog(props: {
 
           <Show when={task}>
             <aside class="config-scrollbar min-h-0 min-w-0 overflow-y-auto px-1">
-              <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
+              <section
+                data-slot="scheduled-task-runs"
+                class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4"
+              >
                 <div class="mb-3 flex items-center justify-between gap-2">
                   <div class="text-12-medium text-text-weak">{language.t("scheduled.history")}</div>
                   <span class="text-11-regular text-text-weaker">{state.runs.length}</span>
                 </div>
                 <Show
-                  when={!state.loadingRuns && state.runs.length > 0}
+                  when={state.runs.length > 0}
                   fallback={
                     <Show when={!state.loadingRuns}>
                       <div class="py-3 text-center text-12-regular text-text-weak">
@@ -835,6 +854,7 @@ export function ScheduledTaskFormDialog(props: {
                         return (
                           <button
                             type="button"
+                            data-run-id={run.id}
                             class="min-w-0 rounded-lg border border-border-weak-base bg-background-base px-3 py-2 text-left transition-colors enabled:hover:bg-surface-raised-base-hover disabled:cursor-default"
                             disabled={!sessionID()}
                             title={run.error ?? (sessionID() ? language.t("scheduled.openSession") : undefined)}
@@ -976,6 +996,34 @@ export function ScheduledTasksPanel(props: {
     }
   }
 
+  const taskRequests = new Map<string, number>()
+  onCleanup(() => taskRequests.clear())
+  async function refreshTask(taskID: string, scope: ScheduledTaskPanelScope) {
+    const listRequest = request
+    const current = (taskRequests.get(taskID) ?? 0) + 1
+    taskRequests.set(taskID, current)
+    console.debug(`[scheduled-panel] task refresh-start task=${taskID} request=${current}`)
+    try {
+      const result = await sdk.client.scheduledTask.get({ taskID })
+      if (
+        request !== listRequest ||
+        taskRequests.get(taskID) !== current ||
+        !sameScheduledTaskPanelScope(scope, untrack(activeScope))
+      ) {
+        console.debug(`[scheduled-panel] task refresh-stale task=${taskID} request=${current}`)
+        return
+      }
+      const index = state.tasks.findIndex((task) => task.id === taskID)
+      if (index === -1 || !result.data) return
+      setState("tasks", index, reconcile(result.data))
+      console.debug(`[scheduled-panel] task refresh-success task=${taskID} request=${current}`)
+    } catch (error) {
+      console.error(
+        `[scheduled-panel] task refresh-failed task=${taskID} error=${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+  }
+
   function open(task: ScheduledTask) {
     dialog.show(() => (
       <ScheduledTaskFormDialog
@@ -1053,6 +1101,10 @@ export function ScheduledTasksPanel(props: {
     console.debug(
       `[scheduled-panel] event type=${event.details.type} directory=${event.name} activeDirectory=${scope.directory}`,
     )
+    if (event.details.type === "scheduled-task.run-updated") {
+      void refreshTask(event.details.properties.taskID, scope)
+      return
+    }
     void load({ silent: true, source: `event:${event.details.type}`, scope })
   })
   onCleanup(stop)

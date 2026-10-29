@@ -6,4 +6,4 @@ export const sameScheduledTaskPanelScope = (a: ScheduledTaskPanelScope, b: Sched
   a.projectID === b.projectID && a.directory === b.directory
 
 export const scheduledTaskEventMatchesScope = (eventDirectory: string, scope: ScheduledTaskPanelScope) =>
-  workspaceKey(eventDirectory) === scope.directory
+  workspaceKey(eventDirectory) === workspaceKey(scope.directory)
