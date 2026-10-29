@@ -312,19 +312,15 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
       desktopApi.relaunch()
     },
 
-    notify: async (title, description, href) => {
-      const focused = await desktopApi.getWindowFocused().catch(() => document.hasFocus())
-      if (focused) return
+    openNotificationSettings:
+      typeof desktopApi.openNotificationSettings === "function" ? () => desktopApi.openNotificationSettings() : undefined,
 
-      const notification = new Notification(title, {
-        body: description ?? "",
-        icon: "https://opencode.ai/favicon-96x96-v3.png",
-      })
-      notification.onclick = () => {
-        void desktopApi.showWindow()
-        void desktopApi.setWindowFocus()
-        handleNotificationClick(href)
-        notification.close()
+    notify: async (title, description, href, options) => {
+      console.debug(`[notification] sending native notification linked=${!!href} attention=${!!options?.attention}`)
+      try {
+        await desktopApi.showNotification(title, description, href, options?.attention)
+      } catch (error) {
+        console.error(`[notification] native IPC failed error=${String(error)}`)
       }
     },
 
@@ -559,6 +555,19 @@ window.addEventListener("error", (event) => {
 window.addEventListener("unhandledrejection", (event) => rendererFault("unhandledrejection", event.reason))
 
 render(() => {
+  onMount(() => {
+    // HMR can update the renderer before the preload bridge is restarted.
+    if (typeof desktopApi.onNotificationClick !== "function") {
+      console.warn("[notification] native click bridge unavailable; restart desktop to update preload")
+      return
+    }
+    onCleanup(
+      desktopApi.onNotificationClick((href) => {
+        console.debug(`[notification] navigating from native notification linked=${!!href}`)
+        handleNotificationClick(href)
+      }),
+    )
+  })
   const [extraAgentVersion, setExtraAgentVersion] = createSignal(0)
   let refreshExtraAgents: (() => Promise<ExtraAgentServer[] | undefined>) | undefined
   const platform = createPlatform(async () => {

@@ -401,7 +401,9 @@ export type ElectronAPI = {
     config?: OpenclawConfig | HermesConfig | GenericagentConfig,
   ) => Promise<ExtraAgentInfo>
   readClipboardImage: () => Promise<{ buffer: ArrayBuffer; width: number; height: number } | null>
-  showNotification: (title: string, body?: string) => void
+  showNotification: (title: string, body?: string, href?: string, attention?: boolean) => Promise<void>
+  openNotificationSettings: () => Promise<void>
+  onNotificationClick: (cb: (href?: string) => void) => () => void
   getWindowFocused: () => Promise<boolean>
   setWindowFocus: () => Promise<void>
   showWindow: () => Promise<void>

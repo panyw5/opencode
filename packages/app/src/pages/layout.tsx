@@ -69,6 +69,7 @@ import { usePermission } from "@/context/permission"
 import { Binary } from "@opencode-ai/core/util/binary"
 import { playSoundById } from "@/utils/sound"
 import { setNavigate } from "@/utils/notification-click"
+import { createAttentionRequestTracker } from "@/utils/attention-requests"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { requestConfigPageRefresh } from "@/utils/config-reload"
@@ -626,15 +627,13 @@ export default function Layout(props: ParentProps) {
   const useSDKNotificationToasts = () =>
     onMount(() => {
       const toastBySession = new Map<string, number>()
-      const alertedAtBySession = new Map<string, number>()
-      const cooldownMs = 5000
+      const acceptRequest = createAttentionRequestTracker()
 
       const dismissSessionAlert = (sessionKey: string) => {
         const toastId = toastBySession.get(sessionKey)
         if (toastId === undefined) return
         toaster.dismiss(toastId)
         toastBySession.delete(sessionKey)
-        alertedAtBySession.delete(sessionKey)
       }
 
       const unsub = globalSDK.listenAll((e) => {
@@ -674,7 +673,10 @@ export default function Layout(props: ParentProps) {
           : ""
         if (quickAssistantDirectory && workspaceKey(directory) === quickAssistantDirectory) return
         const props = e.details.properties
-        if (e.details.type === "permission.asked" && permission.autoResponds(e.details.properties, directory)) return
+        if (e.details.type === "permission.asked" && permission.autoResponds(e.details.properties, directory)) {
+          console.debug(`[notification] skipped automatic permission session=${props.sessionID} request=${props.id}`)
+          return
+        }
 
         const [store] = globalSync.child(directory, { bootstrap: false })
         const session = store.session.find((s) => s.id === props.sessionID)
@@ -688,23 +690,24 @@ export default function Layout(props: ParentProps) {
             : language.t("notification.question.description", { sessionTitle, projectName })
         const href = `/${base64Encode(directory)}/session/${props.sessionID}`
 
-        const now = Date.now()
-        const lastAlerted = alertedAtBySession.get(sessionKey) ?? 0
-        if (now - lastAlerted < cooldownMs) return
-        alertedAtBySession.set(sessionKey, now)
+        if (!acceptRequest(directory, e.details.type, props.id)) {
+          console.debug(`[notification] skipped duplicate type=${e.details.type} request=${props.id}`)
+          return
+        }
+        console.debug(`[notification] attention type=${e.details.type} session=${props.sessionID} request=${props.id}`)
 
         if (e.details.type === "permission.asked") {
           if (settings.sounds.permissionsEnabled()) {
             void playSoundById(settings.sounds.permissions())
           }
           if (settings.notifications.permissions()) {
-            void platform.notify(title, description, href)
+            void platform.notify(title, description, href, { attention: true })
           }
         }
 
         if (e.details.type === "question.asked") {
           if (settings.notifications.agent()) {
-            void platform.notify(title, description, href)
+            void platform.notify(title, description, href, { attention: true })
           }
         }
 

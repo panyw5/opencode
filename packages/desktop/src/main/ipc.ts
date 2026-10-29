@@ -87,6 +87,7 @@ import {
 } from "./cli-agents"
 import { write as writeLog } from "./logging"
 import { relaunchApp } from "./relaunch"
+import { createSystemNotifications } from "./system-notifications"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -166,6 +167,16 @@ type Deps = {
 }
 
 export function registerIpcHandlers(deps: Deps) {
+  const notifications = createSystemNotifications({
+    supported: () => Notification.isSupported(),
+    create: (options) => new Notification(options),
+    log: (message) =>
+      writeLog(
+        "notification",
+        `${message} app=${app.getName()} packaged=${app.isPackaged} platform=${process.platform}`,
+      ),
+  })
+  app.on("before-quit", () => notifications.dispose())
   getGptProController()
   const gptStateSubscriptions = new Map<string, () => void>()
   ipcMain.handle("gpt-pro-state-read", (_event, id: string) => getGptProController().stateRead(id))
@@ -557,8 +568,24 @@ export function registerIpcHandlers(deps: Deps) {
     return { buffer, width: size.width, height: size.height }
   })
 
-  ipcMain.on("show-notification", (_event: IpcMainEvent, title: string, body?: string) => {
-    new Notification({ title, body }).show()
+  ipcMain.handle("show-notification", (event, title: unknown, body?: unknown, href?: unknown, attention?: unknown) => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    if (!window || event.senderFrame !== event.sender.mainFrame) {
+      writeLog("notification", "rejected notification from non-window renderer")
+      return
+    }
+    notifications.show(window, title, body, href, attention)
+  })
+
+  ipcMain.handle("open-notification-settings", async () => {
+    const url =
+      process.platform === "darwin"
+        ? "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+        : process.platform === "win32"
+          ? "ms-settings:notifications"
+          : undefined
+    writeLog("notification", `open-system-settings platform=${process.platform} supported=${!!url}`)
+    if (url) await shell.openExternal(url)
   })
 
   ipcMain.handle("get-window-count", () => BrowserWindow.getAllWindows().length)

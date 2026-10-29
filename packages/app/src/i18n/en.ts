@@ -1747,6 +1747,13 @@ export const dict = {
   "sound.option.yup06": "Yup 06",
 
   "settings.general.notifications.agent.title": "Agent",
+  "settings.general.notifications.test.title": "Test system notifications",
+  "settings.general.notifications.test.description":
+    "Send a test even while this window is focused. If no banner appears, check system notification settings (development builds are listed as Electron). Do Not Disturb can silence banners.",
+  "settings.general.notifications.test.settings": "System settings",
+  "settings.general.notifications.test.send": "Send test notification",
+  "settings.general.notifications.test.body":
+    "This is an OpenCode system notification. Permission requests and assistant questions also notify while OpenCode is in the foreground.",
   "settings.general.notifications.agent.description":
     "Show system notification when the agent is complete or needs attention",
   "settings.general.notifications.permissions.title": "Permissions",

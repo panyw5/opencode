@@ -104,6 +104,7 @@ export const SettingsGeneral: Component<{ hideHeading?: boolean }> = (props) => 
 
   const [store, setStore] = createStore({
     checking: false,
+    notificationTesting: false,
     searchIndex: undefined as SearchIndex | undefined,
     searchIndexBusy: false,
   })
@@ -586,6 +587,54 @@ export const SettingsGeneral: Component<{ hideHeading?: boolean }> = (props) => 
       <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.notifications")}</h3>
 
       <SettingsList>
+        <Show when={platform.platform === "desktop"}>
+          <SettingsRow
+            title={language.t("settings.general.notifications.test.title")}
+            description={language.t("settings.general.notifications.test.description")}
+          >
+            <div class="flex flex-wrap justify-end gap-2">
+              <Show when={platform.openNotificationSettings}>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    console.debug("[notification] settings open requested")
+                    void platform.openNotificationSettings?.().catch((error) => {
+                      console.error(`[notification] settings open failed error=${String(error)}`)
+                      showToast({ title: language.t("common.requestFailed"), description: String(error) })
+                    })
+                  }}
+                >
+                  {language.t("settings.general.notifications.test.settings")}
+                </Button>
+              </Show>
+              <Button
+                variant="secondary"
+                data-action="settings-notifications-test"
+                disabled={store.notificationTesting}
+                onClick={async () => {
+                  if (store.notificationTesting) return
+                  setStore("notificationTesting", true)
+                  console.debug("[notification] settings test requested attention=true")
+                  try {
+                    await platform.notify(
+                      "OpenCode",
+                      language.t("settings.general.notifications.test.body"),
+                      undefined,
+                      { attention: true },
+                    )
+                    console.debug(
+                      "[notification] settings test submitted; OS visibility requires independent verification",
+                    )
+                  } finally {
+                    setTimeout(() => setStore("notificationTesting", false), 1000)
+                  }
+                }}
+              >
+                {language.t("settings.general.notifications.test.send")}
+              </Button>
+            </div>
+          </SettingsRow>
+        </Show>
         <SettingsRow
           title={language.t("settings.general.notifications.agent.title")}
           description={language.t("settings.general.notifications.agent.description")}

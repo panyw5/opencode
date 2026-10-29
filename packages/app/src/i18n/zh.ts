@@ -1584,6 +1584,13 @@ export const dict = {
   "sound.option.yup06": "是 06",
 
   "settings.general.notifications.agent.title": "智能体",
+  "settings.general.notifications.test.title": "测试系统通知",
+  "settings.general.notifications.test.description":
+    "即使当前窗口在前台也发送测试通知。没有横幅时，请检查系统通知设置（开发版显示为 Electron）。专注模式可能静音横幅。",
+  "settings.general.notifications.test.settings": "系统通知设置",
+  "settings.general.notifications.test.send": "发送测试通知",
+  "settings.general.notifications.test.body":
+    "这是一条 OpenCode 系统通知。权限请求和助手问题在 OpenCode 处于前台时也会提醒。",
   "settings.general.notifications.agent.description": "当智能体完成或需要注意时显示系统通知",
   "settings.general.notifications.permissions.title": "权限",
   "settings.general.notifications.permissions.description": "当需要权限时显示系统通知",
