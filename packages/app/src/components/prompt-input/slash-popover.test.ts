@@ -60,6 +60,37 @@ test("mention loading status stays in the fixed header and uses subdued theme ch
     expect(container.querySelector('[role="tablist"]')).not.toBeNull()
     expect(container.querySelectorAll('[aria-selected="true"]')).toHaveLength(1)
     expect(container.querySelector('[aria-selected="true"]')?.textContent).toBe("prompt.at.category.external")
+
+    for (const atCategory of ["all", "external"]) {
+      container.innerHTML = renderToString(() =>
+        PromptPopover({
+          ...props,
+          atCategory,
+          atFlat: [
+            ...["gpt-pro", "codex", "claude", "grok", "dsh", "unknown"].map((id) => ({
+              type: "consult",
+              id,
+              name: id,
+              display: id,
+            })),
+            { type: "agent", name: "build", display: "Build" },
+          ],
+        }),
+      )
+      const rows = [...container.querySelectorAll("[data-prompt-popover-list] button")]
+      expect(rows).toHaveLength(7)
+      for (const [index, icon] of ["openai", "openai", "anthropic", "xai", "deepseek", "synthetic"].entries()) {
+        const svg = rows[index].querySelector('[data-component="provider-icon"]')!
+        expect(svg).not.toBeNull()
+        expect(svg.querySelector("use")?.getAttribute("href")).toEndWith(`#${icon}`)
+        expect(svg.getAttribute("aria-hidden")).toBe("true")
+        expect(svg.getAttribute("class")).toContain("size-4")
+        expect(rows[index].textContent).toContain("prompt.at.badge.consult")
+      }
+      expect(rows[6].querySelector('[data-component="provider-icon"]')).toBeNull()
+      expect(rows[6].textContent).toBe("@build")
+    }
+
     container.innerHTML = renderToString(() => PromptPopover({ ...props, popover: "slash" }))
     expect(container.querySelector('[data-slot="prompt-at-header"]')).toBeNull()
   } finally {

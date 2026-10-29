@@ -1,8 +1,17 @@
 import { Component, createEffect, For, Match, onCleanup, Show, Switch } from "solid-js"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
+import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 import { atCategories, type AtCategory, type AtReference } from "./at-references"
+
+const consultIcons: Record<string, string> = {
+  "gpt-pro": "openai",
+  codex: "openai",
+  claude: "anthropic",
+  grok: "xai",
+  dsh: "deepseek",
+}
 
 export type AtOption =
   | { type: "im"; display: string; channelName?: string; botName?: string }
@@ -174,11 +183,16 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                           onClick={() => props.onAtSelect(item)}
                           onMouseEnter={() => props.setAtActive(key)}
                         >
-                          <Icon
-                            name={item.type === "consult" ? "review" : "brain"}
-                            size="small"
-                            class="text-icon-info-active shrink-0"
-                          />
+                          <Show
+                            when={item.type === "consult"}
+                            fallback={<Icon name="brain" size="small" class="text-icon-info-active shrink-0" />}
+                          >
+                            <ProviderIcon
+                              id={item.type === "consult" ? (consultIcons[item.id] ?? "synthetic") : "synthetic"}
+                              class="size-4 shrink-0 text-icon-info-active"
+                              aria-hidden="true"
+                            />
+                          </Show>
                           <span class="text-14-regular text-text-strong whitespace-nowrap">@{item.name}</span>
                           <Show when={item.type === "consult"}>
                             <span class="text-11-regular text-text-subtle px-1.5 py-0.5 bg-surface-base rounded shrink-0">
