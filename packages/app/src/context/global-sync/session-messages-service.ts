@@ -88,13 +88,56 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
     const promise = retry(() =>
       deps.sdk(directory).session.messages({ sessionID: input.sessionID, limit: input.limit, before: input.before }),
     )
-      .then((response) => {
+      .then(async (response) => {
         if (!deps.current(directory, child, directoryRevision)) {
           const error = new Error("Session message request became stale after directory reset")
           error.name = "AbortError"
           throw error
         }
         const items = (response.data ?? []).filter((item) => !!item?.info?.id)
+        const present = new Set(items.map((item) => item.info.id))
+        const parents = new Set(
+          items.flatMap((item) =>
+            item.info.role === "assistant" && item.info.parentID && !present.has(item.info.parentID)
+              ? [item.info.parentID]
+              : [],
+          ),
+        )
+        // A page can begin halfway through a long turn. Without its user anchor,
+        // the timeline drops every assistant message belonging to that turn.
+        await Promise.all(
+          [...parents].map(async (messageID) => {
+            const cached = child[0].message[input.sessionID]?.find((message) => message.id === messageID)
+            console.debug(
+              `[session-messages] parent-recovery start sid=${input.sessionID} parent=${messageID} cached=${cached?.role === "user"}`,
+            )
+            try {
+              const item =
+                cached?.role === "user"
+                  ? { info: cached, parts: child[0].part[messageID] ?? [] }
+                  : (await deps.sdk(directory).session.message({ sessionID: input.sessionID, messageID })).data
+              if (
+                item?.info?.id !== messageID ||
+                item.info.role !== "user" ||
+                item.info.sessionID !== input.sessionID
+              ) {
+                console.warn(`[session-messages] parent-recovery invalid sid=${input.sessionID} parent=${messageID}`)
+                return
+              }
+              items.push(item)
+              console.debug(`[session-messages] parent-recovery ready sid=${input.sessionID} parent=${messageID}`)
+            } catch (error) {
+              console.warn(
+                `[session-messages] parent-recovery failed sid=${input.sessionID} parent=${messageID} error=${error instanceof Error ? error.message : String(error)}`,
+              )
+            }
+          }),
+        )
+        if (!deps.current(directory, child, directoryRevision)) {
+          const error = new Error("Session parent request became stale after directory reset")
+          error.name = "AbortError"
+          throw error
+        }
         const messages = items.map((item) => item.info).sort((a, b) => compareSessionItemID(a.id, b.id))
         const cursor = response.response.headers.get("x-next-cursor") ?? undefined
         markSessionProfile(

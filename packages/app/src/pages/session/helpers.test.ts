@@ -213,12 +213,7 @@ describe("createSessionTabs", () => {
 
 describe("clipMessages", () => {
   test("keeps the latest full turn when the raw limit would start on assistant output", () => {
-    const list = [
-      msg("u1", "user"),
-      msg("a1", "assistant"),
-      msg("a2", "assistant"),
-      msg("a3", "assistant"),
-    ]
+    const list = [msg("u1", "user"), msg("a1", "assistant"), msg("a2", "assistant"), msg("a3", "assistant")]
 
     expect(clipMessages(list, 2).map((item) => item.id)).toEqual(["u1", "a1", "a2", "a3"])
   })
@@ -244,5 +239,20 @@ describe("clipMessages", () => {
     ] as Message[]
 
     expect(clipMessages(list, 2).map((item) => item.id)).toEqual(["msg_00new", "msg_00new_a"])
+  })
+
+  test("keeps the actual parent when background user inputs interleave a long turn", () => {
+    const list = [
+      { ...msg("u1", "user"), time: { created: 1 } },
+      { ...msg("a1", "assistant"), parentID: "u1", time: { created: 2 } },
+      { ...msg("background", "user"), time: { created: 3 } },
+      { ...msg("a2", "assistant"), parentID: "u1", time: { created: 4 } },
+      { ...msg("u2", "user"), time: { created: 5 } },
+      { ...msg("a3", "assistant"), parentID: "u2", time: { created: 6 } },
+    ] as Message[]
+
+    expect(clipMessages(list, 4).map((item) => item.id)).toEqual(["u1", "a1", "background", "a2", "u2", "a3"])
+    expect(clipMessages(list, 3).map((item) => item.id)).toEqual(["u1", "a1", "background", "a2", "u2", "a3"])
+    expect(clipMessages(list, 2).map((item) => item.id)).toEqual(["u2", "a3"])
   })
 })

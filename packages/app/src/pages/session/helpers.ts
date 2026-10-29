@@ -25,11 +25,29 @@ export const clipMessages = (list: Message[], limit?: number) => {
   const ordered = sortMessages(list)
   if (limit === undefined || ordered.length <= limit) return ordered
 
-  const start = ordered.length - limit
-  if (ordered[start]?.role === "user") return ordered.slice(start)
+  let start = ordered.length - limit
+  if (ordered[start]?.role !== "user") {
+    for (let i = start - 1; i >= 0; i--) {
+      if (ordered[i]?.role !== "user") continue
+      start = i
+      break
+    }
+  }
 
-  for (let i = start - 1; i >= 0; i--) {
-    if (ordered[i]?.role === "user") return ordered.slice(i)
+  const users = new Map(
+    ordered.flatMap((message, index) => (message.role === "user" ? [[message.id, index] as const] : [])),
+  )
+  // Background inputs can interleave a turn: the nearest preceding user is
+  // not necessarily the parent of the assistant messages in this window.
+  for (let i = ordered.length - 1; i >= start; i--) {
+    const message = ordered[i]
+    if (message.role !== "assistant") continue
+    const parent = users.get(message.parentID)
+    if (parent === undefined || parent >= start) continue
+    console.debug(
+      `[session-messages] window-extend sid=${message.sessionID} assistant=${message.id} parent=${message.parentID} from=${start} to=${parent}`,
+    )
+    start = parent
   }
 
   return ordered.slice(start)

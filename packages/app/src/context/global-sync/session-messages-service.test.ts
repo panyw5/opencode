@@ -16,6 +16,65 @@ const response = (messages: Message[], parts: Part[] = []) => ({
 })
 
 describe("session messages controller", () => {
+  test("recovers a paginated turn's user anchor once without moving the history cursor", async () => {
+    const parent = { ...message("parent"), role: "user" } as Message
+    const assistants = ["a1", "a2"].map((id) => ({ ...message(id), parentID: parent.id }) as Message)
+    const parentPart = { ...part("original question"), id: "parent-text", messageID: parent.id }
+    const calls: string[] = []
+    const harness = createSessionControllerHarness({
+      messages: async () => ({
+        ...response(assistants),
+        response: { headers: { get: () => "original-cursor" } },
+      }),
+      message: async ({ messageID }) => {
+        calls.push(messageID)
+        return { data: { info: parent, parts: [parentPart] } }
+      },
+    })
+    const service = createSessionMessagesService(harness.deps)
+    const result = await service.load({ directory: "/project", sessionID: "session", limit: 2 })
+    expect(calls).toEqual(["parent"])
+    expect(result).toEqual({ committed: true, count: 3, cursor: "original-cursor", complete: false })
+    expect(service.get("/project", "session")?.map((item) => item.id)).toEqual(["a1", "a2", "parent"])
+    expect(service.parts("/project", "parent")).toEqual([parentPart])
+    await service.load({ directory: "/project", sessionID: "session", limit: 2, authoritative: true })
+    expect(calls).toEqual(["parent"])
+    expect(service.get("/project", "session")).toHaveLength(3)
+  })
+
+  test("a failed parent recovery retains the fetched assistant messages", async () => {
+    const assistant = { ...message("a1"), parentID: "missing" } as Message
+    const harness = createSessionControllerHarness({
+      messages: async () => response([assistant]),
+      message: async () => {
+        throw new Error("parent not found")
+      },
+    })
+    const service = createSessionMessagesService(harness.deps)
+    expect((await service.load({ directory: "/project", sessionID: "session", limit: 2 })).committed).toBe(true)
+    expect(service.get("/project", "session")).toEqual([assistant])
+  })
+
+  test("discarded pages cannot commit after parent recovery finishes", async () => {
+    const parent = { ...message("parent"), role: "user" } as Message
+    const request = deferred<{ data: { info: Message; parts: Part[] } }>()
+    const started = deferred<void>()
+    const harness = createSessionControllerHarness({
+      messages: async () => response([{ ...message("a1"), parentID: parent.id } as Message]),
+      message: async () => {
+        started.resolve()
+        return request.promise
+      },
+    })
+    const service = createSessionMessagesService(harness.deps)
+    const loading = service.load({ directory: "/project", sessionID: "session", limit: 2 })
+    await started.promise
+    service.event("/project", "session", "discard")
+    request.resolve({ data: { info: parent, parts: [] } })
+    expect((await loading).committed).toBe(false)
+    expect(service.get("/project", "session")).toBeUndefined()
+  })
+
   test("an SSE confirmation releases optimistic protection before later authoritative snapshots", async () => {
     const harness = createSessionControllerHarness({ messages: async () => response([]) })
     const controller = createSessionService(harness.deps)
