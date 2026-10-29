@@ -298,8 +298,9 @@ function ProjectStatusPortal(props: { directory: Accessor<string> }) {
                 </Tooltip>
                 <DropdownMenu.Portal>
                   <DropdownMenu.Content
-                    class="session-child-agent-scrollbar w-80 max-w-[calc(100vw-32px)]"
+                    class="session-child-agent-scrollbar w-96 max-w-[calc(100vw-32px)]"
                     style={{
+                      padding: "8px",
                       "max-height": "min(520px, calc(100dvh - 64px))",
                       "overflow-y": "auto",
                       "overscroll-behavior": "contain",
@@ -315,6 +316,7 @@ function ProjectStatusPortal(props: { directory: Accessor<string> }) {
                               data-action="session-new-project-item"
                               data-project={base64Encode(project.worktree)}
                               class="min-w-0"
+                              style={{ padding: "10px 14px", gap: "12px" }}
                               aria-current={current() ? "page" : undefined}
                               onSelect={() => newSessionIn(project.worktree)}
                             >
@@ -322,13 +324,16 @@ function ProjectStatusPortal(props: { directory: Accessor<string> }) {
                                 fallback={name()}
                                 src={project.icon?.override}
                                 {...getAvatarColors(project.icon?.color)}
-                                class="size-5 rounded shrink-0"
+                                class="size-6 rounded shrink-0"
                               />
                               <div class="flex min-w-0 flex-1 items-center gap-3">
-                                <DropdownMenu.ItemLabel class="min-w-0 flex-1 truncate text-13-medium text-text-strong">
+                                <DropdownMenu.ItemLabel class="min-w-0 flex-1 truncate text-15-medium text-text-strong">
                                   {name()}
                                 </DropdownMenu.ItemLabel>
-                                <DropdownMenu.ItemDescription class="max-w-[55%] shrink-0 truncate text-right text-11-regular text-text-weak">
+                                <DropdownMenu.ItemDescription
+                                  class="max-w-[55%] shrink-0 truncate text-right text-13-regular text-text-weak"
+                                  style={{ "font-size": "13px" }}
+                                >
                                   {project.worktree}
                                 </DropdownMenu.ItemDescription>
                               </div>
