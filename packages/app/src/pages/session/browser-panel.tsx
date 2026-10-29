@@ -16,6 +16,7 @@ import { createBrowserDisplay } from "@/browser/display"
 import { browserOverlay } from "@/browser/overlays"
 import { CLOSE_BROWSER_TAB_COMMAND } from "@/browser/close-tab"
 import { PanelCollapseButton } from "@/pages/session/panel-collapse-button"
+import "./browser-panel.css"
 
 export { browserApi } from "@/browser/types"
 export type { WindowBrowserApi, BrowserBounds, BrowserPresentation, BrowserViewState } from "@/browser/types"
@@ -38,6 +39,7 @@ export function BrowserPanel(props: { class?: string }) {
   const setActive = service.activate
   const tabs = createMemo(service.tabs)
   const opened = createMemo(() => view().browser.opened())
+  const loading = createMemo(() => service.loading())
   const showGptProLogin = () => {
     const tab = tabs().find((candidate) => candidate.pageID === active())
     return !!platform.gptPro && tab?.profileID === GPT_PRO_PARTITION
@@ -56,6 +58,9 @@ export function BrowserPanel(props: { class?: string }) {
   let maximizeButton: HTMLButtonElement | undefined
   const [floating, setFloating] = createStore({ partition: "" })
   const maximized = () => !!floating.partition
+  createEffect(() => {
+    console.debug(`[browser-panel] loading pageID=${active()} active=${loading()} floating=${maximized()}`)
+  })
   const restore = () => {
     console.debug(`[browser-panel] restore partition=${floating.partition}`)
     setFloating("partition", "")
@@ -83,7 +88,12 @@ export function BrowserPanel(props: { class?: string }) {
       const height = Math.floor(Math.min(window.innerHeight, rect.bottom)) - y
       if (width < 2 || height < 2) return { pageID: null, partition: null, bounds: null }
       const bounds = { x, y, width, height }
-      return { pageID: tab.pageID, partition: tab.pageID, bounds, overlay: dialog.active ? "dialog" : browserOverlay(bounds) }
+      return {
+        pageID: tab.pageID,
+        partition: tab.pageID,
+        bounds,
+        overlay: dialog.active ? "dialog" : browserOverlay(bounds),
+      }
     },
     shown: () => service.acknowledge(service.presentation()),
     preview: async (partition, image) => {
@@ -229,7 +239,7 @@ export function BrowserPanel(props: { class?: string }) {
   }
 
   const Toolbar = (props: { floating?: boolean }) => (
-    <div class="h-10 shrink-0 flex items-center gap-1 px-2 border-b border-border-weaker-base bg-background-base">
+    <div class="browser-toolbar" aria-busy={loading()}>
       <IconButton
         icon="arrow-left"
         variant="ghost"
@@ -263,20 +273,31 @@ export function BrowserPanel(props: { class?: string }) {
         title={language.t(props.floating ? "common.restore" : "common.maximize")}
         data-action={props.floating ? "browser-restore" : "browser-maximize"}
       />
-      <input
-        type="text"
-        value={address()}
-        readonly={activeAgent()}
-        onInput={(e) => setAddress(e.currentTarget.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") go(e.currentTarget.value)
-        }}
-        placeholder={language.t("panel.browser.addressPlaceholder")}
-        spellcheck={false}
-        autocomplete="off"
-        class="flex-1 min-w-0 h-7 px-2 rounded-md bg-surface-base text-13-regular text-text-strong placeholder:text-text-weak outline-none focus:ring-1 focus:ring-border-strong-base"
-        classList={{ "text-text-weak": activeAgent() }}
-      />
+      <div class="browser-address" data-readonly={activeAgent() ? "true" : undefined}>
+        <Icon name="globe" size="small" class="browser-address-icon" />
+        <input
+          type="text"
+          value={address()}
+          readonly={activeAgent()}
+          onInput={(e) => setAddress(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || e.isComposing) return
+            e.preventDefault()
+            console.debug(`[browser-panel] address submit partition=${active()}`)
+            go(e.currentTarget.value)
+            console.debug(`[browser-panel] address navigation dispatched partition=${active()}`)
+            e.currentTarget.blur()
+            console.debug(
+              `[browser-panel] address focus released focused=${document.activeElement === e.currentTarget}`,
+            )
+          }}
+          placeholder={language.t("panel.browser.addressPlaceholder")}
+          aria-label={language.t("panel.browser.addressPlaceholder")}
+          spellcheck={false}
+          autocomplete="off"
+          class="browser-address-input"
+        />
+      </div>
       <Show when={showGptProLogin()}>
         <IconButton
           icon="globe"
@@ -297,6 +318,11 @@ export function BrowserPanel(props: { class?: string }) {
         onClick={() => (props.floating ? restore() : view().browser.close())}
         aria-label={language.t("common.close")}
       />
+      <Show when={loading()}>
+        <div class="browser-loading" role="progressbar" aria-label={language.t("common.loading")}>
+          <div class="browser-loading-indicator" />
+        </div>
+      </Show>
     </div>
   )
   const Preview = () => (
@@ -327,12 +353,12 @@ export function BrowserPanel(props: { class?: string }) {
         }}
         class={props.class}
         classList={{
-          "relative size-full min-w-0 flex flex-col overflow-hidden bg-background-stronger": true,
+          "browser-shell relative size-full min-w-0 flex flex-col overflow-hidden bg-background-stronger": true,
           "pointer-events-none": !opened() || maximized(),
         }}
       >
         <div class="flex flex-col flex-1 min-h-0">
-          <div class="relative flex h-7 shrink-0 items-center gap-1 px-2 bg-background-base">
+          <div class="browser-tab-strip">
             {/* Agent-tab close confirmation capsule. Must live in the tab-strip
                 row: the native WebContentsView always paints ABOVE the DOM, so
                 any overlay inside the placeholder container (the region the
@@ -367,105 +393,101 @@ export function BrowserPanel(props: { class?: string }) {
                 it would tear down and rebuild every tab button (a click can
                 straddle mousedown/mouseup across nodes mid-load). Index
                 reuses DOM by position and re-runs the reactive expressions. */}
-            <Index each={tabs()}>
-              {(tab) => (
-                <button
-                  type="button"
-                  aria-pressed={active() === tab().partition}
-                  onClick={() => {
-                    console.debug(`[browser-panel] tab selected partition=${tab().partition}`)
-                    setActive(tab().partition)
-                  }}
-                  onAuxClick={(e) => {
-                    if (e.button !== 1) return
-                    if (tab().agent) setConfirmClose(tab().partition)
-                    else closeUserTab(tab().partition)
-                  }}
-                  title={
-                    tab().agent
-                      ? `${language.t("panel.browser.agentTab")} · ${tab().state?.url ?? ""}`
-                      : tab().state?.url
-                  }
-                  class="group/tab flex h-6 min-w-0 max-w-56 cursor-pointer select-none items-center gap-1.5 rounded-md pl-2 text-12-regular outline-none transition-[background-color,color] duration-150 focus-visible:ring-1 focus-visible:ring-border-strong-base"
-                  classList={{
-                    "pr-2": tab().agent,
-                    "pr-1": !tab().agent,
-                    "bg-surface-interactive-weak": active() === tab().partition && !tab().agent,
-                    "text-text-strong": active() === tab().partition,
-                    "text-text-weak hover:bg-surface-inset-base hover:text-text-strong": active() !== tab().partition,
-                  }}
-                  style={
-                    tab().agent
-                      ? {
-                          color: "var(--surface-brand-base)",
-                          "background-color":
-                            active() === tab().partition
-                              ? "color-mix(in srgb, var(--surface-brand-base) 14%, transparent)"
-                              : undefined,
-                        }
-                      : undefined
-                  }
-                >
-                  {/* Leading slot: a spinner while the page loads (tab-level
-                      loading feedback), otherwise the brand dot for agent tabs.
-                      A fresh empty tab only loads about:blank — nothing worth
-                      waiting for, and a spinner flash there reads as jitter. */}
-                  <Show
-                    when={
-                      tab().state?.loading === true && tab().state?.url !== "about:blank" && tab().state?.url !== ""
-                    }
-                    fallback={
-                      <Show when={tab().agent}>
-                        <span
-                          class="h-1.5 w-1.5 shrink-0 rounded-full"
-                          style={{ "background-color": "var(--surface-brand-base)" }}
-                        />
-                      </Show>
-                    }
-                  >
-                    <Spinner
-                      class="size-3 shrink-0"
-                      style={tab().agent ? { color: "var(--surface-brand-base)" } : undefined}
-                    />
-                  </Show>
-                  <span class="truncate">{tabLabel(tab())}</span>
-                  <span
-                    role="button"
-                    data-action="browser-tab-close"
-                    aria-label={language.t("panel.browser.closeTab")}
-                    title={language.t("panel.browser.closeTab")}
-                    onPointerDown={(event) => {
-                      console.debug(
-                        `[browser-panel] tab close pointerdown partition=${tab().partition} button=${event.button}`,
-                      )
+            <div class="browser-tabs">
+              <Index each={tabs()}>
+                {(tab) => (
+                  <button
+                    type="button"
+                    data-browser-tab={tab().pageID}
+                    aria-pressed={active() === tab().partition}
+                    onClick={() => {
+                      console.debug(`[browser-panel] tab selected partition=${tab().partition}`)
+                      setActive(tab().partition)
                     }}
-                    onPointerUp={(event) => {
-                      console.debug(
-                        `[browser-panel] tab close pointerup partition=${tab().partition} button=${event.button}`,
-                      )
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      console.debug(`[browser-panel] tab close click partition=${tab().partition} agent=${tab().agent}`)
+                    onAuxClick={(e) => {
+                      if (e.button !== 1) return
                       if (tab().agent) setConfirmClose(tab().partition)
                       else closeUserTab(tab().partition)
                     }}
-                    // Keep both this hit target and its tab stationary between
-                    // pointerdown and pointerup; scaling turns edge clicks into tab selection.
-                    class="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-sm text-text-weak transition-[opacity,background-color,color] duration-100 hover:bg-background-base hover:text-text-strong active:bg-surface-inset-base"
-                    classList={{
-                      "opacity-0 group-hover/tab:opacity-100": active() !== tab().partition,
-                    }}
+                    title={
+                      tab().agent
+                        ? `${language.t("panel.browser.agentTab")} · ${tab().state?.url ?? ""}`
+                        : tab().state?.url
+                    }
+                    class="group/tab browser-tab"
+                    style={
+                      tab().agent
+                        ? {
+                            color: "var(--surface-brand-base)",
+                            "background-color":
+                              active() === tab().partition
+                                ? "color-mix(in srgb, var(--surface-brand-base) 14%, transparent)"
+                                : undefined,
+                          }
+                        : undefined
+                    }
                   >
-                    <Icon name="close-small" size="small" />
-                  </span>
-                </button>
-              )}
-            </Index>
+                    {/* Leading slot: a spinner while the page loads (tab-level
+                      loading feedback), otherwise the brand dot for agent tabs.
+                      A fresh empty tab only loads about:blank — nothing worth
+                      waiting for, and a spinner flash there reads as jitter. */}
+                    <Show
+                      when={service.loading(tab().partition)}
+                      fallback={
+                        <Show when={tab().agent} fallback={<Icon name="globe" size="small" class="shrink-0" />}>
+                          <span
+                            class="h-1.5 w-1.5 shrink-0 rounded-full"
+                            style={{ "background-color": "var(--surface-brand-base)" }}
+                          />
+                        </Show>
+                      }
+                    >
+                      <Spinner
+                        class="size-3 shrink-0"
+                        style={tab().agent ? { color: "var(--surface-brand-base)" } : undefined}
+                      />
+                    </Show>
+                    <span class="min-w-0 flex-1 truncate">{tabLabel(tab())}</span>
+                    <span
+                      role="button"
+                      data-action="browser-tab-close"
+                      aria-label={language.t("panel.browser.closeTab")}
+                      title={language.t("panel.browser.closeTab")}
+                      onPointerDown={(event) => {
+                        console.debug(
+                          `[browser-panel] tab close pointerdown partition=${tab().partition} button=${event.button}`,
+                        )
+                      }}
+                      onPointerUp={(event) => {
+                        console.debug(
+                          `[browser-panel] tab close pointerup partition=${tab().partition} button=${event.button}`,
+                        )
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        console.debug(
+                          `[browser-panel] tab close click partition=${tab().partition} agent=${tab().agent}`,
+                        )
+                        if (tab().agent) setConfirmClose(tab().partition)
+                        else closeUserTab(tab().partition)
+                      }}
+                      // Keep both this hit target and its tab stationary between
+                      // pointerdown and pointerup; scaling turns edge clicks into tab selection.
+                      class="browser-tab-close"
+                      classList={{
+                        "opacity-0 group-hover/tab:opacity-100": active() !== tab().partition,
+                      }}
+                    >
+                      <Icon name="close-small" size="small" />
+                    </span>
+                  </button>
+                )}
+              </Index>
+            </div>
             <IconButton
               icon="plus-small"
               variant="ghost"
-              class="h-5 w-5 shrink-0"
+              class="browser-new-tab"
               onClick={() => addUserTab()}
               aria-label={language.t("panel.browser.newTab")}
             />
@@ -496,7 +518,7 @@ export function BrowserPanel(props: { class?: string }) {
               ref={(element) => requestAnimationFrame(() => element.focus({ preventScroll: true }))}
               onClick={(event) => event.stopPropagation()}
               // The native webpage is rectangular and cannot be clipped by this DOM container.
-              class="absolute inset-x-6 top-14 bottom-6 flex flex-col overflow-hidden rounded-t-xl bg-background-stronger outline-none"
+              class="browser-shell absolute inset-x-6 top-14 bottom-6 flex flex-col overflow-hidden bg-background-stronger outline-none"
             >
               <Toolbar floating />
               <div

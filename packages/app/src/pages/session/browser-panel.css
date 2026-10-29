@@ -1,0 +1,231 @@
+.browser-shell {
+  --browser-chrome: var(--background-base);
+  --browser-strip: color-mix(in srgb, var(--text-weak) 6%, var(--browser-chrome));
+  --browser-field: color-mix(in srgb, var(--text-weak) 4%, var(--browser-chrome));
+  container: browser / inline-size;
+}
+
+.browser-tab-strip {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 6px 10px 0;
+  background: var(--browser-strip);
+}
+
+.browser-tabs {
+  display: flex;
+  min-width: 0;
+  gap: 4px;
+  align-self: stretch;
+  overflow-x: auto;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.browser-tab {
+  display: flex;
+  flex: 0 1 200px;
+  align-items: center;
+  gap: 8px;
+  min-width: 96px;
+  max-width: 224px;
+  height: 34px;
+  padding: 0 8px 0 12px;
+  border-radius: 12px;
+  color: var(--text-weak);
+  font-size: 12px;
+  line-height: 20px;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+
+  &:hover {
+    background: var(--surface-base-hover);
+    color: var(--text-strong);
+  }
+
+  &[aria-pressed="true"] {
+    height: 38px;
+    padding-bottom: 4px;
+    border-radius: 12px 12px 0 0;
+    background: var(--browser-chrome);
+    color: var(--text-strong);
+  }
+
+  &:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--border-focus);
+  }
+}
+
+.browser-tab-close {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  /* Keep near-corner clicks inside the close target, not the parent tab. */
+  border-radius: 2px;
+  color: var(--text-weak);
+  cursor: pointer;
+  transition:
+    opacity 100ms ease,
+    background-color 100ms ease,
+    color 100ms ease;
+
+  &:hover {
+    background: var(--surface-base-hover);
+    color: var(--text-strong);
+  }
+
+  &:active {
+    background: var(--surface-base-active);
+  }
+}
+
+.browser-toolbar {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  height: 54px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-weaker-base);
+  background: var(--browser-chrome);
+}
+
+.browser-loading {
+  position: absolute;
+  inset: auto 0 0;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--surface-brand-base) 12%, transparent);
+}
+
+.browser-loading-indicator {
+  width: 35%;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--surface-brand-base);
+  animation: browser-loading 1.4s ease-in-out infinite;
+}
+
+@keyframes browser-loading {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(290%);
+  }
+}
+
+.browser-toolbar [data-component="icon-button"],
+.browser-tab-strip [data-component="icon-button"] {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+}
+
+.browser-tab-strip [data-component="icon-button"] {
+  margin-bottom: 6px;
+}
+
+.browser-address {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  height: 34px;
+  margin: 0 4px;
+  padding: 0 12px;
+  border: 1px solid var(--border-weaker-base);
+  border-radius: 999px;
+  background: var(--browser-field);
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease;
+
+  &:focus-within {
+    border-color: var(--border-strong-base);
+    background: var(--browser-chrome);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--border-focus) 15%, transparent);
+  }
+
+  &[data-readonly="true"] {
+    color: var(--text-weak);
+  }
+}
+
+.browser-address-icon {
+  flex-shrink: 0;
+  color: var(--text-weaker);
+  pointer-events: none;
+}
+
+.browser-address-input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-strong);
+  font-size: 13px;
+  line-height: 20px;
+
+  &::placeholder,
+  &:read-only {
+    color: var(--text-weak);
+  }
+}
+
+@container browser (max-width: 420px) {
+  .browser-tab-strip {
+    gap: 4px;
+    padding-inline: 8px;
+  }
+
+  .browser-toolbar {
+    gap: 2px;
+    padding-inline: 8px;
+  }
+
+  .browser-toolbar [data-component="icon-button"] {
+    width: 28px;
+    height: 28px;
+  }
+
+  .browser-address {
+    gap: 6px;
+    margin-inline: 2px;
+    padding-inline: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .browser-tab,
+  .browser-tab-close,
+  .browser-address {
+    transition: none;
+  }
+}

@@ -24,7 +24,21 @@ export function normalizeAddress(input: string) {
   return `https://duckduckgo.com/?q=${encodeURIComponent(value)}`
 }
 
-export type BrowserTab = { pageID: string; profileID: string; partition: string; agent: boolean; state?: BrowserViewState }
+function sameAddress(target: string, current: string) {
+  try {
+    return new URL(target).href === new URL(current).href
+  } catch {
+    return false
+  }
+}
+
+export type BrowserTab = {
+  pageID: string
+  profileID: string
+  partition: string
+  agent: boolean
+  state?: BrowserViewState
+}
 export function pickFallback(list: readonly Pick<BrowserTab, "partition" | "agent">[], closed: string): string {
   const index = list.findIndex((tab) => tab.partition === closed)
   const rest = list.filter((tab) => tab.partition !== closed)
@@ -45,6 +59,7 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
     active: BROWSER_PARTITION,
     address: "",
     presentation: 0,
+    navigating: {} as Record<string, { id: number; url: string } | undefined>,
   })
   const closed = new Map<string, number>()
   const pending = new Map<string, { id: number; url: string }>()
@@ -88,7 +103,9 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
       syncAddress()
     })
     // Background state updates never claim the user's dock or native display.
-    console.debug(`[browser-tabs] recorded pageID=${pageID} profileID=${normalized.profileID} epoch=${next.epoch} active=${state.active}`)
+    console.debug(
+      `[browser-tabs] recorded pageID=${pageID} profileID=${normalized.profileID} epoch=${next.epoch} active=${state.active}`,
+    )
   }
   const activate = (partition: string) => {
     if (disposed || !state.views[partition]) return
@@ -101,7 +118,7 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
   const remove = (partition: string, epoch: number) => {
     if (disposed) return
     if ((state.views[partition]?.epoch ?? -1) > epoch) {
-    console.debug(`[browser-tabs] ignored stale close pageID=${partition} epoch=${epoch}`)
+      console.debug(`[browser-tabs] ignored stale close pageID=${partition} epoch=${epoch}`)
       return
     }
     closed.set(partition, Math.max(epoch, closed.get(partition) ?? -1))
@@ -111,6 +128,7 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
     const becameEmpty = list.length === 1 && list[0].partition === partition
     batch(() => {
       setState("views", partition, undefined!)
+      setState("navigating", partition, undefined)
       if (state.active === partition) setState("active", fallback)
       syncAddress()
       if (becameEmpty) {
@@ -131,14 +149,18 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
     input.reveal()
     console.debug(`[browser-tabs] reveal pageID=${browserPageID(request.state)} request=${request.id}`)
   }
-  const navigate = (partition: string, url: string) => {
+  const navigate = (partition: string, url: string, reload = false) => {
     if (!api || disposed) return
     const id = ++sequence
     pending.set(partition, { id, url })
+    // Show loading while the bridge is still waiting for native navigation events.
+    setState("navigating", partition, { id, url })
     syncAddress()
-    console.debug(`[browser-tabs] navigation start partition=${partition} request=${id}`)
-    void api
-      .open(partition, url)
+    console.debug(
+      `[browser-tabs] navigation start partition=${partition} request=${id} action=${reload ? "reload" : "open"}`,
+    )
+    const request = reload ? api.navigate(partition, "reload").then(() => undefined) : api.open(partition, url)
+    void request
       .then((next) => {
         if (disposed || pending.get(partition)?.id !== id) return
         pending.delete(partition)
@@ -147,16 +169,30 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
         console.debug(`[browser-tabs] navigation settled partition=${partition} request=${id}`)
       })
       .catch((error) => {
-        if (disposed || pending.get(partition)?.id !== id) return
+        if (disposed || state.navigating[partition]?.id !== id) return
         pending.delete(partition)
         console.warn(`[browser-tabs] navigation failed partition=${partition} request=${id} error=${String(error)}`)
+      })
+      .finally(() => {
+        if (disposed || state.navigating[partition]?.id !== id) return
+        setState("navigating", partition, undefined)
+        console.debug(`[browser-tabs] navigation loading released partition=${partition} request=${id}`)
       })
   }
   const addUserTab = (url?: string) => {
     if (!api || disposed) return
     const partition = `persist:tab-${crypto.randomUUID()}`
     const target = url ? normalizeAddress(url) : undefined
-    record({ pageID: partition, profileID: partition, partition, url: "about:blank", title: "", loading: false, shared: false, epoch: 0 })
+    record({
+      pageID: partition,
+      profileID: partition,
+      partition,
+      url: "about:blank",
+      title: "",
+      loading: false,
+      shared: false,
+      epoch: 0,
+    })
     activate(partition)
     navigate(partition, target ?? "about:blank")
     return partition
@@ -166,6 +202,11 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
     tabs,
     active: () => state.active,
     address: () => state.address,
+    loading: (partition = state.active) => {
+      const request = state.navigating[partition]
+      const view = state.views[partition]
+      return !!(request && request.url !== "about:blank") || !!(view?.loading && view.url && view.url !== "about:blank")
+    },
     presentation: () => state.presentation,
     setAddress: (value: string) => setState("address", value),
     activate,
@@ -177,7 +218,7 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
       const target = normalizeAddress(raw)
       if (!target) return
       if (!state.views[state.active]) addUserTab(raw)
-      else navigate(state.active, target)
+      else navigate(state.active, target, sameAddress(target, state.views[state.active].url))
     },
     close(partition: string) {
       if (!api || disposed) return

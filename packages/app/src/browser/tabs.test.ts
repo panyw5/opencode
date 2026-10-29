@@ -4,10 +4,12 @@ import type { BrowserPresentation, BrowserViewState, WindowBrowserApi } from "./
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => {
+  let reject!: (error: Error) => void
+  const promise = new Promise<T>((done, fail) => {
     resolve = done
+    reject = fail
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 const view = (partition: string, epoch = 1): BrowserViewState => ({
   partition,
@@ -26,6 +28,7 @@ function fixture() {
   let legacyCalls = 0
   const snapshot = deferred<BrowserViewState[]>()
   const navigations: ReturnType<typeof deferred<BrowserViewState | undefined>>[] = []
+  const reloads: { partition: string; action: string; request: ReturnType<typeof deferred<void>> }[] = []
   const api: WindowBrowserApi = {
     getDisplayState: async () => ({ lease: 0, revision: 0, views: [] }),
     acquireDisplay: async () => 1,
@@ -59,7 +62,11 @@ function fixture() {
       legacyCalls++
     },
     close: async () => {},
-    navigate: async () => {},
+    navigate: (partition, action) => {
+      const request = deferred<void>()
+      reloads.push({ partition, action, request })
+      return request.promise
+    },
     setShared: async () => {},
   }
   const service = createBrowserTabs({
@@ -76,6 +83,7 @@ function fixture() {
     service,
     snapshot,
     navigations,
+    reloads,
     updated: (state: BrowserViewState) => updated(state),
     present: (request: BrowserPresentation) => presented(request),
     close: (partition: string, epoch: number) => closed(partition, epoch),
@@ -90,6 +98,106 @@ const flush = async () => {
 }
 
 describe("shared browser tabs", () => {
+  test("submitting the current address reloads, including canonical URL variations", async () => {
+    for (const target of [
+      "https://example.test/",
+      "https://example.test",
+      "example.test",
+      "https://example.test:443/",
+    ]) {
+      const f = fixture()
+      f.updated({ ...view("persist:user"), url: "https://example.test/" })
+      f.service.go(target)
+      expect(f.navigations).toHaveLength(0)
+      expect(f.reloads).toHaveLength(1)
+      expect(f.reloads[0]).toMatchObject({ partition: "persist:user", action: "reload" })
+      expect(f.service.loading()).toBe(true)
+      f.updated({ ...view("persist:user"), url: "https://example.test/", loading: true })
+      f.reloads[0].request.resolve()
+      await flush()
+      await flush()
+      expect(f.service.loading()).toBe(true)
+      f.updated({ ...view("persist:user"), url: "https://example.test/" })
+      expect(f.service.loading()).toBe(false)
+      f.service.dispose()
+    }
+  })
+  test("failed reload releases loading and a different address still navigates", async () => {
+    const f = fixture()
+    f.updated({ ...view("persist:user"), url: "https://example.test/" })
+    f.service.go("https://example.test/")
+    f.reloads[0].request.reject(new Error("reload fixture failure"))
+    await flush()
+    await flush()
+    expect(f.service.loading()).toBe(false)
+    f.service.go("https://example.test/other")
+    expect(f.navigations).toHaveLength(1)
+    expect(f.reloads).toHaveLength(1)
+    f.service.go("https://[")
+    expect(f.navigations).toHaveLength(2)
+    f.service.dispose()
+  })
+  test("loading starts before native events and covers native page loading after IPC settles", async () => {
+    const f = fixture()
+    f.updated(view("persist:user"))
+    f.service.go("https://slow.test/")
+    expect(f.service.loading()).toBe(true)
+    f.updated(view("persist:user"))
+    expect(f.service.loading()).toBe(true)
+    const loading = { ...view("persist:user"), url: "https://slow.test/", loading: true }
+    f.updated(loading)
+    f.navigations[0].resolve(loading)
+    await flush()
+    await flush()
+    expect(f.service.loading()).toBe(true)
+    f.updated({ ...loading, loading: false })
+    expect(f.service.loading()).toBe(false)
+    f.service.dispose()
+  })
+  test("older navigation completion cannot clear a newer loading request", async () => {
+    const f = fixture()
+    f.updated(view("persist:user"))
+    f.service.go("https://first.test/")
+    f.service.go("https://second.test/")
+    f.navigations[0].resolve(view("persist:user"))
+    await flush()
+    await flush()
+    expect(f.service.loading()).toBe(true)
+    f.navigations[1].resolve({ ...view("persist:user"), url: "https://second.test/" })
+    await flush()
+    await flush()
+    expect(f.service.loading()).toBe(false)
+    f.service.dispose()
+  })
+  test("navigation failure clears loading even after native events consumed pending address", async () => {
+    const f = fixture()
+    f.updated(view("persist:user"))
+    f.service.go("https://failure.test/")
+    f.updated(view("persist:user"))
+    f.navigations[0].reject(new Error("fixture navigation failed"))
+    await flush()
+    await flush()
+    expect(f.service.loading()).toBe(false)
+    f.service.dispose()
+  })
+  test("loading stays page-scoped, ignores blank tabs and clears when a tab closes", () => {
+    const f = fixture()
+    const blank = f.service.addUserTab()!
+    expect(f.service.loading()).toBe(false)
+    f.service.go("https://slow.test/")
+    expect(f.service.loading()).toBe(true)
+    f.updated(view("persist:other"))
+    f.service.activate("persist:other")
+    expect(f.service.loading()).toBe(false)
+    expect(f.service.loading(blank)).toBe(true)
+    f.service.close(blank)
+    expect(f.service.loading(blank)).toBe(false)
+    f.updated({ ...view("persist:other"), url: "https://reload.test/", loading: true })
+    expect(f.service.loading()).toBe(true)
+    f.updated(view("persist:other"))
+    expect(f.service.loading()).toBe(false)
+    f.service.dispose()
+  })
   test("closing the last user tab collapses once and ignores late navigation", async () => {
     const f = fixture()
     const first = f.service.addUserTab()!
