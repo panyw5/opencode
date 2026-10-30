@@ -64,6 +64,7 @@ import {
 } from "./session-tab-groups"
 import { pickWarmDirectories, shouldFetchTabMeta } from "./session-tab-warm"
 import { useNewSessionWithReference } from "./use-new-session-with-reference"
+import { SessionShareDialog } from "./session-share-dialog"
 
 const SESSION_TAB_PERMISSION_EXIT_MS = 160
 
@@ -1441,6 +1442,14 @@ function SessionTab(props: {
               </span>
             </ContextMenu.Icon>
             <ContextMenu.ItemLabel>{language.t("session.copyInfo")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+          <ContextMenu.Item onSelect={() => dialog.show(() => <SessionShareDialog directory={props.tab.directory} sessionID={props.tab.id} title={session()?.title || props.tab.title || "Session"} />)}>
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="share" size="small" />
+              </span>
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{language.t("share.open")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>

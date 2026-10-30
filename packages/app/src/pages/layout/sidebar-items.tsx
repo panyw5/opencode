@@ -1,6 +1,8 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import { Avatar } from "@opencode-ai/ui/avatar"
 import { ContextMenu } from "@opencode-ai/ui/context-menu"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { SessionShareDialog } from "@/components/session/session-share-dialog"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Keybind } from "@opencode-ai/ui/keybind"
@@ -37,6 +39,18 @@ import {
 
 const OPENCODE_PROJECT_ID = "4b0ea68d7af9a6031a7ffda7ad66e0cb83315750"
 const projectActivityPulseInterval = 6_000
+function SessionShareMenuItem(props: { directory: string; sessionID: string; title: string }) {
+  const dialog = useDialog()
+  const language = useLanguage()
+  return <ContextMenu.Item onSelect={() => dialog.show(() => <SessionShareDialog {...props} />)}>
+    <ContextMenu.Icon>
+      <span class="flex shrink-0 text-icon-base">
+        <Icon name="share" size="small" />
+      </span>
+    </ContextMenu.Icon>
+    <ContextMenu.ItemLabel>{language.t("share.open")}</ContextMenu.ItemLabel>
+  </ContextMenu.Item>
+}
 const projectActivityPulseDuration = 1_000
 
 /** Module-level so title shimmer survives SessionItem remount after title update. */
@@ -988,6 +1002,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
             </ContextMenu.Icon>
             <ContextMenu.ItemLabel>{language.t("session.copyInfo")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
+          <SessionShareMenuItem directory={props.session.directory} sessionID={props.session.id} title={props.session.title} />
           <ContextMenu.Item
             data-action="session-generate-title"
             data-session={base64Encode(props.session.id)}
