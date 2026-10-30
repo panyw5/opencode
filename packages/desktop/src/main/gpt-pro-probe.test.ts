@@ -1,213 +1,104 @@
-import { describe, expect, test } from "bun:test"
-import {
-  GPT_PRO_PARTITION,
-  GPT_PRO_URL,
-  isGptProLoginUrl,
-  isGptProOrigin,
-  type GptProPageState,
-} from "@opencode-ai/util/gpt-pro"
+import { expect, test } from "bun:test"
+import { GPT_PRO_PARTITION, GPT_PRO_URL } from "@opencode-ai/util/gpt-pro"
 import { GptProProbe } from "./gpt-pro-probe"
 
-const page: GptProPageState = {
-  url: GPT_PRO_URL,
-  model: "GPT-6 Pro",
-  targetModel: true,
-  composer: true,
-  draft: "",
-  generating: false,
-  revision: 0,
-  users: [],
-}
-
-function fixture(input: { existing?: boolean; loading?: boolean; url?: string; page?: GptProPageState } = {}) {
-  let existing = input.existing ?? true
-  const opened: Array<{ partition: string; url: string }> = []
-  const evaluated: string[] = []
-  const presented: string[] = []
-  const view = {
-    partition: GPT_PRO_PARTITION,
-    url: input.url ?? GPT_PRO_URL,
-    title: "ChatGPT",
-    loading: input.loading ?? false,
-    shared: false,
-    epoch: 1,
-  }
+function fixture(existing = true) {
+  const views = existing
+    ? [
+        {
+          pageID: GPT_PRO_PARTITION,
+          partition: GPT_PRO_PARTITION,
+          profileID: GPT_PRO_PARTITION,
+          url: GPT_PRO_URL,
+          title: "Synthetic",
+          epoch: 1,
+          documentEpoch: 1,
+          loading: false,
+          shared: false,
+        },
+      ]
+    : []
+  let requests = 0
+  let metadata = 0
+  let diagnostics = 0
+  let opens = 0
+  let presented = 0
   const browser = {
-    has: () => existing,
-    open: async (partition: string, url: string) => {
-      opened.push({ partition, url })
-      existing = true
-      return view
+    getState: () => views,
+    has: () => !!views.length,
+    open: async () => {
+      throw Error("Explicit page identity required")
     },
-    getState: () => (existing ? [view] : []),
+    openPage: async () => {
+      opens++
+      const v = {
+        pageID: GPT_PRO_PARTITION,
+        partition: GPT_PRO_PARTITION,
+        profileID: GPT_PRO_PARTITION,
+        url: GPT_PRO_URL,
+        title: "Synthetic",
+        epoch: 1,
+        documentEpoch: 1,
+        loading: false,
+        shared: false,
+      }
+      views.push(v)
+      return v
+    },
+    present: () => {
+      presented++
+    },
     cdp: () => ({
       evaluate: async <T>(expression: string) => {
-        evaluated.push(expression)
-        return (input.page ?? page) as T
+        if (expression.includes("/api/auth/session")) {
+          requests++
+          return { phase: "authenticated", identity: "synthetic" } as T
+        }
+        if (expression.includes("cloneNode")) {
+          diagnostics++
+          return { url: GPT_PRO_URL, draft: "MANUAL_PRIVATE_DRAFT", users: [] } as T
+        }
+        metadata++
+        return { url: GPT_PRO_URL, composer: true, model: "Pro" } as T
       },
     }),
-    present: (partition: string) => {
-      presented.push(partition)
-    },
   }
-  const logs: string[] = []
-  return { probe: new GptProProbe(browser, (line) => logs.push(line)), opened, evaluated, presented, logs }
+  return {
+    probe: new GptProProbe(browser),
+    views,
+    counts: () => ({ requests, metadata, diagnostics, opens, presented }),
+  }
 }
-
-describe("gpt-pro P0 diagnostics", () => {
-  test("runtime status uses a verified consultation even when the manual page is blocked", async () => {
-    const views = ["manual", "consultation"].map((id) => ({
-      pageID: id,
-      partition: id,
-      profileID: GPT_PRO_PARTITION,
-      url: GPT_PRO_URL,
-      title: "ChatGPT",
-      loading: false,
-      shared: false,
-      epoch: 1,
-    }))
-    const browser = {
-      has: () => true,
-      open: async () => views[0],
-      present: () => {},
-      getState: () => views,
-      cdp: (id: string) => ({
-        evaluate: async <T>(expression: string) =>
-          (expression.includes("/api/auth/session")
-            ? id === "manual"
-              ? { phase: "unknown" }
-              : { phase: "authenticated", identity: "synthetic-user" }
-            : id === "manual"
-              ? { ...page, composer: false, error: { kind: "verification", message: "Human check" } }
-              : page) as T,
-      }),
-    }
-    const probe = new GptProProbe(browser)
-    expect((await probe.authentication()).phase).toBe("authenticated")
-    expect((await probe.authentication()).model).toBe("GPT-6 Pro")
-  })
-  test("rejects lookalike hosts and non-HTTPS origins", () => {
-    expect(isGptProOrigin("https://chatgpt.com/c/123")).toBe(true)
-    for (const url of ["http://chatgpt.com", "https://chatgpt.com.example.com", "https://auth.openai.com", "garbage"])
-      expect(isGptProOrigin(url)).toBe(false)
-  })
-
-  test("recognizes explicit login URLs without treating arbitrary pages as login", () => {
-    expect(isGptProLoginUrl("https://auth.openai.com/login")).toBe(true)
-    expect(isGptProLoginUrl("https://chatgpt.com/auth/login")).toBe(true)
-    expect(isGptProLoginUrl("https://chatgpt.com/c/123")).toBe(false)
-    expect(isGptProLoginUrl("https://example.com/login")).toBe(false)
-  })
-
-  test("opens only the dedicated persistent profile", async () => {
-    const f = fixture({ existing: false })
-    expect((await f.probe.status()).phase).toBe("not_open")
-    expect((await f.probe.open()).phase).toBe("ready")
-    expect(f.opened).toEqual([{ partition: GPT_PRO_PARTITION, url: GPT_PRO_URL }])
-    expect(f.presented).toEqual([GPT_PRO_PARTITION])
-  })
-  test("keeps the manual login page on the legacy pageID and shared profile", async () => {
-    const opened: Array<{ pageID: string; profileID: string; url: string; kind?: string }> = []
-    let state: Record<string, unknown> | undefined
-    const browser = {
-      has: () => !!state,
-      getState: () => (state ? [state] : []),
-      open: async () => {
-        throw new Error("the probe must use explicit page/profile identity")
-      },
-      openPage: async (pageID: string, profileID: string, url: string, metadata: { kind?: string }) => {
-        opened.push({ pageID, profileID, url, kind: metadata.kind })
-        state = { pageID, partition: pageID, profileID, url, title: "ChatGPT", loading: false, shared: false, epoch: 1 }
-        return state
-      },
-      present: () => {},
-      cdp: () => ({ evaluate: async () => page }),
-    }
-    const probe = new GptProProbe(browser as never)
-    expect((await probe.open()).phase).toBe("ready")
-    expect(opened).toEqual([
-      { pageID: GPT_PRO_PARTITION, profileID: GPT_PRO_PARTITION, url: GPT_PRO_URL, kind: "login" },
-    ])
-  })
-
-  test("does not navigate an existing conversation or erase its draft", async () => {
-    const f = fixture({ page: { ...page, draft: "unsent question", url: `${GPT_PRO_URL}c/existing` } })
-    expect((await f.probe.open()).page?.draft).toBe("unsent question")
-    expect(f.opened).toHaveLength(0)
-  })
-
-  test("does not evaluate an authentication or verification origin", async () => {
-    const f = fixture({ url: "https://auth.openai.com/login" })
-    expect((await f.probe.status()).phase).toBe("needs_login")
-    expect(f.evaluated).toHaveLength(0)
-  })
-  test("recognizes the explicit same-origin ChatGPT login route", async () => {
-    const f = fixture({ url: `${GPT_PRO_URL}auth/login` })
-    expect((await f.probe.status()).phase).toBe("needs_login")
-    expect(f.evaluated).toHaveLength(0)
-  })
-  test("does not misclassify an unrelated external origin as a login page", async () => {
-    const f = fixture({ url: "https://example.com/" })
-    expect((await f.probe.status()).phase).toBe("blocked")
-    expect(f.evaluated).toHaveLength(0)
-  })
-
-  test("waits for navigation to finish", async () => {
-    const f = fixture({ loading: true })
-    expect((await f.probe.status()).phase).toBe("loading")
-    expect(f.evaluated).toHaveLength(0)
-  })
-  test("treats a same-origin missing composer as page loading, not login evidence", async () => {
-    const f = fixture({ page: { ...page, composer: false } })
-    expect((await f.probe.status()).phase).toBe("loading")
-    expect(f.opened).toHaveLength(0)
-  })
-  test("does not label a composer as ready when the website shows a request error", async () => {
-    const f = fixture({ page: { ...page, error: { kind: "request", message: "ChatGPT request rejected" } } })
-    const status = await f.probe.status()
-    expect(status.phase).toBe("blocked")
-    expect(status.detail).toContain("rejected")
-  })
-  test("reports browser verification without attempting login or sending", async () => {
-    const f = fixture({
-      page: { ...page, composer: false, error: { kind: "verification", message: "Browser verification required" } },
-    })
-    expect((await f.probe.status()).phase).toBe("needs_login")
-    expect(f.opened).toHaveLength(0)
-  })
-
-  test.each(["", "Pro", "Thinking effort", "GPT-5.5 Pro"])(
-    "model label %j cannot block readiness or change selection",
-    async (model) => {
-      const f = fixture({ page: { ...page, model, targetModel: false } })
-      expect((await f.probe.status()).phase).toBe("ready")
-      expect(f.opened).toHaveLength(0)
-      expect(f.evaluated).toHaveLength(1)
-    },
-  )
-
-  test("tracks generating pages and keeps prompt/answer out of diagnostic logs", async () => {
-    const f = fixture({
-      page: {
-        ...page,
-        generating: true,
-        users: [{ id: "user", text: "secret prompt" }],
-        answer: {
-          id: "answer",
-          userID: "user",
-          text: "secret answer",
-          html: "<p>secret answer</p>",
-          complete: false,
-          truncated: false,
-        },
-      },
-    })
-    expect((await f.probe.status()).phase).toBe("tracking")
-    expect(f.logs.join("\n")).not.toContain("secret")
-  })
-
-  test("rejects a page that changes origin during inspection", async () => {
-    const f = fixture({ page: { ...page, url: "https://example.com/" } })
-    expect((await f.probe.status()).phase).toBe("blocked")
-  })
+test("status is a pure canonical snapshot even when a page exists", async () => {
+  const f = fixture()
+  for (let i = 0; i < 100; i++) expect((await f.probe.status()).session.authentication.phase).toBe("unverified")
+  expect(f.counts()).toEqual({ requests: 0, metadata: 0, diagnostics: 0, opens: 0, presented: 0 })
+})
+test("explicit open verifies once without navigating or reading an existing draft", async () => {
+  const f = fixture()
+  expect((await f.probe.open()).session.authentication.phase).toBe("authenticated")
+  expect(f.counts()).toEqual({ requests: 1, metadata: 1, diagnostics: 0, opens: 0, presented: 1 })
+  expect((await f.probe.status()).session.page.model).toBe("Pro")
+})
+test("closed status never recreates a page; explicit open may create one", async () => {
+  const f = fixture(false)
+  expect((await f.probe.status()).session.page.phase).toBe("not_open")
+  expect(f.counts().opens).toBe(0)
+  await f.probe.open()
+  expect(f.counts().opens).toBe(1)
+})
+test("expensive diagnostic inspection is opt-in and never authenticates", async () => {
+  const f = fixture()
+  expect((await f.probe.inspect())?.draft).toBe("MANUAL_PRIVATE_DRAFT")
+  expect(f.counts().diagnostics).toBe(1)
+  expect(f.counts().requests).toBe(0)
+  expect((await f.probe.status()).session.authentication.phase).toBe("unverified")
+})
+test("login location and navigation anomalies do not manufacture expired-session evidence", async () => {
+  const f = fixture()
+  f.views[0].url = `${GPT_PRO_URL}auth/login`
+  const status = await f.probe.status()
+  expect(status.session.page.location).toBe("login")
+  expect(status.session.authentication.phase).toBe("unverified")
+  expect(f.counts().requests).toBe(0)
 })

@@ -267,6 +267,9 @@ describe("ChatGPT session connector explicit approval", () => {
     for (const [code, status, key] of [
       ["login_import_busy", 409, "errorBusy"],
       ["credential_storage", 503, "errorStorage"],
+      ["login_connection_expired", 410, "errorExpired"],
+      ["login_expired", 503, "errorNoSession"],
+      ["login_expired", 410, "errorExpired"],
     ] as const) {
       const p = popup({ locale: "zh_CN", responseStatus: status, responseCode: code })
       await p.settle()

@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import type { Cookie } from "electron"
-import { GptProCredentialVault } from "./gpt-pro-credential-vault"
+import { GptProCredentialVault, restorableGptProCookies } from "./gpt-pro-credential-vault"
 
 const cookies: Cookie[] = [
   {
@@ -19,6 +19,15 @@ const cookies: Cookie[] = [
     sameSite: "lax",
   },
 ]
+
+test("restore rejects incomplete, mixed and partially expired Cookie families as a whole", () => {
+  const base = cookies[0]
+  const chunk = (index: number, extra: Partial<Cookie> = {}) => ({ ...base, name: `${base.name}.${index}`, ...extra })
+  expect(restorableGptProCookies([chunk(0), chunk(1)], 100)).toHaveLength(2)
+  for (const group of [[chunk(0), chunk(2)], [chunk(0), chunk(1, { expirationDate: 50 })], [base, chunk(0)]])
+    expect(restorableGptProCookies(group, 100)).toEqual([])
+  expect(restorableGptProCookies([chunk(0), chunk(1), { ...base, domain: "chatgpt.com" }], 100)).toHaveLength(3)
+})
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), "opencode-credential-vault-test-"))
   const key = randomBytes(32)

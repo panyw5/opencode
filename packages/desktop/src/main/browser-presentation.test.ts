@@ -91,6 +91,47 @@ mock.module("./browser-cdp", () => ({
 const { BrowserController } = await import("./browser")
 
 describe("sidebar browser presentation", () => {
+  test.each(["consult-gpt-pro-secure", "consult-gpt-pro-secure-generation-synthetic"])("login loop guard protects GPT profile %s", async (profileID) => {
+    const controller = new BrowserController()
+    const children: FakeView[] = []
+    controller.attachWindow({
+      isDestroyed: () => false,
+      contentView: { addChildView: (view: FakeView) => children.push(view), removeChildView: () => {} },
+    } as never)
+    await controller.openPage("loop", profileID, "https://chatgpt.com/", { kind: "login" })
+    let prevented = 0
+    const event = { preventDefault: () => prevented++ }
+    for (let i = 0; i < 8; i++)
+      children[0].emit(
+        "will-redirect",
+        event,
+        i % 2 ? "https://chatgpt.com/" : "https://chatgpt.com/auth/login?next=%2F",
+        false,
+        false,
+      )
+    expect(prevented).toBe(0)
+    for (let i = 0; i < 5; i++)
+      children[0].emit(
+        "will-navigate",
+        event,
+        i % 2 ? "https://chatgpt.com/" : "https://chatgpt.com/auth/login?next=%2F",
+      )
+    expect(prevented).toBe(1)
+    expect(controller.getState()[0].authRedirectLoop).toBe(true)
+    await controller.openPage("loop", profileID, "https://chatgpt.com/")
+    expect(controller.getState()[0].authRedirectLoop).toBeUndefined()
+    // The real site uses pushState for login and document navigation for home.
+    for (let i = 0; i < 2; i++) {
+      children[0].emit("will-navigate", event, "https://chatgpt.com/")
+      children[0].emit("did-navigate-in-page", event, "https://chatgpt.com/auth/login?next=%2F", true)
+    }
+    children[0].emit("will-navigate", event, "https://chatgpt.com/")
+    expect(prevented).toBe(2)
+    expect(controller.getState()[0].authRedirectLoop).toBe(true)
+    await controller.open("ordinary", "https://chatgpt.com/")
+    expect(children[1].listeners.has("will-navigate")).toBe(false)
+    controller.dispose()
+  })
   test("preview captures the live viewport without changing visibility or geometry", async () => {
     const controller = new BrowserController()
     const children: FakeView[] = []

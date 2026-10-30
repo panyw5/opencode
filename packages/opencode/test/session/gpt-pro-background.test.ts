@@ -85,6 +85,17 @@ describe("background Pro inbox delivery", () => {
       expect(text).toContain("Do not create a new consultation or resend")
     }),
   )
+  it.instance("login recovery notifications do not mislabel login as an automated browser challenge", () =>
+    Effect.gen(function* () {
+      const text = notificationText({ id: "gpt_login:notification:1", consultationID: "gpt_login", owner: "/repo\nses_parent", phase: "paused", revision: 0, at: 1, url: "https://chatgpt.com/", kind: "state", format: "snapshot", text: "", truncated: false,
+        errorCode: "login_expired", recovery: { stage: "submit", reason: "Login cannot refresh", humanAction: "login" } })
+      expect(text).toContain("human recovery required")
+      expect(text).toContain("HUMAN LOGIN REQUIRED")
+      expect(text).not.toContain("HUMAN BROWSER VERIFICATION")
+      expect(text).not.toContain("FIXED FLOW NEEDS AGENT RECOVERY")
+      expect(text).toContain("Do not create a new consultation or resend")
+    }),
+  )
   it.instance("durably admits notifications before acknowledgement and deduplicates replay", () =>
     Effect.gen(function* () {
       const service = yield* BackgroundGptPro.Service

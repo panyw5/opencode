@@ -210,7 +210,7 @@ try {
       const tool=fresh.flatMap(m=>m.parts).filter(p=>p.type==='tool'&&p.tool==='gpt_pro_consult'&&p.state.input?.prompt===${JSON.stringify(prompt)}&&(!${JSON.stringify(watchID ?? null)}||p.state.metadata?.consultation_id===${JSON.stringify(watchID ?? null)})).at(-1)
       const id=${JSON.stringify(id ?? null)}||tool?.state.metadata?.consultation_id
       const job=id?await window.api.gptPro.command({action:'read',id}):undefined
-      const page=(await window.api.gptPro.status()).page
+      const page=await window.api.gptPro.inspect()
       const notificationMatches=!!job?.text&&fresh.some(m=>m.parts.some(p=>p.type==='text'&&p.metadata?.consultationID===id&&p.metadata?.phase==='completed'&&p.text.includes(job.text)))
       const recoveryTools=fresh.flatMap(m=>m.parts).filter(p=>p.type==='tool'&&p.tool.startsWith('browser_')&&p.state.input?.consultation_id===id).map(p=>({tool:p.tool,status:p.state.status}))
       return {tool:tool?{id:tool.state.metadata?.consultation_id,promptMatches:tool.state.input.prompt===${JSON.stringify(prompt)},status:tool.state.status}:undefined,job,page,notificationMatches,recoveryTools}

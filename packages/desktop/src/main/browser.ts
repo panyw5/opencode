@@ -2,9 +2,10 @@ import { homedir } from "node:os"
 import { pathToFileURL } from "node:url"
 import { BrowserWindow, session, WebContentsView, type Rectangle } from "electron"
 import { write as writeLog } from "./logging"
-import { BrowserCdp } from "./browser-cdp"
+import { BrowserCdp, type BrowserNavigationReason } from "./browser-cdp"
 import type { BrowserDisplayFrame } from "@opencode-ai/app/browser/types"
-import type { BrowserPageIdentity } from "@opencode-ai/util/gpt-pro"
+import { isGptProProfile, type BrowserPageIdentity } from "@opencode-ai/util/gpt-pro"
+import { GptProNavigationGuard } from "./gpt-pro-navigation"
 
 // P1-D-01: owns the embedded browser WebContentsViews. One controller per app;
 // views are keyed by pageID (one WebContents/CDP target per page). profileID is
@@ -60,6 +61,10 @@ export type ViewState = {
    * Events emitted before a teardown carry the old epoch, so consumers can
    * drop stale in-flight events instead of resurrecting dead tabs. */
   epoch: number
+  /** Main-frame document generation, including same-URL reloads. */
+  documentEpoch?: number
+  navigationReason?: BrowserNavigationReason
+  authRedirectLoop?: boolean
 }
 
 export type BrowserPresentation = { id: number; state: ViewState }
@@ -74,6 +79,10 @@ type ViewEntry = {
   /** monotonic clock (ms) of the last state emission / command touching the view */
   lastActivity: number
   identity: BrowserPageIdentity
+  navigationGuard?: GptProNavigationGuard
+  documentEpoch?: number
+  navigationReason?: BrowserNavigationReason
+  pendingNavigationReason?: BrowserNavigationReason
 }
 
 type ControllerEvents = {
@@ -241,6 +250,33 @@ export class BrowserController {
       },
     })
     const isCurrent = () => this.views.get(pageID)?.view === view
+    const navigationGuard = isGptProProfile(profileID) ? new GptProNavigationGuard() : undefined
+    if (navigationGuard) {
+      const onNavigate = (event: Electron.Event, url: string, _inPlace: boolean, isMainFrame: boolean) => {
+        if (!isCurrent() || isMainFrame === false) return
+        const allowed = navigationGuard.request(url)
+        log("navigation", `GPT login navigation requested pageID=${pageID} path=${new URL(url).pathname} allowed=${allowed}`)
+        if (allowed) return
+        event.preventDefault()
+        log("navigation", `login redirect loop stopped pageID=${pageID}; credentials and page contents preserved`)
+        this.emitState(pageID)
+      }
+      view.webContents.on("will-navigate", onNavigate)
+      view.webContents.on("will-redirect", onNavigate)
+      // ChatGPT enters /auth/login via pushState before replacing the document
+      // with /. will-navigate alone sees only repeated requests for /.
+      const onCommitted = (_event: Electron.Event, url: string, isMainFrame?: boolean) => {
+        if (!isCurrent() || isMainFrame === false) return
+        const blocked = navigationGuard.blocked
+        navigationGuard.allow(url)
+        log("navigation", `GPT login navigation committed pageID=${pageID} path=${new URL(url).pathname} blocked=${navigationGuard.blocked}`)
+        if (!blocked && navigationGuard.blocked)
+          log("navigation", `login SPA redirect loop detected pageID=${pageID}; next navigation will be cancelled`)
+        this.emitState(pageID)
+      }
+      view.webContents.on("did-navigate", (event, url) => onCommitted(event, url))
+      view.webContents.on("did-navigate-in-page", onCommitted)
+    }
     view.webContents.setUserAgent(BROWSER_USER_AGENT)
     // Agent partitions stay hidden (no panel bounds) — disable background
     // throttling so CDP screenshots/AX snapshots still get fresh frames.
@@ -258,7 +294,23 @@ export class BrowserController {
       return { action: "deny" }
     })
     view.webContents.on("did-navigate", () => isCurrent() && this.emitState(pageID))
-    view.webContents.on("did-navigate-in-page", () => isCurrent() && this.emitState(pageID))
+    view.webContents.on("did-navigate-in-page", (_event, _url, isMainFrame) => {
+      const entry = this.views.get(pageID)
+      if (!isCurrent() || !entry || isMainFrame === false) return
+      entry.navigationReason = entry.pendingNavigationReason ?? "website"
+      entry.pendingNavigationReason = undefined
+      this.emitState(pageID)
+    })
+    view.webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
+      if (!isCurrent() || !isMainFrame || isInPlace) return
+      const entry = this.views.get(pageID)
+      if (!entry) return
+      entry.documentEpoch = (entry.documentEpoch ?? 0) + 1
+      entry.navigationReason = entry.pendingNavigationReason ?? "website"
+      entry.pendingNavigationReason = undefined
+      log("navigation", `document started pageID=${pageID} documentEpoch=${entry.documentEpoch} reason=${entry.navigationReason}; url omitted`)
+      this.emitState(pageID)
+    })
     view.webContents.on("did-start-loading", () => isCurrent() && this.emitState(pageID))
     view.webContents.on("did-stop-loading", () => isCurrent() && this.emitState(pageID))
     view.webContents.on("page-title-updated", () => isCurrent() && this.emitState(pageID))
@@ -271,7 +323,11 @@ export class BrowserController {
       }
     })
 
-    const cdp = new BrowserCdp(view.webContents)
+    const cdp = new BrowserCdp(view.webContents, reason => {
+      navigationGuard?.reset()
+      const entry = this.views.get(pageID)
+      if (entry) entry.pendingNavigationReason = reason
+    })
     cdp.onConsoleEntry = (entry) => {
       if (!isCurrent()) return
       this.events.onConsole?.({ partition: pageID, pageID, profileID, ...entry })
@@ -279,7 +335,15 @@ export class BrowserController {
 
     const epoch = (this.epochs.get(pageID) ?? 0) + 1
     this.epochs.set(pageID, epoch)
-    const entry: ViewEntry = { view, cdp, visible: false, shared: false, lastActivity: Date.now(), identity }
+    const entry: ViewEntry = {
+      view,
+      cdp,
+      visible: false,
+      shared: false,
+      lastActivity: Date.now(),
+      identity,
+      navigationGuard,
+    }
     if (this.owner && !this.owner.isDestroyed()) {
       this.owner.contentView.addChildView(view)
       entry.win = this.owner
@@ -321,6 +385,9 @@ export class BrowserController {
       loading: entry.view.webContents.isLoading(),
       shared: entry.shared,
       epoch: this.epochs.get(partition) ?? 0,
+      documentEpoch: entry.documentEpoch ?? 0,
+      navigationReason: entry.navigationReason,
+      ...(entry.navigationGuard?.blocked ? { authRedirectLoop: true } : {}),
     }
   }
 
@@ -339,12 +406,12 @@ export class BrowserController {
   }
 
   /** Navigate (creating the view if needed) and make it visible. */
-  async open(partition: string, url: string) {
+  async open(partition: string, url: string, reason: BrowserNavigationReason = "user") {
     const existing = this.views.get(partition)?.identity
     return this.openPage(partition, existing?.profileID ?? partition, url, {
       owner: existing?.owner,
       kind: existing?.kind,
-    })
+    }, reason)
   }
 
   /** Open a distinct page backed by an existing/shared Electron session. */
@@ -353,11 +420,14 @@ export class BrowserController {
     profileID: string,
     url: string,
     metadata: Omit<BrowserPageIdentity, "pageID" | "profileID"> = {},
+    reason: BrowserNavigationReason = "automation",
   ) {
     if (!pageID || !profileID) throw new Error("Browser pageID and profileID are required")
     const target = normalizeTargetUrl(url)
     const identity: BrowserPageIdentity = { pageID, profileID, ...metadata }
     const entry = this.ensure(identity)
+    const redirectBlocked = entry.navigationGuard?.blocked
+    entry.navigationGuard?.reset()
     entry.lastActivity = Date.now()
     const epoch = this.epochs.get(pageID) ?? 0
     if (this.isAutomationPage(entry)) {
@@ -376,8 +446,8 @@ export class BrowserController {
       log("viewport", `pageID=${pageID} epoch=${epoch} width=${width} height=${height} outcome=ready`)
     }
     this.applyBounds(pageID)
-    if (target !== entry.view.webContents.getURL()) {
-      await entry.cdp.navigate(target).catch((error) => {
+    if (redirectBlocked || target !== entry.view.webContents.getURL()) {
+      await entry.cdp.navigate(target, reason).catch((error) => {
         log("open", "navigate failed", { pageID, profileID, url: target, error: String(error) })
         throw error
       })

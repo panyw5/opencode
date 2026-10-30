@@ -6,8 +6,10 @@ export const GPT_PRO_ISSUE_CODES = [
   "login_invalid_session",
   "login_import_failed",
   "credential_storage",
+  "result_storage",
   "account_changed",
   "login_expired",
+  "login_connection_expired",
   "login_connection_failed",
   "browser_open_failed",
   "disabled",
@@ -34,6 +36,7 @@ export const GPT_PRO_ISSUE_CODES = [
 ] as const
 
 export type GptProIssueCode = (typeof GPT_PRO_ISSUE_CODES)[number]
+export type GptProHumanAction = "login" | "verification" | "secure_storage" | "restore_account"
 export class GptProOperationError extends Error {
   constructor(
     readonly code: GptProIssueCode,
@@ -48,7 +51,7 @@ export type GptProIssueContext = {
   code?: unknown
   phase?: string
   queueReason?: string
-  needsHuman?: boolean
+  humanAction?: GptProHumanAction
 }
 
 export function gptProErrorText(error: unknown): string {
@@ -75,6 +78,8 @@ export function gptProIssue(
       return "send_uncertain"
     if (/website stop could not be confirmed/.test(text)) return "stop_unconfirmed"
     if (GPT_PRO_ISSUE_CODES.includes(context.code as GptProIssueCode)) return context.code as GptProIssueCode
+    const explicit = /^([a-z_]+):/.exec(text)?.[1]
+    if (GPT_PRO_ISSUE_CODES.includes(explicit as GptProIssueCode)) return explicit as GptProIssueCode
     if (/login_invalid_session/.test(text)) return "login_invalid_session"
     if (/login_import_failed/.test(text)) return "login_import_failed"
     if (/credential_storage/.test(text)) return "credential_storage"
@@ -123,7 +128,10 @@ export function gptProIssue(
     if (/capture limit|reply exceeds|incomplete output/.test(text)) return "response_too_large"
     if (/composer|send control|snapshot|element|interface.*changed/.test(text)) return "control_unavailable"
     if (/owner_session_cancelled|consultation aborted|consultation was cancelled/.test(text)) return "cancelled"
-    if (context.needsHuman) return "verification"
+    if (context.humanAction === "login") return "login"
+    if (context.humanAction === "secure_storage") return "credential_storage"
+    if (context.humanAction === "restore_account") return "account_changed"
+    if (context.humanAction === "verification") return "verification"
     if (context.phase === "interrupted" || /application (?:stopped|restarted)|shutting down/.test(text))
       return "interrupted"
     if (text) return "unknown"
@@ -150,6 +158,54 @@ export function gptProIssue(
         ? "warning"
         : "error",
   }
+}
+
+export function gptProHumanAction(context: GptProIssueContext): GptProHumanAction | undefined {
+  const code = gptProIssue(context)?.code
+  if (["login", "login_expired", "login_invalid_session"].includes(code ?? "")) return "login"
+  if (code === "verification") return "verification"
+  if (code === "credential_storage") return "secure_storage"
+  if (code === "account_changed") return "restore_account"
+  return context.humanAction
+}
+
+/** One-time legacy history/outbox migration; no boolean human-verification inference on live paths. */
+export function migrateGptProRecovery<T extends { stage: string; reason: string; humanAction?: GptProHumanAction }>(
+  recovery: T | undefined,
+  context: GptProIssueContext,
+) {
+  if (!recovery) return
+  const action =
+    gptProHumanAction({ ...context, humanAction: recovery.humanAction }) ??
+    ((recovery as T & { needsHuman?: boolean }).needsHuman ? "verification" : undefined)
+  return { stage: recovery.stage, reason: recovery.reason, ...(action ? { humanAction: action } : {}) }
+}
+
+/** The same recovery instruction is used by tool results and background notifications. */
+export function gptProRecoveryInstruction(input: {
+  id: string
+  error?: string
+  errorCode?: GptProIssueCode
+  recovery?: { stage: string; humanAction?: GptProHumanAction; reason: string }
+}) {
+  if (!input.recovery) return ""
+  const action = gptProHumanAction({
+    error: input.error,
+    code: input.errorCode,
+    humanAction: input.recovery.humanAction,
+  })
+  const preserve = `Keep consultation_id=${input.id}. Do not create a new consultation or resend. Resume only this same ID explicitly after recovery; the program revalidates the account, managed prompt and attachments and controls any send. Preserve the user's current model selection.`
+  if (action === "login")
+    return `HUMAN LOGIN REQUIRED. Ask the user to reconnect ChatGPT through the approved login import and verification flow. Do not automate login or copy credentials. ${preserve}`
+  if (action === "verification")
+    return `HUMAN BROWSER VERIFICATION REQUIRED. Ask the user to complete the check in the owned page. Do not automate or bypass the challenge. ${preserve}`
+  if (action === "secure_storage")
+    return `HUMAN SECURE STORAGE RECOVERY REQUIRED. Ask the user to restore OS secure storage, then explicitly reconnect. Never use plaintext credentials. ${preserve}`
+  if (action === "restore_account")
+    return `ORIGINAL ACCOUNT REQUIRED. Ask the user to restore the original ChatGPT account. This consultation cannot send under another account. ${preserve}`
+  if (input.errorCode === "result_storage")
+    return `RESULT STORAGE RECOVERY REQUIRED. Preserve the original page and restore local result storage before explicitly resuming read-only tracking. ${preserve}`
+  return `FIXED FLOW NEEDS AGENT RECOVERY at stage=${input.recovery.stage}. ${preserve} Use browser_read/browser_screenshot/browser_click/browser_type/browser_scroll/browser_navigate with consultation_id=${input.id} to inspect and repair only the owned page. Read the consultation for its managed prompt. After repair use gpt_pro_consult action=resume.`
 }
 
 export function gptProCanResume(

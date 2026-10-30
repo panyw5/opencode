@@ -13,6 +13,7 @@ import contextMenu from "electron-context-menu"
 
 import type { InitStep, ServerReadyData, SqliteMigrationProgress, WslConfig } from "../preload/types"
 import { browserController, USER_PARTITION, warmupBrowserSession } from "./browser"
+import { prepareGptProQuit } from "./gpt-pro-runtime"
 import { BridgeClient } from "./browser-bridge-client"
 import { checkAppExists, resolveAppPath, wslPath } from "./apps"
 import { CHANNEL, UPDATER_ENABLED } from "./constants"
@@ -119,6 +120,11 @@ async function killSidecar() {
   const current = server
   server = null
   await current.stop()
+}
+
+async function quitBackends() {
+  await prepareGptProQuit().catch(() => writeLog("lifecycle", "GPT-Pro durable shutdown failed; previous checkpoints retained", undefined, "warn"))
+  await killBackends()
 }
 
 async function killBackends() {
@@ -254,7 +260,7 @@ const main = Effect.gen(function* () {
     event.preventDefault()
     if (quitCleanup) return
     isQuitting = true
-    quitCleanup = killBackends()
+    quitCleanup = quitBackends()
       .catch(() => {
         writeLog("lifecycle", "quit cleanup failed", undefined, "warn")
       })
@@ -278,7 +284,7 @@ const main = Effect.gen(function* () {
 
   setRelaunchHandler(() => {
     isQuitting = true
-    void killBackends().finally(() => {
+    void quitBackends().finally(() => {
       relaunchApp(app)
       app.exit(0)
     })
@@ -287,7 +293,7 @@ const main = Effect.gen(function* () {
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.on(signal, () => {
       isQuitting = true
-      void killBackends().finally(() => app.exit(0))
+      void quitBackends().finally(() => app.exit(0))
     })
   }
 
@@ -596,7 +602,7 @@ const main = Effect.gen(function* () {
         void checkForUpdates(true, killBackends)
       },
       relaunch: () => {
-        void killBackends().finally(() => {
+        void quitBackends().finally(() => {
           relaunchApp(app)
           app.exit(0)
         })

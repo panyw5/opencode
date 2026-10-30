@@ -45,6 +45,27 @@ const api: ElectronAPI = {
       },
     },
     runtimeStatus: () => ipcRenderer.invoke("gpt-pro-runtime-status"),
+    verifyLogin: () => ipcRenderer.invoke("gpt-pro-login-verify"),
+    recoverStorage: () => ipcRenderer.invoke("gpt-pro-storage-recover"),
+    subscribeRuntime: (listener) => {
+      const subscriptionID = crypto.randomUUID()
+      let active = true
+      let received = false
+      const handler = (_: unknown, payload: { subscriptionID: string; status: import("@opencode-ai/util/gpt-pro").GptProRuntimeStatus }) => {
+        if (!active || payload.subscriptionID !== subscriptionID) return
+        received = true
+        listener(payload.status)
+      }
+      ipcRenderer.on("gpt-pro-runtime-changed", handler)
+      void ipcRenderer.invoke("gpt-pro-runtime-subscribe", subscriptionID).then((status) => {
+        if (active && !received) listener(status)
+      }, () => {})
+      return () => {
+        active = false
+        ipcRenderer.removeListener("gpt-pro-runtime-changed", handler)
+        ipcRenderer.send("gpt-pro-runtime-unsubscribe", subscriptionID)
+      }
+    },
     getConfig: () => ipcRenderer.invoke("gpt-pro-config"),
     setConfig: (config) => ipcRenderer.invoke("gpt-pro-set-config", config),
     command: (input) => ipcRenderer.invoke("gpt-pro-command", input),
@@ -52,6 +73,7 @@ const api: ElectronAPI = {
     list: () => ipcRenderer.invoke("gpt-pro-list"),
     open: () => ipcRenderer.invoke("gpt-pro-open"),
     status: () => ipcRenderer.invoke("gpt-pro-status"),
+    inspect: () => ipcRenderer.invoke("gpt-pro-inspect"),
     loginInBrowser: () => ipcRenderer.invoke("gpt-pro-login"),
     loginStatus: () => ipcRenderer.invoke("gpt-pro-login-status"),
     cancelLogin: () => ipcRenderer.invoke("gpt-pro-login-cancel"),

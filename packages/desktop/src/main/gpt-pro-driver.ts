@@ -1,5 +1,5 @@
 import {
-  CHATGPT_INSPECT_EXPRESSION,
+  CHATGPT_METADATA_EXPRESSION,
   chatGptCaptureExpression,
   CHATGPT_COMPOSER_ATTACHMENT_TARGET_EXPRESSION,
   CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION,
@@ -16,7 +16,8 @@ import {
 import type { BrowserController } from "./browser"
 import type { BeforeTrustedClick } from "./browser-cdp"
 import { GptProPageError } from "./gpt-pro-page-error"
-import { readGptProAuthentication } from "./gpt-pro-authentication"
+import { getGptProSessionCoordinator } from "./gpt-pro-session-coordinator"
+import { GPT_PRO_REDIRECT_LOOP_DETAIL } from "./gpt-pro-navigation"
 import { GptProOperationError } from "@opencode-ai/util/gpt-pro-error"
 
 const editorSelector = '#prompt-textarea, [data-composer-markdown][role="textbox"][contenteditable="true"]'
@@ -30,6 +31,7 @@ export class GptProDriver {
     userID: string
     url: string
     epoch: number
+    documentEpoch?: number
     version: string
     answer: NonNullable<GptProPageState["answers"]>[number]
   }
@@ -128,10 +130,25 @@ export class GptProDriver {
   }
   async account() {
     await this.identity.prepare?.()
-    const authentication = await readGptProAuthentication(this.cdp())
+    const state = this.state()
+    if (state?.authRedirectLoop) throw new GptProOperationError("page_changed", GPT_PRO_REDIRECT_LOOP_DETAIL)
+    this.cdp()
+    const authentication = await getGptProSessionCoordinator(this.browser, this.profileID, this.log).verify(this.pageID)
+    const current = this.state()
+    if (current?.authRedirectLoop) throw new GptProOperationError("page_changed", GPT_PRO_REDIRECT_LOOP_DETAIL)
+    if (!state || !current || state.epoch !== current.epoch || state.documentEpoch !== current.documentEpoch || state.url !== current.url)
+      throw new GptProOperationError(
+        "page_changed",
+        "The ChatGPT page changed during account verification. No message was dispatched.",
+      )
     this.log(`driver authentication phase=${authentication.phase}; account and credentials omitted`)
-    if (authentication.phase === "needs_login")
-      throw new GptProOperationError("login", "Sign in to ChatGPT before sending. No message was dispatched.")
+    if (authentication.phase === "verification")
+      throw new GptProOperationError("verification", "Complete the human browser verification before continuing. No message was dispatched.")
+    if (authentication.phase === "invalid")
+      throw new GptProOperationError(
+        authentication.detail ? "login_expired" : "login",
+        authentication.detail ?? "Sign in to ChatGPT before sending. No message was dispatched.",
+      )
     if (authentication.phase !== "authenticated")
       throw new GptProOperationError(
         "connection",
@@ -158,6 +175,7 @@ export class GptProDriver {
       throw new Error(`The consultation browser view is unavailable for page ${this.pageID}. Reopen explicitly.`)
     if (this.pageEpoch !== undefined && state.epoch !== this.pageEpoch)
       throw new Error("The consultation page generation changed; stale page evidence was discarded")
+    if (state.authRedirectLoop) throw new GptProOperationError("page_changed", GPT_PRO_REDIRECT_LOOP_DETAIL)
     if (isGptProLoginUrl(state.url)) {
       this.log(`driver login required pageID=${this.pageID} epoch=${state.epoch}; no input dispatched`)
       throw new GptProPageError("Sign in to ChatGPT before continuing this consultation.", "login")
@@ -170,12 +188,12 @@ export class GptProDriver {
       try {
         const previous = this.answerCapture
         const known =
-          previous?.userID === options?.userID && previous?.epoch === state.epoch && previous?.url === state.url
+          previous?.userID === options?.userID && previous?.epoch === state.epoch && previous?.documentEpoch === state.documentEpoch && previous?.url === state.url
             ? previous
             : undefined
         const expression = options
           ? chatGptCaptureExpression({ ...options, force, knownVersion: known?.version })
-          : CHATGPT_INSPECT_EXPRESSION
+          : CHATGPT_METADATA_EXPRESSION
         const page = await cdp.evaluate<GptProPageState>(expression)
         const imageEvidence = await cdp.evaluate<{
           url: string
@@ -208,7 +226,7 @@ export class GptProDriver {
         })
         if (attempt > 1) this.log(`driver page snapshot consistency restored attempt=${attempt}/3`)
         const latest = this.state()
-        if (!latest || latest.epoch !== state.epoch || latest.url !== imageEvidence.url)
+        if (!latest || latest.epoch !== state.epoch || latest.documentEpoch !== state.documentEpoch || latest.url !== imageEvidence.url)
           throw new Error("The consultation page changed during inspection; stale page evidence was discarded")
         if (options && page.capture) {
           const capture = page.capture
@@ -227,6 +245,7 @@ export class GptProDriver {
             userID: options.userID,
             url: page.url,
             epoch: state.epoch,
+            documentEpoch: state.documentEpoch,
             version: capture.version,
             answer: { ...answer },
           }
@@ -234,7 +253,7 @@ export class GptProDriver {
           else delete page.answer
           if (capture.mode !== "unchanged")
             this.log(
-              `driver answer capture mode=${capture.mode} reads=${capture.reads} htmlChars=${answer.html.length}`,
+              `driver answer capture mode=${capture.mode} reads=${capture.reads} blocksRecomputed=${capture.blocksRecomputed ?? -1} elementsSanitized=${capture.elementsSanitized ?? -1} htmlChars=${answer.html.length}`,
             )
         } else if (options) this.answerCapture = undefined
         return page
@@ -543,6 +562,17 @@ export class GptProDriver {
         lastTargetState = targetState
       }
       if (page.sendReady) {
+        const observed = this.state()
+        const lease = observed && { ...observed }
+        const guardedDispatch: BeforeTrustedClick = async () => {
+          const commit = await beforeDispatch?.()
+          return () => {
+            const current = this.state()
+            if (!lease || !current || lease.epoch !== current.epoch || lease.documentEpoch !== current.documentEpoch || lease.url !== current.url)
+              throw new GptProOperationError("page_changed", "The document changed before the trusted send boundary. Nothing was dispatched.")
+            commit?.()
+          }
+        }
         this.log(
           `driver send model label=${JSON.stringify(page.model || "unknown")} policy=user-selected nonblocking=true`,
         )
@@ -550,9 +580,9 @@ export class GptProDriver {
         if (uid) {
           if (!(await this.cdp().matchesResolved(uid, CHATGPT_SEND_TARGET_EXPRESSION)))
             throw new Error("Observed UID is not the exact current send target; no click dispatched")
-          await this.cdp().click(uid, undefined, beforeDispatch)
+          await this.cdp().click(uid, undefined, guardedDispatch)
         } else {
-          await this.cdp().clickResolved(CHATGPT_SEND_TARGET_EXPRESSION, beforeDispatch)
+          await this.cdp().clickResolved(CHATGPT_SEND_TARGET_EXPRESSION, guardedDispatch)
         }
         this.log("driver send click dispatched; waiting for website acknowledgment")
         return

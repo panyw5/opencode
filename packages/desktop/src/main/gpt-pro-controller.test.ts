@@ -31,6 +31,7 @@ function fixture(
     enabled?: boolean
     account?: () => Promise<string | undefined>
     save?: () => void
+    flush?: () => Promise<void>
     open?: () => Promise<void>
     verify?: () => Promise<GptProPageState>
     loaded?: GptProJob[]
@@ -164,6 +165,7 @@ function fixture(
         options.save?.()
         saved = structuredClone(jobs)
       },
+      flush: options.flush,
       config: () => config,
       setConfig: (next) => {
         config = next
@@ -434,6 +436,244 @@ async function previewJob(
 }
 
 describe("gpt-pro consultation control", () => {
+  test("answer changes during the final checkpoint are re-read before completion", async () => {
+    let flushes = 0
+    const f = fixture({ flush: async () => { if (flushes++ === 0) f.finish("Revised final answer") } })
+    try {
+      await f.controller.command({ prompt: "Final revalidation", background: true }, "/repo\nses_final_revalidation")
+      await until(() => f.counts().submits === 1)
+      f.finish("Earlier snapshot")
+      await until(() => f.controller.list()[0].phase === "completed")
+      expect(f.saved()[0].text).toBe("Revised final answer")
+      expect(flushes).toBeGreaterThanOrEqual(2)
+      expect(f.controller.notifications().filter(event => event.kind === "completed").map(event => event.text)).toEqual(["Revised final answer"])
+      expect(f.counts().submits).toBe(1)
+    } finally { f.controller.dispose() }
+  })
+  test("persistent execution faults revoke authority, release scheduler locks and recover without replay or restart", async () => {
+    let diskFault = false
+    let verificationFault = true
+    let failedWrites = 0
+    const f = fixture({
+      save: () => {
+        if (diskFault) {
+          failedWrites++
+          throw Error("execution disk unavailable")
+        }
+      },
+      verify: async () => {
+        if (verificationFault) {
+          diskFault = true
+          throw new GptProPageError("Typed page failure", "request")
+        }
+        return structuredClone(f.page)
+      },
+    })
+    const events: string[] = []
+    const unsubscribe = f.controller.subscribeState((event) => events.push(event.type))
+    try {
+      const job = await f.controller.command(
+        { prompt: "Recover the same managed question" },
+        "/repo\nses_storage_fault",
+      )
+      await until(
+        () =>
+          f.controller.storageStatus().phase === "fault" &&
+          (f.controller as unknown as { pendingWork: Map<string, unknown> }).pendingWork.size === 0,
+      )
+      expect(events).toContain("disconnected")
+      expect(() => f.controller.stateList()).toThrow("result_storage")
+      expect(f.controller.notifications()).toEqual([])
+      expect(f.counts().submits).toBe(0)
+      expect(failedWrites).toBe(1)
+      await expect(f.controller.recoverStorage()).rejects.toThrow("execution disk unavailable")
+      diskFault = false
+      verificationFault = false
+      await f.controller.recoverStorage()
+      expect(f.controller.storageStatus().phase).toBe("available")
+      expect(events.at(-1)).toBe("snapshot")
+      expect(f.controller.list()[0].phase).toBe("paused")
+      expect(f.counts().submits).toBe(0)
+      await f.controller.command({ action: "resume", id: job.id }, "/repo\nses_storage_fault")
+      await until(() => f.counts().submits === 1)
+      f.finish("Recovered result")
+      await until(() => f.controller.list()[0].phase === "completed")
+    } finally {
+      unsubscribe()
+      diskFault = false
+      f.controller.dispose()
+    }
+  })
+  test("a runner settling after disposal never writes to closed persistence or sends", async () => {
+    let release!: () => void
+    let entered!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    let closed = false
+    let lateWrites = 0
+    const f = fixture({
+      open: async () => {
+        entered()
+        await gate
+      },
+      save: () => {
+        if (closed) {
+          lateWrites++
+          throw Error("store closed")
+        }
+      },
+    })
+    await f.controller.command({ prompt: "Dispose while opening" })
+    await ready
+    const internal = f.controller as unknown as {
+      pendingWork: Map<string, Promise<void>>
+      running: Map<string, Promise<void>>
+    }
+    const pending = [...internal.pendingWork.values(), ...internal.running.values()]
+    f.controller.dispose()
+    closed = true
+    release()
+    await Promise.allSettled(pending)
+    expect(lateWrites).toBe(0)
+    expect(f.counts().submits).toBe(0)
+  })
+  test("completion waits for the final body checkpoint and cancellation during flush wins", async () => {
+    let release!: () => void
+    let entered!: () => void
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const f = fixture({
+      flush: async () => {
+        entered()
+        await gate
+      },
+    })
+    try {
+      const job = await f.controller.command({ prompt: "Checkpoint the final answer" })
+      await until(() => f.counts().submits === 1)
+      f.finish("Final checkpointed answer")
+      await ready
+      expect(f.controller.list()[0].phase).toBe("generating")
+      expect(f.controller.notifications().some((event) => event.kind === "completed")).toBe(false)
+      await f.controller.command({ action: "stop", id: job.id })
+      release()
+      await until(() => f.controller.list()[0].phase === "cancelled")
+      expect(f.controller.notifications().some((event) => event.kind === "completed")).toBe(false)
+    } finally {
+      release()
+      f.controller.dispose()
+    }
+  })
+  test("candidate promotion restores only unsent staged content and waits for explicit resume", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "gpt-pro-profile-recovery-"))
+    const staged = await previewJob(root, { phase: "paused" })
+    staged.job.submitted = false
+    staged.job.uploadAttempted = true
+    staged.job.accountID = "original-account"
+    const f = fixture({
+      loaded: [staged.job],
+      stagingRoot: staged.stagingRoot,
+      account: async () => "original-account",
+      upload: async (files, mayDispatch, _continue, setAttachments) => {
+        expect(mayDispatch).toBe(true)
+        setAttachments(files.map((file) => ({ name: file.name, status: "ready" })))
+      },
+    })
+    try {
+      const old = f.controller.list()[0].pageID
+      await f.controller.importLogin(async () => {
+        f.controller.promoteLoginProfile("new-profile", "original-account")
+      })
+      const migrated = f.controller.list()[0]
+      expect(migrated.pageID).not.toBe(old)
+      expect(migrated.profileID).toBe("new-profile")
+      expect(migrated.attachments?.[0].status).toBe("pending")
+      expect(migrated.uploadAttempted).toBe(false)
+      expect(migrated.phase).toBe("paused")
+      expect(f.counts().submits).toBe(0)
+      await f.controller.command({ action: "resume", id: migrated.id }, migrated.owner)
+      await until(() => f.counts().submits === 1)
+      expect(f.page.users[0].text).toBe(staged.job.prompt)
+      expect(f.page.users[0].attachments?.[0].name).toBe(staged.job.attachments![0].uploadName)
+    } finally {
+      f.controller.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+  test("another account cannot migrate an unsent consultation or alter its attachment state", async () => {
+    const job: GptProJob = {
+      id: "gpt_account_binding",
+      owner: "owner",
+      requestID: "binding",
+      prompt: "original",
+      phase: "paused",
+      url: GPT_PRO_URL,
+      createdAt: 1,
+      updatedAt: 1,
+      revision: 0,
+      submitted: false,
+      accountID: "original-account",
+    }
+    const f = fixture({ loaded: [job] })
+    try {
+      const before = f.controller.list()[0]
+      await expect(
+        f.controller.importLogin(async () => {
+          f.controller.promoteLoginProfile("new", "different-account")
+        }),
+      ).rejects.toThrow("account_changed")
+      expect(f.controller.list()[0]).toEqual(before)
+      expect(f.counts().submits).toBe(0)
+    } finally {
+      f.controller.dispose()
+    }
+  })
+  test("failed profile execution commit rolls back every binding and notification mutation", async () => {
+    let fail = false
+    const job: GptProJob = {
+      id: "gpt_failed_promotion",
+      owner: "owner",
+      requestID: "failed",
+      prompt: "original",
+      phase: "paused",
+      url: GPT_PRO_URL,
+      createdAt: 1,
+      updatedAt: 1,
+      revision: 0,
+      submitted: false,
+      background: true,
+      accountID: "original-account",
+    }
+    const f = fixture({
+      loaded: [job],
+      save: () => {
+        if (fail) throw Error("execution fault")
+      },
+    })
+    try {
+      const before = f.controller.list()[0]
+      const notifications = f.controller.notifications()
+      fail = true
+      await expect(
+        f.controller.importLogin(async () => {
+          f.controller.promoteLoginProfile("new", "original-account")
+        }),
+      ).rejects.toThrow("execution fault")
+      expect(f.controller.list()[0]).toEqual(before)
+      expect(f.controller.notifications()).toEqual(notifications)
+    } finally {
+      fail = false
+      f.controller.dispose()
+    }
+  })
   test("login import fences recovery send, resume and browser mutations but permits cached reads", async () => {
     const job: GptProJob = {
       id: "gpt_import_recovery",
@@ -979,7 +1219,7 @@ describe("gpt-pro consultation control", () => {
       updatedAt: 1,
       submitted: false,
       revision: 0,
-      recovery: { stage: "ready", reason: "Sign in to ChatGPT", needsHuman: true },
+      recovery: { stage: "ready", reason: "Sign in to ChatGPT", humanAction: "login" },
     }
     const f = fixture({ loaded: [job] })
     let imported = 0
@@ -2043,6 +2283,25 @@ describe("gpt-pro consultation control", () => {
       f.controller.dispose()
     }
   })
+  test("typed request failures do not become human verification merely because their guidance mentions login", async () => {
+    const f = fixture({
+      verify: async () => {
+        throw new GptProPageError(
+          "ChatGPT request error. Check browser verification, login or network access.",
+          "request",
+        )
+      },
+    })
+    try {
+      await f.controller.command({ prompt: "Typed request diagnostic" })
+      await until(() => f.controller.list()[0].phase === "paused")
+      expect(f.controller.list()[0].errorCode).toBe("request_rejected")
+      expect(f.controller.list()[0].recovery?.humanAction).toBeUndefined()
+      expect(f.counts().submits).toBe(0)
+    } finally {
+      f.controller.dispose()
+    }
+  })
   test("verification failures do not fill or send a question", async () => {
     const f = fixture({
       verify: async () => {
@@ -2052,7 +2311,7 @@ describe("gpt-pro consultation control", () => {
     try {
       await f.controller.command({ prompt: "Question" }, "main")
       await until(() => !!f.controller.list()[0].recovery)
-      expect(f.controller.list()[0].recovery?.needsHuman).toBe(true)
+      expect(f.controller.list()[0].recovery?.humanAction).toBe("verification")
       expect(f.controller.list()[0].errorCode).toBe("verification")
       expect(f.counts().fills).toBe(0)
       expect(f.counts().submits).toBe(0)
@@ -2069,7 +2328,7 @@ describe("gpt-pro consultation control", () => {
     try {
       await f.controller.command({ prompt: "Wait for login" }, "/repo\nses_needs_login")
       await until(() => f.controller.list()[0]?.errorCode === "login")
-      expect(f.controller.list()[0].recovery?.needsHuman).toBe(true)
+      expect(f.controller.list()[0].recovery?.humanAction).toBe("login")
       expect(f.counts().fills).toBe(0)
       expect(f.counts().submits).toBe(0)
     } finally {
@@ -3039,7 +3298,7 @@ describe("gpt-pro consultation control", () => {
       expect(f.controller.list()[0].userID).toBe("user-1")
       const job = f.controller.list()[0]
       expect((await f.controller.command({ action: "read", id: job.id }, "main")).text).toBeUndefined()
-      expect(f.controller.list()[0].recovery?.needsHuman).toBe(true)
+      expect(f.controller.list()[0].recovery?.humanAction).toBe("verification")
     } finally {
       f.controller.dispose()
     }

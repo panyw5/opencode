@@ -1,6 +1,28 @@
 import { describe, expect, test } from "bun:test"
-import { parseSessionCookies, importSessionCookies, type CookieJar } from "./gpt-pro-session-cookies"
+import { gptProSessionCookieRevoked, parseSessionCookies, importSessionCookies, restoreGptProCookieSnapshot, type CookieJar } from "./gpt-pro-session-cookies"
 import { candidateNames, parseConnection } from "../../resources/gpt-pro-login/common.js"
+
+test("failed startup restoration rolls back a complete family and permits an explicit retry", async () => {
+  let current = [{ name: "__Secure-next-auth.session-token.0", value: "OLD_0", domain: ".chatgpt.com", path: "/" }, { name: "__Secure-next-auth.session-token.1", value: "OLD_1", domain: ".chatgpt.com", path: "/" }]
+  const next = current.map(cookie => ({ ...cookie, value: cookie.value.replace("OLD", "NEW") }))
+  let fail = true
+  const jar = { get: async () => current, remove: async (_url: string, name: string) => { current = current.filter(cookie => cookie.name !== name) },
+    set: async (cookie: typeof current[number]) => { if (fail && cookie.value === "NEW_1") { fail = false; throw Error("native write failed") }; current.push(cookie) }, flushStore: async () => {} }
+  await expect(restoreGptProCookieSnapshot(jar as never, next as never, () => {})).rejects.toThrow("credential_storage")
+  expect(current.map(cookie => cookie.value)).toEqual(["OLD_0", "OLD_1"])
+  await restoreGptProCookieSnapshot(jar as never, next as never, () => {})
+  expect(current.map(cookie => cookie.value)).toEqual(["NEW_0", "NEW_1"])
+})
+
+test("normal session rotations are not new logins; removal and expiry revoke identity evidence", () => {
+  const name = "__Secure-next-auth.session-token"
+  expect(gptProSessionCookieRevoked(name, "overwrite", true)).toBe(false)
+  expect(gptProSessionCookieRevoked(name, "expired-overwrite", true)).toBe(false)
+  expect(gptProSessionCookieRevoked(name, "explicit", false)).toBe(false)
+  expect(gptProSessionCookieRevoked(name, "explicit", true)).toBe(true)
+  expect(gptProSessionCookieRevoked(`${name}.0`, "expired", true)).toBe(true)
+  expect(gptProSessionCookieRevoked("unrelated", "explicit", true)).toBe(false)
+})
 
 const cookie = {
   name: "__Secure-next-auth.session-token",

@@ -235,11 +235,12 @@ export const layer = Layer.effect(
                   text: Schema.String,
                   truncated: Schema.Boolean,
                   error: Schema.optional(Schema.String),
+                  errorCode: Schema.optional(Schema.String),
                   recovery: Schema.optional(
                     Schema.Struct({
                       stage: Schema.Literals(["open", "ready", "model", "compose", "submit", "track"]),
                       reason: Schema.String,
-                      needsHuman: Schema.optional(Schema.Boolean),
+                      humanAction: Schema.optional(Schema.Literals(["login", "verification", "secure_storage", "restore_account"])),
                     }),
                   ),
                 }),

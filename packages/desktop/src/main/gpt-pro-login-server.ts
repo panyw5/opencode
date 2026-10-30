@@ -16,13 +16,19 @@ type Dependencies = {
   extensionDirectory: string
   ttl?: number
   operationWarningMs?: number
+  changed?: () => void
 }
 
 type Connection = { server: Server; token: Buffer; port: number; timer: ReturnType<typeof setTimeout> }
 
 export class GptProLoginServer {
   private connection?: Connection
-  private state: GptProLoginStatus = { phase: "idle" }
+  private value: GptProLoginStatus = { phase: "idle" }
+  private get state() { return this.value }
+  private set state(value: GptProLoginStatus) {
+    this.value = value
+    this.deps.changed?.()
+  }
   private starting?: Promise<string>
   private generation = 0
 
@@ -30,6 +36,11 @@ export class GptProLoginServer {
 
   status(): GptProLoginStatus {
     return { ...this.state, extensionDirectory: this.deps.extensionDirectory }
+  }
+  verified() {
+    this.state = { ...this.state, phase: "imported", error: undefined, errorCode: undefined }
+    this.deps.log("login-connection candidate explicitly verified and promoted; no message dispatched")
+    return this.status()
   }
 
   start(): Promise<string> {
@@ -82,7 +93,7 @@ export class GptProLoginServer {
         this.state = {
           ...this.state,
           phase: "expired",
-          errorCode: "login_expired",
+          errorCode: "login_connection_expired",
           error: "Connection expired. Open a new connection.",
         }
       this.deps.log(`login-connection expired phase=${this.state.phase}`)
@@ -195,7 +206,7 @@ export class GptProLoginServer {
       return
     }
     if (this.state.expiresAt === undefined || Date.now() >= this.state.expiresAt) {
-      this.reply(response, 410, { error: "Connection expired." })
+      this.reply(response, 410, { error: "Connection expired.", code: "login_connection_expired" })
       return
     }
     if (
@@ -239,7 +250,7 @@ export class GptProLoginServer {
         chunks.push(buffer)
       }
       if (Date.now() >= this.state.expiresAt!)
-        throw new GptProOperationError("login_expired", "Connection expired. Open a new connection.")
+        throw new GptProOperationError("login_connection_expired", "Connection expired. Open a new connection.")
       body = Buffer.concat(chunks)
       let cookies: SessionCookie[]
       try {
@@ -287,7 +298,7 @@ export class GptProLoginServer {
         response,
         code === "login_import_busy"
           ? 409
-          : code === "login_expired"
+          : code === "login_connection_expired"
             ? 410
             : code === "login_invalid_session"
               ? 400

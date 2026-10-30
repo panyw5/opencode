@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process"
+import { randomUUID } from "node:crypto"
 import { realpath, stat } from "node:fs/promises"
 import { basename, join } from "node:path"
 import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, shell, webContents } from "electron"
@@ -21,10 +22,10 @@ import { GptProProbe } from "./gpt-pro-probe"
 import { GptProLoginServer } from "./gpt-pro-login-server"
 import { launchGptProLogin } from "./gpt-pro-login-launcher"
 import { getGptProCredentials } from "./gpt-pro-credentials"
-import { gptProBridgeState } from "./gpt-pro-bridge-state"
-import { inspectGptProImportSafety } from "./gpt-pro-import-safety"
-import { GptProOperationError } from "@opencode-ai/util/gpt-pro-error"
-import { GPT_PRO_PARTITION, GPT_PRO_URL } from "@opencode-ai/util/gpt-pro"
+import { gptProBridgeState, onGptProBridgeState } from "./gpt-pro-bridge-state"
+import { getGptProSessionCoordinator, releaseGptProSessionCoordinator } from "./gpt-pro-session-coordinator"
+import { gptProRuntimeSnapshot } from "./gpt-pro-runtime-snapshot"
+import { GptProLoginTransaction } from "./gpt-pro-login-transaction"
 import type { GptProCommand, GptProConfig } from "@opencode-ai/util/gpt-pro"
 import { getGptProController } from "./gpt-pro-runtime"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
@@ -95,8 +96,24 @@ const pickerFilters = (ext?: string[]) => {
 }
 
 const pickedFiles = createPickedFileAuthorizations()
-const gptProProbe = new GptProProbe(browserController, (message) => writeLog("gpt-pro", message))
+const gptProProbe = new GptProProbe(browserController, (message) => writeLog("gpt-pro", message), () => getGptProCredentials().profileID())
+const gptProSession = () => getGptProSessionCoordinator(browserController, getGptProCredentials().profileID(), (message) => writeLog("gpt-pro", message))
+const runtimeListeners = new Set<() => void>()
+const runtimeSourceID = randomUUID()
+let runtimeSequence = 0
+const runtimeChanged = () => {
+  runtimeSequence++
+  for (const listener of runtimeListeners) listener()
+}
 let gptProLogin: GptProLoginServer | undefined
+let gptProTransaction: GptProLoginTransaction | undefined
+function loginTransaction() {
+  return gptProTransaction ??= new GptProLoginTransaction({
+    controller: getGptProController(), credentials: getGptProCredentials(), browser: browserController,
+    coordinator: profile => getGptProSessionCoordinator(browserController, profile, message => writeLog("gpt-pro", message)),
+    changed: runtimeChanged, log: message => writeLog("gpt-pro", message),
+  })
+}
 
 function loginConnection() {
   if (gptProLogin) return gptProLogin
@@ -105,21 +122,8 @@ function loginConnection() {
       ? join(process.resourcesPath, "gpt-pro-login")
       : join(app.getAppPath(), "resources", "gpt-pro-login"),
     log: (message) => writeLog("gpt-pro", message),
-    importCookies: (cookies) =>
-      getGptProController().importLogin(async () => {
-        await getGptProCredentials().ready()
-        const { pages, blockers } = await inspectGptProImportSafety(browserController, (message) =>
-          writeLog("gpt-pro", message),
-        )
-        if (blockers.length)
-          throw new GptProOperationError(
-            "login_import_busy",
-            "A shared ChatGPT page is loading, has a draft or attachment, or is generating. Existing login was not changed.",
-          )
-        await getGptProCredentials().replace(cookies)
-        for (const page of pages) browserController.cdp(page.pageID ?? page.partition)?.reload()
-        writeLog("gpt-pro", `login-import reload idle profile pages count=${pages.length}; dispatch lock still held`)
-      }),
+    changed: runtimeChanged,
+    importCookies: (cookies) => loginTransaction().import(cookies),
     imported: async () => {
       await gptProProbe.open()
     },
@@ -129,6 +133,7 @@ function loginConnection() {
 }
 
 async function openGptProLogin() {
+  if (getGptProCredentials().status().phase === "storage_fault") await getGptProCredentials().recover()
   return launchGptProLogin(
     loginConnection(),
     (url) => shell.openExternal(url),
@@ -178,6 +183,66 @@ export function registerIpcHandlers(deps: Deps) {
   })
   app.on("before-quit", () => notifications.dispose())
   getGptProController()
+  // Startup is an explicit lifecycle operation, never a side effect of runtimeStatus.
+  void getGptProCredentials().ready().then(runtimeChanged, runtimeChanged)
+  const runtimeSnapshot = () => ({ ...gptProRuntimeSnapshot({
+    session: { ...gptProSession().snapshot(), import: { ...gptProSession().snapshot().import, candidateProfileID: gptProTransaction?.pendingProfileID() } },
+    config: getGptProController().config(),
+    login: loginConnection().status(),
+    credentials: getGptProCredentials().status(),
+    bridge: gptProBridgeState(),
+    managed: getGptProController().importStatus(),
+  }), sourceID: runtimeSourceID, sequence: runtimeSequence, executionStorage: getGptProController().storageStatus() })
+  const runtimeSubscriptions = new Map<string, () => void>()
+  let observedSession = gptProSession()
+  let sessionUnsubscribe = observedSession.subscribe(runtimeChanged)
+  const runtimeCleanup = [getGptProController().subscribeState(runtimeChanged), onGptProBridgeState(runtimeChanged),
+    getGptProCredentials().subscribe(() => {
+      const current = gptProSession()
+      if (current !== observedSession) {
+        sessionUnsubscribe()
+        observedSession = current
+        sessionUnsubscribe = current.subscribe(runtimeChanged)
+      }
+      runtimeChanged()
+    }),
+    getGptProCredentials().onSessionChanged(id => getGptProSessionCoordinator(browserController, id).credentialsChanged()),
+    getGptProCredentials().onProfileReleased(id => {
+      releaseGptProSessionCoordinator(browserController, id)
+      gptProTransaction?.profileReleased(id)
+    }),
+    browserController.onViewClosed(() => {
+      void getGptProCredentials().collect(id => browserController.getState().some(view => view.profileID === id)).catch(() => writeLog("gpt-pro", "retired profile cleanup deferred"))
+    }),
+  ]
+  app.once("before-quit", () => {
+    runtimeCleanup.forEach((cleanup) => cleanup())
+    runtimeSubscriptions.forEach((cleanup) => cleanup())
+    runtimeListeners.clear()
+    sessionUnsubscribe()
+    observedSession.dispose()
+  })
+  ipcMain.handle("gpt-pro-runtime-subscribe", (event, subscriptionID: string) => {
+    if (typeof subscriptionID !== "string" || subscriptionID.length > 100) throw new Error("Invalid runtime subscription")
+    const sender = event.sender
+    const key = `${sender.id}:${subscriptionID}`
+    runtimeSubscriptions.get(key)?.()
+    const listener = () => {
+      if (!sender.isDestroyed()) sender.send("gpt-pro-runtime-changed", { subscriptionID, status: runtimeSnapshot() })
+    }
+    const cleanup = () => {
+      runtimeListeners.delete(listener)
+      runtimeSubscriptions.delete(key)
+      sender.removeListener("destroyed", cleanup)
+    }
+    runtimeListeners.add(listener)
+    runtimeSubscriptions.set(key, cleanup)
+    sender.once("destroyed", cleanup)
+    return runtimeSnapshot()
+  })
+  ipcMain.on("gpt-pro-runtime-unsubscribe", (event, subscriptionID: string) => {
+    runtimeSubscriptions.get(`${event.sender.id}:${subscriptionID}`)?.()
+  })
   const gptStateSubscriptions = new Map<string, () => void>()
   ipcMain.handle("gpt-pro-state-read", (_event, id: string) => getGptProController().stateRead(id))
   ipcMain.handle("gpt-pro-state-list", () => getGptProController().stateList())
@@ -205,7 +270,11 @@ export function registerIpcHandlers(deps: Deps) {
     gptStateSubscriptions.get(`${event.sender.id}:${subscriptionID}`)?.()
   })
   ipcMain.handle("gpt-pro-config", () => getGptProController().config())
-  ipcMain.handle("gpt-pro-set-config", (_event, config: GptProConfig) => getGptProController().setConfig(config))
+  ipcMain.handle("gpt-pro-set-config", (_event, config: GptProConfig) => {
+    const result = getGptProController().setConfig(config)
+    runtimeChanged()
+    return result
+  })
   ipcMain.handle("gpt-pro-command", (_event, command: GptProCommand) => getGptProController().command(command))
   ipcMain.handle("gpt-pro-attachment-preview", (_event, input: { id: string; attachmentID: string }) =>
     getGptProController().attachmentPreview(input),
@@ -213,36 +282,28 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("gpt-pro-list", () => getGptProController().list())
   ipcMain.handle("gpt-pro-open", async () => {
     await getGptProCredentials().ready()
-    return gptProProbe.open()
+    const pending = gptProTransaction?.pendingProfileID()
+    if (pending && browserController.has(pending)) {
+      return new GptProProbe(browserController, message => writeLog("gpt-pro", message), () => pending).open()
+    }
+    const status = await gptProProbe.open()
+    return status
   })
   ipcMain.handle("gpt-pro-status", () => gptProProbe.status())
+  ipcMain.handle("gpt-pro-inspect", () => gptProProbe.inspect())
   ipcMain.handle("gpt-pro-login", () => openGptProLogin())
   ipcMain.handle("gpt-pro-login-status", () => loginConnection().status())
   ipcMain.handle("gpt-pro-login-cancel", () => loginConnection().cancel())
-  ipcMain.handle("gpt-pro-runtime-status", async () => {
-    const credentials = getGptProCredentials()
-    await credentials.ready().catch(() => {})
-    if (
-      credentials.status().phase === "encrypted" &&
-      !browserController.getState().some((view) => view.profileID === GPT_PRO_PARTITION)
-    )
-      await browserController
-        .openPage(GPT_PRO_PARTITION, GPT_PRO_PARTITION, GPT_PRO_URL, { kind: "login" })
-        .catch(() => {})
-    const controller = getGptProController()
-    const authentication = await gptProProbe.authentication()
-    const managed = controller.importStatus()
-    const manual = await inspectGptProImportSafety(browserController, (message) => writeLog("gpt-pro", message))
-    return {
-      config: controller.config(),
-      login: loginConnection().status(),
-      authentication,
-      credentials: credentials.status(),
-      bridge: gptProBridgeState(),
-      importBlocked: managed.importBlocked || !!manual.blockers.length,
-      blockers: [...managed.blockers, ...manual.blockers],
-      jobs: controller.list(),
-    }
+  ipcMain.handle("gpt-pro-login-verify", async () => {
+    await loginTransaction().verify()
+    loginConnection().verified()
+    return runtimeSnapshot()
+  })
+  ipcMain.handle("gpt-pro-runtime-status", runtimeSnapshot)
+  ipcMain.handle("gpt-pro-storage-recover", async () => {
+    await getGptProController().recoverStorage()
+    runtimeChanged()
+    return runtimeSnapshot()
   })
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
   ipcMain.handle("browser-open", (_event: IpcMainInvokeEvent, pageID: string, url: string) =>

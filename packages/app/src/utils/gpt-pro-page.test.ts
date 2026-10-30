@@ -7,6 +7,8 @@ import {
   CHATGPT_COMPOSER_ATTACHMENT_TARGET_EXPRESSION,
   CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION,
   CHATGPT_ONBOARDING_DISMISS_EXPRESSION,
+  CHATGPT_AUTH_METADATA_EXPRESSION,
+  CHATGPT_METADATA_EXPRESSION,
 } from "@opencode-ai/util/chatgpt-page"
 import { createHash } from "node:crypto"
 
@@ -102,6 +104,51 @@ function blobResponse(url: string, chunks: Uint8Array[], contentLength?: number)
 }
 
 describe("ChatGPT reply HTML extraction", () => {
+  test("routine driver metadata never extracts answer HTML or old user bodies", () => {
+    conversation("<p>Unrelated long formula answer</p>")
+    const first = document.querySelector('[data-message-author-role="user"]')!
+    const next = document.createElement("div")
+    next.setAttribute("data-message-author-role", "user")
+    next.setAttribute("data-message-id", "u2")
+    next.textContent = "New question"
+    document.querySelector("main")!.append(next)
+    first.cloneNode = () => { throw Error("Old prompt must not be cloned") }
+    document.querySelector(".markdown")!.cloneNode = () => { throw Error("Answer must not be cloned") }
+    const page = window.eval(CHATGPT_METADATA_EXPRESSION)
+    expect(page.answers).toEqual([])
+    expect(page.answer).toBeUndefined()
+    expect(page.users).toEqual([{ id: "u1", text: "" }, { id: "u2", text: "New question" }])
+  })
+  test("streaming changes sanitize only their changed block and preserve exact snapshot output", () => {
+    conversation(Array.from({ length: 100 }, (_, i) => `<p>Block ${i} <span class="katex">x_${i}</span></p>`).join(""), false)
+    const first = window.eval(chatGptCaptureExpression({ userID: "u1" }))
+    expect(first.capture.blocksRecomputed).toBe(100)
+    const last = document.querySelector(".markdown p:last-child span")!
+    last.textContent = "new formula"
+    last.setAttribute("onclick", "forbidden()")
+    const next = window.eval(chatGptCaptureExpression({ userID: "u1", knownVersion: first.capture.version }))
+    expect(next.capture.blocksRecomputed).toBe(1)
+    expect(next.capture.elementsSanitized).toBe(2)
+    expect(next.answers[0].html).not.toContain("onclick")
+    const full = window.eval(chatGptCaptureExpression({ userID: "u1", force: true }))
+    expect(full.capture.blocksRecomputed).toBe(100)
+    expect(next.answers[0].html).toBe(full.answers[0].html)
+    expect(next.answers[0].text).toBe(full.answers[0].text)
+  })
+  test("authentication metadata never clones answers or installs answer observers", () => {
+    conversation("<p>Private long answer</p>")
+    const answer = document.querySelector('.markdown')!
+    answer.cloneNode = () => { throw new Error("Answer cloning is forbidden for metadata") }
+    expect(window.eval(CHATGPT_AUTH_METADATA_EXPRESSION).verification).toBe(false)
+    expect((window as any).__opencodeGptProTracking).toBeUndefined()
+  })
+
+  test("authentication metadata distinguishes visible challenges from answer markup", () => {
+    conversation('<iframe src="https://challenges.cloudflare.com/test"></iframe>')
+    expect(window.eval(CHATGPT_AUTH_METADATA_EXPRESSION).verification).toBe(false)
+    document.querySelector("main")!.insertAdjacentHTML("beforeend", '<div id="challenge-form"></div>')
+    expect(window.eval(CHATGPT_AUTH_METADATA_EXPRESSION).verification).toBe(true)
+  })
   test("scopes duplicate enabled file inputs to the sole visible composer", () => {
     document.body.innerHTML = `
       <style>.inactive-composer { display: none; }</style>

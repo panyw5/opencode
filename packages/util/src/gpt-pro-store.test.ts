@@ -126,7 +126,7 @@ describe("GPT-Pro complete state contracts", () => {
   })
   test("archives do not manufacture runtime fields or mutation authority", () => {
     const result = gptProArchivedResult(
-      job({ phase: "completed", recovery: { stage: "ready", reason: "old", needsHuman: true } }),
+      job({ phase: "completed", recovery: { stage: "ready", reason: "old", humanAction: "verification" } }),
     )
     expect(result).not.toHaveProperty("recovery")
     expect(result).not.toHaveProperty("attachments")
@@ -177,7 +177,7 @@ describe("GPT-Pro shared state store", () => {
   test("cleared fields replace earlier errors, recovery, stopping, and attachments", async () => {
     const f = fixture()
     f.replace(
-      [job({ error: "old", recovery: { stage: "ready", reason: "old", needsHuman: true }, stopPending: true })],
+      [job({ error: "old", recovery: { stage: "ready", reason: "old", humanAction: "verification" }, stopPending: true })],
       1,
     )
     const off = f.store.watch("one", () => {})

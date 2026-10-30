@@ -43,6 +43,8 @@ export const dict = {
   "gptPro.open": "Open gpt-pro browser",
   "gptPro.login": "Open connection page in default browser",
   "gptPro.refresh": "Refresh",
+  "gptPro.verifyLogin": "Verify Imported Login",
+  "gptPro.recoverStorage": "Recover Execution Storage",
   "gptPro.importStatus.label": "Current connection/import operation",
   "gptPro.importStatus.success": "Imported",
   "gptPro.importStatus.failed": "Import failed",

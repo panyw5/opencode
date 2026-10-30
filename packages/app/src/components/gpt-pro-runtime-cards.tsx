@@ -86,18 +86,18 @@ function RuntimeCard(props: {
 }
 
 export function GptProRuntimeCards(props: { runtime?: GptProRuntimeStatus; t: ReturnType<typeof useLanguage>["t"] }) {
-  const phase = () => props.runtime?.authentication.phase ?? "unknown"
+  const phase = () => props.runtime?.session.authentication.phase ?? "unverified"
   const loginStatus = () => {
     if (phase() === "authenticated") return props.t("gptPro.auth.authenticated")
-    if (phase() === "needs_login") return props.t("gptPro.auth.needsLogin")
+    if (phase() === "invalid") return props.t("gptPro.auth.needsLogin")
     if (phase() === "verification") return props.t("gptPro.auth.verification")
-    if (phase() === "loading") return props.t("gptPro.auth.loading")
+    if (phase() === "verifying") return props.t("gptPro.auth.loading")
     return props.t("gptPro.auth.unknown")
   }
   const loginTone = (): Tone =>
     phase() === "authenticated"
       ? "healthy"
-      : ["needs_login", "verification"].includes(phase())
+      : ["invalid", "verification"].includes(phase())
         ? "attention"
         : "neutral"
   return (
@@ -111,14 +111,14 @@ export function GptProRuntimeCards(props: { runtime?: GptProRuntimeStatus; t: Re
           value={loginStatus()}
           status="authentication"
           featured
-          detail={props.runtime?.authentication.account}
+          detail={props.runtime?.session.authentication.account}
         />
         <RuntimeCard
           kind="model"
           title={props.t("gptPro.card.model")}
           icon="models"
           tone="neutral"
-          value={props.runtime?.authentication.model || props.t("gptPro.auth.unknown")}
+          value={props.runtime?.session.page.model || props.t("gptPro.auth.unknown")}
           detail={props.t("gptPro.card.userSelected")}
         />
         <RuntimeCard
@@ -138,11 +138,11 @@ export function GptProRuntimeCards(props: { runtime?: GptProRuntimeStatus; t: Re
           kind="storage"
           title={props.t("gptPro.auth.storage")}
           icon="shield-check"
-          tone={!props.runtime ? "neutral" : props.runtime.credentials.phase === "encrypted" ? "healthy" : "attention"}
+          tone={!props.runtime ? "neutral" : props.runtime.credentials.phase === "available" ? "healthy" : "attention"}
           value={
             !props.runtime
               ? props.t("gptPro.auth.unknown")
-              : props.runtime.credentials.phase === "encrypted"
+              : props.runtime.credentials.phase === "available"
                 ? props.t("gptPro.card.encrypted")
                 : props.t("gptPro.auth.storageUnavailable")
           }

@@ -23,12 +23,13 @@ test("runtime cards keep verified, pending and attention states distinct", async
     const runtime: GptProRuntimeStatus = {
       config: DEFAULT_GPT_PRO_CONFIG,
       login: { phase: "idle" },
-      authentication: { phase: "authenticated", account: "test@example.invalid", model: "Pro", checkedAt: 1 },
-      credentials: { phase: "encrypted" },
+      session: { profileID: "synthetic", generation: 1, revision: 1,
+        authentication: { phase: "authenticated", account: "test@example.invalid", checkedAt: 1 },
+        page: { phase: "interactive", model: "Pro" }, import: { phase: "verified" } },
+      credentials: { phase: "available" },
       bridge: { connected: true },
       importBlocked: false,
       blockers: [],
-      jobs: [],
     }
     const healthy = renderToString(() => GptProRuntimeCards({ runtime, t }))
     expect(healthy.match(/data-runtime-card=/g)).toHaveLength(4)
@@ -54,8 +55,8 @@ test("runtime cards keep verified, pending and attention states distinct", async
         t,
         runtime: {
           ...runtime,
-          authentication: { phase: "verification", checkedAt: 1 },
-          credentials: { phase: "unavailable" },
+          session: { ...runtime.session, authentication: { phase: "verification", checkedAt: 1 } },
+          credentials: { phase: "storage_fault" },
           bridge: { connected: false },
           importBlocked: true,
           blockers: [{ id: "gpt_test", phase: "generating" }],

@@ -9,6 +9,7 @@ export function createGptProPersistence(
   store: Store,
   log: (message: string) => void,
   archive?: { save(jobs: GptProJob[]): void; read(id: string, owners?: string[]): GptProJob | undefined },
+  execution?: { load(legacy: () => GptProJob[]): GptProJob[]; save(jobs: GptProJob[]): void; flush?(): void | Promise<void> },
 ) {
   const started = performance.now()
   // electron-store parses the entire history on get(), including completed results.
@@ -26,21 +27,25 @@ export function createGptProPersistence(
   log(`config cache initialized enabled=${config.enabled} durationMs=${(performance.now() - started).toFixed(2)}`)
   return {
     load() {
-      const started = performance.now()
-      const value = store.get("jobs")
-      const jobs = Array.isArray(value)
-        ? (value.filter(
-            (job) =>
-              job && typeof job.id === "string" && typeof job.owner === "string" && typeof job.prompt === "string",
-          ) as GptProJob[])
-        : []
-      log(`history loaded jobs=${jobs.length} durationMs=${(performance.now() - started).toFixed(2)}`)
-      archiveJobs(jobs)
-      return jobs
+      const legacy = () => {
+        const started = performance.now()
+        const value = store.get("jobs")
+        const jobs = Array.isArray(value)
+          ? (value.filter(
+              (job) =>
+                job && typeof job.id === "string" && typeof job.owner === "string" && typeof job.prompt === "string",
+            ) as GptProJob[])
+          : []
+        log(`history loaded jobs=${jobs.length} durationMs=${(performance.now() - started).toFixed(2)}`)
+        archiveJobs(jobs)
+        return jobs
+      }
+      return execution ? execution.load(legacy) : legacy()
     },
     save(jobs: GptProJob[]) {
       const started = performance.now()
-      store.set("jobs", jobs)
+      if (execution) execution.save(jobs)
+      else store.set("jobs", jobs)
       archiveJobs(jobs)
       const elapsed = performance.now() - started
       if (elapsed >= 16) log(`history save slow jobs=${jobs.length} durationMs=${elapsed.toFixed(2)}`)
@@ -49,6 +54,7 @@ export function createGptProPersistence(
       return { ...config }
     },
     readResult: archive?.read,
+    flush: async () => { await execution?.flush?.() },
     setConfig(next: GptProConfig) {
       const copy = { ...next }
       // Publish only after the durable write succeeds, so failed settings writes don't take effect.

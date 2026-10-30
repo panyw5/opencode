@@ -3,6 +3,8 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "gptPro.verifyLogin": "驗證候選登入",
+  "gptPro.recoverStorage": "恢復執行儲存",
   "session.referenceNew": "引用並新增工作階段",
   "session.copyReference": "複製為工作階段引用",
   "projectTask.status.open": "待開始",

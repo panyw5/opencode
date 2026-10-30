@@ -4,6 +4,7 @@ import DESCRIPTION from "./gpt_pro_consult.txt"
 import { Browser } from "@/browser"
 import { InstanceState } from "@/effect/instance-state"
 import { gptProTerminal, type GptProJob } from "@opencode-ai/util/gpt-pro"
+import { gptProRecoveryInstruction } from "@opencode-ai/util/gpt-pro-error"
 import * as Log from "@opencode-ai/core/util/log"
 import { prepareGptProAttachments } from "./gpt-pro-attachments"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -173,7 +174,7 @@ export const GptProConsultTool = Tool.define(
                       : job.owner !== owner
                         ? "This is a read-only handoff from a descendant session. Read this same consultation ID for its result; do not create a duplicate, stop, resume or mutate it from the parent. Recovery and cancellation belong to its original session."
                         : job.recovery
-                          ? `The fixed flow failed at ${job.recovery.stage}. Use the existing browser_* tools with consultation_id=${job.id} to inspect and repair this consultation's page, then resume this same ID. Never create a replacement or resend an attempted question. The program owns managed prompt submission and tracking. ${job.recovery.needsHuman ? (job.errorCode === "login" ? "Human ChatGPT login is required; ask the user to reconnect their login before continuing." : "Human browser verification is required; do not automate the challenge.") : "You may use action=send after verifying the exact managed prompt and GPT-6 Pro; send is guarded against duplicates."}`
+                          ? gptProRecoveryInstruction(job)
                           : gptProTerminal(job.phase) && job.phase !== "paused"
                             ? "The consultation did not complete. Report its error, do not claim an answer, and do not automatically resubmit. Resolve browser verification, login or network access before a new explicit consultation."
                             : job.background && job.phase !== "paused"

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { createGptProRefreshFence } from "./gpt-pro-refresh-fence"
+import { createGptProRefreshFence, createGptProRuntimeFence } from "./gpt-pro-refresh-fence"
 
 test("a delayed poll cannot overwrite a newer settings write", () => {
   const fence = createGptProRefreshFence()
@@ -17,4 +17,12 @@ test("out-of-order responses and disposed views reject stale reads", () => {
   expect(fence.current(second)).toBe(true)
   fence.invalidate()
   expect(fence.current(second)).toBe(false)
+})
+
+test("a subscription event fences an older runtime snapshot response", () => {
+  const fence = createGptProRuntimeFence()
+  expect(fence.accept({ sourceID: "main", sequence: 2 })).toBe(true)
+  expect(fence.accept({ sourceID: "main", sequence: 1 })).toBe(false)
+  expect(fence.accept({ sourceID: "main", sequence: 3 })).toBe(true)
+  expect(fence.accept({ sourceID: "restarted", sequence: 0 })).toBe(true)
 })

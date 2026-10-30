@@ -35,6 +35,7 @@ export function collectGptProNotification(
     text: content.slice(0, LIMIT),
     truncated: content.length > LIMIT,
     error: job.error,
+    errorCode: job.errorCode,
     recovery: job.recovery,
   }
   job.notificationSequence = sequence

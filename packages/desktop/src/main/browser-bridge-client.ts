@@ -244,7 +244,7 @@ export class BridgeClient {
       case "navigate": {
         const url = String(args.url ?? "")
         if (!url) throw new Error("navigate requires url")
-        const state = await controller.open(pageID, url)
+        const state = await controller.open(pageID, url, "agent")
         return { state }
       }
       case "snapshot": {

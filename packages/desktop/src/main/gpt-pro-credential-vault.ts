@@ -3,6 +3,7 @@ import { dirname } from "node:path"
 import { randomUUID } from "node:crypto"
 import type { Cookie } from "electron"
 import { GptProOperationError } from "@opencode-ai/util/gpt-pro-error"
+import { sessionCookieFamily } from "../../resources/gpt-pro-login/common.js"
 
 type Dependencies = {
   path: string
@@ -42,9 +43,7 @@ export class GptProCredentialVault {
       validateCookies(cookies)
       await chmod(this.deps.path, 0o600)
       this.deps.log(`credential-vault restored count=${cookies.length}; values omitted`)
-      return cookies.filter(
-        (cookie: Cookie) => cookie.expirationDate === undefined || cookie.expirationDate > Date.now() / 1000,
-      )
+      return restorableGptProCookies(cookies)
     } catch {
       throw new GptProOperationError(
         "credential_storage",
@@ -74,6 +73,14 @@ export class GptProCredentialVault {
             await file.close()
           }
           await rename(temp, this.deps.path)
+          if (process.platform !== "win32") {
+            const directory = await open(dirname(this.deps.path), "r")
+            try {
+              await directory.sync()
+            } finally {
+              await directory.close()
+            }
+          }
           this.deps.log(`credential-vault committed encrypted=true count=${cookies.length}`)
         } catch {
           throw new GptProOperationError(
@@ -88,6 +95,33 @@ export class GptProCredentialVault {
     this.tail = task
     return task
   }
+}
+
+// Dropping a single expired chunk must not restore a truncated login session.
+export function restorableGptProCookies(cookies: Cookie[], now = Date.now() / 1000) {
+  const groups = new Map<string, Cookie[]>()
+  for (const cookie of cookies) {
+    const family = sessionCookieFamily(cookie.name)
+    if (!family) continue
+    const key = `${cookie.domain}:${cookie.path}:${family}`
+    const group = groups.get(key) ?? []
+    group.push(cookie)
+    groups.set(key, group)
+  }
+  const invalid = new Set<Cookie>()
+  for (const group of groups.values()) {
+    const family = sessionCookieFamily(group[0].name)!
+    const whole = group.filter((cookie) => cookie.name === family)
+    const indices = group.map((cookie) => Number(cookie.name.slice(family.length + 1))).sort((a, b) => a - b)
+    if (
+      group.some((cookie) => cookie.expirationDate !== undefined && cookie.expirationDate <= now) ||
+      (whole.length ? group.length !== 1 : indices.some((index, position) => index !== position))
+    )
+      group.forEach((cookie) => invalid.add(cookie))
+  }
+  return cookies.filter(
+    (cookie) => !invalid.has(cookie) && (cookie.expirationDate === undefined || cookie.expirationDate > now),
+  )
 }
 
 function validateCookies(cookies: unknown): asserts cookies is Cookie[] {

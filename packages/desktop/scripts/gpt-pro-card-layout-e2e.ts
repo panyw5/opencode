@@ -34,7 +34,7 @@ await withCdp(async (cdp, target) => {
       dispose = web.render(() => component.GptProTool({
         status: "completed", input: {},
         metadata: { consultation_id: id, phase: "paused", background: true, error: "connection timed out",
-          recovery: { needsHuman: true }, stop_pending: true,
+          recovery: { humanAction: "verification" }, stop_pending: true,
           attachments: [{ id: "old", name: "stale.txt", status: "failed", error: "Old attachment error" }] },
       }), host)
     }
@@ -70,7 +70,7 @@ await withCdp(async (cdp, target) => {
       if (original.state.kind !== "execution") throw new Error("Expected a local execution snapshot for fixture seed")
       const initial = { ...original.state.job, id: "layout-one", owner: "/layout\\nfixture", parentID: null, successorID: null,
         stateVersion: 1, phase: "paused", error: "verification", errorCode: "verification",
-        recovery: { stage: "ready", reason: "verify", needsHuman: true }, stopPending: true,
+        recovery: { stage: "ready", reason: "verify", humanAction: "verification" }, stopPending: true,
         attachments: [{ id: "live", name: "live.txt", mime: "text/plain", status: "failed", error: "Live upload failed" }] }
       let current = initial
       let sequence = 1
@@ -92,7 +92,7 @@ await withCdp(async (cdp, target) => {
       const roots = [document.createElement("div"), document.createElement("div")]
       roots.forEach(root => host.append(root))
       const off = roots.map(root => web.render(() => component.GptProTool({ client: fake, status: "completed", input: {},
-        metadata: { consultation_id: "layout-one", phase: "paused", recovery: { needsHuman: true }, stop_pending: true,
+        metadata: { consultation_id: "layout-one", phase: "paused", recovery: { humanAction: "verification" }, stop_pending: true,
           attachments: [{ id: "obsolete", name: "obsolete.txt", status: "failed", error: "Obsolete upload" }] },
       }), root))
       const settle = () => new Promise(resolve => setTimeout(resolve, 50))

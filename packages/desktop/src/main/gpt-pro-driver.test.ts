@@ -1,13 +1,45 @@
 import { describe, expect, test } from "bun:test"
 import { GptProDriver } from "./gpt-pro-driver"
 import { GptProPageError } from "./gpt-pro-page-error"
+import type { BeforeTrustedClick } from "./browser-cdp"
 import { GPT_PRO_PARTITION, GPT_PRO_URL, type GptProPageState } from "@opencode-ai/util/gpt-pro"
 import {
   CHATGPT_INSPECT_EXPRESSION,
+  CHATGPT_METADATA_EXPRESSION,
   CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION,
   CHATGPT_ONBOARDING_DISMISS_EXPRESSION,
   CHATGPT_SEND_TARGET_EXPRESSION,
 } from "@opencode-ai/util/chatgpt-page"
+
+test("account verification rejects page changes while the session request was pending", async () => {
+  let url = GPT_PRO_URL
+  const driver = new GptProDriver({
+    getState: () => [{ partition: GPT_PRO_PARTITION, url, epoch: 1 }],
+    cdp: () => ({ evaluate: async () => {
+      url = `${GPT_PRO_URL}auth/login`
+      return { phase: "authenticated", identity: "stale-user" }
+    } }),
+  } as never)
+  await expect(driver.account()).rejects.toThrow("page_changed")
+})
+
+test("a stopped redirect loop fails account verification before another request", async () => {
+  const driver = new GptProDriver({
+    getState: () => [{ partition: GPT_PRO_PARTITION, url: GPT_PRO_URL, epoch: 1, authRedirectLoop: true }],
+    cdp: () => { throw Error("must not read credentials for stopped loop") },
+  } as never)
+  await expect(driver.account()).rejects.toThrow("page_changed")
+})
+
+test("same-URL reload at the trusted click boundary cannot persist intent or send", async () => {
+  let refresh = () => {}
+  const f = fixture({ beforeClickCommit: () => refresh() })
+  refresh = f.refresh
+  let committed = false
+  await expect(f.driver.submit(async () => () => { committed = true })).rejects.toThrow("page_changed")
+  expect(committed).toBe(false)
+  expect(f.clicks).toEqual([])
+})
 
 function fixture(
   options: {
@@ -24,6 +56,7 @@ function fixture(
     persistentOverlay?: boolean
     focusAccepted?: boolean
     sendUidMatches?: boolean
+    beforeClickCommit?: () => void
     afterInspect?: (page: GptProPageState, count: number) => void
     capture?: (
       options: { userID: string; knownVersion?: string; force?: boolean },
@@ -67,11 +100,11 @@ function fixture(
     evaluate: async (expression: string) => {
       reads++
       const captureMarker = "attachmentTarget,sendTarget,"
-      if (options.capture && expression.includes(captureMarker)) {
+      if (options.capture && expression !== CHATGPT_METADATA_EXPRESSION && expression.includes(captureMarker)) {
         const input = JSON.parse(expression.slice(expression.lastIndexOf(captureMarker) + captureMarker.length, -5))
         return options.capture(input, structuredClone(page))
       }
-      if (expression === CHATGPT_INSPECT_EXPRESSION) {
+      if (expression === CHATGPT_INSPECT_EXPRESSION || expression === CHATGPT_METADATA_EXPRESSION) {
         const snapshot = structuredClone(page)
         options.afterInspect?.(page, ++inspectCount)
         return snapshot
@@ -97,15 +130,19 @@ function fixture(
       clicks.push(selector)
       if (selector === overlay?.selector && !options.persistentOverlay) overlay = null
     },
-    clickResolved: async (expression: string, beforeDispatch?: () => Promise<void>) => {
+    clickResolved: async (expression: string, beforeDispatch?: BeforeTrustedClick) => {
       if (covered) throw Error("Control is covered; no click dispatched")
-      await beforeDispatch?.()
+      const commit = await beforeDispatch?.()
+      options.beforeClickCommit?.()
+      commit?.()
       resolvedClicks.push(expression)
       clicks.push(expression)
     },
-    click: async (uid: string, _position?: { x: number; y: number }, beforeDispatch?: () => Promise<void>) => {
+    click: async (uid: string, _position?: { x: number; y: number }, beforeDispatch?: BeforeTrustedClick) => {
       if (covered) throw Error("Control is covered; no click dispatched")
-      await beforeDispatch?.()
+      const commit = await beforeDispatch?.()
+      options.beforeClickCommit?.()
+      commit?.()
       clicks.push(`uid:${uid}`)
     },
     matchesResolved: async (_uid: string, _expression: string) => options.sendUidMatches ?? true,
@@ -146,10 +183,11 @@ function fixture(
       }
     },
   }
+  let documentEpoch = 1
   const browser = {
     cdp: () => cdp,
     has: () => !hidden,
-    getState: () => (hidden ? [] : [{ partition: GPT_PRO_PARTITION, url: page.url }]),
+    getState: () => (hidden ? [] : [{ partition: GPT_PRO_PARTITION, url: page.url, epoch: 1, documentEpoch }]),
     open: async (_partition: string, url: string) => {
       opened.push(url)
       hidden = false
@@ -160,6 +198,7 @@ function fixture(
   const driver = new GptProDriver(browser as never, (line) => logs.push(line))
   return {
     driver,
+    refresh: () => { documentEpoch++ },
     page,
     clicks,
     logs,
@@ -308,7 +347,7 @@ describe("gpt-pro trusted submission", () => {
       },
       cdp: () => ({
         evaluate: async (expression: string) =>
-          expression === CHATGPT_INSPECT_EXPRESSION
+          expression === CHATGPT_INSPECT_EXPRESSION || expression === CHATGPT_METADATA_EXPRESSION
             ? {
                 url: GPT_PRO_URL,
                 model: "Website selection",

@@ -12,6 +12,9 @@ export type BrowserViewState = {
   loading: boolean
   shared: boolean
   epoch: number
+  documentEpoch?: number
+  navigationReason?: "user" | "agent" | "automation" | "login_candidate" | "website"
+  authRedirectLoop?: boolean
 }
 export type BrowserPresentation = { id: number; state: BrowserViewState }
 export type BrowserDisplayFrame = {

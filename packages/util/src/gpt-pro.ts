@@ -1,8 +1,10 @@
-import type { GptProIssueCode } from "./gpt-pro-error"
+import type { GptProHumanAction, GptProIssueCode } from "./gpt-pro-error"
 
 // Credentials are persisted only by the encrypted vault, never Chromium's cookie database.
 export const GPT_PRO_PARTITION = "consult-gpt-pro-secure"
 export const GPT_PRO_LEGACY_PARTITION = "persist:consult-gpt-pro"
+export const isGptProProfile = (id: string) =>
+  id === GPT_PRO_PARTITION || id.startsWith(`${GPT_PRO_PARTITION}-generation-`)
 export const GPT_PRO_URL = "https://chatgpt.com/"
 export const GPT_PRO_MAX_HTML_CHARS = 1_000_000
 
@@ -92,14 +94,14 @@ export type GptProPageState = {
     mode: "snapshot" | "unchanged" | "append"
     baseVersion?: string
     reads: number
+    blocksRecomputed?: number
+    elementsSanitized?: number
   }
 }
 
 export type GptProProbeStatus = {
-  phase: "not_open" | "loading" | "needs_login" | "ready" | "tracking" | "completed" | "blocked"
   partition: string
-  page?: GptProPageState
-  detail?: string
+  session: GptProSessionState
 }
 
 /** Desktop consultation commands and the versioned, read-only UI state feed. */
@@ -107,7 +109,11 @@ export type GptProAPI = {
   state?: import("./gpt-pro-state").GptProStateAPI
   open(): Promise<GptProProbeStatus>
   status(): Promise<GptProProbeStatus>
+  inspect?(): Promise<GptProPageState | undefined>
   runtimeStatus?(): Promise<GptProRuntimeStatus>
+  subscribeRuntime?(listener: (status: GptProRuntimeStatus) => void): () => void
+  verifyLogin?(): Promise<GptProRuntimeStatus>
+  recoverStorage?(): Promise<GptProRuntimeStatus>
   loginInBrowser(): Promise<GptProLoginStatus>
   loginStatus(): Promise<GptProLoginStatus>
   cancelLogin(): Promise<GptProLoginStatus>
@@ -170,7 +176,7 @@ export type GptProJobAttachment = Omit<GptProAttachment, "path"> & { path?: stri
 export type GptProRecovery = {
   stage: "open" | "ready" | "model" | "compose" | "submit" | "track"
   reason: string
-  needsHuman?: boolean
+  humanAction?: GptProHumanAction
 }
 export type GptProBrowserCommand =
   | "state"
@@ -194,6 +200,7 @@ export type GptProNotification = {
   text: string
   truncated: boolean
   error?: string
+  errorCode?: GptProIssueCode
   recovery?: GptProRecovery
 }
 export type GptProPhase =
@@ -281,22 +288,38 @@ export type GptProLoginStatus = {
   errorCode?: GptProIssueCode
 }
 
-export type GptProRuntimeStatus = {
-  config: GptProConfig
-  login: GptProLoginStatus
+export type GptProSessionState = {
+  profileID: string
+  generation: number
+  revision: number
   authentication: {
-    phase: "authenticated" | "needs_login" | "verification" | "loading" | "unknown"
+    phase: "unverified" | "verifying" | "authenticated" | "invalid" | "verification" | "transient"
     account?: string
     accountID?: string
-    model?: string
     detail?: string
     checkedAt: number
+    retryAt?: number
+    source?: { pageID: string; epoch: number; documentEpoch: number; url: string; generation: number }
   }
-  credentials: { phase: "encrypted" | "unavailable"; error?: string }
+  page: {
+    phase: "not_open" | "loading" | "interactive" | "navigation_error" | "closed"
+    model?: string
+    location?: "chatgpt" | "login" | "other"
+  }
+  import: { phase: "idle" | "installing" | "pending_verification" | "verified" | "failed"; candidateProfileID?: string }
+}
+
+export type GptProRuntimeStatus = {
+  executionStorage?: { phase: "available" | "fault" }
+  sourceID?: string
+  sequence?: number
+  session: GptProSessionState
+  config: GptProConfig
+  login: GptProLoginStatus
+  credentials: { phase: "unrestored" | "restoring" | "available" | "storage_fault"; error?: string }
   bridge: { connected: boolean; url?: string }
   importBlocked: boolean
   blockers: Array<{ id: string; phase: GptProPhase; ownerPage?: GptProJob["ownerPage"] }>
-  jobs: GptProJob[]
 }
 
 export function isGptProOrigin(url: string) {

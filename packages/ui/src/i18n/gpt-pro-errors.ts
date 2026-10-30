@@ -1,6 +1,10 @@
 import type { GptProIssueCode } from "@opencode-ai/util/gpt-pro-error"
 
 const messages = {
+  result_storage: {
+    en: ["Answer storage needs recovery", "The original page was preserved. Restore local result storage, then resume the same consultation. No question was resent."],
+    zh: ["回答存储需要恢复", "原网页已保留。恢复本地结果存储后再继续同一咨询；程序没有重发问题。"],
+  },
   login_invalid_session: {
     en: [
       "The imported session payload is unsupported",
@@ -10,10 +14,10 @@ const messages = {
   },
   login_import_failed: {
     en: [
-      "Session replacement could not finish",
-      "Check secure storage and the original browser. The previous login was restored when possible; this is not proof that your ChatGPT account is invalid.",
+      "Candidate login could not be verified",
+      "The active login and original pages were retained. Complete verification on the candidate page or explicitly retry import. This is not proof that the account is invalid.",
     ],
-    zh: ["会话替换未能完成", "检查安全存储和原浏览器。已尽可能恢复旧登录；这不代表 ChatGPT 账号无效。"],
+    zh: ["候选登录尚未核验成功", "活跃登录和原网页已保留。完成候选页验证或显式重试导入；这不代表账号无效。"],
   },
   credential_storage: {
     en: [
@@ -42,11 +46,15 @@ const messages = {
   login_import_pending: {
     en: [
       "Waiting for login import",
-      "The login is being updated. This queued consultation will continue automatically when the import finishes; do not submit it again.",
+      "Wait for login verification. If reconnection restored an unsent consultation, resume it explicitly; do not create a replacement or submit it again.",
     ],
-    zh: ["正在等待登录导入完成", "登录状态正在更新，导入结束后这条排队咨询会自动继续，不需要重新提交。"],
+    zh: ["正在等待登录导入完成", "等待登录核验。重连后恢复的未发送咨询需显式继续；不要创建替代咨询或重复提交。"],
   },
   login_expired: {
+    en: ["The ChatGPT login could not be renewed", "Reconnect ChatGPT through the approved browser import and verify the candidate login. The original question was not resent."],
+    zh: ["ChatGPT 登录无法续用", "通过已批准的浏览器导入流程重连，并核验候选登录。原问题没有重发。"],
+  },
+  login_connection_expired: {
     en: [
       "The connection page has expired",
       "Click Open connection page in default browser again, then finish importing within ten minutes. This is not a ChatGPT login failure.",

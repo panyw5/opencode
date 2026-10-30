@@ -19,6 +19,28 @@ export function chatGptModelPicker() {
 
 export const CHATGPT_MODEL_PICKER_EXPRESSION = `(${chatGptModelPicker.toString()})()`
 
+// Authentication must not clone answers, read private body text or install an answer observer.
+export function chatGptAuthMetadata(picker = chatGptModelPicker()) {
+  const editor = document.querySelector('#prompt-textarea, [data-composer-markdown][role="textbox"]')
+  const challenge = [
+    ...document.querySelectorAll(
+      '#challenge-form, #cf-challenge-running, #cf-challenge-stage, iframe[src*="challenges.cloudflare.com"]',
+    ),
+  ].some(
+    (element) =>
+      element.getClientRects().length > 0 &&
+      !element.closest(
+        '[data-message-author-role], [data-chatgpt-search-unit-key], .markdown, [hidden], [aria-hidden="true"]',
+      ),
+  )
+  return {
+    url: location.href,
+    model: picker.trigger?.textContent?.trim().slice(0, 200),
+    verification: (!editor && /^(?:Just a moment|Attention Required)/i.test(document.title)) || challenge,
+  }
+}
+export const CHATGPT_AUTH_METADATA_EXPRESSION = `(${chatGptAuthMetadata.toString()})(${CHATGPT_MODEL_PICKER_EXPRESSION})`
+
 // Dismiss only promotional overlays, never login, consent, or destructive dialogs.
 export function chatGptOnboardingDismissal() {
   const visible = (el: Element) =>
@@ -227,7 +249,7 @@ export function inspectChatGptPage(
   readComposer = readChatGptComposer,
   attachmentTarget = chatGptComposerAttachmentTarget(),
   sendTarget = chatGptSendTarget(attachmentTarget),
-  captureOptions?: { userID: string; knownVersion?: string; force?: boolean },
+  captureOptions?: { userID: string; knownVersion?: string; force?: boolean; metadataOnly?: boolean },
 ): GptProPageState {
   const visible = (el: Element) =>
     el.getClientRects().length > 0 &&
@@ -318,6 +340,11 @@ export function inspectChatGptPage(
       html: string
       text: string
       truncated: boolean
+      blocks: Map<Node, { html: string }>
+      dirtyBlocks: Set<Node>
+      blockChars: number
+      blocksRecomputed: number
+      elementsSanitized: number
     }
   }
   const trackingWindow = window as typeof window & { __opencodeGptProTracking?: Tracking }
@@ -426,29 +453,67 @@ export function inspectChatGptPage(
     if (contents.length !== 1) return
     const content = contents[0]!
     const turn = assistantTurn(assistant)
-    const captureBody = () => {
-      const clone = content.cloneNode(true) as HTMLElement
-      clone
-        .querySelectorAll(
-          "script, style, iframe, object, embed, form, input, button, meta, link, svg, animate, animateMotion, animateTransform, set, foreignObject, annotation-xml",
-        )
-        .forEach((el) => el.remove())
-      for (const el of [clone, ...clone.querySelectorAll("*")]) {
-        for (const attr of [...el.attributes]) {
-          const name = attr.name.toLowerCase()
-          if (name.startsWith("on") || ["srcdoc", "style", "srcset"].includes(name)) el.removeAttribute(attr.name)
-          if (["href", "src", "xlink:href", "action", "formaction"].includes(name)) {
-            try {
-              const target = new URL(attr.value, location.href)
-              if (!["http:", "https:"].includes(target.protocol)) el.removeAttribute(name)
-              else el.setAttribute(name, target.href)
-            } catch {
-              el.removeAttribute(name)
+    const captureBody = (cache?: NonNullable<Tracking["capture"]>, force = false) => {
+      let blocksRecomputed = 0
+      let elementsSanitized = 0
+      const parts: string[] = []
+      let chars = 0
+      for (const node of content.childNodes) {
+        const previous = !force && !cache?.dirtyBlocks.has(node) ? cache?.blocks.get(node) : undefined
+        if (previous) {
+          parts.push(previous.html)
+          chars += previous.html.length
+          if (chars > maxChars) break
+          continue
+        }
+        const clone = document.createElement("div")
+        clone.append(node.cloneNode(true))
+        blocksRecomputed++
+        clone
+          .querySelectorAll(
+            "script, style, iframe, object, embed, form, input, button, meta, link, svg, animate, animateMotion, animateTransform, set, foreignObject, annotation-xml",
+          )
+          .forEach((el) => el.remove())
+        for (const el of clone.querySelectorAll("*")) {
+          elementsSanitized++
+          for (const attr of [...el.attributes]) {
+            const name = attr.name.toLowerCase()
+            if (name.startsWith("on") || ["srcdoc", "style", "srcset"].includes(name)) el.removeAttribute(attr.name)
+            if (["href", "src", "xlink:href", "action", "formaction"].includes(name)) {
+              try {
+                const target = new URL(attr.value, location.href)
+                if (!["http:", "https:"].includes(target.protocol)) el.removeAttribute(name)
+                else el.setAttribute(name, target.href)
+              } catch {
+                el.removeAttribute(name)
+              }
             }
           }
         }
+        const html = clone.innerHTML.slice(0, maxChars + 1)
+        parts.push(html)
+        chars += html.length
+        if (cache) {
+          const old = cache.blocks.get(node)
+          cache.blockChars -= old?.html.length ?? 0
+          cache.blocks.delete(node)
+          cache.blocks.set(node, { html })
+          cache.blockChars += html.length
+          cache.dirtyBlocks.delete(node)
+        }
+        if (chars > maxChars) break
       }
-      const html = clone.innerHTML
+      if (cache) {
+        for (const [node, block] of cache.blocks) {
+          if (node.parentNode === content && cache.blocks.size <= 4096 && cache.blockChars <= maxChars * 2) continue
+          cache.blocks.delete(node)
+          cache.dirtyBlocks.delete(node)
+          cache.blockChars -= block.html.length
+        }
+        cache.blocksRecomputed = blocksRecomputed
+        cache.elementsSanitized = elementsSanitized
+      }
+      const html = parts.join("")
       const text = readText(content)
       const truncated = html.length > maxChars || text.length > maxChars
       return { html: html.slice(0, maxChars), text: text.slice(0, maxChars), truncated }
@@ -515,15 +580,33 @@ export function inspectChatGptPage(
           html: "",
           text: "",
           truncated: false,
-          observer: new MutationObserver(() => {
+          blocks: new Map(),
+          dirtyBlocks: new Set(),
+          blockChars: 0,
+          blocksRecomputed: 0,
+          elementsSanitized: 0,
+          observer: new MutationObserver((records) => {
             next.dirty = true
+            for (const record of records) {
+              let node: Node = record.target
+              while (node.parentNode && node.parentNode !== content) node = node.parentNode
+              if (node.parentNode === content) next.dirtyBlocks.add(node)
+            }
           }),
         }
         next.observer.observe(content, { subtree: true, childList: true, characterData: true, attributes: true })
         tracking.capture = next
         cached = next
       }
-      if (cached.observer.takeRecords().length) cached.dirty = true
+      const records = cached.observer.takeRecords()
+      if (records.length) {
+        cached.dirty = true
+        for (const record of records) {
+          let node: Node = record.target
+          while (node.parentNode && node.parentNode !== content) node = node.parentNode
+          if (node.parentNode === content) cached.dirtyBlocks.add(node)
+        }
+      }
       const completing = !turnGenerating && completionEvidence !== "unknown" && !cached.complete
       const fallback = Date.now() - cached.at >= 10_000
       const changed = cached.dirty || captureOptions.force || completing || fallback || !cached.version
@@ -531,7 +614,7 @@ export function inspectChatGptPage(
       const previousHtml = cached.html
       const previousText = cached.text
       if (changed) {
-        body = captureBody()
+        body = captureBody(cached, !!captureOptions.force || fallback)
         tracking.captureSequence = (tracking.captureSequence ?? 0) + 1
         cached.version = `${tracking.documentID}:${tracking.captureSequence}`
         cached.reads++
@@ -557,6 +640,8 @@ export function inspectChatGptPage(
         version: cached.version!,
         mode,
         reads: cached.reads,
+        blocksRecomputed: changed ? cached.blocksRecomputed : 0,
+        elementsSanitized: changed ? cached.elementsSanitized : 0,
         ...(mode === "append" ? { baseVersion: previousVersion } : {}),
       }
       if (mode === "unchanged") body = { ...body, html: "", text: "" }
@@ -577,13 +662,14 @@ export function inspectChatGptPage(
     }
   }
   const answers = users.flatMap((user) => {
+    if (captureOptions?.metadataOnly) return []
     if (captureOptions && id(user) !== captureOptions.userID) return []
     const assistant = assistantForUser(turns.indexOf(user))
     if (!assistant) return []
     const value = answerFor(user, assistant, user === lastUser)
     return value ? [value] : []
   })
-  if (captureOptions && !captureResult) {
+  if (captureOptions && !captureOptions.metadataOnly && !captureResult) {
     tracking.capture?.observer.disconnect()
     tracking.capture = undefined
   }
@@ -699,7 +785,8 @@ export function inspectChatGptPage(
       const attachments = userAttachments(el)
       return {
         id: id(el),
-        text: userText(el).slice(0, maxChars),
+        text:
+          captureOptions && el !== lastUser && id(el) !== captureOptions.userID ? "" : userText(el).slice(0, maxChars),
         ...(attachments.length ? { attachments } : {}),
       }
     }),
@@ -708,6 +795,11 @@ export function inspectChatGptPage(
 }
 
 export const CHATGPT_INSPECT_EXPRESSION = `(()=>{const attachmentTarget=(${chatGptComposerAttachmentTarget.toString()})();const sendTarget=(${chatGptSendTarget.toString()})(attachmentTarget);return (${inspectChatGptPage.toString()})(${GPT_PRO_MAX_HTML_CHARS},${CHATGPT_MODEL_PICKER_EXPRESSION},(${readChatGptComposer.toString()}),attachmentTarget,sendTarget)})()`
+
+export const CHATGPT_METADATA_EXPRESSION = CHATGPT_INSPECT_EXPRESSION.replace(
+  "attachmentTarget,sendTarget)})()",
+  'attachmentTarget,sendTarget,{"userID":"","metadataOnly":true})})()',
+)
 
 export function chatGptCaptureExpression(options: { userID: string; knownVersion?: string; force?: boolean }) {
   return CHATGPT_INSPECT_EXPRESSION.replace(

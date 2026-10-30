@@ -633,7 +633,7 @@ export function GptProTool(props: Props) {
           code={execution()?.errorCode ?? undefined}
           phase={phase()}
           queueReason={queueReason()}
-          needsHuman={execution()?.recovery?.needsHuman}
+          humanAction={execution()?.recovery?.humanAction}
           busy={state.busy}
           onOpenPage={id() && api() ? () => void command("open") : undefined}
         />

@@ -13,7 +13,7 @@ import type { GptProIssueCode } from "@opencode-ai/util/gpt-pro-error"
 import { getDirectory } from "@opencode-ai/core/util/path"
 import { usePlatform } from "@/context/platform"
 import { useLanguage } from "@/context/language"
-import { createGptProRefreshFence } from "./gpt-pro-refresh-fence"
+import { createGptProRefreshFence, createGptProRuntimeFence } from "./gpt-pro-refresh-fence"
 import { GptProRuntimeCards } from "./gpt-pro-runtime-cards"
 import { gptProStateStore } from "@opencode-ai/ui/gpt-pro-state"
 import type { GptProExecutionSnapshot } from "@opencode-ai/util/gpt-pro-state"
@@ -50,6 +50,7 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
   })
   let disposed = false
   const refreshFence = createGptProRefreshFence()
+  const runtimeFence = createGptProRuntimeFence()
   let refreshing = false
   const refresh = async () => {
     if (!api || refreshing) return
@@ -61,6 +62,7 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
         ? [runtime.config, runtime.login]
         : await Promise.all([api.getConfig(), api.loginStatus()])
       if (disposed || !refreshFence.current(sequence)) return
+      if (runtime && !runtimeFence.accept(runtime)) return
       set({
         runtime,
         config,
@@ -72,7 +74,7 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
       })
       props.onConfig?.(config)
       console.debug(
-        `[gpt-pro-settings] runtime refreshed auth=${runtime?.authentication.phase ?? "unknown"} import=${login.phase} bridge=${runtime?.bridge.connected ?? false} blocked=${runtime?.importBlocked ?? false}`,
+        `[gpt-pro-settings] runtime refreshed auth=${runtime?.session.authentication.phase ?? "unverified"} import=${login.phase} bridge=${runtime?.bridge.connected ?? false} blocked=${runtime?.importBlocked ?? false}`,
       )
     } catch (error) {
       console.warn(`[gpt-pro-settings] status refresh failed`)
@@ -209,14 +211,18 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
           .slice(0, 10),
       )
     })
+    const runtimeUnsubscribe = api?.subscribeRuntime?.((runtime) => {
+      if (disposed || !runtimeFence.accept(runtime)) return
+      set({ runtime, config: runtime.config, login: runtime.login.phase,
+        loginError: runtime.login.error ?? "", loginErrorCode: runtime.login.errorCode,
+        extensionDirectory: runtime.login.extensionDirectory ?? "", refreshError: "" })
+      props.onConfig?.(runtime.config)
+    })
     void refresh()
-    const timer = setInterval(() => {
-      if (!state.busy) void refresh()
-    }, 3000)
     onCleanup(() => {
       disposed = true
       refreshFence.invalidate()
-      clearInterval(timer)
+      runtimeUnsubscribe?.()
       unsubscribe?.()
     })
   })
@@ -259,6 +265,18 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
               >
                 {t("gptPro.login")}
               </Button>
+              <Show when={api?.verifyLogin && state.runtime?.session?.import.candidateProfileID}>
+                <Button size="small" variant="secondary" disabled={state.busy}
+                  onClick={() => void run(() => api!.verifyLogin!())}>
+                  {t("gptPro.verifyLogin")}
+                </Button>
+              </Show>
+              <Show when={api?.recoverStorage && state.runtime?.executionStorage?.phase === "fault"}>
+                <Button size="small" variant="secondary" disabled={state.busy}
+                  onClick={() => void run(() => api!.recoverStorage!())}>
+                  {t("gptPro.recoverStorage")}
+                </Button>
+              </Show>
               <div class="inline-flex max-w-full flex-wrap items-center gap-1 rounded-full border border-border-weak-base bg-background-base py-0.5 pl-3 pr-1">
                 <span class="text-12-regular text-text-weak">{t("gptPro.importStatus.label")}:</span>
                 <span
@@ -299,7 +317,7 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
                 state.refreshError ||
                 state.loginError ||
                 state.runtime?.credentials.error ||
-                state.runtime?.authentication.detail
+                state.runtime?.session.authentication.detail || state.runtime?.executionStorage?.phase === "fault"
               }
             >
               <GptProErrorNotice
@@ -308,17 +326,19 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
                   state.refreshError ||
                   state.loginError ||
                   state.runtime?.credentials.error ||
-                  state.runtime?.authentication.detail
+                  state.runtime?.session.authentication.detail
                 }
                 code={
-                  state.error
+                  state.runtime?.executionStorage?.phase === "fault"
+                    ? "result_storage"
+                    : state.error
                     ? undefined
                     : state.refreshError
                       ? "connection"
                       : (state.loginErrorCode ??
                         (state.runtime?.credentials.error
                           ? "credential_storage"
-                          : state.runtime?.authentication.phase === "verification"
+                          : state.runtime?.session.authentication.phase === "verification"
                             ? "verification"
                             : undefined))
                 }

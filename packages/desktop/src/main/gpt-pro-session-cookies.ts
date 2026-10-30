@@ -17,6 +17,10 @@ export type SessionCookie = {
 
 const invalid = () => new Error("Only valid, unexpired ChatGPT login-session cookies can be imported.")
 
+export function gptProSessionCookieRevoked(name: string, cause: string, removed: boolean) {
+  return !!sessionCookieFamily(name) && removed && cause !== "overwrite" && cause !== "expired-overwrite"
+}
+
 export function parseSessionCookies(input: unknown, nowSeconds = Date.now() / 1000): SessionCookie[] {
   if (!input || typeof input !== "object") throw invalid()
   const payload = input as { version?: unknown; cookies?: unknown }
@@ -84,6 +88,60 @@ export function parseSessionCookies(input: unknown, nowSeconds = Date.now() / 10
 }
 
 export type CookieJar = Pick<Cookies, "get" | "remove" | "set" | "flushStore">
+
+/** Startup restoration is transactional too: a failed initialize must not leave a partial Cookie family. */
+export async function restoreGptProCookieSnapshot(jar: CookieJar, cookies: Cookie[], log: (message: string) => void) {
+  const snapshot = async () =>
+    (await jar.get({ domain: "chatgpt.com" })).filter((cookie) =>
+      ["chatgpt.com", ".chatgpt.com"].includes(cookie.domain ?? ""),
+    )
+  const old = await snapshot()
+  if (old.length > 256 || cookies.length > 256)
+    throw new GptProOperationError(
+      "credential_storage",
+      "Credential restore snapshot exceeds the bounded profile size.",
+    )
+  const remove = async (values: Cookie[]) => {
+    for (const cookie of values) await jar.remove(`https://chatgpt.com${cookie.path ?? "/"}`, cookie.name)
+  }
+  const set = async (values: Cookie[]) => {
+    for (const cookie of values)
+      await jar.set({
+        url: `https://chatgpt.com${cookie.path ?? "/"}`,
+        name: cookie.name,
+        value: cookie.value,
+        path: cookie.path,
+        secure: cookie.secure,
+        httpOnly: cookie.httpOnly,
+        sameSite: cookie.sameSite,
+        ...(cookie.hostOnly ? {} : { domain: cookie.domain }),
+        ...(cookie.expirationDate === undefined ? {} : { expirationDate: cookie.expirationDate }),
+      })
+  }
+  log(`credential restore stage=install count=${cookies.length}; values omitted`)
+  try {
+    await remove(old)
+    await set(cookies)
+    await jar.flushStore()
+  } catch {
+    log("credential restore failed; rolling back the complete previous memory snapshot")
+    try {
+      await remove(await snapshot())
+      await set(old)
+      await jar.flushStore()
+    } catch {
+      throw new GptProOperationError(
+        "credential_storage",
+        "Credential restore and rollback failed. Existing encrypted data was preserved; retry secure initialization explicitly.",
+      )
+    }
+    throw new GptProOperationError(
+      "credential_storage",
+      "Credential restore failed; the complete previous memory snapshot was restored. Retry secure initialization explicitly.",
+    )
+  }
+  log(`credential restore stage=settled count=${cookies.length}; authentication remains unverified`)
+}
 
 export async function importSessionCookies(
   jar: CookieJar,

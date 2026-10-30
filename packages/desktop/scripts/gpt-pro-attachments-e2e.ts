@@ -327,15 +327,15 @@ try {
     client.close()
     process.exit(0)
   }
-  const status = await client.evaluate<GptProProbeStatus>("window.api.gptPro.status()")
+  const status = await client.evaluate<GptProProbeStatus & { page?: GptProPageState }>("(async()=>({...await window.api.gptPro.status(),page:await window.api.gptPro.inspect()}))()")
   const chatTargets = (await listTargets(endpoint)).filter(
     (item) => item.type === "page" && item.url.startsWith("https://chatgpt.com/"),
   )
   const jobs = await client.evaluate<GptProJob[]>("window.api.gptPro.list()")
   const active = jobs.filter((job) => activePhases.includes(job.phase))
-  const cloudflare = status.phase === "blocked" || /cloudflare|challenge|verification/i.test(status.detail ?? "")
+  const cloudflare = status.session.authentication.phase === "verification" || status.session.page.phase === "navigation_error"
   log(
-    `probe phase=${status.phase} model=${status.page?.model ?? "unknown"} targetModel=${status.page?.targetModel ?? false} chatTargets=${chatTargets.length} activeJobs=${active.length} draftChars=${status.page?.draft.trim().length ?? 0} existingQuestions=${status.page?.users.length ?? 0}`,
+    `probe phase=${status.session.page.phase} model=${status.page?.model ?? "unknown"} targetModel=${status.page?.targetModel ?? false} chatTargets=${chatTargets.length} activeJobs=${active.length} draftChars=${status.page?.draft.trim().length ?? 0} existingQuestions=${status.page?.users.length ?? 0}`,
   )
   if (cloudflare) {
     log(

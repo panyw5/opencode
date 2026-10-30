@@ -13,7 +13,11 @@ const { client, target } = await connectCdp()
 const log = (message: string) => console.log(`[gpt-pro-auth-e2e] ${message}`)
 try {
   if (!target.url.includes("localhost:5173")) throw Error("This test requires the dev renderer on 9222")
+  const authentication = await client.evaluate<string>("window.api.gptPro.runtimeStatus().then(r=>r.session.authentication.phase)")
+  if (authentication !== "authenticated") throw Error("A verified development login is required; no session or sidecar prompt was created")
   const ids = await client.evaluate<{ parent: string; child: string }>(`(async () => {
+    const runtime = await window.api.gptPro.runtimeStatus()
+    if (runtime.session.authentication.phase !== 'authenticated') throw Error('A verified development login is required; no sidecar prompt was sent')
     const sidecar = await window.api.awaitInitialization(() => {})
     window.__proAuthRequest = async (path, body) => {
       const response = await fetch(sidecar.url + path, {method:body===undefined?'GET':'POST', headers:{'Content-Type':'application/json','x-opencode-directory':encodeURIComponent(${JSON.stringify(directory)}),Authorization:'Basic '+btoa((sidecar.username||'opencode')+':'+sidecar.password)},body:body===undefined?undefined:JSON.stringify(body)})
@@ -24,8 +28,8 @@ try {
     if (provided.parent && provided.child) return provided
     const active=(await window.api.gptPro.list()).some(j=>['queued','preparing','sending','generating'].includes(j.phase))
     if (active) throw Error('A consultation is active; this test will not interrupt it')
-    const parent = await window.__proAuthRequest('/session',{title:'GPT-Pro auth-state parent regression',permission:[{permission:'gpt_pro_consult',pattern:'*',action:'allow'}]})
-    const child = await window.__proAuthRequest('/session',{parentID:parent.id,title:'GPT-Pro auth-state child regression',permission:[{permission:'gpt_pro_consult',pattern:'*',action:'allow'}]})
+    const parent = await window.__proAuthRequest('/session',{title:'GPT-Pro auth-state parent regression',permission:[{permission:'*',pattern:'*',action:'deny'},{permission:'gpt_pro_consult',pattern:'*',action:'allow'}]})
+    const child = await window.__proAuthRequest('/session',{parentID:parent.id,title:'GPT-Pro auth-state child regression',permission:[{permission:'*',pattern:'*',action:'deny'},{permission:'gpt_pro_consult',pattern:'*',action:'allow'}]})
     await window.__proAuthRequest('/session/'+child.id+'/prompt_async',{agent:'build',parts:[{type:'text',text:${JSON.stringify(`Reply with exactly ${marker}. Do not search or use tools.`)},metadata:{gptProBackground:true}},{type:'agent',name:'gpt-pro'}]})
     console.debug('[gpt-pro-auth-e2e] child prompt sent once session='+child.id)
     return {parent:parent.id,child:child.id}
@@ -51,7 +55,7 @@ try {
       const child=await window.__proAuthRequest('/session/'+${JSON.stringify(ids.child)}+'/message')
       const parent=await window.__proAuthRequest('/session/'+${JSON.stringify(ids.parent)}+'/message')
       const runtime=await window.api.gptPro.runtimeStatus()
-      return {job,completedNotification:child.some(m=>m.parts.some(p=>p.type==='text'&&p.metadata?.consultationID===job?.id&&p.metadata?.phase==='completed'&&p.text.includes(${JSON.stringify(marker)}))),parentRead:parent.some(m=>m.parts.some(p=>p.type==='tool'&&p.tool==='gpt_pro_consult'&&p.state.status==='completed'&&p.state.input?.action==='read'&&p.state.metadata?.read_only_handoff===true&&p.state.output?.includes(${JSON.stringify(marker)}))),extraConsultations:jobs.filter(j=>j.owner.endsWith('\\n'+${JSON.stringify(ids.parent)})).length+Math.max(0,owned.length-1),auth:runtime.authentication.phase,encrypted:runtime.credentials.phase==='encrypted',bridge:runtime.bridge.connected}
+      return {job,completedNotification:child.some(m=>m.parts.some(p=>p.type==='text'&&p.metadata?.consultationID===job?.id&&p.metadata?.phase==='completed'&&p.text.includes(${JSON.stringify(marker)}))),parentRead:parent.some(m=>m.parts.some(p=>p.type==='tool'&&p.tool==='gpt_pro_consult'&&p.state.status==='completed'&&p.state.input?.action==='read'&&p.state.metadata?.read_only_handoff===true&&p.state.output?.includes(${JSON.stringify(marker)}))),extraConsultations:jobs.filter(j=>j.owner.endsWith('\\n'+${JSON.stringify(ids.parent)})).length+Math.max(0,owned.length-1),auth:runtime.session.authentication.phase,encrypted:runtime.credentials.phase==='available',bridge:runtime.bridge.connected}
     })()`)
     job = result.job
     const observed = `phase=${job?.phase ?? "pending"} notification=${result.completedNotification} parentRead=${result.parentRead} auth=${result.auth} encrypted=${result.encrypted} bridge=${result.bridge}`

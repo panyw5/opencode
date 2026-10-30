@@ -1,7 +1,36 @@
 import { describe, expect, test } from "bun:test"
-import { gptProCanResume, gptProDiagnostic, gptProIssue } from "./gpt-pro-error"
+import {
+  gptProCanResume,
+  gptProDiagnostic,
+  gptProHumanAction,
+  gptProIssue,
+  gptProRecoveryInstruction,
+} from "./gpt-pro-error"
 
 describe("GPT-Pro issue classification", () => {
+  test("login, browser checks, OS storage and account restoration have distinct instructions", () => {
+    expect(gptProHumanAction({ code: "login_connection_expired" })).toBeUndefined()
+    expect(gptProIssue({ error: "login_connection_expired: local token expired" })?.code).toBe(
+      "login_connection_expired",
+    )
+    for (const [code, action, phrase] of [
+      ["login_expired", "login", "HUMAN LOGIN REQUIRED"],
+      ["verification", "verification", "HUMAN BROWSER VERIFICATION REQUIRED"],
+      ["credential_storage", "secure_storage", "HUMAN SECURE STORAGE RECOVERY REQUIRED"],
+      ["account_changed", "restore_account", "ORIGINAL ACCOUNT REQUIRED"],
+    ] as const) {
+      expect(gptProHumanAction({ code })).toBe(action)
+      const instruction = gptProRecoveryInstruction({
+        id: "gpt_synthetic",
+        errorCode: code,
+        recovery: { stage: "submit", reason: "failure", humanAction: action },
+      })
+      expect(instruction).toContain(phrase)
+      expect(instruction).toContain("Do not create a new consultation or resend")
+      expect(instruction).not.toContain("Use browser_read")
+      expect(instruction).not.toContain("exact managed prompt and GPT-6 Pro")
+    }
+  })
   test("structured import, account and storage errors are not mistaken for expired login", () => {
     for (const code of [
       "login_invalid_session",
@@ -54,6 +83,17 @@ describe("GPT-Pro issue classification", () => {
       "send_uncertain",
     )
     expect(gptProIssue({ error: new Error("Submission is uncertain. Inspect the original page") })?.code).toBe(
+      "send_uncertain",
+    )
+  })
+  test("keeps authentication failure codes instead of guessing from the human message", () => {
+    expect(gptProIssue({ error: "connection: The current ChatGPT account could not be verified." })?.code).toBe(
+      "connection",
+    )
+    expect(gptProIssue({ error: "login_expired: ChatGPT could not refresh this login session." })?.code).toBe(
+      "login_expired",
+    )
+    expect(gptProIssue({ phase: "send_uncertain", error: "connection: Account check failed." })?.code).toBe(
       "send_uncertain",
     )
   })

@@ -44,6 +44,8 @@ export const dict = {
   "gptPro.open": "打开 gpt-pro 浏览器",
   "gptPro.login": "用默认浏览器打开连接页面",
   "gptPro.refresh": "刷新状态",
+  "gptPro.verifyLogin": "验证候选登录",
+  "gptPro.recoverStorage": "恢复执行存储",
   "gptPro.importStatus.label": "当前连接/导入操作",
   "gptPro.importStatus.success": "成功导入",
   "gptPro.importStatus.failed": "导入失败",

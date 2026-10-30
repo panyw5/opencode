@@ -77,9 +77,22 @@ export class GptProStateFeed {
       this.listeners.delete(listener)
     }
   }
+  unavailable() {
+    for (const listener of this.listeners) {
+      try {
+        listener({
+          type: "disconnected",
+          message:
+            "result_storage: Execution persistence failed. Restore storage and explicitly recover; no new send is authorized.",
+        })
+      } catch {}
+    }
+  }
   dispose() {
     for (const listener of this.listeners) {
-      try { listener({ type: "disconnected", message: "Consultation controller stopped" }) } catch {}
+      try {
+        listener({ type: "disconnected", message: "Consultation controller stopped" })
+      } catch {}
     }
     this.listeners.clear()
   }

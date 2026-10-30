@@ -78,6 +78,7 @@ const INTERESTING_ROLES = new Set([
 ])
 
 export type BeforeTrustedClick = () => Promise<void | (() => void)> | void | (() => void)
+export type BrowserNavigationReason = "user" | "agent" | "automation" | "login_candidate" | "website"
 
 const INTERACTIVE_ROLES = new Set([
   "button",
@@ -116,7 +117,10 @@ export class BrowserCdp {
   private viewportQueue: Promise<void> = Promise.resolve()
   private responseListeners = new Set<(response: { origin: string; path: string; status: number }) => void>()
 
-  constructor(private readonly wc: WebContents) {}
+  constructor(
+    private readonly wc: WebContents,
+    private readonly beforeNavigation: (reason: BrowserNavigationReason) => void = () => {},
+  ) {}
 
   private get dbg() {
     return this.wc.debugger
@@ -565,7 +569,8 @@ export class BrowserCdp {
     return target.nodeName === "BUTTON" && target.backendNodeId === expectedBackendNodeId
   }
 
-  async navigate(url: string) {
+  async navigate(url: string, reason: BrowserNavigationReason = "automation") {
+    this.beforeNavigation(reason)
     // Plain navigation needs no debugger. Attaching the debugger to a
     // never-navigated webContents hangs: the renderer process (and its CDP
     // agent) does not exist until the first load completes. Debugger domains
@@ -936,14 +941,57 @@ export class BrowserCdp {
   }
 
   back() {
+    this.beforeNavigation("user")
     this.wc.navigationHistory.goBack()
   }
 
   forward() {
+    this.beforeNavigation("user")
     this.wc.navigationHistory.goForward()
   }
 
   reload() {
+    this.beforeNavigation("user")
     this.wc.reload()
+  }
+
+  async reloadAndWait(timeoutMs = NAVIGATE_TIMEOUT_MS) {
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        clearTimeout(timer)
+        this.wc.off("did-stop-loading", loaded)
+        this.wc.off("destroyed", destroyed)
+        this.wc.off("did-fail-load", failed)
+      }
+      const loaded = () => { cleanup(); resolve() }
+      const destroyed = () => { cleanup(); reject(new Error("Page closed during reconnect refresh")) }
+      const failed = (_event: Electron.Event, code: number, _description: string, _url: string, isMainFrame: boolean) => {
+        if (!isMainFrame || code === -3) return
+        cleanup()
+        reject(new Error(`Reconnect refresh failed code=${code}`))
+      }
+      const timer = setTimeout(() => { cleanup(); reject(new Error("Reconnect refresh timed out")) }, timeoutMs)
+      this.wc.on("did-stop-loading", loaded)
+      this.wc.on("destroyed", destroyed)
+      this.wc.on("did-fail-load", failed)
+      try { this.reload() } catch (error) { cleanup(); reject(error) }
+    })
+  }
+
+  async waitForDocument(timeoutMs = NAVIGATE_TIMEOUT_MS) {
+    if (!this.wc.isLoading()) return
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        clearTimeout(timer)
+        this.wc.off("did-stop-loading", loaded)
+        this.wc.off("destroyed", destroyed)
+      }
+      const loaded = () => { cleanup(); resolve() }
+      const destroyed = () => { cleanup(); reject(new Error("Page closed while awaiting its document")) }
+      const timer = setTimeout(() => { cleanup(); reject(new Error("Document loading timed out")) }, timeoutMs)
+      this.wc.on("did-stop-loading", loaded)
+      this.wc.on("destroyed", destroyed)
+      if (!this.wc.isLoading()) loaded()
+    })
   }
 }

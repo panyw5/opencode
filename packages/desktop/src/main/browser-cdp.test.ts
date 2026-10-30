@@ -1,7 +1,60 @@
 import { describe, expect, mock, test } from "bun:test"
+import { EventEmitter } from "node:events"
 
 mock.module("./logging", () => ({ write: () => {} }))
 const { BrowserCdp } = await import("./browser-cdp")
+
+test("candidate document barrier waits without dispatching a reload and releases listeners", async () => {
+  const wc = new EventEmitter() as EventEmitter & { isLoading(): boolean }
+  let loading = true
+  wc.isLoading = () => loading
+  const cdp = new BrowserCdp(wc as never)
+  const pending = cdp.waitForDocument(100)
+  expect(wc.listenerCount("did-stop-loading")).toBe(1)
+  loading = false
+  wc.emit("did-stop-loading")
+  await pending
+  expect(wc.eventNames()).toEqual([])
+  await cdp.waitForDocument(100)
+  expect(wc.eventNames()).toEqual([])
+})
+
+test("reconnect reload waits for the document and releases all listeners", async () => {
+  const wc = new EventEmitter() as EventEmitter & { reload(): void }
+  wc.reload = () => {}
+  const cdp = new BrowserCdp(wc as never)
+  let settled = false
+  const pending = cdp.reloadAndWait(100).then(() => { settled = true })
+  await Promise.resolve()
+  expect(settled).toBe(false)
+  wc.emit("did-stop-loading")
+  await pending
+  expect(settled).toBe(true)
+  expect(wc.eventNames()).toEqual([])
+})
+
+test("reconnect timeout does not leak listeners or claim a settled document", async () => {
+  const wc = new EventEmitter() as EventEmitter & { reload(): void }
+  wc.reload = () => {}
+  const cdp = new BrowserCdp(wc as never)
+  await expect(cdp.reloadAndWait(5)).rejects.toThrow("timed out")
+  expect(wc.eventNames()).toEqual([])
+})
+
+test("explicit navigation controls reset login loop protection before navigating", () => {
+  const calls: string[] = []
+  const cdp = new BrowserCdp(
+    {
+      navigationHistory: { goBack: () => calls.push("back"), goForward: () => calls.push("forward") },
+      reload: () => calls.push("reload"),
+    } as never,
+    () => calls.push("reset"),
+  )
+  cdp.back()
+  cdp.forward()
+  cdp.reload()
+  expect(calls).toEqual(["reset", "back", "reset", "forward", "reset", "reload"])
+})
 
 function fixture(
   options: {
@@ -200,20 +253,20 @@ describe("CDP file attachment", () => {
       newlyCovered.browser.clickResolved("send-target-fixture", async () => () => coveredAfterGuardCommitted++),
     ).rejects.toThrow("covered")
     expect(coveredAfterGuardCommitted).toBe(0)
-    expect(newlyCovered.calls.filter((call) => call.method === "Input.dispatchMouseEvent").map((call) => call.params.type)).toEqual([
-      "mouseMoved",
-    ])
+    expect(
+      newlyCovered.calls.filter((call) => call.method === "Input.dispatchMouseEvent").map((call) => call.params.type),
+    ).toEqual(["mouseMoved"])
   })
   test("a failed mouse move never commits send intent or presses the control", async () => {
     const f = fixture({ resolvedBackendNodeIds: [31, 31], failMouseMove: true })
     let committed = 0
-    await expect(
-      f.browser.clickResolved("send-target-fixture", async () => () => committed++),
-    ).rejects.toThrow("simulated mouse move failure")
-    expect(committed).toBe(0)
-    expect(f.calls.some((call) => call.method === "Input.dispatchMouseEvent" && call.params.type === "mousePressed")).toBe(
-      false,
+    await expect(f.browser.clickResolved("send-target-fixture", async () => () => committed++)).rejects.toThrow(
+      "simulated mouse move failure",
     )
+    expect(committed).toBe(0)
+    expect(
+      f.calls.some((call) => call.method === "Input.dispatchMouseEvent" && call.params.type === "mousePressed"),
+    ).toBe(false)
 
     const uid = fixture({ failMouseMove: true })
     let uidCommitted = 0

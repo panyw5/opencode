@@ -163,7 +163,9 @@ button.addEventListener("click", async () => {
         login_import_busy: "errorBusy",
         credential_storage: "errorStorage",
         login_invalid_session: "errorInvalidSession",
-        login_expired: "errorExpired",
+        login_connection_expired: "errorExpired",
+        // Older installed apps used login_expired for local HTTP 410 too.
+        login_expired: response.status === 410 ? "errorExpired" : "errorNoSession",
         login_import_failed: "errorImport",
       }
       console.debug(

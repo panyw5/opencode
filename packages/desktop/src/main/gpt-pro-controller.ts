@@ -20,7 +20,12 @@ import {
   isGptProOrigin,
 } from "@opencode-ai/util/gpt-pro"
 import { GptProPageError } from "./gpt-pro-page-error"
-import { gptProIssue, GptProOperationError } from "@opencode-ai/util/gpt-pro-error"
+import {
+  gptProHumanAction,
+  gptProIssue,
+  GptProOperationError,
+  migrateGptProRecovery,
+} from "@opencode-ai/util/gpt-pro-error"
 import { collectGptProNotification } from "./gpt-pro-notifications"
 import { gptProArchivedResult, type GptProStateResponse, type GptProStateEvent } from "@opencode-ai/util/gpt-pro-state"
 import { GptProStateFeed } from "./gpt-pro-state-feed"
@@ -57,6 +62,8 @@ type Persistence = {
   stagingRoot?(): string
   readResult?(id: string, owners?: string[]): GptProJob | undefined
   openResult?(job: GptProJob): Promise<void>
+  profileID?(): string
+  flush?(): Promise<void>
 }
 export type GptProManagedPage = {
   pageID: string
@@ -192,6 +199,8 @@ export class GptProController {
   private notificationOutbox = new Set<GptProJob>()
   private lifecycleUnsubscribes: Array<() => void> = []
   private readonly lifecycle?: GptProLifecycleOptions
+  private storageFault = false
+  private recoveringStorage = false
   constructor(
     private readonly driverSource: DriverSource,
     private readonly persistence: Persistence,
@@ -207,6 +216,18 @@ export class GptProController {
         pageID: `gpt-pro-page-${job.id}`,
         profileID: GPT_PRO_PARTITION,
         ownerPage: ownerPage(job.owner),
+        recovery: migrateGptProRecovery(job.recovery, {
+          code: job.errorCode,
+          error: job.error ?? job.recovery?.reason,
+        }) as GptProRecovery | undefined,
+        notifications: job.notifications?.map((event) => ({
+          ...event,
+          errorCode: event.errorCode ?? gptProIssue({ error: event.error })?.code,
+          recovery: migrateGptProRecovery(event.recovery, {
+            code: event.errorCode,
+            error: event.error ?? event.recovery?.reason,
+          }) as GptProRecovery | undefined,
+        })),
         ...(job.stopPending
           ? {
               stopPending: false,
@@ -267,6 +288,8 @@ export class GptProController {
     return this.running.size > 0 || this.jobs.some(isUnfinished)
   }
   async importLogin<T>(importCookies: () => Promise<T>): Promise<T> {
+    if (this.storageFault)
+      throw new GptProOperationError("result_storage", "Recover execution storage before importing a login.")
     const attempted = this.jobs.some((job) => isUnfinished(job) && (job.submitted || job.sendAttempted || !!job.userID))
     if (
       this.disposed ||
@@ -308,9 +331,144 @@ export class GptProController {
           (isUnfinished(job) && (job.submitted || job.sendAttempted || !!job.userID)),
       )
       .map(({ id, phase, ownerPage }) => ({ id, phase, ownerPage }))
-    return { importBlocked: this.loginImporting || this.pumping || !!this.creating.size || !!blockers.length, blockers }
+    return {
+      importBlocked:
+        this.storageFault || this.loginImporting || this.pumping || !!this.creating.size || !!blockers.length,
+      blockers,
+    }
+  }
+  storageStatus() {
+    return { phase: this.storageFault ? ("fault" as const) : ("available" as const) }
+  }
+  async recoverStorage() {
+    if (this.disposed) throw new Error("The consultation controller is shutting down")
+    if (!this.storageFault) {
+      await this.persistence.flush?.()
+      return
+    }
+    await Promise.allSettled([...this.running.values(), ...this.pendingWork.values()])
+    await this.persistence.flush?.()
+    for (const job of this.jobs) {
+      if (
+        this.running.has(job.id) ||
+        this.pendingWork.has(job.id) ||
+        !["preparing", "sending", "generating", "queued"].includes(job.phase)
+      )
+        continue
+      const uncertain = job.sendAttempted === true && !job.userID
+      Object.assign(job, {
+        phase: uncertain ? "send_uncertain" : "paused",
+        updatedAt: Date.now(),
+        error: uncertain ? "Submission remains uncertain. Never resend automatically." : undefined,
+        errorCode: uncertain ? "send_uncertain" : undefined,
+        recovery: uncertain
+          ? undefined
+          : { stage: "open", reason: "Execution storage recovered; resume explicitly on the owned page" },
+        resumeCurrentPage: true,
+      })
+      this.notify(job, false)
+    }
+    this.recoveringStorage = true
+    try {
+      this.save()
+    } finally {
+      this.recoveringStorage = false
+    }
+    this.log("execution storage explicitly recovered; existing jobs remain paused or uncertain, no automatic send")
+  }
+  private persist(jobs: GptProJob[]) {
+    try {
+      this.persistence.save(jobs)
+      this.storageFault = false
+    } catch (error) {
+      this.storageFault = true
+      this.stateFeed.unavailable()
+      throw error
+    }
+  }
+  assertLoginAccount(accountID: string) {
+    if (!this.loginImporting || !accountID)
+      throw new Error("Profile promotion requires the login transaction and a verified account")
+    for (const job of this.jobs.filter(isUnfinished)) {
+      if (job.submitted || job.sendAttempted || job.userID)
+        throw new GptProOperationError(
+          "login_import_busy",
+          "Already-sent consultations cannot migrate to a new login profile.",
+        )
+      if (job.accountID && job.accountID !== accountID)
+        throw new GptProOperationError(
+          "account_changed",
+          "Restore the original ChatGPT account. Unsent consultations will not migrate to another account.",
+        )
+    }
+  }
+  promoteLoginProfile(profileID: string, accountID: string) {
+    this.assertLoginAccount(accountID)
+    const jobs = this.jobs.filter(isUnfinished)
+    const previous = jobs.map((job) => ({
+      ...job,
+      ...(job.notifications ? { notifications: job.notifications.slice() } : {}),
+    }))
+    let event: ReturnType<GptProStateFeed["commit"]>
+    try {
+      for (const job of jobs) {
+        Object.assign(job, {
+          profileID,
+          pageID: `gpt-pro-page-${job.id}-reconnect-${randomUUID()}`,
+          accountID,
+          phase: "paused",
+          updatedAt: Date.now(),
+          resumeCurrentPage: false,
+          error: undefined,
+          errorCode: undefined,
+          recovery: undefined,
+          notificationPhase: undefined,
+          notifications: job.notifications?.filter((event) => !event.recovery),
+          queueReason: undefined,
+          queueOwnerConsultationID: undefined,
+          ...(job.attachments?.length
+            ? {
+                uploadAttempted: false,
+                attachments: job.attachments.map((attachment) => ({
+                  ...attachment,
+                  status: "pending",
+                  error: undefined,
+                })),
+              }
+            : {}),
+        })
+        this.notify(job, false)
+      }
+      event = this.stateFeed.commit(this.jobs, () => this.persist(this.jobs))
+    } catch (error) {
+      jobs.forEach((job, index) => {
+        for (const key of Object.keys(job)) delete (job as unknown as Record<string, unknown>)[key]
+        Object.assign(job, previous[index])
+        this.trackNotifications(job)
+      })
+      this.log("login profile execution commit failed; original consultation bindings retained")
+      throw error
+    }
+    this.stateFeed.publish(event)
+    for (const job of jobs) {
+      try {
+        this.releaseDriver(job.id, "login-profile-promotion")
+      } catch {
+        this.drivers.delete(job.id)
+        this.driverBindings.delete(job.id)
+        this.log(`login profile driver cleanup failed id=${job.id}; durable promotion retained`)
+      }
+      this.log(
+        `login profile consultation migrated id=${job.id} profile=${profileID} stagedAttachments=${job.attachments?.length ?? 0} requiresExplicitResume=true; old page untouched`,
+      )
+    }
   }
   private requireDispatchAllowed() {
+    if (this.storageFault)
+      throw new GptProOperationError(
+        "result_storage",
+        "Execution storage needs explicit recovery. No browser input is authorized.",
+      )
     if (this.loginImporting) {
       this.log("dispatch rejected code=login_import_pending shared profile is being replaced")
       throw new GptProOperationError(
@@ -357,12 +515,22 @@ export class GptProController {
     })
   }
   stateList() {
+    if (this.storageFault)
+      throw new GptProOperationError(
+        "result_storage",
+        "Execution storage is unavailable; explicitly recover it before trusting current action authority.",
+      )
     return this.stateFeed.list()
   }
   subscribeState(listener: (event: GptProStateEvent) => void) {
     return this.stateFeed.subscribe(listener)
   }
   stateRead(id: string): GptProStateResponse {
+    if (this.storageFault)
+      throw new GptProOperationError(
+        "result_storage",
+        "Current execution authority is unavailable until storage is explicitly recovered.",
+      )
     const envelope = this.stateFeed.list()
     const local = this.jobs.find((job) => job.id === id)
     if (local) {
@@ -512,6 +680,7 @@ export class GptProController {
     }
   }
   notifications(directory?: string) {
+    if (this.storageFault) return []
     for (const job of this.notificationCandidates) this.notify(job)
     return Array.from(this.notificationOutbox)
       .filter(
@@ -525,6 +694,11 @@ export class GptProController {
       .map((event) => ({ ...event }))
   }
   acknowledge(directory: string, ids: string[]) {
+    if (this.storageFault)
+      throw new GptProOperationError(
+        "result_storage",
+        "Execution storage is unavailable; notification acknowledgement was not committed.",
+      )
     const accepted = new Set(ids)
     let changed = false
     for (const job of this.notificationOutbox) {
@@ -593,6 +767,12 @@ export class GptProController {
     this.log(`consult lifecycle disposed timers=0 observers=0 drivers=0`)
   }
   private save() {
+    if (this.storageFault && !this.recoveringStorage)
+      throw new GptProOperationError(
+        "result_storage",
+        "Execution storage needs explicit recovery; automatic commits and dispatch are suspended.",
+      )
+    const recovering = this.storageFault
     const previous = this.jobs
     const retained = new Set(
       this.jobs
@@ -617,7 +797,7 @@ export class GptProController {
     )
     const remaining = new Set(next.map((job) => job.id))
     const removed = previous.filter((job) => !remaining.has(job.id))
-    const stateEvent = this.stateFeed.commit(next, () => this.persistence.save(next))
+    const stateEvent = this.stateFeed.commit(next, () => this.persist(next))
     this.jobs = next
     for (const job of removed) {
       this.notificationCandidates.delete(job)
@@ -643,7 +823,7 @@ export class GptProController {
         )
       }
     }
-    this.stateFeed.publish(stateEvent)
+    this.stateFeed.publish(recovering ? this.stateFeed.list() : stateEvent)
     this.reconcilePageLifecycle()
   }
   private update(job: GptProJob, input: Partial<GptProJob>) {
@@ -662,7 +842,12 @@ export class GptProController {
       })
     job.errorCode =
       job.error || job.phase === "send_uncertain"
-        ? gptProIssue({ error: job.error, phase: job.phase, needsHuman: job.recovery?.needsHuman })?.code
+        ? gptProIssue({
+            error: job.error,
+            phase: job.phase,
+            code: input.errorCode,
+            humanAction: job.recovery?.humanAction,
+          })?.code
         : undefined
     if (previousCode !== job.errorCode)
       this.log(
@@ -1224,6 +1409,7 @@ export class GptProController {
   private canDispatch(job: GptProJob, runToken?: number) {
     if (
       this.disposed ||
+      this.storageFault ||
       this.loginImporting ||
       !this.config().enabled ||
       job.phase === "cancelled" ||
@@ -1392,7 +1578,7 @@ export class GptProController {
       const job: GptProJob = {
         id: jobID,
         pageID: `gpt-pro-page-${jobID}`,
-        profileID: GPT_PRO_PARTITION,
+        profileID: this.persistence.profileID?.() ?? GPT_PRO_PARTITION,
         ...(ownerContext ? { ownerPage: ownerContext } : {}),
         owner: jobOwner,
         requestID,
@@ -1620,6 +1806,14 @@ export class GptProController {
   }
   async command(input: GptProCommand, owner?: string, readOwners: string[] = []): Promise<GptProJob> {
     if (this.disposed) throw new Error("The consultation controller is shutting down")
+    if (this.storageFault) {
+      if (["read", "status"].includes(input.action ?? "consult"))
+        throw new GptProOperationError(
+          "result_storage",
+          "Execution state is unavailable until storage is explicitly recovered.",
+        )
+      await this.recoverStorage()
+    }
     const action = input.action ?? "consult"
     if (
       !["consult", "status", "read", "open", "stop", "pause", "resume", "intervene", "background", "send"].includes(
@@ -1792,6 +1986,7 @@ export class GptProController {
     this.pumping = true
     this.pumpRequested = false
     try {
+      if (this.storageFault) return
       if (this.loginImporting) {
         for (const job of this.jobs) {
           if (job.phase === "queued" && job.queueReason !== "login_import")
@@ -1859,19 +2054,32 @@ export class GptProController {
             if (this.runTokens.get(job.id) === runToken) {
               this.running.delete(job.id)
               this.activeOwners.delete(job.owner)
-              this.save()
+              if (!this.disposed)
+                try {
+                  this.save()
+                } catch {
+                  this.log("scheduler persistence failed; cleanup continues without dispatch")
+                }
               this.log(`consult scheduler release id=${job.id} phase=${job.phase} running=${this.running.size}`)
             }
             void work
               .finally(() => {
                 if (this.pendingWork.get(job.id) === work) this.pendingWork.delete(job.id)
-                this.save()
+                if (!this.disposed)
+                  try {
+                    this.save()
+                  } catch {
+                    this.log("runner persistence failed; operation ownership released without dispatch")
+                  }
                 if (this.runTokens.get(job.id) === runToken) this.releaseExecution(job, "runner-settled")
               })
               .catch(() => {})
-            void this.pump()
+            if (!this.storageFault) void this.pump()
           })
         this.running.set(job.id, task)
+        void task.catch(() =>
+          this.log(`consult runner failed id=${job.id}; storage recovery may be required, no automatic resend`),
+        )
       }
       for (const job of this.jobs) {
         if (job.phase !== "queued" || this.running.has(job.id)) continue
@@ -1892,13 +2100,25 @@ export class GptProController {
       }
     } finally {
       this.pumping = false
-      if (this.pumpRequested && !this.disposed && !this.loginImporting) void this.pump()
+      if (this.pumpRequested && !this.disposed && !this.loginImporting && !this.storageFault) void this.pump()
     }
   }
   private failRun(job: GptProJob, error: unknown) {
     if (job.phase === "cancelled" || this.disposed) return
     const reason = error instanceof Error ? error.message : "Browser consultation failed"
     const attempted = job.sendAttempted === true || job.submitted
+    const code =
+      error instanceof GptProOperationError
+        ? error.code
+        : error instanceof GptProPageError
+          ? error.kind === "login"
+            ? "login"
+            : error.kind === "verification"
+              ? "verification"
+              : error.kind === "request"
+                ? "request_rejected"
+                : gptProIssue({ error: reason })?.code
+          : gptProIssue({ error: reason })?.code
     this.log(
       `consult fixed flow handoff id=${job.id} stage=${this.stages.get(job.id) ?? "open"} attempted=${attempted} error=${reason}`,
     )
@@ -1915,13 +2135,14 @@ export class GptProController {
       phase: "paused",
       background: job.background || job.owner.includes("\n"),
       error: reason,
+      errorCode: code,
       notificationPhase: undefined,
       queueReason: undefined,
       queueOwnerConsultationID: undefined,
       recovery: {
         stage: this.stages.get(job.id) ?? "open",
         reason,
-        needsHuman: error instanceof GptProPageError && (error.kind === "verification" || error.kind === "login"),
+        humanAction: gptProHumanAction({ code, error: reason }),
       },
     })
   }
@@ -2119,13 +2340,44 @@ export class GptProController {
         this.update(job, { phase: "generating", error: undefined })
       if (answer) {
         if (answer.truncated) throw new Error("Reply exceeds HTML capture limit; incomplete output is not success.")
-        if (html !== answer.html) {
+        if (html !== answer.html || job.text !== answer.text) {
           html = answer.html
           stableAt = Date.now()
           this.update(job, { text: answer.text, html, revision: job.revision + 1, url: page.url })
         }
         if (!answerComplete) stableAt = Date.now()
         if (answerComplete && Date.now() - stableAt >= this.stableMs) {
+          await this.persistence.flush?.()
+          if (!(await this.checkpoint(job, runToken))) return
+          const verified = await this.inspectPage(job, driver)
+          if (!(await this.checkpoint(job, runToken))) return
+          const verifiedUser = verified.users.find((user) => user.id === job.userID)
+          const finalError = this.blockingOwnedTurnError(verified, verifiedUser)
+          if (finalError) throw new GptProPageError(finalError.message, finalError.kind)
+          if (
+            !verifiedUser ||
+            verifiedUser.text.trim() !== job.prompt ||
+            this.hasUnexpectedUserAttachments(job, verifiedUser)
+          )
+            throw new GptProOperationError(
+              "page_changed",
+              "Owned question changed during the final checkpoint. No unrelated answer was accepted.",
+            )
+          const finalAnswer =
+            verified.answers?.find((answer) => answer.userID === job.userID) ??
+            (verified.answer?.userID === job.userID ? verified.answer : undefined)
+          if (
+            !this.hasExactUserAttachmentEvidence(job, verifiedUser) ||
+            !finalAnswer?.complete ||
+            finalAnswer.truncated ||
+            (finalAnswer as { generating?: boolean }).generating === true ||
+            finalAnswer.html !== html ||
+            finalAnswer.text !== job.text ||
+            verified.url !== page.url
+          ) {
+            stableAt = Date.now()
+            continue
+          }
           this.update(job, { phase: "completed", error: undefined })
           return
         }
@@ -2137,6 +2389,7 @@ export class GptProController {
   private async checkpoint(job: GptProJob, runToken?: number) {
     return (
       !this.disposed &&
+      !this.storageFault &&
       !["paused", "cancelled", "send_uncertain"].includes(job.phase) &&
       (runToken === undefined || this.runTokens.get(job.id) === runToken)
     )
