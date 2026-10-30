@@ -10,8 +10,71 @@ import { Snapshot } from "../../src/snapshot"
 import { Log } from "@opencode-ai/core/util/log"
 import { disposeAllInstances, provideInstance, TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+import { Global } from "@opencode-ai/core/global"
+import { Hash } from "@opencode-ai/core/util/hash"
+import { InstanceRef } from "../../src/effect/instance-ref"
 
 const it = testEffect(Layer.mergeAll(Snapshot.defaultLayer, AppFileSystem.defaultLayer))
+
+it.instance(
+  "captures through a private index despite a stale index lock without touching the source index",
+  () =>
+    Effect.gen(function* () {
+      const { directory } = yield* TestInstance
+      const ctx = yield* InstanceRef
+      if (!ctx) throw new Error("missing instance")
+      const snapshots = yield* Snapshot.Service
+      const gitdir = path.join(Global.Path.data, "snapshot", ctx.project.id, Hash.fast(ctx.worktree))
+      const originalIndex = yield* Effect.promise(() => fs.readFile(path.join(directory, ".git/index")))
+      yield* write(path.join(directory, "before.txt"), "before")
+      const before = yield* snapshots.track()
+      yield* write(path.join(gitdir, "index.lock"), "abandoned writer")
+      const name = " padded\n[*].txt "
+      yield* write(path.join(directory, name), "after")
+      const after = yield* snapshots.track()
+      expect(after).toMatch(/^[0-9a-f]{40,64}$/)
+      expect(after).not.toBe(before)
+      expect((yield* snapshots.patch(before!)).files).toContain(fwd(directory, name))
+      expect(yield* readText(path.join(gitdir, "index.lock"))).toBe("abandoned writer")
+      expect(yield* Effect.promise(() => fs.readFile(path.join(directory, ".git/index")))).toEqual(originalIndex)
+      const leftovers = yield* Effect.promise(() => fs.readdir(path.dirname(gitdir)))
+      expect(leftovers.filter((name) => name.startsWith(`${path.basename(gitdir)}.index-`))).toEqual([])
+    }),
+  { git: true },
+)
+
+it.instance(
+  "does not report a successful tree when snapshot index scanning fails",
+  () =>
+    Effect.gen(function* () {
+      const ctx = yield* InstanceRef
+      if (!ctx) throw new Error("missing instance")
+      const snapshots = yield* Snapshot.Service
+      expect(yield* snapshots.track()).toBeTruthy()
+      const gitdir = path.join(Global.Path.data, "snapshot", ctx.project.id, Hash.fast(ctx.worktree))
+      yield* write(path.join(gitdir, "index"), "corrupt index")
+      expect(yield* snapshots.track()).toBeUndefined()
+      expect(yield* readText(path.join(gitdir, "index"))).toBe("corrupt index")
+    }),
+  { git: true },
+)
+
+it.instance(
+  "recovers an interrupted snapshot repository initialization",
+  () =>
+    Effect.gen(function* () {
+      const { directory } = yield* TestInstance
+      const ctx = yield* InstanceRef
+      if (!ctx) throw new Error("missing instance")
+      const gitdir = path.join(Global.Path.data, "snapshot", ctx.project.id, Hash.fast(ctx.worktree))
+      yield* mkdirp(gitdir)
+      yield* write(path.join(directory, "recovered.txt"), "recover after directory creation")
+      const snapshots = yield* Snapshot.Service
+      expect(yield* snapshots.track()).toMatch(/^[0-9a-f]{40,64}$/)
+      expect(yield* exists(path.join(gitdir, "HEAD"))).toBe(true)
+    }),
+  { git: true },
+)
 
 // Git always outputs /-separated paths internally. Snapshot.patch() joins them
 // with path.join (which produces \ on Windows) then normalizes back to /.

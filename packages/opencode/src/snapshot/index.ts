@@ -8,6 +8,8 @@ import { Hash } from "@opencode-ai/core/util/hash"
 import { Config } from "@/config/config"
 import { Global } from "@opencode-ai/core/global"
 import * as Log from "@opencode-ai/core/util/log"
+import { Flock } from "@opencode-ai/core/util/flock"
+import { randomUUID } from "node:crypto"
 
 export const Patch = Schema.Struct({
   hash: Schema.String,
@@ -95,6 +97,10 @@ interface GitResult {
   readonly stderr: string
 }
 
+class CaptureError extends Schema.TaggedErrorClass<CaptureError>()("SnapshotCaptureError", {
+  operation: Schema.String,
+}) {}
+
 type State = Omit<Interface, "init">
 
 export interface Interface {
@@ -178,6 +184,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
           }
 
           const args = (cmd: string[]) => ["--git-dir", state.gitdir, "--work-tree", state.worktree, ...cmd]
+          let activeIndex: string | undefined
 
           const feed = (list: string[]) => list.join("\0") + "\0"
 
@@ -187,7 +194,16 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
               opts?: { cwd?: string; env?: Record<string, string>; stdin?: string; timeout?: Duration.Input },
             ) {
               const result = yield* appProcess.run(
-                ChildProcess.make("git", cmd, { cwd: opts?.cwd, env: opts?.env, extendEnv: true }),
+                ChildProcess.make("git", cmd, {
+                  cwd: opts?.cwd,
+                  env: {
+                    ...opts?.env,
+                    ...(activeIndex && (cmd.includes(state.gitdir) || opts?.env?.GIT_DIR === state.gitdir)
+                      ? { GIT_INDEX_FILE: activeIndex }
+                      : {}),
+                  },
+                  extendEnv: true,
+                }),
                 { stdin: opts?.stdin, timeout: opts?.timeout },
               )
               return {
@@ -242,22 +258,20 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
 
           const drop = Effect.fnUntraced(function* (files: string[]) {
             if (!files.length) return
-            yield* git(
-              [
-                ...cfg,
-                ...args(["rm", "--cached", "-f", "--ignore-unmatch", "--pathspec-from-file=-", "--pathspec-file-nul"]),
-              ],
-              {
-                cwd: state.directory,
-                stdin: feed(files),
-              },
-            )
+            const result = yield* git([...cfg, ...args(["update-index", "--force-remove", "-z", "--stdin"])], {
+              cwd: state.directory,
+              stdin: feed(files),
+            })
+            if (result.code !== 0) {
+              log.warn("failed to remove snapshot files", { exitCode: result.code, stderr: result.stderr })
+              return yield* new CaptureError({ operation: "drop" })
+            }
           })
 
           const stage = Effect.fnUntraced(function* (files: string[]) {
             if (!files.length) return
             const result = yield* git(
-              [...cfg, ...args(["add", "--all", "--sparse", "--pathspec-from-file=-", "--pathspec-file-nul"])],
+              [...cfg, ...args(["update-index", "--add", "--remove", "--replace", "-z", "--stdin"])],
               {
                 cwd: state.directory,
                 stdin: feed(files),
@@ -268,12 +282,51 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
               exitCode: result.code,
               stderr: result.stderr,
             })
+            return yield* new CaptureError({ operation: "stage" })
           })
 
           const exists = (file: string) => fs.exists(file).pipe(Effect.orDie)
           const read = (file: string) => fs.readFileString(file).pipe(Effect.catch(() => Effect.succeed("")))
           const remove = (file: string) => fs.remove(file).pipe(Effect.catch(() => Effect.void))
-          const locked = <A, E, R>(fx: Effect.Effect<A, E, R>) => lock(state.gitdir).withPermits(1)(fx)
+          const locked = <A, E, R>(fx: Effect.Effect<A, E, R>) =>
+            lock(state.gitdir).withPermits(1)(
+              Effect.gen(function* () {
+                yield* Flock.effect(`snapshot:${state.gitdir}`)
+                return yield* fx
+              }).pipe(Effect.scoped),
+            )
+
+          // A killed writer may leave index.lock. Write through a private index
+          // and only publish it after success, leaving the original index intact.
+          const withTemporaryIndex = <A, E, R>(fx: Effect.Effect<A, E, R>) =>
+            Effect.acquireUseRelease(
+              Effect.gen(function* () {
+                const index = `${state.gitdir}.index-${randomUUID()}`
+                yield* fs.ensureDir(path.dirname(index)).pipe(Effect.orDie)
+                const current = path.join(state.gitdir, "index")
+                if (yield* exists(current)) yield* fs.copyFile(current, index).pipe(Effect.orDie)
+                activeIndex = index
+                log.info("snapshot temporary index prepared", { cwd: state.directory })
+                return index
+              }),
+              (index) =>
+                Effect.gen(function* () {
+                  const result = yield* fx
+                  if (yield* exists(index)) {
+                    yield* fs
+                      .rename(index, path.join(state.gitdir, "index"))
+                      .pipe(Effect.retry({ times: 3, schedule: Schedule.spaced("20 millis") }), Effect.orDie)
+                    log.info("snapshot temporary index installed", { cwd: state.directory })
+                  }
+                  return result
+                }),
+              (index) =>
+                Effect.gen(function* () {
+                  activeIndex = undefined
+                  yield* remove(index)
+                  yield* remove(`${index}.lock`)
+                }),
+            )
 
           const enabled = Effect.fnUntraced(function* () {
             if (state.vcs !== "git") return false
@@ -323,7 +376,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                 otherCode: other.code,
                 otherStderr: other.stderr,
               })
-              return
+              return yield* new CaptureError({ operation: "list" })
             }
 
             const tracked = diff.text.split("\0").filter(Boolean)
@@ -390,12 +443,19 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
             return yield* locked(
               Effect.gen(function* () {
                 if (!(yield* enabled())) return
-                const existed = yield* exists(state.gitdir)
+                const initialized = yield* exists(path.join(state.gitdir, "HEAD"))
                 yield* fs.ensureDir(state.gitdir).pipe(Effect.orDie)
-                if (!existed) {
-                  yield* git(["init"], {
+                if (!initialized) {
+                  const initResult = yield* git(["init"], {
                     env: { GIT_DIR: state.gitdir, GIT_WORK_TREE: state.worktree },
                   })
+                  if (initResult.code !== 0) {
+                    log.warn("snapshot initialization failed", {
+                      exitCode: initResult.code,
+                      stderr: initResult.stderr,
+                    })
+                    return yield* new CaptureError({ operation: "init" })
+                  }
                   yield* git(["--git-dir", state.gitdir, "config", "core.autocrlf", "false"])
                   yield* git(["--git-dir", state.gitdir, "config", "core.longpaths", "true"])
                   yield* git(["--git-dir", state.gitdir, "config", "core.symlinks", "true"])
@@ -405,9 +465,20 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                 yield* add()
                 const result = yield* git(args(["write-tree"]), { cwd: state.directory })
                 const hash = result.text.trim()
+                if (result.code !== 0 || !/^[0-9a-f]{40,64}$/.test(hash)) {
+                  log.warn("snapshot tree capture failed", { exitCode: result.code, stderr: result.stderr })
+                  return yield* new CaptureError({ operation: "write-tree" })
+                }
                 log.info("tracking", { hash, cwd: state.directory, git: state.gitdir })
                 return hash
-              }),
+              }).pipe(withTemporaryIndex),
+            ).pipe(
+              Effect.catchTag("SnapshotCaptureError", (error) =>
+                Effect.sync(() => {
+                  log.warn("snapshot capture skipped", { operation: error.operation, cwd: state.directory })
+                  return undefined
+                }),
+              ),
             )
           })
 
@@ -416,7 +487,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
               Effect.gen(function* () {
                 yield* add()
                 const result = yield* git(
-                  [...quote, ...args(["diff", "--cached", "--no-ext-diff", "--name-only", hash, "--", "."])],
+                  [...quote, ...args(["diff", "--cached", "--no-ext-diff", "--name-only", "-z", hash, "--", "."])],
                   {
                     cwd: state.directory,
                   },
@@ -425,11 +496,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                   log.warn("failed to get diff", { hash, exitCode: result.code })
                   return { hash, files: [] }
                 }
-                const files = result.text
-                  .trim()
-                  .split("\n")
-                  .map((x) => x.trim())
-                  .filter(Boolean)
+                const files = result.text.split("\0").filter(Boolean)
 
                 // Hide ignored-file removals from the user-facing patch output.
                 const ignored = yield* ignore(files)
@@ -440,8 +507,8 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                     .filter((item) => !ignored.has(item))
                     .map((x) => path.join(state.worktree, x).replaceAll("\\", "/")),
                 }
-              }),
-            )
+              }).pipe(withTemporaryIndex),
+            ).pipe(Effect.catchTag("SnapshotCaptureError", () => Effect.succeed({ hash, files: [] })))
           })
 
           const restore = Effect.fnUntraced(function* (snapshot: string) {
@@ -466,7 +533,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                   exitCode: result.code,
                   stderr: result.stderr,
                 })
-              }),
+              }).pipe(withTemporaryIndex),
             )
           })
 
@@ -581,7 +648,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
 
                   i = j
                 }
-              }),
+              }).pipe(withTemporaryIndex),
             )
           })
 
@@ -601,8 +668,8 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                   return ""
                 }
                 return result.text.trim()
-              }),
-            )
+              }).pipe(withTemporaryIndex),
+            ).pipe(Effect.catchTag("SnapshotCaptureError", () => Effect.succeed("")))
           })
 
           const diffFull = Effect.fnUntraced(function* (from: string, to: string, files?: ReadonlySet<string>) {
