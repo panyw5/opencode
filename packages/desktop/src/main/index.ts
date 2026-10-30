@@ -304,6 +304,11 @@ const main = Effect.gen(function* () {
     throw new Error("Backend reload is not ready")
   }
 
+  // Registering IPC handlers constructs the GPT-Pro credential profiles, which
+  // call session.fromPartition(). Electron throws "Session can only be received
+  // when app is ready" if that happens before readiness, so await it first.
+  yield* Effect.promise(() => app.whenReady())
+
   registerIpcHandlers({
     killSidecar: () => killBackends(),
     reloadBackend: () => reloadBackend(),
@@ -371,8 +376,6 @@ const main = Effect.gen(function* () {
   )
   registerSshIpcHandlers(sshController)
   app.on("before-quit", () => sshController.stopAll())
-
-  yield* Effect.promise(() => app.whenReady())
 
   powerMonitor.on("resume", () => {
     if (isQuitting || getStore().get("remote-access.enabled") !== true || !remoteUpstream) return
