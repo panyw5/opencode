@@ -10,6 +10,7 @@ Update an existing scheduled task by ID (from `scheduled_task_list`, mandatory).
 Provide (at least one) changed data: name/schedule/prompt/executionMode/model/enabled
 
 # GUIDELINES
+- `model` selects `providerID` and `modelID`; optional `model.variant` controls reasoning/thinking intensity (for example low, medium, or high). Use a variant supported by the selected model.
 - Passing `schedule` or `enabled` (even unchanged) recomputes the next run time; `enabled: false` clears it (task stays dormant until re-enabled)
 - `executionMode === "automatic_session"`: keeps the existing session binding (or binds a fresh session on the next run if none exists); reuses one session until 30 runs or the current context reaches 1000000 tokens, then rotates and references the previous session
 - `executionMode === "existing_session"`: keeps the existing session binding (or binds a fresh session on the next run if none exists) and never rotates
