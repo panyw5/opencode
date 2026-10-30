@@ -493,6 +493,12 @@ export class Reply {
     return this
   }
 
+  length() {
+    this.stop()
+    this.#finish = "length"
+    return this
+  }
+
   toolCalls() {
     this.#finish = "tool_calls"
     this.#hang = false

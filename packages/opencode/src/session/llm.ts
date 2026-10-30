@@ -295,6 +295,12 @@ const live: Layer.Layer<
             })
           },
           async experimental_repairToolCall(failed) {
+            try {
+              JSON.parse(failed.toolCall.input)
+            } catch {
+              l.warn("leaving malformed tool input unexecuted", { tool: failed.toolCall.toolName })
+              return null
+            }
             const lower = failed.toolCall.toolName.toLowerCase()
             if (lower !== failed.toolCall.toolName && prepared.tools[lower]) {
               l.info("repairing tool call", {
