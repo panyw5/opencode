@@ -247,8 +247,8 @@ export function updateProjectMcpText(
   const type = after.type
   const controlled =
     type === "local"
-      ? ["type", "command", "environment", ...(before.type === "remote" ? ["url", "headers"] : [])]
-      : ["type", "url", "headers", ...(before.type === "local" ? ["command", "environment"] : [])]
+      ? ["type", "command", "environment", "codemode", ...(before.type === "remote" ? ["url", "headers"] : [])]
+      : ["type", "url", "headers", "codemode", ...(before.type === "local" ? ["command", "environment"] : [])]
   return controlled.reduce((text, key) => {
     const next =
       key === "headers" || key === "environment"

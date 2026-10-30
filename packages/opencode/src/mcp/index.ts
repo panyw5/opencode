@@ -1,4 +1,4 @@
-import { dynamicTool, type Tool, jsonSchema, type JSONSchema7 } from "ai"
+import { dynamicTool, type Tool as AITool, jsonSchema, type JSONSchema7 } from "ai"
 import { serviceUse } from "@/effect/service-use"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
@@ -112,6 +112,10 @@ function isMcpConfigured(entry: McpEntry): entry is ConfigMCP.Info {
 }
 
 const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, "_")
+
+export type Tool = AITool & {
+  mcp?: { server: string; name: string; codemode: boolean }
+}
 
 function remoteURL(key: string, value: string) {
   if (URL.canParse(value)) return new URL(value)
@@ -237,6 +241,7 @@ interface State {
   status: Record<string, Status>
   clients: Record<string, MCPClient>
   defs: Record<string, MCPToolDef[]>
+  codemode: Map<string, boolean>
 }
 
 export interface Interface {
@@ -514,6 +519,7 @@ export const layer = Layer.effect(
           status: {},
           clients: {},
           defs: {},
+          codemode: new Map(),
         }
 
         yield* Effect.forEach(
@@ -524,6 +530,7 @@ export const layer = Layer.effect(
                 log.error("Ignoring MCP config entry without type", { key })
                 return
               }
+              s.codemode.set(key, mcp.codemode !== false)
 
               if (mcp.enabled === false) {
                 s.status[key] = { status: "disabled" }
@@ -615,6 +622,7 @@ export const layer = Layer.effect(
 
     const createAndStore = Effect.fn("MCP.createAndStore")(function* (name: string, mcp: ConfigMCP.Info) {
       const s = yield* InstanceState.get(state)
+      s.codemode.set(name, mcp.codemode !== false)
       const result = yield* create(name, mcp)
 
       s.status[name] = result.status
@@ -673,7 +681,10 @@ export const layer = Layer.effect(
 
             const timeout = entry?.timeout ?? defaultTimeout
             for (const mcpTool of listed) {
-              result[sanitize(clientName) + "_" + sanitize(mcpTool.name)] = convertMcpTool(mcpTool, client, timeout)
+              result[sanitize(clientName) + "_" + sanitize(mcpTool.name)] = {
+                ...convertMcpTool(mcpTool, client, timeout),
+                mcp: { server: clientName, name: mcpTool.name, codemode: s.codemode.get(clientName) ?? entry?.codemode !== false },
+              }
             }
           }),
         { concurrency: "unbounded" },

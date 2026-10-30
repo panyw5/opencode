@@ -115,6 +115,16 @@ export const SessionTranscriptTool = Tool.define(
 
       return {
         title: "Session transcript",
+        data: {
+          session_id: params.session_id,
+          more: page.more,
+          next_cursor: page.cursor,
+          messages: page.items.map((message) => ({
+            id: message.info.id,
+            role: message.info.role,
+            content: renderMessage(message, include),
+          })),
+        },
         metadata: {
           session_id: params.session_id,
           parent_task_id: session.parentID,

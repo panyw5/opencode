@@ -132,6 +132,41 @@ afterEach(async () => {
 })
 
 describe("tool.registry", () => {
+  it.instance("marks only built-in read-only queries for Code Mode", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const tools = yield* registry.tools({
+        providerID: ProviderID.opencode,
+        modelID: ModelID.make("test"),
+        agent: yield* (yield* Agent.Service).defaultInfo(),
+      })
+      for (const name of [
+        "read",
+        "glob",
+        "grep",
+        "webfetch",
+        "websearch",
+        "task_list",
+        "task_transcript",
+        "session_transcript",
+        "browser_read",
+        "browser_console",
+      ]) {
+        expect(tools.find((tool) => tool.id === name)?.codemode).toBe("readonly")
+      }
+      for (const name of [
+        "bash",
+        "task",
+        "browser_navigate",
+        "browser_click",
+        "browser_type",
+        "scheduled_task_create",
+      ]) {
+        expect(tools.find((tool) => tool.id === name)?.codemode).toBeUndefined()
+      }
+    }),
+  )
+
   it.instance("exposes scheduled task creation to agents", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service

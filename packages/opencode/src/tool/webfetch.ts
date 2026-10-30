@@ -124,6 +124,14 @@ export const WebFetchTool = Tool.define(
           }
 
           const content = new TextDecoder().decode(arrayBuffer)
+          let data: unknown
+          if (mime === "application/json" || mime.endsWith("+json")) {
+            try {
+              data = JSON.parse(content)
+            } catch {
+              // Invalid JSON remains available as text rather than failing a successful fetch.
+            }
+          }
 
           // Handle content based on requested format and actual content type
           switch (params.format) {
@@ -132,23 +140,24 @@ export const WebFetchTool = Tool.define(
                 const markdown = convertHTMLToMarkdown(content)
                 return {
                   output: markdown,
+                  data,
                   title,
                   metadata: {},
                 }
               }
-              return { output: content, title, metadata: {} }
+              return { output: content, title, metadata: {}, data }
 
             case "text":
               if (contentType.includes("text/html")) {
-                return { output: extractTextFromHTML(content), title, metadata: {} }
+                return { output: extractTextFromHTML(content), title, metadata: {}, data }
               }
-              return { output: content, title, metadata: {} }
+              return { output: content, title, metadata: {}, data }
 
             case "html":
-              return { output: content, title, metadata: {} }
+              return { output: content, title, metadata: {}, data }
 
             default:
-              return { output: content, title, metadata: {} }
+              return { output: content, title, metadata: {}, data }
           }
         }).pipe(Effect.orDie),
     }

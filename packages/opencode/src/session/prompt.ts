@@ -13,6 +13,7 @@ import type { JSONSchema7 } from "@ai-sdk/provider"
 import { SessionCompaction } from "./compaction"
 import { Bus } from "../bus"
 import { SystemPrompt } from "./system"
+import { CodeModeState } from "./code-mode-state"
 import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
 import { ProjectTask } from "@/project-task/service"
@@ -38,6 +39,7 @@ import { ConfigMarkdown } from "@/config/markdown"
 import { SessionSummary } from "./summary"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { SessionProcessor } from "./processor"
+import { MAX_OUTPUT_LIMIT_CONTINUATIONS, OUTPUT_LIMIT_PROMPT, outputLimitStreak } from "./output-limit"
 import { Tool } from "@/tool/tool"
 import { Permission } from "@/permission"
 import { SessionStatus } from "./status"
@@ -110,6 +112,7 @@ function latestUserIsTerminallyHandled(input: {
     typeof assistant.time.completed === "number" &&
     assistant.finish !== undefined &&
     assistant.finish !== "tool-calls" &&
+    (assistant.finish !== "length" || assistant.error !== undefined) &&
     !input.hasToolCalls &&
     input.pendingSessionInputCount === 0 &&
     input.pendingTaskCount === 0 &&
@@ -2248,6 +2251,9 @@ export const layer = Layer.effect(
     const prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts, Image.Error> = Effect.fn(
       "SessionPrompt.prompt",
     )(function* (input: PromptInput) {
+      if ((yield* sessions.get(input.sessionID).pipe(Effect.orDie)).external) {
+        throw new Error("External CLI sessions only accept external-control operations")
+      }
       let revision = yield* state.revision(input.sessionID, lastAssistant(input.sessionID))
       yield* elog.info("prompt preparation registered", { sessionID: input.sessionID, revision })
       yield* ensureBackgroundShellSubscription()
@@ -2413,6 +2419,7 @@ export const layer = Layer.effect(
           })
 
           const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
+          const truncatedResponses = outputLimitStreak(msgs)
 
           if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
 
@@ -2710,13 +2717,21 @@ export const layer = Layer.effect(
             if (step === 1)
               yield* summary.summarize({ sessionID, messageID: lastUser.id }).pipe(Effect.ignore, Effect.forkIn(scope))
 
-            yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
+            const codeMode = yield* CodeModeState.prepare({
+              sessionID,
+              messageID: msg.id,
+              user: lastUser,
+              messages: msgs,
+              catalog: SessionTools.codeModeCatalog(tools),
+            })
+            const requestMessages = codeMode.messages
+            yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: requestMessages })
 
             const [skills, env, instructions, modelMsgs] = yield* Effect.all([
               sys.skills(agent),
               sys.environment(model),
               instruction.system().pipe(Effect.orDie),
-              MessageV2.toModelMessagesEffect(msgs, model),
+              MessageV2.toModelMessagesEffect(requestMessages, model),
             ])
             // Consumption means these durable notification messages have been
             // assigned to this exact model-input snapshot. Provider failure or
@@ -2733,7 +2748,12 @@ export const layer = Layer.effect(
                 return "break" as const
               }
             }
-            const system = [...env, ...instructions, ...(skills ? [skills] : [])]
+            const system = [
+              ...(codeMode.system ? [codeMode.system] : []),
+              ...env,
+              ...instructions,
+              ...(skills ? [skills] : []),
+            ]
             // Project-task context is attached as a durable user-message synthetic part
             // earlier in the loop (see project-task inject above), so it is already in
             // modelMsgs via toModelMessages — do not also push into system.
@@ -2746,7 +2766,13 @@ export const layer = Layer.effect(
               sessionID,
               parentSessionID: session.parentID,
               system,
-              messages: [...modelMsgs, ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : [])],
+              messages: [
+                ...modelMsgs,
+                ...(truncatedResponses > 0 && !hasToolCalls
+                  ? [{ role: "user" as const, content: OUTPUT_LIMIT_PROMPT }]
+                  : []),
+                ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
+              ],
               tools,
               model,
               toolChoice: isLastStep ? "none" : format.type === "json_schema" ? "required" : undefined,
@@ -2768,7 +2794,23 @@ export const layer = Layer.effect(
               return "break" as const
             }
 
-            const finished = handle.message.finish && !["tool-calls", "unknown"].includes(handle.message.finish)
+            if (handle.message.finish === "length" && result !== "stop" && !isLastStep) {
+              if (truncatedResponses >= MAX_OUTPUT_LIMIT_CONTINUATIONS) {
+                yield* slog.warn("output limit continuation exhausted", { truncatedResponses })
+                handle.message.error = new NamedError.Unknown({
+                  message: "Response still truncated after two output token limit continuations",
+                }).toObject()
+                yield* sessions.updateMessage(handle.message)
+                yield* bus.publish(Session.Event.Error, { sessionID, error: handle.message.error })
+                return "break" as const
+              }
+              yield* slog.info("continuing after output token limit", {
+                continuation: truncatedResponses + 1,
+                maximum: MAX_OUTPUT_LIMIT_CONTINUATIONS,
+              })
+            }
+
+            const finished = handle.message.finish && !["tool-calls", "unknown", "length"].includes(handle.message.finish)
             if (finished && !handle.message.error) {
               if (format.type === "json_schema") {
                 handle.message.error = new MessageV2.StructuredOutputError({
@@ -2968,12 +3010,14 @@ export const layer = Layer.effect(
     const shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts, Session.BusyError> = Effect.fn(
       "SessionPrompt.shell",
     )(function* (input: ShellInput) {
+      if ((yield* sessions.get(input.sessionID).pipe(Effect.orDie)).external) throw new Error("Shell is unavailable in external CLI sessions")
       yield* ensureBackgroundShellSubscription()
       const ready = yield* Latch.make()
       return yield* state.startShell(input.sessionID, lastAssistant(input.sessionID), shellImpl(input, ready), ready)
     })
 
     const command = Effect.fn("SessionPrompt.command")(function* (input: CommandInput) {
+      if ((yield* sessions.get(input.sessionID).pipe(Effect.orDie)).external) throw new Error("Commands are unavailable in external CLI sessions")
       yield* ensureBackgroundShellSubscription()
       yield* elog.info("command", { sessionID: input.sessionID, command: input.command, agent: input.agent })
       const cmd = yield* commands.get(input.command)

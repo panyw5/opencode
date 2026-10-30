@@ -45,6 +45,7 @@ export const BrowserConsoleTool = Tool.define(
 
           return {
             title: state.url,
+            data: { url: state.url, entries },
             output: lines.join("\n"),
             metadata: {
               url: state.url,

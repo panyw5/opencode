@@ -37,6 +37,7 @@ export const GrepTool = Tool.define(
             title: params.pattern,
             metadata: { matches: 0, truncated: false },
             output: "No files found",
+            data: { matches: [], total: 0, truncated: false, partial: false },
           }
           if (!params.pattern) {
             throw new Error("pattern is required")
@@ -144,6 +145,16 @@ export const GrepTool = Tool.define(
 
           return {
             title: params.pattern,
+            data: {
+              matches: final.map((match) => ({
+                path: match.path,
+                line: match.line,
+                text: match.text.slice(0, MAX_LINE_LENGTH),
+              })),
+              total,
+              truncated,
+              partial: result.partial,
+            },
             metadata: {
               matches: total,
               truncated,

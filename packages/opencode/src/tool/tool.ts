@@ -47,6 +47,8 @@ export interface ExecuteResult<M extends Metadata = Metadata> {
   title: string
   metadata: M
   output: string
+  data?: unknown
+  instructions?: { filepath: string; content: string }[]
   attachments?: Omit<MessageV2.FilePart, "id" | "sessionID" | "messageID">[]
 }
 
@@ -58,6 +60,7 @@ export interface Def<
   description: string
   parameters: Parameters
   jsonSchema?: JSONSchema7
+  codemode?: "readonly"
   execute(args: Schema.Schema.Type<Parameters>, ctx: Context): Effect.Effect<ExecuteResult<M>>
   formatValidationError?(error: unknown): string
 }

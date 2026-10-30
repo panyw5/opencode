@@ -38,6 +38,7 @@ export const BrowserReadTool = Tool.define(
           ]
           return {
             title: snapshot.url,
+            data: { url: snapshot.url, title: snapshot.title, nodes: snapshot.nodes },
             output: lines.join("\n"),
             metadata: { url: snapshot.url, title: snapshot.title, nodes: snapshot.nodes.length },
           }

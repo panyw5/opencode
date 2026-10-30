@@ -36,6 +36,7 @@
     }
   },
   "devDependencies": {
+    "@opencode/codemode": "workspace:*",
     "@babel/core": "7.28.4",
     "@octokit/webhooks-types": "7.6.1",
     "@opencode-ai/core": "workspace:*",

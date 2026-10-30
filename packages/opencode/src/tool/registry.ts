@@ -37,6 +37,7 @@ import { CodexConsultTool } from "./codex_consult"
 import { ClaudeConsultTool } from "./claude_consult"
 import { GrokConsultTool } from "./grok_consult"
 import { DshConsultTool } from "./dsh_consult"
+import { PiConsultTool } from "./pi_consult"
 import { GptProConsultTool } from "./gpt_pro_consult"
 import { RepoCloneTool } from "./repo_clone"
 import { RepoOverviewTool } from "./repo_overview"
@@ -74,6 +75,7 @@ import { Reference } from "@/reference/reference"
 import { BackgroundJob } from "@/background/job"
 import { BackgroundShell } from "@/background/shell"
 import { SessionStatus } from "@/session/status"
+import { makeExternalSessions } from "@/session/external"
 import { SessionInput } from "@/session/input"
 import { IM } from "@/im/service"
 import { IMOwner } from "@/im/owner"
@@ -167,6 +169,7 @@ const BUILTINS = {
   claude_consult: ClaudeConsultTool,
   grok_consult: GrokConsultTool,
   dsh_consult: DshConsultTool,
+  pi_consult: PiConsultTool,
   gpt_pro_consult: GptProConsultTool,
   skill: SkillTool,
   apply_patch: ApplyPatchTool,
@@ -184,6 +187,20 @@ const BUILTINS = {
   browser_close: BrowserCloseTool,
   browser_scroll: BrowserScrollTool,
 } as const
+
+const CODE_MODE_READONLY = new Set([
+  "glob",
+  "grep",
+  "read",
+  "lsp",
+  "websearch",
+  "webfetch",
+  "task_list",
+  "task_transcript",
+  "session_transcript",
+  "browser_read",
+  "browser_console",
+])
 
 export function webSearchEnabled(providerID: ProviderID, flags = { exa: false, parallel: false }) {
   return providerID === ProviderID.opencode || flags.exa || flags.parallel
@@ -250,6 +267,25 @@ export const layer: Layer.Layer<
     const skill = yield* Skill.Service
     const truncate = yield* Truncate.Service
     const flags = yield* RuntimeFlags.Service
+    const external = makeExternalSessions(
+      yield* Session.Service,
+      yield* SessionStatus.Service,
+      (output, ctx) =>
+        Effect.gen(function* () {
+          const agent = yield* agents.get(ctx.agent)
+          return yield* truncate.output(output, {}, agent)
+        }),
+      (ctx, parent) =>
+        Effect.gen(function* () {
+          const agent = yield* agents.get(ctx.agent)
+          const user = ctx.messages.findLast((message) => message.info.role === "user")?.info
+          if (user?.role === "user" && user.tools?.task_transcript === false) return false
+          return !Permission.disabled(
+            ["task_transcript"],
+            Permission.merge(agent?.permission ?? [], parent.permission ?? []),
+          ).has("task_transcript")
+        }),
+    )
 
     const infos = yield* Effect.all(BUILTINS)
 
@@ -343,6 +379,12 @@ export const layer: Layer.Layer<
         const browserEnabled = flags.pure !== true && configInfo.browser?.enabled !== false
 
         const defs = yield* Effect.all(initTools(infos))
+        for (const def of Object.values(defs)) {
+          if (CODE_MODE_READONLY.has(def.id)) Object.assign(def, { codemode: "readonly" })
+        }
+        for (const id of ["codex_consult", "claude_consult", "grok_consult", "dsh_consult", "pi_consult"] as const) {
+          defs[id] = external.wrap(defs[id]) as (typeof defs)[typeof id]
+        }
 
         // Gating is the only thing that keeps a declared tool away from the model.
         const hidden: Tool.Def[] = [
@@ -350,7 +392,9 @@ export const layer: Layer.Layer<
           ...(flags.experimentalScout ? [] : [defs.repo_clone, defs.repo_overview]),
           ...(flags.experimentalLspTool ? [] : [defs.lsp]),
           ...(flags.experimentalPlanMode && flags.client === "cli" ? [] : [defs.plan_exit]),
-          ...(browserEnabled ? [] : Object.values(defs).filter((item) => item.id.startsWith("browser_") || item.id === "gpt_pro_consult")),
+          ...(browserEnabled
+            ? []
+            : Object.values(defs).filter((item) => item.id.startsWith("browser_") || item.id === "gpt_pro_consult")),
         ]
         const builtin = Object.values(defs).filter((item) => !hidden.includes(item))
         log.info("builtin tools initialized", { ids: builtin.map((item) => item.id) })
@@ -437,6 +481,7 @@ export const layer: Layer.Layer<
               : undefined
           return {
             id: tool.id,
+            codemode: tool.codemode,
             description: [
               output.description,
               tool.id === TaskTool.id ? yield* describeTask(input.agent) : undefined,

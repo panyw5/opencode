@@ -3808,7 +3808,7 @@ export default function ConfigPage() {
     cmdCreateProjectLabel: "",
     cmdSaving: false,
     cmdErr: "",
-    mcpForm: { type: "local" as "local" | "remote", command: "", url: "", environment: "", headers: "" },
+    mcpForm: { type: "local" as "local" | "remote", command: "", url: "", environment: "", headers: "", codemode: true },
     mcpNewName: "",
     mcpTargetDirectory: "",
     mcpSaving: false,
@@ -3998,6 +3998,7 @@ export default function ConfigPage() {
         const entryType = ((entry.type as string) ?? "local") as "local" | "remote"
         setState("mcpForm", {
           type: entryType,
+          codemode: entry.codemode !== false,
           command: entryType === "local" ? formatArgv((entry.command as string[]) ?? []) : "",
           url: entryType === "remote" ? ((entry.url as string) ?? "") : "",
           environment:
@@ -4082,6 +4083,7 @@ export default function ConfigPage() {
         if (hdrs) config.headers = hdrs
       }
       const current = currentConfig?.mcp ?? {}
+      config.codemode = form.codemode
       if (targetDirectory && targetStore) {
         const client = globalSDK.forDomain(mainDomain).createClient({ directory: targetDirectory, throwOnError: true })
         const records = await loadConfigRecords(targetDirectory, "project")
@@ -4239,7 +4241,7 @@ export default function ConfigPage() {
     setState("pick", MCP_NEW)
     setState("mcpNewName", "")
     setState("mcpTargetDirectory", targetDirectory)
-    setState("mcpForm", { type: "local" as const, command: "", url: "", environment: "", headers: "" })
+    setState("mcpForm", { type: "local" as const, command: "", url: "", environment: "", headers: "", codemode: true })
     setState("mcpDirty", true)
     setState("mcpSaving", false)
   }
@@ -4249,7 +4251,7 @@ export default function ConfigPage() {
       setState("pick", "")
       setState("mcpNewName", "")
       setState("mcpTargetDirectory", "")
-      setState("mcpForm", { type: "local" as const, command: "", url: "", environment: "", headers: "" })
+      setState("mcpForm", { type: "local" as const, command: "", url: "", environment: "", headers: "", codemode: true })
       setState("mcpDirty", false)
       setState("mcpSaving", false)
     })
@@ -4432,6 +4434,7 @@ export default function ConfigPage() {
           .list()
           .then(async (descriptors) => {
             if (run !== cliAgentsRun) return
+            console.debug(`[config-cli-agents] loaded run=${run} ids=${descriptors.map((agent) => agent.id).join(",")}`)
             setCliAgentDescriptors(descriptors)
             for (const descriptor of descriptors) {
               if (!state.cliAgents[descriptor.id]) setState("cliAgents", descriptor.id, cliAgentCfg())
@@ -4472,7 +4475,8 @@ export default function ConfigPage() {
               }),
             )
           })
-          .catch(() => {
+          .catch((error) => {
+            console.warn(`[config-cli-agents] list failed run=${run} error=${String(error)}`)
             if (run === cliAgentsRun) setCliAgentDescriptors([])
           })
           .finally(() => {
@@ -7346,6 +7350,9 @@ export default function ConfigPage() {
     setState("cliAgents", id, "saving", true)
     setState("cliAgents", id, "test", undefined)
     try {
+      if (id === "pi") {
+        await patchConfig({ pi: { ...config, binaryPath: config.binaryPath ?? "", configHome: config.configHome ?? "" } })
+      }
       await platform.cliAgents.set(id, config)
       setCliAgentConfigs(id, config)
       if (id === "dsh" && platform.cliAgents.setDshHome) {
@@ -9826,6 +9833,20 @@ export default function ConfigPage() {
                                 onSelect={(o) => o && setMcpField("type", o.value)}
                                 variant="secondary"
                                 size="large"
+                              />
+                            </div>
+                            <div class="flex items-center justify-between gap-4" data-slot="mcp-codemode-setting">
+                              <div>
+                                <div class="text-12-medium text-text-base">{t("config.mcp.editor.codemode")}</div>
+                                <div class="text-12-regular text-text-weak">{t("config.mcp.editor.codemodeHint")}</div>
+                              </div>
+                              <Toggle
+                                checked={state.mcpForm.codemode}
+                                onChange={(value) => {
+                                  setState("mcpForm", "codemode", value)
+                                  setState("mcpDirty", true)
+                                }}
+                                aria-label={t("config.mcp.editor.codemode")}
                               />
                             </div>
                             <Switch>

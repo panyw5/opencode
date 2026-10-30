@@ -108,6 +108,7 @@ export const GlobTool = Tool.define(
 
           return {
             title: path.relative(ins.worktree, search),
+            data: { files: files.map((file) => file.path), truncated },
             metadata: {
               count: files.length,
               truncated,

@@ -17,6 +17,21 @@ import {
 } from "./config-persistence"
 
 describe("config persistence", () => {
+  test("MCP Code Mode can be toggled without losing unrelated server settings", () => {
+    const entry = {
+      type: "remote" as const,
+      url: "https://example.test/mcp",
+      codemode: false,
+      oauth: false as const,
+      timeout: 12345,
+    }
+    const source = JSON.stringify({ mcp: { demo: entry }, model: "keep/model" })
+    const enabled = updateProjectMcpText(source, "demo", { ...entry, codemode: true }, entry)
+    expect(parse(enabled)).toEqual({ mcp: { demo: { ...entry, codemode: true } }, model: "keep/model" })
+    const disabled = updateProjectMcpText(enabled, "demo", entry, { ...entry, codemode: true })
+    expect(parse(disabled).mcp.demo.codemode).toBe(false)
+  })
+
   test("MCP selection IDs preserve scope, directory, and name", () => {
     const selection = { scope: "project" as const, directory: "/tmp/project:one", name: "same:name" }
     const id = mcpSelectionID(selection)
@@ -180,7 +195,10 @@ describe("config persistence", () => {
     expect(
       declaredProviderEntry(
         [
-          { file: { label: "opencode.jsonc", path: "/config/opencode.jsonc" }, text: `{"provider":{"target":{"name":"Raw"}}}` },
+          {
+            file: { label: "opencode.jsonc", path: "/config/opencode.jsonc" },
+            text: `{"provider":{"target":{"name":"Raw"}}}`,
+          },
           { file: { label: "opencode.json", path: "/config/opencode.json" }, text: "{}" },
         ],
         "target",
@@ -289,8 +307,14 @@ describe("config persistence", () => {
 
   test("project MCP edits the highest-precedence declaration", () => {
     const records = [
-      { file: { label: "opencode.jsonc", path: "/project/opencode.jsonc" }, text: `{"mcp":{"target":{"type":"remote","url":"https://root.test"}}}` },
-      { file: { label: ".opencode/opencode.jsonc", path: "/project/.opencode/opencode.jsonc" }, text: `{"mcp":{"target":{"type":"remote","url":"https://dot.test"}}}` },
+      {
+        file: { label: "opencode.jsonc", path: "/project/opencode.jsonc" },
+        text: `{"mcp":{"target":{"type":"remote","url":"https://root.test"}}}`,
+      },
+      {
+        file: { label: ".opencode/opencode.jsonc", path: "/project/.opencode/opencode.jsonc" },
+        text: `{"mcp":{"target":{"type":"remote","url":"https://dot.test"}}}`,
+      },
     ]
 
     expect(selectProjectMcpConfig(records, "target", false)?.file.path).toBe("/project/.opencode/opencode.jsonc")

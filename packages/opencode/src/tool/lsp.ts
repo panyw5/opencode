@@ -104,6 +104,7 @@ export const LspTool = Tool.define(
 
           return {
             title,
+            data: { result },
             metadata: { result },
             output: result.length === 0 ? `No results found for ${args.operation}` : JSON.stringify(result, null, 2),
           }

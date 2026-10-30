@@ -90,6 +90,19 @@
         "vite-plugin-solid": "catalog:",
       },
     },
+    "packages/codemode": {
+      "name": "@opencode/codemode",
+      "version": "2.2.0",
+      "dependencies": {
+        "acorn": "8.16.0",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+        "@types/bun": "catalog:",
+        "@typescript/native-preview": "catalog:",
+      },
+    },
     "packages/console/app": {
       "name": "@opencode-ai/console-app",
       "version": "1.18.62",
@@ -514,6 +527,7 @@
         "@opencode-ai/core": "workspace:*",
         "@opencode-ai/http-recorder": "workspace:*",
         "@opencode-ai/script": "workspace:*",
+        "@opencode/codemode": "workspace:*",
         "@parcel/watcher-darwin-arm64": "2.5.1",
         "@parcel/watcher-darwin-x64": "2.5.1",
         "@parcel/watcher-linux-arm64-glibc": "2.5.1",
@@ -1614,6 +1628,8 @@
     "@opencode-ai/util": ["@opencode-ai/util@workspace:packages/util"],
 
     "@opencode-ai/web": ["@opencode-ai/web@workspace:packages/web"],
+
+    "@opencode/codemode": ["@opencode/codemode@workspace:packages/codemode"],
 
     "@openrouter/ai-sdk-provider": ["@openrouter/ai-sdk-provider@2.8.1", "", { "peerDependencies": { "ai": "^6.0.0", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-Y6j3yivgoEUf/kutD/k5GX/mzZfioRFoSx0gbQ+mIOzMaH/vJv1rCkztiuvlLw5xRYQil7oxHUZvmSfXqOx1NQ=="],
 

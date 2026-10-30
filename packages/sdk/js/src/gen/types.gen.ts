@@ -1118,6 +1118,10 @@ export type McpLocalConfig = {
    */
   enabled?: boolean
   /**
+   * Expose tools through Code Mode (default: true). Set false to expose tools directly.
+   */
+  codemode?: boolean
+  /**
    * Timeout in ms for fetching tools from the MCP server. Defaults to 5000 (5 seconds) if not specified.
    */
   timeout?: number
@@ -1151,6 +1155,10 @@ export type McpRemoteConfig = {
    * Enable or disable the MCP server on startup
    */
   enabled?: boolean
+  /**
+   * Expose tools through Code Mode (default: true). Set false to expose tools directly.
+   */
+  codemode?: boolean
   /**
    * Headers to send with the request
    */

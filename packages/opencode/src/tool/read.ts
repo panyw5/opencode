@@ -243,6 +243,7 @@ export const ReadTool = Tool.define(
 
         return {
           title,
+          data: { type: "directory", path: filepath, entries: sliced, offset, truncated, total: items.length },
           output: [
             `<path>${filepath}</path>`,
             `<type>directory</type>`,
@@ -273,6 +274,8 @@ export const ReadTool = Tool.define(
         return {
           title,
           output: msg,
+          data: { type: "attachment", path: filepath, mime },
+          instructions: loaded,
           metadata: {
             preview: msg,
             truncated: false,
@@ -323,6 +326,16 @@ export const ReadTool = Tool.define(
       return {
         title,
         output,
+        data: {
+          type: "file",
+          path: filepath,
+          lines: file.raw.map((text, index) => ({ line: file.offset + index, text })),
+          offset: file.offset,
+          nextOffset: truncated ? next : undefined,
+          totalLines: file.cut ? undefined : file.count,
+          truncated,
+        },
+        instructions: loaded,
         metadata: {
           preview: file.raw.slice(0, 20).join("\n"),
           truncated,

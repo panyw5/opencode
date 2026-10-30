@@ -21,7 +21,11 @@ function extract(messages: MessageV2.WithParts[]) {
   const paths = new Set<string>()
   for (const msg of messages) {
     for (const part of msg.parts) {
-      if (part.type === "tool" && part.tool === "read" && part.state.status === "completed") {
+      if (
+        part.type === "tool" &&
+        part.state.status === "completed" &&
+        (part.tool === "read" || (part.tool === "execute" && part.state.metadata?.codemode === true))
+      ) {
         if (part.state.time.compacted) continue
         const loaded = part.state.metadata?.loaded
         if (!loaded || !Array.isArray(loaded)) continue
