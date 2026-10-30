@@ -14,6 +14,7 @@ There are several opencode instances:
 - Run **frontend** tests using CDP 9222: you can control **electron** app, spawn one if not running
   **VERIFY** if there is electron app running **before** launching
 - DO NOT shut down the installed opencode app (`/applications/opencode.app`).
+- [CRITICAL] Run CDP verification after your edit!!!
 - CDP helper (dev renderer only, does not launch or quit apps):
   ```
   bun packages/desktop/scripts/cdp.ts targets

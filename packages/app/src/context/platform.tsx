@@ -10,6 +10,14 @@ type PickerPaths = string | string[] | null
 type OpenDirectoryPickerOptions = { title?: string; multiple?: boolean }
 type OpenFilePickerOptions = { title?: string; multiple?: boolean; accept?: string[]; extensions?: string[] }
 type SaveFilePickerOptions = { title?: string; defaultPath?: string }
+export type SessionDocumentInput = {
+  format: "png" | "pdf" | "markdown"
+  name: string
+  markdown?: string
+  html?: string
+  width?: number
+  theme?: "light" | "dark"
+}
 type UpdateInfo = { updateAvailable: boolean; version?: string; failed?: boolean; error?: string }
 
 export type UpdaterState =
@@ -116,7 +124,7 @@ export type HermesTest = {
   logs: string[]
 }
 
-export type CliAgentID = "codex" | "claude" | "grok" | "dsh"
+export type CliAgentID = "codex" | "claude" | "grok" | "dsh" | "pi"
 
 export type CliAgentConfig = {
   enabled: boolean
@@ -317,6 +325,7 @@ export type Platform = {
 
   /** Save file picker dialog (Tauri only) */
   saveFilePickerDialog?(opts?: SaveFilePickerOptions): Promise<string | null>
+  exportSessionDocument?(input: SessionDocumentInput): Promise<{ cancelled: boolean; files: number }>
 
   /** Storage mechanism, defaults to localStorage */
   storage?: (name?: string) => SyncStorage | AsyncStorage

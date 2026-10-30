@@ -722,7 +722,13 @@ export const LocalWorkspace = (props: {
   const [restarting, setRestarting] = createSignal(false)
   // Project view paginates the merged, sorted session list; per-directory store
   // limits would make worktrees compete and cause rows to appear mid-list later.
-  const { limit: visibleLimit, loadMore } = createSessionListPagination(() => workspaceKey(props.project.worktree))
+  const { limit: visibleLimit, loadMore } = createSessionListPagination(() => {
+    if (!props.project) {
+      console.debug("[sidebar-project] pagination scope unavailable during project transition")
+      return ""
+    }
+    return workspaceKey(props.project.worktree)
+  })
   const dirs = props.directories
   const stores = createMemo(() => dirs().map((directory) => globalSync.child(directory, { bootstrap: false })))
   const slug = createMemo(() => base64Encode(props.project.worktree))
