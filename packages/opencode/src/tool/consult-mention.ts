@@ -1,13 +1,14 @@
 /** Reserved @-mention names that route to external CLI consult tools (not task/subagent). */
-export type ConsultMentionID = "codex" | "claude" | "grok" | "dsh" | "gpt-pro"
+export type ConsultMentionID = "codex" | "claude" | "grok" | "dsh" | "pi" | "gpt-pro"
 
-export type ConsultMentionTool = "codex_consult" | "claude_consult" | "grok_consult" | "dsh_consult" | "gpt_pro_consult"
+export type ConsultMentionTool = "codex_consult" | "claude_consult" | "grok_consult" | "dsh_consult" | "pi_consult" | "gpt_pro_consult"
 
 export const CONSULT_MENTION_IDS = [
   "codex",
   "claude",
   "grok",
   "dsh",
+  "pi",
   "gpt-pro",
 ] as const satisfies readonly ConsultMentionID[]
 
@@ -16,6 +17,7 @@ export const CONSULT_MENTIONS: Record<ConsultMentionID, { tool: ConsultMentionTo
   claude: { tool: "claude_consult", label: "Claude" },
   grok: { tool: "grok_consult", label: "Grok" },
   dsh: { tool: "dsh_consult", label: "DeepSeek" },
+  pi: { tool: "pi_consult", label: "Pi" },
   "gpt-pro": { tool: "gpt_pro_consult", label: "GPT-6 Pro (Chat)" },
 }
 
@@ -29,6 +31,7 @@ export function isConsultTool(tool: string): tool is ConsultMentionTool {
     tool === "claude_consult" ||
     tool === "grok_consult" ||
     tool === "dsh_consult" ||
+    tool === "pi_consult" ||
     tool === "gpt_pro_consult"
   )
 }
@@ -78,9 +81,14 @@ export function buildConsultFollowupSynthetic(names: string[]): string {
   return [
     `The user invoked ${list} via @-mention.`,
     "The consultation tool result is already in this conversation.",
+    names.some((name) => isConsultMention(name) && name !== "gpt-pro")
+      ? "For external CLI results, inspect the external_consultation handoff. It supplies the child task_id, summary previews, and user_intervened/read_before_summary flags. If read_before_summary is true, call task_transcript with read_transcript.arguments and inspect relevant earlier pages before summarizing. Do not use the final intervention reply alone as the original consultation result."
+      : undefined,
     "Summarize the advisor output for the user and continue only if further action is needed.",
     names.includes("gpt-pro")
       ? "If GPT-Pro is running with background=true, continue independent exploration: progress and completion arrive automatically. Do not sleep, poll or resend. For a foreground unfinished consultation, use status with consultation_id. Never treat partial output as final."
       : "Do not re-invoke the same consult tool unless the user asks for another consultation.",
-  ].join(" ")
+  ]
+    .filter(Boolean)
+    .join(" ")
 }

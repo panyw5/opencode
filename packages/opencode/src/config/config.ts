@@ -148,6 +148,11 @@ export const Info = Schema.Struct({
     description: "Default shell to use for terminal and bash tool",
   }),
   logLevel: Schema.optional(LogLevelRef).annotate({ description: "Log level" }),
+  pi: Schema.optional(Schema.Struct({
+    enabled: Schema.optional(Schema.Boolean),
+    binaryPath: Schema.optional(Schema.String),
+    configHome: Schema.optional(Schema.String),
+  })).annotate({ description: "Local Pi external advisor executable and configuration directory" }),
   server: Schema.optional(ConfigServer.Server).annotate({
     description: "Server configuration for opencode serve and web commands",
   }),

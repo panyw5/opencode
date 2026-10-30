@@ -267,6 +267,12 @@ exports[`tool parameters JSON Schema (wire shape) question 1`] = `
       },
       "type": "array",
     },
+    "timeout": {
+      "description": "Seconds to wait for the entire question request (1-86400). Defaults to 300. On timeout the question is dismissed without selecting an answer.",
+      "maximum": 86400,
+      "minimum": 1,
+      "type": "integer",
+    },
   },
   "required": [
     "questions",
@@ -401,7 +407,7 @@ exports[`tool parameters JSON Schema (wire shape) task_transcript 1`] = `
       "type": "integer",
     },
     "task_id": {
-      "description": "The task_id returned by task or discovered with task_list",
+      "description": "OpenCode child session ID from task, task_list, or an external CLI consultation handoff; not the CLI thread/session ID",
       "pattern": "^ses",
       "type": "string",
     },
@@ -705,6 +711,34 @@ exports[`tool parameters JSON Schema (wire shape) dsh_consult 1`] = `
     },
     "working_directory": {
       "description": "Absolute directory dsh should run in. Defaults to the current project directory. Must stay inside an allowed workspace path.",
+      "type": "string",
+    },
+  },
+  "required": [
+    "prompt",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`tool parameters JSON Schema (wire shape) pi_consult 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "model": {
+      "description": "Optional Pi model selector, e.g. provider/model-id.",
+      "type": "string",
+    },
+    "prompt": {
+      "description": "Self-contained request for the local Pi advisor, including paths and constraints.",
+      "type": "string",
+    },
+    "timeout_ms": {
+      "description": "Per-turn timeout in milliseconds, default 600000, maximum 1800000.",
+      "type": "number",
+    },
+    "working_directory": {
+      "description": "Working directory; defaults to the current project. Must be an allowed workspace path.",
       "type": "string",
     },
   },

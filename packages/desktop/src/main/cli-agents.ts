@@ -20,6 +20,7 @@ import {
   testDshConfig,
 } from "./dsh-status"
 import { getGrokInfo, testGrokConfig } from "./grok-status"
+import { getPiInfo, testPiConfig } from "./pi-status"
 
 type CliAgentDefinition = {
   descriptor: CliAgentDescriptor
@@ -28,6 +29,18 @@ type CliAgentDefinition = {
 }
 
 const cliAgents: Record<CliAgentID, CliAgentDefinition> = {
+  pi: {
+    descriptor: {
+      id: "pi",
+      label: "Pi",
+      command: "pi",
+      sourceUrl: "https://github.com/earendil-works/pi",
+      configHomeLabel: "PI_CODING_AGENT_DIR",
+      configHomePlaceholder: "~/.pi/agent",
+    },
+    getInfo: getPiInfo,
+    test: testPiConfig,
+  },
   codex: {
     descriptor: {
       id: "codex",

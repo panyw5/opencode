@@ -395,6 +395,7 @@ export function setHermesConfig(config: HermesConfig) {
 }
 
 const cliAgentConfigKeys: Record<CliAgentID, string> = {
+  pi: "piConfig",
   codex: CODEX_CONFIG_KEY,
   claude: CLAUDE_CONFIG_KEY,
   grok: GROK_CONFIG_KEY,

@@ -350,7 +350,7 @@ project_task_get, project_task_mount, project_task_update,
 scheduled_task_create, scheduled_task_list, scheduled_task_get,
 scheduled_task_update, scheduled_task_delete, scheduled_task_run_now,
 scheduled_task_runs, question, im_list, im_read, im_send, im_watch, webfetch,
-websearch, codex_consult, claude_consult, grok_consult, dsh_consult,
+websearch, codex_consult, claude_consult, grok_consult, dsh_consult, pi_consult,
 repo_clone, repo_overview, lsp, doom_loop, skill, and `plan_exit`, plus any
 custom tool IDs. Action-only keys include `todowrite`, all `project_task_*`
 and `scheduled_task_*` keys, `question`, all `im_*` keys, `webfetch`,

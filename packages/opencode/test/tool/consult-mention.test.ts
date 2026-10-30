@@ -28,12 +28,14 @@ describe("consult-mention", () => {
     expect(consultMentionFor("grok")?.tool).toBe("grok_consult")
     expect(consultMentionFor("dsh")?.tool).toBe("dsh_consult")
     expect(consultMentionFor("dsh")?.label).toBe("DeepSeek")
+    expect(consultMentionFor("pi")).toEqual({ id: "pi", tool: "pi_consult", label: "Pi" })
     expect(consultMentionFor("planner")).toBeUndefined()
   })
 
   test("isConsultTool matches tool ids", () => {
     expect(isConsultTool("codex_consult")).toBe(true)
     expect(isConsultTool("dsh_consult")).toBe(true)
+    expect(isConsultTool("pi_consult")).toBe(true)
     expect(isConsultTool("task")).toBe(false)
   })
 
@@ -71,5 +73,24 @@ describe("consult-mention", () => {
     expect(text).toContain("Codex")
     expect(text).toContain("Claude")
     expect(text).toContain("Do not re-invoke")
+    expect(text).toContain("task_transcript")
+    expect(text).toContain("read_before_summary")
+  })
+
+  test("GPT-Pro guidance does not use the CLI child-session handoff", () => {
+    const text = buildConsultFollowupSynthetic(["gpt-pro"])
+    expect(text).toContain("consultation_id")
+    expect(text).not.toContain("external_consultation")
+    expect(text).not.toContain("task_transcript")
+  })
+
+  test("each CLI consultation describes the shared handoff and transcript-reading contract", async () => {
+    for (const advisor of ["codex", "claude", "grok", "dsh", "pi"]) {
+      const description = await Bun.file(new URL(`../../src/tool/${advisor}_consult.txt`, import.meta.url)).text()
+      expect(description).toContain("external_consultation")
+      expect(description).toContain("task_transcript")
+      expect(description).toContain("read_before_summary")
+      expect(description).toContain("task_id")
+    }
   })
 })

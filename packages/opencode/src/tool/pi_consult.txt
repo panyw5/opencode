@@ -1,0 +1,7 @@
+Consult the local Pi coding agent through its persistent RPC subprocess.
+Provide a self-contained prompt with the goal, file paths, constraints, and expected answer. Pi cannot see this conversation.
+This is a read-only advisor: only read, grep, find, and ls tools are enabled. Automatic extensions, MCP, skills, and prompt templates are disabled. Tool selection is not an OS filesystem sandbox.
+Pi uses its own credentials and model configuration. An optional model selects a Pi provider/model, not an OpenCode model.
+The user can inspect the external child session and intervene with additional messages. All intervention turns reuse the same live Pi process and conversation.
+The external_consultation handoff supplies task_id and summary previews. If read_before_summary is true, call task_transcript with read_transcript.arguments and inspect relevant earlier pages before summarizing. Never treat the final intervention reply alone as the original result.
+The child task_id is an OpenCode session, not a Pi session. Completed consultations are read-only; do not resume them with task.
