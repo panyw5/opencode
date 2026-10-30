@@ -236,7 +236,7 @@ describe("tool.browser_*", () => {
 
         const frame = fake.sent.at(-1)!
         expect(frame.name).toBe("scroll")
-        expect(frame.args).toMatchObject({ partition: "agent-browser-ses_browser", direction: "up", amount: 400 })
+        expect(frame.args).toMatchObject({ pageID: "agent-browser-ses_browser", direction: "up", amount: 400 })
         yield* respond(bridge, fake, true, { state: viewState })
         const result = (yield* Fiber.join(fiber)) as { output: string; metadata: Record<string, unknown> }
         expect(result.output).toContain("Scrolled up by 400px.")
@@ -340,7 +340,7 @@ describe("tool.browser_*", () => {
 
         const frame = fake.sent.at(-1)!
         expect(frame.name).toBe("close")
-        expect(frame.args).toMatchObject({ partition: "agent-browser-ses_browser" })
+        expect(frame.args).toMatchObject({ pageID: "agent-browser-ses_browser" })
         yield* respond(bridge, fake, true, {})
         const result = (yield* Fiber.join(fiber)) as { output: string }
         expect(result.output).toContain("Closed this session's embedded browser tab.")
