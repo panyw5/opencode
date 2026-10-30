@@ -1,17 +1,15 @@
 import { Config } from "@/config/config"
 import type { MessageV2 } from "@/session/message-v2"
 import * as Log from "@opencode-ai/core/util/log"
-import photonWasm from "@silvia-odwyer/photon-node/photon_rs_bg.wasm" with { type: "file" }
 import { Context, Effect, Layer, Schema } from "effect"
 import { readFile } from "node:fs/promises"
-import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { normalize as normalizePhoton } from "./photon-runtime"
 
 const MAX_BASE64_BYTES = 5 * 1024 * 1024
 const MAX_WIDTH = 2000
 const MAX_HEIGHT = 2000
 const AUTO_RESIZE = true
-const JPEG_QUALITIES = [80, 85, 70, 55, 40]
 const log = Log.create({ service: "image" })
 
 export class ResizerUnavailableError extends Schema.TaggedErrorClass<ResizerUnavailableError>()(
@@ -62,18 +60,6 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const config = yield* Config.Service
-    const loadPhoton = yield* Effect.cached(
-      Effect.sync(() => {
-        // Patched photon-node reads this during module init so Bun compiled binaries use the embedded wasm path.
-        ;(globalThis as typeof globalThis & { __OPENCODE_PHOTON_WASM_PATH?: string }).__OPENCODE_PHOTON_WASM_PATH =
-          path.isAbsolute(photonWasm) ? photonWasm : fileURLToPath(new URL(photonWasm, import.meta.url))
-      }).pipe(
-        Effect.andThen(() => Effect.tryPromise(() => import("@silvia-odwyer/photon-node"))),
-        Effect.tapError((error) => Effect.sync(() => log.warn("failed to load photon", { error }))),
-        Effect.mapError(() => new ResizerUnavailableError()),
-      ),
-    )
-
     const normalize = Effect.fn("Image.normalize")(function* (input: MessageV2.FilePart) {
       const image = (yield* config.get()).attachment?.image
       const info = {
@@ -88,9 +74,7 @@ export const layer = Layer.effect(
       // only the path; the resize fallback below still produces an inline
       // data URL because it must replace the bytes.
       let base64: string
-      let fileBacked = false
       if (input.url.startsWith("file:")) {
-        fileBacked = true
         const bytes = yield* Effect.tryPromise({
           try: () => readFile(fileURLToPath(input.url)),
           catch: () => new InvalidDataUrlError({ url: input.url }),
@@ -101,85 +85,32 @@ export const layer = Layer.effect(
           return yield* new InvalidDataUrlError({ url: input.url })
         base64 = input.url.slice(input.url.indexOf(";base64,") + ";base64,".length)
       }
-      const bytes = Buffer.byteLength(base64, "utf8")
-
-      const photon = yield* loadPhoton
-
-      const decoded = yield* Effect.try({
-        try: () => photon.PhotonImage.new_from_byteslice(Buffer.from(base64, "base64")),
-        catch: (error) => {
-          log.warn("failed to decode image", { error })
-          return new DecodeError()
-        },
-      })
-
-      try {
-        const originalWidth = decoded.get_width()
-        const originalHeight = decoded.get_height()
-        if (originalWidth <= info.maxWidth && originalHeight <= info.maxHeight && bytes <= info.maxBase64Bytes)
+      log.info("normalizing image", { mime: input.mime, base64Bytes: base64.length })
+      const result = yield* normalizePhoton(base64, info).pipe(Effect.mapError(() => new ResizerUnavailableError()))
+      switch (result.type) {
+        case "unchanged":
           return input
-        if (!info.autoResize)
+        case "decode-error":
+          log.warn("failed to decode image")
+          return yield* new DecodeError()
+        case "size-error":
+          log.warn("image exceeds resize limits", { bytes: result.bytes, width: result.width, height: result.height })
           return yield* new SizeError({
-            bytes,
+            bytes: result.bytes,
             max: info.maxBase64Bytes,
-            width: originalWidth,
-            height: originalHeight,
+            width: result.width,
+            height: result.height,
             max_width: info.maxWidth,
             max_height: info.maxHeight,
           })
-
-        const scale = Math.min(1, info.maxWidth / originalWidth, info.maxHeight / originalHeight)
-        for (const size of Array.from({ length: 32 }).reduce<Array<{ width: number; height: number }>>((acc) => {
-          const previous = acc.at(-1) ?? {
-            width: Math.max(1, Math.round(originalWidth * scale)),
-            height: Math.max(1, Math.round(originalHeight * scale)),
-          }
-          const next =
-            acc.length === 0
-              ? previous
-              : {
-                  width: previous.width === 1 ? 1 : Math.max(1, Math.floor(previous.width * 0.75)),
-                  height: previous.height === 1 ? 1 : Math.max(1, Math.floor(previous.height * 0.75)),
-                }
-          return acc.some((item) => item.width === next.width && item.height === next.height) ? acc : [...acc, next]
-        }, [])) {
-          const resized = photon.resize(decoded, size.width, size.height, photon.SamplingFilter.Lanczos3)
-          const candidate = [
-            { data: Buffer.from(resized.get_bytes()).toString("base64"), mime: "image/png" },
-            ...JPEG_QUALITIES.map((quality) => ({
-              data: Buffer.from(resized.get_bytes_jpeg(quality)).toString("base64"),
-              mime: "image/jpeg",
-            })),
-          ]
-            .map((item) => ({ ...item, bytes: Buffer.byteLength(item.data, "utf8") }))
-            .find((item) => item.bytes <= info.maxBase64Bytes)
-          resized.free()
-
-          if (candidate) {
-            log.info("using resized image", {
-              from_mime: input.mime,
-              to_mime: candidate.mime,
-              from: `${originalWidth}x${originalHeight}`,
-              to: `${size.width}x${size.height}`,
-            })
-            return {
-              ...input,
-              mime: candidate.mime,
-              url: `data:${candidate.mime};base64,${candidate.data}`,
-            }
-          }
-        }
-
-        return yield* new SizeError({
-          bytes,
-          max: info.maxBase64Bytes,
-          width: originalWidth,
-          height: originalHeight,
-          max_width: info.maxWidth,
-          max_height: info.maxHeight,
-        })
-      } finally {
-        decoded.free()
+        case "resized":
+          log.info("using resized image", {
+            from_mime: input.mime,
+            to_mime: result.mime,
+            from: `${result.originalWidth}x${result.originalHeight}`,
+            to: `${result.width}x${result.height}`,
+          })
+          return { ...input, mime: result.mime, url: `data:${result.mime};base64,${result.data}` }
       }
     })
 

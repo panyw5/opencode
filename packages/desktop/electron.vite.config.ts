@@ -114,11 +114,14 @@ const require = __cjs_mod__.createRequire(import.meta.url);
       },
       {
         name: "opencode:copy-server-assets",
-        async writeBundle() {
+        async writeBundle(options) {
+          const chunks = path.join(options.dir ?? "./out/main", "chunks")
+          await fs.mkdir(chunks, { recursive: true })
           for (const l of await fs.readdir(OPENCODE_SERVER_DIST)) {
             if (!l.endsWith(".wasm")) continue
-            await fs.writeFile(`./out/main/chunks/${l}`, await fs.readFile(`${OPENCODE_SERVER_DIST}/${l}`))
+            await fs.writeFile(path.join(chunks, l), await fs.readFile(`${OPENCODE_SERVER_DIST}/${l}`))
           }
+          await fs.copyFile(path.join(OPENCODE_SERVER_DIST, "photon-worker.js"), path.join(chunks, "photon-worker.js"))
         },
       },
     ],

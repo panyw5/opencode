@@ -45,7 +45,7 @@ console.log(`Loaded ${migrations.length} migrations`)
 
 await Bun.build({
   target: "node",
-  entrypoints: ["./src/node.ts"],
+  entrypoints: ["./src/node.ts", "./src/photon-worker.ts"],
   outdir: "./dist/node",
   format: "esm",
   sourcemap: "linked",

@@ -235,6 +235,7 @@ for (const item of targets) {
     plugins: [],
     external: ["node-gyp"],
     format: "esm",
+    naming: { entry: "[name].js" },
     minify: true,
     sourcemap: sourcemapsFlag ? "linked" : "none",
     splitting: true,
@@ -249,7 +250,7 @@ for (const item of targets) {
       windows: {},
     },
     files: embeddedFileMap ? { "opencode-web-ui.gen.ts": embeddedFileMap } : {},
-    entrypoints: ["./src/index.ts", ...(embeddedFileMap ? ["opencode-web-ui.gen.ts"] : [])],
+    entrypoints: ["./src/index.ts", "./src/photon-worker.ts", ...(embeddedFileMap ? ["opencode-web-ui.gen.ts"] : [])],
     define: {
       OPENCODE_VERSION: `'${Script.version}'`,
       OPENCODE_MIGRATIONS: JSON.stringify(migrations),
