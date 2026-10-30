@@ -117,6 +117,7 @@ describe("tool.lsp", () => {
               character: 7,
             })
             expect(result.title).toBe("goToDefinition test.ts:3:7")
+            expect(result.data).toEqual({ result: [] })
           }),
         { git: true },
       ),

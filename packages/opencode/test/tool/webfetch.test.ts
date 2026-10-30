@@ -38,6 +38,30 @@ const exec = Effect.fn("WebFetchToolTest.exec")(function* (args: Tool.InferParam
 })
 
 describe("tool.webfetch", () => {
+  it.instance("exposes valid JSON as structured data without changing textual output", () =>
+    withFetch(
+      () => Response.json({ rows: [{ id: 1, status: "failed" }] }),
+      (url) =>
+        Effect.gen(function* () {
+          const result = yield* exec({ url: url.toString(), format: "text" })
+          expect(result.data).toEqual({ rows: [{ id: 1, status: "failed" }] })
+          expect(JSON.parse(result.output)).toEqual(result.data)
+        }),
+    ),
+  )
+
+  it.instance("keeps malformed JSON readable as text", () =>
+    withFetch(
+      () => new Response("{broken", { headers: { "content-type": "application/problem+json" } }),
+      (url) =>
+        Effect.gen(function* () {
+          const result = yield* exec({ url: url.toString(), format: "text" })
+          expect(result.data).toBeUndefined()
+          expect(result.output).toBe("{broken")
+        }),
+    ),
+  )
+
   it.instance("returns image responses as file attachments", () =>
     Effect.gen(function* () {
       const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])

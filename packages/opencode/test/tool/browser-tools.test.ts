@@ -164,6 +164,10 @@ describe("tool.browser_*", () => {
         expect(result.output).toContain('[n10] textbox "Email"')
         expect(result.output).toContain('[n11] button "Sign in"')
         expect(result.metadata.nodes).toBe(2)
+        expect((result as Tool.ExecuteResult).data).toMatchObject({
+          url: viewState.url,
+          nodes: [{ uid: "n10", role: "textbox", name: "Email" }, { uid: "n11", role: "button", name: "Sign in" }],
+        })
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )
@@ -305,6 +309,10 @@ describe("tool.browser_*", () => {
         expect(result.output).toContain("[error] boom")
         expect(result.output).toContain("[warn] meh")
         expect(result.metadata.errors).toBe(1)
+        expect((result as Tool.ExecuteResult).data).toMatchObject({
+          url: viewState.url,
+          entries: [{ level: "error", text: "boom" }, { level: "warn", text: "meh" }],
+        })
 
         // Incremental: nothing new since the last read.
         const fiber2 = yield* Effect.forkChild(exec(BrowserConsoleTool, {}, makeCtx([])))

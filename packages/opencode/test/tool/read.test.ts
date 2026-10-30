@@ -58,6 +58,24 @@ const readLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
 const it = testEffect(readLayer())
 const scout = testEffect(readLayer({ experimentalScout: true }))
 
+it.instance("read exposes bounded, numbered lines as structured data", () =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    const fs = yield* AppFileSystem.Service
+    const file = path.join(test.directory, "sample.txt")
+    yield* fs.writeFileString(file, "one\ntwo\nthree\n")
+    const result = yield* run({ filePath: file, offset: 2, limit: 1 })
+    expect(result.data).toMatchObject({
+      type: "file",
+      path: file,
+      lines: [{ line: 2, text: "two" }],
+      truncated: true,
+      nextOffset: 3,
+    })
+    expect(result.output).toContain("2: two")
+  }),
+)
+
 const init = Effect.fn("ReadToolTest.init")(function* () {
   const info = yield* ReadTool
   return yield* info.init()
