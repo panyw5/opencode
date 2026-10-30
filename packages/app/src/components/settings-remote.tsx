@@ -289,17 +289,20 @@ export const SettingsRemote: Component = () => {
         {(pairing) => (
           <div class="rounded-lg border border-border-base bg-surface-base p-4 flex flex-col items-start gap-3">
             <h3 class="text-14-medium">{language.t("settings.remote.pairTitle")}</h3>
-            <img
-              class="size-56 rounded bg-white p-2"
-              src={store.pairing?.qr}
-              alt={language.t("settings.remote.qrAlt")}
-            />
+            <div class="flex flex-wrap items-center gap-3">
+              <img
+                class="size-56 rounded bg-white p-2"
+                src={store.pairing?.qr}
+                alt={language.t("settings.remote.qrAlt")}
+              />
+              <Button size="large" class="size-56! shrink-0 flex-col gap-3!" onClick={() => void copy()}>
+                <Icon name="copy" size="large" />
+                {language.t("settings.remote.copyLink")}
+              </Button>
+            </div>
             <p class="text-13-regular text-text-weak">
               {language.t("settings.remote.pairExpires", { seconds: remaining() })}
             </p>
-            <Button size="small" onClick={() => void copy()}>
-              {language.t("settings.remote.copyLink")}
-            </Button>
           </div>
         )}
       </Show>
