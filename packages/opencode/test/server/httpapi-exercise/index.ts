@@ -1712,6 +1712,22 @@ const scenarios: Scenario[] = [
       check(body.length === 1 && isRecord(body[0]) && body[0].enabled === false, "hook control should be stored")
     }),
   http.protected
+    .post("/session/{sessionID}/external-session", "session.external_session")
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/external-session", { sessionID: "ses_httpapi_missing" }),
+      headers: ctx.headers(),
+      body: { messageID: "msg_httpapi_missing", partID: "prt_httpapi_missing" },
+    }))
+    .status(404),
+  http.protected
+    .post("/session/{sessionID}/external-control", "session.external_control")
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/external-control", { sessionID: "ses_httpapi_missing" }),
+      headers: ctx.headers(),
+      body: { action: "status" },
+    }))
+    .status(404),
+  http.protected
     .post("/session/{sessionID}/advisor-intervention/start", "session.advisor_intervention_start")
     .at((ctx) => ({
       path: route("/session/{sessionID}/advisor-intervention/start", { sessionID: "ses_httpapi_missing" }),

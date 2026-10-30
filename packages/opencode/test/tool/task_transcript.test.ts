@@ -95,4 +95,41 @@ describe("tool.task_transcript", () => {
       expect(Exit.isFailure(denied)).toBe(true)
     }),
   )
+
+  it.instance("reads and paginates an external CLI child while preserving the descendant boundary", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const parent = yield* sessions.create({ title: "Parent" })
+      const child = yield* sessions.create({
+        parentID: parent.id,
+        agent: "codex",
+        external: {
+          advisor: "codex",
+          sourceMessageID: MessageID.ascending(),
+          sourcePartID: PartID.ascending(),
+          callID: "external-call",
+          historical: true,
+        },
+      })
+      yield* addUserMessage(child.id, "Original news request", 1)
+      yield* addUserMessage(child.id, "Science follow-up", 2)
+      yield* addUserMessage(child.id, "Unrelated small talk", 3)
+      const reader = yield* TaskTranscriptTool
+      const def = yield* reader.init()
+      const latest = yield* def.execute({ task_id: child.id, include: ["text"], limit: 1 }, context(parent.id))
+      expect(latest.output).toContain("Unrelated small talk")
+      expect(latest.metadata.more).toBe(true)
+      const earlier = yield* def.execute(
+        { task_id: child.id, include: ["text"], limit: 2, cursor: latest.metadata.next_cursor },
+        context(parent.id),
+      )
+      expect(earlier.output).toContain("Original news request")
+      expect(earlier.output).toContain("Science follow-up")
+      expect(earlier.metadata.more).toBe(false)
+      const unrelated = yield* sessions.create({ title: "Unrelated reader" })
+      expect(Exit.isFailure(yield* def.execute({ task_id: child.id }, context(unrelated.id)).pipe(Effect.exit))).toBe(
+        true,
+      )
+    }),
+  )
 })

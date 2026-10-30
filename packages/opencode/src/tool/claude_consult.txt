@@ -19,3 +19,10 @@ Usage notes:
   - Defaults to the current project directory; optional `working_directory` overrides cwd
   - Requires a working local Claude Code install (`claude` on PATH) and authenticated credentials
   - Long-running: prefer concise scoped questions over "review the entire monorepo"
+
+Result handoff:
+  - Successful calls include a versioned `external_consultation` block with the OpenCode child `task_id`, summary previews, and intervention flags. The task_id is not the Claude native session_id.
+  - If `read_before_summary` is true, call `task_transcript` with `read_transcript.arguments` BEFORE summarizing. Follow next_cursor to inspect earlier relevant answers, not just the last intervention reply.
+  - Summary fields are previews. The complete conversation is persisted in the child session; use task_list to rediscover it if needed.
+  - Reading a transcript does not rerun Claude. Do not use task to resume this external session or repeat the consultation to recover history.
+  - If `delivery` is `inline_fallback`, transcript reading is unavailable for this turn and the full text history is supplied inline instead.

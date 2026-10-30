@@ -124,6 +124,16 @@ function DirectoryDataProvider(
       directory={directory()}
       onNavigateToSession={(sessionID: string) => navigate(`/${slug()}/session/${sessionID}`)}
       onSessionHref={(sessionID: string) => `/${slug()}/session/${sessionID}`}
+      onOpenExternalSession={async (part) => {
+        console.debug(`[external-session] open parent=${part.sessionID} part=${part.id}`)
+        const result = await sdk.client.session.externalSession(
+          { sessionID: part.sessionID, messageID: part.messageID, partID: part.id },
+          { throwOnError: true },
+        )
+        if (!result.data) throw new Error("External child session unavailable")
+        console.debug(`[external-session] navigate child=${result.data.id}`)
+        navigate(`/${slug()}/session/${result.data.id}`)
+      }}
       onAbortSession={(sessionID: string) => {
         void sdk.client.session.abort({ sessionID }).catch(() => undefined)
       }}

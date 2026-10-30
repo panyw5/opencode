@@ -16,6 +16,7 @@ import { SessionInput } from "@/session/input"
 import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
+import { makeExternalSessions } from "@/session/external"
 import { InstanceState } from "@/effect/instance-state"
 import { Database, and, eq, inArray } from "@/storage/db"
 import { SessionTable } from "@/session/session.sql"
@@ -45,6 +46,7 @@ import {
   startAdvisorIntervention,
 } from "@/tool/advisor-intervention"
 import { NamedError } from "@opencode-ai/core/util/error"
+import { directoryEquals } from "@opencode-ai/core/util/path"
 import * as Log from "@opencode-ai/core/util/log"
 import { Cause, Effect, Layer, Option, Schema, Scope } from "effect"
 import { existsSync, readdirSync, realpathSync } from "node:fs"
@@ -56,6 +58,8 @@ import { HttpApiBuilder, HttpApiError, HttpApiSchema } from "effect/unstable/htt
 import { InstanceHttpApi } from "../api"
 import {
   CommandPayload,
+  ExternalSessionPayload,
+  ExternalControlPayload,
   AdvisorInterventionMessagePayload,
   AdvisorInterventionPayload,
   DiffQuery,
@@ -170,6 +174,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const agentSvc = yield* Agent.Service
     const permissionSvc = yield* Permission.Service
     const statusSvc = yield* SessionStatus.Service
+    const external = makeExternalSessions(session, statusSvc)
     const todoSvc = yield* Todo.Service
     const summary = yield* SessionSummary.Service
     const pluginSvc = yield* Plugin.Service
@@ -286,6 +291,12 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
 
     const requireSession = Effect.fn("SessionHttpApi.requireSession")(function* (sessionID: SessionID) {
       return yield* SessionError.mapStorageNotFound(session.get(sessionID))
+    })
+
+    const requireRegularSession = Effect.fn("SessionHttpApi.requireRegularSession")(function* (sessionID: SessionID) {
+      const current = yield* requireSession(sessionID)
+      if (current.external) return yield* new HttpApiError.BadRequest({})
+      return current
     })
 
     const get = Effect.fn("SessionHttpApi.get")(function* (ctx: { params: { sessionID: SessionID } }) {
@@ -879,14 +890,12 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     }) {
       const parent = yield* requireSession(ctx.params.sessionID)
       yield* requireMathWorker({ parentID: parent.id, workerID: ctx.params.workerID })
-      const projectDir = (
-        yield* resolveExistingMathWorkspaceFromSessions({
-          sessions: session,
-          parentSessionID: parent.id,
-          workerSessionID: ctx.params.workerID,
-          problemID: ctx.query.project,
-        }).pipe(Effect.catchCause(() => Effect.fail(new HttpApiError.BadRequest({}))))
-      ).problemDirectory
+      const projectDir = (yield* resolveExistingMathWorkspaceFromSessions({
+        sessions: session,
+        parentSessionID: parent.id,
+        workerSessionID: ctx.params.workerID,
+        problemID: ctx.query.project,
+      }).pipe(Effect.catchCause(() => Effect.fail(new HttpApiError.BadRequest({}))))).problemDirectory
       return yield* Effect.try({
         try: () => readMathWorkerTask(projectDir, ctx.params.workerID),
         catch: () => new HttpApiError.BadRequest({}),
@@ -900,14 +909,12 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     }) {
       const parent = yield* requireSession(ctx.params.sessionID)
       yield* requireMathWorker({ parentID: parent.id, workerID: ctx.params.workerID })
-      const projectDir = (
-        yield* resolveExistingMathWorkspaceFromSessions({
-          sessions: session,
-          parentSessionID: parent.id,
-          workerSessionID: ctx.params.workerID,
-          problemID: ctx.query.project,
-        }).pipe(Effect.catchCause(() => Effect.fail(new HttpApiError.BadRequest({}))))
-      ).problemDirectory
+      const projectDir = (yield* resolveExistingMathWorkspaceFromSessions({
+        sessions: session,
+        parentSessionID: parent.id,
+        workerSessionID: ctx.params.workerID,
+        problemID: ctx.query.project,
+      }).pipe(Effect.catchCause(() => Effect.fail(new HttpApiError.BadRequest({}))))).problemDirectory
       return yield* Effect.try({
         try: () => updateMathWorkerTask(projectDir, ctx.params.workerID, ctx.payload.task),
         catch: () => new HttpApiError.BadRequest({}),
@@ -938,8 +945,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           catch: () => new HttpApiError.BadRequest({}),
         })
       }
-      yield* requireSession(ctx.params.sessionID)
-      if ((yield* statusSvc.get(ctx.params.sessionID)).type === "idle") {
+      const current = yield* requireSession(ctx.params.sessionID)
+      if (current.external) {
+        yield* external.control(current, "status").pipe(Effect.orDie)
+      } else if ((yield* statusSvc.get(ctx.params.sessionID)).type === "idle") {
         yield* session.finalizeOrphanedAssistant(ctx.params.sessionID, {
           staleAfterMs: Session.ORPHANED_ASSISTANT_STALE_AFTER_MS,
         })
@@ -1062,6 +1071,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload?: typeof ForkPayload.Type
     }) {
+      yield* requireRegularSession(ctx.params.sessionID)
       return yield* SessionError.mapStorageNotFound(
         session.fork({ sessionID: ctx.params.sessionID, messageID: ctx.payload?.messageID }),
       )
@@ -1082,6 +1092,11 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const abort = Effect.fn("SessionHttpApi.abort")(function* (ctx: { params: { sessionID: SessionID } }) {
+      const current = yield* requireSession(ctx.params.sessionID)
+      if (current.external) {
+        yield* external.control(current, "stop").pipe(Effect.catchCause(() => Effect.void))
+        return true
+      }
       yield* promptSvc.cancel(ctx.params.sessionID)
       return true
     })
@@ -1154,6 +1169,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload: typeof SummarizePayload.Type
     }) {
+      yield* requireRegularSession(ctx.params.sessionID)
       yield* revertSvc.cleanup(yield* requireSession(ctx.params.sessionID))
       const messages = yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))
       const defaultAgent = yield* agentSvc.defaultAgent()
@@ -1184,7 +1200,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload: typeof PromptPayload.Type
     }) {
-      yield* requireSession(ctx.params.sessionID)
+      yield* requireRegularSession(ctx.params.sessionID)
       yield* captureContextLocale(ctx.params.sessionID)
       const message = yield* promptSvc
         .prompt({
@@ -1224,7 +1240,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload: typeof PromptPayload.Type
     }) {
-      yield* requireSession(ctx.params.sessionID)
+      yield* requireRegularSession(ctx.params.sessionID)
       yield* captureContextLocale(ctx.params.sessionID)
       yield* promptSvc.prompt({ ...ctx.payload, sessionID: ctx.params.sessionID }).pipe(
         Effect.catchCause((cause) =>
@@ -1267,6 +1283,30 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return HttpApiSchema.NoContent.make()
     })
 
+    const externalSession = Effect.fn("SessionHttpApi.externalSession")(function* (ctx: {
+      params: { sessionID: SessionID }
+      payload: typeof ExternalSessionPayload.Type
+    }) {
+      const parent = yield* requireSession(ctx.params.sessionID)
+      if (!directoryEquals(parent.directory, yield* InstanceState.directory)) return yield* new HttpApiError.BadRequest({})
+      return yield* external
+        .importHistory(parent, ctx.payload.messageID, ctx.payload.partID)
+        .pipe(Effect.catchCause(() => Effect.fail(new HttpApiError.BadRequest({}))))
+    })
+
+    const externalControl = Effect.fn("SessionHttpApi.externalControl")(function* (ctx: {
+      params: { sessionID: SessionID }
+      payload: typeof ExternalControlPayload.Type
+    }) {
+      const child = yield* requireSession(ctx.params.sessionID)
+      const directory = yield* InstanceState.directory
+      if (!directoryEquals(child.directory, directory))
+        return yield* new InvalidRequestError({ message: "External session belongs to another directory" })
+      return yield* external
+        .control(child, ctx.payload.action, ctx.payload.message, ctx.payload.requestID)
+        .pipe(Effect.catchCause((cause) => Effect.fail(new InvalidRequestError({ message: Cause.pretty(cause) }))))
+    })
+
     const advisorInterventionStart = Effect.fn("SessionHttpApi.advisorInterventionStart")(function* (ctx: {
       params: { sessionID: SessionID }
       payload: typeof AdvisorInterventionPayload.Type
@@ -1304,7 +1344,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload: typeof CommandPayload.Type
     }) {
-      yield* requireSession(ctx.params.sessionID)
+      yield* requireRegularSession(ctx.params.sessionID)
       yield* captureContextLocale(ctx.params.sessionID)
       return yield* promptSvc
         .command({ ...ctx.payload, sessionID: ctx.params.sessionID })
@@ -1315,7 +1355,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload: typeof ShellPayload.Type
     }) {
-      yield* requireSession(ctx.params.sessionID)
+      yield* requireRegularSession(ctx.params.sessionID)
       yield* captureContextLocale(ctx.params.sessionID)
       return yield* SessionError.mapBusy(promptSvc.shell({ ...ctx.payload, sessionID: ctx.params.sessionID }))
     })
@@ -1324,7 +1364,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload: typeof RevertPayload.Type
     }) {
-      yield* requireSession(ctx.params.sessionID)
+      yield* requireRegularSession(ctx.params.sessionID)
       return yield* revertSvc.revert({ sessionID: ctx.params.sessionID, ...ctx.payload }).pipe(
         Effect.catchTags({
           NotFoundError: (error) => SessionError.mapStorageNotFound(Effect.fail(error)),
@@ -1334,7 +1374,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const unrevert = Effect.fn("SessionHttpApi.unrevert")(function* (ctx: { params: { sessionID: SessionID } }) {
-      yield* requireSession(ctx.params.sessionID)
+      yield* requireRegularSession(ctx.params.sessionID)
       return yield* SessionError.mapBusy(revertSvc.unrevert({ sessionID: ctx.params.sessionID }))
     })
 
@@ -1436,6 +1476,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("advisorInterventionStart", advisorInterventionStart)
       .handle("advisorInterventionMessage", advisorInterventionMessage)
       .handle("advisorInterventionFinish", advisorInterventionFinish)
+      .handle("externalSession", externalSession)
+      .handle("externalControl", externalControl)
       .handle("command", command)
       .handle("shell", shell)
       .handle("revert", revert)

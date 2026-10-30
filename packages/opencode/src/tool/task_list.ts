@@ -123,6 +123,7 @@ export const TaskListTool = Tool.define(
 
       return {
         title: `${found.length} child tasks`,
+        data: { parent_session_id: ctx.sessionID, scope, count: found.length, tasks: found },
         metadata: { count: found.length, task_ids: found.map((task) => task.task_id) },
         output: JSON.stringify(
           {

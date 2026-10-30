@@ -8,6 +8,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { which } from "@/util/which"
 import { registerAdvisorIntervention } from "./advisor-intervention"
+import { attachExternalTranscript, type TranscriptItem } from "@/session/external"
 import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "tool.claude_consult" })
@@ -82,6 +83,8 @@ export type ClaudeTranscriptItem = {
 }
 
 export type ClaudeLiveState = {
+  onTranscript?: (item: TranscriptItem) => void
+  runSeq?: number
   sessionId?: string
   usage?: Record<string, unknown>
   costUsd?: number
@@ -176,11 +179,13 @@ export function applyClaudeJsonlLine(state: ClaudeLiveState, rawLine: string): b
     const message = readObject(e.message)
     const contents = Array.isArray(message?.content) ? message.content : []
     let changed = false
-    for (const content of contents) {
+    for (const [contentIndex, content] of contents.entries()) {
       if (!content || typeof content !== "object") continue
       const item = content as Record<string, unknown>
       const itemType = typeof item.type === "string" ? item.type : ""
-      const id = typeof item.id === "string" && item.id ? item.id : `${itemType}:${state.transcript.length}`
+      const messageID =
+        typeof message?.id === "string" ? message.id : typeof e.uuid === "string" ? e.uuid : state.transcript.length
+      const id = typeof item.id === "string" && item.id ? item.id : `${itemType}:${messageID}:${contentIndex}`
 
       if (itemType === "text" && typeof item.text === "string" && item.text.trim()) {
         if (!state.agentMessages.includes(item.text)) state.agentMessages.push(item.text)
@@ -189,7 +194,7 @@ export function applyClaudeJsonlLine(state: ClaudeLiveState, rawLine: string): b
           id,
           kind: "message",
           title: "Assistant",
-          text: clip(item.text, MAX_TRANSCRIPT_TEXT),
+          text: state.onTranscript ? item.text : clip(item.text, MAX_TRANSCRIPT_TEXT),
           status: "completed",
         })
         changed = true
@@ -200,7 +205,7 @@ export function applyClaudeJsonlLine(state: ClaudeLiveState, rawLine: string): b
           id,
           kind: "tool_use",
           title: item.name,
-          text: clip(stringify(item.input), MAX_TRANSCRIPT_TEXT),
+          text: state.onTranscript ? stringify(item.input) : clip(stringify(item.input), MAX_TRANSCRIPT_TEXT),
           status: "running",
         })
         changed = true
@@ -211,7 +216,7 @@ export function applyClaudeJsonlLine(state: ClaudeLiveState, rawLine: string): b
           id,
           kind: "thinking",
           title: "Thinking",
-          text: clip(item.thinking, MAX_TRANSCRIPT_TEXT),
+          text: state.onTranscript ? item.thinking : clip(item.thinking, MAX_TRANSCRIPT_TEXT),
         })
         changed = true
       }
@@ -235,7 +240,7 @@ export function applyClaudeJsonlLine(state: ClaudeLiveState, rawLine: string): b
         id: `result:${toolUseID}`,
         kind: isError ? "error" : "tool_result",
         title: "Tool result",
-        text: clip(text, MAX_TRANSCRIPT_TEXT),
+        text: state.onTranscript ? text : clip(text, MAX_TRANSCRIPT_TEXT),
         status: isError ? "error" : "completed",
       })
       if (isError && text) state.error = text
@@ -257,7 +262,7 @@ export function applyClaudeJsonlLine(state: ClaudeLiveState, rawLine: string): b
       id: `result:${state.sessionId ?? state.transcript.length}`,
       kind: isError ? "error" : "status",
       title: isError ? "Turn failed" : "Turn completed",
-      text: resultText ? clip(resultText, MAX_TRANSCRIPT_TEXT) : undefined,
+      text: resultText ? (state.onTranscript ? resultText : clip(resultText, MAX_TRANSCRIPT_TEXT)) : undefined,
       status: isError ? "error" : "completed",
     })
     return true
@@ -353,6 +358,7 @@ export const ClaudeConsultTool = Tool.define(
           })
 
           const live = createClaudeLiveState()
+          attachExternalTranscript(ctx, live)
           let lastMetaAt = 0
 
           const publishMetadata = (force = false) =>
@@ -408,6 +414,7 @@ export const ClaudeConsultTool = Tool.define(
           const runProcess = (runArgs: string[]) =>
             Effect.scoped(
               Effect.gen(function* () {
+                live.runSeq = (live.runSeq ?? 0) + 1
                 const terminatorAt = runArgs.lastIndexOf("--")
                 log.info("spawning claude", {
                   bin,
@@ -616,7 +623,7 @@ export const ClaudeConsultTool = Tool.define(
                 id: `intervention-assistant:${Date.now()}`,
                 kind: "message",
                 title: "Assistant",
-                text: clip(nextBody, MAX_TRANSCRIPT_TEXT),
+                text: nextBody,
                 status: "completed",
               })
             }
@@ -671,6 +678,8 @@ export const ClaudeConsultTool = Tool.define(
 )
 
 function upsertTranscript(state: ClaudeLiveState, item: ClaudeTranscriptItem) {
+  state.onTranscript?.({ ...item, id: `${state.runSeq ?? 0}:${item.id}` })
+  item = { ...item, text: item.text === undefined ? undefined : clip(item.text, MAX_TRANSCRIPT_TEXT) }
   const idx = state.transcript.findIndex((entry) => entry.id === item.id)
   if (idx >= 0) {
     state.transcript[idx] = { ...state.transcript[idx], ...item }

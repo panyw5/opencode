@@ -1,10 +1,11 @@
 # PURPOSE
-List task sessions launched from the current session.
+List child task sessions and external CLI consultation sessions launched from the current session.
 
 Use this after a task call was interrupted before returning its `task_id`, or whenever you need to rediscover child tasks before reading their transcript or resuming them.
 
 # GUIDELINES
 - The default scope lists all descendant task sessions. Set scope to children to list only direct children.
+- External CLI consultation sessions are included even though they were not launched by `task`. Use their `task_id` with `task_transcript` to inspect the persisted conversation; do not use `task` to resume them.
 
 - Returns each `task_id` with its parent task, depth, title, agent, durable timestamps, and best-known state.
 - Live session state is preferred.

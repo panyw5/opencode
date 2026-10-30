@@ -270,6 +270,10 @@ import type {
   SessionDelivery,
   SessionDiffErrors,
   SessionDiffResponses,
+  SessionExternalControlErrors,
+  SessionExternalControlResponses,
+  SessionExternalSessionErrors,
+  SessionExternalSessionResponses,
   SessionFlushErrors,
   SessionFlushResponses,
   SessionForkErrors,
@@ -5526,6 +5530,94 @@ export class Session2 extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<SessionPromptAsyncResponses, SessionPromptAsyncErrors, ThrowOnError>({
       url: "/session/{sessionID}/prompt_async",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Open an external CLI child session
+   */
+  public externalSession<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      messageID?: string
+      partID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "messageID" },
+            { in: "body", key: "partID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionExternalSessionResponses,
+      SessionExternalSessionErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/external-session",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Control an external CLI child session
+   */
+  public externalControl<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      action?: "status" | "start" | "message" | "finish" | "stop"
+      message?: string
+      requestID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "action" },
+            { in: "body", key: "message" },
+            { in: "body", key: "requestID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionExternalControlResponses,
+      SessionExternalControlErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/external-control",
       ...options,
       ...params,
       headers: {

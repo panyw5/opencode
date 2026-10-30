@@ -5,13 +5,19 @@ import { Session } from "@/session/session"
 import { SessionID } from "@/session/schema"
 import { PositiveInt } from "@opencode-ai/core/schema"
 import { Effect, Schema } from "effect"
+import * as Log from "@opencode-ai/core/util/log"
+
+const log = Log.create({ service: "tool.task_transcript" })
 
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 50
 const MAX_FIELD_CHARS = 4_000
 
 export const Parameters = Schema.Struct({
-  task_id: SessionID.annotate({ description: "The task_id returned by task or discovered with task_list" }),
+  task_id: SessionID.annotate({
+    description:
+      "OpenCode child session ID from task, task_list, or an external CLI consultation handoff; not the CLI thread/session ID",
+  }),
   cursor: Schema.optional(Schema.String).annotate({
     description: "Opaque next_cursor returned by a previous call, to read older messages",
   }),
@@ -45,9 +51,7 @@ function assistantError(error: NonNullable<MessageV2.Assistant["error"]>) {
 }
 
 function renderMessage(message: MessageV2.WithParts, include: Set<string>) {
-  const lines = [
-    `[${message.info.role}] message_id: ${message.info.id} created: ${message.info.time.created}`,
-  ]
+  const lines = [`[${message.info.role}] message_id: ${message.info.id} created: ${message.info.time.created}`]
   if (message.info.role === "assistant") {
     if (message.info.finish) lines.push(`finish: ${message.info.finish}`)
     if (message.info.error) lines.push(`error: ${assistantError(message.info.error)}`)
@@ -98,23 +102,46 @@ export const TaskTranscriptTool = Tool.define(
       params: Schema.Schema.Type<typeof Parameters>,
       ctx: Tool.Context,
     ) {
+      log.info(
+        `read started reader=${ctx.sessionID} task=${params.task_id} limit=${params.limit ?? DEFAULT_LIMIT} cursor=${params.cursor ? "present" : "none"} include=${(params.include ?? ["text", "tool"]).join(",")}`,
+      )
       const allowed = yield* isDescendant(sessions, ctx.sessionID, params.task_id).pipe(
         Effect.catch(() => Effect.succeed(false)),
       )
-      if (!allowed) return yield* Effect.fail(new Error("task_id must identify a child task of the current session"))
+      if (!allowed) {
+        log.warn(`read denied reader=${ctx.sessionID} task=${params.task_id} reason=not-descendant`)
+        return yield* Effect.fail(new Error("task_id must identify a child task of the current session"))
+      }
 
       const session = yield* sessions.get(params.task_id)
+      log.info(
+        `read authorized reader=${ctx.sessionID} task=${session.id} external=${session.external?.advisor ?? "none"}`,
+      )
       const page = yield* MessageV2.page({
         sessionID: params.task_id,
         limit: params.limit ?? DEFAULT_LIMIT,
         before: params.cursor,
       })
       const include = new Set(params.include ?? ["text", "tool"])
-      const content = page.items.map((message) => renderMessage(message, include)).join("\n\n") || "No messages in this page."
+      const content =
+        page.items.map((message) => renderMessage(message, include)).join("\n\n") || "No messages in this page."
       const cursor = page.cursor ? `next_cursor: ${page.cursor}\n` : ""
+      log.info(
+        `read completed reader=${ctx.sessionID} task=${session.id} messages=${page.items.length} more=${page.more} chars=${content.length}`,
+      )
 
       return {
         title: "Task transcript",
+        data: {
+          task_id: params.task_id,
+          more: page.more,
+          next_cursor: page.cursor,
+          messages: page.items.map((message) => ({
+            id: message.info.id,
+            role: message.info.role,
+            content: renderMessage(message, include),
+          })),
+        },
         metadata: {
           task_id: params.task_id,
           next_cursor: page.cursor,
@@ -137,7 +164,8 @@ export const TaskTranscriptTool = Tool.define(
     return {
       description: DESCRIPTION,
       parameters: Parameters,
-      execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) => run(params, ctx).pipe(Effect.orDie),
+      execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
+        run(params, ctx).pipe(Effect.orDie),
     }
   }),
 )

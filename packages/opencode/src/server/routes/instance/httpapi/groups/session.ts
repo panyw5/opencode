@@ -8,6 +8,7 @@ import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
 import { SessionStatus } from "@/session/status"
+import { ExternalSessionState } from "@/session/external-schema"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
@@ -218,6 +219,12 @@ export const AdvisorInterventionMessagePayload = Schema.Struct({
   message: Schema.String,
 })
 export const HookControlPayload = Plugin.HookControlInput
+export const ExternalSessionPayload = Schema.Struct({ messageID: MessageID, partID: PartID })
+export const ExternalControlPayload = Schema.Struct({
+  action: Schema.Literals(["status", "start", "message", "finish", "stop"]),
+  message: Schema.optional(Schema.String),
+  requestID: Schema.optional(Schema.String),
+})
 export const StopAfterStepPayload = Schema.Struct({
   messageID: Schema.optional(Schema.String),
 })
@@ -264,6 +271,8 @@ export const SessionPaths = {
   advisorInterventionStart: `${root}/:sessionID/advisor-intervention/start`,
   advisorInterventionMessage: `${root}/:sessionID/advisor-intervention/message`,
   advisorInterventionFinish: `${root}/:sessionID/advisor-intervention/finish`,
+  externalSession: `${root}/:sessionID/external-session`,
+  externalControl: `${root}/:sessionID/external-control`,
 } as const
 
 export const SessionApi = HttpApi.make("session")
@@ -529,7 +538,7 @@ export const SessionApi = HttpApi.make("session")
           params: { sessionID: SessionID },
           query: WorkspaceRoutingQuery,
           success: described(Schema.Boolean, "Aborted session"),
-          error: HttpApiError.BadRequest,
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.abort",
@@ -692,6 +701,30 @@ export const SessionApi = HttpApi.make("session")
             summary: "Send async message",
             description:
               "Create and send a new message to a session asynchronously, starting the session if needed and returning immediately.",
+          }),
+        ),
+        HttpApiEndpoint.post("externalSession", SessionPaths.externalSession, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: ExternalSessionPayload,
+          success: Session.Info,
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.external_session",
+            summary: "Open an external CLI child session",
+          }),
+        ),
+        HttpApiEndpoint.post("externalControl", SessionPaths.externalControl, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: ExternalControlPayload,
+          success: ExternalSessionState,
+          error: [InvalidRequestError, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.external_control",
+            summary: "Control an external CLI child session",
           }),
         ),
         HttpApiEndpoint.post("advisorInterventionStart", SessionPaths.advisorInterventionStart, {

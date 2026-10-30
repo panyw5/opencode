@@ -78,6 +78,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
     onSessionHref?: SessionHrefFn
     onAbortSession?: AbortSessionFn
     onAdvisorIntervention?: AdvisorInterventionFn
+    onOpenExternalSession?: (part: { sessionID: string; messageID: string; id: string }) => Promise<void>
     loadPresentation?: LoadPresentationFn
     openPresentationSource?: OpenPresentationSourceFn
     onOpenTask?: OpenTaskFn
@@ -99,6 +100,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
       sessionHref: props.onSessionHref,
       abortSession: props.onAbortSession,
       advisorIntervention: props.onAdvisorIntervention,
+      openExternalSession: props.onOpenExternalSession,
       loadPresentation: props.loadPresentation,
       openPresentationSource: props.openPresentationSource,
       openTask: props.onOpenTask,

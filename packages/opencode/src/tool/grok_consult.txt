@@ -1,3 +1,10 @@
 - Delegate implementation, debugging, review, research, or verification work to the local Grok Build CLI.
 - Use when a locally authenticated Grok Build session is useful as an independent agent.
 - Grok can inspect and edit files, execute shell commands, use network tools, and return its response to the current agent.
+
+Result handoff:
+  - Successful calls include a versioned `external_consultation` block with the OpenCode child `task_id`, summary previews, and intervention flags. The task_id is not the Grok native session_id.
+  - If `read_before_summary` is true, call `task_transcript` with `read_transcript.arguments` BEFORE summarizing. Follow next_cursor to inspect earlier relevant answers, not just the last intervention reply.
+  - Summary fields are previews. The complete conversation is persisted in the child session; use task_list to rediscover it if needed.
+  - Reading a transcript does not rerun Grok. Do not use task to resume this external session or repeat the consultation to recover history.
+  - If `delivery` is `inline_fallback`, transcript reading is unavailable for this turn and the full text history is supplied inline instead.

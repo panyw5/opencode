@@ -1,5 +1,5 @@
 import path from "path"
-import { Effect, Schema, Stream } from "effect"
+import { Effect, Fiber, Schema, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import * as Tool from "./tool"
@@ -8,6 +8,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { which } from "@/util/which"
 import { registerAdvisorIntervention } from "./advisor-intervention"
+import { attachExternalTranscript, type TranscriptItem } from "@/session/external"
 import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "tool.grok_consult" })
@@ -32,7 +33,8 @@ export const Parameters = Schema.Struct({
       "Absolute directory Grok should run in. Defaults to the current project directory. Must stay inside an allowed workspace path.",
   }),
   model: Schema.optional(Schema.String).annotate({
-    description: "Optional Grok model override (passed to `grok --model`)." }),
+    description: "Optional Grok model override (passed to `grok --model`).",
+  }),
   timeout_ms: Schema.optional(Schema.Number).annotate({
     description: `Timeout in milliseconds (default ${DEFAULT_TIMEOUT_MS}, max ${MAX_TIMEOUT_MS}).`,
   }),
@@ -55,6 +57,8 @@ export type GrokTranscriptItem = {
 }
 
 export type GrokLiveState = {
+  onTranscript?: (item: TranscriptItem) => void
+  runSeq?: number
   sessionId?: string
   error?: string
   assistantText: string
@@ -134,6 +138,16 @@ export function createGrokLiveState(): GrokLiveState {
   }
 }
 
+export function beginGrokTurn(state: GrokLiveState) {
+  state.runSeq = (state.runSeq ?? 0) + 1
+  state.assistantText = ""
+  state.assistantSegmentText = ""
+  state.assistantOpen = false
+  state.thinkingText = ""
+  state.thinkingOpen = false
+  state.error = undefined
+}
+
 /** Apply one `grok --output-format streaming-json` event into live state. */
 export function applyGrokJsonlLine(state: GrokLiveState, rawLine: string): boolean {
   const line = rawLine.trim()
@@ -166,7 +180,7 @@ export function applyGrokJsonlLine(state: GrokLiveState, rawLine: string): boole
       id: `assistant:${state.assistantIndex}`,
       kind: "message",
       title: "Assistant",
-      text: clip(state.assistantSegmentText, MAX_TRANSCRIPT_TEXT),
+      text: state.onTranscript ? state.assistantSegmentText : clip(state.assistantSegmentText, MAX_TRANSCRIPT_TEXT),
       status: "running",
     })
     return true
@@ -185,7 +199,7 @@ export function applyGrokJsonlLine(state: GrokLiveState, rawLine: string): boole
       id: `thinking:${state.thinkingIndex}`,
       kind: "thinking",
       title: "Thinking",
-      text: clip(state.thinkingText, MAX_TRANSCRIPT_TEXT),
+      text: state.onTranscript ? state.thinkingText : clip(state.thinkingText, MAX_TRANSCRIPT_TEXT),
       status: "running",
     })
     closeAssistant(state)
@@ -202,7 +216,9 @@ export function applyGrokJsonlLine(state: GrokLiveState, rawLine: string): boole
       id,
       kind: "tool_use",
       title,
-      text: clip(stringify(item.rawInput ?? item.input ?? item.data), MAX_TRANSCRIPT_TEXT),
+      text: state.onTranscript
+        ? stringify(item.rawInput ?? item.input ?? item.data)
+        : clip(stringify(item.rawInput ?? item.input ?? item.data), MAX_TRANSCRIPT_TEXT),
       status: string(item.status) ?? "pending",
     })
     return true
@@ -221,6 +237,7 @@ export function applyGrokJsonlLine(state: GrokLiveState, rawLine: string): boole
       const entry = state.transcript[index]!
       entry.text = clip(entry.text ? `${entry.text}\n${result}` : result, MAX_TRANSCRIPT_TEXT)
     }
+    state.onTranscript?.({ ...state.transcript[index]!, id: `${state.runSeq ?? 0}:${state.transcript[index]!.id}` })
     return true
   }
 
@@ -295,13 +312,16 @@ export const GrokConsultTool = Tool.define(
 
           const bin = which("grok")
           if (!bin) {
-            throw new Error("Grok Build CLI not found on PATH. Install Grok Build and ensure `grok` is available on PATH, then authenticate and retry.")
+            throw new Error(
+              "Grok Build CLI not found on PATH. Install Grok Build and ensure `grok` is available on PATH, then authenticate and retry.",
+            )
           }
           const prompt = params.prompt.trim()
           if (!prompt) throw new Error("prompt must be a non-empty string")
 
           const timeoutMs = resolveTimeoutMs(params.timeout_ms)
           const live = createGrokLiveState()
+          attachExternalTranscript(ctx, live)
           let lastMetaAt = 0
           let publishMetadata: (force?: boolean) => Effect.Effect<void>
           intervention = ctx.callID
@@ -341,13 +361,14 @@ export const GrokConsultTool = Tool.define(
           const runProcess = (args: string[]) =>
             Effect.scoped(
               Effect.gen(function* () {
+                beginGrokTurn(live)
                 const handle = yield* spawner.spawn(
                   ChildProcess.make(bin, args, { cwd: workingDirectory, extendEnv: true, stdin: "ignore" }),
                 )
                 let stdout = ""
                 let stderr = ""
                 let lineBuffer = ""
-                yield* Effect.forkScoped(
+                const stdoutFiber = yield* Effect.forkScoped(
                   Stream.runForEach(Stream.decodeText(handle.stdout), (chunk) =>
                     Effect.gen(function* () {
                       stdout += chunk
@@ -360,7 +381,9 @@ export const GrokConsultTool = Tool.define(
                     }),
                   ),
                 )
-                yield* Effect.forkScoped(Stream.runForEach(Stream.decodeText(handle.stderr), (chunk) => Effect.sync(() => (stderr += chunk))))
+                const stderrFiber = yield* Effect.forkScoped(
+                  Stream.runForEach(Stream.decodeText(handle.stderr), (chunk) => Effect.sync(() => (stderr += chunk))),
+                )
                 const abort = Effect.callback<void>((resume) => {
                   if (ctx.abort.aborted) return resume(Effect.void)
                   const onAbort = () => resume(Effect.void)
@@ -368,12 +391,26 @@ export const GrokConsultTool = Tool.define(
                   return Effect.sync(() => ctx.abort.removeEventListener("abort", onAbort))
                 })
                 const exit = yield* Effect.raceAll([
-                  handle.exitCode.pipe(Effect.map((code) => ({ kind: "exit" as const, code: Number(code) })), Effect.orDie),
+                  handle.exitCode.pipe(
+                    Effect.map((code) => ({ kind: "exit" as const, code: Number(code) })),
+                    Effect.orDie,
+                  ),
                   abort.pipe(Effect.map(() => ({ kind: "abort" as const, code: null as number | null }))),
-                  Effect.sleep(`${timeoutMs} millis`).pipe(Effect.map(() => ({ kind: "timeout" as const, code: null as number | null }))),
+                  Effect.sleep(`${timeoutMs} millis`).pipe(
+                    Effect.map(() => ({ kind: "timeout" as const, code: null as number | null })),
+                  ),
                 ])
                 if (exit.kind !== "exit") yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
+                yield* Fiber.join(stdoutFiber).pipe(
+                  Effect.timeout("10 seconds"),
+                  Effect.orElseSucceed(() => void 0),
+                )
+                yield* Fiber.join(stderrFiber).pipe(
+                  Effect.timeout("10 seconds"),
+                  Effect.orElseSucceed(() => void 0),
+                )
                 if (lineBuffer.trim()) applyGrokJsonlLine(live, lineBuffer)
+                yield* publishMetadata(true)
                 return { exit, stdout, stderr }
               }),
             ).pipe(Effect.orDie)
@@ -385,11 +422,17 @@ export const GrokConsultTool = Tool.define(
 
           const parsed = parseGrokJsonl(result.stdout)
           let sessionId = live.sessionId ?? parsed.sessionId
-          let body = live.assistantText.trim() || parsed.finalResponse || stripAnsi(result.stdout).trim() || stripAnsi(result.stderr).trim()
+          let body =
+            live.assistantText.trim() ||
+            parsed.finalResponse ||
+            stripAnsi(result.stdout).trim() ||
+            stripAnsi(result.stderr).trim()
           if ((live.error ?? parsed.error) && !body) throw new Error(`Grok Build failed: ${live.error ?? parsed.error}`)
           if (result.exit.code !== 0 && !body) {
             const detail = (live.error ?? parsed.error ?? result.stderr ?? result.stdout).trim().slice(0, 4000)
-            throw new Error(`Grok Build exited with code ${result.exit.code}${detail ? `: ${detail}` : ""}. Ensure \`grok\` is authenticated and reachable.`)
+            throw new Error(
+              `Grok Build exited with code ${result.exit.code}${detail ? `: ${detail}` : ""}. Ensure \`grok\` is authenticated and reachable.`,
+            )
           }
           if (!body) throw new Error("Grok Build returned an empty response")
 
@@ -406,18 +449,31 @@ export const GrokConsultTool = Tool.define(
             if (command.type === "abort") throw new Error("Grok Build consultation was aborted")
             if (command.type !== "message") break
             if (!sessionId) throw new Error("Grok Build did not return a session id for intervention")
-            upsertTranscript(live, { id: `intervention-user:${Date.now()}`, kind: "user", title: "User", text: command.message, status: "completed" })
+            upsertTranscript(live, {
+              id: `intervention-user:${Date.now()}`,
+              kind: "user",
+              title: "User",
+              text: command.message,
+              status: "completed",
+            })
             activeIntervention.setBusy(true)
             try {
-              result = yield* runProcess(buildGrokResumeArgs({ sessionId, prompt: command.message, workingDirectory, model: params.model }))
+              result = yield* runProcess(
+                buildGrokResumeArgs({ sessionId, prompt: command.message, workingDirectory, model: params.model }),
+              )
             } finally {
               activeIntervention.setBusy(false)
               yield* publishMetadata(true)
             }
             if (result.exit.kind === "abort") throw new Error("Grok Build consultation was aborted")
-            if (result.exit.kind === "timeout") throw new Error(`Grok Build consultation timed out after ${timeoutMs}ms`)
+            if (result.exit.kind === "timeout")
+              throw new Error(`Grok Build consultation timed out after ${timeoutMs}ms`)
             const next = parseGrokJsonl(result.stdout)
-            const nextBody = live.assistantText.trim() || next.finalResponse || stripAnsi(result.stdout).trim() || stripAnsi(result.stderr).trim()
+            const nextBody =
+              live.assistantText.trim() ||
+              next.finalResponse ||
+              stripAnsi(result.stdout).trim() ||
+              stripAnsi(result.stderr).trim()
             if (!nextBody) {
               upsertTranscript(live, {
                 id: `intervention-error:${Date.now()}`,
@@ -468,11 +524,14 @@ export const GrokConsultTool = Tool.define(
 )
 
 function upsertTranscript(state: GrokLiveState, item: GrokTranscriptItem) {
+  state.onTranscript?.({ ...item, id: `${state.runSeq ?? 0}:${item.id}` })
+  item = { ...item, text: item.text === undefined ? undefined : clip(item.text, MAX_TRANSCRIPT_TEXT) }
   const index = state.transcript.findIndex((entry) => entry.id === item.id)
   if (index >= 0) state.transcript[index] = { ...state.transcript[index], ...item }
   else {
     state.transcript.push(item)
-    if (state.transcript.length > MAX_TRANSCRIPT_ITEMS) state.transcript.splice(0, state.transcript.length - MAX_TRANSCRIPT_ITEMS)
+    if (state.transcript.length > MAX_TRANSCRIPT_ITEMS)
+      state.transcript.splice(0, state.transcript.length - MAX_TRANSCRIPT_ITEMS)
   }
 }
 
@@ -481,7 +540,10 @@ function closeAssistant(state: GrokLiveState) {
   state.assistantOpen = false
   const id = `assistant:${state.assistantIndex}`
   const item = state.transcript.find((entry) => entry.id === id)
-  if (item) item.status = "completed"
+  if (item) {
+    item.status = "completed"
+    state.onTranscript?.({ id: `${state.runSeq ?? 0}:${item.id}`, kind: item.kind, status: item.status })
+  }
 }
 
 function closeThinking(state: GrokLiveState) {
@@ -489,7 +551,10 @@ function closeThinking(state: GrokLiveState) {
   state.thinkingOpen = false
   const id = `thinking:${state.thinkingIndex}`
   const item = state.transcript.find((entry) => entry.id === id)
-  if (item) item.status = "completed"
+  if (item) {
+    item.status = "completed"
+    state.onTranscript?.({ id: `${state.runSeq ?? 0}:${item.id}`, kind: item.kind, status: item.status })
+  }
 }
 
 function mapToolStatus(value: unknown): string | undefined {

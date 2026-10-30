@@ -564,7 +564,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         description: language.t("command.session.undo.description"),
         keywords: kw("command.session.undo", "command.session.undo.description"),
         slash: "undo",
-        disabled: !params.id || userMessages().length === 0 || sync.session.revert.pending(params.id),
+        disabled: !!info()?.external || !params.id || userMessages().length === 0 || sync.session.revert.pending(params.id),
         onSelect: async () => {
           const sessionID = params.id
           if (!sessionID) return
@@ -591,7 +591,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         description: language.t("command.session.redo.description"),
         keywords: kw("command.session.redo", "command.session.redo.description"),
         slash: "redo",
-        disabled: !params.id || !info()?.revert?.messageID || sync.session.revert.pending(params.id),
+        disabled: !!info()?.external || !params.id || !info()?.revert?.messageID || sync.session.revert.pending(params.id),
         onSelect: async () => {
           const sessionID = params.id
           if (!sessionID) return
@@ -628,7 +628,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         description: language.t("command.session.compact.description"),
         keywords: kw("command.session.compact", "command.session.compact.description"),
         slash: "compact",
-        disabled: !params.id || userMessages().length === 0,
+        disabled: !!info()?.external || !params.id || userMessages().length === 0,
         onSelect: async () => {
           const sessionID = params.id
           if (!sessionID) return
@@ -653,7 +653,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         description: language.t("command.session.fork.description"),
         keywords: kw("command.session.fork", "command.session.fork.description"),
         slash: "fork",
-        disabled: !params.id || userMessages().length === 0,
+        disabled: !!info()?.external || !params.id || userMessages().length === 0,
         onSelect: () => dialog.showForOwner(() => <DialogFork />),
       }),
       ...share,

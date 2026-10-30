@@ -1,7 +1,7 @@
 - Consult DeepSeek Harness (dsh) as an external coding advisor via the local `dsh` CLI
 - Spawns a one-shot agent: `dsh --profile <profile> [--patch <file>...] "<prompt>"` (profile defaults to headless)
 - Returns the final assistant text on stdout (no streaming JSON transcript)
-- Supports mid-session user intervention in the desktop advisor dialog (follow-ups re-run with prior transcript context, same profile and patches)
+- Supports user intervention in the external consultation child session (follow-ups re-run with prior transcript context, same profile and patches)
 - Use when you want an independent DeepSeek Harness judgment without making it the primary executor
 
 When to use:
@@ -22,3 +22,10 @@ Usage notes:
   - Requires `dsh` on PATH (`npm i -g @deepseek-ai/dsh`) and `DEEPSEEK_API_KEY` (or credentials under ~/.dsh)
   - dsh is a full coding agent; prefer analysis-scoped prompts unless the user wants implementation
   - Desktop intervention keeps the tool call open after the first answer; follow-ups are new runs with replayed history
+
+Result handoff:
+  - Successful calls include a versioned `external_consultation` block with the OpenCode child `task_id`, summary previews, and intervention flags.
+  - If `read_before_summary` is true, call `task_transcript` with `read_transcript.arguments` BEFORE summarizing. Follow next_cursor to inspect earlier relevant answers, not just the last intervention reply.
+  - Summary fields are previews. The complete conversation is persisted in the child session; use task_list to rediscover it if needed.
+  - Reading a transcript does not rerun DSH. Do not use task to resume this external session or repeat the consultation to recover history.
+  - If `delivery` is `inline_fallback`, transcript reading is unavailable for this turn and the full text history is supplied inline instead.

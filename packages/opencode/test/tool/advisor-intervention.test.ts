@@ -42,4 +42,26 @@ describe("advisor intervention", () => {
     expect(handle.snapshot()).toMatchObject({ active: true })
     handle.close()
   })
+
+  test("deduplicates a retried message after its first delivery", async () => {
+    const handle = registerAdvisorIntervention({ sessionID, callID: "call-retry", advisor: "codex" })
+    startAdvisorIntervention({ sessionID, callID: "call-retry" })
+    const input = { sessionID, callID: "call-retry", message: "once", requestID: "request-1" }
+    expect(sendAdvisorIntervention(input)).toBe(true)
+    expect(await handle.wait(new AbortController().signal)).toEqual({ type: "message", message: "once" })
+    handle.setBusy(true)
+    expect(sendAdvisorIntervention(input)).toBe(true)
+    expect(handle.snapshot().queued).toBe(false)
+    expect(sendAdvisorIntervention({ ...input, message: "different payload" })).toBe(false)
+    handle.close()
+  })
+
+  test("does not wait forever when cancellation arrived before wait", async () => {
+    const handle = registerAdvisorIntervention({ sessionID, callID: "call-aborted", advisor: "codex" })
+    startAdvisorIntervention({ sessionID, callID: "call-aborted" })
+    const controller = new AbortController()
+    controller.abort()
+    expect(await handle.wait(controller.signal)).toEqual({ type: "abort" })
+    handle.close()
+  })
 })

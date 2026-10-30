@@ -10,6 +10,8 @@ import { Markdown } from "@opencode-ai/ui/markdown"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { PromptInput } from "@/components/prompt-input"
+import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
+import { ExternalSessionComposer } from "./external-session-composer"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { usePrompt } from "@/context/prompt"
@@ -33,7 +35,23 @@ import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
 import { createChildAgentMenuEntries } from "@/pages/session/composer/session-child-agent-menu-state"
 import type { FollowupDraft, SubmitOptions } from "@/components/prompt-input/submit"
 import type { SessionChildAgentEntry } from "@/pages/session/session-child-agents"
-import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2"
+import type { PermissionRequest, QuestionRequest, Session } from "@opencode-ai/sdk/v2"
+
+const externalAdvisorIcons = {
+  codex: "openai",
+  claude: "anthropic",
+  grok: "xai",
+  dsh: "deepseek",
+  pi: "synthetic",
+} satisfies Record<NonNullable<Session["external"]>["advisor"], string>
+
+const externalAdvisorNames = {
+  codex: "Codex",
+  claude: "Claude",
+  grok: "Grok",
+  dsh: "DeepSeek",
+  pi: "Pi",
+} satisfies Record<NonNullable<Session["external"]>["advisor"], string>
 
 function ComposerDockExit(props: {
   active: boolean
@@ -475,7 +493,7 @@ function SessionChildAgentMenu(props: {
           variant="ghost"
           size="small"
           icon="branch"
-          class="h-7 rounded-md px-2 text-text-weak hover:text-text-strong data-[expanded]:bg-surface-base-active"
+          class="h-7 rounded-md px-2 text-text-weak hover:text-text-strong data-[expanded]:bg-surface-base-active [&>[data-component=icon]:first-child>svg]:[transform:scaleY(-1)]"
           aria-label={language.t("session.childAgents.open")}
           data-testid="session-child-agent-menu-trigger"
         >
@@ -631,6 +649,7 @@ export function SessionComposerRegion(props: {
     onNavigate: (sessionID: string) => void
   }
   subagentTitle?: string
+  externalSession?: Session
   mathModeActive?: boolean
   setPromptDockRef: (el: HTMLDivElement) => void
 }) {
@@ -998,10 +1017,26 @@ export function SessionComposerRegion(props: {
                     {(title) => (
                       <span
                         data-testid="subagent-session-prompt-badge"
-                        class="inline-flex min-w-0 max-w-full shrink items-center truncate rounded-full border border-border-weak-base bg-surface-base px-3 py-1 text-11-medium font-medium text-text-interactive-base shadow-sm"
+                        class="inline-flex min-w-0 max-w-full shrink items-center gap-1.5 overflow-hidden rounded-full border border-border-weak-base bg-surface-base px-3 py-1 text-11-medium font-medium text-text-interactive-base shadow-sm"
                         title={title}
                       >
-                        {language.t("session.childAgents.promptBadge", { title })}
+                        <Show when={props.externalSession?.external}>
+                          {(external) => (
+                            <ProviderIcon
+                              id={externalAdvisorIcons[external().advisor]}
+                              class="size-3.5 shrink-0"
+                              aria-hidden="true"
+                            />
+                          )}
+                        </Show>
+                        <span class="min-w-0 truncate">
+                          <Show
+                            when={props.externalSession?.external}
+                            fallback={language.t("session.childAgents.promptBadge", { title })}
+                          >
+                            {(external) => externalAdvisorNames[external().advisor]}
+                          </Show>
+                        </span>
                       </span>
                     )}
                   </Show>
@@ -1163,7 +1198,7 @@ export function SessionComposerRegion(props: {
                   />
                 )}
               </Show>
-              <PromptInput
+              <Show when={props.externalSession} fallback={<PromptInput
                 ref={props.inputRef}
                 newSessionWorktree={props.newSessionWorktree}
                 onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
@@ -1182,7 +1217,9 @@ export function SessionComposerRegion(props: {
                 onUserMessageCreated={props.onUserMessageCreated}
                 onSubmitted={props.onSubmitted}
                 onScrollToBottom={props.onScrollToBottom}
-              />
+              />}>
+                {(session) => <ExternalSessionComposer session={session()} />}
+              </Show>
             </div>
           </Show>
         </ComposerDockExit>

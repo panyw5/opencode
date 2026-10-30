@@ -2,7 +2,7 @@ import { afterEach, describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { Agent } from "@/agent/agent"
 import { Session } from "@/session/session"
-import { MessageID, type SessionID } from "@/session/schema"
+import { MessageID, PartID, type SessionID } from "@/session/schema"
 import { SessionStatus } from "@/session/status"
 import { Truncate } from "@/tool/truncate"
 import { TaskListTool } from "@/tool/task_list"
@@ -90,6 +90,33 @@ describe("tool.task_list", () => {
       const result = yield* def.execute({}, context(parent.id))
       expect(result.output).toContain('"state": "unknown"')
       expect(result.output).toContain(child.id)
+    }),
+  )
+
+  it.instance("discovers external CLI child session references for task_transcript", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const parent = yield* sessions.create({ title: "Parent" })
+      const child = yield* sessions.create({
+        parentID: parent.id,
+        agent: "claude",
+        title: "External Claude review",
+        external: {
+          advisor: "claude",
+          sourceMessageID: MessageID.ascending(),
+          sourcePartID: PartID.ascending(),
+          callID: "external-review",
+          historical: true,
+        },
+      })
+      yield* addAssistant(child.id, { completed: 2 })
+      const tool = yield* TaskListTool
+      const def = yield* tool.init()
+      const result = yield* def.execute({ scope: "children" }, context(parent.id))
+      const output = JSON.parse(result.output)
+      expect(output.tasks).toEqual([
+        expect.objectContaining({ task_id: child.id, parent_task_id: parent.id, agent: "claude", state: "completed" }),
+      ])
     }),
   )
 

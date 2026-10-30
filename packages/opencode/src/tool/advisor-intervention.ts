@@ -3,7 +3,7 @@ import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "tool.advisor_intervention" })
 
-export type AdvisorKind = "codex" | "claude" | "grok" | "dsh"
+export type AdvisorKind = "codex" | "claude" | "grok" | "dsh" | "pi"
 
 export type AdvisorInterventionSnapshot = {
   available: true
@@ -30,6 +30,7 @@ type Entry = {
     reject: (error: unknown) => void
   }
   onChange?: () => void
+  requests?: Map<string, string>
 }
 
 const entries = new Map<string, Entry>()
@@ -86,6 +87,7 @@ export class AdvisorInterventionHandle {
   }
 
   waitForInput(signal: AbortSignal): Promise<Command> {
+    if (signal.aborted) return Promise.resolve({ type: "abort" })
     if (!this.entry.active) return Promise.resolve({ type: "finish" })
     if (this.entry.waiter) return Promise.reject(new Error("Advisor intervention is already waiting for input"))
 
@@ -187,6 +189,16 @@ export function registerAdvisorIntervention(input: {
   return new AdvisorInterventionHandle(entry)
 }
 
+export function advisorInterventionSnapshot(input: { sessionID: SessionID; callID: string }) {
+  const entry = entries.get(key(input.sessionID, input.callID))
+  return entry ? new AdvisorInterventionHandle(entry).snapshot() : undefined
+}
+
+export function closeAdvisorIntervention(input: { sessionID: SessionID; callID: string }) {
+  const entry = entries.get(key(input.sessionID, input.callID))
+  if (entry) new AdvisorInterventionHandle(entry).close()
+}
+
 export function startAdvisorIntervention(input: { sessionID: SessionID; callID: string }): boolean {
   const entry = entries.get(key(input.sessionID, input.callID))
   if (!entry || entry.busy) {
@@ -217,9 +229,15 @@ export function startAdvisorIntervention(input: { sessionID: SessionID; callID: 
   return true
 }
 
-export function sendAdvisorIntervention(input: { sessionID: SessionID; callID: string; message: string }): boolean {
+export function sendAdvisorIntervention(input: {
+  sessionID: SessionID
+  callID: string
+  message: string
+  requestID?: string
+}): boolean {
   const entry = entries.get(key(input.sessionID, input.callID))
   const message = input.message.trim()
+  if (input.requestID && entry?.requests?.has(input.requestID)) return entry.requests.get(input.requestID) === message
   if (!entry || !entry.active || entry.busy || entry.queued || !message) {
     log.info("advisor intervention message rejected", {
       sessionID: input.sessionID,
@@ -237,6 +255,7 @@ export function sendAdvisorIntervention(input: { sessionID: SessionID; callID: s
     return false
   }
   const command = { type: "message" as const, message }
+  if (input.requestID) (entry.requests ??= new Map()).set(input.requestID, message)
   const deliveredToWaiter = entry.waitingForInput
   if (deliveredToWaiter) resolveWaiter(entry, command)
   else entry.queued = command

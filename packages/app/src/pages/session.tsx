@@ -3775,6 +3775,7 @@ export default function Page() {
             onOpenChildAgent={openChildAgent}
             subagentNavigation={subagentNavigation()}
             subagentTitle={subagentPromptTitle()}
+            externalSession={info()?.external ? info() : undefined}
             mathModeActive={mathModeAgentLocked() && !mathDisabled()}
             setPromptDockRef={(el) => {
               promptDock = el

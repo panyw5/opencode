@@ -31,6 +31,7 @@ import { ProjectTable } from "../project/project.sql"
 import { Storage } from "@/storage/storage"
 import * as Log from "@opencode-ai/core/util/log"
 import { MessageV2 } from "./message-v2"
+import { CodeModeState } from "./code-mode-state"
 import { appendStreamingText, streamingText, withStreamingText } from "./streaming-text"
 import type { InstanceContext } from "../project/instance-context"
 import { InstanceState } from "@/effect/instance-state"
@@ -48,6 +49,7 @@ import { Global } from "@opencode-ai/core/global"
 import { Effect, Layer, Option, Context, Schema, Types } from "effect"
 import { NonNegativeInt, optionalOmitUndefined } from "@opencode-ai/core/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { ExternalSession } from "./external-schema"
 
 const log = Log.create({ service: "session" })
 
@@ -117,6 +119,7 @@ export function fromRow(row: SessionRow): Info {
   if (row.workspace_id != null) result.workspaceID = row.workspace_id
   if (row.path != null) result.path = row.path
   if (row.parent_id != null) result.parentID = row.parent_id
+  if (row.metadata?.external) result.external = Schema.decodeUnknownSync(ExternalSession)(row.metadata.external)
   if (row.agent != null) result.agent = row.agent
   if (row.share_url) result.share = { url: row.share_url }
   if (row.revert != null) result.revert = row.revert
@@ -155,6 +158,7 @@ export function toRow(info: Info) {
     project_id: info.projectID,
     workspace_id: info.workspaceID,
     parent_id: info.parentID,
+    ...(info.external ? { metadata: { external: info.external } } : {}),
     slug: info.slug,
     // Normalize to the canonical logical-path form (`/`) on write so future
     // list queries stay consistent regardless of how the directory arrived
@@ -265,6 +269,7 @@ export const Info = Schema.Struct({
   directory: Schema.String,
   path: optionalOmitUndefined(Schema.String),
   parentID: optionalOmitUndefined(SessionID),
+  external: optionalOmitUndefined(ExternalSession),
   summary: optionalOmitUndefined(Summary),
   cost: optionalOmitUndefined(Schema.Finite),
   tokens: optionalOmitUndefined(Tokens),
@@ -568,6 +573,8 @@ export const staleOrphanedAssistantReason = (input: { elapsedMs: number; staleAf
 export interface Interface {
   readonly list: (input?: ListInput) => Effect.Effect<Info[]>
   readonly create: (input?: {
+    id?: SessionID
+    external?: ExternalSession
     parentID?: SessionID
     title?: string
     agent?: string
@@ -654,6 +661,7 @@ export const layer: Layer.Layer<
 
     const createNext = Effect.fn("Session.createNext")(function* (input: {
       id?: SessionID
+      external?: ExternalSession
       title?: string
       agent?: string
       model?: Schema.Schema.Type<typeof Model>
@@ -675,6 +683,7 @@ export const layer: Layer.Layer<
         path: input.path,
         workspaceID: input.workspaceID,
         parentID: input.parentID,
+        external: input.external,
         title: input.title ?? createDefaultTitle(!!input.parentID),
         agent: input.agent,
         model: input.model,
@@ -856,6 +865,8 @@ export const layer: Layer.Layer<
     })
 
     const create = Effect.fn("Session.create")(function* (input?: {
+      id?: SessionID
+      external?: ExternalSession
       parentID?: SessionID
       title?: string
       agent?: string
@@ -867,6 +878,8 @@ export const layer: Layer.Layer<
       const ctx = yield* InstanceState.context
       const workspace = yield* InstanceState.workspaceID
       return yield* createNext({
+        id: input?.id,
+        external: input?.external,
         parentID: input?.parentID,
         directory: ctx.directory,
         path: sessionPath(ctx.worktree, ctx.directory),
@@ -934,6 +947,7 @@ export const layer: Layer.Layer<
           partCount++
         }
       }
+      CodeModeState.copy(input.sessionID, session.id, idMap)
       log.info("fork completed", {
         sourceSessionID: input.sessionID,
         targetSessionID: session.id,

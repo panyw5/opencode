@@ -8,6 +8,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { which } from "@/util/which"
 import { registerAdvisorIntervention } from "./advisor-intervention"
+import { attachExternalTranscript, type TranscriptItem } from "@/session/external"
 import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "tool.codex_consult" })
@@ -86,6 +87,7 @@ export type CodexTranscriptItem = {
 }
 
 export type CodexLiveState = {
+  onTranscript?: (item: TranscriptItem) => void
   threadId?: string
   usage?: {
     input_tokens: number
@@ -211,7 +213,7 @@ export function applyCodexJsonlLine(state: CodexLiveState, rawLine: string): boo
         id: codexSeqId(state, `turn-message:${state.transcript.length}`),
         kind: "message",
         title: "Assistant",
-        text: clip(text, MAX_TRANSCRIPT_TEXT),
+        text: state.onTranscript ? text : clip(text, MAX_TRANSCRIPT_TEXT),
         status: "completed",
       })
     }
@@ -256,7 +258,7 @@ export function applyCodexJsonlLine(state: CodexLiveState, rawLine: string): boo
         id,
         kind: "message",
         title: "Assistant",
-        text: clip(it.text, MAX_TRANSCRIPT_TEXT),
+        text: state.onTranscript ? it.text : clip(it.text, MAX_TRANSCRIPT_TEXT),
         status: type === "item.started" ? "running" : "completed",
       })
       return true
@@ -267,7 +269,7 @@ export function applyCodexJsonlLine(state: CodexLiveState, rawLine: string): boo
         id,
         kind: "reasoning",
         title: "Reasoning",
-        text: clip(it.text, MAX_TRANSCRIPT_TEXT),
+        text: state.onTranscript ? it.text : clip(it.text, MAX_TRANSCRIPT_TEXT),
         status: type === "item.started" ? "running" : "completed",
       })
       return true
@@ -281,7 +283,7 @@ export function applyCodexJsonlLine(state: CodexLiveState, rawLine: string): boo
         id,
         kind: "command",
         title: command,
-        text: clip(output, MAX_TRANSCRIPT_TEXT),
+        text: state.onTranscript ? output : clip(output, MAX_TRANSCRIPT_TEXT),
         status,
       })
       return true
@@ -302,7 +304,7 @@ export function applyCodexJsonlLine(state: CodexLiveState, rawLine: string): boo
         id,
         kind: "file_change",
         title: "File changes",
-        text: clip(summary || status, MAX_TRANSCRIPT_TEXT),
+        text: state.onTranscript ? summary || status : clip(summary || status, MAX_TRANSCRIPT_TEXT),
         status,
       })
       return true
@@ -335,7 +337,7 @@ export function applyCodexJsonlLine(state: CodexLiveState, rawLine: string): boo
         id,
         kind: "todo",
         title: "Todo",
-        text: clip(text, MAX_TRANSCRIPT_TEXT),
+        text: state.onTranscript ? text : clip(text, MAX_TRANSCRIPT_TEXT),
       })
       return true
     }
@@ -446,6 +448,7 @@ export const CodexConsultTool = Tool.define(
           })
 
           const live = createCodexLiveState()
+          attachExternalTranscript(ctx, live)
           let lastMetaAt = 0
 
           const publishMetadata = (force = false) =>
@@ -704,7 +707,7 @@ export const CodexConsultTool = Tool.define(
                 id: `intervention-assistant:${Date.now()}`,
                 kind: "message",
                 title: "Assistant",
-                text: clip(nextBody, MAX_TRANSCRIPT_TEXT),
+                text: nextBody,
                 status: "completed",
               })
             }
@@ -752,6 +755,8 @@ export const CodexConsultTool = Tool.define(
 )
 
 function upsertTranscript(state: CodexLiveState, item: CodexTranscriptItem) {
+  state.onTranscript?.(item)
+  item = { ...item, text: item.text === undefined ? undefined : clip(item.text, MAX_TRANSCRIPT_TEXT) }
   const idx = state.transcript.findIndex((entry) => entry.id === item.id)
   if (idx >= 0) {
     state.transcript[idx] = { ...state.transcript[idx], ...item }

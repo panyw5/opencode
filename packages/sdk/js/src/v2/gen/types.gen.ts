@@ -17,7 +17,7 @@ export type Event =
   | EventProjectUpdated
   | EventLspClientDiagnostics
   | EventLspUpdated
-  | EventMessagePartDelta
+  | EventMessagePartDelta1
   | EventTodoUpdated
   | EventSessionDiff
   | EventSessionError
@@ -37,6 +37,9 @@ export type Event =
   | EventBackgroundShellCreated
   | EventBackgroundShellUpdated
   | EventBackgroundShellExited
+  | EventBrowserUpdated1
+  | EventBrowserClosed1
+  | EventGptProNotification1
   | EventScheduledTaskCreated
   | EventScheduledTaskUpdated
   | EventScheduledTaskDeleted
@@ -83,7 +86,6 @@ export type Event =
   | EventSessionNextCompactionStarted
   | EventSessionNextCompactionDelta
   | EventSessionNextCompactionEnded
-  | EventBrowserUpdated
   | EventServerConnected
   | EventGlobalDisposed
   | EventGlobalConfigUpdated
@@ -311,10 +313,6 @@ export type QuestionTool = {
 }
 
 export type QuestionRequest = {
-  /**
-   * Absolute response deadline in Unix milliseconds
-   */
-  expiresAt?: number
   id: string
   sessionID: string
   /**
@@ -322,6 +320,10 @@ export type QuestionRequest = {
    */
   questions: Array<QuestionPrompt>
   tool?: QuestionTool
+  /**
+   * Absolute response deadline in Unix milliseconds
+   */
+  expiresAt?: number
 }
 
 export type QuestionImageAnswer = {
@@ -809,6 +811,15 @@ export type Part =
   | RetryPart
   | CompactionPart
 
+export type ExternalSession = {
+  advisor: "codex" | "claude" | "grok" | "dsh" | "pi"
+  sourceMessageID: string
+  sourcePartID: string
+  callID: string
+  historical: boolean
+  ownerPID?: number
+}
+
 export type PermissionAction = "allow" | "deny" | "ask"
 
 export type PermissionRule = {
@@ -828,6 +839,7 @@ export type Session = {
   directory: string
   path?: string
   parentID?: string
+  external?: ExternalSession
   summary?: {
     additions: number
     deletions: number
@@ -959,6 +971,8 @@ export type PermissionConfig =
       claude_consult?: PermissionActionConfig
       grok_consult?: PermissionActionConfig
       dsh_consult?: PermissionActionConfig
+      pi_consult?: PermissionActionConfig
+      gpt_pro_consult?: PermissionActionConfig
       repo_clone?: PermissionRuleConfig
       repo_overview?: PermissionRuleConfig
       lsp?: PermissionRuleConfig
@@ -1111,6 +1125,7 @@ export type McpLocalConfig = {
     [key: string]: string
   }
   enabled?: boolean
+  codemode?: boolean
   timeout?: number
 }
 
@@ -1132,6 +1147,7 @@ export type McpRemoteConfig = {
    */
   url: string
   enabled?: boolean
+  codemode?: boolean
   headers?: {
     [key: string]: string
   }
@@ -1240,6 +1256,11 @@ export type Config = {
   $schema?: string
   shell?: string
   logLevel?: LogLevel
+  pi?: {
+    enabled?: boolean
+    binaryPath?: string
+    configHome?: string
+  }
   server?: ServerConfig
   command?: {
     [key: string]: {
@@ -1357,6 +1378,9 @@ export type Config = {
   tools?: {
     [key: string]: boolean
   }
+  browser?: {
+    enabled?: boolean
+  }
   attachment?: AttachmentConfig
   enterprise?: {
     url?: string
@@ -1423,6 +1447,9 @@ export type GlobalEvent = {
     | EventBackgroundShellCreated
     | EventBackgroundShellUpdated
     | EventBackgroundShellExited
+    | EventBrowserUpdated
+    | EventBrowserClosed
+    | EventGptProNotification
     | EventScheduledTaskCreated
     | EventScheduledTaskUpdated
     | EventScheduledTaskDeleted
@@ -1469,7 +1496,6 @@ export type GlobalEvent = {
     | EventSessionNextCompactionStarted
     | EventSessionNextCompactionDelta
     | EventSessionNextCompactionEnded
-    | EventBrowserUpdated
     | EventServerConnected
     | EventGlobalDisposed
     | EventGlobalConfigUpdated
@@ -1708,6 +1734,7 @@ export type GlobalSession = {
   directory: string
   path?: string
   parentID?: string
+  external?: ExternalSession
   summary?: {
     additions: number
     deletions: number
@@ -2115,6 +2142,15 @@ export type SubtaskPartInput = {
   command?: string
 }
 
+export type ExternalSessionState = {
+  available: boolean
+  active: boolean
+  busy: boolean
+  queued: boolean
+  waitingForInput: boolean
+  stopping: boolean
+}
+
 export type SessionBusyError = {
   _tag: "SessionBusyError"
   sessionID: string
@@ -2183,6 +2219,7 @@ export type ProjectTaskDetail = {
   descriptionPath: string
   status: ProjectTaskStatus
   sessionCount: number
+  lastSessionAt?: number
   progress: ProjectTaskProgress
   sessionDirectories: Array<string>
   time: {
@@ -2279,6 +2316,20 @@ export type EffectHttpApiErrorForbidden = {
   _tag: "Forbidden"
 }
 
+export type QuestionRequest1 = {
+  id: string
+  sessionID: string
+  /**
+   * Questions to ask
+   */
+  questions: Array<QuestionPrompt>
+  tool?: QuestionTool
+  /**
+   * Absolute response deadline in Unix milliseconds
+   */
+  expiresAt?: number
+}
+
 export type BackgroundShell3 = {
   id: string
   sessionID: string
@@ -2300,6 +2351,11 @@ export type Config7 = {
   $schema?: string
   shell?: string
   logLevel?: LogLevel
+  pi?: {
+    enabled?: boolean
+    binaryPath?: string
+    configHome?: string
+  }
   server?: ServerConfig
   command?: {
     [key: string]: {
@@ -2416,6 +2472,9 @@ export type Config7 = {
   permission?: PermissionConfig
   tools?: {
     [key: string]: boolean
+  }
+  browser?: {
+    enabled?: boolean
   }
   attachment?: AttachmentConfig
   enterprise?: {
@@ -3090,7 +3149,7 @@ export type EventMessagePartDelta = {
     partID: string
     field: string
     delta: string
-    offset?: number
+    offset?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   }
 }
 
@@ -3246,6 +3305,71 @@ export type EventBackgroundShellExited = {
   type: "background.shell.exited"
   properties: {
     info: BackgroundShell
+  }
+}
+
+export type EventBrowserUpdated = {
+  id: string
+  type: "browser.updated"
+  properties: {
+    pageID?: string
+    profileID?: string
+    owner?: {
+      directory?: string
+      sessionID?: string
+    }
+    kind?: "user" | "agent" | "consultation" | "login"
+    partition: string
+    url: string
+    title: string
+    loading: boolean
+    shared: boolean
+    epoch?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type EventBrowserClosed = {
+  id: string
+  type: "browser.closed"
+  properties: {
+    pageID?: string
+    partition: string
+    profileID?: string
+    epoch?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type EventGptProNotification = {
+  id: string
+  type: "gpt-pro.notification"
+  properties: {
+    id: string
+    consultationID: string
+    owner: string
+    phase:
+      | "queued"
+      | "preparing"
+      | "sending"
+      | "generating"
+      | "completed"
+      | "paused"
+      | "cancelled"
+      | "failed"
+      | "interrupted"
+      | "send_uncertain"
+    revision: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    url: string
+    kind: "progress" | "completed" | "state"
+    format: "append" | "snapshot"
+    text: string
+    truncated: boolean
+    error?: string
+    recovery?: {
+      stage: "open" | "ready" | "model" | "compose" | "submit" | "track"
+      reason: string
+      needsHuman?: boolean
+    }
   }
 }
 
@@ -3802,18 +3926,6 @@ export type EventSessionNextCompactionEnded = {
   }
 }
 
-export type EventBrowserUpdated = {
-  id: string
-  type: "browser.updated"
-  properties: {
-    partition: string
-    url: string
-    title: string
-    loading: boolean
-    shared: boolean
-  }
-}
-
 export type EventServerConnected = {
   id: string
   type: "server.connected"
@@ -4298,6 +4410,84 @@ export type ProviderV2Info = {
       request: {
         [key: string]: unknown
       }
+    }
+  }
+}
+
+export type EventMessagePartDelta1 = {
+  id: string
+  type: "message.part.delta"
+  properties: {
+    sessionID: string
+    messageID: string
+    partID: string
+    field: string
+    delta: string
+    offset?: number | "NaN" | "Infinity" | "-Infinity"
+  }
+}
+
+export type EventBrowserUpdated1 = {
+  id: string
+  type: "browser.updated"
+  properties: {
+    pageID?: string
+    profileID?: string
+    owner?: {
+      directory?: string
+      sessionID?: string
+    }
+    kind?: "user" | "agent" | "consultation" | "login"
+    partition: string
+    url: string
+    title: string
+    loading: boolean
+    shared: boolean
+    epoch?: number | "NaN" | "Infinity" | "-Infinity"
+  }
+}
+
+export type EventBrowserClosed1 = {
+  id: string
+  type: "browser.closed"
+  properties: {
+    pageID?: string
+    partition: string
+    profileID?: string
+    epoch?: number | "NaN" | "Infinity" | "-Infinity"
+  }
+}
+
+export type EventGptProNotification1 = {
+  id: string
+  type: "gpt-pro.notification"
+  properties: {
+    id: string
+    consultationID: string
+    owner: string
+    phase:
+      | "queued"
+      | "preparing"
+      | "sending"
+      | "generating"
+      | "completed"
+      | "paused"
+      | "cancelled"
+      | "failed"
+      | "interrupted"
+      | "send_uncertain"
+    revision: number | "NaN" | "Infinity" | "-Infinity"
+    at: number | "NaN" | "Infinity" | "-Infinity"
+    url: string
+    kind: "progress" | "completed" | "state"
+    format: "append" | "snapshot"
+    text: string
+    truncated: boolean
+    error?: string
+    recovery?: {
+      stage: "open" | "ready" | "model" | "compose" | "submit" | "track"
+      reason: string
+      needsHuman?: boolean
     }
   }
 }
@@ -8846,6 +9036,10 @@ export type SessionAbortErrors = {
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
 }
 
 export type SessionAbortError = SessionAbortErrors[keyof SessionAbortErrors]
@@ -9266,6 +9460,81 @@ export type SessionPromptAsyncResponses = {
 }
 
 export type SessionPromptAsyncResponse = SessionPromptAsyncResponses[keyof SessionPromptAsyncResponses]
+
+export type SessionExternalSessionData = {
+  body?: {
+    messageID: string
+    partID: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/external-session"
+}
+
+export type SessionExternalSessionErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionExternalSessionError = SessionExternalSessionErrors[keyof SessionExternalSessionErrors]
+
+export type SessionExternalSessionResponses = {
+  /**
+   * Session
+   */
+  200: Session
+}
+
+export type SessionExternalSessionResponse = SessionExternalSessionResponses[keyof SessionExternalSessionResponses]
+
+export type SessionExternalControlData = {
+  body?: {
+    action: "status" | "start" | "message" | "finish" | "stop"
+    message?: string
+    requestID?: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/external-control"
+}
+
+export type SessionExternalControlErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionExternalControlError = SessionExternalControlErrors[keyof SessionExternalControlErrors]
+
+export type SessionExternalControlResponses = {
+  /**
+   * ExternalSessionState
+   */
+  200: ExternalSessionState
+}
+
+export type SessionExternalControlResponse = SessionExternalControlResponses[keyof SessionExternalControlResponses]
 
 export type SessionAdvisorInterventionStartData = {
   body?: {

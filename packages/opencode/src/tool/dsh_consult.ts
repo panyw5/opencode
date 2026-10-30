@@ -66,6 +66,13 @@ export type DshTurn = {
   text: string
 }
 
+export function dshTranscriptItem(item: DshTranscriptItem, turn: number): DshTranscriptItem {
+  if (item.id === "assistant:live" || item.id === "assistant:final" || item.id.startsWith("intervention-assistant:")) {
+    return { ...item, id: `assistant:turn:${turn}` }
+  }
+  return item
+}
+
 /** Frame a one-shot headless task for dsh (shared with tests). */
 export function frameDshPrompt(prompt: string): string {
   return [
@@ -184,9 +191,7 @@ export function classifyDshFailure(input: {
   }
 
   if (!stdout) {
-    return detail
-      ? `dsh returned empty stdout: ${clip(detail, 4000)}`
-      : "dsh returned an empty response"
+    return detail ? `dsh returned empty stdout: ${clip(detail, 4000)}` : "dsh returned an empty response"
   }
 
   return undefined
@@ -255,7 +260,7 @@ export const DshConsultTool = Tool.define(
                 id: "user:initial",
                 kind: "user",
                 title: "User",
-                text: clip(prompt, MAX_PREVIEW),
+                text: prompt,
                 status: "completed",
               },
             ]
@@ -264,6 +269,7 @@ export const DshConsultTool = Tool.define(
             let lastExitCode: number | null = null
             let lastMetaAt = 0
             let streamPreview = ""
+            let transcriptTurn = 0
 
             let publishMetadata: (force?: boolean) => Effect.Effect<void>
             intervention = ctx.callID
@@ -300,6 +306,10 @@ export const DshConsultTool = Tool.define(
               })
 
             const upsertTranscript = (item: DshTranscriptItem) => {
+              item = dshTranscriptItem(item, transcriptTurn)
+              const capture = ctx.extra?.externalTranscript as ((item: DshTranscriptItem) => void) | undefined
+              capture?.(item)
+              item = { ...item, text: item.text === undefined ? undefined : clip(item.text, MAX_PREVIEW) }
               const index = transcript.findIndex((entry) => entry.id === item.id)
               if (index >= 0) transcript[index] = { ...transcript[index], ...item }
               else {
@@ -334,7 +344,7 @@ export const DshConsultTool = Tool.define(
                           id: "assistant:live",
                           kind: "message",
                           title: "Assistant",
-                          text: clip(streamPreview, MAX_PREVIEW),
+                          text: streamPreview,
                           status: "running",
                         })
                         yield* publishMetadata()
@@ -406,7 +416,7 @@ export const DshConsultTool = Tool.define(
               id: "assistant:final",
               kind: "message",
               title: "Assistant",
-              text: clip(body, MAX_PREVIEW),
+              text: body,
               status: "completed",
             })
             // Drop the live streaming row once the final answer is recorded.
@@ -431,12 +441,13 @@ export const DshConsultTool = Tool.define(
 
                 const followup = command.message.trim()
                 if (!followup) continue
+                transcriptTurn++
 
                 upsertTranscript({
                   id: `intervention-user:${Date.now()}`,
                   kind: "user",
                   title: "User",
-                  text: clip(followup, MAX_PREVIEW),
+                  text: followup,
                   status: "completed",
                 })
                 history.push({ role: "user", text: followup })
@@ -493,7 +504,7 @@ export const DshConsultTool = Tool.define(
                   id: `intervention-assistant:${Date.now()}`,
                   kind: "message",
                   title: "Assistant",
-                  text: clip(body, MAX_PREVIEW),
+                  text: body,
                   status: "completed",
                 })
                 const live = transcript.findIndex((item) => item.id === "assistant:live")
