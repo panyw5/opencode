@@ -3,10 +3,14 @@ import { Effect, Layer, Record, Result, Schema, Context } from "effect"
 import { NonNegativeInt } from "@opencode-ai/core/schema"
 import { Global } from "@opencode-ai/core/global"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { Flock } from "@opencode-ai/core/util/flock"
+import * as Log from "@opencode-ai/core/util/log"
+import { randomUUID } from "node:crypto"
 
 export const OAUTH_DUMMY_KEY = "opencode-oauth-dummy-key"
 
 const file = path.join(Global.Path.data, "auth.json")
+const log = Log.create({ service: "auth" })
 
 const fail = (message: string) => (cause: unknown) => new AuthError({ message, cause })
 
@@ -69,23 +73,35 @@ export const layer = Layer.effect(
       return (yield* all())[providerID]
     })
 
+    const persist = (data: Record<string, Info>) =>
+      Effect.acquireUseRelease(
+        Effect.sync(() => `${file}.${randomUUID()}.tmp`),
+        (temporary) =>
+          fsys
+            .writeFileString(temporary, JSON.stringify(data, null, 2), { mode: 0o600 })
+            .pipe(Effect.andThen(fsys.rename(temporary, file)), Effect.mapError(fail("Failed to write auth data"))),
+        (temporary) => fsys.remove(temporary, { force: true }).pipe(Effect.ignore),
+      )
+
     const set = Effect.fn("Auth.set")(function* (key: string, info: Info) {
+      yield* Flock.effect(`auth-file:${file}`)
       const norm = key.replace(/\/+$/, "")
+      log.info("updating credential under file lock", { provider: norm })
       const data = yield* all()
       if (norm !== key) delete data[key]
       delete data[norm + "/"]
-      yield* fsys
-        .writeJson(file, { ...data, [norm]: info }, 0o600)
-        .pipe(Effect.mapError(fail("Failed to write auth data")))
-    })
+      yield* persist({ ...data, [norm]: info })
+    }, Effect.scoped)
 
     const remove = Effect.fn("Auth.remove")(function* (key: string) {
+      yield* Flock.effect(`auth-file:${file}`)
       const norm = key.replace(/\/+$/, "")
+      log.info("removing credential under file lock", { provider: norm })
       const data = yield* all()
       delete data[key]
       delete data[norm]
-      yield* fsys.writeJson(file, data, 0o600).pipe(Effect.mapError(fail("Failed to write auth data")))
-    })
+      yield* persist(data)
+    }, Effect.scoped)
 
     return Service.of({ get, all, set, remove })
   }),

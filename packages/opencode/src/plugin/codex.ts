@@ -5,6 +5,7 @@ import { OAUTH_DUMMY_KEY } from "../auth"
 import os from "os"
 import { setTimeout as sleep } from "node:timers/promises"
 import { createServer } from "http"
+import { refreshOAuth } from "./oauth-refresh"
 
 const log = Log.create({ service: "plugin.codex" })
 
@@ -142,6 +143,7 @@ async function exchangeCodeForTokens(code: string, redirectUri: string, pkce: Pk
 
 async function refreshAccessToken(refreshToken: string, issuer = ISSUER): Promise<TokenResponse> {
   const response = await fetch(`${issuer}/oauth/token`, {
+    signal: AbortSignal.timeout(30_000),
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -412,66 +414,44 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
         const auth = await getAuth()
         if (auth.type !== "oauth") return {}
 
-        let refreshPromise:
-          | Promise<{
-              access: string
-              accountId: string | undefined
-            }>
-          | undefined
-
         return {
           apiKey: OAUTH_DUMMY_KEY,
           async fetch(requestInput: RequestInfo | URL, init?: RequestInit) {
-            // Remove dummy API key authorization header
-            if (init?.headers) {
-              if (init.headers instanceof Headers) {
-                init.headers.delete("authorization")
-                init.headers.delete("Authorization")
-              } else if (Array.isArray(init.headers)) {
-                init.headers = init.headers.filter(([key]) => key.toLowerCase() !== "authorization")
-              } else {
-                delete init.headers["authorization"]
-                delete init.headers["Authorization"]
-              }
-            }
-
-            const currentAuth = await getAuth()
+            let currentAuth = await getAuth()
             if (currentAuth.type !== "oauth") return fetch(requestInput, init)
 
             // Cast to include accountId field
-            const authWithAccount = currentAuth as typeof currentAuth & { accountId?: string }
-
             // Check if token needs refresh
             if (!currentAuth.access || currentAuth.expires < Date.now()) {
-              if (!refreshPromise) {
+              currentAuth = await refreshOAuth("openai", issuer, currentAuth.refresh, async () => {
+                const latest = await getAuth()
+                if (latest.type !== "oauth" || (latest.access && latest.expires >= Date.now())) {
+                  log.info("codex refresh skipped after credential recheck")
+                  return latest
+                }
                 log.info("refreshing codex access token")
-                refreshPromise = refreshAccessToken(currentAuth.refresh, issuer)
-                  .then(async (tokens) => {
-                    const accountId = extractAccountId(tokens) || authWithAccount.accountId
-                    await input.client.auth.set({
-                      path: { id: "openai" },
-                      body: {
-                        type: "oauth",
-                        refresh: tokens.refresh_token,
-                        access: tokens.access_token,
-                        expires: Date.now() + (tokens.expires_in ?? 3600) * 1000,
-                        ...(accountId && { accountId }),
-                      },
-                    })
-                    return {
-                      access: tokens.access_token,
-                      accountId,
-                    }
-                  })
-                  .finally(() => {
-                    refreshPromise = undefined
-                  })
-              }
-
-              const refreshed = await refreshPromise
-              currentAuth.access = refreshed.access
-              authWithAccount.accountId = refreshed.accountId
+                const tokens = await refreshAccessToken(latest.refresh, issuer)
+                const selected = await getAuth()
+                if (selected.type !== "oauth" || selected.refresh !== latest.refresh) {
+                  log.info("codex credentials changed during refresh, preserving current selection")
+                  return selected
+                }
+                const accountId =
+                  extractAccountId(tokens) || (latest as typeof latest & { accountId?: string }).accountId
+                const refreshed = {
+                  ...latest,
+                  refresh: tokens.refresh_token || latest.refresh,
+                  access: tokens.access_token,
+                  expires: Date.now() + (tokens.expires_in ?? 3600) * 1000,
+                  ...(accountId && { accountId }),
+                }
+                await input.client.auth.set({ path: { id: "openai" }, body: refreshed })
+                log.info("codex refreshed credentials persisted")
+                return refreshed
+              })
+              if (currentAuth.type !== "oauth") return fetch(requestInput, init)
             }
+            const authWithAccount = currentAuth as typeof currentAuth & { accountId?: string }
 
             // Build headers
             const headers = new Headers()

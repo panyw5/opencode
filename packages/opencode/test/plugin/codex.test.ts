@@ -198,9 +198,10 @@ describe("plugin.codex", () => {
       },
     )
     const loaded = await hooks.auth!.loader!(async () => auth as never, {} as never)
+    const otherLocation = await hooks.auth!.loader!(async () => auth as never, {} as never)
 
     const first = loaded.fetch!("https://api.openai.com/v1/responses")
-    const second = loaded.fetch!("https://api.openai.com/v1/responses")
+    const second = otherLocation.fetch!("https://api.openai.com/v1/responses")
 
     await waitFor(() => refreshRequests === 1)
     expect(apiRequests).toHaveLength(0)

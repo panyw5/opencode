@@ -3,6 +3,7 @@ import * as Log from "@opencode-ai/core/util/log"
 import { OAUTH_DUMMY_KEY } from "../auth"
 import { createServer } from "http"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import { refreshOAuth } from "./oauth-refresh"
 
 const log = Log.create({ service: "plugin.xai" })
 
@@ -187,6 +188,7 @@ async function exchangeCodeForTokens(
 
 async function refreshAccessToken(refreshToken: string, options: XaiAuthPluginOptions = {}): Promise<TokenResponse> {
   const response = await fetch(options.tokenUrl ?? TOKEN_URL, {
+    signal: AbortSignal.timeout(30_000),
     method: "POST",
     headers: authHeaders(),
     body: new URLSearchParams({
@@ -562,12 +564,6 @@ function waitForOAuthCallback(pkce: PkceCodes, state: string): Promise<TokenResp
   })
 }
 
-interface RefreshResult {
-  access: string
-  refresh: string
-  expires: number
-}
-
 export async function XaiAuthPlugin(input: PluginInput, options: XaiAuthPluginOptions = {}): Promise<Hooks> {
   return {
     auth: {
@@ -575,10 +571,6 @@ export async function XaiAuthPlugin(input: PluginInput, options: XaiAuthPluginOp
       async loader(getAuth) {
         const auth = await getAuth()
         if (auth.type !== "oauth") return {}
-
-        // Single-flight refresh: collapse concurrent fetches from this loaded
-        // provider onto one HTTP call so we don't replay a rotating refresh_token.
-        let refreshPromise: Promise<RefreshResult> | undefined
 
         return {
           // Dummy bearer keeps the AI SDK from bailing on "missing apiKey"; the
@@ -605,37 +597,45 @@ export async function XaiAuthPlugin(input: PluginInput, options: XaiAuthPluginOp
               currentAuth.expires - Date.now() <= ACCESS_TOKEN_REFRESH_SKEW_MS ||
               accessTokenIsExpiring(currentAuth.access)
             if (expiresSoon) {
-              if (!refreshPromise) {
-                const refreshToken = currentAuth.refresh
+              currentAuth = await refreshOAuth("xai", options.tokenUrl ?? TOKEN_URL, currentAuth.refresh, async () => {
+                const latest = await getAuth()
+                if (
+                  latest.type !== "oauth" ||
+                  (latest.expires - Date.now() > ACCESS_TOKEN_REFRESH_SKEW_MS && !accessTokenIsExpiring(latest.access))
+                ) {
+                  log.info("xai refresh skipped after credential recheck")
+                  return latest
+                }
+                const refreshToken = latest.refresh
                 log.info("refreshing xai access token")
-                refreshPromise = refreshAccessToken(refreshToken, options)
-                  .then(async (tokens) => {
-                    const refreshedExpires = Date.now() + (tokens.expires_in ?? 3600) * 1000
-                    const refreshedRefresh = tokens.refresh_token || refreshToken
-                    // Persist the rotated pair as best-effort. xAI has already consumed the
-                    // old refresh_token by the time we get here; an auth.set failure leaves
-                    // the on-disk state stale but the in-memory result is still valid for
-                    // this turn. The next live refresh against the stale disk state will
-                    // 4xx and force re-login — a known cross-process limitation.
-                    await input.client.auth
-                      .set({
-                        path: { id: "xai" },
-                        body: {
-                          type: "oauth",
-                          access: tokens.access_token,
-                          refresh: refreshedRefresh,
-                          expires: refreshedExpires,
-                        },
-                      })
-                      .catch((err) => log.warn("failed to persist refreshed xai tokens", { error: err }))
-                    return { access: tokens.access_token, refresh: refreshedRefresh, expires: refreshedExpires }
+                const tokens = await refreshAccessToken(refreshToken, options)
+                const selected = await getAuth()
+                if (selected.type !== "oauth" || selected.refresh !== refreshToken) {
+                  log.info("xai credentials changed during refresh, preserving current selection")
+                  return selected
+                }
+                const refreshedExpires = Date.now() + (tokens.expires_in ?? 3600) * 1000
+                const refreshedRefresh = tokens.refresh_token || refreshToken
+                // Persist the rotated pair as best-effort. xAI has already consumed the
+                // old refresh_token by the time we get here; an auth.set failure leaves
+                // the on-disk state stale but the in-memory result is still valid for
+                // this turn. The next live refresh against the stale disk state will
+                // 4xx and force re-login — a known cross-process limitation.
+                await input.client.auth
+                  .set({
+                    path: { id: "xai" },
+                    body: {
+                      type: "oauth",
+                      access: tokens.access_token,
+                      refresh: refreshedRefresh,
+                      expires: refreshedExpires,
+                    },
                   })
-                  .finally(() => {
-                    refreshPromise = undefined
-                  })
-              }
-              const refreshed = await refreshPromise
-              currentAuth = { ...currentAuth, ...refreshed }
+                  .catch((err) => log.warn("failed to persist refreshed xai tokens", { error: err }))
+                log.info("xai credential refresh finished")
+                return { ...latest, access: tokens.access_token, refresh: refreshedRefresh, expires: refreshedExpires }
+              })
+              if (currentAuth.type !== "oauth") return fetch(requestInput, init)
             }
 
             // Copy the caller's headers into a fresh Headers (case-insensitive)

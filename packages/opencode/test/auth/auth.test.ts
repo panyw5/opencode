@@ -10,6 +10,25 @@ const node = CrossSpawnSpawner.defaultLayer
 const it = testEffect(Layer.mergeAll(Auth.defaultLayer, node))
 
 describe("Auth", () => {
+  it.live("concurrent credential updates preserve other providers", () =>
+    Effect.gen(function* () {
+      const auth = yield* Auth.Service
+      const providers = Array.from({ length: 12 }, (_, index) => `concurrent-provider-${index}`)
+      yield* Effect.all(
+        providers.map((provider) => auth.set(provider, { type: "api", key: provider })),
+        { concurrency: "unbounded" },
+      )
+      const stored = yield* auth.all()
+      for (const provider of providers) expect(stored[provider]).toEqual({ type: "api", key: provider })
+      yield* Effect.all(
+        providers.map((provider) => auth.remove(provider)),
+        { concurrency: "unbounded" },
+      )
+      const after = yield* auth.all()
+      for (const provider of providers) expect(after[provider]).toBeUndefined()
+    }),
+  )
+
   it.live("set normalizes trailing slashes in keys", () =>
     provideTmpdirInstance(() =>
       Effect.gen(function* () {
