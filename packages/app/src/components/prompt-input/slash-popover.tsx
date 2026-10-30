@@ -1,16 +1,16 @@
 import { Component, createEffect, For, Match, onCleanup, Show, Switch } from "solid-js"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
-import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
+import { ProviderChip, type ProviderChipProps } from "../provider-chip"
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 import { atCategories, type AtCategory, type AtReference } from "./at-references"
 
-const consultIcons: Record<string, string> = {
-  "gpt-pro": "openai",
-  codex: "openai",
-  claude: "anthropic",
-  grok: "xai",
-  dsh: "deepseek",
+const consultChips: Record<string, Pick<ProviderChipProps, "icon" | "tone">> = {
+  "gpt-pro": { icon: "openai", tone: "openai" },
+  codex: { icon: "openai", tone: "codex" },
+  claude: { icon: "anthropic", tone: "claude" },
+  grok: { icon: "xai", tone: "neutral" },
+  dsh: { icon: "deepseek", tone: "deepseek" },
 }
 
 export type AtOption =
@@ -178,22 +178,32 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                         <button
                           type="button"
                           data-prompt-popover-active={props.atActive === key ? "" : undefined}
-                          class="w-full flex items-center gap-x-2 rounded-md px-2 py-0.5"
-                          classList={{ "bg-surface-raised-base-active": props.atActive === key }}
+                          class="w-full flex items-center rounded-md"
+                          classList={{
+                            "bg-surface-raised-base-active": props.atActive === key,
+                            "gap-x-3 px-3 py-2": item.type === "consult",
+                            "gap-x-2 px-2 py-0.5": item.type === "agent",
+                          }}
                           onClick={() => props.onAtSelect(item)}
                           onMouseEnter={() => props.setAtActive(key)}
                         >
                           <Show
                             when={item.type === "consult"}
-                            fallback={<Icon name="brain" size="small" class="text-icon-info-active shrink-0" />}
+                            fallback={
+                              <>
+                                <Icon name="brain" size="small" class="text-icon-info-active shrink-0" />
+                                <span class="text-14-regular text-text-strong whitespace-nowrap">@{item.name}</span>
+                              </>
+                            }
                           >
-                            <ProviderIcon
-                              id={item.type === "consult" ? (consultIcons[item.id] ?? "synthetic") : "synthetic"}
-                              class="size-4 shrink-0 text-icon-info-active"
-                              aria-hidden="true"
+                            <ProviderChip
+                              {...((item.type === "consult" ? consultChips[item.id] : undefined) ?? {
+                                icon: "synthetic",
+                                tone: "neutral",
+                              })}
+                              label={item.name}
                             />
                           </Show>
-                          <span class="text-14-regular text-text-strong whitespace-nowrap">@{item.name}</span>
                           <Show when={item.type === "consult"}>
                             <span class="text-11-regular text-text-subtle px-1.5 py-0.5 bg-surface-base rounded shrink-0">
                               {props.t("prompt.at.badge.consult")}

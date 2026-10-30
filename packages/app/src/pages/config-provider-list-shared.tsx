@@ -1,4 +1,4 @@
-import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
+import { ProviderChip, type ProviderChipProps } from "@/components/provider-chip"
 import { createMemo, Show, type JSX } from "solid-js"
 import type { ConfigProviderItem } from "./config-provider-list"
 
@@ -9,13 +9,7 @@ export const CONFIG_MIDDLE_ITEM_ACTIVE_CLASS =
 export const CONFIG_MIDDLE_ITEM_INACTIVE_CLASS =
   "border-border-weak-base bg-background-base/80 hover:border-[color-mix(in_srgb,var(--surface-brand-base)_30%,var(--border-base))] hover:bg-[color-mix(in_srgb,var(--surface-brand-base)_12%,var(--background-base))] hover:shadow-[0_12px_26px_-16px_color-mix(in_srgb,black_55%,transparent)]"
 
-type ProviderSdkBadgeTone = "codex" | "claude" | "deepseek" | "openai" | "neutral"
-
-type ProviderSdkBadge = {
-  label: string
-  icon: string
-  tone: ProviderSdkBadgeTone
-}
+type ProviderSdkBadge = ProviderChipProps
 
 export function providerSdkBadge(item: ConfigProviderItem): ProviderSdkBadge | undefined {
   if (!item.sdk) return undefined
@@ -37,24 +31,6 @@ export function providerSdkBadge(item: ConfigProviderItem): ProviderSdkBadge | u
   if (sdk.includes("mistral")) return { label: "Mistral", icon: "mistral", tone: "neutral" }
 
   return { label: item.sdk.replace(/^@ai-sdk\//, ""), icon: item.id, tone: "neutral" }
-}
-
-function ProviderSdkChip(props: { badge: ProviderSdkBadge }) {
-  return (
-    <span
-      class="inline-flex h-7 w-fit items-center gap-1.5 rounded-full border px-2.5 text-12-medium shadow-[0_8px_20px_-16px_rgba(0,0,0,0.65)]"
-      classList={{
-        "border-[#74d6ca]/45 bg-[#2f8179] text-[#ffffff]": props.badge.tone === "codex",
-        "border-[#d16b27]/30 bg-[#fff0d8] text-[#a33f0a]": props.badge.tone === "claude",
-        "border-[#7daeff]/50 bg-[#dceaff] text-[#1856c9]": props.badge.tone === "deepseek",
-        "border-border-strong-base bg-surface-base text-text-base": props.badge.tone === "openai",
-        "border-border-weak-base bg-surface-secondary text-text-base": props.badge.tone === "neutral",
-      }}
-    >
-      <ProviderIcon id={props.badge.icon} class="size-4 shrink-0" />
-      <span>{props.badge.label}</span>
-    </span>
-  )
 }
 
 export function ProviderListButton(props: {
@@ -110,7 +86,7 @@ export function ProviderListButton(props: {
         <Show when={badge()}>
           {(value) => (
             <div class="mt-3">
-              <ProviderSdkChip badge={value()} />
+              <ProviderChip {...value()} />
             </div>
           )}
         </Show>

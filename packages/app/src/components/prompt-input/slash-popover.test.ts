@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url"
 import { createServer } from "vite"
 import solid from "vite-plugin-solid"
 
-test("mention loading status stays in the fixed header and uses subdued theme chrome", async () => {
+test("mention menu keeps header chrome and renders colored advisor chips", async () => {
   const server = await createServer({
     configFile: false,
     plugins: [solid({ solid: { generate: "ssr" } })],
@@ -79,7 +79,25 @@ test("mention loading status stays in the fixed header and uses subdued theme ch
       )
       const rows = [...container.querySelectorAll("[data-prompt-popover-list] button")]
       expect(rows).toHaveLength(7)
+      const tones = ["openai", "codex", "claude", "neutral", "deepseek", "neutral"]
+      const backgrounds = [
+        "bg-surface-base",
+        "bg-[#2f8179]",
+        "bg-[#fff0d8]",
+        "bg-surface-secondary",
+        "bg-[#dceaff]",
+        "bg-surface-secondary",
+      ]
       for (const [index, icon] of ["openai", "openai", "anthropic", "xai", "deepseek", "synthetic"].entries()) {
+        expect(rows[index].className).toContain("px-3")
+        expect(rows[index].className).toContain("py-2")
+        expect(rows[index].className).toContain("gap-x-3")
+        const chip = rows[index].querySelector('[data-component="provider-chip"]')!
+        expect(chip).not.toBeNull()
+        expect(chip.getAttribute("data-tone")).toBe(tones[index])
+        expect(chip.className).toContain("rounded-full")
+        expect(chip.className).toContain(backgrounds[index])
+        expect(chip.textContent).toBe(["gpt-pro", "codex", "claude", "grok", "dsh", "unknown"][index])
         const svg = rows[index].querySelector('[data-component="provider-icon"]')!
         expect(svg).not.toBeNull()
         expect(svg.querySelector("use")?.getAttribute("href")).toEndWith(`#${icon}`)
@@ -88,7 +106,9 @@ test("mention loading status stays in the fixed header and uses subdued theme ch
         expect(rows[index].textContent).toContain("prompt.at.badge.consult")
       }
       expect(rows[6].querySelector('[data-component="provider-icon"]')).toBeNull()
+      expect(rows[6].querySelector('[data-component="provider-chip"]')).toBeNull()
       expect(rows[6].textContent).toBe("@build")
+      expect(rows[6].className).toContain("py-0.5")
     }
 
     container.innerHTML = renderToString(() => PromptPopover({ ...props, popover: "slash" }))

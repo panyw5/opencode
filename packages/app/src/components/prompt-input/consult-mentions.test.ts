@@ -6,7 +6,7 @@ import {
   loadReadyConsultMentions,
 } from "./consult-mentions"
 
-function descriptor(id: "codex" | "claude" | "grok" | "dsh", label?: string): CliAgentDescriptor {
+function descriptor(id: "codex" | "claude" | "grok" | "dsh" | "pi", label?: string): CliAgentDescriptor {
   return {
     id,
     label: label ?? id,
@@ -48,6 +48,7 @@ describe("consult-mentions", () => {
     expect(await loadReadyConsultMentions(undefined, { getConfig: async () => ({ enabled: false, timeoutMinutes: 30 }) })).toEqual([])
   })
   test("isConsultMentionID matches reserved ids", () => {
+    expect(isConsultMentionID("pi")).toBe(true)
     expect(isConsultMentionID("codex")).toBe(true)
     expect(isConsultMentionID("claude")).toBe(true)
     expect(isConsultMentionID("grok")).toBe(true)
@@ -90,6 +91,14 @@ describe("consult-mentions", () => {
 
   test("loadReadyConsultMentions returns empty without api", async () => {
     expect(await loadReadyConsultMentions(undefined)).toEqual([])
+  })
+
+  test("Pi is shown only when enabled and its executable is runnable", async () => {
+    const api = mockCliAgents({ list: [descriptor("pi", "Pi")], get: { pi: { enabled: true } }, info: { pi: { sourceUrl: "x", installed: true } } })
+    expect(await loadReadyConsultMentions(api)).toEqual([{ id: "pi", name: "pi", display: "Pi" }])
+    api.get = async () => ({ enabled: false })
+    expect(await loadReadyConsultMentions(api)).toEqual([])
+    expect(filterAgentsForConsultMentions([{ name: "pi" }, { name: "build" }])).toEqual([{ name: "build" }])
   })
 
   test("loadReadyConsultMentions skips probe failures", async () => {

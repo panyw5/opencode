@@ -1,7 +1,7 @@
 import type { CliAgentID, CliAgents, Platform } from "@/context/platform"
 
 /** Reserved @-mention names for desktop CLI consult advisors (must match backend). */
-export const CONSULT_MENTION_IDS = ["codex", "claude", "grok", "dsh", "gpt-pro"] as const satisfies readonly (
+export const CONSULT_MENTION_IDS = ["codex", "claude", "grok", "dsh", "pi", "gpt-pro"] as const satisfies readonly (
   | CliAgentID
   | "gpt-pro"
 )[]
