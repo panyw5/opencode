@@ -1836,14 +1836,18 @@ it.instance("mounted project task context flows into task subagent prompt", () =
     yield* llm.text("child context language inspected")
     yield* llm.text("parent received updated child report")
     const resumed = yield* prompt.loop({ sessionID: parent.id })
-    expect(resumed.parts.some((part) => part.type === "text" && part.text === "parent received updated child report")).toBe(true)
+    expect(
+      resumed.parts.some((part) => part.type === "text" && part.text === "parent received updated child report"),
+    ).toBe(true)
     const updatedInputs = yield* llm.inputs
     expect(updatedInputs).toHaveLength(6)
     expect(JSON.stringify(updatedInputs[4]?.messages)).toContain("# Project Task Context")
     const updatedMessages = yield* MessageV2.filterCompactedEffect(child.id)
-    const updates = updatedMessages.flatMap((message) => message.parts).filter(
-      (part): part is MessageV2.TextPart => part.type === "text" && part.metadata?.kind === "project-task-injection",
-    )
+    const updates = updatedMessages
+      .flatMap((message) => message.parts)
+      .filter(
+        (part): part is MessageV2.TextPart => part.type === "text" && part.metadata?.kind === "project-task-injection",
+      )
     expect(updates).toHaveLength(2)
     expect(updates[0]?.text).toBe(injected?.text)
     expect(updates[1]?.metadata?.locale).toBe("en")
@@ -3991,6 +3995,89 @@ noLLMServer.instance(
 )
 
 // Regression: empty assistant turn loop
+
+it.instance("continues output-limited replies without repeating or persisting a user prompt", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Output limit recovery" })
+    yield* llm.push(
+      reply().text("first part").length(),
+      reply().text("second part").length(),
+      reply().text("done").stop(),
+    )
+    const result = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      parts: [{ type: "text", text: "continue safely" }],
+    })
+    expect(result.info.error).toBeUndefined()
+    expect(result.parts.some((part) => part.type === "text" && part.text === "done")).toBe(true)
+    expect(yield* llm.calls).toBe(3)
+    const history = yield* sessions.messages({ sessionID: chat.id })
+    expect(history.filter((message) => message.info.role === "user")).toHaveLength(1)
+    expect(history.filter((message) => message.info.role === "assistant")).toHaveLength(3)
+    const inputs = yield* llm.inputs
+    expect(JSON.stringify(inputs[1])).toContain("Break the remaining work into smaller pieces")
+    expect(JSON.stringify(inputs[1])).toContain("first part")
+  }),
+)
+
+it.instance("bounds output limit continuations and resets the budget on new user input", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Bounded output limit" })
+    yield* llm.push(...Array.from({ length: 3 }, () => reply().text("partial").length()))
+    const result = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      parts: [{ type: "text", text: "large answer" }],
+    })
+    expect(result.info.error).toMatchObject({
+      data: { message: "Response still truncated after two output token limit continuations" },
+    })
+    expect(yield* llm.calls).toBe(3)
+    yield* llm.push(reply().text("new partial").length(), reply().text("new answer").stop())
+    const next = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      parts: [{ type: "text", text: "try a smaller answer" }],
+    })
+    expect(next.info.error).toBeUndefined()
+    expect(yield* llm.calls).toBe(5)
+  }),
+)
+
+it.instance("recovers truncated tool input without executing the partial call", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const { directory } = yield* TestInstance
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const fs = yield* AppFileSystem.Service
+    const chat = yield* sessions.create({ title: "Truncated tool input" })
+    const file = path.join(directory, "must-not-exist.txt")
+    yield* llm.push(
+      reply().pendingTool("write", { filePath: file, content: "not complete" }).length(),
+      reply().text("recovered").stop(),
+    )
+    const result = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      parts: [{ type: "text", text: "test truncated arguments" }],
+    })
+    expect(result.info.error).toBeUndefined()
+    expect(yield* llm.calls).toBe(2)
+    expect(yield* fs.exists(file)).toBe(false)
+    const history = yield* sessions.messages({ sessionID: chat.id })
+    const part = history.flatMap((message) => message.parts).find((part) => part.type === "tool")
+    expect(part?.type === "tool" && part.state.status === "error" && part.state.error).toContain("output token limit")
+    expect(JSON.stringify((yield* llm.inputs)[1])).toContain("was not executed")
+  }),
+)
 
 it.instance("does not loop empty assistant turns for a simple reply", () =>
   Effect.gen(function* () {

@@ -107,6 +107,10 @@ type ToolCall = {
   sessionID: MessageV2.ToolPart["sessionID"]
   done: Deferred.Deferred<void>
   inputEnded: boolean
+  called?: boolean
+  inputExcerpt?: string
+  inputLength?: number
+  inputFailure?: string
 }
 
 interface ProcessorContext extends Input {
@@ -500,6 +504,7 @@ export const layer = Layer.effect(
         })
         ctx.toolcalls[toolCallID] = {
           ...match.call,
+          called: true,
           partID: part.id,
           messageID: part.messageID,
           sessionID: part.sessionID,
@@ -585,10 +590,15 @@ export const layer = Layer.effect(
             yield* ensureToolCall(value)
             return
 
-          case "tool-input-delta":
-            // AI SDK emits a final `tool-call` with the parsed `input`; accumulating
-            // delta fragments into `state.raw` is redundant work for no current consumer.
+          case "tool-input-delta": {
+            // Keep only a bounded recovery excerpt, never the whole streamed payload.
+            const call = ctx.toolcalls[value.id]
+            if (call) {
+              call.inputExcerpt = ((call.inputExcerpt ?? "") + value.text).slice(0, 2048)
+              call.inputLength = (call.inputLength ?? 0) + value.text.length
+            }
             return
+          }
 
           case "tool-input-end": {
             const toolCall = yield* ensureToolCall(value)
@@ -734,6 +744,11 @@ export const layer = Layer.effect(
 
           case "tool-error": {
             const toolCall = yield* readToolCall(value.id)
+            if (toolCall && !toolCall.call.called && !toolCall.part.metadata?.providerExecuted) {
+              toolCall.call.inputFailure = value.message.slice(0, 2048)
+              slog.info("deferring unexecuted tool failure until finish reason", { toolCallID: value.id })
+              return
+            }
             // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
             if (flags.experimentalEventSystem) {
               yield* events.publish(SessionEvent.Tool.Failed, {
@@ -984,6 +999,45 @@ export const layer = Layer.effect(
           })
         }
         ctx.reasoningMap = {}
+
+        if (!aborted && !ctx.assistantMessage.error) {
+          for (const [toolCallID, call] of Object.entries(ctx.toolcalls)) {
+            if (call.called) continue
+            const match = yield* readToolCall(toolCallID)
+            if (!match || match.part.metadata?.providerExecuted) continue
+            if (match.part.state.status === "completed" || match.part.state.status === "error") continue
+            const reason = ctx.assistantMessage.finish === "length" ? "length" : "incomplete"
+            const message =
+              reason === "length"
+                ? "The tool call was not executed because the output token limit (stop reason: length) was reached before the arguments were complete. Break large payloads into smaller tool calls and reissue the call with complete arguments."
+                : call.inputFailure ??
+                  "Tool call arguments were not completed and were not executed. Reissue the call with complete arguments."
+            const excerpt = call.inputLength
+              ? `\n\nInput excerpt (first ${call.inputExcerpt?.length ?? 0} of ${call.inputLength} characters):\n${call.inputExcerpt ?? ""}`
+              : ""
+            const now = Date.now()
+            yield* session.updatePart({
+              ...match.part,
+              state: {
+                status: "error",
+                input: match.part.state.input,
+                error: message + excerpt,
+                time: { start: match.part.state.status === "running" ? match.part.state.time.start : now, end: now },
+              },
+            })
+            if (flags.experimentalEventSystem) {
+              yield* events.publish(SessionEvent.Tool.Failed, {
+                sessionID: ctx.sessionID,
+                callID: toolCallID,
+                error: { type: "unknown", message: message + excerpt },
+                provider: { executed: false },
+                timestamp: DateTime.makeUnsafe(now),
+              })
+            }
+            yield* settleToolCall(toolCallID)
+            slog.warn("unexecuted tool input settled", { toolCallID, reason, inputLength: call.inputLength ?? 0 })
+          }
+        }
 
         const isErrorCleanup = ctx.assistantMessage.error !== undefined
         const settleTimeout = aborted || isErrorCleanup ? INTERRUPTED_TOOL_SETTLE_TIMEOUT : TOOL_SETTLE_TIMEOUT
