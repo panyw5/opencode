@@ -19,11 +19,26 @@ beforeEach(() => {
 })
 
 describe("theme preload", () => {
-  test("defaults to the Claude light theme on first launch", () => {
+  test("defaults to the Claude theme and follows the light system scheme on first launch", () => {
     run()
 
     expect(document.documentElement.dataset.theme).toBe("claude")
     expect(document.documentElement.dataset.colorScheme).toBe("light")
+  })
+
+  test("follows the dark system scheme on first launch", () => {
+    Object.defineProperty(window, "matchMedia", {
+      value: () =>
+        ({
+          matches: true,
+        }) as MediaQueryList,
+      configurable: true,
+    })
+
+    run()
+
+    expect(document.documentElement.dataset.theme).toBe("claude")
+    expect(document.documentElement.dataset.colorScheme).toBe("dark")
   })
 
   test("migrates legacy oc-1 to oc-2 before mount", () => {

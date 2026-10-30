@@ -16,7 +16,7 @@ const STORAGE_KEYS = {
 
 const THEME_STYLE_ID = "oc-theme"
 const DEFAULT_THEME_ID = "claude"
-const DEFAULT_COLOR_SCHEME: ColorScheme = "light"
+const DEFAULT_COLOR_SCHEME: ColorScheme = "system"
 let files: Record<string, () => Promise<{ default: DesktopTheme }>> | undefined
 let ids: string[] | undefined
 let known: Set<string> | undefined
