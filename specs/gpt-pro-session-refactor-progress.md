@@ -1,6 +1,6 @@
 # GPT-Pro Session Refactor Progress
 
-Status: code refactor and unauthenticated/synthetic verification implemented; authenticated live-service acceptance is pending. This is not an end-to-end completion report. Updated 2026-10-30.
+Status: code refactor and reorganized local/offline tests implemented. Authorized live marker and two-page service tests passed; the rich-answer test stopped before sending with unverified authentication. Full live long-answer/performance acceptance is not complete. Updated 2026-10-30.
 
 ## Implemented In This Stage
 
@@ -19,6 +19,8 @@ Status: code refactor and unauthenticated/synthetic verification implemented; au
 - Credential initialization readiness is explicitly retryable/coalesced. Failed startup Cookie writes roll back the complete previous memory snapshot; secure-storage recovery does not rerun successful initialization. Retired-profile cleanup failures preserve the generation cap and can be retried.
 
 ## Evidence
+
+These bullets record successive refactor checkpoints. Current suite selection and live/offline results are recorded in Current Test Suite below.
 
 - Original session database was rechecked before code reads. No original research consultation was resumed or edited.
 - Pre-change focused baseline: 41 tests passed. The synthetic two-page regression returned needs_login for A,B and authenticated for B,A.
@@ -41,7 +43,45 @@ Status: code refactor and unauthenticated/synthetic verification implemented; au
 
 ## Remaining Before Full Acceptance
 
-- Genuine authenticated ChatGPT/Pro reply, completion notification and live-service long-answer/concurrency checks require the user to authorize the development login. Current development state is authentication=unverified, page.location=login, with no pending imported candidate. The real-success harness rejects before creating a session or sending a prompt; latest preflight log: /private/tmp/opencode-gpt-final-auth-preflight.log. No installed credentials were copied and no human verification was bypassed.
+- Authorized development login became available. Generated-marker and two-concurrent-page service tests now passed, including completion notifications, parent read-only handoff and account/profile binding. This does not finish long-answer or four-stream live performance acceptance.
+- The rich-answer test paused at stage=model with code=connection, submitted=false and no sendAttempted=true: consultation gpt_1f71a98c-a7a0-49d1-bf38-6dd66c68f7be in /private/tmp/opencode-pro-auth-e2e-1db74135-5210-4d0d-90a1-f91022db09b0. Driver authentication returned unverified while the profile's other-page snapshot was authenticated; no session HTTP attempt was logged at that step. It was not resumed, replaced or resent, and is not evidence of token expiry. The exact early-return cause was not captured at that instant. A deterministic regression now covers the rule that a still-loading source cannot borrow another page's identity and must be verified explicitly after settling. Log: /private/tmp/opencode-gpt-suite-live-rich.log; main/sidecar log: /private/tmp/opencode-tool-regression-dev.log.
 - The synthetic/native measurements above do not substitute for that live-service acceptance. Windows-specific durability behavior was not exercised on this macOS machine; file fsync/atomic rename remain enabled there, without Unix directory fsync.
 
-This checkpoint is committed at the user's request. No push, Action run, installed-app shutdown, credential export or permission-policy relaxation was performed. Authenticated live-service acceptance remains pending.
+The original refactor checkpoint was committed at the user's request; the test-suite update is not committed. No push, Action run, installed-app shutdown, credential export or permission-policy relaxation was performed. Full live-service acceptance remains pending.
+
+## Current Test Suite
+
+From the repository root, run `bun run --cwd packages/desktop test:gpt-pro`. The runner changes into each package before launching Bun, preserving package preloads and isolating module mocks. `--list` prints the exact files. New `gpt-pro` and `gpt_pro` test files in the configured source/test/script roots are discovered automatically; cross-cutting browser and composer tests are listed explicitly.
+
+| Layer | Responsibility |
+| --- | --- |
+| util | Error/action contracts, legacy recovery migration, compact execution state and shared store |
+| desktop | Authentication transport, profile coordinator and document evidence, candidate import, staged recovery, critical execution commits, asynchronous body journal, crash recovery and notification outbox |
+| app | Metadata/owned DOM capture, composer/attachment boundaries, all canonical authentication phases and orthogonal runtime cards |
+| ui | Error guidance, read-only historical cards, result rendering, handoff and shared-state behavior |
+| opencode | Actual tool adapter, human-action handoff, durable sidecar inbox, descendant-read and browser-command authorization; a separate filtered routing group covers direct mentions, attachment forwarding, denied permissions and progress/completion wakeups in prompt.test.ts |
+
+Modes are mutually exclusive. The default never runs a live website consultation or opens an Electron app:
+
+- `--unit`: six isolated groups in five packages, including the previously omitted tool, read-owner, prompt-routing and CDP-helper tests. The routing group's explicit name filter is printed by `--list`; it does not run unrelated session cases.
+- `--baseline`: synthetic old full-history persistence versus the current asynchronous per-job body journal; awaits flush before recording body metrics. Timing is evidence, not a hard CI performance threshold.
+- `--native`: a separate temporary Electron process, synthetic Cookie jars, OS encryption, offline synthetic pages, staged text/PNG recovery and same-machine formula/concurrency measurements. It never imports user credentials.
+- `--logged-out`: requires an already running development app on CDP 9222. Sends one isolated sidecar message, checks the received human-login notification, asserts zero website submissions and bounds a controlled navigation loop. It refuses an authenticated profile.
+- `--live`: authorized development login is mandatory before creating sidecar sessions. Checks one generated-marker question/reply, account/profile binding, single-send evidence, completed notification and parent read-only handoff.
+- `--live-rich`: the same isolated route with a generated long Fourier-series fixture; also requires substantive text, rendered math, a table and code. It never loads an original user research prompt.
+- `--live-multipage`: generated isolated questions on distinct pages bound to the authenticated profile (including generated profiles), overlapping runners, reply ownership and notifications. Direct script watch mode only observes its saved binding; it never redispatches.
+
+Live completion is checked against the immutable account/profile and submitted user turn, not a requirement that authentication evidence from a replaced pre-send document remain valid forever. Admission and completion authentication states are recorded separately. A Pro label, available encrypted Cookies or a local connection token does not authorize live admission. No mode logs in automatically, relaxes approvals, switches the user's model, clears a manual draft or replays an original consultation.
+
+The legacy `gpt-pro-e2e.ts` is now only a compatibility entry to the isolated marker test. Its original-session prompt extraction, draft-clearing and diagnostic-page mutation flags reject before CDP. Specialized attachment/layout/lifecycle scripts remain explicit diagnostics, not part of the default live-free regression count. Attachment acceptance uses the saved account/profile binding; lifecycle checks use the recorded pageID rather than reconstructing one.
+
+Current integration evidence:
+
+- Default regression: 691 passed (util 60, desktop 369, app 109, UI 68, opencode contracts 76, selected prompt/mention routing 9), zero failures. Log: /private/tmp/opencode-gpt-suite-final.log. Full test/tool separately passed 527 tests; its overlap with the default suite must not be added to the total. Log: /private/tmp/opencode-gpt-suite-all-tools.log. Production desktop/sidecar typechecks and changed live-script builds passed; the runner and live-contract helpers have a separate direct typecheck.
+
+- Native offline fixture: /tmp/codeg-acp-501/42844-a5a6baea/opencode-gpt-profile-native-XWNL8X/result.json. The new --native entry passed encrypted candidate promotion, preservation of the old jar/draft, two staged attachments, one upload, one explicit send and completed delivery. Log: /private/tmp/opencode-gpt-suite-native.log.
+- Current asynchronous-journal baseline: /private/tmp/opencode-gpt-suite-baseline-journal.json. Sixty updates staged zero body writes before flush and one after awaited flush; unchanged historical bodies were not rewritten. This is synthetic evidence, not live-service performance acceptance.
+- Real single-page marker, completed notification and parent read-only handoff: /private/tmp/opencode-pro-auth-e2e-de61bc39-acbe-4280-954e-dcc33c3b4c01/result.json; log: /private/tmp/opencode-gpt-suite-live.log. Authentication was verified at admission and unverified after navigation at completion; the immutable submission binding and owned user turn passed.
+- Real two-page overlap, isolated answers and notification delivery on a generated profile: /tmp/codeg-acp-501/42844-a5a6baea/opencode-multipage-e2e-ESM6xG/result.json; log: /private/tmp/opencode-gpt-suite-live-multipage.log. Each fixture sent one question. This did not exercise stop isolation or four simultaneous long replies.
+- Current authenticated profile correctly rejects --logged-out before opening any page or creating a sidecar session. Its previous logged-out notification/controlled-loop evidence remains historical evidence; current login was not cleared to rerun it. Log: /private/tmp/opencode-gpt-suite-logged-out-preflight.log.
+- CDP: 100 canonical runtime reads, four pages before/after, no history payload, P95/P99 about 0.2/0.4ms in this run. No status-triggered refresh, login or consultation was issued.
