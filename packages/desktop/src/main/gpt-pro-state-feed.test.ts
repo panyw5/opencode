@@ -65,4 +65,27 @@ describe("durable GPT-Pro state feed", () => {
     next.commit([structuredClone(current)], () => {})
     expect(next.list().jobs[0].stateVersion).toBe(2)
   })
+  test("storage unavailability revokes subscribers without losing their explicit recovery subscription", () => {
+    const feed = new GptProStateFeed(() => {})
+    const current = { ...job(), text: "PRIVATE_BODY", html: "<p>PRIVATE_BODY</p>" }
+    feed.commit([current], () => {})
+    const events: GptProStateEvent[] = []
+    const off = feed.subscribe((event) => events.push(event))
+    feed.unavailable()
+    expect(events).toEqual([{ type: "disconnected", message: expect.stringContaining("result_storage") }])
+    expect(feed.list().sequence).toBe(1)
+    current.errorCode = "result_storage"
+    current.updatedAt++
+    feed.commit([current], () => {})
+    feed.publish(feed.list())
+    expect(events[1]).toMatchObject({
+      type: "snapshot",
+      sequence: 2,
+      jobs: [{ errorCode: "result_storage", stateVersion: 2 }],
+    })
+    expect(JSON.stringify(events)).not.toContain("PRIVATE_BODY")
+    off()
+    feed.unavailable()
+    expect(events).toHaveLength(2)
+  })
 })

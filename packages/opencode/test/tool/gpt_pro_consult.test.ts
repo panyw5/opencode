@@ -20,7 +20,7 @@ const calls: Array<{ owner: string; input: GptProCommand }> = []
 const attachmentBytes = new Map<string, Buffer>()
 const attachmentModes = new Map<string, { file: number; directory: number; root: number }>()
 let phase: GptProPhase = "completed"
-let recovery = false
+let recovery: GptProJob["recovery"]
 let queueReason: GptProJob["queueReason"]
 const browser = Layer.mock(Browser.Service, {
   gptPro: (owner, input) =>
@@ -41,9 +41,7 @@ const browser = Layer.mock(Browser.Service, {
         phase,
         queueReason,
         ...(queueReason === "owner_busy" ? { queueOwnerConsultationID: "gpt_owner_job" } : {}),
-        ...(recovery
-          ? { recovery: { stage: "model" as const, reason: "Unknown picker" }, sendAttempted: false, submitted: false }
-          : {}),
+        ...(recovery ? { recovery, sendAttempted: false } : {}),
         background: input.background ?? input.action === "background",
         prompt: input.prompt ?? "Question",
         url: "https://chatgpt.com/c/test",
@@ -88,7 +86,7 @@ describe("gpt_pro_consult tool", () => {
     () =>
       Effect.gen(function* () {
         phase = "paused"
-        recovery = true
+        recovery = { stage: "model", reason: "Unknown picker" }
         calls.length = 0
         try {
           const tool = yield* (yield* GptProConsultTool).init()
@@ -98,14 +96,60 @@ describe("gpt_pro_consult tool", () => {
           expect(output.recovery.stage).toBe("model")
           expect(output.managed_prompt).toBe("Original prompt")
           expect(output.send_attempted).toBe(false)
-          expect(output.instruction).toContain("browser_* tools with consultation_id=gpt_test")
-          expect(output.instruction).toContain("resume this same ID")
+          for (const tool of [
+            "browser_read",
+            "browser_screenshot",
+            "browser_click",
+            "browser_type",
+            "browser_scroll",
+            "browser_navigate",
+          ])
+            expect(output.instruction).toContain(tool)
+          expect(output.instruction).toContain("with consultation_id=gpt_test")
+          expect(output.instruction).toContain("inspect and repair only the owned page")
+          expect(output.instruction).toContain("gpt_pro_consult action=resume")
+          expect(output.instruction).toContain("Resume only this same ID explicitly")
+          expect(output.instruction).toContain("Do not create a new consultation or resend")
+          expect(output.instruction).toContain("Preserve the user's current model selection")
         } finally {
           phase = "completed"
-          recovery = false
+          recovery = undefined
         }
       }),
   )
+  for (const [humanAction, required, forbidden] of [
+    ["login", "HUMAN LOGIN REQUIRED", "HUMAN BROWSER VERIFICATION REQUIRED"],
+    ["verification", "HUMAN BROWSER VERIFICATION REQUIRED", "HUMAN LOGIN REQUIRED"],
+    ["secure_storage", "HUMAN SECURE STORAGE RECOVERY REQUIRED", "HUMAN LOGIN REQUIRED"],
+    ["restore_account", "ORIGINAL ACCOUNT REQUIRED", "HUMAN BROWSER VERIFICATION REQUIRED"],
+  ] as const) {
+    it.instance(`foreground ${humanAction} recovery asks the user without polling or browser repair`, () =>
+      Effect.gen(function* () {
+        phase = "paused"
+        recovery = { stage: "ready", reason: "Human action required", humanAction }
+        calls.length = 0
+        try {
+          const c = context()
+          const tool = yield* (yield* GptProConsultTool).init()
+          const result = yield* tool.execute({ prompt: "Original prompt", background: false }, c.ctx)
+          const output = JSON.parse(result.output)
+          expect(calls).toHaveLength(1)
+          expect(output.recovery.humanAction).toBe(humanAction)
+          expect(result.metadata.recovery?.humanAction).toBe(humanAction)
+          expect(output.send_attempted).toBe(false)
+          expect(output.instruction).toContain(required)
+          expect(output.instruction).not.toContain(forbidden)
+          expect(output.instruction).not.toContain("FIXED FLOW NEEDS AGENT RECOVERY")
+          expect(output.instruction).not.toContain("Use browser_read")
+          expect(output.instruction).toContain("Do not create a new consultation or resend")
+          expect(output.instruction).toContain("Resume only this same ID explicitly")
+        } finally {
+          phase = "completed"
+          recovery = undefined
+        }
+      }),
+    )
+  }
   it.instance("a failed background consultation never claims it is still running", () =>
     Effect.gen(function* () {
       calls.length = 0

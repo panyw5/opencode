@@ -5,9 +5,39 @@ import {
   gptProHumanAction,
   gptProIssue,
   gptProRecoveryInstruction,
+  migrateGptProRecovery,
 } from "./gpt-pro-error"
 
 describe("GPT-Pro issue classification", () => {
+  test.each([
+    ["login_expired", "login"],
+    ["verification", "verification"],
+    ["credential_storage", "secure_storage"],
+    ["account_changed", "restore_account"],
+  ] as const)("legacy recovery migration uses typed %s evidence before the old human boolean", (code, action) => {
+    const previous = { stage: "submit", reason: "legacy", needsHuman: true }
+    const migrated = migrateGptProRecovery(previous, { code })
+    expect(migrated).toEqual({ stage: "submit", reason: "legacy", humanAction: action })
+    expect(migrated).not.toHaveProperty("needsHuman")
+    expect(previous).toHaveProperty("needsHuman", true)
+    expect(migrateGptProRecovery(migrated, { code })).toEqual(migrated)
+  })
+  test("connection-token expiry and result storage recovery never request website login or challenge bypass", () => {
+    expect(gptProHumanAction({ code: "login_connection_expired" })).toBeUndefined()
+    expect(migrateGptProRecovery(undefined, { code: "login" })).toBeUndefined()
+    expect(migrateGptProRecovery({ stage: "ready", reason: "old", needsHuman: true }, {})).toMatchObject({
+      humanAction: "verification",
+    })
+    const instruction = gptProRecoveryInstruction({
+      id: "gpt_synthetic",
+      errorCode: "result_storage",
+      recovery: { stage: "track", reason: "disk unavailable" },
+    })
+    expect(instruction).toContain("RESULT STORAGE RECOVERY REQUIRED")
+    expect(instruction).not.toContain("HUMAN LOGIN REQUIRED")
+    expect(instruction).not.toContain("Use browser_read")
+    expect(instruction).toContain("Do not create a new consultation or resend")
+  })
   test("login, browser checks, OS storage and account restoration have distinct instructions", () => {
     expect(gptProHumanAction({ code: "login_connection_expired" })).toBeUndefined()
     expect(gptProIssue({ error: "login_connection_expired: local token expired" })?.code).toBe(

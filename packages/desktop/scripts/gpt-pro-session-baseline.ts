@@ -3,6 +3,7 @@ import { GPT_PRO_PARTITION, GPT_PRO_URL, type GptProJob } from "@opencode-ai/uti
 import { GptProProbe } from "../src/main/gpt-pro-probe"
 import { createGptProPersistence } from "../src/main/gpt-pro-persistence"
 import { createGptProExecutionStore } from "../src/main/gpt-pro-execution-store"
+import { createGptProBodyJournal } from "../src/main/gpt-pro-body-journal"
 import { Database } from "bun:sqlite"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -81,7 +82,8 @@ for (let i = 0; i < 60; i++) {
 }
 durations.sort((a, b) => a - b)
 const root = await mkdtemp(join(tmpdir(), "gpt-pro-baseline-"))
-const execution = createGptProExecutionStore(new Database(join(root, "execution.db")), () => {}, 60_000)
+const bodies = createGptProBodyJournal(join(root, "bodies"), () => {}, { checkpointMs: 60_000 })
+const execution = createGptProExecutionStore(new Database(join(root, "execution.db")), () => {}, 60_000, bodies)
 execution.load(() => jobs)
 const startMetrics = execution.metrics()
 const nextDurations: number[] = []
@@ -94,12 +96,15 @@ for (let i = 0; i < 60; i++) {
   nextDurations.push(performance.now() - start)
 }
 const preFlush = execution.metrics()
+const bodyBeforeFlush = bodies.metrics()
 const flushStart = performance.now()
-execution.flush()
+await execution.flush()
 const flushMs = performance.now() - flushStart
 const finalMetrics = execution.metrics()
+const bodyAfterFlush = bodies.metrics()
 nextDurations.sort((a, b) => a - b)
-execution.close()
+await execution.close()
+await bodies.close()
 await rm(root, { recursive: true, force: true })
 console.info(
   JSON.stringify(
@@ -117,11 +122,12 @@ console.info(
         lastBytes: raw.length,
       },
       executionStore: {
+        bodyStorage: "async_per_job_journal",
         metadataWrites: preFlush.metadataWrites - startMetrics.metadataWrites,
-        bodyWritesBeforeFlush: preFlush.bodyWrites - startMetrics.bodyWrites,
-        bodyWritesAfterFlush: finalMetrics.bodyWrites - startMetrics.bodyWrites,
+        bodyWritesBeforeFlush: bodyBeforeFlush.writes,
+        bodyWritesAfterFlush: bodyAfterFlush.writes,
         bytesBeforeFlush: preFlush.serializedBytes - startMetrics.serializedBytes,
-        bytesAfterFlush: finalMetrics.serializedBytes - startMetrics.serializedBytes,
+        bytesAfterFlush: finalMetrics.serializedBytes - startMetrics.serializedBytes + bodyAfterFlush.serializedBytes,
         p95Ms: nextDurations[57],
         p99Ms: nextDurations[59],
         flushMs,

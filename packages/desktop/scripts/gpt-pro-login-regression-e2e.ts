@@ -10,8 +10,27 @@ const { client, target } = await connectCdp()
 let socket: WebSocket | undefined
 try {
   if (!target.url.includes("localhost:5173")) throw Error("Requires the dev renderer on 9222")
+  const preflight = await client.evaluate<{
+    authentication: string
+    login: string
+    candidate: boolean
+    active: number
+  }>(
+    `Promise.all([window.api.gptPro.runtimeStatus(),window.api.gptPro.list()]).then(([r,jobs])=>({authentication:r.session.authentication.phase,login:r.login.phase,candidate:!!r.session.import.candidateProfileID,active:jobs.filter(j=>['queued','preparing','sending','generating'].includes(j.phase)).length}))`,
+  )
+  log(
+    `preflight authentication=${preflight.authentication} connection=${preflight.login} candidate=${preflight.candidate} active=${preflight.active}`,
+  )
+  if (preflight.authentication === "authenticated")
+    throw Error("Requires a logged-out dev profile; no page or sidecar session was created")
+  if (preflight.active || preflight.candidate || ["waiting", "importing"].includes(preflight.login))
+    throw Error("Consultation or login authorization is active; no page or sidecar session was created")
   await mkdir(directory, { recursive: true })
   await client.evaluate(`(async () => {
+    const before = await window.api.gptPro.runtimeStatus()
+    if (before.session.authentication.phase === 'authenticated') throw Error('Requires a logged-out dev profile')
+    if (['waiting','importing'].includes(before.login.phase) || before.session.import.candidateProfileID) throw Error('Login authorization is in progress; refusing test')
+    if ((await window.api.gptPro.list()).some(j => ['queued','preparing','sending','generating'].includes(j.phase))) throw Error('Active consultation; refusing test')
     await window.api.gptPro.open()
     let runtime = await window.api.gptPro.runtimeStatus()
     const loginDeadline = Date.now() + 20000
@@ -129,11 +148,8 @@ try {
   await new Promise((resolve) => setTimeout(resolve, 1000))
   if (documents !== count || documents < 2 || documents > 4)
     throw Error("Loop protection did not reset for explicit navigation or failed to bound subsequent documents")
-  const status = await client.evaluate<{ phase: string }>(
-    `window.api.gptPro.runtimeStatus().then(r=>r.session.page)`,
-  )
-  if (status.phase !== "navigation_error")
-    throw Error("Runtime did not report the stopped loop")
+  const status = await client.evaluate<{ phase: string }>(`window.api.gptPro.runtimeStatus().then(r=>r.session.page)`)
+  if (status.phase !== "navigation_error") throw Error("Runtime did not report the stopped loop")
   await call("Fetch.disable")
   socket.close()
   socket = undefined

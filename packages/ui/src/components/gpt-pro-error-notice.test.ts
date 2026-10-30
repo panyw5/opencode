@@ -48,6 +48,24 @@ describe("GPT-Pro user guidance", () => {
       const queue = renderToString(() => notice.GptProErrorNotice({ phase: "queued", queueReason: "page_capacity" }))
       expect(queue).toContain('role="status"')
       expect(queue).toContain("resident page limit")
+      const localExpiry = renderToString(() => notice.GptProErrorNotice({ code: "login_connection_expired" }))
+      const websiteExpiry = renderToString(() => notice.GptProErrorNotice({ code: "login_expired" }))
+      expect(localExpiry).toContain("The connection page has expired")
+      expect(localExpiry).not.toContain("The ChatGPT login could not be renewed")
+      expect(websiteExpiry).toContain("The ChatGPT login could not be renewed")
+      expect(websiteExpiry).not.toContain("within ten minutes")
+      for (const [humanAction, title] of [
+        ["login", "ChatGPT login is required"],
+        ["verification", "ChatGPT needs browser verification"],
+        ["secure_storage", "Secure credential storage needs attention"],
+        ["restore_account", "The ChatGPT account changed"],
+      ]) {
+        const html = renderToString(() => notice.GptProErrorNotice({ humanAction }))
+        expect(html).toContain(title)
+      }
+      const storage = renderToString(() => notice.GptProErrorNotice({ code: "result_storage" }))
+      expect(storage).toContain("Answer storage needs recovery")
+      expect(storage).not.toContain("ChatGPT login is required")
       const uncertain = renderToString(() =>
         tool.GptProTool({
           status: "completed",

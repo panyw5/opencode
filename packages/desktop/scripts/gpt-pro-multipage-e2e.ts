@@ -3,11 +3,12 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { randomUUID } from "node:crypto"
 import { CHATGPT_INSPECT_EXPRESSION } from "@opencode-ai/util/chatgpt-page"
-import type { GptProJob, GptProPageState } from "@opencode-ai/util/gpt-pro"
+import type { GptProJob, GptProPageState, GptProRuntimeStatus } from "@opencode-ai/util/gpt-pro"
 import { CdpClient, connectCdp, listTargets } from "./cdp"
+import { assertGptProBoundSubmission, requireGptProLiveProfile, type GptProLiveBinding } from "./gpt-pro-live-contract"
 
 type Case = { sessionID: string; prompt: string; marker: string }
-type Run = { directory: string; cases: Case[]; cancelFirst: boolean }
+type Run = { directory: string; cases: Case[]; cancelFirst: boolean; binding: GptProLiveBinding }
 type Observation = { job?: GptProJob & { pageID?: string }; delivered: boolean }
 
 const args = process.argv.slice(2)
@@ -24,13 +25,17 @@ if (!target.url.includes("localhost:5173") && !target.url.startsWith("oc://")) {
 
 let run: Run
 try {
-  const config = await client.evaluate<{ enabled: boolean }>("window.api.gptPro.getConfig()")
-  if (!config.enabled) throw new Error("GPT-Pro is disabled; the test will not change user settings")
-  if (watch) run = JSON.parse(await readFile(watch, "utf8")) as Run
+  if (watch) {
+    run = JSON.parse(await readFile(watch, "utf8")) as Run
+    if (!run.binding) throw Error("Saved run predates profile/account binding; refusing unverifiable acceptance, never resending")
+  }
   else {
+    const binding = requireGptProLiveProfile(await client.evaluate<GptProRuntimeStatus>("window.api.gptPro.runtimeStatus()"))
+    const active = await client.evaluate<boolean>("window.api.gptPro.list().then(jobs=>jobs.some(j=>['queued','preparing','sending','generating'].includes(j.phase)))")
+    if (active) throw Error("Another consultation is active; no multipage sessions were created")
     const directory = join(output, "project")
     await mkdir(directory, { recursive: true })
-    run = { directory: await realpath(directory), cases: [], cancelFirst: args.includes("--cancel-first") }
+    run = { directory: await realpath(directory), cases: [], cancelFirst: args.includes("--cancel-first"), binding }
   }
   const directory = JSON.stringify(run.directory)
   await client.evaluate(`(async () => {
@@ -55,7 +60,7 @@ try {
       const marker = `OPENCODE_MULTIPAGE_${label}_${randomUUID().replaceAll("-", "").slice(0, 12)}`
       const session = await client.evaluate<{ id: string }>(`window.__multipageRequest('/session', {
         title: ${JSON.stringify(`GPT-Pro multipage integration ${label}`)},
-        permission: [{permission:'gpt_pro_consult',pattern:'*',action:'allow'}],
+        permission: [{permission:'*',pattern:'*',action:'deny'},{permission:'gpt_pro_consult',pattern:'*',action:'allow'}],
       })`)
       run.cases.push({
         sessionID: session.id,
@@ -119,7 +124,7 @@ try {
         states.find((state) => (state.pageID ?? state.partition) === job.pageID),
       )
       if (pages.every(Boolean)) {
-        if (pages[0]!.profileID !== pages[1]!.profileID || pages[0]!.profileID !== "consult-gpt-pro-secure")
+        if (pages[0]!.profileID !== pages[1]!.profileID || pages[0]!.profileID !== run.binding.profileID)
           throw new Error("Consultation pages did not share the intended ChatGPT login profile")
         if (first.submitted && second.submitted) independent = true
       }
@@ -148,6 +153,7 @@ try {
       if (!overlapped) throw new Error("No overlapping consultation runners were observed; concurrency is unverified")
       for (const [index, observation] of observations.entries()) {
         const job = observation.job!
+        assertGptProBoundSubmission(job, run.binding)
         const cancelledCase = run.cancelFirst && index === 0
         const test = run.cases[index]
         const other = run.cases[1 - index]

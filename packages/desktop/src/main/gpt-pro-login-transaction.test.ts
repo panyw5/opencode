@@ -5,6 +5,7 @@ import { GptProCredentialProfiles } from "./gpt-pro-credential-profiles"
 import { GptProLoginTransaction } from "./gpt-pro-login-transaction"
 import { GptProSessionCoordinator } from "./gpt-pro-session-coordinator"
 import type { SessionCookie } from "./gpt-pro-session-cookies"
+import { GptProOperationError } from "@opencode-ai/util/gpt-pro-error"
 
 const cookie: SessionCookie = {
   name: "__Secure-next-auth.session-token",
@@ -36,6 +37,7 @@ function fixture() {
   let valid = true
   let retryAfterMs: number | undefined
   let requests = 0
+  let rejectAccount = false
   let commitHook = () => {}
   let persisted: string[] = []
   const commits: string[] = []
@@ -98,7 +100,9 @@ function fixture() {
       retain: (id) => profiles.retain(id),
     },
     controller: {
-      assertLoginAccount: () => {},
+      assertLoginAccount: () => {
+        if (rejectAccount) throw new GptProOperationError("account_changed", "Original account required")
+      },
       importLogin: async (action) => action(),
       promoteLoginProfile: (id) => {
         commits.push(id)
@@ -119,6 +123,9 @@ function fixture() {
     commits,
     persisted: () => persisted,
     requests: () => requests,
+    rejectAccount: () => {
+      rejectAccount = true
+    },
     invalid: () => {
       valid = false
     },
@@ -173,4 +180,29 @@ test("explicit verification cannot bypass a candidate Retry-After backoff", asyn
   await expect(f.service.import([cookie])).rejects.toThrow("login_import_pending")
   await expect(f.service.verify()).rejects.toThrow("backoff")
   expect(f.requests()).toBe(1)
+})
+
+test("a verified but different account cannot persist a candidate or migrate execution", async () => {
+  const f = fixture()
+  f.rejectAccount()
+  await expect(f.service.import([cookie])).rejects.toThrow("account_changed")
+  expect(f.persisted()).toEqual([])
+  expect(f.commits).toEqual([])
+  expect(f.profiles.profileID()).toBe(GPT_PRO_PARTITION)
+  expect(f.service.pendingProfileID()).toBeDefined()
+  expect(f.jars.get(GPT_PRO_PARTITION)![0].value).toBe("ORIGINAL")
+})
+
+test("releasing a failed candidate removes verification authority without recreating its page", async () => {
+  const f = fixture()
+  f.invalid()
+  await expect(f.service.import([cookie])).rejects.toThrow("login_expired")
+  const pending = f.service.pendingProfileID()!
+  f.service.profileReleased(pending)
+  const pages = f.views.length
+  await expect(f.service.verify()).rejects.toThrow("no pending login candidate")
+  expect(f.service.pendingProfileID()).toBeUndefined()
+  expect(f.views).toHaveLength(pages)
+  expect(f.requests()).toBe(1)
+  expect(f.persisted()).toEqual([])
 })

@@ -11,6 +11,7 @@
   },
   "scripts": {
     "typecheck": "tsgo -b",
+    "test:gpt-pro": "bun ./scripts/test-gpt-pro.ts",
     "predev": "bun ./scripts/predev.ts",
     "dev": "electron-vite dev",
     "profile:mouse-click": "bun ./scripts/profile-mouse-click.ts",

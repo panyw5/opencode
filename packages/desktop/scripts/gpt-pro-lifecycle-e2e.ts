@@ -21,11 +21,12 @@ type View = { pageID?: string; partition: string; epoch?: number }
 const views = () => client.evaluate<View[]>("window.api.browser.getState()")
 const read = (jobID: string) =>
   client.evaluate<GptProJob>(`window.api.gptPro.command({action:'read',id:${JSON.stringify(jobID)}})`)
-const pageID = `gpt-pro-page-${id}`
 let opened = false
 try {
   const before = await views()
   const job = await read(id)
+  const pageID = job.pageID
+  if (!pageID) throw Error("The completed QA job has no recorded page identity; refusing to guess one")
   if (job.phase !== "completed" || !job.owner.includes("opencode-multipage-e2e-") || !job.text?.startsWith("OPENCODE_MULTIPAGE_"))
     throw new Error("The selected result is not this harness's completed multipage QA answer")
   if (before.some((page) => (page.pageID ?? page.partition) === pageID))

@@ -4,8 +4,9 @@ import { basename, dirname, join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import { createHash, randomUUID } from "node:crypto"
 import { CHATGPT_IMAGE_ATTACHMENTS_EXPRESSION, CHATGPT_INSPECT_EXPRESSION } from "@opencode-ai/util/chatgpt-page"
-import type { GptProJob, GptProPageState, GptProProbeStatus } from "@opencode-ai/util/gpt-pro"
+import type { GptProJob, GptProPageState, GptProProbeStatus, GptProRuntimeStatus } from "@opencode-ai/util/gpt-pro"
 import { CdpClient, connectCdp, listTargets } from "./cdp"
+import { assertGptProBoundSubmission, requireGptProLiveProfile, type GptProLiveBinding } from "./gpt-pro-live-contract"
 
 // Exercises file-input transport separately from an opt-in real sidecar run.
 // Never prints fixture contents, data URLs, credentials, or attachment paths.
@@ -50,6 +51,7 @@ const savedRun = watchRunPath
       prompt?: string
       markers?: Record<string, string>
       fixtures?: Record<string, string>
+      binding?: GptProLiveBinding
     })
   : undefined
 if (watchRunPath && (!savedRun?.sessionID || !savedRun.directory))
@@ -327,19 +329,21 @@ try {
     client.close()
     process.exit(0)
   }
-  const status = await client.evaluate<GptProProbeStatus & { page?: GptProPageState }>("(async()=>({...await window.api.gptPro.status(),page:await window.api.gptPro.inspect()}))()")
+  const status = await client.evaluate<GptProProbeStatus>("window.api.gptPro.status()")
+  const binding = savedRun?.binding ?? (!existingSession && !probeOnly
+    ? requireGptProLiveProfile(await client.evaluate<GptProRuntimeStatus>("window.api.gptPro.runtimeStatus()")) : undefined)
   const chatTargets = (await listTargets(endpoint)).filter(
     (item) => item.type === "page" && item.url.startsWith("https://chatgpt.com/"),
   )
   const jobs = await client.evaluate<GptProJob[]>("window.api.gptPro.list()")
   const active = jobs.filter((job) => activePhases.includes(job.phase))
-  const cloudflare = status.session.authentication.phase === "verification" || status.session.page.phase === "navigation_error"
+  const pageBlocked = status.session.authentication.phase === "verification" || status.session.page.phase === "navigation_error"
   log(
-    `probe phase=${status.session.page.phase} model=${status.page?.model ?? "unknown"} targetModel=${status.page?.targetModel ?? false} chatTargets=${chatTargets.length} activeJobs=${active.length} draftChars=${status.page?.draft.trim().length ?? 0} existingQuestions=${status.page?.users.length ?? 0}`,
+    `probe page=${status.session.page.phase} auth=${status.session.authentication.phase} chatTargets=${chatTargets.length} activeJobs=${active.length}`,
   )
-  if (cloudflare) {
+  if (pageBlocked) {
     log(
-      "BLOCKED: ChatGPT reports a verification/challenge state; no browser challenge was simulated and no consultation was sent",
+      "BLOCKED: verification or navigation anomaly; neither proves token expiry, and no consultation was sent",
     )
     if (!probeOnly && !existingSession)
       throw new Error("Real consultation blocked by ChatGPT validation; no question was submitted")
@@ -351,14 +355,10 @@ try {
     process.exit(0)
   }
   if (!existingSession) {
-    if (cloudflare) throw new Error("ChatGPT validation is active; refusing to submit")
+    if (pageBlocked) throw new Error("ChatGPT page needs attention; refusing to submit")
     if (active.length) throw new Error("Another GPT-Pro consultation is active; refusing to submit")
-    if (chatTargets.length !== 1) throw new Error("Expected one ChatGPT target; refusing an ambiguous browser")
-    if (!status.page?.composer || status.page.generating)
-      throw new Error("An idle GPT-6 Pro composer is required; no question was sent")
-    if (status.page.draft.trim() || status.page.users.length)
-      throw new Error("Existing draft or conversation detected; refusing to alter it")
   }
+  if (!binding) throw Error("Attachment acceptance requires a saved profile/account binding; old watch runs remain read-only, never resent")
 
   const markerList = Object.values(markers)
   const fileParts = [fixtures.markdown, fixtures.text, fixtures.pdf, fixtures.png].map((path) => ({
@@ -394,12 +394,13 @@ try {
     existingSession ??
     (await client.evaluate<string>(`(async()=>{
     const session=await window.__gptProAttachmentRequest('/session',{title:'GPT-Pro attachment integration test',permission:[
+      {permission:'*',pattern:'*',action:'deny'},
       {permission:'gpt_pro_consult',pattern:'*',action:'allow'},
       {permission:'read',pattern:'*',action:'allow'}
     ]})
     return session.id
   })()`))
-  const runManifest = { sessionID, directory, background: backgroundMode, nonce, prompt, markers, fixtures }
+  const runManifest = { sessionID, directory, background: backgroundMode, nonce, prompt, markers, fixtures, binding }
   if (!existingSession) await writeFile(join(output, "run.json"), JSON.stringify(runManifest, null, 2), { mode: 0o600 })
   if (!existingSession) {
     await client.evaluate(`(async()=>{
@@ -463,6 +464,7 @@ try {
       previous = summary
     }
     if (state.job?.phase === "completed") {
+      assertGptProBoundSubmission(state.job, binding)
       completionObservedAt ??= Date.now()
       const livePage = await inspectLiveTarget(state.job)
       const names = attachments.map((item) => item.name ?? "")

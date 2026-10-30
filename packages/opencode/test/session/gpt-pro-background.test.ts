@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Deferred, Effect, Layer } from "effect"
 import { BackgroundGptPro, notificationText } from "../../src/background/gpt-pro"
 import { Browser } from "../../src/browser"
@@ -85,16 +85,42 @@ describe("background Pro inbox delivery", () => {
       expect(text).toContain("Do not create a new consultation or resend")
     }),
   )
-  it.instance("login recovery notifications do not mislabel login as an automated browser challenge", () =>
-    Effect.gen(function* () {
-      const text = notificationText({ id: "gpt_login:notification:1", consultationID: "gpt_login", owner: "/repo\nses_parent", phase: "paused", revision: 0, at: 1, url: "https://chatgpt.com/", kind: "state", format: "snapshot", text: "", truncated: false,
-        errorCode: "login_expired", recovery: { stage: "submit", reason: "Login cannot refresh", humanAction: "login" } })
+  test.each([
+    ["login_expired", "HUMAN LOGIN REQUIRED"],
+    ["verification", "HUMAN BROWSER VERIFICATION REQUIRED"],
+    ["credential_storage", "HUMAN SECURE STORAGE RECOVERY REQUIRED"],
+    ["account_changed", "ORIGINAL ACCOUNT REQUIRED"],
+  ] as const)(
+    "typed %s notifications request the correct human action without agent browser repair",
+    (errorCode, marker) => {
+      const text = notificationText({
+        id: "gpt_login:notification:1",
+        consultationID: "gpt_login",
+        owner: "/repo\nses_parent",
+        phase: "paused",
+        revision: 0,
+        at: 1,
+        url: "https://chatgpt.com/",
+        kind: "state",
+        format: "snapshot",
+        text: "",
+        truncated: false,
+        errorCode,
+        recovery: { stage: "submit", reason: "Human action needed" },
+      })
       expect(text).toContain("human recovery required")
-      expect(text).toContain("HUMAN LOGIN REQUIRED")
-      expect(text).not.toContain("HUMAN BROWSER VERIFICATION")
+      expect(text).toContain(marker)
+      expect(text).not.toContain("Use browser_read")
       expect(text).not.toContain("FIXED FLOW NEEDS AGENT RECOVERY")
       expect(text).toContain("Do not create a new consultation or resend")
-    }),
+      for (const other of [
+        "HUMAN LOGIN REQUIRED",
+        "HUMAN BROWSER VERIFICATION REQUIRED",
+        "HUMAN SECURE STORAGE RECOVERY REQUIRED",
+        "ORIGINAL ACCOUNT REQUIRED",
+      ])
+        if (other !== marker) expect(text).not.toContain(other)
+    },
   )
   it.instance("durably admits notifications before acknowledgement and deduplicates replay", () =>
     Effect.gen(function* () {
