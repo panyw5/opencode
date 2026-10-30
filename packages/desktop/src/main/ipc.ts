@@ -89,6 +89,7 @@ import {
 import { write as writeLog } from "./logging"
 import { relaunchApp } from "./relaunch"
 import { createSystemNotifications } from "./system-notifications"
+import { exportSessionDocument } from "./session-document"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -182,6 +183,16 @@ export function registerIpcHandlers(deps: Deps) {
       ),
   })
   app.on("before-quit", () => notifications.dispose())
+  ipcMain.handle("export-session-document", (event, input: unknown) => {
+    const parent = BrowserWindow.fromWebContents(event.sender)
+    const url = (event.senderFrame?.url ?? "").split(/[?#]/, 1)[0]
+    const trusted = url === "oc://renderer/index.html" ||
+      (!!process.env.ELECTRON_RENDERER_URL && url === new URL("index.html", process.env.ELECTRON_RENDERER_URL).toString())
+    if (!parent || event.senderFrame !== event.sender.mainFrame ||
+      !trusted)
+      throw new Error("Untrusted export sender")
+    return exportSessionDocument(parent, input)
+  })
   getGptProController()
   // Startup is an explicit lifecycle operation, never a side effect of runtimeStatus.
   void getGptProCredentials().ready().then(runtimeChanged, runtimeChanged)
@@ -603,7 +614,10 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("set-hermes-config", (_event: IpcMainInvokeEvent, config) => setHermesConfig(config))
   ipcMain.handle("test-hermes-config", (_event: IpcMainInvokeEvent, config) => testHermesBridge(config))
   ipcMain.handle("abort-hermes-test", () => abortExtraAgentTest("hermes"))
-  ipcMain.handle("cli-agents-list", () => cliAgentDescriptors)
+  ipcMain.handle("cli-agents-list", () => {
+    writeLog("cli-agents", `list pid=${process.pid} ids=${cliAgentDescriptors.map((agent) => agent.id).join(",")}`)
+    return cliAgentDescriptors
+  })
   ipcMain.handle("cli-agents-get", (_event: IpcMainInvokeEvent, id) => getCliAgent(id))
   ipcMain.handle("cli-agents-set", (_event: IpcMainInvokeEvent, id, config) => setCliAgent(id, config))
   ipcMain.handle("cli-agents-test", (_event: IpcMainInvokeEvent, id, config) => testCliAgent(id, config))

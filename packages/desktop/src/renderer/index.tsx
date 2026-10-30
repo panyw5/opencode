@@ -299,6 +299,7 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
       await desktopApi.installUpdate()
     },
 
+    exportSessionDocument: (input) => desktopApi.exportSessionDocument(input),
     exportDebugLogs: () => desktopApi.exportDebugLogs(),
 
     resourceUsage: () => desktopApi.getResourceUsage(),

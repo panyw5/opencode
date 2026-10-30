@@ -135,7 +135,7 @@ export type HermesTest = {
   logs: string[]
 }
 
-export type CliAgentID = "codex" | "claude" | "grok" | "dsh"
+export type CliAgentID = "codex" | "claude" | "grok" | "dsh" | "pi"
 
 export type CliAgentConfig = {
   enabled: boolean
@@ -426,6 +426,7 @@ export type ElectronAPI = {
   cancelUpdate: () => Promise<void>
   onUpdaterStateChanged: (cb: (state: UpdaterState) => void) => () => void
   setBackgroundColor: (color: string) => Promise<void>
+  exportSessionDocument: (input: { format: "png" | "pdf" | "markdown"; name: string; markdown?: string; html?: string; width?: number; theme?: "light" | "dark" }) => Promise<{ cancelled: boolean; files: number }>
   exportDebugLogs: () => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>
   fetchExternal: (
