@@ -29,6 +29,19 @@ export const FileDiff = Schema.Struct({
   // Optional so legacy/imported `summary_diffs` on disk without it still parse.
   size: Schema.optional(Schema.Finite),
   status: Schema.optional(Schema.Literals(["added", "deleted", "modified"])),
+  attribution: Schema.optional(Schema.Literals(["verified", "legacy"])),
+  incomplete: Schema.optional(Schema.Boolean),
+  operations: Schema.optional(
+    Schema.mutable(
+      Schema.Array(
+        Schema.Struct({
+          patch: Schema.optional(Schema.String),
+          additions: Schema.Finite,
+          deletions: Schema.Finite,
+        }),
+      ),
+    ),
+  ),
 }).annotate({ identifier: "SnapshotFileDiff" })
 export type FileDiff = typeof FileDiff.Type
 

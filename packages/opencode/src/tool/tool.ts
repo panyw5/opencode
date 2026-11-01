@@ -5,6 +5,7 @@ import type { Permission } from "../permission"
 import type { SessionID, MessageID } from "../session/schema"
 import * as Truncate from "./truncate"
 import { Agent } from "@/agent/agent"
+import type { FileChange } from "@/session/file-change"
 
 interface Metadata {
   [key: string]: any
@@ -40,6 +41,7 @@ export type Context<M extends Metadata = Metadata> = {
   extra?: { [key: string]: unknown }
   messages: MessageV2.WithParts[]
   metadata(input: { title?: string; metadata?: M }): Effect.Effect<void>
+  recordFileChange?(input: FileChange.Input): Effect.Effect<void>
   ask(input: Omit<Permission.Request, "id" | "sessionID" | "tool">): Effect.Effect<void>
 }
 

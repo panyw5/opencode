@@ -4,7 +4,7 @@
 // https://github.com/cline/cline/blob/main/evals/diff-edits/diff-apply/diff-06-26-25.ts
 
 import * as path from "path"
-import { Effect, Schema, Semaphore } from "effect"
+import { Effect, Schema } from "effect"
 import * as Tool from "./tool"
 import { LSP } from "@/lsp/lsp"
 import { createTwoFilesPatch, diffLines } from "diff"
@@ -18,6 +18,7 @@ import { Snapshot } from "@/snapshot"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import * as Bom from "@/util/bom"
+import { assertCurrent, lock } from "./file-mutation"
 
 function normalizeLineEndings(text: string): string {
   return text.replaceAll("\r\n", "\n")
@@ -30,18 +31,6 @@ function detectLineEnding(text: string): "\n" | "\r\n" {
 function convertToLineEnding(text: string, ending: "\n" | "\r\n"): string {
   if (ending === "\n") return text
   return text.replaceAll("\n", "\r\n")
-}
-
-const locks = new Map<string, Semaphore.Semaphore>()
-
-function lock(filePath: string) {
-  const resolvedFilePath = AppFileSystem.resolve(filePath)
-  const hit = locks.get(resolvedFilePath)
-  if (hit) return hit
-
-  const next = Semaphore.makeUnsafe(1)
-  locks.set(resolvedFilePath, next)
-  return next
 }
 
 export const Parameters = Schema.Struct({
@@ -85,10 +74,11 @@ export const EditTool = Tool.define(
           let diff = ""
           let contentOld = ""
           let contentNew = ""
+          let existed = true
           yield* lock(filePath).withPermits(1)(
             Effect.gen(function* () {
               if (params.oldString === "") {
-                const existed = yield* afs.existsSafe(filePath)
+                existed = yield* afs.existsSafe(filePath)
                 const source = existed ? yield* Bom.readFile(afs, filePath) : { bom: false, text: "" }
                 const next = Bom.split(params.newString)
                 const desiredBom = source.bom || next.bom
@@ -104,9 +94,24 @@ export const EditTool = Tool.define(
                     diff,
                   },
                 })
+                yield* assertCurrent(afs, filePath, existed ? contentOld : null)
                 yield* afs.writeWithDirs(filePath, Bom.join(contentNew, desiredBom))
+                yield* ctx.recordFileChange?.({
+                  tool: "edit",
+                  file: filePath,
+                  before: existed ? contentOld : null,
+                  after: contentNew,
+                }) ?? Effect.void
+                const unformatted = contentNew
                 if (yield* format.file(filePath)) {
                   contentNew = yield* Bom.syncFile(afs, filePath, desiredBom)
+                  yield* ctx.recordFileChange?.({
+                    tool: "edit",
+                    file: filePath,
+                    before: unformatted,
+                    after: contentNew,
+                    source: "formatter",
+                  }) ?? Effect.void
                 }
                 yield* bus.publish(File.Event.Edited, { file: filePath })
                 yield* bus.publish(FileWatcher.Event.Updated, {
@@ -148,9 +153,20 @@ export const EditTool = Tool.define(
                 },
               })
 
+              yield* assertCurrent(afs, filePath, contentOld)
               yield* afs.writeWithDirs(filePath, Bom.join(contentNew, desiredBom))
+              yield* ctx.recordFileChange?.({ tool: "edit", file: filePath, before: contentOld, after: contentNew }) ??
+                Effect.void
+              const unformatted = contentNew
               if (yield* format.file(filePath)) {
                 contentNew = yield* Bom.syncFile(afs, filePath, desiredBom)
+                yield* ctx.recordFileChange?.({
+                  tool: "edit",
+                  file: filePath,
+                  before: unformatted,
+                  after: contentNew,
+                  source: "formatter",
+                }) ?? Effect.void
               }
               yield* bus.publish(File.Event.Edited, { file: filePath })
               yield* bus.publish(FileWatcher.Event.Updated, {
