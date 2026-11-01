@@ -1,6 +1,6 @@
 import path from "path"
 import { pathToFileURL } from "url"
-import { Effect, Layer, Context, Schema } from "effect"
+import { Effect, Layer, Context, Schema, Semaphore } from "effect"
 import { NamedError } from "@opencode-ai/core/util/error"
 import type { Agent } from "@/agent/agent"
 import { Bus } from "@/bus"
@@ -12,6 +12,7 @@ import { Config } from "@/config/config"
 import { ConfigMarkdown } from "@/config/markdown"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Glob } from "@opencode-ai/core/util/glob"
+import { Flag } from "@opencode-ai/core/flag/flag"
 import * as Log from "@opencode-ai/core/util/log"
 import { Discovery } from "./discovery"
 import USE_OPENCODE_SKILL_BODY from "./prompt/use-opencode.md" with { type: "text" }
@@ -158,16 +159,21 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Ski
 type State = {
   skills: Record<string, Info>
   dirs: Set<string>
+  available: boolean
 }
 
 type DiscoveryState = {
   matches: string[]
   dirs: string[]
+  available: boolean
+  roots: string[]
 }
 
 type ScanState = {
   matches: Set<string>
   dirs: Set<string>
+  available: boolean
+  roots: Set<string>
 }
 
 export interface Interface {
@@ -175,7 +181,7 @@ export interface Interface {
   readonly require: (name: string) => Effect.Effect<Info, NotFoundError>
   readonly all: () => Effect.Effect<Info[]>
   readonly dirs: () => Effect.Effect<string[]>
-  readonly available: (agent?: Agent.Info) => Effect.Effect<Info[]>
+  readonly available: (agent?: Agent.Info, options?: { refresh?: boolean }) => Effect.Effect<Info[]>
 }
 
 const add = Effect.fnUntraced(function* (state: State, match: string, bus: Bus.Interface) {
@@ -185,6 +191,7 @@ const add = Effect.fnUntraced(function* (state: State, match: string, bus: Bus.I
   }).pipe(
     Effect.catch(
       Effect.fnUntraced(function* (err) {
+        state.available = false
         const message = ConfigMarkdown.FrontmatterError.isInstance(err)
           ? err.data.message
           : `Failed to parse skill ${match}`
@@ -223,6 +230,7 @@ const scan = Effect.fnUntraced(function* (
   pattern: string,
   opts?: { dot?: boolean; scope?: string },
 ) {
+  state.roots.add(root)
   const matches = yield* Effect.tryPromise({
     try: () =>
       Glob.scan(pattern, {
@@ -235,6 +243,7 @@ const scan = Effect.fnUntraced(function* (
     catch: (error) => error,
   }).pipe(
     Effect.catch((error) => {
+      state.available = false
       if (!opts?.scope) return Effect.die(error)
       log.error(`failed to scan ${opts.scope} skills`, { dir: root, error })
       return Effect.succeed([] as string[])
@@ -257,7 +266,18 @@ const discoverSkills = Effect.fnUntraced(function* (
   directory: string,
   worktree: string,
 ) {
-  const state: ScanState = { matches: new Set(), dirs: new Set() }
+  const state: ScanState = { matches: new Set(), dirs: new Set(), available: true, roots: new Set() }
+  const isDirectory = (location: string) =>
+    fsys.stat(location).pipe(
+      Effect.map((info) => info.type === "Directory"),
+      Effect.catch((error) => {
+        if (error.reason._tag !== "NotFound") {
+          state.available = false
+          log.warn("skill directory unavailable", { location, error: String(error) })
+        }
+        return Effect.succeed(false)
+      }),
+    )
   log.info("discover start", { directory, worktree, disableExternalSkills, disableClaudeCodeSkills })
 
   const externalDirs: string[] = []
@@ -267,14 +287,18 @@ const discoverSkills = Effect.fnUntraced(function* (
 
     for (const dir of externalDirs) {
       const root = path.join(global.home, dir)
-      if (!(yield* fsys.isDir(root))) continue
+      if (!(yield* isDirectory(root))) continue
       log.info("discover global root", { root, pattern: EXTERNAL_SKILL_PATTERN })
       yield* scan(state, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "global" })
     }
 
-    const upDirs = yield* fsys
-      .up({ targets: externalDirs, start: directory, stop: worktree })
-      .pipe(Effect.catch(() => Effect.succeed([] as string[])))
+    const upDirs = yield* fsys.up({ targets: externalDirs, start: directory, stop: worktree }).pipe(
+      Effect.catch((error) => {
+        state.available = false
+        log.warn("skill ancestry unavailable", { error: String(error) })
+        return Effect.succeed([] as string[])
+      }),
+    )
 
     for (const root of upDirs) {
       log.info("discover project root", { root, pattern: EXTERNAL_SKILL_PATTERN })
@@ -282,7 +306,17 @@ const discoverSkills = Effect.fnUntraced(function* (
     }
   }
 
-  const configDirs = yield* config.directories()
+  const cachedDirs = yield* config.directories()
+  const freshDirs = Flag.OPENCODE_DISABLE_PROJECT_CONFIG
+    ? []
+    : yield* fsys.up({ targets: [".opencode"], start: directory, stop: worktree }).pipe(
+        Effect.catch((error) => {
+          state.available = false
+          log.warn("skill config roots unavailable", { error: String(error) })
+          return Effect.succeed([] as string[])
+        }),
+      )
+  const configDirs = [...new Set([...cachedDirs, ...freshDirs])]
   for (const dir of configDirs) {
     log.info("discover config root", { root: dir, pattern: OPENCODE_SKILL_PATTERN })
     yield* scan(state, dir, OPENCODE_SKILL_PATTERN)
@@ -292,7 +326,7 @@ const discoverSkills = Effect.fnUntraced(function* (
   for (const item of cfg.skills?.paths ?? []) {
     const expanded = item.startsWith("~/") ? path.join(global.home, item.slice(2)) : item
     const dir = path.isAbsolute(expanded) ? expanded : path.join(directory, expanded)
-    if (!(yield* fsys.isDir(dir))) {
+    if (!(yield* isDirectory(dir))) {
       log.warn("skill path not found", { path: dir })
       continue
     }
@@ -310,13 +344,16 @@ const discoverSkills = Effect.fnUntraced(function* (
   return {
     matches: Array.from(state.matches),
     dirs: Array.from(state.dirs),
+    available: state.available,
+    roots: [...state.roots],
   }
 })
 
 const loadSkills = Effect.fnUntraced(function* (state: State, discovered: DiscoveryState, bus: Bus.Interface) {
+  state.available = discovered.available
   log.info("load start", { matches: discovered.matches })
   yield* Effect.forEach(discovered.matches, (match) => add(state, match, bus), {
-    concurrency: "unbounded",
+    concurrency: 1,
     discard: true,
   })
 
@@ -334,11 +371,23 @@ export const layer = Layer.effect(
     const fsys = yield* AppFileSystem.Service
     const global = yield* Global.Service
     const flags = yield* RuntimeFlags.Service
+    const remote = yield* InstanceState.make(() => Effect.succeed(new Map<string, string[]>()))
+    const cachedDiscovery: Discovery.Interface = {
+      pull: (url) =>
+        Effect.gen(function* () {
+          const cache = yield* InstanceState.get(remote)
+          const existing = cache.get(url)
+          if (existing) return existing
+          const dirs = yield* discovery.pull(url)
+          cache.set(url, dirs)
+          return dirs
+        }),
+    }
     const discovered = yield* InstanceState.make(
       Effect.fn("Skill.discovery")(function* (ctx) {
         return yield* discoverSkills(
           config,
-          discovery,
+          cachedDiscovery,
           fsys,
           global,
           flags.disableExternalSkills,
@@ -350,7 +399,7 @@ export const layer = Layer.effect(
     )
     const state = yield* InstanceState.make(
       Effect.fn("Skill.state")(function* () {
-        const s: State = { skills: {}, dirs: new Set() }
+        const s: State = { skills: {}, dirs: new Set(), available: true }
         // Register the built-in skill BEFORE disk discovery so a user-disk
         // skill with the same name can override it.
         s.skills[USE_OPENCODE_SKILL_NAME] = {
@@ -366,6 +415,87 @@ export const layer = Layer.effect(
         return s
       }),
     )
+
+    const refreshLock = yield* InstanceState.make(() => Effect.succeed(Semaphore.makeUnsafe(1)))
+    const refresh = Effect.fn("Skill.refresh")(function* () {
+      const lock = yield* InstanceState.get(refreshLock)
+      return yield* lock.withPermits(1)(
+        Effect.gen(function* () {
+          const ctx = yield* InstanceState.context
+          const current = yield* InstanceState.get(state)
+          log.info("skill refresh started", { directory: ctx.directory })
+          const found = yield* discoverSkills(
+            config,
+            cachedDiscovery,
+            fsys,
+            global,
+            flags.disableExternalSkills,
+            flags.disableClaudeCodeSkills,
+            ctx.directory,
+            ctx.worktree,
+          )
+          const next: State = {
+            skills: {
+              [USE_OPENCODE_SKILL_NAME]: {
+                name: USE_OPENCODE_SKILL_NAME,
+                description: USE_OPENCODE_SKILL_DESCRIPTION,
+                location: "<built-in>",
+                content: USE_OPENCODE_SKILL_BODY,
+              },
+            },
+            dirs: new Set(),
+            available: true,
+          }
+          for (const skill of MATH_SKILLS) next.skills[skill.name] = { ...skill, location: "<built-in>" }
+          yield* loadSkills(next, found, bus)
+          const present = new Set(Object.values(next.skills).map((skill) => skill.location))
+          for (const skill of Object.values(current.skills))
+            if (
+              skill.location !== "<built-in>" &&
+              found.matches.includes(skill.location) &&
+              !present.has(skill.location)
+            ) {
+              next.available = false
+              log.warn("known skill is temporarily invalid", { name: skill.name, location: skill.location })
+            }
+          for (const skill of Object.values(current.skills)) {
+            if (
+              skill.location === "<built-in>" ||
+              present.has(skill.location) ||
+              found.matches.includes(skill.location)
+            )
+              continue
+            const inScope = found.roots.some((root) => {
+              const relative = path.relative(root, skill.location)
+              return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+            })
+            if (!inScope) continue
+            const exists = yield* fsys.stat(skill.location).pipe(
+              Effect.as(true),
+              Effect.catch((error) => {
+                if (error.reason._tag !== "NotFound") {
+                  next.available = false
+                  log.warn("known skill path unavailable", { location: skill.location, error: String(error) })
+                }
+                return Effect.succeed(false)
+              }),
+            )
+            if (exists) {
+              next.available = false
+              log.warn("skill scan omitted an existing known file", { location: skill.location })
+            }
+          }
+          if (!next.available) {
+            log.warn("skill refresh unavailable; keeping cached state", { directory: ctx.directory })
+            return yield* Effect.die(new Error("Skill discovery is temporarily unavailable"))
+          }
+          current.skills = next.skills
+          current.dirs = next.dirs
+          current.available = true
+          log.info("skill refresh completed", { directory: ctx.directory, count: Object.keys(next.skills).length })
+        }),
+      )
+    })
 
     // Math Mode can be switched off at runtime (config.math.disabled), so the
     // built-in math skills are filtered when serving lists/lookups instead of
@@ -404,7 +534,8 @@ export const layer = Layer.effect(
       return (yield* InstanceState.get(discovered)).dirs
     })
 
-    const available = Effect.fn("Skill.available")(function* (agent?: Agent.Info) {
+    const available = Effect.fn("Skill.available")(function* (agent?: Agent.Info, options?: { refresh?: boolean }) {
+      if (options?.refresh) yield* refresh()
       const list = (yield* visible()).toSorted((a, b) => a.name.localeCompare(b.name))
       if (!agent) return list
       return list.filter((skill) => Permission.evaluate("skill", skill.name, agent.permission).action !== "deny")

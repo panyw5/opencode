@@ -7,6 +7,9 @@ import type { Provider } from "@/provider/provider"
 import type { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
 import { Skill } from "@/skill"
+import { pathToFileURL } from "node:url"
+import { InstructionSource } from "./instruction-source"
+import { InstructionGuidance } from "./instruction-guidance"
 
 export function provider(model: Provider.Model) {
   void model
@@ -16,6 +19,11 @@ export function provider(model: Provider.Model) {
 export interface Interface {
   readonly environment: (model: Provider.Model) => Effect.Effect<string[]>
   readonly skills: (agent: Agent.Info) => Effect.Effect<string | undefined>
+  readonly skillSource: (
+    agent: Agent.Info,
+    permission: Permission.Ruleset,
+    enabled: boolean,
+  ) => InstructionSource.Source
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SystemPrompt") {}
@@ -26,6 +34,41 @@ export const layer = Layer.effect(
     const skill = yield* Skill.Service
 
     return Service.of({
+      skillSource: (agent, permission, enabled) => {
+        const rules = Permission.merge(agent.permission, permission)
+        const keep = (list: readonly InstructionGuidance.SkillEntry[]) =>
+          enabled ? list.filter((item) => Permission.evaluate("skill", item.name, rules).action !== "deny") : []
+        return InstructionSource.make({
+          key: "core/skill-guidance",
+          schema: InstructionGuidance.Skills,
+          read: () =>
+            !enabled || Permission.disabled(["skill"], rules).has("skill")
+              ? Effect.succeed([])
+              : skill
+                  .available({ ...agent, permission: rules }, { refresh: true })
+                  .pipe(
+                    Effect.map((list) =>
+                      keep(
+                        list.flatMap((item) =>
+                          item.description === undefined
+                            ? []
+                            : [
+                                {
+                                  name: item.name,
+                                  description: item.description,
+                                  location:
+                                    item.location === "<built-in>" ? item.location : pathToFileURL(item.location).href,
+                                },
+                              ],
+                        ),
+                      ).toSorted((a, b) => a.name.localeCompare(b.name)),
+                    ),
+                  ),
+          keep,
+          initial: InstructionGuidance.renderSkills,
+          changed: InstructionGuidance.updateSkills,
+        })
+      },
       environment: Effect.fn("SystemPrompt.environment")(function* (model: Provider.Model) {
         const ctx = yield* InstanceState.context
         return [

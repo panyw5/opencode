@@ -7,6 +7,10 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { withTransientReadRetry } from "@/util/effect-http-client"
+import * as Log from "@opencode-ai/core/util/log"
+import { Glob } from "@opencode-ai/core/util/glob"
+import { InstructionSource } from "./instruction-source"
+import { InstructionGuidance } from "./instruction-guidance"
 import { Global } from "@opencode-ai/core/global"
 import type { MessageV2 } from "./message-v2"
 import type { MessageID } from "./schema"
@@ -16,6 +20,12 @@ const files = (disableClaudeCodePrompt: boolean) => [
   ...(disableClaudeCodePrompt ? [] : ["CLAUDE.md"]),
   "CONTEXT.md", // deprecated
 ]
+const log = Log.create({ service: "session.instruction" })
+const missing = (error: unknown) =>
+  typeof error === "object" &&
+  error !== null &&
+  (("reason" in error && (error.reason as { _tag?: string })?._tag === "NotFound") ||
+    ("code" in error && ["ENOENT", "ENOTDIR"].includes(String(error.code))))
 
 function extract(messages: MessageV2.WithParts[]) {
   const paths = new Set<string>()
@@ -39,6 +49,7 @@ function extract(messages: MessageV2.WithParts[]) {
 }
 
 export interface Interface {
+  readonly source: (messages: MessageV2.WithParts[]) => InstructionSource.Source
   readonly clear: (messageID: MessageID) => Effect.Effect<void>
   readonly systemPaths: () => Effect.Effect<Set<string>, AppFileSystem.Error>
   readonly system: () => Effect.Effect<string[], AppFileSystem.Error>
@@ -63,7 +74,8 @@ export const layer: Layer.Layer<
     const fs = yield* AppFileSystem.Service
     const global = yield* Global.Service
     const flags = yield* RuntimeFlags.Service
-    const http = HttpClient.filterStatusOk(withTransientReadRetry(yield* HttpClient.HttpClient))
+    const rawHttp = withTransientReadRetry(yield* HttpClient.HttpClient)
+    const http = HttpClient.filterStatusOk(rawHttp)
     const globalFiles = [
       path.join(global.config, "AGENTS.md"),
       ...(!flags.disableClaudeCodePrompt ? [path.join(global.home, ".claude", "CLAUDE.md")] : []),
@@ -79,8 +91,20 @@ export const layer: Layer.Layer<
       ),
     )
 
-    const relative = Effect.fnUntraced(function* (instruction: string) {
+    const relative = Effect.fnUntraced(function* (instruction: string, strict = false) {
       const ctx = yield* InstanceState.context
+      if (strict) {
+        const matches: string[] = []
+        let current = path.resolve(Flag.OPENCODE_DISABLE_PROJECT_CONFIG ? global.config : ctx.directory)
+        const stop = path.resolve(Flag.OPENCODE_DISABLE_PROJECT_CONFIG ? global.config : ctx.worktree)
+        while (true) {
+          matches.push(...(yield* fs.glob(instruction, { cwd: current, absolute: true, include: "file", dot: true })))
+          const parent = path.dirname(current)
+          if (current === stop || parent === current) break
+          current = parent
+        }
+        return matches
+      }
       if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
         return yield* fs
           .globUp(instruction, ctx.directory, ctx.worktree)
@@ -110,13 +134,19 @@ export const layer: Layer.Layer<
       s.claims.delete(messageID)
     })
 
-    const systemPaths = Effect.fn("Instruction.systemPaths")(function* () {
+    const systemPaths = Effect.fn("Instruction.systemPaths")(function* (strict = false) {
       const config = yield* cfg.get()
       const ctx = yield* InstanceState.context
       const paths = new Set<string>()
 
       for (const file of globalFiles) {
-        if (yield* fs.existsSafe(file)) {
+        const exists = strict
+          ? yield* fs.stat(file).pipe(
+              Effect.as(true),
+              Effect.catchIf(missing, () => Effect.succeed(false)),
+            )
+          : yield* fs.existsSafe(file)
+        if (exists) {
           paths.add(path.resolve(file))
           break
         }
@@ -126,8 +156,12 @@ export const layer: Layer.Layer<
       if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
         for (const file of instructionFiles) {
           const matches = yield* fs
-            .findUp(file, ctx.directory, ctx.worktree)
-            .pipe(Effect.catch(() => Effect.succeed([])))
+            .findUp(
+              file,
+              strict ? path.resolve(ctx.directory) : ctx.directory,
+              strict ? path.resolve(ctx.worktree) : ctx.worktree,
+            )
+            .pipe(Effect.catch((error) => (strict ? Effect.fail(error) : Effect.succeed([]))))
           if (matches.length > 0) {
             matches.forEach((item) => paths.add(path.resolve(item)))
             break
@@ -146,8 +180,8 @@ export const layer: Layer.Layer<
                   absolute: true,
                   include: "file",
                 })
-              : relative(instruction)
-          ).pipe(Effect.catch(() => Effect.succeed([] as string[])))
+              : relative(instruction, strict)
+          ).pipe(Effect.catch((error) => (strict ? Effect.fail(error) : Effect.succeed([] as string[]))))
           matches.forEach((item) => paths.add(path.resolve(item)))
         }
       }
@@ -170,6 +204,91 @@ export const layer: Layer.Layer<
         ...urls.flatMap((item, i) => (remote[i] ? [`Instructions from: ${item}\n${remote[i]}`] : [])),
       ]
     })
+
+    const source = (messages: MessageV2.WithParts[]) =>
+      InstructionSource.make({
+        key: "core/instructions",
+        schema: InstructionGuidance.Files,
+        read: (previous) =>
+          Effect.gen(function* () {
+            const config = yield* cfg.get()
+            const ctx = yield* InstanceState.context
+            const paths = yield* systemPaths(true)
+            const loaded = new Set([
+              ...extract(messages),
+              ...(previous ?? []).filter((file) => file.loaded).map((file) => file.path),
+            ])
+            const patterns: string[] = []
+            for (const raw of config.instructions ?? []) {
+              if (/^https?:\/\//.test(raw)) {
+                paths.add(raw)
+                continue
+              }
+              const pattern = raw.startsWith("~/") ? path.join(global.home, raw.slice(2)) : raw
+              if (path.isAbsolute(pattern)) {
+                patterns.push(pattern)
+                if (!/[?*{}\[\]]/.test(pattern)) paths.add(pattern)
+                continue
+              }
+              let current = path.resolve(Flag.OPENCODE_DISABLE_PROJECT_CONFIG ? global.config : ctx.directory)
+              const stop = path.resolve(Flag.OPENCODE_DISABLE_PROJECT_CONFIG ? global.config : ctx.worktree)
+              while (true) {
+                patterns.push(path.join(current, pattern))
+                if (!/[?*{}\[\]]/.test(pattern)) paths.add(path.join(current, pattern))
+                const parent = path.dirname(current)
+                if (current === stop || parent === current) break
+                current = parent
+              }
+            }
+            for (const file of previous ?? [])
+              if (
+                patterns.some((pattern) =>
+                  Glob.match(
+                    process.platform === "win32" ? pattern.replaceAll("\\", "/") : pattern,
+                    process.platform === "win32" ? file.path.replaceAll("\\", "/") : file.path,
+                  ),
+                )
+              )
+                paths.add(file.path)
+            for (const file of loaded) paths.add(file)
+            const observed = yield* Effect.forEach(
+              [...paths],
+              (location) =>
+                Effect.gen(function* () {
+                  log.debug("instruction file read started", {
+                    location: location.startsWith("http")
+                      ? new URL(location).origin + new URL(location).pathname
+                      : location,
+                  })
+                  const content = yield* /^https?:\/\//.test(location)
+                    ? Effect.gen(function* () {
+                        const response = yield* rawHttp.execute(HttpClientRequest.get(location))
+                        if (response.status === 404 || response.status === 410) return undefined
+                        if (response.status < 200 || response.status >= 300)
+                          return yield* Effect.fail(new Error(`Instruction HTTP status ${response.status}`))
+                        return new TextDecoder().decode(yield* response.arrayBuffer)
+                      }).pipe(Effect.timeout(5000))
+                    : fs.readFileString(location).pipe(Effect.catchIf(missing, () => Effect.succeed(undefined)))
+                  log.debug("instruction file read settled", {
+                    present: content !== undefined,
+                    chars: content?.length ?? 0,
+                  })
+                  return content === undefined || content.length === 0
+                    ? []
+                    : [{ path: location, content, ...(loaded.has(location) ? { loaded: true } : {}) }]
+                }),
+              { concurrency: 4 },
+            )
+            return observed.flat()
+          }).pipe(
+            Effect.catchCause((cause) => {
+              log.warn("instruction source unavailable", { cause: String(cause) })
+              return Effect.succeed(InstructionSource.unavailable)
+            }),
+          ),
+        initial: InstructionGuidance.renderFiles,
+        changed: InstructionGuidance.updateFiles,
+      })
 
     const find = Effect.fn("Instruction.find")(function* (dir: string) {
       for (const file of instructionFiles) {
@@ -223,7 +342,7 @@ export const layer: Layer.Layer<
       return results
     })
 
-    return Service.of({ clear, systemPaths, system, find, resolve })
+    return Service.of({ clear, systemPaths, system, find, resolve, source })
   }),
 )
 

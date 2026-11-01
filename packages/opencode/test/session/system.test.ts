@@ -113,4 +113,23 @@ describe("session.system", () => {
       expect(output).not.toContain("manual-skill")
     }),
   )
+
+  it.effect("skill snapshots enforce session and per-prompt exclusions independently of loader filtering", () =>
+    Effect.gen(function* () {
+      const prompt = yield* SystemPrompt.Service
+      const source = prompt.skillSource(build, [{ permission: "skill", pattern: "alpha-skill", action: "deny" }], true)
+      const current = yield* source.read()
+      expect(JSON.stringify(current)).not.toContain("alpha-skill")
+      expect(JSON.stringify(current)).toContain("zeta-skill")
+      expect(source.keep(skills.filter((skill) => skill.description !== undefined))).toEqual(
+        skills
+          .filter((skill) => skill.description !== undefined && skill.name !== "alpha-skill")
+          .map(({ name, description, location }) => ({ name, description, location })),
+      )
+      expect(yield* prompt.skillSource(build, [], false).read()).toEqual([])
+      expect(
+        yield* prompt.skillSource(build, [{ permission: "skill", pattern: "*", action: "deny" }], true).read(),
+      ).toEqual([])
+    }),
+  )
 })

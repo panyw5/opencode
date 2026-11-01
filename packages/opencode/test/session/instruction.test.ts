@@ -14,6 +14,7 @@ import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { provideInstance, provideTmpdirInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { TestConfig } from "../fixture/config"
+import { InstructionSource } from "@/session/instruction-source"
 
 const it = testEffect(Layer.mergeAll(CrossSpawnSpawner.defaultLayer, NodeFileSystem.layer))
 
@@ -248,6 +249,63 @@ describe("Instruction.systemPaths global config", () => {
         const paths = yield* svc.systemPaths()
         expect(paths.has(path.join(globalTmp, "AGENTS.md"))).toBe(true)
       }).pipe(provideInstance(projectTmp), provideInstruction({ home: globalTmp, config: globalTmp }))
+    }),
+  )
+})
+
+describe("Instruction.source", () => {
+  it.live("observes edits and confirmed deletion, including previously loaded nested files", () =>
+    withFiles({ "AGENTS.md": "root one", "sub/AGENTS.md": "nested one" }, (dir) =>
+      Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const source = svc.source(loaded(path.join(dir, "sub/AGENTS.md")))
+        const first = yield* source.read()
+        expect(JSON.stringify(first)).toContain("root one")
+        expect(JSON.stringify(first)).toContain("nested one")
+        yield* write(path.join(dir, "AGENTS.md"), "root two")
+        const changed = yield* svc.source([]).read(first)
+        expect(JSON.stringify(changed)).toContain("root two")
+        expect(JSON.stringify(changed)).toContain("nested one")
+        const fs = yield* FileSystem.FileSystem
+        yield* fs.remove(path.join(dir, "sub/AGENTS.md"))
+        const removed = yield* svc.source([]).read(changed)
+        expect(JSON.stringify(removed)).not.toContain("nested one")
+        expect(source.changed(changed, removed)).toContain("no longer apply")
+      }),
+    ),
+  )
+
+  it.live("classifies HTTP 500 as unavailable and 404 as confirmed removal", () =>
+    Effect.gen(function* () {
+      const state = { status: 200, body: "remote policy" }
+      yield* Effect.acquireUseRelease(
+        Effect.sync(() => Bun.serve({ port: 0, fetch: () => new Response(state.body, { status: state.status }) })),
+        (server) =>
+          provideTmpdirInstance((dir) =>
+            Effect.gen(function* () {
+              const svc = yield* Instruction.Service
+              const source = svc.source([])
+              expect(JSON.stringify(yield* source.read())).toContain("remote policy")
+              state.status = 500
+              expect(yield* source.read()).toBe(InstructionSource.unavailable)
+              state.status = 404
+              expect(yield* source.read()).toEqual([])
+            }).pipe(
+              Effect.provide(
+                Instruction.layer.pipe(
+                  Layer.provide(
+                    TestConfig.layer({ get: () => Effect.succeed({ instructions: [server.url.toString()] }) }),
+                  ),
+                  Layer.provide(AppFileSystem.defaultLayer),
+                  Layer.provide(FetchHttpClient.layer),
+                  Layer.provide(Global.layerWith({ home: dir, config: dir })),
+                  Layer.provide(RuntimeFlags.layer({})),
+                ),
+              ),
+            ),
+          ),
+        (server) => Effect.sync(() => server.stop(true)),
+      )
     }),
   )
 })

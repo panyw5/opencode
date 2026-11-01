@@ -13,6 +13,7 @@ import { testEffect } from "../lib/effect"
 import path from "path"
 import fs from "fs/promises"
 import * as Log from "@opencode-ai/core/util/log"
+import { Glob } from "@opencode-ai/core/util/glob"
 
 const node = CrossSpawnSpawner.defaultLayer
 
@@ -76,6 +77,37 @@ const withHome = <A, E, R>(home: string, self: Effect.Effect<A, E, R>) =>
   )
 
 describe("skill", () => {
+  it.live("refresh observes local skill creation, edits and removal without disposing the instance", () =>
+    provideTmpdirInstance((dir) =>
+      Effect.gen(function* () {
+        const svc = yield* Skill.Service
+        yield* svc.available(undefined, { refresh: true })
+        const file = path.join(dir, ".opencode/skills/fresh/SKILL.md")
+        yield* Effect.promise(() => Bun.write(file, "---\nname: fresh\ndescription: First version\n---\nbody one"))
+        expect(
+          (yield* svc.available(undefined, { refresh: true })).find((skill) => skill.name === "fresh")?.description,
+        ).toBe("First version")
+        yield* Effect.promise(() => Bun.write(file, "---\nname: fresh\ndescription: Second version\n---\nbody two"))
+        expect(
+          (yield* svc.available(undefined, { refresh: true })).find((skill) => skill.name === "fresh")?.description,
+        ).toBe("Second version")
+        expect((yield* svc.require("fresh")).content).toContain("body two")
+        yield* Effect.acquireUseRelease(
+          Effect.sync(()=>spyOn(Glob,"scan").mockResolvedValue([])),
+          ()=>Effect.gen(function*(){
+            expect((yield* svc.available(undefined,{refresh:true}).pipe(Effect.exit))._tag).toBe("Failure")
+            expect((yield* svc.require("fresh")).description).toBe("Second version")
+          }),
+          spy=>Effect.sync(()=>spy.mockRestore()),
+        )
+        yield* Effect.promise(() => Bun.write(file, "---\nname: [\n---\nbroken"))
+        expect((yield* svc.available(undefined, { refresh: true }).pipe(Effect.exit))._tag).toBe("Failure")
+        expect((yield* svc.require("fresh")).description).toBe("Second version")
+        yield* Effect.promise(() => fs.rm(file))
+        expect((yield* svc.available(undefined, { refresh: true })).some((skill) => skill.name === "fresh")).toBe(false)
+      }),
+    ),
+  )
   it.instance("ships Math Mode control skills", () =>
     Effect.gen(function* () {
       const skills = yield* Skill.Service
