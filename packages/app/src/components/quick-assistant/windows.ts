@@ -71,6 +71,18 @@ export function activeAfterClose(windows: AssistantWindow[], active: string | un
   return windows[index + 1]?.id ?? windows[index - 1]?.id
 }
 
+export function openAssistantSession(saved: AssistantWindows, session: string, id: string): AssistantWindows {
+  const existing = saved.windows.find((item) => item.session === session)
+  if (existing) return { ...saved, open: true, active: existing.id }
+  return {
+    ...saved,
+    open: true,
+    active: id,
+    next: saved.next + 1,
+    windows: [...saved.windows, { id, number: saved.next, session, context: false }],
+  }
+}
+
 export function assistantWindowTitle(title: string | undefined, question = "") {
   const value = title?.trim()
   const placeholder = !value || value === "Quick Assistant" || /^New session - \d{4}-\d{2}-\d{2}T/.test(value)

@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { activeAfterClose, assistantWindowTitle, initialAssistantWindows, migrateAssistantWindows } from "./windows"
+import {
+  activeAfterClose,
+  assistantWindowTitle,
+  initialAssistantWindows,
+  migrateAssistantWindows,
+  openAssistantSession,
+} from "./windows"
 
 describe("quick assistant windows", () => {
   test("migrates the existing conversation and preferences without losing its session", () => {
@@ -66,6 +72,36 @@ describe("quick assistant windows", () => {
   test("closing a background window preserves the active conversation", () => {
     expect(activeAfterClose(windows, "b", "a")).toBe("b")
     expect(activeAfterClose(windows, "a", "c")).toBe("a")
+  })
+
+  test("a notification reopens and selects the matching window without losing drafts or preferences", () => {
+    const saved = {
+      ...initialAssistantWindows(),
+      maximized: true,
+      windows: [
+        { id: "a", number: 1, session: "ses_a", context: true, variant: "high", title: "First" },
+        { id: "b", number: 2, session: "ses_b", context: false },
+      ],
+      active: "b",
+      next: 3,
+    }
+    const next = openAssistantSession(saved, "ses_a", "unused")
+    expect(next).toEqual({ ...saved, open: true, active: "a" })
+    expect(next.windows).toBe(saved.windows)
+  })
+
+  test("a notification restores a closed session in a new window and reuses it on repeated clicks", () => {
+    const saved = initialAssistantWindows()
+    const next = openAssistantSession(saved, "ses_closed", "restored")
+    expect(next.windows).toEqual([
+      ...saved.windows,
+      { id: "restored", number: 2, session: "ses_closed", context: false },
+    ])
+    expect(next.active).toBe("restored")
+    expect(next.open).toBe(true)
+    expect(next.next).toBe(3)
+    expect(openAssistantSession(next, "ses_closed", "duplicate")).toEqual(next)
+    expect(saved.windows).toHaveLength(1)
   })
 
   test("uses generated titles and falls back to the first question for placeholder titles", () => {

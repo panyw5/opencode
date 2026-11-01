@@ -60,11 +60,13 @@ import { buildRequestParts } from "../prompt-input/build-request-parts"
 import { promptText } from "../prompt-input/prompt-text"
 import { clonePromptParts } from "../prompt-input/history"
 import { QUICK_ASSISTANT_SELECTION_EVENT, appendSelectionToPrompt } from "@/utils/selection-prompt"
+import { QUICK_ASSISTANT_NOTIFICATION_EVENT, type AssistantNotificationTarget } from "@/utils/notification-click"
 import {
   activeAfterClose,
   assistantWindowTitle,
   initialAssistantWindows,
   migrateAssistantWindows,
+  openAssistantSession,
   type AssistantWindow,
 } from "./windows"
 
@@ -250,6 +252,7 @@ export function QuickAssistant() {
   const language = useLanguage()
   const settings = useSettings()
   const command = useCommand()
+  const globalSync = useGlobalSync()
   const [saved, setSaved, , ready] = persisted(
     { ...Persist.global("quick-assistant", ["quick-assistant.v1"]), migrate: migrateAssistantWindows },
     createStore(initialAssistantWindows()),
@@ -257,7 +260,12 @@ export function QuickAssistant() {
   const [status, setStatus] = createStore<
     Record<string, { busy: boolean; waiting: boolean; closing: boolean } | undefined>
   >({})
-  const [panel, setPanel] = createStore({ present: false, entering: false, tabScroll: 0 })
+  const [panel, setPanel] = createStore({
+    present: false,
+    entering: false,
+    tabScroll: 0,
+    pendingSession: undefined as string | undefined,
+  })
   createEffect(() => {
     if (saved.open) {
       console.debug("[quick-assistant] panel slide-in requested motion=always")
@@ -282,6 +290,33 @@ export function QuickAssistant() {
   })
   const controls = new Map<string, WindowControls>()
   const enabled = () => settings.assistant.model() !== "disabled"
+  const onNotification = (event: Event) => {
+    const { directory, session } = (event as CustomEvent<AssistantNotificationTarget>).detail
+    const config = globalSync.data.path.config
+    if (!enabled() || !config || !same(directory, join(config, "quick-assistant"), platform.os === "windows")) return
+    event.preventDefault()
+    console.debug(
+      `[quick-assistant] notification accepted directory=${directory} session=${session} ready=${ready() ? 1 : 0}`,
+    )
+    setPanel("pendingSession", session)
+  }
+  window.addEventListener(QUICK_ASSISTANT_NOTIFICATION_EVENT, onNotification)
+  onCleanup(() => window.removeEventListener(QUICK_ASSISTANT_NOTIFICATION_EVENT, onNotification))
+  createEffect(() => {
+    const session = panel.pendingSession
+    if (!ready() || !session) return
+    untrack(() => {
+      const existing = saved.windows.find((item) => item.session === session)
+      const next = openAssistantSession(saved, session, crypto.randomUUID())
+      batch(() => {
+        setSaved(reconcile(next))
+        setPanel("pendingSession", undefined)
+      })
+      console.debug(
+        `[quick-assistant] notification opened session=${session} window=${next.active} reused=${existing ? 1 : 0}`,
+      )
+    })
+  })
   const add = () => {
     if (!ready()) return
     const current = document.querySelector<HTMLElement>('[data-component="quick-assistant-panel"]:not([hidden])')
@@ -433,8 +468,7 @@ export function QuickAssistant() {
                 tabIndex={saved.active === item.id ? 0 : -1}
                 class="relative isolate flex h-9 w-full min-w-0 items-center gap-2 rounded-l-full border border-r-0 border-border-weak-base bg-surface-base-active pl-3 pr-7 text-left text-12-medium text-text-weak transition-colors hover:bg-surface-base-hover aria-selected:text-text-strong max-sm:h-10 max-sm:pl-2"
                 style={{
-                  "background-color":
-                    saved.active === item.id ? "var(--quick-assistant-surface)" : undefined,
+                  "background-color": saved.active === item.id ? "var(--quick-assistant-surface)" : undefined,
                 }}
                 onClick={() => {
                   setSaved("active", item.id)
@@ -1406,8 +1440,7 @@ function QuickAssistantWindow(props: {
             "w-[min(520px,calc(100vw-192px))] max-sm:w-[calc(100vw-128px)]": !expanded(),
           }}
           style={{
-            "--quick-assistant-surface":
-              "color-mix(in srgb, var(--background-base) 20%, var(--background-stronger))",
+            "--quick-assistant-surface": "color-mix(in srgb, var(--background-base) 20%, var(--background-stronger))",
             "background-color": "var(--quick-assistant-surface)",
           }}
         >

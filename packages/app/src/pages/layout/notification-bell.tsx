@@ -1,6 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
-import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Popover } from "@opencode-ai/ui/popover"
@@ -9,6 +8,7 @@ import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import type { Notification } from "@/context/notification-state"
 import { BELL_TOAST_TTL_MS, type BellToast } from "@/context/notification-bell-state"
+import { handleNotificationClick } from "@/utils/notification-click"
 
 const typeIcon = (type: BellToast["type"]) =>
   type === "error"
@@ -32,7 +32,6 @@ function formatTime(time: number) {
 export function NotificationBell() {
   const notification = useNotification()
   const language = useLanguage()
-  const navigate = useNavigate()
   const platform = usePlatform()
   const compactWidth = createMediaQuery("(max-width: 1439px)")
   const compact = () => platform.platform === "web" && compactWidth()
@@ -163,9 +162,10 @@ export function NotificationBell() {
   const go = (item: { directory?: string; session?: string }) => {
     const href = sessionHref(item)
     if (!href) return
+    console.debug(`[notification-bell] open directory=${item.directory} session=${item.session ?? "none"}`)
     if (item.session) notification.session.markViewed(item.session)
     else if (item.directory) notification.project.markViewed(item.directory)
-    navigate(href)
+    handleNotificationClick(href)
     setOpen(false)
   }
 
