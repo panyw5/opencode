@@ -178,7 +178,7 @@ export async function createRemoteGateway(options: {
         ? undefined
         : replyJson(response, 404, { error: "Not found" })
     if (path.startsWith("/remote/api/")) return replyJson(response, 404, { error: "Not found" })
-    if (isPublicAsset(path) && (await serveWeb(request, response, options.webRoot, path))) return
+    if (isPublicAsset(path) && (await serveWeb(request, response, options.webRoot, path, { log: options.log }))) return
 
     if (request.method === "GET" && request.headers.accept?.includes("text/html") && isAppNavigation(path)) {
       noStore(response)
@@ -187,6 +187,7 @@ export async function createRemoteGateway(options: {
       const served = await serveWeb(request, response, options.webRoot, path, {
         allowAppShell: path === "/",
         allowNavigation: true,
+        log: options.log,
       })
       if (served) return
       return replyJson(response, 404, { error: "Not found" })

@@ -10,6 +10,7 @@
     "./wsl/types": "./src/wsl/types.ts",
     "./ssh/types": "./src/ssh/types.ts",
     "./remote/types": "./src/remote/types.ts",
+    "./services/transport": "./src/services/transport.ts",
     "./vite": "./vite.js",
     "./index.css": "./src/index.css"
   },

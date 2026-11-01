@@ -5,6 +5,7 @@ import { brotliDecompressSync, gunzipSync, inflateSync } from "node:zlib"
 import type { RemoteConnections } from "./connections"
 import { MAX_UPLOAD_BYTES, remoteRouteLabel } from "./security"
 import { redactSensitive } from "./policy"
+import { endEncodedBody } from "./encoding"
 
 const HOP = new Set([
   "connection",
@@ -358,7 +359,7 @@ export async function proxy(
         response.removeHeader("content-encoding")
         response.removeHeader("etag")
         response.setHeader("Content-Type", "application/json; charset=utf-8")
-        response.end(body)
+        endEncodedBody(request, response, body, input.log)
       } catch {
         log("response-invalid", `encodedBytes=${size} limit=${responseLimit}`)
         fail(502, "Invalid upstream response", "invalid-json-or-encoding")

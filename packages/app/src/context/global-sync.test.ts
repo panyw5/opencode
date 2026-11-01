@@ -48,6 +48,92 @@ describe("loadRootSessions", () => {
 
     await expect(result).rejects.toBeInstanceOf(RootSessionLoadTimeoutError)
   })
+
+  test("uses the host directory for both the query and sidebar visibility metadata", async () => {
+    const steps: string[] = []
+    const result = await loadRootSessions({
+      directory: "~/apps/opencode",
+      resolveDirectory: async (directory) => {
+        steps.push(`resolve:${directory}`)
+        return "/Users/test/apps/opencode"
+      },
+      list: async (query) => {
+        steps.push(`list:${query.directory}`)
+        expect(query.roots).toBe(true)
+        return { data: [] }
+      },
+    })
+    expect(steps).toEqual(["resolve:~/apps/opencode", "list:/Users/test/apps/opencode"])
+    expect(result.directory).toBe("/Users/test/apps/opencode")
+  })
+
+  test("does not list an unresolved directory when host resolution fails", async () => {
+    let listed = false
+    await expect(
+      loadRootSessions({
+        directory: "~/missing",
+        resolveDirectory: async () => {
+          throw new Error("Directory unavailable")
+        },
+        list: async () => {
+          listed = true
+          return { data: [] }
+        },
+      }),
+    ).rejects.toThrow("Directory unavailable")
+    expect(listed).toBe(false)
+  })
+
+  test("includes directory resolution in the session load timeout", async () => {
+    await expect(
+      loadRootSessions({
+        directory: "~/apps/opencode",
+        timeoutMs: 1,
+        resolveDirectory: () => new Promise(() => {}),
+        list: async () => ({ data: [] }),
+      }),
+    ).rejects.toBeInstanceOf(RootSessionLoadTimeoutError)
+  })
+
+  test("aborts a timed-out query instead of leaving the network request running", async () => {
+    let signal: AbortSignal | undefined
+    await expect(
+      loadRootSessions({
+        directory: "/repo",
+        timeoutMs: 1,
+        list: (_query, next) => {
+          signal = next
+          return new Promise(() => {})
+        },
+      }),
+    ).rejects.toBeInstanceOf(RootSessionLoadTimeoutError)
+    expect(signal?.aborted).toBe(true)
+  })
+
+  test("does not dispatch a session query after timed-out directory resolution completes late", async () => {
+    let release!: (directory: string) => void
+    let listed = false
+    let signal: AbortSignal | undefined
+    const pending = loadRootSessions({
+      directory: "~/apps/opencode",
+      timeoutMs: 1,
+      resolveDirectory: (_directory, next) => {
+        signal = next
+        return new Promise<string>((resolve) => {
+          release = resolve
+        })
+      },
+      list: async () => {
+        listed = true
+        return { data: [] }
+      },
+    })
+    await expect(pending).rejects.toBeInstanceOf(RootSessionLoadTimeoutError)
+    release("/host/apps/opencode")
+    await Promise.resolve()
+    expect(signal?.aborted).toBe(true)
+    expect(listed).toBe(false)
+  })
 })
 
 describe("canDisposeDirectory", () => {

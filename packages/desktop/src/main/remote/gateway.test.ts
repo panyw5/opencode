@@ -156,7 +156,7 @@ async function fixture(
     await new Promise<void>((resolve) => upstream.close(() => resolve()))
     await rm(webRoot, { recursive: true, force: true })
   })
-  return { gateway, upstream, getSaved: () => saved }
+  return { gateway, upstream, webRoot, getSaved: () => saved }
 }
 
 async function pair(base: string, gateway: Awaited<ReturnType<typeof createRemoteGateway>>) {
@@ -477,8 +477,32 @@ describe("remote gateway", () => {
       expect(catalog.all[0].models["model-9999"].limit.context).toBe(128000)
       expect(safe).not.toContain("catalog-private-credential")
       expect(safe).not.toContain("privatePadding")
-      expect(response.headers.get("content-encoding")).toBeNull()
+      expect(response.headers.get("content-encoding")).toBe("gzip")
+      expect(response.headers.get("vary")).toContain("Accept-Encoding")
+      expect(Number(response.headers.get("content-length"))).toBeLessThan(Buffer.byteLength(safe) / 4)
     }
+  })
+
+  test("compresses public script assets, respects identity clients and preserves HEAD/cache/security headers", async () => {
+    const { gateway, webRoot } = await fixture()
+    const script = "self.publicFixture=true;\n".repeat(10000)
+    await writeFile(join(webRoot, "assets", "large.js"), script)
+    const url = `${gateway.url}/assets/large.js`
+    const response = await fetch(url, { headers: { "Accept-Encoding": "gzip" } })
+    expect(response.headers.get("content-encoding")).toBe("gzip")
+    expect(Number(response.headers.get("content-length"))).toBeLessThan(Buffer.byteLength(script) / 10)
+    expect(response.headers.get("cache-control")).toContain("immutable")
+    expect(response.headers.get("content-security-policy")).toContain("default-src 'self'")
+    expect(await response.text()).toBe(script)
+    const head = await fetch(url, { method: "HEAD", headers: { "Accept-Encoding": "gzip" } })
+    expect(head.headers.get("content-encoding")).toBe("gzip")
+    expect(head.headers.get("content-length")).toBe(response.headers.get("content-length"))
+    expect(await head.text()).toBe("")
+    const identity = await fetch(url, { headers: { "Accept-Encoding": "gzip;q=0, identity" } })
+    expect(identity.headers.get("content-encoding")).toBeNull()
+    expect(Number(identity.headers.get("content-length"))).toBe(Buffer.byteLength(script))
+    expect(identity.headers.get("vary")).toContain("Accept-Encoding")
+    expect(await identity.text()).toBe(script)
   })
 
   test("redeems a pairing code once and persists only token hashes", async () => {

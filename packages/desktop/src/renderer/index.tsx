@@ -16,6 +16,7 @@ import {
   useCommand,
 } from "@opencode-ai/app"
 import type { SshServersState } from "@opencode-ai/app/ssh/types"
+import { createRequestFetch } from "@opencode-ai/app/services/transport"
 import * as Sentry from "@sentry/solid"
 import type { AsyncStorage } from "@solid-primitives/storage"
 import { createMemoryHistory, MemoryRouter, type BaseRouterProps } from "@solidjs/router"
@@ -325,10 +326,7 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
       }
     },
 
-    fetch: (input, init) => {
-      if (input instanceof Request) return fetch(input)
-      return fetch(input, init)
-    },
+    fetch: createRequestFetch((request) => fetch(request), (line) => console.debug(line)),
 
     fetchExternal: async (input, init) => {
       const url = input instanceof Request ? input.url : typeof input === "string" ? input : input.toString()

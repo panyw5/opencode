@@ -1,10 +1,10 @@
+import { transportRequest, type FetchLike } from "../services/transport"
+
 export type RemoteSession = {
   authenticated: true
   csrfToken: string
   capabilities?: { remote?: boolean; presence?: boolean }
 }
-
-type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
 export class RemoteSessionError extends Error {
   constructor(readonly kind: "unauthenticated" | "unavailable") {
@@ -37,7 +37,10 @@ export function createRemoteFetch(getCsrfToken: () => string | undefined, origin
     const lookup = (async () => {
       const url = new URL("/remote/api/directory", origin)
       url.search = new URLSearchParams({ path: directory, mode: "validate" }).toString()
-      const response = await fetcher(new Request(url, { credentials: "same-origin" }), { cache: "no-store" })
+      const response = await fetcher(new Request(url, { credentials: "same-origin" }), {
+        cache: "no-store",
+        signal: AbortSignal.timeout(30_000),
+      })
       console.debug(`[remote-fetch] directory resolution status=${response.status}`)
       if (!response.ok) throw new Error(`Directory request failed (${response.status})`)
       const result = (await response.json()) as { path?: unknown }
@@ -56,8 +59,7 @@ export function createRemoteFetch(getCsrfToken: () => string | undefined, origin
   }
 
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const target = typeof input === "string" ? new URL(input, origin).href : input
-    const request = new Request(target, init)
+    const request = transportRequest(input, init, origin)
     const url = new URL(request.url, origin)
     if (url.origin !== origin) return fetcher(request)
 
@@ -70,7 +72,15 @@ export function createRemoteFetch(getCsrfToken: () => string | undefined, origin
     const directory = queryDirectory ?? (headerDirectory ? decodeURIComponent(headerDirectory) : undefined)
     const tilde = directory === "~" || /^~[\\/]/.test(directory ?? "")
     if (tilde) {
-      const canonical = await resolveDirectory(directory!)
+      // A shared host lookup outlives any one consumer, but an aborted consumer
+      // must release its SDK request immediately instead of waiting for the host.
+      request.signal.throwIfAborted()
+      const lookup = resolveDirectory(directory!)
+      const canonical = await new Promise<string>((resolve, reject) => {
+        const abort = () => reject(request.signal.reason)
+        request.signal.addEventListener("abort", abort, { once: true })
+        void lookup.then(resolve, reject).finally(() => request.signal.removeEventListener("abort", abort))
+      })
       if (queryDirectory !== null) url.searchParams.set("directory", canonical)
       if (headerDirectory) headers.set("x-opencode-directory", encodeURIComponent(canonical))
       console.debug(`[remote-fetch] directory request normalized method=${request.method}`)
@@ -81,6 +91,7 @@ export function createRemoteFetch(getCsrfToken: () => string | undefined, origin
       headers.set("x-opencode-csrf", csrfToken)
     }
     const normalized = tilde ? new Request(url, request) : request
+    normalized.signal.throwIfAborted()
     return fetcher(new Request(normalized, { headers, credentials: "same-origin" }))
   }) as typeof fetch
 }

@@ -626,20 +626,36 @@ function createGlobalSync() {
     setStore("sessions", "loading")
     setStore("session_error", undefined)
 
+    const resolveRemoteDirectory = platform.remoteMode && (logical === "~" || /^~[\\/]/.test(logical))
     const promise = loadRootSessions({
       directory: logical,
-      list: (query) => {
+      resolveDirectory: resolveRemoteDirectory
+        ? async (_directory, signal) => {
+            console.debug("[global-sync] remote session directory resolution start")
+            const result = await sdkFor(logical).path.get(undefined, { signal })
+            if (!result.data?.directory) throw new Error("Host directory response is missing its directory")
+            console.debug("[global-sync] remote session directory resolution completed")
+            return result.data.directory
+          }
+        : undefined,
+      list: (query, signal) => {
         console.debug(
-          `[global-sync] loadSessions list query directory=${logical} identity=${directoryKey} roots=${query.roots}`,
+          `[global-sync] loadSessions list query directory=${logical} queryDirectory=${query.directory} identity=${directoryKey} roots=${query.roots}`,
         )
         const sdk = sdkFor(logical)
-        return sdk.session.list(query)
+        return sdk.session.list(query, { signal })
       },
     })
       .then((x) => {
         if (!current()) {
           console.debug(`[session-list] discard directory=${logical} token=${request.token} reason=invalidated-request`)
           return
+        }
+        // Sidebar-only projects need not have run directory bootstrap. Use the
+        // same host path for their visibility filter and their session query.
+        if (resolveRemoteDirectory && store.path.directory !== x.directory) {
+          console.debug("[global-sync] session list directory reconciled with host")
+          setStore("path", "directory", x.directory)
         }
         const sessions = mergeSessionListSnapshot(x.data ?? [], store.session, request.changes)
         const total = sessions.filter((session) => !session.parentID).length
@@ -677,7 +693,7 @@ function createGlobalSync() {
         )
         setStore("sessions", "idle")
         const note = permissionNotice(err, language.t, "session")
-        setStore("session_error", note)
+        setStore("session_error", note ?? formatServerError(err, language.t))
         if (opts?.silent || note) return
         const project = getFilename(logical)
         const agent = extraAgentByIntegration(server.current?.integration)

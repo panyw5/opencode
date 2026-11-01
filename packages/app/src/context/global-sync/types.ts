@@ -131,7 +131,8 @@ export type DisposeCheck = {
 
 export type RootLoadArgs = {
   directory: string
-  list: (query: { directory: string; roots: true }) => Promise<{ data?: Session[] }>
+  resolveDirectory?: (directory: string, signal: AbortSignal) => Promise<string>
+  list: (query: { directory: string; roots: true }, signal: AbortSignal) => Promise<{ data?: Session[] }>
   timeoutMs?: number
 }
 

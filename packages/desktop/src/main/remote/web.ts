@@ -1,6 +1,7 @@
 import { readFile, realpath, stat } from "node:fs/promises"
 import { extname, resolve, sep } from "node:path"
 import type { IncomingMessage, ServerResponse } from "node:http"
+import { endEncodedBody } from "./encoding"
 
 export const loginPage = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect to OpenCode</title><style>body{font:16px system-ui,sans-serif;max-width:30rem;margin:12vh auto;padding:1.5rem;color:#202020}input,button{font:inherit;padding:.7rem}button{cursor:pointer}p{line-height:1.5}</style></head><body><h1>Connect to OpenCode</h1><p>Pair this browser with your OpenCode desktop instance.</p><label>Device name <input id="name" maxlength="80" autocomplete="off"></label> <button id="connect">Connect</button><p id="status" role="status"></p><script>const code=location.hash.slice(1);history.replaceState(null,"",location.pathname);document.getElementById("connect").onclick=async()=>{const status=document.getElementById("status");status.textContent="Connecting…";try{const r=await fetch("/remote/api/pair/redeem",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code,name:document.getElementById("name").value})});if(!r.ok)throw new Error("Pairing code is invalid or expired.");location.replace("/")}catch(e){status.textContent=e.message}}</script></body></html>`
 
@@ -28,7 +29,7 @@ export async function serveWeb(
   response: ServerResponse,
   webRoot: string,
   path: string,
-  options: { allowAppShell?: boolean; allowNavigation?: boolean } = {},
+  options: { allowAppShell?: boolean; allowNavigation?: boolean; log?: (line: string) => void } = {},
 ): Promise<boolean> {
   if (path === "/remote/connect" && (request.method === "GET" || request.method === "HEAD")) {
     response.statusCode = 200
@@ -68,7 +69,9 @@ export async function serveWeb(
   response.statusCode = 200
   response.setHeader("Content-Type", TYPES[extname(file).toLowerCase()] ?? "application/octet-stream")
   response.setHeader("Cache-Control", extname(file) === ".html" ? "no-store" : "public, max-age=31536000, immutable")
-  if (request.method === "HEAD") response.end()
+  const text = /\.(?:html|js|css|svg|json)$/i.test(file)
+  if (text) endEncodedBody(request, response, await readFile(file), options.log)
+  else if (request.method === "HEAD") response.end()
   else response.end(await readFile(file))
   return true
 }

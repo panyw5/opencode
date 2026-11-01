@@ -3520,21 +3520,25 @@ export default function Layout(props: ParentProps) {
   )
 
   let observedSidebarRoute = ""
-  let pendingSidebarRoute = ""
+  const [sidebarRouteState, setSidebarRouteState] = createStore({
+    pending: undefined as { marker: string; request: number } | undefined,
+  })
   createEffect(
     on(
-      () => [pageReady(), onSessionRoute(), routeSlug(), routeDir()] as const,
-      ([ready, sessionRoute, slug, directory]) => {
-        if (!ready || !sessionRoute) {
-          pendingSidebarRoute = ""
+      () => [pageReady(), routeSlug(), routeDir(), params.id] as const,
+      ([ready, slug, directory, sessionID]) => {
+        if (!ready || !directory) {
+          setSidebarRouteState("pending", undefined)
           return
         }
-        const marker = `${slug ?? ""}\u0000${directory}`
+        // Observe the project index before its lazy session/draft page mounts.
+        // That initialization is not a new user navigation to the same project.
+        const marker = JSON.stringify([slug, directory, sessionID])
         if (marker === observedSidebarRoute) return
         observedSidebarRoute = marker
-        pendingSidebarRoute = marker
+        setSidebarRouteState("pending", { marker, request: sidebarDomainRequest })
 
-        console.debug(`[sidebar-project] route-observed marker=${marker} route-directory=${directory || "none"}`)
+        console.debug(`[sidebar-project] route-observed marker=${marker} request=${sidebarDomainRequest}`)
       },
       { defer: true },
     ),
@@ -3542,9 +3546,16 @@ export default function Layout(props: ParentProps) {
 
   createEffect(
     on(
-      () => [currentProjectRoot(), layout.projects.list()] as const,
-      ([root, projects]) => {
-        if (!pendingSidebarRoute || !root) return
+      () => [currentProjectRoot(), layout.projects.list(), sidebarRouteState.pending] as const,
+      ([root, projects, pending]) => {
+        if (!pending || !root) return
+        if (pending.request !== sidebarDomainRequest) {
+          console.debug(
+            `[sidebar-project] route-sync discarded reason=newer-selection request=${pending.request} current=${sidebarDomainRequest}`,
+          )
+          setSidebarRouteState("pending", undefined)
+          return
+        }
         const extra = extraAgentByDirectory(root)
         const im = findImChannelByDirectory(
           root,
@@ -3561,7 +3572,7 @@ export default function Layout(props: ParentProps) {
           setSidebarProjectRoot(next)
         }
 
-        pendingSidebarRoute = ""
+        setSidebarRouteState("pending", undefined)
       },
       { defer: true },
     ),
