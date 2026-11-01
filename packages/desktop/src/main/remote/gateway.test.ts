@@ -752,6 +752,7 @@ describe("remote gateway", () => {
       "/file?path=.",
       "/global/health",
       "/experimental/session?roots=true",
+      "/experimental/project-task/recent",
       "/scheduled-task",
       "/scheduled-task/task-1",
       "/scheduled-task/task-1/run",

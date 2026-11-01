@@ -19,6 +19,7 @@ const READS = [
   new RegExp(`^/session/${ID}/user-message-index$`),
   new RegExp(`^/session/${ID}/hooks$`),
   /^\/experimental\/session$/,
+  /^\/experimental\/project-task\/recent$/,
   /^\/agent$/,
   /^\/command$/,
   /^\/skill$/,

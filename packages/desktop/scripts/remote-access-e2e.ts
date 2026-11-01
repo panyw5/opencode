@@ -25,6 +25,10 @@ const desktop = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const project = join(root, "project")
 const webRoot = join(root, "web")
 await mkdir(project, { recursive: true })
+if (process.argv.includes("--directory-picker")) {
+  await mkdir(join(project, "browse-fixture", "nested"), { recursive: true })
+  await mkdir(join(project, ".hidden-fixture"))
+}
 await mkdir(webRoot, { recursive: true })
 await writeFile(join(webRoot, "index.html"), "<!doctype html><title>Remote access QA</title>")
 await writeFile(

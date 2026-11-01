@@ -25,6 +25,8 @@ const modelOnlyTest = process.argv.includes("--model-only")
 const toolbarSizingTest = process.argv.includes("--toolbar-sizing")
 const generalOnlyTest = process.argv.includes("--general-only")
 const fontsTest = process.argv.includes("--fonts")
+const directoryPickerTest = process.argv.includes("--directory-picker")
+const readModeTest = process.argv.includes("--read-mode")
 const presenceTest = invite.presence || process.argv.includes("--presence")
 const locale = process.argv.find((arg) => arg.startsWith("--locale="))?.slice("--locale=".length)
 const { client: desktop } = await connectCdp()
@@ -73,6 +75,238 @@ async function resizeViewport(width: number, height: number) {
     dispatchEvent(new Event('resize'));
     visualViewport?.dispatchEvent(new Event('resize'));
   })()`)
+}
+
+async function checkDirectoryPicker() {
+  async function fill(selector: string, value: string) {
+    await browser!.evaluate(
+      `(() => {const input=document.querySelector(${JSON.stringify(selector)});input.focus();input.select()})()`,
+    )
+    await browser!.call("Input.insertText", { text: value })
+  }
+  const homeInput = '[data-component="home-path-input"] input'
+  await fill(homeInput, `${invite.directory}/bro`)
+  await waitFor(
+    async () =>
+      (await browser!.evaluate<boolean>(
+        `!!document.querySelector('[id^="home-path-option-"]')?.textContent.includes('browse-fixture')`,
+      ))
+        ? true
+        : undefined,
+    "host folder autocomplete on Home",
+  )
+  console.log("[directory-picker-qa] Home path autocomplete loaded host folders")
+  await browser!.evaluate(`document.querySelector('[data-component="home-path-input"] button[aria-label]').click()`)
+  const dialog = '[data-slot="dialog-content"]'
+  const input = `${dialog} input:not([type="checkbox"])`
+  await waitFor(
+    async () =>
+      (await browser!.evaluate<boolean>(`!!document.querySelector(${JSON.stringify(input)})`)) ? true : undefined,
+    "Open project dialog",
+  )
+  await waitFor(
+    async () =>
+      (await browser!.evaluate<boolean>(
+        `document.querySelector('${dialog} [data-slot="dialog-body"]').textContent.includes('Desktop') || (window.__remoteQaRequests??[]).some(r=>r.path==='/remote/api/directory'&&r.status===200)`,
+      ))
+        ? true
+        : undefined,
+    "initial home directory request",
+  )
+  await fill(input, `${invite.directory}/`)
+  await waitFor(
+    async () =>
+      (await browser!.evaluate<boolean>(
+        `document.querySelector('${dialog} [data-slot="dialog-body"]').textContent.includes('browse-fixture')`,
+      ))
+        ? true
+        : undefined,
+    "actual host subdirectories in dialog",
+  )
+  for (const [width, height] of [
+    [1440, 900],
+    [390, 844],
+    [320, 568],
+    [390, 420],
+  ]) {
+    await resizeViewport(width, height)
+    // A compositor frame also delivers visualViewport changes in hidden views.
+    const screenshot = skipScreenshots ? undefined : await captureScreenshot()
+    await waitFor(
+      async () =>
+        (await browser!.evaluate<boolean>(
+          `Math.abs(parseFloat(document.documentElement.style.getPropertyValue('--app-viewport-height'))-innerHeight)<1`,
+        ))
+          ? true
+          : undefined,
+      "updated visual viewport",
+    )
+    const state = await browser!.evaluate<{
+      background: string
+      blur: string
+      fits: boolean
+      footerVisible: boolean
+      rows: number
+    }>(`(() => {
+      const content=document.querySelector('${dialog}');const style=getComputedStyle(content);const r=content.getBoundingClientRect();
+      const body=content.querySelector('[data-slot="dialog-body"]');const footer=body.firstElementChild.lastElementChild;const f=footer.getBoundingClientRect();
+      return {background:style.backgroundColor,blur:style.backdropFilter,fits:r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight,footerVisible:f.bottom<=r.bottom&&f.top>=r.top,rows:body.querySelectorAll('button').length,rect:r.toJSON(),viewport:[innerWidth,innerHeight],overflow:content.scrollWidth>content.clientWidth};
+    })()`)
+    if (state.background === "rgba(0, 0, 0, 0)" || state.blur !== "none" || !state.fits || !state.footerVisible)
+      throw new Error(`Directory picker layout failed ${width}x${height}: ${JSON.stringify(state)}`)
+    console.log(
+      `[directory-picker-qa] viewport=${width}x${height} opaque=${state.background} footerVisible=${state.footerVisible} fits=${state.fits}`,
+    )
+    if (screenshot && (width === 1440 || width === 320)) {
+      await writeFile(`/private/tmp/opencode-directory-picker-${width}.png`, Buffer.from(screenshot.data, "base64"))
+    }
+  }
+  await browser!.evaluate(
+    `(() => {const checkbox=document.querySelector('${dialog} input[type="checkbox"]');if(checkbox.checked)checkbox.click()})()`,
+  )
+  const hidden = await browser!.evaluate<boolean>(
+    `document.querySelector('${dialog} [data-slot="dialog-body"]').textContent.includes('.hidden-fixture')`,
+  )
+  if (hidden) throw new Error("Hidden directories toggle did not filter rows")
+  await fill(input, `${invite.directory}/bro`)
+  await waitFor(
+    async () =>
+      (await browser!.evaluate<boolean>(
+        `document.querySelector('${dialog} [data-slot="dialog-body"]').textContent.includes('browse-fixture')`,
+      ))
+        ? true
+        : undefined,
+    "filtered folder",
+  )
+  await browser!.call("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 })
+  await browser!.call("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 })
+  await waitFor(
+    async () =>
+      (await browser!.evaluate<boolean>(
+        `document.querySelector(${JSON.stringify(input)}).value.endsWith('/browse-fixture/') && document.querySelector('${dialog} [data-slot="dialog-body"]').textContent.includes('nested')`,
+      ))
+        ? true
+        : undefined,
+    "Tab completion loads nested directory",
+  )
+  await browser!.evaluate(
+    `Array.from(document.querySelectorAll('${dialog} [data-slot="dialog-body"] button')).find(button=>button.textContent.trim()==='..').click()`,
+  )
+  await waitFor(
+    async () =>
+      (await browser!.evaluate<boolean>(
+        `document.querySelector(${JSON.stringify(input)}).value===${JSON.stringify(invite.directory + "/")}`,
+      ))
+        ? true
+        : undefined,
+    "parent directory navigation",
+  )
+  await fill(input, `${invite.directory}/browse-fixture/`)
+  await browser!.evaluate(
+    `document.querySelector('${dialog} [data-slot="dialog-body"] input').parentElement.querySelector('button').click()`,
+  )
+  await waitFor(
+    async () =>
+      (await browser!.evaluate<boolean>(
+        `!document.querySelector('${dialog}') && location.pathname.startsWith('/'+${JSON.stringify(Buffer.from(invite.directory + "/browse-fixture").toString("base64url"))})`,
+      ))
+        ? true
+        : undefined,
+    "validated project selection",
+  )
+  console.log("[directory-picker-qa] hidden toggle, Tab completion, parent navigation and canonical selection verified")
+}
+
+async function checkReadMode() {
+  const draft = "READ_MODE_DRAFT_RESTORE_OK"
+  async function toggle() {
+    await browser!.evaluate(`document.querySelector('[data-action="prompt-mobile-options"]').click()`)
+    await waitFor(
+      async () =>
+        (await browser!.evaluate<boolean>(
+          `Array.from(document.querySelectorAll('[role="dialog"] button')).some(button=>['Read mode','阅读模式'].includes(button.textContent.trim()))`,
+        ))
+          ? true
+          : undefined,
+      "reading mode option",
+    )
+    await browser!.evaluate(
+      `Array.from(document.querySelectorAll('[role="dialog"] button')).find(button=>['Read mode','阅读模式'].includes(button.textContent.trim())).click()`,
+    )
+  }
+  await resizeViewport(390, 844)
+  await browser!.evaluate(`document.querySelector('[data-component="prompt-input"][contenteditable="true"]').focus()`)
+  await browser!.call("Input.insertText", { text: draft })
+  await toggle()
+  await waitFor(
+    async () =>
+      (await browser!.evaluate<boolean>(
+        `!document.querySelector('[data-component="prompt-input"][contenteditable="true"]')`,
+      ))
+        ? true
+        : undefined,
+    "reading mode removes editor",
+  )
+  console.log("[read-mode-qa] enabled; reloading with no editor mounted")
+  await browser!.call("Page.reload")
+  await waitFor(
+    async () =>
+      (await browser!.evaluate<boolean>(
+        `document.querySelector('textarea')?.value.includes('childNodes') || (window.__remoteQaErrors??[]).some(error=>error.includes('childNodes')) || !!document.querySelector('[data-action="prompt-mobile-options"]')`,
+      ))
+        ? true
+        : undefined,
+    "persisted reading mode after reload",
+    15_000,
+  ).catch(async (error) => {
+    console.log(
+      `[read-mode-qa] reload-state=${JSON.stringify(await browser!.evaluate(`({text:document.body.innerText.slice(0,1800),errors:window.__remoteQaErrors??[],href:location.href,buttons:[...document.querySelectorAll('button')].map(button=>button.textContent.trim())})`))}`,
+    )
+    throw error
+  })
+  const crashed = await browser!.evaluate<boolean>(
+    `document.querySelector('textarea')?.value.includes('childNodes') || (window.__remoteQaErrors??[]).some(error=>error.includes('childNodes'))`,
+  )
+  if (crashed) {
+    console.log(
+      `[read-mode-qa] reproduced=${await browser!.evaluate<string>(`document.querySelector('textarea')?.value.slice(0,600)??'childNodes'`)}`,
+    )
+    throw new Error("Read mode reload crashed while synchronizing an unmounted editor (childNodes)")
+  }
+  if (
+    await browser!.evaluate<boolean>(
+      `!!document.querySelector('[data-component="prompt-input"][contenteditable="true"]')`,
+    )
+  )
+    throw new Error("Reading mode did not persist through reload")
+  await toggle()
+  await waitFor(
+    async () =>
+      (await browser!.evaluate<boolean>(
+        `document.querySelector('[data-component="prompt-input"][contenteditable="true"]')?.textContent===${JSON.stringify(draft)}`,
+      ))
+        ? true
+        : undefined,
+    "restored draft after leaving reading mode",
+  )
+  for (let index = 0; index < 2; index++) {
+    await toggle()
+    await toggle()
+    await waitFor(
+      async () =>
+        (await browser!.evaluate<boolean>(
+          `document.querySelector('[data-component="prompt-input"][contenteditable="true"]')?.textContent===${JSON.stringify(draft)}`,
+        ))
+          ? true
+          : undefined,
+      "draft preserved after editor remount",
+    )
+  }
+  await browser!.evaluate(
+    `(() => {const editor=document.querySelector('[data-component="prompt-input"][contenteditable="true"]');editor.focus();const range=document.createRange();range.selectNodeContents(editor);const selection=getSelection();selection.removeAllRanges();selection.addRange(range)})()`,
+  )
+  await browser!.call("Input.insertText", { text: "" })
+  console.log("[read-mode-qa] persisted reading mode reload and repeated remounts preserve draft without crashing")
 }
 
 async function checkSidebarSessionActions() {
@@ -720,6 +954,7 @@ try {
     const screenshot = await captureScreenshot()
     await writeFile("/private/tmp/opencode-remote-mobile-qa.png", Buffer.from(screenshot.data, "base64"))
   }
+  if (directoryPickerTest) await checkDirectoryPicker()
   if (sidebarActionsTest) {
     await browser.evaluate(
       `(() => {const row=document.querySelector('.home-work-row[role="button"]');if(!row)throw new Error('Fixture Home session missing');row.click()})()`,
@@ -766,6 +1001,7 @@ try {
     await writeFile("/private/tmp/opencode-remote-session-qa.png", Buffer.from(sessionShot.data, "base64"))
   }
   if (!historyVisible) throw new Error("Remote session history did not render; see diagnostic state and screenshot")
+  if (readModeTest) await checkReadMode()
   if (presenceTest) {
     presenceDeviceID = await browser.evaluate<string>(
       `fetch('/remote/api/session').then(r=>r.json()).then(s=>s.device.id)`,
