@@ -56,7 +56,12 @@ export function HomePathInput(props: { home: string; onOpen: (directory: string)
     browseAbsolutePath,
     async (directory) => {
       if (!directory || !platform.listLocalDirectory) return [] as BrowseEntry[]
-      const list = await platform.listLocalDirectory(directory).catch(() => [])
+      console.debug(`[home-path] browse-start directory=${directory}`)
+      const list = await platform.listLocalDirectory(directory).catch((error) => {
+        console.warn(`[home-path] browse-failed directory=${directory} error=${String(error)}`)
+        return []
+      })
+      console.debug(`[home-path] browse-end directory=${directory} count=${list.length}`)
       return list
         .filter((item) => item.kind === "directory")
         .map((item) => ({ name: getFilename(item.path), path: trimDirectoryTrailing(item.path.replaceAll("\\", "/")) }))
@@ -120,8 +125,11 @@ export function HomePathInput(props: { home: string; onOpen: (directory: string)
 
   function complete(entry: BrowseEntry | undefined) {
     if (!entry) return false
-    setState({ query: withDirectoryTrailing(directoryAbsoluteToDisplay(entry.path, props.home)), open: true })
+    const query = withDirectoryTrailing(directoryAbsoluteToDisplay(entry.path, props.home))
+    console.debug(`[home-path] complete directory=${entry.path} query=${query}`)
+    setState({ query, open: true })
     inputRef?.focus()
+    inputRef?.setSelectionRange(query.length, query.length)
     return true
   }
 
@@ -247,7 +255,7 @@ export function HomePathInput(props: { home: string; onOpen: (directory: string)
                           }}
                           onMouseEnter={() => setState("highlighted", index())}
                           onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => void submit(entry.path)}
+                          onClick={() => complete(entry)}
                         >
                           <FileIcon node={{ path: entry.path, type: "directory" }} class="size-4 shrink-0" />
                           <span class="min-w-0 flex-1 truncate font-mono">{entry.name}</span>
