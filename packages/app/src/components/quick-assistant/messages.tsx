@@ -292,7 +292,8 @@ export function QuickAssistantMessages(props: Props) {
                       data-slot="quick-assistant-bubble"
                       classList={{
                         "group/message relative px-3.5 py-3 pr-11": true,
-                        "ml-10 rounded-[18px] border border-border-weak-base bg-surface-panel": item.role === "user",
+                        "ml-auto w-fit max-w-[min(82%,64ch)] rounded-[18px] border border-border-weak-base bg-surface-panel":
+                          item.role === "user",
                         "mr-10 rounded-[20px] border border-border-weaker-base bg-background-stronger":
                           item.role === "assistant",
                       }}

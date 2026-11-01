@@ -222,7 +222,13 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
           .sort((a, b) => a.name.localeCompare(b.name))
       }
       if (!directory || !platform.listLocalDirectory) return [] as BrowseEntry[]
-      const list = await platform.listLocalDirectory(directory).catch(() => [])
+      console.debug(`[directory-picker] listing platform=${platform.platform}`)
+      const list = await platform.listLocalDirectory(directory).catch(() => {
+        console.debug("[directory-picker] listing failed")
+        setError(language.t("home.quickAdd.invalid"))
+        return []
+      })
+      console.debug(`[directory-picker] listed entries=${list.length}`)
       const directories = list
         .filter((item) => item.kind === "directory")
         .map((item) => ({
@@ -261,6 +267,10 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
     query()
     rows().length
     setHighlightedIndex(0)
+  })
+
+  createEffect(() => {
+    query()
     setError("")
   })
 
@@ -330,7 +340,9 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
         return
       }
       if (platform.filterDirectories) {
+        console.debug("[directory-picker] validating selection")
         const [valid] = await platform.filterDirectories([absolute])
+        console.debug(`[directory-picker] validated valid=${!!valid}`)
         if (!valid) {
           setError(language.t("dialog.directory.empty"))
           return
@@ -341,6 +353,9 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
       }
       props.onSelect(props.multiple ? [absolute] : absolute)
       dialog.close()
+    } catch {
+      console.debug("[directory-picker] selection failed")
+      setError(language.t("home.quickAdd.invalid"))
     } finally {
       setSelecting(false)
     }
@@ -383,9 +398,10 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
     <Dialog
       title={props.title ?? language.t("command.project.open")}
       description={language.t("dialog.directory.search.placeholder")}
-      class="w-full max-w-[720px]"
+      size="large"
+      class="h-full w-full"
     >
-      <div class="flex min-h-[520px] flex-col gap-3">
+      <div class="flex h-full min-h-0 flex-col gap-3 px-4 pb-4">
         <div class="relative">
           <div class="pointer-events-none absolute left-3 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center text-icon-weak">
             <Icon name="folder-add-left" size="small" />
@@ -416,7 +432,7 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
           </Button>
         </div>
 
-        <div class="min-h-0 flex-1 overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-base">
+        <div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-base">
           <div class="flex items-center justify-between gap-4 border-b border-border-weak-base px-4 py-2 text-11-regular text-text-weak">
             <span class="uppercase tracking-wide">{language.t("session.new.meta.directory")}</span>
             <label class="flex items-center gap-2 normal-case tracking-normal">
@@ -428,14 +444,20 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
               <span>{language.t("dialog.directory.showHidden")}</span>
             </label>
           </div>
-          <div class="max-h-[420px] overflow-y-auto p-2">
+          <div class="min-h-0 flex-1 overflow-y-auto p-2">
             <Show
               when={!entries.loading}
-              fallback={<div class="py-10 text-center text-13-regular text-text-weak">{language.t("common.loading")}</div>}
+              fallback={
+                <div class="py-10 text-center text-13-regular text-text-weak">{language.t("common.loading")}</div>
+              }
             >
               <Show
                 when={rows().length > 0}
-                fallback={<div class="py-10 text-center text-13-regular text-text-weak">{language.t("dialog.directory.empty")}</div>}
+                fallback={
+                  <div class="py-10 text-center text-13-regular text-text-weak">
+                    {language.t("dialog.directory.empty")}
+                  </div>
+                }
               >
                 <div class="space-y-0.5">
                   <For each={rows()}>
@@ -475,14 +497,16 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
           <div class="text-12-regular text-danger-base">{error()}</div>
         </Show>
 
-        <div class="flex items-center justify-between gap-3 text-12-regular text-text-weak">
+        <div class="flex shrink-0 flex-wrap items-center justify-between gap-3 text-12-regular text-text-weak">
           <div class="flex min-w-0 items-center gap-2">
             <span>{selectedLabel()}</span>
           </div>
           <div class="flex shrink-0 items-center gap-4">
             <span>↑↓ {language.t("dialog.directory.footer.navigate")}</span>
             <span>Enter {language.t("common.open")}</span>
-            <span>{submitModifier}+Enter {language.t("dialog.directory.footer.select")}</span>
+            <span>
+              {submitModifier}+Enter {language.t("dialog.directory.footer.select")}
+            </span>
           </div>
         </div>
       </div>
