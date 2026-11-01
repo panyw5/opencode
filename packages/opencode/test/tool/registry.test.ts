@@ -6,7 +6,7 @@ import { Effect, Layer, Result, Schema } from "effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { ToolRegistry } from "@/tool/registry"
 import { Tool } from "@/tool/tool"
-import { disposeAllInstances, TestInstance } from "../fixture/fixture"
+import { disposeAllInstances, TestInstance, testInstanceStoreLayer } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { TestConfig } from "../fixture/config"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -55,6 +55,7 @@ type RegistryLayerOptions = {
 const registryLayer = (opts: RegistryLayerOptions = {}) =>
   ToolRegistry.layer
     .pipe(
+      Layer.provide(testInstanceStoreLayer),
       Layer.provide(configLayer),
       Layer.provide(opts.plugin ?? Plugin.defaultLayer),
       Layer.provide(Question.defaultLayer),
@@ -157,6 +158,7 @@ describe("tool.registry", () => {
       for (const name of [
         "bash",
         "task",
+        "session_create",
         "browser_navigate",
         "browser_click",
         "browser_type",
@@ -249,6 +251,22 @@ describe("tool.registry", () => {
       const ids = yield* registry.ids()
 
       expect(ids).toContain("session_transcript")
+    }),
+  )
+
+  it.instance("exposes session_create with optional title and directory", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      expect(yield* registry.ids()).toContain("session_create")
+      const tool = (yield* registry.tools({
+        providerID: ProviderID.opencode,
+        modelID: ModelID.make("test"),
+        agent: yield* (yield* Agent.Service).defaultInfo(),
+      })).find((tool) => tool.id === "session_create")
+      expect(tool).toBeDefined()
+      const json = tool?.jsonSchema ?? ToolJsonSchema.fromSchema(tool!.parameters)
+      expect(Object.keys(json.properties ?? {})).toEqual(["title", "directory"])
+      expect(json.required ?? []).toEqual([])
     }),
   )
 

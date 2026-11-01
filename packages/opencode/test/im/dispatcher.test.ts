@@ -147,6 +147,7 @@ const dependencies = Layer.mergeAll(
 const question = Question.layer.pipe(Layer.provideMerge(dependencies))
 const todo = Todo.layer.pipe(Layer.provideMerge(dependencies))
 const registry = ToolRegistry.layer.pipe(
+  Layer.provide(testInstanceStoreLayer),
   Layer.provide(Skill.defaultLayer),
   Layer.provide(Discovery.defaultLayer), Layer.provide(FetchHttpClient.layer), Layer.provide(CrossSpawnSpawner.defaultLayer),
   Layer.provide(RepositoryCache.defaultLayer), Layer.provide(Git.defaultLayer), Layer.provide(Reference.defaultLayer), Layer.provide(Ripgrep.defaultLayer), Layer.provide(Format.defaultLayer),

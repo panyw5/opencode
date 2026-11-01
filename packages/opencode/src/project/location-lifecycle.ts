@@ -48,7 +48,7 @@ export type AdmissionError = LocationUnavailable | LocationDeleting | LocationDe
 
 export type DeleteLocationError = LocationBusy | LocationDeleteFailed
 
-export type AdmissionPurpose = "http-request" | "session-run" | "scheduled-task" | "pty" | "background-job"
+export type AdmissionPurpose = "http-request" | "session-create" | "session-run" | "scheduled-task" | "pty" | "background-job"
 
 export type LifecycleState = "available" | "unavailable" | "deleting" | "deleted"
 

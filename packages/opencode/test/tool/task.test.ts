@@ -20,7 +20,7 @@ import { ToolRegistry } from "@/tool/registry"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProjectTask } from "@/project-task/service"
 import { getContextLocale, setContextLocale } from "@/session/context-locale"
-import { disposeAllInstances } from "../fixture/fixture"
+import { disposeAllInstances, testInstanceStoreLayer } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
 afterEach(async () => {
@@ -44,7 +44,7 @@ const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
     SessionStatus.defaultLayer,
     SessionInput.defaultLayer,
     Truncate.defaultLayer,
-    ToolRegistry.defaultLayer,
+    ToolRegistry.defaultLayer.pipe(Layer.provide(testInstanceStoreLayer)),
     ProjectTask.defaultLayer,
     RuntimeFlags.layer(flags),
   )

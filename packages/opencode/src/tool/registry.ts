@@ -10,6 +10,7 @@ import { TaskTool } from "./task"
 import { TaskListTool } from "./task_list"
 import { TaskTranscriptTool } from "./task_transcript"
 import { SessionTranscriptTool } from "./session_transcript"
+import { SessionCreateTool } from "./session_create"
 import { TaskInterruptTool } from "./task_interrupt"
 import { TodoWriteTool } from "./todo"
 import {
@@ -59,6 +60,7 @@ import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Ripgrep } from "../file/ripgrep"
 import { Format } from "../format"
 import { InstanceState } from "@/effect/instance-state"
+import { InstanceStore } from "@/project/instance-store"
 import { EffectBridge } from "@/effect/bridge"
 import { Question } from "../question"
 import { Todo } from "../session/todo"
@@ -133,6 +135,7 @@ const BUILTINS = {
   task_list: TaskListTool,
   task_transcript: TaskTranscriptTool,
   session_transcript: SessionTranscriptTool,
+  session_create: SessionCreateTool,
   task_interrupt: TaskInterruptTool,
   im_list: IMListTool,
   im_read: IMReadTool,
@@ -236,6 +239,7 @@ export const layer: Layer.Layer<
   | Agent.Service
   | Skill.Service
   | Session.Service
+  | InstanceStore.Service
   | SessionStatus.Service
   | BackgroundJob.Service
   | BackgroundShell.Service

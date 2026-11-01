@@ -1,0 +1,14 @@
+# PURPOSE
+Create a new independent, top-level OpenCode session in the current directory or another existing project directory.
+
+# PARAMETERS
+- `title`: Optional session title. Omit to use the default title.
+- `directory`: Optional existing directory. Defaults to the current directory. Relative paths resolve against the current directory, not the server's working directory.
+
+# BEHAVIOR
+- Returns `session_id`, `title`, `directory`, and `project_id`. Use the exact returned `session_id` with `session_transcript` to read the session.
+- Creates an empty session with no parent and no copied conversation, mounted task, or permission overrides from the caller.
+- Does not switch the user's active session, send a prompt, or start an agent. This is not a takeover or resume tool.
+- Does not create directories or repositories. The target directory must already exist.
+- Normal `session_create` and external-directory permission checks apply.
+- For delegated work that should run immediately and return a result, use `task` instead. The session created here is not a child task and cannot be resumed with `task(task_id=...)`.

@@ -581,7 +581,8 @@ export interface Interface {
     agent?: string
     model?: Schema.Schema.Type<typeof Model>
     permission?: Permission.Ruleset
-    workspaceID?: WorkspaceID
+    /** Null explicitly disables inheritance from the active workspace. */
+    workspaceID?: WorkspaceID | null
     archived?: boolean
   }) => Effect.Effect<Info>
   readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound>
@@ -873,7 +874,7 @@ export const layer: Layer.Layer<
       agent?: string
       model?: Schema.Schema.Type<typeof Model>
       permission?: Permission.Ruleset
-      workspaceID?: WorkspaceID
+      workspaceID?: WorkspaceID | null
       archived?: boolean
     }) {
       const ctx = yield* InstanceState.context
@@ -888,7 +889,7 @@ export const layer: Layer.Layer<
         agent: input?.agent,
         model: input?.model,
         permission: input?.permission,
-        workspaceID: input?.workspaceID ?? workspace,
+        workspaceID: input?.workspaceID === null ? undefined : (input?.workspaceID ?? workspace),
         archived: input?.archived,
       })
     })

@@ -53,7 +53,7 @@ import { Ripgrep } from "../../src/file/ripgrep"
 import { Format } from "../../src/format"
 import { Reference } from "../../src/reference/reference"
 import { RepositoryCache } from "../../src/reference/repository-cache"
-import { TestInstance } from "../fixture/fixture"
+import { TestInstance, testInstanceStoreLayer } from "../fixture/fixture"
 import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
 import { reply, TestLLMServer } from "../lib/llm-server"
 import { SyncEvent } from "@/sync"
@@ -220,6 +220,7 @@ function makePrompt(input?: { processor?: "blocking"; browser?: Layer.Layer<Brow
   const todo = Todo.layer.pipe(Layer.provideMerge(deps))
   const browserLayer = input?.browser ?? Browser.defaultLayer
   const registry = ToolRegistry.layer.pipe(
+    Layer.provide(testInstanceStoreLayer),
     Layer.provide(Skill.defaultLayer),
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(CrossSpawnSpawner.defaultLayer),
@@ -1923,6 +1924,44 @@ it.instance("glob tool keeps instance context during prompt runs", () =>
     expect(tool.state.output).toContain(file)
     expect(tool.state.output).not.toContain("No context found for instance")
     expect(result.parts.some((part) => part.type === "text" && part.text === "done")).toBe(true)
+  }),
+)
+
+it.instance("agent creates an independent empty session through session_create", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const caller = yield* sessions.create({
+      title: "Session creation caller",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* prompt.prompt({
+      sessionID: caller.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "Create a separate session without starting it" }],
+    })
+    yield* llm.tool("session_create", { title: "Independent session" })
+    yield* llm.text("Session created")
+
+    const result = yield* prompt.loop({ sessionID: caller.id })
+    expect(yield* llm.calls).toBe(2)
+    expect(result.parts.some((part) => part.type === "text" && part.text === "Session created")).toBe(true)
+    const messages = yield* MessageV2.filterCompactedEffect(caller.id)
+    const call = messages
+      .flatMap((message) => message.parts)
+      .find(
+        (part): part is CompletedToolPart =>
+          part.type === "tool" && part.tool === "session_create" && part.state.status === "completed",
+      )
+    expect(call).toBeDefined()
+    const created = yield* sessions.get(SessionID.make(JSON.parse(call!.state.output).session_id))
+    expect(created.title).toBe("Independent session")
+    expect(created.directory).toBe(caller.directory)
+    expect(created.parentID).toBeUndefined()
+    expect(created.permission).toBeUndefined()
+    expect(yield* MessageV2.filterCompactedEffect(created.id)).toEqual([])
   }),
 )
 
