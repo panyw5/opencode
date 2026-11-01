@@ -194,6 +194,13 @@ export type SnapshotFileDiff = {
   deletions: number
   size?: number
   status?: "added" | "deleted" | "modified"
+  attribution?: "verified" | "legacy"
+  incomplete?: boolean
+  operations?: Array<{
+    patch?: string
+    additions: number
+    deletions: number
+  }>
 }
 
 export type ProviderAuthError = {

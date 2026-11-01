@@ -46,6 +46,35 @@ ignores pre-summary snapshots, including retained tail messages. Existing sessio
 without snapshots initialize on their next Code Mode-capable request. The additive
 database migration is applied on backend startup.
 
+### Project Instructions And Skills
+
+The same message-anchored baseline/delta approach also applies to global/project
+`AGENTS.md`, configured instruction files and URLs, and the available Skills
+directory. They use independent `core/instructions` and `core/skill-guidance`
+snapshots in `session_instruction_snapshot`; the existing Code Mode table remains
+unchanged for compatibility. Updates are reconstructed as user-role context
+notifications, not new mid-history system/developer messages. Stable system
+baselines are retained until a successful compaction starts a new epoch.
+
+Temporary filesystem/HTTP failures retain the last known source, including after
+restart or compaction. A first observation with no usable snapshot blocks the
+primary model request rather than silently dropping guidance. Confirmed missing
+files, empty files, HTTP 404/410, and removed skill entries explicitly invalidate
+prior instructions. Nested instruction paths previously loaded by `read` or
+Code Mode are also revisited, rather than remaining stale until the next read.
+
+Local skill discovery is refreshed for primary requests; invalid intermediate
+edits to known skills preserve the last good state. Remote skill downloads retain
+their existing instance-level cache. Skill-directory snapshots contain names,
+descriptions, and locations, not all skill bodies; full bodies are still loaded
+through the `skill` tool. Agent/session permissions and per-message tool disabling
+narrow the directory, even when an unavailable loader falls back to old data.
+The `skill` tool description is invariant and no longer repeats the dynamic list.
+
+Both instruction-source snapshots follow fork, revert cleanup, session deletion,
+and compaction boundaries. Existing sessions initialize these additional sources
+on their next request after the additive database migration runs.
+
 Read-only built-ins also appear in the Code Mode catalog when enabled for the
 current model/agent: `glob`, `grep`, `read`, `lsp`, `websearch`, `webfetch`,
 `task_list`, `task_transcript`, `session_transcript`, `browser_read`, and

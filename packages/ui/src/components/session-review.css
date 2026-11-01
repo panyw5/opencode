@@ -40,6 +40,24 @@
     color: var(--text-strong);
   }
 
+  [data-slot="session-review-attribution-note"] {
+    padding: 8px 12px;
+    color: var(--text-weak);
+    font-size: var(--font-size-small);
+    background: var(--background-base);
+  }
+
+  [data-slot="session-review-operation"] + [data-slot="session-review-operation"] {
+    border-top: 1px solid var(--border-weak-base);
+    margin-top: 12px;
+  }
+
+  [data-slot="session-review-operation"] > div:first-child {
+    padding: 8px 12px;
+    color: var(--text-strong);
+    font-size: var(--font-size-small);
+  }
+
   [data-slot="session-review-actions"] {
     display: flex;
     align-items: center;

@@ -216,7 +216,7 @@ function TimelineDiffSummaryRow(props: {
   return (
     <div data-slot="session-turn-diffs" data-component="session-turn-diffs-group">
       <div data-slot="session-turn-diffs-header">
-        <span data-slot="session-turn-diffs-label">
+        <span data-slot="session-turn-diffs-label" title={language.t("ui.sessionReview.incomplete")}>
           {language.t("ui.sessionTurn.diffs.summary", { count: String(props.diffs.length) })}
         </span>
         <div data-slot="session-turn-diffs-summary">

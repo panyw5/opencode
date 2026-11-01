@@ -177,7 +177,7 @@ const EMPTY_COMMENTS: SessionReviewComment[] = []
  * §4.4). Header badges come from the recorded status only and never parse the
  * patch text.
  */
-function ReviewDiffBody(props: {
+type ReviewDiffBodyProps = {
   diff: ReviewDiff
   file: string
   diffStyle: SessionReviewDiffStyle
@@ -196,7 +196,38 @@ function ReviewDiffBody(props: {
   onLineCommentDelete?: SessionReviewProps["onLineCommentDelete"]
   lineCommentActions?: SessionReviewCommentActions
   readFile?: SessionReviewProps["readFile"]
-}) {
+}
+
+function ReviewDiffBody(props: ReviewDiffBodyProps) {
+  const i18n = useI18n()
+  return (
+    <div>
+      <Show when={props.diff.incomplete}>
+        <div data-slot="session-review-attribution-note">{i18n.t("ui.sessionReview.incomplete")}</div>
+      </Show>
+      <Show when={props.diff.operations?.length} fallback={<ReviewOperationBody {...props} />}>
+        <div data-slot="session-review-attribution-note">{i18n.t("ui.sessionReview.operations")}</div>
+        <For each={props.diff.operations}>
+          {(operation, index) => (
+            <section data-slot="session-review-operation">
+              <div>{i18n.t("ui.sessionReview.operation", { index: index() + 1 })}</div>
+              <ReviewOperationBody
+                {...props}
+                diff={{ ...props.diff, ...operation, operations: undefined }}
+                comments={[]}
+                onLineComment={undefined}
+                onLineCommentUpdate={undefined}
+                onLineCommentDelete={undefined}
+              />
+            </section>
+          )}
+        </For>
+      </Show>
+    </div>
+  )
+}
+
+function ReviewOperationBody(props: ReviewDiffBodyProps) {
   const i18n = useI18n()
   const fileComponent = useFileComponent()
 
@@ -257,11 +288,7 @@ function ReviewDiffBody(props: {
     editSubmitLabel: props.lineCommentActions?.saveLabel,
     renderCommentActions: props.lineCommentActions
       ? (comment, controls) => (
-          <ReviewCommentMenu
-            labels={props.lineCommentActions!}
-            onEdit={controls.edit}
-            onDelete={controls.remove}
-          />
+          <ReviewCommentMenu labels={props.lineCommentActions!} onEdit={controls.edit} onDelete={controls.remove} />
         )
       : undefined,
   })
@@ -278,6 +305,9 @@ function ReviewDiffBody(props: {
 
   return (
     <Switch>
+      <Match when={props.diff.attribution && !props.diff.patch}>
+        <div data-slot="session-review-attribution-note">{i18n.t("ui.sessionReview.unavailable")}</div>
+      </Match>
       <Match when={tooLarge()}>
         <div data-slot="session-review-large-diff">
           <div data-slot="session-review-large-diff-title">{i18n.t("ui.sessionReview.largeDiff.title")}</div>
@@ -624,7 +654,9 @@ export const SessionReview = (props: SessionReviewProps) => {
                   // viewport window of items is mounted.
                   "padding-top": `${win().start > 0 ? Math.round(offsets()[win().start]!) : 0}px`,
                   "padding-bottom": `${
-                    props.diffs.length > win().end ? Math.round(offsets()[props.diffs.length]! - offsets()[win().end]!) : 0
+                    props.diffs.length > win().end
+                      ? Math.round(offsets()[props.diffs.length]! - offsets()[win().end]!)
+                      : 0
                   }px`,
                 }}
               >
