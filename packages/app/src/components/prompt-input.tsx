@@ -104,7 +104,7 @@ import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import { createPromptPair } from "./prompt-input/autocomplete-pair"
 import { createModelAutocomplete, createAutocompleteSettings } from "./prompt-input/autocomplete-model"
 import { GhostText } from "./prompt-input/ghost-text"
-import { shouldRender } from "./prompt-input/sync"
+import { createEditorSync, shouldRender } from "./prompt-input/sync"
 import { DialogPromptEditor } from "@/components/dialog-prompt-editor"
 import { Popover } from "@opencode-ai/ui/popover"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -641,6 +641,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   )
 
   const [store, setStore] = createStore<{
+    editor: HTMLDivElement | undefined
     popover: "at" | "slash" | null
     historyIndex: number
     savedPrompt: PromptHistoryEntry | null
@@ -650,6 +651,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     applyingHistory: boolean
     submitting: boolean
   }>({
+    editor: undefined,
     popover: null,
     historyIndex: -1,
     savedPrompt: null as PromptHistoryEntry | null,
@@ -1646,6 +1648,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const reconcile = (input: Prompt) => {
+    if (read() || !store.editor) {
+      console.debug("[prompt-editor-sync] reconcile deferred reason=editor-unmounted")
+      return
+    }
     if (mirror.input) {
       mirror.input = false
       if (isNormalizedEditor()) return
@@ -1660,31 +1666,30 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     renderEditorWithCursor(input)
   }
 
-  createEffect(
-    on(
-      () => prompt.current(),
-      (currentParts) => {
-        const inputParts = currentParts.filter((part) => part.type !== "image")
-        const mirrorMode = mirror.input
-        if (mirrorMode) mirror.input = false
-        const normalized = isNormalizedEditor()
+  createEditorSync({
+    editor: () => (read() ? undefined : store.editor),
+    current: () => prompt.current(),
+    sync: (currentParts) => {
+      const inputParts = currentParts.filter((part) => part.type !== "image")
+      const mirrorMode = mirror.input
+      if (mirrorMode) mirror.input = false
+      const normalized = isNormalizedEditor()
 
-        if (mirrorMode) {
-          if (!shouldRender({ composing: composing(), mirror: true, normalized, equal: false })) return
-          renderEditorWithCursor(inputParts)
-          return
-        }
-
-        if (composing()) return
-
-        const domParts = parseFromDOM()
-        const equal = isPromptEqual(inputParts, domParts)
-        if (!shouldRender({ composing: false, mirror: false, normalized, equal })) return
-
+      if (mirrorMode) {
+        if (!shouldRender({ composing: composing(), mirror: true, normalized, equal: false })) return
         renderEditorWithCursor(inputParts)
-      },
-    ),
-  )
+        return
+      }
+
+      if (composing()) return
+
+      const domParts = parseFromDOM()
+      const equal = isPromptEqual(inputParts, domParts)
+      if (!shouldRender({ composing: false, mirror: false, normalized, equal })) return
+
+      renderEditorWithCursor(inputParts)
+    },
+  })
 
   const parseFromDOM = (): Prompt => {
     const parts: Prompt = []
@@ -2780,6 +2785,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 data-component="prompt-input"
                 ref={(el) => {
                   editorRef = el
+                  mirror.input = false
+                  setStore("editor", el)
+                  console.debug("[prompt-editor-sync] editor mounted")
+                  onCleanup(() => {
+                    if (store.editor !== el) return
+                    setStore("editor", undefined)
+                    console.debug("[prompt-editor-sync] editor unmounted")
+                  })
                   props.ref?.(el)
                 }}
                 role="textbox"
