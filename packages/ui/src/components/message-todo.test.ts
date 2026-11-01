@@ -18,10 +18,36 @@ describe("todoSnapshot", () => {
     const current = [todo("zero"), todo("one"), todo("two", "completed"), todo("three"), todo("four")]
 
     expect(todoSnapshot(previous, current)).toEqual([
-      { todo: todo("one"), change: undefined, gapBefore: false },
+      { todo: todo("one"), change: undefined, gapBefore: true },
       { todo: todo("two", "completed"), change: "modified", gapBefore: false },
-      { todo: todo("three"), change: undefined, gapBefore: false },
+      { todo: todo("three"), change: undefined, gapBefore: false, gapAfter: true },
     ])
+  })
+
+  test("marks omitted trailing tasks when the first task changes", () => {
+    const previous = ["a", "b", "c", "d", "e"].map((value) => todo(value))
+    const current = previous.map((value, index) => (index === 0 ? { ...value, status: "completed" } : value))
+
+    expect(todoSnapshot(previous, current)).toEqual([
+      { todo: todo("a", "completed"), change: "modified", gapBefore: false },
+      { todo: todo("b"), change: undefined, gapBefore: false, gapAfter: true },
+    ])
+  })
+
+  test("marks omitted leading tasks when the last task changes", () => {
+    const previous = ["a", "b", "c", "d", "e"].map((value) => todo(value))
+    const current = previous.map((value, index) => (index === 4 ? { ...value, status: "in_progress" } : value))
+
+    expect(todoSnapshot(previous, current)).toEqual([
+      { todo: todo("d"), change: undefined, gapBefore: true },
+      { todo: todo("e", "in_progress"), change: "modified", gapBefore: false },
+    ])
+  })
+
+  test("does not show rows or gaps for an unchanged update", () => {
+    const previous = [todo("one"), todo("two")]
+    expect(todoSnapshot(previous, previous)).toEqual([])
+    expect(todoSnapshot([], [])).toEqual([])
   })
 
   test("merges nearby windows and marks a gap between distant changes", () => {

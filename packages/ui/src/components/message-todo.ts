@@ -5,6 +5,7 @@ export type TodoSnapshotRow = {
   todo: Todo
   change?: "added" | "modified" | "removed"
   gapBefore?: boolean
+  gapAfter?: boolean
 }
 
 function sameTodo(a: Todo, b: Todo) {
@@ -112,11 +113,14 @@ export function todoSnapshot(previous: readonly Todo[] | undefined, current: rea
     visible.add(index + 1)
   })
 
-  let last = -2
-  return operations.flatMap<TodoSnapshotRow>((row, index) => {
+  let last = -1
+  const snapshot = operations.flatMap<TodoSnapshotRow>((row, index) => {
     if (!visible.has(index)) return []
-    const result = { todo: row.todo, change: row.change, gapBefore: last >= 0 && index > last + 1 }
+    const result = { todo: row.todo, change: row.change, gapBefore: index > last + 1 }
     last = index
     return [result]
   })
+  const tail = snapshot.at(-1)
+  if (tail && last < operations.length - 1) tail.gapAfter = true
+  return snapshot
 }

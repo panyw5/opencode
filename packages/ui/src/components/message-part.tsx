@@ -3436,7 +3436,15 @@ ToolRegistry.register({
       if (!part) return undefined
       return previousTodoList(data.store.message[part.sessionID] ?? [], data.store.part, part)
     })
-    const snapshot = createMemo(() => todoSnapshot(previous(), todos()))
+    const snapshot = createMemo(() => {
+      const before = previous()
+      const current = todos()
+      const rows = todoSnapshot(before, current)
+      console.debug(
+        `[todowrite] snapshot part=${props.part?.id ?? "none"} previous=${before?.length ?? "none"} current=${current.length} visible=${rows.length} changed=${rows.filter((row) => row.change).length} gaps=${rows.reduce((count, row) => count + Number(!!row.gapBefore) + Number(!!row.gapAfter), 0)}`,
+      )
+      return rows
+    })
 
     const subtitle = createMemo(() => {
       const list = todos()
@@ -3460,23 +3468,24 @@ ToolRegistry.register({
           <div data-component="todos">
             <For each={snapshot()}>
               {(row) => (
-                <div
-                  data-slot="message-part-todo-row"
-                  data-change={row.change}
-                  data-gap-before={row.gapBefore ? "true" : undefined}
-                >
+                <>
                   <Show when={row.gapBefore}>
-                    <span data-slot="message-part-todo-gap">...</span>
+                    <span data-slot="message-part-todo-gap">{"\u22ee"}</span>
                   </Show>
-                  <Checkbox readOnly checked={row.todo.status === "completed"}>
-                    <span
-                      data-slot="message-part-todo-content"
-                      data-completed={row.todo.status === "completed" ? "completed" : undefined}
-                    >
-                      {row.todo.content}
-                    </span>
-                  </Checkbox>
-                </div>
+                  <div data-slot="message-part-todo-row" data-change={row.change}>
+                    <Checkbox readOnly checked={row.todo.status === "completed"}>
+                      <span
+                        data-slot="message-part-todo-content"
+                        data-completed={row.todo.status === "completed" ? "completed" : undefined}
+                      >
+                        {row.todo.content}
+                      </span>
+                    </Checkbox>
+                  </div>
+                  <Show when={row.gapAfter}>
+                    <span data-slot="message-part-todo-gap">{"\u22ee"}</span>
+                  </Show>
+                </>
               )}
             </For>
           </div>
