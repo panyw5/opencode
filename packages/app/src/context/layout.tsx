@@ -1018,6 +1018,10 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         open(directory: string) {
           const root = rootFor(directory)
           const registerBackendProject = () => {
+            if (platform.remoteMode) {
+              console.debug("[project-open] remote project uses directory-scoped reads; skipping host registration")
+              return
+            }
             void globalSdk.client.project
               .open({ directory: root })
               .catch((error) => console.error(`[project-open] backend registration failed directory=${root}`, error))

@@ -12,6 +12,12 @@ The mobile browser stores its authenticated session only in the server-issued Ht
 
 The remote web app supports the core session workflow: browsing projects and sessions, reading conversation history and files exposed by the host, composing and sending messages, and responding to permission prompts. Tool permissions remain governed by the host's OpenCode permission configuration.
 
+The Home path input and Open project dialog browse the host's folders through the authenticated, read-only `GET /remote/api/directory` endpoint. `mode=list` returns immediate subdirectories (including hidden folders); `mode=validate` checks a selection and returns its canonical path. Both expand `~` on the host, reject relative or invalid paths, and never return file contents. Requests require a paired device, are not cached, and log only operation, status and entry counts, not paths.
+
+Older browser profiles may contain projects saved as `~/...` display paths. The remote fetch boundary resolves these through host directory validation before forwarding directory-scoped requests, sharing successful lookups within the page and retrying failed lookups. Absolute paths and other origins are unchanged. Opening a project remotely uses the existing directory-scoped reads, not the host-only `POST /project/open` registration route.
+
+`bun packages/desktop/scripts/remote-sessions-cdp.ts '~/apps/project'` seeds a legacy saved project in a throwaway browser, checks real sidebar rows through a temporary loopback gateway, and verifies unresolved paths never reach the sidecar. It neither exposes a public tunnel nor modifies existing host sessions. Validated home-relative app deep links are authenticated SPA navigations so an older saved tab can also reload.
+
 Provider credentials and configuration, server administration, desktop browser controls, and terminal UI are not supported in the remote client. The remote gateway must enforce those restrictions server-side as well; hiding a control in the web app is not an authorization boundary.
 
 Remote access uses the configured relay implementation. This documentation makes no availability, pricing, or cloud-hosting promises.

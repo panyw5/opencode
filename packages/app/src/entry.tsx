@@ -13,6 +13,7 @@ import { ServerConnection } from "./context/server"
 import { bootstrapRemoteSession, createRemoteFetch, RemoteSessionError } from "./remote/bootstrap"
 import { installWebViewport } from "./utils/web-viewport"
 import { installRemotePresence } from "./remote/presence"
+import { createRemoteDirectoryPlatform } from "./remote/directory"
 
 const disposeViewport = installWebViewport()
 if (import.meta.hot) import.meta.hot.dispose(disposeViewport)
@@ -134,6 +135,7 @@ if (import.meta.hot) import.meta.hot.dispose(() => disposePresence?.())
 const remoteFetch = createRemoteFetch(() => remoteCsrfToken, location.origin)
 
 const platform: Platform = {
+  ...(remoteMode ? createRemoteDirectoryPlatform(remoteFetch) : {}),
   platform: "web",
   remoteMode,
   fetch: remoteMode ? (remoteFetch as typeof fetch) : undefined,

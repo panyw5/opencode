@@ -66,4 +66,82 @@ describe("remote web bootstrap", () => {
       kind: "unavailable",
     })
   })
+
+  test("resolves persisted tilde directories on the host and deduplicates concurrent lookups", async () => {
+    const calls: Request[] = []
+    const fetcher = createRemoteFetch(
+      () => "csrf-secret",
+      "https://remote.example",
+      async (input, init) => {
+        const request = input as Request
+        calls.push(request)
+        if (new URL(request.url).pathname === "/remote/api/directory") {
+          expect(new URL(request.url).searchParams.get("path")).toBe("~/apps/repo")
+          expect(new URL(request.url).searchParams.get("mode")).toBe("validate")
+          expect(request.credentials).toBe("same-origin")
+          expect(init?.cache).toBe("no-store")
+          expect(request.headers.has("authorization")).toBe(false)
+          return Response.json({ path: "/host/apps/repo", entries: [] })
+        }
+        return Response.json([])
+      },
+    )
+    await Promise.all([
+      fetcher("/session?directory=~%2Fapps%2Frepo&roots=true"),
+      fetcher("/path?directory=~%2Fapps%2Frepo"),
+    ])
+    expect(calls).toHaveLength(3)
+    for (const request of calls.slice(1)) {
+      expect(new URL(request.url).searchParams.get("directory")).toBe("/host/apps/repo")
+    }
+    expect(new URL(calls[1].url).searchParams.get("roots")).toBe("true")
+    await fetcher("/session", {
+      method: "POST",
+      headers: { "x-opencode-directory": encodeURIComponent("~/apps/repo"), authorization: "Basic stale" },
+      body: JSON.stringify({ title: "QA" }),
+    })
+    expect(calls).toHaveLength(4)
+    expect(calls[3].headers.get("x-opencode-directory")).toBe(encodeURIComponent("/host/apps/repo"))
+    expect(calls[3].headers.get("x-opencode-csrf")).toBe("csrf-secret")
+    expect(calls[3].headers.has("authorization")).toBe(false)
+    expect(await calls[3].json()).toEqual({ title: "QA" })
+  })
+
+  test("retries failed directory resolution without forwarding an unresolved path", async () => {
+    let lookups = 0
+    let sessions = 0
+    const fetcher = createRemoteFetch(
+      () => undefined,
+      "https://remote.example",
+      async (input) => {
+        if (new URL((input as Request).url).pathname === "/remote/api/directory") {
+          lookups++
+          return lookups === 1 ? new Response(null, { status: 401 }) : Response.json({ path: "/host" })
+        }
+        sessions++
+        return Response.json([])
+      },
+    )
+    await expect(fetcher("/session?directory=~")).rejects.toThrow("Directory request failed (401)")
+    expect(sessions).toBe(0)
+    await fetcher("/session?directory=~")
+    expect(lookups).toBe(2)
+    expect(sessions).toBe(1)
+  })
+
+  test("does not resolve absolute directories or directories belonging to another origin", async () => {
+    const calls: Request[] = []
+    const fetcher = createRemoteFetch(
+      () => undefined,
+      "https://remote.example",
+      async (input) => {
+        calls.push(input as Request)
+        return Response.json([])
+      },
+    )
+    await fetcher("/session?directory=%2Fhost%2Frepo")
+    await fetcher("https://other.example/session?directory=~%2Frepo")
+    expect(calls).toHaveLength(2)
+    expect(new URL(calls[1].url).searchParams.get("directory")).toBe("~/repo")
+  })
 })

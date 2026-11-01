@@ -3,6 +3,7 @@ import type { Socket } from "node:net"
 import { RemoteAuth, type RemoteAuthSnapshot, type RemoteDevice } from "./auth"
 import { RemoteConnections } from "./connections"
 import { RemotePresence } from "./presence"
+import { remoteDirectory } from "./directory"
 import { routePolicy } from "./policy"
 import { proxy } from "./proxy"
 import {
@@ -94,6 +95,32 @@ export async function createRemoteGateway(options: {
         csrfToken: digest(`csrf:${token}`),
         capabilities: { remote: true, sse: true, presence: true },
       })
+    }
+    if (path === "/remote/api/directory") {
+      noStore(response)
+      options.log("remote-directory request-start")
+      if (!auth.authenticate(cookies(request).get(COOKIE_NAME))) {
+        options.log("remote-directory rejected reason=authentication")
+        return replyJson(response, 401, { error: "Unauthenticated" })
+      }
+      if (request.method !== "GET") return replyJson(response, 405, { error: "Method not allowed" })
+      const params = new URLSearchParams(query)
+      const input = params.get("path")
+      const mode = params.get("mode")
+      if (!input || (mode !== "list" && mode !== "validate")) {
+        options.log("remote-directory rejected reason=invalid-query")
+        return replyJson(response, 400, { error: "Invalid directory query" })
+      }
+      try {
+        options.log(`remote-directory resolving mode=${mode}`)
+        const result = await remoteDirectory(input, mode === "list")
+        options.log(`remote-directory completed mode=${mode} entries=${result.entries.length}`)
+        return replyJson(response, 200, result)
+      } catch {
+        // Paths and filesystem errors may contain private host information.
+        options.log(`remote-directory failed mode=${mode} reason=unavailable`)
+        return replyJson(response, 404, { error: "Directory unavailable" })
+      }
     }
     if (path === "/remote/api/presence") {
       noStore(response)
@@ -323,6 +350,10 @@ function validDirectorySegment(segment: string): boolean {
     (directory.startsWith("/") && !directory.startsWith("//")) ||
     /^[A-Za-z]:[\\/]/.test(directory) ||
     /^\\\\[^\\/]+[\\/][^\\/]+/.test(directory)
-  if (!absolute) return false
+  // Legacy web profiles used home-relative display paths in their app URLs.
+  // Only navigation is accepted here; authenticated API requests resolve the
+  // directory on the host before reaching the sidecar.
+  const homeRelative = directory === "~" || /^~[\\/]/.test(directory)
+  if (!absolute && !homeRelative) return false
   return !directory.split(/[\\/]+/).some((part) => part === "." || part === "..")
 }

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createServer, type Server, type ServerResponse } from "node:http"
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { PassThrough } from "node:stream"
 import { gzipSync } from "node:zlib"
@@ -172,6 +172,50 @@ async function pair(base: string, gateway: Awaited<ReturnType<typeof createRemot
 }
 
 describe("remote gateway", () => {
+  test("browses and validates host folders only for paired devices without exposing files or logging paths", async () => {
+    const logs: string[] = []
+    const upstreamCalls: string[] = []
+    const { gateway } = await fixture(() => {}, {
+      onLog: (line) => logs.push(line),
+      onRequest: (path) => upstreamCalls.push(path),
+    })
+    const root = await realpath(await mkdtemp(join(tmpdir(), "remote-directory-private-")))
+    running.push(() => rm(root, { recursive: true, force: true }))
+    await mkdir(join(root, "folder & spaces"))
+    await mkdir(join(root, ".hidden"))
+    await writeFile(join(root, "private.txt"), "never expose this")
+    await symlink(join(root, "folder & spaces"), join(root, "alias"), "dir")
+    const endpoint = (path: string, mode = "list") =>
+      `${gateway.url}/remote/api/directory?${new URLSearchParams({ path, mode })}`
+    expect((await fetch(endpoint(root))).status).toBe(401)
+    const { cookie } = await pair(gateway.url, gateway)
+    const headers = { Cookie: cookie! }
+    const listed = await fetch(endpoint(root), { headers })
+    expect(listed.status).toBe(200)
+    expect(listed.headers.get("cache-control")).toContain("no-store")
+    const body = await listed.json()
+    expect(body.path).toBe(root)
+    expect(body.entries.map((entry: { path: string }) => entry.path).sort()).toEqual([
+      join(root, ".hidden"),
+      join(root, "folder & spaces"),
+    ])
+    const validated = await fetch(endpoint(join(root, "alias"), "validate"), { headers })
+    expect(await validated.json()).toEqual({ path: join(root, "folder & spaces"), entries: [] })
+    const home = await fetch(endpoint("~/", "validate"), { headers })
+    expect((await home.json()).path).toBe(await realpath(homedir()))
+    for (const path of [join(root, "missing"), join(root, "private.txt"), "relative", "~someone", "\u0000"]) {
+      expect((await fetch(endpoint(path), { headers })).status).toBe(404)
+    }
+    expect((await fetch(endpoint(root, "bad"), { headers })).status).toBe(400)
+    expect((await fetch(endpoint(root), { method: "POST", headers })).status).toBe(405)
+    expect(upstreamCalls).toEqual([])
+    expect(logs.some((line) => line.includes("remote-directory completed mode=list entries=2"))).toBe(true)
+    expect(logs.join("\n")).not.toContain(root)
+    expect(logs.join("\n")).not.toContain("private.txt")
+    await gateway.revoke(gateway.devices()[0].id)
+    expect((await fetch(endpoint(root), { headers })).status).toBe(401)
+  })
+
   test("authenticates presence locally with Origin/CSRF, isolates devices and never persists page metadata", async () => {
     const upstreamCalls: string[] = []
     const logs: string[] = []
@@ -892,6 +936,8 @@ describe("remote gateway", () => {
       `/${directory}/session`,
       `/${directory}/session/new/draft-1`,
       `/${directory}/session/session-1`,
+      `/${Buffer.from("~").toString("base64url")}/session`,
+      `/${Buffer.from("~/project").toString("base64url")}/session`,
       `/${directory}/config`,
       `/${directory}/scheduled`,
     ]
@@ -905,6 +951,13 @@ describe("remote gateway", () => {
       })
       expect(response.status).toBe(200)
       expect(await response.text()).toContain("remote client")
+    }
+    for (const directory of ["~user/project", "~/../project", "~/./project", "~/project\u0000"]) {
+      const segment = Buffer.from(directory).toString("base64url")
+      expect(
+        (await fetch(`${gateway.url}/${segment}/session`, { headers: { Cookie: paired.cookie!, Accept: "text/html" } }))
+          .status,
+      ).toBe(403)
     }
     const invalidDirectory = Buffer.from("relative/path").toString("base64url")
     expect(
