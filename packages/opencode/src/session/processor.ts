@@ -1,5 +1,5 @@
 import { Image } from "@/image/image"
-import { Cause, Deferred, Effect, Exit, Layer, Context, Scope, Schema } from "effect"
+import { Cause, Deferred, Effect, Exit, Layer, Context, Scope, Schema, Semaphore } from "effect"
 import * as Stream from "effect/Stream"
 import { Agent } from "@/agent/agent"
 import { Bus } from "@/bus"
@@ -146,37 +146,37 @@ export const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
 
-  const gracefulAborts = new Map<SessionID, number>()
+    const gracefulAborts = new Map<SessionID, number>()
 
-  const takeGracefulAbort = (sessionID: SessionID) =>
-    Effect.sync(() => {
-      const armedAt = gracefulAborts.get(sessionID)
-      if (armedAt === undefined) return false
-      gracefulAborts.delete(sessionID)
-      return Date.now() - armedAt < 60_000
+    const takeGracefulAbort = (sessionID: SessionID) =>
+      Effect.sync(() => {
+        const armedAt = gracefulAborts.get(sessionID)
+        if (armedAt === undefined) return false
+        gracefulAborts.delete(sessionID)
+        return Date.now() - armedAt < 60_000
+      })
+
+    const prepareGracefulAbort = Effect.fn("SessionProcessor.prepareGracefulAbort")(function* (sessionID: SessionID) {
+      gracefulAborts.set(sessionID, Date.now())
+      yield* Effect.log("graceful abort armed").pipe(Effect.annotateLogs({ sessionID }))
     })
 
-  const prepareGracefulAbort = Effect.fn("SessionProcessor.prepareGracefulAbort")(function* (sessionID: SessionID) {
-    gracefulAborts.set(sessionID, Date.now())
-    yield* Effect.log("graceful abort armed").pipe(Effect.annotateLogs({ sessionID }))
-  })
+    const stopAfterSteps = new Map<SessionID, { messageID?: string; armedAt: number }>()
 
-  const stopAfterSteps = new Map<SessionID, { messageID?: string; armedAt: number }>()
+    const prepareStopAfterStep = Effect.fn("SessionProcessor.prepareStopAfterStep")(function* (
+      sessionID: SessionID,
+      messageID?: string,
+    ) {
+      stopAfterSteps.set(sessionID, { messageID, armedAt: Date.now() })
+      yield* Effect.log("stop-after-step armed").pipe(Effect.annotateLogs({ sessionID, messageID: messageID ?? "" }))
+    })
 
-  const prepareStopAfterStep = Effect.fn("SessionProcessor.prepareStopAfterStep")(function* (
-    sessionID: SessionID,
-    messageID?: string,
-  ) {
-    stopAfterSteps.set(sessionID, { messageID, armedAt: Date.now() })
-    yield* Effect.log("stop-after-step armed").pipe(Effect.annotateLogs({ sessionID, messageID: messageID ?? "" }))
-  })
+    const clearStopAfterStep = Effect.fn("SessionProcessor.clearStopAfterStep")(function* (sessionID: SessionID) {
+      stopAfterSteps.delete(sessionID)
+      yield* Effect.log("stop-after-step cleared").pipe(Effect.annotateLogs({ sessionID }))
+    })
 
-  const clearStopAfterStep = Effect.fn("SessionProcessor.clearStopAfterStep")(function* (sessionID: SessionID) {
-    stopAfterSteps.delete(sessionID)
-    yield* Effect.log("stop-after-step cleared").pipe(Effect.annotateLogs({ sessionID }))
-  })
-
-  const create = Effect.fn("SessionProcessor.create")(function* (input: Input) {
+    const create = Effect.fn("SessionProcessor.create")(function* (input: Input) {
       // Graceful abort latches are armed by SessionPrompt.flush right before it
       // cancels the run. takeGracefulAbort consumes the latch so it can never
       // leak into a later, unrelated abort of the same session.
@@ -210,12 +210,8 @@ export const layer = Layer.effect(
 
       const captureToolFiles = <A>(tool: string, action: Effect.Effect<A>) =>
         Effect.gen(function* () {
-          if (tool !== "bash") return { value: yield* action, files: [] }
-          const before = yield* snapshot.track()
-          const value = yield* action
-          const files = before ? (yield* snapshot.patch(before)).files : []
-          if (files.length) slog.info("captured tool-owned files", { tool, files })
-          return { value, files }
+          if (tool === "bash") slog.info("shell snapshot attribution disabled", { tool })
+          return { value: yield* action, files: [] as string[] }
         })
 
       // Stop-after-step latches are armed by the UI while a reply streams. A
@@ -279,6 +275,7 @@ export const layer = Layer.effect(
         return { call, part }
       })
 
+      const toolUpdateLock = Semaphore.makeUnsafe(1)
       const updateToolCall = Effect.fn("SessionProcessor.updateToolCall")(function* (
         toolCallID: string,
         update: (part: MessageV2.ToolPart) => MessageV2.ToolPart,
@@ -289,6 +286,9 @@ export const layer = Layer.effect(
           return undefined
         }
         const next = update(match.part)
+        if (match.part.metadata?.fileChanges && next.metadata?.fileChanges === undefined) {
+          next.metadata = { ...next.metadata, fileChanges: match.part.metadata.fileChanges }
+        }
         const terminal = match.part.state.status === "completed" || match.part.state.status === "error"
         const part = yield* session.updatePart(
           terminal
@@ -313,7 +313,7 @@ export const layer = Layer.effect(
           start: part.state.status === "pending" ? undefined : part.state.time.start,
         })
         return part
-      })
+      }, toolUpdateLock.withPermits(1))
 
       const completeToolCall = Effect.fn("SessionProcessor.completeToolCall")(function* (
         toolCallID: string,
@@ -657,9 +657,12 @@ export const layer = Layer.effect(
                       input,
                       time: { start: Date.now() },
                     },
-              metadata: match.metadata?.providerExecuted
-                ? { ...value.providerMetadata, providerExecuted: true }
-                : value.providerMetadata,
+              metadata: {
+                ...value.providerMetadata,
+                ...(match.metadata?.providerExecuted ? { providerExecuted: true } : {}),
+                // Local write evidence is never supplied by the provider.
+                fileChanges: match.metadata?.fileChanges,
+              },
             }))
 
             const parts = MessageV2.parts(ctx.assistantMessage.id)
@@ -1010,8 +1013,8 @@ export const layer = Layer.effect(
             const message =
               reason === "length"
                 ? "The tool call was not executed because the output token limit (stop reason: length) was reached before the arguments were complete. Break large payloads into smaller tool calls and reissue the call with complete arguments."
-                : call.inputFailure ??
-                  "Tool call arguments were not completed and were not executed. Reissue the call with complete arguments."
+                : (call.inputFailure ??
+                  "Tool call arguments were not completed and were not executed. Reissue the call with complete arguments.")
             const excerpt = call.inputLength
               ? `\n\nInput excerpt (first ${call.inputExcerpt?.length ?? 0} of ${call.inputLength} characters):\n${call.inputExcerpt ?? ""}`
               : ""

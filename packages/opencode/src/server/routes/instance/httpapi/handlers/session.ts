@@ -946,6 +946,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         })
       }
       const current = yield* requireSession(ctx.params.sessionID)
+      if (!current.external) yield* summary.repair(ctx.params.sessionID)
       if (current.external) {
         yield* external.control(current, "status").pipe(Effect.orDie)
       } else if ((yield* statusSvc.get(ctx.params.sessionID)).type === "idle") {
@@ -1002,6 +1003,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const message = Effect.fn("SessionHttpApi.message")(function* (ctx: {
       params: { sessionID: SessionID; messageID: MessageID }
     }) {
+      yield* summary.repair(ctx.params.sessionID)
       return yield* SessionError.mapStorageNotFound(
         MessageV2.get({ sessionID: ctx.params.sessionID, messageID: ctx.params.messageID }),
       )

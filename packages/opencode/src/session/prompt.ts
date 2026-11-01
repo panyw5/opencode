@@ -14,6 +14,7 @@ import { SessionCompaction } from "./compaction"
 import { Bus } from "../bus"
 import { SystemPrompt } from "./system"
 import { CodeModeState } from "./code-mode-state"
+import { SessionInstructionState } from "./instruction-state"
 import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
 import { ProjectTask } from "@/project-task/service"
@@ -2724,13 +2725,32 @@ export const layer = Layer.effect(
               messages: msgs,
               catalog: SessionTools.codeModeCatalog(tools),
             })
-            const requestMessages = codeMode.messages
+            const guidance = yield* SessionInstructionState.prepare({
+              sessionID,
+              messageID: msg.id,
+              user: lastUser,
+              messages: codeMode.messages,
+              sources: [
+                instruction.source(msgs),
+                sys.skillSource(agent, session.permission ?? [], !!tools.skill && lastUser.tools?.skill !== false),
+              ],
+            }).pipe(
+              Effect.tapError((error) =>
+                Effect.gen(function* () {
+                  handle.message.error = new NamedError.Unknown({ message: error.message }).toObject()
+                  handle.message.finish = "error"
+                  handle.message.time.completed = Date.now()
+                  yield* sessions.updateMessage(handle.message)
+                  yield* bus.publish(Session.Event.Error, { sessionID, error: handle.message.error })
+                }),
+              ),
+              Effect.orDie,
+            )
+            const requestMessages = guidance.messages
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: requestMessages })
 
-            const [skills, env, instructions, modelMsgs] = yield* Effect.all([
-              sys.skills(agent),
+            const [env, modelMsgs] = yield* Effect.all([
               sys.environment(model),
-              instruction.system().pipe(Effect.orDie),
               MessageV2.toModelMessagesEffect(requestMessages, model),
             ])
             // Consumption means these durable notification messages have been
@@ -2748,12 +2768,7 @@ export const layer = Layer.effect(
                 return "break" as const
               }
             }
-            const system = [
-              ...(codeMode.system ? [codeMode.system] : []),
-              ...env,
-              ...instructions,
-              ...(skills ? [skills] : []),
-            ]
+            const system = [...(codeMode.system ? [codeMode.system] : []), ...guidance.system, ...env]
             // Project-task context is attached as a durable user-message synthetic part
             // earlier in the loop (see project-task inject above), so it is already in
             // modelMsgs via toModelMessages — do not also push into system.

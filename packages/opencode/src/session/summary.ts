@@ -1,13 +1,14 @@
 import { Effect, Layer, Context, Schema, Semaphore } from "effect"
 import path from "path"
 import { Bus } from "@/bus"
-import { Snapshot } from "@/snapshot"
+import type { Snapshot } from "@/snapshot"
 import { Storage } from "@/storage/storage"
 import * as Session from "./session"
 import { MessageV2 } from "./message-v2"
 import { SessionID, MessageID } from "./schema"
 import * as Log from "@opencode-ai/core/util/log"
 import { InstanceState } from "@/effect/instance-state"
+import { FileChange } from "./file-change"
 
 const log = Log.create({ service: "session.summary" })
 
@@ -68,6 +69,7 @@ function unquoteGitPath(input: string) {
 }
 
 export interface Interface {
+  readonly repair: (sessionID: SessionID) => Effect.Effect<void>
   readonly summarize: (input: { sessionID: SessionID; messageID: MessageID }) => Effect.Effect<void>
   readonly invalidate: (sessionID: SessionID) => Effect.Effect<void>
   readonly diff: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Snapshot.FileDiff[]>
@@ -114,12 +116,14 @@ export function collectSessionEditedFiles(messages: MessageV2.WithParts[]) {
     const root = message.info.path.root
 
     for (const part of message.parts) {
-      if (part.type !== "tool" || part.state.status !== "completed") continue
+      if (part.type !== "tool") continue
+      for (const change of FileChange.records(part)) addOwnedFile(files, change.file, root)
+      if (part.state.status !== "completed" || !["edit", "write", "apply_patch"].includes(part.tool)) continue
 
       const metadata = part.state.metadata
       const input = part.state.input
       const reported = metadata.files
-      if (Array.isArray(reported)) {
+      if (part.tool === "apply_patch" && Array.isArray(reported)) {
         for (const item of reported) {
           if (typeof item === "string") {
             addOwnedFile(files, item, root)
@@ -151,7 +155,6 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const sessions = yield* Session.Service
-    const snapshot = yield* Snapshot.Service
     const storage = yield* Storage.Service
     const bus = yield* Bus.Service
     const state = yield* InstanceState.make<SummaryState>(() =>
@@ -183,41 +186,13 @@ export const layer = Layer.effect(
       messages: MessageV2.WithParts[]
       files?: ReadonlySet<string>
     }) {
-      if (input.files && input.files.size === 0) return []
-
-      let from: string | undefined
-      let to: string | undefined
-      for (const item of input.messages) {
-        if (!from) {
-          for (const part of item.parts) {
-            if (part.type === "step-start" && part.snapshot) {
-              from = part.snapshot
-              break
-            }
-          }
-        }
-        for (const part of item.parts) {
-          if (part.type === "step-finish" && part.snapshot) to = part.snapshot
-        }
-      }
-      if (from && to) {
-        const diffs = yield* snapshot.diffFull(from, to, input.files)
-        if (!input.files) return diffs
-
-        const root = input.messages.reduce<string | undefined>(
-          (value, item) => value ?? (item.info.role === "assistant" ? item.info.path.root : undefined),
-          undefined,
-        )
-        const filtered = filterSessionDiffs(diffs, input.files, root)
-        log.info("filtered session snapshot diff", {
-          sessionID: input.messages[0]?.info.sessionID ?? "",
-          snapshotFiles: diffs.length,
-          ownedFiles: input.files.size,
-          keptFiles: filtered.length,
-        })
-        return filtered
-      }
-      return []
+      const diffs = FileChange.diffs(input.messages)
+      log.info("computed operation-owned diff", {
+        sessionID: input.messages[0]?.info.sessionID ?? "",
+        files: diffs.length,
+        incomplete: diffs.filter((diff) => diff.incomplete).length,
+      })
+      return diffs
     })
 
     const summarize = Effect.fn("SessionSummary.summarize")(function* (input: {
@@ -342,7 +317,74 @@ export const layer = Layer.effect(
       )
     })
 
+    const repair = Effect.fn("SessionSummary.repair")(function* (sessionID: SessionID) {
+      const current = yield* InstanceState.get(state)
+      yield* current.commitLock.withPermits(1)(
+        Effect.gen(function* () {
+          const marker = yield* storage
+            .read<number>(["session_diff_version", sessionID])
+            .pipe(Effect.orElseSucceed(() => 0))
+          if (marker === FileChange.version || current.closed) return
+          const all = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
+          log.info("rebuilding legacy diff summaries", { sessionID, messages: all.length })
+          const backup = <T>(id: string, value: T) =>
+            Effect.gen(function* () {
+              const key = ["session_diff_backup", sessionID, id]
+              const exists = yield* storage.read(key).pipe(
+                Effect.as(true),
+                Effect.orElseSucceed(() => false),
+              )
+              if (!exists) yield* storage.write(key, value).pipe(Effect.orDie)
+            })
+          for (const target of all) {
+            if (target.info.role !== "user") continue
+            const messages = all.filter(
+              (message) => message.info.role === "assistant" && message.info.parentID === target.info.id,
+            )
+            const diffs = FileChange.diffs(messages)
+            if (JSON.stringify(target.info.summary?.diffs ?? []) === JSON.stringify(diffs)) continue
+            log.info("repairing legacy turn diff", {
+              sessionID,
+              messageID: target.info.id,
+              before: target.info.summary?.diffs.length ?? 0,
+              after: diffs.length,
+            })
+            yield* backup(target.info.id, target.info.summary ?? null)
+            yield* sessions.updateMessage({ ...target.info, summary: { ...target.info.summary, diffs } })
+          }
+          const diffs = FileChange.diffs(all)
+          yield* backup(
+            "session",
+            yield* storage.read(["session_diff", sessionID]).pipe(Effect.orElseSucceed(() => null)),
+          )
+          yield* sessions.setSummary({
+            sessionID,
+            summary: {
+              files: diffs.length,
+              additions: diffs.reduce((sum, diff) => sum + diff.additions, 0),
+              deletions: diffs.reduce((sum, diff) => sum + diff.deletions, 0),
+            },
+          })
+          yield* storage.write(["session_diff", sessionID], diffs).pipe(Effect.orDie)
+          yield* bus.publish(Session.Event.Diff, { sessionID, diff: diffs })
+          yield* storage.write(["session_diff_version", sessionID], FileChange.version).pipe(Effect.orDie)
+          log.info("legacy diff summaries rebuilt", { sessionID, files: diffs.length })
+        }),
+      )
+    })
+
     const diff = Effect.fn("SessionSummary.diff")(function* (input: { sessionID: SessionID; messageID?: MessageID }) {
+      yield* repair(input.sessionID)
+      if (input.messageID) {
+        const all = yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
+        return FileChange.diffs(
+          all.filter(
+            (message) =>
+              message.info.id === input.messageID ||
+              (message.info.role === "assistant" && message.info.parentID === input.messageID),
+          ),
+        )
+      }
       const diffs = yield* storage
         .read<Snapshot.FileDiff[]>(["session_diff", input.sessionID])
         .pipe(Effect.catch(() => Effect.succeed([] as Snapshot.FileDiff[])))
@@ -357,14 +399,13 @@ export const layer = Layer.effect(
       return next
     })
 
-    return Service.of({ summarize, invalidate, diff, computeDiff })
+    return Service.of({ summarize, invalidate, diff, computeDiff, repair })
   }),
 )
 
 export const defaultLayer = Layer.suspend(() =>
   layer.pipe(
     Layer.provide(Session.defaultLayer),
-    Layer.provide(Snapshot.defaultLayer),
     Layer.provide(Storage.defaultLayer),
     Layer.provide(Bus.layer),
   ),

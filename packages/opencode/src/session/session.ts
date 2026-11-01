@@ -32,6 +32,7 @@ import { Storage } from "@/storage/storage"
 import * as Log from "@opencode-ai/core/util/log"
 import { MessageV2 } from "./message-v2"
 import { CodeModeState } from "./code-mode-state"
+import { SessionInstructionState } from "./instruction-state"
 import { appendStreamingText, streamingText, withStreamingText } from "./streaming-text"
 import type { InstanceContext } from "../project/instance-context"
 import { InstanceState } from "@/effect/instance-state"
@@ -948,6 +949,7 @@ export const layer: Layer.Layer<
         }
       }
       CodeModeState.copy(input.sessionID, session.id, idMap)
+      SessionInstructionState.copy(input.sessionID, session.id, idMap)
       log.info("fork completed", {
         sourceSessionID: input.sessionID,
         targetSessionID: session.id,

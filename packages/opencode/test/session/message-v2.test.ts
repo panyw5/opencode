@@ -410,7 +410,7 @@ describe("session.message-v2.toModelMessage", () => {
                 },
               ],
             },
-            metadata: { openai: { tool: "meta" } },
+            metadata: { openai: { tool: "meta" }, fileChanges: [{ before: "private baseline", after: "private output" }] },
           },
         ] as MessageV2.Part[],
       },

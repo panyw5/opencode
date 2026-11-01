@@ -21,14 +21,6 @@ const dependencies = Layer.mergeAll(
           yield* Deferred.succeed(firstReadStarted, undefined)
           yield* Deferred.await(releaseFirstRead)
         }
-        return snapshot
-      }),
-    setSummary: () => Effect.sync(() => void (summaryWrites += 1)),
-    updateMessage: (info) => Effect.sync(() => void updatedMessages.add(info.id)),
-  }),
-  Layer.mock(Snapshot.Service, {
-    diffFull: () =>
-      Effect.gen(function* () {
         diffCalls += 1
         if (diffCalls === 1) {
           yield* Deferred.succeed(firstDiffStarted, undefined)
@@ -40,9 +32,12 @@ const dependencies = Layer.mergeAll(
             yield* Deferred.await(releaseSecondDiff)
           }
         }
-        return []
+        return snapshot
       }),
+    setSummary: () => Effect.sync(() => void (summaryWrites += 1)),
+    updateMessage: (info) => Effect.sync(() => void updatedMessages.add(info.id)),
   }),
+  Layer.mock(Snapshot.Service, {}),
   Layer.mock(Storage.Service, { write: () => Effect.void }),
   Layer.mock(Bus.Service, { publish: () => Effect.void }),
 )
@@ -104,7 +99,7 @@ it.instance("coalesces session summary requests and commits every pending user s
     yield* Deferred.succeed(releaseSecondDiff, undefined)
     yield* Fiber.join(first)
 
-    expect(diffCalls).toBe(4)
+    expect(diffCalls).toBe(2)
     expect(summaryWrites).toBe(2)
     expect([...updatedMessages].sort()).toEqual([userA, userB].sort())
   }),
@@ -135,7 +130,7 @@ it.instance("keeps a message request queued while an older message read is in fl
     yield* Fiber.join(first)
 
     expect(messageReads).toBe(2)
-    expect(diffCalls).toBe(4)
+    expect(diffCalls).toBe(2)
     expect([...updatedMessages].sort()).toEqual([userA, userB].sort())
     expect(summaryWrites).toBe(2)
   }),
@@ -183,7 +178,7 @@ it.instance("releases the single runner when its fiber is interrupted", () =>
     yield* Fiber.interrupt(canceled)
     yield* summary.summarize({ sessionID, messageID: userA })
 
-    expect(diffCalls).toBe(3)
+    expect(diffCalls).toBe(2)
     expect(summaryWrites).toBe(1)
     expect(updatedMessages.has(userA)).toBe(true)
   }),

@@ -26,6 +26,7 @@ import type { JsonSchemaValidator, JsonSchemaType } from "@modelcontextprotocol/
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
 import { toolError } from "@opencode/codemode"
 import { Cause, Semaphore } from "effect"
+import { FileChange } from "./file-change"
 
 const log = Log.create({ service: "session.tools" })
 const catalogs = new WeakMap<Record<string, AITool>, CodeModeCatalog.Summary>()
@@ -82,6 +83,16 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     extra: { model: input.model, bypassAgentCheck: input.bypassAgentCheck, promptOps: input.promptOps },
     agent: input.agent.name,
     messages: input.messages,
+    recordFileChange: (change) =>
+      input.processor
+        .updateToolCall(options.toolCallId, (part) => ({
+          ...part,
+          metadata: {
+            ...part.metadata,
+            fileChanges: [...FileChange.records(part), FileChange.make(change, options.toolCallId)],
+          },
+        }))
+        .pipe(Effect.asVoid),
     metadata: (val) =>
       input.processor.updateToolCall(options.toolCallId, (match) => {
         if (!["running", "pending"].includes(match.state.status)) return match
@@ -371,6 +382,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                     input: JSON.stringify(nested).slice(0, 2048),
                   }
                   calls.push(call)
+                  const subcallID = `${options.toolCallId}:${calls.length - 1}`
                   yield* publish()
                   log.info("Code Mode subcall started", {
                     callID: ctx.callID,
@@ -404,6 +416,16 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                         (controller) =>
                           registered.tool.execute(nested, {
                             ...ctx,
+                            recordFileChange: (change) =>
+                              input.processor
+                                .updateToolCall(options.toolCallId, (part) => ({
+                                  ...part,
+                                  metadata: {
+                                    ...part.metadata,
+                                    fileChanges: [...FileChange.records(part), FileChange.make(change, subcallID)],
+                                  },
+                                }))
+                                .pipe(Effect.asVoid),
                             abort: options.abortSignal
                               ? AbortSignal.any([controller.signal, options.abortSignal])
                               : controller.signal,

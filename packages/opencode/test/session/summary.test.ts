@@ -39,13 +39,7 @@ test("collects only files explicitly reported by completed mutation tools", () =
     ]),
   ])
 
-  expect([...files].sort()).toEqual([
-    `${root}/deleted.md`,
-    `${root}/generated-by-script.md`,
-    `${root}/new.md`,
-    `${root}/old.md`,
-    `${root}/written.md`,
-  ])
+  expect([...files].sort()).toEqual([`${root}/deleted.md`, `${root}/new.md`, `${root}/old.md`, `${root}/written.md`])
 })
 
 test("does not attribute a concurrent file change to a read-only session", () => {

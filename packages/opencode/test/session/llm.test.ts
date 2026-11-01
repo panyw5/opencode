@@ -23,6 +23,7 @@ import { Permission } from "@/permission"
 import { LLMAISDK } from "@/session/llm/ai-sdk"
 import { Session as SessionNs } from "@/session/session"
 import { LLMRequestPrep } from "@/session/llm/request"
+import { InstructionGuidance } from "@/session/instruction-guidance"
 
 type ConfigModel = NonNullable<NonNullable<Config.Info["provider"]>[string]["models"]>[string]
 
@@ -1296,7 +1297,7 @@ describe("session.llm.stream", () => {
   )
 
   it.instance(
-    "sends responses API payload for OpenAI models",
+    "sends Responses API payload without promoting mid-history instruction updates after tool output",
     () =>
       Effect.gen(function* () {
         const model = loadFixture("openai", "gpt-5.2").model
@@ -1370,7 +1371,30 @@ describe("session.llm.stream", () => {
           model: resolved,
           agent,
           system: ["You are a helpful assistant."],
-          messages: [{ role: "user", content: "Hello" }],
+          messages: [
+            { role: "user", content: "Hello" },
+            {
+              role: "assistant",
+              content: [
+                { type: "tool-call", toolCallId: "call_previous", toolName: "execute", input: { code: "return 7" } },
+              ],
+            },
+            {
+              role: "tool",
+              content: [
+                {
+                  type: "tool-result",
+                  toolCallId: "call_previous",
+                  toolName: "execute",
+                  output: { type: "text", value: "7" },
+                },
+              ],
+            },
+            {
+              role: "user",
+              content: `<system-reminder>\n${InstructionGuidance.updateFiles([{ path: "AGENTS.md", content: "old" }], [{ path: "AGENTS.md", content: "new" }])}\n</system-reminder>`,
+            },
+          ],
           tools: {},
         })
 
@@ -1380,6 +1404,13 @@ describe("session.llm.stream", () => {
         expect(capture.url.pathname.endsWith("/responses")).toBe(true)
         expect(body.model).toBe(resolved.api.id)
         expect(body.stream).toBe(true)
+        const lowered = body.input as Array<{ type?: string; role?: string }>
+        const outputIndex = lowered.findIndex((item) => item.type === "function_call_output")
+        expect(outputIndex).toBeGreaterThan(-1)
+        expect(lowered.slice(outputIndex + 1).some((item) => item.role === "user")).toBe(true)
+        expect(lowered.slice(outputIndex + 1).some((item) => item.role === "developer" || item.role === "system")).toBe(
+          false,
+        )
         expect((body.reasoning as { effort?: string } | undefined)?.effort).toBe("high")
 
         const maxTokens = body.max_output_tokens as number | undefined
