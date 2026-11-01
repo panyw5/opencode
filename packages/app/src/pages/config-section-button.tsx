@@ -11,22 +11,19 @@ export function SectionButton(props: {
     <button
       type="button"
       aria-current={props.current ? "page" : undefined}
-      class="group relative flex min-h-14 w-full items-center gap-3 overflow-hidden rounded-lg border px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow] duration-150 focus:outline-none focus-visible:border-border-strong"
+      class="group relative flex min-h-14 w-full items-center gap-3 overflow-hidden rounded-lg border px-3 py-2.5 text-left transition-colors duration-150 focus:outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-focus"
       classList={{
-        "border-transparent bg-transparent hover:border-[color-mix(in_srgb,var(--surface-brand-base)_24%,var(--border-weak-base))] hover:bg-[color-mix(in_srgb,var(--surface-brand-base)_10%,var(--background-base))] hover:shadow-[0_10px_22px_-16px_color-mix(in_srgb,black_45%,transparent)]":
-          !props.current,
-        "border-[color-mix(in_srgb,var(--surface-brand-base)_40%,var(--border-weak-base))] bg-[linear-gradient(105deg,color-mix(in_srgb,var(--surface-brand-base)_22%,var(--background-base)),color-mix(in_srgb,var(--surface-brand-base)_10%,var(--background-base)))] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--surface-brand-base)_18%,transparent)]":
-          props.current,
+        "border-transparent bg-transparent hover:border-border-base hover:bg-surface-base-hover": !props.current,
+        "border-border-base bg-surface-base-active": props.current,
       }}
       onClick={props.onClick}
     >
       <div
         class="relative z-[1] flex size-8 shrink-0 items-center justify-center rounded-lg border transition-[background-color,border-color,color] duration-150"
         classList={{
-          "border-border-weak-base bg-background-base/75 text-text-weak group-hover:border-border-base group-hover:text-text-strong":
+          "border-border-weak-base bg-background-base text-text-weak group-hover:border-border-base group-hover:text-text-strong":
             !props.current,
-          "border-[color-mix(in_srgb,var(--surface-brand-base)_34%,var(--border-weak-base))] bg-[color-mix(in_srgb,var(--surface-brand-base)_15%,var(--background-base))] text-text-strong":
-            props.current,
+          "border-border-base bg-surface-secondary text-text-strong": props.current,
         }}
       >
         <Icon name={props.icon} size="medium" />

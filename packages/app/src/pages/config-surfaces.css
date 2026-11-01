@@ -1,0 +1,40 @@
+[data-component="config-page"] {
+  /* Mix against the opaque canvas so surface contrast does not depend on nesting. */
+  --config-navigation-bg: color-mix(in srgb, var(--text-strong) 7%, var(--background-base));
+  --config-list-bg: color-mix(in srgb, var(--text-strong) 3%, var(--background-base));
+  --config-group-bg: color-mix(in srgb, var(--text-strong) 4.5%, var(--background-base));
+  --config-row-bg: color-mix(in srgb, var(--text-strong) 7%, var(--background-base));
+  --config-control-bg: color-mix(in srgb, var(--text-strong) 10%, var(--background-base));
+
+  [data-config-pane="left"] {
+    background-color: var(--config-navigation-bg);
+  }
+
+  [data-config-pane="middle"] {
+    background-color: var(--config-list-bg);
+  }
+
+  [data-config-pane="right"] {
+    background-color: var(--background-base);
+
+    /* Existing neutral form cards share this layer; semantic status cards keep their colors. */
+    :where(div, section, fieldset).border:is(.rounded-xl, .rounded-2xl):is(.bg-background-base, .bg-surface-base):not(
+        [data-config-surface="control"]
+      ),
+    [data-config-surface="group"] {
+      background-color: var(--config-group-bg);
+    }
+
+    [data-config-surface="row"] {
+      background-color: var(--config-row-bg);
+    }
+
+    [data-component="input"][data-variant="normal"] [data-slot="input-wrapper"]:not(:has([data-invalid])),
+    [data-slot="select-select-trigger"],
+    [data-component="json-code-field"] > .border:not(:has([aria-invalid="true"])),
+    [data-config-surface="control"],
+    :is(input, textarea).bg-background-base {
+      background-color: var(--config-control-bg);
+    }
+  }
+}

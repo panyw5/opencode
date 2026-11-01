@@ -1,0 +1,14 @@
+[data-config-provider-item] {
+  [data-component="provider-chip"],
+  [data-component="switch"] [data-slot="switch-thumb"] {
+    box-shadow: none;
+  }
+
+  [data-component="switch"]:not([data-readonly])
+    [data-slot="switch-input"]:focus-visible
+    ~ [data-slot="switch-control"] {
+    box-shadow: none;
+    outline: 2px solid var(--border-focus);
+    outline-offset: 2px;
+  }
+}

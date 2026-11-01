@@ -1,13 +1,13 @@
 import { ProviderChip, type ProviderChipProps } from "@/components/provider-chip"
 import { createMemo, Show, type JSX } from "solid-js"
 import type { ConfigProviderItem } from "./config-provider-list"
+import "./config-provider-list.css"
 
 export const CONFIG_MIDDLE_ITEM_CLASS =
-  "group relative flex w-full cursor-pointer items-start justify-between gap-4 overflow-hidden rounded-lg border px-4 py-4 text-left transition-[background-color,border-color,box-shadow] duration-150 focus:outline-none focus-visible:border-[color-mix(in_srgb,var(--surface-brand-base)_40%,var(--border-strong))] focus-visible:bg-[color-mix(in_srgb,var(--surface-brand-base)_10%,var(--background-base))] focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--surface-brand-base)_14%,transparent)]"
-export const CONFIG_MIDDLE_ITEM_ACTIVE_CLASS =
-  "border-[color-mix(in_srgb,var(--surface-brand-base)_48%,var(--border-base))] bg-[linear-gradient(105deg,color-mix(in_srgb,var(--surface-brand-base)_22%,var(--background-base)),color-mix(in_srgb,var(--surface-brand-base)_10%,var(--background-base)))] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--surface-brand-base)_22%,transparent),0_12px_28px_-16px_color-mix(in_srgb,var(--surface-brand-base)_50%,transparent)]"
+  "group relative flex w-full cursor-pointer items-start justify-between gap-4 overflow-hidden rounded-[16px] border px-4 py-4 text-left transition-colors duration-150 focus:outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-focus"
+export const CONFIG_MIDDLE_ITEM_ACTIVE_CLASS = "border-border-base bg-surface-base-active"
 export const CONFIG_MIDDLE_ITEM_INACTIVE_CLASS =
-  "border-border-weak-base bg-background-base/80 hover:border-[color-mix(in_srgb,var(--surface-brand-base)_30%,var(--border-base))] hover:bg-[color-mix(in_srgb,var(--surface-brand-base)_12%,var(--background-base))] hover:shadow-[0_12px_26px_-16px_color-mix(in_srgb,black_55%,transparent)]"
+  "border-border-weak-base bg-background-base hover:border-border-base hover:bg-surface-base-hover"
 
 type ProviderSdkBadge = ProviderChipProps
 
@@ -51,6 +51,7 @@ export function ProviderListButton(props: {
 
   return (
     <div
+      data-config-provider-item
       role="button"
       tabIndex={props.disabled ? -1 : 0}
       aria-disabled={props.disabled}
@@ -74,8 +75,7 @@ export function ProviderListButton(props: {
           <span
             class="shrink-0 rounded-full border px-2 py-0.5 text-11-medium transition-colors"
             classList={{
-              "border-[color-mix(in_srgb,var(--surface-brand-base)_35%,var(--border-base))] bg-[color-mix(in_srgb,var(--surface-brand-base)_14%,var(--surface-secondary))] text-text-strong":
-                props.active && !props.disabled,
+              "border-border-base bg-surface-secondary text-text-strong": props.active && !props.disabled,
               "border-border-weak-base bg-surface-secondary/70 text-text-weak group-hover:border-border-base group-hover:bg-surface-secondary group-hover:text-text-base":
                 !props.active || props.disabled,
             }}

@@ -142,6 +142,7 @@ import {
   useChannelMiddleItems,
 } from "./config-channels"
 import { ConfigIM } from "./config-im"
+import "./config-surfaces.css"
 
 const CORE_SECTIONS = [
   "providers",
@@ -1268,8 +1269,7 @@ function sectionIcon(section: Section): IconProps["name"] {
   return "openclaw"
 }
 
-const CONFIG_PANE_FOCUS_CLASS =
-  "relative z-[1] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-strong)_22%,transparent),inset_0_0_0_3px_color-mix(in_srgb,var(--text-strong)_8%,transparent)]"
+const CONFIG_PANE_FOCUS_CLASS = "relative z-[1] outline outline-1 -outline-offset-1 outline-border-focus"
 
 const ProviderEnabledBlock = lazy(() => import("./config-provider-enabled-block"))
 const ProviderDisabledBlock = lazy(() => import("./config-provider-disabled-block"))
@@ -1288,12 +1288,10 @@ function ListButton(props: {
   return (
     <button
       type="button"
-      class="group flex w-full items-start justify-between gap-3 border-b border-border-weak-base px-3 py-3 text-left transition-[background-color,border-color,box-shadow] duration-150"
+      class="group flex w-full items-start justify-between gap-3 border-b border-border-weak-base px-3 py-3 text-left transition-colors duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-focus"
       classList={{
-        "bg-transparent hover:bg-[color-mix(in_srgb,var(--surface-brand-base)_6%,var(--background-base))]":
-          !props.active,
-        "border-border-base bg-[color-mix(in_srgb,var(--surface-brand-base)_14%,var(--background-base))] shadow-[inset_3px_0_0_color-mix(in_srgb,var(--surface-brand-base)_55%,transparent)]":
-          props.active,
+        "bg-transparent hover:bg-surface-base-hover": !props.active,
+        "border-border-base bg-surface-base-active": props.active,
       }}
       onClick={props.onClick}
     >
@@ -1465,7 +1463,7 @@ function SkillListButton(props: {
 
 function ConfigSearchBox(props: { value: string; placeholder: string; onInput: (value: string) => void }) {
   return (
-    <div class="flex items-center gap-2.5 rounded-lg border border-border-weak-base bg-background-base px-3 py-2.5 transition-[border-color,box-shadow] focus-within:border-[color-mix(in_srgb,var(--surface-brand-base)_45%,var(--border-strong))] focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,var(--surface-brand-base)_10%,transparent)]">
+    <div class="flex items-center gap-2.5 rounded-lg border border-border-weak-base bg-background-base px-3 py-2.5 transition-colors focus-within:border-border-focus">
       <Icon name="magnifying-glass" size="small" class="shrink-0 text-text-weak" />
       <input
         type="text"
@@ -1481,7 +1479,7 @@ function ConfigSearchBox(props: { value: string; placeholder: string; onInput: (
 function ConfigPaneTitle(props: { title: string; description?: string; icon: IconProps["name"] }) {
   return (
     <div class="flex min-w-0 items-start gap-3">
-      <div class="flex size-9 shrink-0 items-center justify-center rounded-lg border border-[color-mix(in_srgb,var(--surface-brand-base)_28%,var(--border-weak-base))] bg-[color-mix(in_srgb,var(--surface-brand-base)_12%,var(--background-base))] text-text-strong shadow-sm">
+      <div class="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border-weak-base bg-surface-secondary text-text-strong">
         <Icon name={props.icon} size="medium" />
       </div>
       <div class="min-w-0 pt-0.5">
@@ -1603,15 +1601,14 @@ function ProjectListGroup(props: {
   const [addPressed, setAddPressed] = createSignal(false)
 
   return (
-    <div class="relative overflow-hidden rounded-[14px] border border-border-weak-base/80 bg-background-base/65 shadow-[inset_0_1px_0_color-mix(in_srgb,white_5%,transparent)] transition-colors hover:border-border-base">
-      <div class="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,color-mix(in_srgb,var(--text-strong)_16%,transparent),transparent)]" />
+    <div class="relative overflow-hidden rounded-[14px] border border-border-weak-base bg-background-base transition-colors hover:border-border-base">
       <div
         role="button"
         tabIndex={0}
         aria-expanded={props.open ? "true" : "false"}
-        class="group flex w-full items-center justify-between gap-3 rounded-[13px] px-3.5 py-3 text-left transition-colors hover:bg-surface-base/55 focus:outline-none focus-visible:bg-surface-base-hover"
+        class="group flex w-full items-center justify-between gap-3 rounded-[13px] px-3.5 py-3 text-left transition-colors hover:bg-surface-base-hover focus:outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-focus"
         classList={{
-          "rounded-b-none border-b border-border-weak-base/70 bg-surface-base/40": props.open,
+          "rounded-b-none border-b border-border-weak-base bg-surface-base": props.open,
         }}
         onClick={props.onToggle}
         onKeyDown={press}
@@ -1647,10 +1644,9 @@ function ProjectListGroup(props: {
           >
             <button
               type="button"
-              class="flex size-7 items-center justify-center rounded-full border text-text-strong shadow-sm transition-all duration-150 ease-out hover:-translate-y-0.5 hover:scale-110 hover:shadow-md active:translate-y-0 active:scale-95 disabled:translate-y-0 disabled:scale-100 disabled:shadow-none disabled:border-border-weak-base disabled:bg-background-base disabled:text-text-weaker"
+              class="flex size-7 items-center justify-center rounded-full border text-text-strong transition-colors duration-150 hover:border-border-strong hover:bg-surface-base-hover active:bg-surface-base-active focus-visible:outline-2 focus-visible:outline-border-focus disabled:border-border-weak-base disabled:bg-background-base disabled:text-text-weaker"
               classList={{
-                "border-border-strong bg-surface-base-hover shadow-[0_0_0_3px_color-mix(in_srgb,var(--text-strong)_10%,transparent)]":
-                  addPressed(),
+                "border-border-strong bg-surface-base-hover": addPressed(),
                 "border-border-base bg-surface-base-active": !addPressed(),
               }}
               onClick={(event) => {
@@ -2797,7 +2793,7 @@ function DshPluginInventoryCard(props: {
                   return (
                     <div
                       class="min-w-0 overflow-hidden rounded-[10px] border border-border-weak-base bg-background-base"
-                      classList={{ "border-border-strong-base shadow-sm": open() }}
+                      classList={{ "border-border-strong-base bg-surface-base-active": open() }}
                     >
                       <div class="flex items-center gap-2 px-3 py-2.5">
                         <button
@@ -3502,7 +3498,10 @@ function CustomEditor(props: {
                   {language.t("config.custom.field.apiKeyDescription")}
                 </span>
               </div>
-              <div class="rounded-xl border border-border-weak-base bg-background-base px-3 py-2.5">
+              <div
+                data-config-surface="control"
+                class="rounded-xl border border-border-weak-base bg-background-base px-3 py-2.5"
+              >
                 <div class="flex items-center gap-2">
                   <input
                     type={props.form.secret ? "password" : "text"}
@@ -3530,7 +3529,7 @@ function CustomEditor(props: {
               </div>
             </div>
 
-            <div class="rounded-xl border border-border-weak-base bg-background-base p-4">
+            <div data-config-surface="group" class="rounded-xl border border-border-weak-base bg-background-base p-4">
               <div class="mb-3">
                 <FetchProviderModels
                   title={language.t("config.custom.models.title")}
@@ -3570,7 +3569,11 @@ function CustomEditor(props: {
                     const item = entry.model
                     const modelIndex = entry.index
                     return (
-                      <div class="rounded-xl border border-border-weak-base bg-surface-base/60 p-2" data-row={item.row}>
+                      <div
+                        data-config-surface="row"
+                        class="rounded-xl border border-border-weak-base bg-surface-base/60 p-2"
+                        data-row={item.row}
+                      >
                         <div class="config-custom-model-summary grid gap-2 md:grid-cols-[24px_minmax(0,1fr)_5.5rem_minmax(0,1fr)_24px]">
                           <IconButton
                             type="button"
@@ -3639,7 +3642,7 @@ function CustomEditor(props: {
               </div>
             </div>
 
-            <div class="rounded-xl border border-border-weak-base bg-background-base p-4">
+            <div data-config-surface="group" class="rounded-xl border border-border-weak-base bg-background-base p-4">
               <div class="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <div class="text-13-medium text-text-strong">{language.t("config.custom.headers.title")}</div>
@@ -8427,9 +8430,9 @@ export default function ConfigPage() {
   // ConfigLoadingShell in app.tsx to avoid a visual flash on first render.
   return (
     <div data-component="config-page" class="size-full overflow-hidden bg-background-base">
-      <div class="flex h-full min-h-0 flex-col bg-[radial-gradient(circle_at_5%_0%,color-mix(in_srgb,var(--surface-brand-base)_7%,transparent),transparent_32%),linear-gradient(135deg,color-mix(in_srgb,var(--surface-brand-base)_3%,var(--background-base)),var(--background-base)_45%)] xl:flex-row">
+      <div class="flex h-full min-h-0 flex-col bg-background-base xl:flex-row">
         <aside
-          class="h-[200px] shrink-0 border-b border-border-weak-base bg-[linear-gradient(165deg,color-mix(in_srgb,var(--surface-brand-base)_7%,var(--surface-base)),color-mix(in_srgb,var(--surface-brand-base)_3%,var(--background-base))_46%,var(--background-base))] transition-shadow duration-150 xl:h-auto xl:w-[236px] xl:border-r xl:border-b-0"
+          class="h-[200px] shrink-0 border-b border-border-weak-base bg-surface-base xl:h-auto xl:w-[236px] xl:border-r xl:border-b-0"
           classList={{ [CONFIG_PANE_FOCUS_CLASS]: state.focusVisible && state.focusPane === "left" }}
           data-config-pane="left"
           data-focused={state.focusVisible && state.focusPane === "left" ? "true" : undefined}
@@ -8439,7 +8442,7 @@ export default function ConfigPage() {
             <div class="relative flex items-center gap-3 border-b border-border-weak-base px-4 py-5">
               <button
                 type="button"
-                class="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border-weak-base bg-background-base/75 text-text-weak shadow-sm transition-colors hover:border-border-strong hover:bg-surface-base-hover hover:text-text-strong active:bg-surface-base-active"
+                class="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border-weak-base bg-background-base text-text-weak transition-colors hover:border-border-strong hover:bg-surface-base-hover hover:text-text-strong active:bg-surface-base-active"
                 onClick={back}
                 aria-label={language.t("common.goBack")}
               >
@@ -8499,7 +8502,7 @@ export default function ConfigPage() {
                   onClick={() => void jump("commands")}
                 />
               </div>
-              <div class="mx-2 my-3 h-px bg-[linear-gradient(90deg,var(--border-weak-base),transparent)]" />
+              <div class="mx-2 my-3 h-px bg-border-weak-base" />
               <div class="flex flex-col gap-1">
                 <SectionButton
                   current={state.section === "channels"}
@@ -8531,14 +8534,14 @@ export default function ConfigPage() {
 
         <div class="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row">
           <section
-            class="h-[200px] shrink-0 border-b border-border-weak-base bg-[color-mix(in_srgb,var(--surface-brand-base)_3%,var(--surface-base))] backdrop-blur transition-shadow duration-150 xl:h-auto xl:w-[400px] xl:border-r xl:border-b-0"
+            class="h-[200px] shrink-0 border-b border-border-weak-base bg-surface-base xl:h-auto xl:w-[400px] xl:border-r xl:border-b-0"
             classList={{ [CONFIG_PANE_FOCUS_CLASS]: state.focusVisible && state.focusPane === "middle" }}
             data-config-pane="middle"
             data-focused={state.focusVisible && state.focusPane === "middle" ? "true" : undefined}
             onMouseDown={() => clearKeyboardFocus("middle")}
           >
             <div class="flex h-full min-h-0 flex-col">
-              <div class="relative overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--surface-brand-base)_8%,var(--background-base)),color-mix(in_srgb,var(--surface-brand-base)_3%,var(--background-base)))] px-5 py-5">
+              <div class="relative overflow-hidden border-b border-border-weak-base bg-surface-base px-5 py-5">
                 <Switch>
                   <Match when={state.section === "agents-md"}>
                     <ConfigPaneTitle
@@ -8573,7 +8576,7 @@ export default function ConfigPage() {
                         size="large"
                         variant="ghost"
                         icon="plus-small"
-                        class="border border-border-weak-base bg-background-base/75 shadow-none hover:border-border-base hover:bg-background-base"
+                        class="border border-border-weak-base bg-background-base shadow-none hover:border-border-base hover:bg-surface-base-hover"
                         onClick={createCustomProvider}
                       >
                         {t("config.custom.new")}
@@ -8582,7 +8585,7 @@ export default function ConfigPage() {
                         size="large"
                         variant="ghost"
                         icon="arrow-sync"
-                        class="border border-border-weak-base bg-background-base/75 shadow-none hover:border-border-base hover:bg-background-base"
+                        class="border border-border-weak-base bg-background-base shadow-none hover:border-border-base hover:bg-surface-base-hover"
                         disabled={refreshing()}
                         aria-label={t("settings.providers.refresh")}
                         onClick={() => void refreshProviders()}
@@ -9515,7 +9518,7 @@ export default function ConfigPage() {
           </section>
 
           <main
-            class="min-h-0 min-w-0 flex-1 overflow-hidden bg-[linear-gradient(155deg,color-mix(in_srgb,var(--surface-brand-base)_2%,var(--background-base)),var(--background-base)_38%)] transition-shadow duration-150"
+            class="min-h-0 min-w-0 flex-1 overflow-hidden bg-background-base"
             classList={{ [CONFIG_PANE_FOCUS_CLASS]: state.focusVisible && state.focusPane === "right" }}
             data-config-pane="right"
             data-focused={state.focusVisible && state.focusPane === "right" ? "true" : undefined}
@@ -10815,7 +10818,7 @@ function SkillMarket(props: {
                         const isInstalled = () => installed(item, "global") || installed(item, "project")
                         return (
                           <div
-                            class="group relative flex min-h-[180px] flex-col overflow-hidden rounded-xl border border-border-weak-base bg-background-base p-4 text-left transition-all duration-150 ease-out hover:-translate-y-0.5 hover:border-border-strong hover:bg-surface-base-hover hover:shadow-[0_10px_28px_-12px_color-mix(in_srgb,var(--border-strong-base)_55%,transparent)] focus:outline-none focus-visible:border-border-strong focus-visible:bg-surface-base-hover"
+                            class="group relative flex min-h-[180px] flex-col overflow-hidden rounded-xl border border-border-weak-base bg-background-base p-4 text-left transition-colors duration-150 hover:border-border-strong hover:bg-surface-base-hover focus:outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-focus"
                             role="button"
                             tabindex="0"
                             onClick={() => openDetail(item)}
@@ -10825,14 +10828,9 @@ function SkillMarket(props: {
                               openDetail(item)
                             }}
                           >
-                            <div class="pointer-events-none absolute inset-0 rounded-[inherit]">
-                              <div class="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,color-mix(in_srgb,var(--surface-brand-base)_60%,transparent),transparent)] opacity-40 transition-opacity duration-150 group-hover:opacity-100" />
-                              <div class="absolute -right-8 -top-10 size-28 rounded-full bg-[radial-gradient(circle_at_center,color-mix(in_srgb,var(--surface-brand-base)_22%,transparent),transparent_70%)] opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
-                              <div class="absolute inset-0 bg-[linear-gradient(135deg,color-mix(in_srgb,var(--surface-brand-base)_9%,transparent),transparent_55%)] opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
-                            </div>
                             <div class="relative flex min-w-0 items-start justify-between gap-3">
                               <div class="flex min-w-0 items-start gap-2.5">
-                                <div class="flex size-9 shrink-0 items-center justify-center rounded-[10px] border border-border-weak-base bg-[linear-gradient(135deg,color-mix(in_srgb,var(--surface-brand-base)_88%,var(--background-base)),color-mix(in_srgb,var(--surface-brand-hover)_60%,transparent))] text-14-medium text-text-on-brand-strong shadow-sm transition-[transform] duration-150 ease-out group-hover:-rotate-3 group-hover:scale-105">
+                                <div class="flex size-9 shrink-0 items-center justify-center rounded-[10px] border border-border-weak-base bg-surface-secondary text-14-medium text-text-strong">
                                   {item.name.charAt(0).toUpperCase()}
                                 </div>
                                 <div class="min-w-0">
@@ -10841,7 +10839,7 @@ function SkillMarket(props: {
                                     <Icon
                                       name="arrow-right"
                                       size="small"
-                                      class="shrink-0 text-icon-brand-base opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover:translate-x-0.5 group-hover:opacity-100"
+                                      class="shrink-0 text-icon-weak-base transition-colors group-hover:text-icon-strong-base"
                                     />
                                   </div>
                                   <div class="mt-1 line-clamp-3 text-12-regular text-text-weak">{item.description}</div>

@@ -190,7 +190,7 @@ const ChannelDirectoryInput: Component<{
 
   return (
     <div ref={(node) => (rootRef = node)} class="relative">
-      <div class="flex h-10 overflow-hidden rounded-xl border border-border-weak-base bg-background-base transition-colors focus-within:border-border-strong-base focus-within:ring-1 focus-within:ring-border-strong-base">
+      <div class="flex h-10 overflow-hidden rounded-xl border border-border-weak-base bg-background-base transition-colors focus-within:border-border-focus">
         <input
           role="combobox"
           aria-autocomplete="list"
@@ -231,7 +231,7 @@ const ChannelDirectoryInput: Component<{
         <div class="mt-1 text-12-regular text-text-danger">{props.errorText}</div>
       </Show>
       <Show when={state.open && !!platform.listLocalDirectory && filtered().length > 0}>
-        <div class="absolute inset-x-0 top-[calc(100%+0.375rem)] z-20 rounded-xl border border-border-weak-base bg-surface-raised-base p-1.5 shadow-lg">
+        <div class="absolute inset-x-0 top-[calc(100%+0.375rem)] z-20 rounded-xl border border-border-base bg-surface-raised-base p-1.5">
           <For each={filtered()}>
             {(entry, index) => (
               <button
@@ -271,7 +271,7 @@ const ChannelModelSelector: Component<{
         type: "button",
         variant: "ghost",
         class:
-          "h-10 w-full min-w-0 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong transition-colors hover:bg-surface-base-hover focus-visible:ring-2 focus-visible:ring-border-focus-base",
+          "h-10 w-full min-w-0 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong transition-colors hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-focus",
       }}
     >
       <div class="flex min-w-0 items-center gap-2">
@@ -1117,7 +1117,7 @@ export const ConfigChannelsDetail: Component<{
                 <div class="flex flex-col gap-1">
                   <span class="text-12-medium text-text-base">{language.t("config.channels.feishu.setup")}</span>
                   <select
-                    class="h-10 w-full cursor-pointer rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong outline-none transition-[background-color,box-shadow] hover:bg-surface-base-hover focus:bg-surface-base-hover focus-visible:ring-2 focus-visible:ring-border-focus-base active:bg-surface-base-active disabled:cursor-not-allowed disabled:opacity-50"
+                    class="h-10 w-full cursor-pointer rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong outline-none transition-colors hover:bg-surface-base-hover focus:bg-surface-base-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-focus active:bg-surface-base-active disabled:cursor-not-allowed disabled:opacity-50"
                     value={form.mode}
                     onChange={(event) => {
                       const mode = event.currentTarget.value as "qr" | "manual"
