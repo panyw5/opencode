@@ -4,6 +4,7 @@ import { Effect, Layer, Context, Schema, Semaphore } from "effect"
 import { NamedError } from "@opencode-ai/core/util/error"
 import type { Agent } from "@/agent/agent"
 import { Bus } from "@/bus"
+import { Issue as DiagnosticIssue } from "@/issue/issue"
 import { InstanceState } from "@/effect/instance-state"
 import { Global } from "@opencode-ai/core/global"
 import { Permission } from "@/permission"
@@ -195,8 +196,7 @@ const add = Effect.fnUntraced(function* (state: State, match: string, bus: Bus.I
         const message = ConfigMarkdown.FrontmatterError.isInstance(err)
           ? err.data.message
           : `Failed to parse skill ${match}`
-        const { Session } = yield* Effect.promise(() => import("@/session/session"))
-        yield* bus.publish(Session.Event.Error, { error: new NamedError.Unknown({ message }).toObject() })
+        yield* DiagnosticIssue.report({ source: "skill", scope: "project", code: "skill.load_failed", state: "recorded", key: match, message, details: match })
         log.error("failed to load skill", { skill: match, err })
         return undefined
       }),

@@ -15,6 +15,7 @@ type TurnCompleteNotification = NotificationBase & {
 
 type ErrorNotification = NotificationBase & {
   type: "error"
+  issueID?: string
   error: EventSessionError["properties"]["error"]
 }
 
@@ -23,6 +24,10 @@ type ActionNeededNotification = NotificationBase & {
 }
 
 export type Notification = TurnCompleteNotification | ErrorNotification | ActionNeededNotification
+
+export function shouldNotifySuccessfulTurn(message: { role: string; finish?: string; error?: unknown } | undefined) {
+  return message?.role === "assistant" && !message.error && message.finish === "stop"
+}
 
 export function shouldNotifyTurnComplete(
   session: Pick<Session, "parentID" | "time"> | undefined,
@@ -39,6 +44,7 @@ export function markCurrentNotifications(list: Notification[], session: string, 
     if (item.session !== session) return item
     if (item.directory !== directory) return item
     if (item.viewed) return item
+    if (item.type === "error" && item.issueID) return item
     changed = true
     return {
       ...item,

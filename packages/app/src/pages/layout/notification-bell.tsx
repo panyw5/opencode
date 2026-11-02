@@ -5,6 +5,9 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { Popover } from "@opencode-ai/ui/popover"
 import { useNotification } from "@/context/notification"
 import { useLanguage } from "@/context/language"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { DialogIssues } from "@/components/issue-panel"
+import { formatServerError } from "@/utils/server-errors"
 import { usePlatform } from "@/context/platform"
 import type { Notification } from "@/context/notification-state"
 import { BELL_TOAST_TTL_MS, type BellToast } from "@/context/notification-bell-state"
@@ -33,6 +36,7 @@ export function NotificationBell() {
   const notification = useNotification()
   const language = useLanguage()
   const platform = usePlatform()
+  const dialog = useDialog()
   const compactWidth = createMediaQuery("(max-width: 1439px)")
   const compact = () => platform.platform === "web" && compactWidth()
   const [open, setOpen] = createSignal(false)
@@ -156,7 +160,7 @@ export function NotificationBell() {
   const sessionHref = (item: { directory?: string; session?: string }) => {
     if (!item.directory) return undefined
     const base = `/${base64Encode(item.directory)}`
-    return item.session ? `${base}/session/${item.session}` : base
+    return item.session && item.session !== "global" ? `${base}/session/${item.session}` : base
   }
 
   const go = (item: { directory?: string; session?: string }) => {
@@ -179,12 +183,12 @@ export function NotificationBell() {
   })
 
   const rowTitle = (item: Notification) => {
-    const title = notification.titleOf(item.session)
-    if (title) return title
     if (item.type === "error") {
-      const text = typeof item.error === "string" ? item.error : undefined
+      const text = formatServerError(item.error, language.t)
       if (text) return text
     }
+    const title = notification.titleOf(item.session)
+    if (title) return title
     return language.t("notification.bell.untitledSession")
   }
 
@@ -233,6 +237,9 @@ export function NotificationBell() {
               <span class="shrink-0 text-12-regular text-text-weak">·</span>
               <span class="min-w-0 flex-1 truncate text-13-regular text-text-base">
                 {toast.title ?? language.t("notification.bell.untitledSession")}
+                <Show when={toast.description}>
+                  <span class="block truncate text-11-regular text-text-weak">{toast.description}</span>
+                </Show>
               </span>
             </button>
           )}
@@ -289,6 +296,16 @@ export function NotificationBell() {
           >
             <div class="flex shrink-0 items-center justify-between border-b border-border-weak-base px-3 py-2">
               <span class="text-13-medium text-text-strong">{language.t("notification.bell.title")}</span>
+              <button
+                type="button"
+                class="text-12-regular underline"
+                onClick={() => {
+                  setOpen(false)
+                  dialog.show(() => <DialogIssues />)
+                }}
+              >
+                {language.t("diagnostics.title")}
+              </button>
               <Show when={count() > 0}>
                 <button
                   type="button"

@@ -9,6 +9,7 @@ import { serviceUse } from "@/effect/service-use"
 import { Identifier } from "@/id/id"
 import type { InstanceContext } from "@/project/instance-context"
 import { InstanceRef } from "@/effect/instance-ref"
+import { Issue } from "@/issue/issue"
 
 const log = Log.create({ service: "bus" })
 
@@ -99,8 +100,30 @@ export const layer = Layer.effect(
 
     function publish<D extends BusEvent.Definition>(def: D, properties: BusProperties<D>, options?: { id?: string }) {
       return Effect.gen(function* () {
+        if (
+          [
+            "permission.asked",
+            "permission.replied",
+            "question.asked",
+            "question.replied",
+            "question.rejected",
+          ].includes(def.type)
+        ) {
+          yield* Issue.interaction(def.type, properties as { id?: string; requestID?: string; sessionID?: string })
+        }
+        let issueID: string | undefined
+        if (def.type === "session.error") {
+          const captured = yield* Issue.fromSessionError(properties as { sessionID?: string; error?: unknown })
+          if (!Issue.needsAttention(captured.issue)) return
+          issueID = captured.issue.id
+          if (!captured.notify) return
+        }
         const s = yield* InstanceState.get(state)
-        const payload: Payload = { id: options?.id ?? createID(), type: def.type, properties }
+        const payload: Payload = {
+          id: options?.id ?? createID(),
+          type: def.type,
+          properties: issueID ? Object.assign({}, properties, { issueID }) : properties,
+        }
         log.info("publishing", { type: def.type })
 
         const ps = s.typed.get(def.type)

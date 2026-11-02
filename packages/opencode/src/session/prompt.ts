@@ -12,6 +12,7 @@ import { type Tool as AITool, tool, jsonSchema } from "ai"
 import type { JSONSchema7 } from "@ai-sdk/provider"
 import { SessionCompaction } from "./compaction"
 import { Bus } from "../bus"
+import { Issue } from "@/issue/issue"
 import { SystemPrompt } from "./system"
 import { CodeModeState } from "./code-mode-state"
 import { SessionInstructionState } from "./instruction-state"
@@ -646,7 +647,10 @@ export const layer = Layer.effect(
       const ctx = yield* InstanceState.context
       const promptOps = yield* ops()
       const { task: taskTool } = yield* registry.named()
-      const taskModel = task.model ? yield* getModel(task.model.providerID, task.model.modelID, sessionID) : model
+      const selectedModel = task.model
+        ? yield* provider.getModel(task.model.providerID, task.model.modelID).pipe(Effect.exit)
+        : Exit.succeed(model)
+      const taskModel = Exit.isSuccess(selectedModel) ? selectedModel.value : model
       const assistantMessage: MessageV2.Assistant = yield* sessions.updateMessage({
         id: MessageID.ascending(),
         role: "assistant",
@@ -693,75 +697,70 @@ export const layer = Layer.effect(
       )
 
       const taskAgent = yield* agents.get(task.agent)
-      if (!taskAgent) {
-        const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
-        const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
-        const error = new NamedError.Unknown({ message: `Agent not found: "${task.agent}".${hint}` })
-        yield* bus.publish(Session.Event.Error, { sessionID, error: error.toObject() })
-        throw error
-      }
 
       let error: Error | undefined
       const taskAbort = new AbortController()
-      const result = yield* taskTool
-        .execute(taskArgs, {
-          agent: task.agent,
-          messageID: assistantMessage.id,
-          sessionID,
-          abort: taskAbort.signal,
-          callID: part.callID,
-          extra: { bypassAgentCheck: true, promptOps },
-          messages: msgs,
-          metadata: (val: { title?: string; metadata?: Record<string, unknown> }) =>
-            Effect.gen(function* () {
-              if (part.state.status !== "running") return
-              part = yield* sessions.updatePart({
-                ...part,
-                type: "tool",
-                state: {
-                  ...part.state,
-                  ...(val.title === undefined ? {} : { title: val.title }),
-                  ...(val.metadata === undefined ? {} : { metadata: { ...part.state.metadata, ...val.metadata } }),
-                },
-              } satisfies MessageV2.ToolPart)
-            }),
-          ask: (req: any) =>
-            permission
-              .ask({
-                ...req,
-                sessionID,
-                ruleset: Permission.merge(taskAgent.permission, session.permission ?? []),
-              })
-              .pipe(Effect.orDie),
-        })
-        .pipe(
-          Effect.catchCause((cause) => {
-            const defect = Cause.squash(cause)
-            error = defect instanceof Error ? defect : new Error(String(defect))
-            log.error("subtask execution failed", { error, agent: task.agent, description: task.description })
-            return Effect.void
-          }),
-          Effect.onInterrupt(() =>
-            Effect.uninterruptible(
-              Effect.gen(function* () {
-                taskAbort.abort()
-                assistantMessage.finish = "tool-calls"
-                assistantMessage.time.completed = Date.now()
-                yield* sessions.updateMessage(assistantMessage)
-                if (part.state.status === "running") {
-                  yield* sessions.abortToolPart({
+      const result = yield* (
+        Exit.isFailure(selectedModel)
+          ? Effect.failCause(selectedModel.cause).pipe(Effect.orDie)
+          : taskTool.execute(taskArgs, {
+              agent: task.agent,
+              messageID: assistantMessage.id,
+              sessionID,
+              abort: taskAbort.signal,
+              callID: part.callID,
+              extra: { bypassAgentCheck: true, promptOps },
+              messages: msgs,
+              metadata: (val: { title?: string; metadata?: Record<string, unknown> }) =>
+                Effect.gen(function* () {
+                  if (part.state.status !== "running") return
+                  part = yield* sessions.updatePart({
+                    ...part,
+                    type: "tool",
+                    state: {
+                      ...part.state,
+                      ...(val.title === undefined ? {} : { title: val.title }),
+                      ...(val.metadata === undefined ? {} : { metadata: { ...part.state.metadata, ...val.metadata } }),
+                    },
+                  } satisfies MessageV2.ToolPart)
+                }),
+              ask: (req: any) =>
+                permission
+                  .ask({
+                    ...req,
                     sessionID,
-                    messageID: assistantMessage.id,
-                    partID: part.id,
-                    source: "tool-specific-interrupt",
-                    error: "Cancelled",
-                    ownerMessageID: assistantMessage.id,
+                    ruleset: Permission.merge(taskAgent?.permission ?? [], session.permission ?? []),
                   })
-                }
-              }),
-            ),
+                  .pipe(Effect.orDie),
+            })
+      ).pipe(
+        Effect.catchCause((cause) => {
+          const defect = Cause.squash(cause)
+          error = defect instanceof Error ? defect : new Error(String(defect))
+          log.error("subtask execution failed", { error, agent: task.agent, description: task.description })
+          return Effect.void
+        }),
+        Effect.onInterrupt(() =>
+          Effect.uninterruptible(
+            Effect.gen(function* () {
+              taskAbort.abort()
+              assistantMessage.finish = "tool-calls"
+              assistantMessage.time.completed = Date.now()
+              yield* sessions.updateMessage(assistantMessage)
+              if (part.state.status === "running") {
+                yield* sessions.abortToolPart({
+                  sessionID,
+                  messageID: assistantMessage.id,
+                  partID: part.id,
+                  source: "tool-specific-interrupt",
+                  error: "Cancelled",
+                  ownerMessageID: assistantMessage.id,
+                })
+              }
+            }),
           ),
-        )
+        ),
+      )
 
       const attachments = result?.attachments?.map((attachment) => ({
         ...attachment,
@@ -1521,6 +1520,17 @@ export const layer = Layer.effect(
               const error = Cause.squash(exit.cause)
               log.error("failed to read MCP resource", { error, clientName, uri })
               const message = error instanceof Error ? error.message : String(error)
+              yield* Issue.report({
+                source: "attachment:mcp",
+                scope: "tool",
+                code: "attachment.read_failed",
+                state: "recorded",
+                sessionID: input.sessionID,
+                messageID: info.id,
+                key: `${info.id}:${uri}`,
+                message,
+                details: uri,
+              })
               pieces.push({
                 messageID: info.id,
                 sessionID: input.sessionID,
@@ -1563,6 +1573,7 @@ export const layer = Layer.effect(
               const { read } = yield* registry.named()
               const execRead = (args: Parameters<typeof read.execute>[0], extra?: Tool.Context["extra"]) => {
                 const controller = new AbortController()
+                log.debug("attachment read begin", { sessionID: input.sessionID, filepath, mime })
                 return read
                   .execute(args, {
                     sessionID: input.sessionID,
@@ -1620,6 +1631,7 @@ export const layer = Layer.effect(
                 )
                 if (Exit.isSuccess(exit)) {
                   const result = exit.value
+                  log.debug("attachment read completed", { sessionID: input.sessionID, filepath, mime })
                   pieces.push({
                     messageID: info.id,
                     sessionID: input.sessionID,
@@ -1642,11 +1654,24 @@ export const layer = Layer.effect(
                   }
                 } else {
                   const error = Cause.squash(exit.cause)
-                  log.error("failed to read file", { error })
                   const message = error instanceof Error ? error.message : String(error)
-                  yield* bus.publish(Session.Event.Error, {
+                  log.warn("attachment read failed; continuing with failure context", {
                     sessionID: input.sessionID,
-                    error: new NamedError.Unknown({ message }).toObject(),
+                    filepath,
+                    mime,
+                    error: message,
+                    recovery: "model-context",
+                  })
+                  yield* Issue.report({
+                    source: "attachment",
+                    scope: "tool",
+                    code: "attachment.read_failed",
+                    state: "recorded",
+                    sessionID: input.sessionID,
+                    messageID: info.id,
+                    key: `${info.id}:${filepath}`,
+                    message,
+                    details: filepath,
                   })
                   pieces.push({
                     messageID: info.id,
@@ -1664,11 +1689,24 @@ export const layer = Layer.effect(
                 const exit = yield* execRead(args).pipe(Effect.exit)
                 if (Exit.isFailure(exit)) {
                   const error = Cause.squash(exit.cause)
-                  log.error("failed to read directory", { error })
                   const message = error instanceof Error ? error.message : String(error)
-                  yield* bus.publish(Session.Event.Error, {
+                  log.warn("attachment read failed; continuing with failure context", {
                     sessionID: input.sessionID,
-                    error: new NamedError.Unknown({ message }).toObject(),
+                    filepath,
+                    mime,
+                    error: message,
+                    recovery: "model-context",
+                  })
+                  yield* Issue.report({
+                    source: "attachment",
+                    scope: "tool",
+                    code: "attachment.read_failed",
+                    state: "recorded",
+                    sessionID: input.sessionID,
+                    messageID: info.id,
+                    key: `${info.id}:${filepath}`,
+                    message,
+                    details: filepath,
                   })
                   return [
                     ...(referenceContext
@@ -1683,6 +1721,7 @@ export const layer = Layer.effect(
                     },
                   ]
                 }
+                log.debug("attachment read completed", { sessionID: input.sessionID, filepath, mime })
                 return [
                   ...(referenceContext
                     ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }]
@@ -2521,6 +2560,13 @@ export const layer = Layer.effect(
           if (task?.type === "compaction") {
             if (compactRetries >= MAX_COMPACTION_RETRIES) {
               yield* slog.warn("exiting loop — max compaction retries exceeded", { compactRetries })
+              yield* bus.publish(Session.Event.Error, {
+                sessionID,
+                error: new NamedError.Unknown({
+                  message:
+                    "Automatic context recovery exhausted its retry budget. Reduce the context or start a new session.",
+                }).toObject(),
+              })
               break
             }
             compactRetries++
@@ -2542,6 +2588,12 @@ export const layer = Layer.effect(
           ) {
             if (compactRetries >= MAX_COMPACTION_RETRIES) {
               yield* slog.warn("exiting loop — max compaction retries exceeded (overflow)", { compactRetries })
+              yield* bus.publish(Session.Event.Error, {
+                sessionID,
+                error: new NamedError.Unknown({
+                  message: "Context overflow could not be recovered within the compaction budget.",
+                }).toObject(),
+              })
               break
             }
             compactRetries++
@@ -2806,6 +2858,7 @@ export const layer = Layer.effect(
                 retries: 0,
               }).toObject()
               yield* sessions.updateMessage(handle.message)
+              yield* bus.publish(Session.Event.Error, { sessionID, error: handle.message.error })
               return "break" as const
             }
 
@@ -2825,7 +2878,8 @@ export const layer = Layer.effect(
               })
             }
 
-            const finished = handle.message.finish && !["tool-calls", "unknown", "length"].includes(handle.message.finish)
+            const finished =
+              handle.message.finish && !["tool-calls", "unknown", "length"].includes(handle.message.finish)
             if (finished && !handle.message.error) {
               if (format.type === "json_schema") {
                 handle.message.error = new MessageV2.StructuredOutputError({
@@ -2833,6 +2887,7 @@ export const layer = Layer.effect(
                   retries: 0,
                 }).toObject()
                 yield* sessions.updateMessage(handle.message)
+                yield* bus.publish(Session.Event.Error, { sessionID, error: handle.message.error })
                 return "break" as const
               }
             }
@@ -2842,6 +2897,12 @@ export const layer = Layer.effect(
             if (result === "compact") {
               if (compactRetries >= MAX_COMPACTION_RETRIES) {
                 yield* slog.warn("exiting loop — max compaction retries exceeded (process)", { compactRetries })
+                yield* bus.publish(Session.Event.Error, {
+                  sessionID,
+                  error: new NamedError.Unknown({
+                    message: "Automatic context recovery exhausted its retry budget.",
+                  }).toObject(),
+                })
                 return "break" as const
               }
               compactRetries++
@@ -3025,14 +3086,16 @@ export const layer = Layer.effect(
     const shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts, Session.BusyError> = Effect.fn(
       "SessionPrompt.shell",
     )(function* (input: ShellInput) {
-      if ((yield* sessions.get(input.sessionID).pipe(Effect.orDie)).external) throw new Error("Shell is unavailable in external CLI sessions")
+      if ((yield* sessions.get(input.sessionID).pipe(Effect.orDie)).external)
+        throw new Error("Shell is unavailable in external CLI sessions")
       yield* ensureBackgroundShellSubscription()
       const ready = yield* Latch.make()
       return yield* state.startShell(input.sessionID, lastAssistant(input.sessionID), shellImpl(input, ready), ready)
     })
 
     const command = Effect.fn("SessionPrompt.command")(function* (input: CommandInput) {
-      if ((yield* sessions.get(input.sessionID).pipe(Effect.orDie)).external) throw new Error("Commands are unavailable in external CLI sessions")
+      if ((yield* sessions.get(input.sessionID).pipe(Effect.orDie)).external)
+        throw new Error("Commands are unavailable in external CLI sessions")
       yield* ensureBackgroundShellSubscription()
       yield* elog.info("command", { sessionID: input.sessionID, command: input.command, agent: input.agent })
       const cmd = yield* commands.get(input.command)

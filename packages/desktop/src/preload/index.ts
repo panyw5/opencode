@@ -268,6 +268,7 @@ const api: ElectronAPI = {
   readClipboardImage: () => ipcRenderer.invoke("read-clipboard-image"),
   showNotification: (title, body, href, attention) =>
     ipcRenderer.invoke("show-notification", title, body, href, attention),
+  claimNotification: (key) => ipcRenderer.invoke("claim-notification", key),
   openNotificationSettings: () => ipcRenderer.invoke("open-notification-settings"),
   onNotificationClick: (cb) => {
     const handler = (_: unknown, href?: string) => cb(href)

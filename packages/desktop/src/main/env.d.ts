@@ -7,6 +7,8 @@ interface ImportMeta {
 }
 
 declare module "virtual:opencode-server" {
+  export const recordDesktopIssue: typeof import("../../../opencode/dist/types/src/node").recordDesktopIssue
+  export const recordDesktopRecovery: typeof import("../../../opencode/dist/types/src/node").recordDesktopRecovery
   export namespace Server {
     export const listen: typeof import("../../../opencode/dist/types/src/node").Server.listen
     export type Listener = import("../../../opencode/dist/types/src/node").Server.Listener

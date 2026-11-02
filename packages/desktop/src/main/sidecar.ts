@@ -37,6 +37,7 @@ type Listener = {
 const parentPort = getParentPort()
 let listener: Listener | undefined
 let fatalReported = false
+let recordIssue: typeof import("virtual:opencode-server").recordDesktopIssue | undefined
 
 // A stray unhandled rejection (e.g. ENOENT from a deleted project directory) must not
 // take down the whole sidecar; log it and keep serving. Only uncaughtException is fatal.
@@ -65,7 +66,8 @@ async function start(command: StartCommand) {
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
-    const { Database, Log, Server } = await import("virtual:opencode-server")
+    const { Database, Log, Server, recordDesktopIssue, recordDesktopRecovery } = await import("virtual:opencode-server")
+    recordIssue = recordDesktopIssue
     console.error(`sidecar lifecycle bundle-ready pid=${String(process.pid)}`)
     await Log.init({ level: "INFO" })
 
@@ -94,8 +96,10 @@ async function start(command: StartCommand) {
       cors: ["oc://renderer"],
     })
     console.error(`sidecar lifecycle listen-ready pid=${String(process.pid)} port=${String(command.port)}`)
+    recordDesktopRecovery()
     parentPort.postMessage({ type: "ready" })
   } catch (error) {
+    recordIssue?.({ ...serializeError(error), details: serializeError(error).stack, fatal: true })
     parentPort.postMessage({ type: "error", error: serializeError(error) })
     setImmediate(() => process.exit(1))
   }
@@ -201,6 +205,7 @@ function reportFatal(type: "uncaughtException" | "unhandledRejection", error: un
   fatalReported = true
   const serialized = serializeError(error)
   const message = `sidecar ${type}: ${serialized.stack ?? serialized.message}`
+  recordIssue?.({ message: serialized.message, details: serialized.stack, fatal: true })
   const fatalError = serialized.stack ? { message, stack: serialized.stack } : { message }
   try {
     parentPort.postMessage({ type: "error", error: fatalError })
@@ -213,5 +218,6 @@ function reportFatal(type: "uncaughtException" | "unhandledRejection", error: un
 
 function reportNonFatal(type: "unhandledRejection", error: unknown) {
   const serialized = serializeError(error)
+  recordIssue?.({ message: serialized.message, details: serialized.stack, fatal: false })
   console.error(`sidecar ${type} (non-fatal, logged): ${serialized.stack ?? serialized.message}`)
 }

@@ -402,6 +402,7 @@ export type ElectronAPI = {
   ) => Promise<ExtraAgentInfo>
   readClipboardImage: () => Promise<{ buffer: ArrayBuffer; width: number; height: number } | null>
   showNotification: (title: string, body?: string, href?: string, attention?: boolean) => Promise<void>
+  claimNotification: (key: string) => Promise<boolean>
   openNotificationSettings: () => Promise<void>
   onNotificationClick: (cb: (href?: string) => void) => () => void
   getWindowFocused: () => Promise<boolean>

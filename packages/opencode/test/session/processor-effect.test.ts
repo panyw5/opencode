@@ -1039,7 +1039,6 @@ it.live("session.processor effect tests record aborted errors and idle state", (
   provideTmpdirServer(
     ({ dir, llm }) =>
       Effect.gen(function* () {
-        const seen = defer<void>()
         const { processors, session, provider } = yield* boot()
         const bus = yield* Bus.Service
         const sts = yield* SessionStatus.Service
@@ -1055,7 +1054,6 @@ it.live("session.processor effect tests record aborted errors and idle state", (
           if (evt.properties.sessionID !== chat.id) return
           if (!evt.properties.error) return
           errs.push(evt.properties.error.name)
-          seen.resolve()
         })
         const handle = yield* processors.create({
           assistantMessage: msg,
@@ -1086,7 +1084,6 @@ it.live("session.processor effect tests record aborted errors and idle state", (
         yield* Fiber.interrupt(run)
 
         const exit = yield* Fiber.await(run)
-        yield* Effect.promise(() => seen.promise)
         const stored = yield* MessageV2.get({ sessionID: chat.id, messageID: msg.id })
         const state = yield* sts.get(chat.id)
         off()
@@ -1101,7 +1098,7 @@ it.live("session.processor effect tests record aborted errors and idle state", (
           expect(stored.info.error?.name).toBe("MessageAbortedError")
         }
         expect(state).toMatchObject({ type: "idle" })
-        expect(errs).toContain("MessageAbortedError")
+        expect(errs).toEqual([])
       }),
     { config: (url) => providerCfg(url) },
   ),

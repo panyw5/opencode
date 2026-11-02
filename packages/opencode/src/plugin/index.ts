@@ -7,6 +7,7 @@ import type {
 } from "@opencode-ai/plugin"
 import { Config } from "@/config/config"
 import { Bus } from "../bus"
+import { Issue } from "@/issue/issue"
 import * as Log from "@opencode-ai/core/util/log"
 import { createOpencodeClient } from "@opencode-ai/sdk"
 import { ServerAuth } from "@/server/auth"
@@ -344,7 +345,7 @@ export const layer = Layer.effect(
         )
 
         function publishPluginError(message: string) {
-          bridge.fork(bus.publish(Session.Event.Error, { error: new NamedError.Unknown({ message }).toObject() }))
+          bridge.fork(Issue.report({ source: "plugin", scope: "project", code: "plugin.load_failed", state: "recorded", key: message, message }))
         }
 
         const { Server } = yield* Effect.promise(() => import("../server/server"))
@@ -444,6 +445,7 @@ export const layer = Layer.effect(
             catch: (err) => {
               const message = errorMessage(err)
               log.error("failed to load plugin", { path: load.spec, error: message })
+              publishPluginError(`Failed to initialize plugin ${load.spec}: ${message}`)
               return message
             },
           }).pipe(
@@ -466,6 +468,7 @@ export const layer = Layer.effect(
             try: () => Promise.resolve((entry.hooks as any).config?.(cfg)),
             catch: (err) => {
               log.error("plugin config hook failed", { error: err })
+              publishPluginError(`Plugin ${entry.id} configuration failed: ${errorMessage(err)}`)
             },
           }).pipe(Effect.ignore)
         }

@@ -54,6 +54,12 @@ function fixture() {
 }
 
 describe("native system notifications", () => {
+  test("claims critical attention once across renderer windows", () => {
+    const f = fixture()
+    expect(f.controller.claim("issue-1")).toBe(true)
+    expect(f.controller.claim("issue-1")).toBe(false)
+    expect(f.controller.claim("issue-2")).toBe(true)
+  })
   test("sends title/body natively without remote resources", () => {
     const f = fixture()
     f.controller.show(f.window, "Permission needed", "Project / Session", "/repo/session/ses_1")

@@ -78,7 +78,7 @@ export const Request = Schema.Struct({
     description: "Questions to ask",
   }),
   tool: Schema.optional(Tool),
-  expiresAt: Schema.optional(Schema.Number).annotate({
+  expiresAt: Schema.optional(Schema.Number.check(Schema.isFinite())).annotate({
     description: "Absolute response deadline in Unix milliseconds",
   }),
 }).annotate({ identifier: "QuestionRequest" })

@@ -5,19 +5,20 @@ export type ClientOptions = {
 }
 
 export type Event =
+  | EventIssueUpdated
   | EventServerInstanceDisposed
   | EventFileEdited
   | EventFileWatcherInvalidated
   | EventFileWatcherUpdated
-  | EventMcpToolsChanged
-  | EventMcpBrowserOpenFailed
-  | EventPermissionAsked
-  | EventPermissionReplied
-  | EventCommandExecuted
-  | EventProjectUpdated
   | EventLspClientDiagnostics
   | EventLspUpdated
   | EventMessagePartDelta1
+  | EventPermissionAsked
+  | EventPermissionReplied
+  | EventMcpToolsChanged
+  | EventMcpBrowserOpenFailed
+  | EventCommandExecuted
+  | EventProjectUpdated
   | EventTodoUpdated
   | EventSessionDiff
   | EventSessionError
@@ -95,6 +96,13 @@ export type Event =
   | EventAccountSwitched
   | EventCatalogModelUpdated
 
+export type InvalidRequestError = {
+  _tag: "InvalidRequestError"
+  message: string
+  kind?: string
+  field?: string
+}
+
 export type OAuth = {
   type: "oauth"
   refresh: string
@@ -122,13 +130,6 @@ export type Auth = OAuth | ApiAuth | WellKnownAuth
 
 export type EffectHttpApiErrorBadRequest = {
   _tag: "BadRequest"
-}
-
-export type InvalidRequestError = {
-  _tag: "InvalidRequestError"
-  message: string
-  kind?: string
-  field?: string
 }
 
 export type PermissionRequest = {
@@ -327,9 +328,6 @@ export type QuestionRequest = {
    */
   questions: Array<QuestionPrompt>
   tool?: QuestionTool
-  /**
-   * Absolute response deadline in Unix milliseconds
-   */
   expiresAt?: number
 }
 
@@ -1444,19 +1442,20 @@ export type GlobalEvent = {
   project?: string
   workspace?: string
   payload:
+    | EventIssueUpdated
     | EventServerInstanceDisposed
     | EventFileEdited
     | EventFileWatcherInvalidated
     | EventFileWatcherUpdated
-    | EventMcpToolsChanged
-    | EventMcpBrowserOpenFailed
-    | EventPermissionAsked
-    | EventPermissionReplied
-    | EventCommandExecuted
-    | EventProjectUpdated
     | EventLspClientDiagnostics
     | EventLspUpdated
     | EventMessagePartDelta
+    | EventPermissionAsked
+    | EventPermissionReplied
+    | EventMcpToolsChanged
+    | EventMcpBrowserOpenFailed
+    | EventCommandExecuted
+    | EventProjectUpdated
     | EventTodoUpdated
     | EventSessionDiff
     | EventSessionError
@@ -2345,20 +2344,6 @@ export type EffectHttpApiErrorForbidden = {
   _tag: "Forbidden"
 }
 
-export type QuestionRequest1 = {
-  id: string
-  sessionID: string
-  /**
-   * Questions to ask
-   */
-  questions: Array<QuestionPrompt>
-  tool?: QuestionTool
-  /**
-   * Absolute response deadline in Unix milliseconds
-   */
-  expiresAt?: number
-}
-
 export type BackgroundShell3 = {
   id: string
   sessionID: string
@@ -3091,6 +3076,35 @@ export type SyncEventSessionNextCompactionEnded = {
   }
 }
 
+export type EventIssueUpdated = {
+  id: string
+  type: "issue.updated"
+  properties: {
+    issue: {
+      id: string
+      directory: string
+      domain: string
+      sessionID?: string
+      messageID?: string
+      toolCallID?: string
+      code: string
+      source: string
+      scope: "tool" | "session" | "project" | "application"
+      state: "recorded" | "recovering" | "needs_user" | "failed" | "resolved" | "cancelled"
+      message: string
+      details?: string
+      action?: string
+      createdAt: number
+      updatedAt: number
+      readAt?: number
+      acknowledgedAt?: number
+      storage: "database" | "fallback"
+      occurrences: number
+    }
+    notify: boolean
+  }
+}
+
 export type EventServerInstanceDisposed = {
   id: string
   type: "server.instance.disposed"
@@ -3124,56 +3138,6 @@ export type EventFileWatcherUpdated = {
   }
 }
 
-export type EventMcpToolsChanged = {
-  id: string
-  type: "mcp.tools.changed"
-  properties: {
-    server: string
-  }
-}
-
-export type EventMcpBrowserOpenFailed = {
-  id: string
-  type: "mcp.browser.open.failed"
-  properties: {
-    mcpName: string
-    url: string
-  }
-}
-
-export type EventPermissionAsked = {
-  id: string
-  type: "permission.asked"
-  properties: PermissionRequest
-}
-
-export type EventPermissionReplied = {
-  id: string
-  type: "permission.replied"
-  properties: {
-    sessionID: string
-    requestID: string
-    reply: "once" | "always" | "reject"
-  }
-}
-
-export type EventCommandExecuted = {
-  id: string
-  type: "command.executed"
-  properties: {
-    name: string
-    sessionID: string
-    arguments: string
-    messageID: string
-  }
-}
-
-export type EventProjectUpdated = {
-  id: string
-  type: "project.updated"
-  properties: Project
-}
-
 export type EventLspClientDiagnostics = {
   id: string
   type: "lsp.client.diagnostics"
@@ -3204,6 +3168,56 @@ export type EventMessagePartDelta = {
   }
 }
 
+export type EventPermissionAsked = {
+  id: string
+  type: "permission.asked"
+  properties: PermissionRequest
+}
+
+export type EventPermissionReplied = {
+  id: string
+  type: "permission.replied"
+  properties: {
+    sessionID: string
+    requestID: string
+    reply: "once" | "always" | "reject"
+  }
+}
+
+export type EventMcpToolsChanged = {
+  id: string
+  type: "mcp.tools.changed"
+  properties: {
+    server: string
+  }
+}
+
+export type EventMcpBrowserOpenFailed = {
+  id: string
+  type: "mcp.browser.open.failed"
+  properties: {
+    mcpName: string
+    url: string
+  }
+}
+
+export type EventCommandExecuted = {
+  id: string
+  type: "command.executed"
+  properties: {
+    name: string
+    sessionID: string
+    arguments: string
+    messageID: string
+  }
+}
+
+export type EventProjectUpdated = {
+  id: string
+  type: "project.updated"
+  properties: Project
+}
+
 export type EventTodoUpdated = {
   id: string
   type: "todo.updated"
@@ -3227,6 +3241,7 @@ export type EventSessionError = {
   type: "session.error"
   properties: {
     sessionID?: string
+    issueID?: string
     error?:
       | ProviderAuthError
       | UnknownError
@@ -4663,6 +4678,170 @@ export type BadRequestError = {
     kind?: "Params" | "Headers" | "Query" | "Body" | "Payload"
   }
 }
+
+export type IssueListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    sessionID?: string
+    before?: string
+    attention?: "true" | "false"
+    limit?: string
+  }
+  url: "/global/issue"
+}
+
+export type IssueListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type IssueListError = IssueListErrors[keyof IssueListErrors]
+
+export type IssueListResponses = {
+  /**
+   * Success
+   */
+  200: Array<{
+    id: string
+    directory: string
+    domain: string
+    sessionID?: string
+    messageID?: string
+    toolCallID?: string
+    code: string
+    source: string
+    scope: "tool" | "session" | "project" | "application"
+    state: "recorded" | "recovering" | "needs_user" | "failed" | "resolved" | "cancelled"
+    message: string
+    details?: string
+    action?: string
+    createdAt: number
+    updatedAt: number
+    readAt?: number
+    acknowledgedAt?: number
+    storage: "database" | "fallback"
+    occurrences: number
+  }>
+}
+
+export type IssueListResponse = IssueListResponses[keyof IssueListResponses]
+
+export type IssueGetData = {
+  body?: never
+  path: {
+    issueID: string
+  }
+  query?: never
+  url: "/global/issue/{issueID}"
+}
+
+export type IssueGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type IssueGetError = IssueGetErrors[keyof IssueGetErrors]
+
+export type IssueGetResponses = {
+  /**
+   * Success
+   */
+  200: {
+    issue: {
+      id: string
+      directory: string
+      domain: string
+      sessionID?: string
+      messageID?: string
+      toolCallID?: string
+      code: string
+      source: string
+      scope: "tool" | "session" | "project" | "application"
+      state: "recorded" | "recovering" | "needs_user" | "failed" | "resolved" | "cancelled"
+      message: string
+      details?: string
+      action?: string
+      createdAt: number
+      updatedAt: number
+      readAt?: number
+      acknowledgedAt?: number
+      storage: "database" | "fallback"
+      occurrences: number
+    }
+    history: Array<{
+      id: string
+      time: number
+      state: "recorded" | "recovering" | "needs_user" | "failed" | "resolved" | "cancelled"
+      message: string
+      details?: string
+    }>
+  }
+}
+
+export type IssueGetResponse = IssueGetResponses[keyof IssueGetResponses]
+
+export type IssueMarkData = {
+  body?: {
+    action: "read" | "acknowledge"
+  }
+  path: {
+    issueID: string
+  }
+  query?: never
+  url: "/global/issue/{issueID}"
+}
+
+export type IssueMarkErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type IssueMarkError = IssueMarkErrors[keyof IssueMarkErrors]
+
+export type IssueMarkResponses = {
+  /**
+   * Success
+   */
+  200: {
+    id: string
+    directory: string
+    domain: string
+    sessionID?: string
+    messageID?: string
+    toolCallID?: string
+    code: string
+    source: string
+    scope: "tool" | "session" | "project" | "application"
+    state: "recorded" | "recovering" | "needs_user" | "failed" | "resolved" | "cancelled"
+    message: string
+    details?: string
+    action?: string
+    createdAt: number
+    updatedAt: number
+    readAt?: number
+    acknowledgedAt?: number
+    storage: "database" | "fallback"
+    occurrences: number
+  }
+}
+
+export type IssueMarkResponse = IssueMarkResponses[keyof IssueMarkResponses]
 
 export type AuthRemoveData = {
   body?: never

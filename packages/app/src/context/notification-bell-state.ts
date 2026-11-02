@@ -6,6 +6,7 @@ export type BellToast = {
   session?: string
   directory?: string
   title?: string
+  description?: string
   time: number
 }
 

@@ -1,4 +1,5 @@
 import { Image } from "@/image/image"
+import { Issue } from "@/issue/issue"
 import { Cause, Deferred, Effect, Exit, Layer, Context, Scope, Schema, Semaphore } from "effect"
 import * as Stream from "effect/Stream"
 import { Agent } from "@/agent/agent"
@@ -1096,6 +1097,7 @@ export const layer = Layer.effect(
           }
         }
         ctx.assistantMessage.error = error
+        if (error.name === "MessageAbortedError") yield* Issue.settle(ctx.sessionID, "cancelled", errorMessage(e))
         yield* bus.publish(Session.Event.Error, {
           sessionID: ctx.assistantMessage.sessionID,
           error: ctx.assistantMessage.error,
@@ -1160,7 +1162,19 @@ export const layer = Layer.effect(
                         timestamp: DateTime.makeUnsafe(Date.now()),
                       })
                     : Effect.void
-                  return event.pipe(
+                  return Issue.report({
+                    source: "provider",
+                    scope: "session",
+                    code: "provider.retry",
+                    state: info.action ? "needs_user" : "recovering",
+                    action: info.action?.message,
+                    sessionID: ctx.sessionID,
+                    messageID: ctx.assistantMessage.id,
+                    occurrenceKey: String(info.attempt),
+                    message: info.message,
+                    details: `attempt=${info.attempt} next=${info.next}`,
+                  }).pipe(
+                    Effect.andThen(event),
                     Effect.andThen(
                       status.set(ctx.sessionID, {
                         type: "retry",
@@ -1180,6 +1194,7 @@ export const layer = Layer.effect(
 
           if (ctx.needsCompaction) return "compact"
           if (ctx.stopAfterStepHit || ctx.blocked || ctx.assistantMessage.error) return "stop"
+          yield* Issue.settle(ctx.sessionID, "resolved", "The agent resumed successfully after recovery.")
           return "continue"
         })
       })

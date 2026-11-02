@@ -538,13 +538,12 @@ export const layer = Layer.effect(
         // The summary request itself exceeded the model context limit. Retry
         // with the oldest turns dropped instead of failing the compaction.
         const shrunk = shrinks < MAX_SUMMARY_SHRINKS ? yield* shrinkSummaryInput(head) : undefined
-        processor.message.error = new MessageV2.ContextOverflowError({
-          message: overflowText,
-        }).toObject()
-        processor.message.finish = "error"
-        yield* session.updateMessage(processor.message)
         if (!shrunk) {
+          processor.message.error = new MessageV2.ContextOverflowError({ message: overflowText }).toObject()
+          processor.message.finish = "error"
+          yield* session.updateMessage(processor.message)
           log.info("summary input cannot fit context limit", { shrinks })
+          yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: { name: "UnknownError", data: { message: overflowText } } })
           return "stop"
         }
         shrinks++

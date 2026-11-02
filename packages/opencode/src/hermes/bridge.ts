@@ -72,6 +72,8 @@ type ToolPart = {
 type Part = TextPart | ToolPart
 
 type MessageInfo = {
+  finish?: string
+  error?: { name: "UnknownError"; data: { message: string } }
   id: string
   sessionID: string
   role: "user" | "assistant"
@@ -257,7 +259,10 @@ function resolvePython(input: string | undefined, dir: string) {
   return path.join(dir, "venv", "bin", "python")
 }
 
+import { IssueTracker } from "@/issue/external"
+
 class Events {
+  private issues = new IssueTracker("extra-agent/hermes")
   private listeners = new Set<(event: Event) => void>()
 
   on(listener: (event: Event) => void) {
@@ -266,6 +271,7 @@ class Events {
   }
 
   emit(event: Event) {
+    this.issues.observe(event)
     for (const listener of this.listeners) listener(event)
   }
 }
@@ -1089,6 +1095,7 @@ export namespace HermesBridge {
                 }
                 assistant.info.modelID = event.modelID || assistant.info.modelID
                 assistant.info.time.completed = Date.now()
+                assistant.info.finish = "stop"
                 assistant.info.tokens = {
                   input: event.usage?.input_tokens ?? 0,
                   output: event.usage?.output_tokens ?? 0,
@@ -1117,6 +1124,9 @@ export namespace HermesBridge {
                   chains.set(sessionID, state)
                 }
                 log.error("response failed", { sessionID, error: event.message })
+                assistant.info.error = { name: "UnknownError", data: { message: event.message } }
+                assistant.info.time.completed = Date.now()
+                emit({ type: "message.updated", properties: { info: assistant.info } })
                 emit({
                   type: "session.error",
                   properties: {
@@ -1131,6 +1141,9 @@ export namespace HermesBridge {
             if (!aborted) {
               const message = err instanceof Error ? err.message : String(err)
               log.error("prompt failed", { sessionID, error: message })
+              assistant.info.error = { name: "UnknownError", data: { message } }
+              assistant.info.time.completed = Date.now()
+              emit({ type: "message.updated", properties: { info: assistant.info } })
               emit({
                 type: "session.error",
                 properties: {

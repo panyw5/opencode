@@ -325,6 +325,7 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
         console.error(`[notification] native IPC failed error=${String(error)}`)
       }
     },
+    claimNotification: typeof desktopApi.claimNotification === "function" ? (key) => desktopApi.claimNotification(key) : undefined,
 
     fetch: createRequestFetch((request) => fetch(request), (line) => console.debug(line)),
 

@@ -10,6 +10,7 @@ import { BackgroundJob } from "@/background/job"
 import { BackgroundShell } from "@/background/shell"
 import { BackgroundGptPro } from "@/background/gpt-pro"
 import { Bus } from "../../src/bus"
+import { GlobalBus } from "../../src/bus/global"
 import { Command } from "../../src/command"
 import { Config } from "@/config/config"
 import { LSP } from "@/lsp/lsp"
@@ -2163,6 +2164,21 @@ it.instance("ends strict json schema mode without materializing its tool after t
   }),
 )
 
+it.instance("an invalid subtask model stays local and the main agent can continue", () => Effect.gen(function* () {
+  const { llm } = yield* useServerConfig(providerCfg)
+  const prompt = yield* SessionPrompt.Service
+  const sessions = yield* Session.Service
+  const chat = yield* sessions.create({ title: "Local subtask failure" })
+  const msg = yield* user(chat.id, "Continue if the subtask cannot run")
+  yield* addSubtask(chat.id, msg.id, { ...ref, modelID: ModelID.make("missing-subtask-model") })
+  yield* llm.text("The subtask was unavailable; I continued independently.")
+  const result = yield* prompt.loop({ sessionID: chat.id })
+  expect(result.info.role).toBe("assistant")
+  if (result.info.role === "assistant") expect(result.info.error).toBeUndefined()
+  const all = (yield* sessions.messages({ sessionID: chat.id })).flatMap((message) => message.parts)
+  expect(all.some((part) => part.type === "tool" && part.tool === "task" && part.state.status === "error")).toBe(true)
+}))
+
 it.instance("failed subtask preserves metadata on error tool state", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig((url) => ({
@@ -3759,6 +3775,82 @@ noLLMServer.instance(
 )
 
 // Missing file handling
+
+for (const kind of ["binary", "missing", "directory"] as const) {
+  it.instance(
+    `keeps recoverable ${kind} attachment failures in context without a session error`,
+    () =>
+      Effect.gen(function* () {
+        const { dir, llm } = yield* useServerConfig(providerCfg)
+        const prompt = yield* SessionPrompt.Service
+        const sessions = yield* Session.Service
+        const session = yield* sessions.create({})
+        const filepath = path.join(dir, kind === "binary" ? "video.mp4" : kind)
+        if (kind === "binary") yield* writeText(filepath, "\u0000\u0000\u0000\u0018ftypmp42\u0000\u0000\u0000\u0000")
+        if (kind === "directory") {
+          yield* ensureDir(filepath)
+          const { read } = yield* (yield* ToolRegistry.Service).named()
+          yield* Effect.acquireRelease(
+            Effect.sync(() => {
+              const original = read.execute
+              read.execute = () => Effect.fail(new Error("Directory read failed"))
+              return original
+            }),
+            (original) =>
+              Effect.sync(() => {
+                read.execute = original
+              }),
+          )
+        }
+
+        const errors: unknown[] = []
+        yield* Effect.acquireRelease(
+          Effect.sync(() => {
+            const listener = (event: Parameters<typeof GlobalBus.emit>[1]) => {
+              if (event.payload.type === "session.error" && event.payload.properties.sessionID === session.id)
+                errors.push(event.payload.properties.error)
+            }
+            GlobalBus.on("event", listener)
+            return listener
+          }),
+          (listener) =>
+            Effect.sync(() => {
+              GlobalBus.off("event", listener)
+            }),
+        )
+
+        yield* llm.push(reply().text("I can continue using another tool.").stop())
+        const result = yield* prompt.prompt({
+          sessionID: session.id,
+          agent: "build",
+          parts: [
+            { type: "text", text: "Inspect this attachment" },
+            {
+              type: "file",
+              mime: kind === "directory" ? "application/x-directory" : "text/plain",
+              filename: path.basename(filepath),
+              url: pathToFileURL(filepath).href,
+            },
+          ],
+        })
+
+        expect(errors).toEqual([])
+        expect(JSON.stringify((yield* llm.inputs)[0]?.messages)).toContain(`Read tool failed to read ${filepath}`)
+        expect(result.info.role).toBe("assistant")
+        if (result.info.role === "assistant") {
+          expect(result.info.error).toBeUndefined()
+          expect(result.info.finish).toBe("stop")
+        }
+        const stored = (yield* sessions.messages({ sessionID: session.id })).flatMap((message) => message.parts)
+        expect(
+          stored.some(
+            (part) => part.type === "text" && part.synthetic && part.text.includes("Read tool failed to read"),
+          ),
+        ).toBe(true)
+      }),
+    { config: cfg },
+  )
+}
 
 noLLMServer.instance(
   "does not fail the prompt when a file part is missing",

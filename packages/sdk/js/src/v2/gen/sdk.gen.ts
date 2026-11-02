@@ -132,6 +132,12 @@ import type {
   ImWechatStatusResponses,
   InstanceDisposeErrors,
   InstanceDisposeResponses,
+  IssueGetErrors,
+  IssueGetResponses,
+  IssueListErrors,
+  IssueListResponses,
+  IssueMarkErrors,
+  IssueMarkResponses,
   LspStatusErrors,
   LspStatusResponses,
   McpAddErrors,
@@ -433,6 +439,92 @@ class HeyApiRegistry<T> {
 
   set(value: T, key?: string): void {
     this.instances.set(key ?? this.defaultKey, value)
+  }
+}
+
+export class Issue extends HeyApiClient {
+  /**
+   * List durable diagnostic issues
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      sessionID?: string
+      before?: string
+      attention?: "true" | "false"
+      limit?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "sessionID" },
+            { in: "query", key: "before" },
+            { in: "query", key: "attention" },
+            { in: "query", key: "limit" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<IssueListResponses, IssueListErrors, ThrowOnError>({
+      url: "/global/issue",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Read issue and recovery history
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      issueID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "issueID" }] }])
+    return (options?.client ?? this.client).get<IssueGetResponses, IssueGetErrors, ThrowOnError>({
+      url: "/global/issue/{issueID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Mark read or acknowledge without resolving an issue
+   */
+  public mark<ThrowOnError extends boolean = false>(
+    parameters: {
+      issueID: string
+      action?: "read" | "acknowledge"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "issueID" },
+            { in: "body", key: "action" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<IssueMarkResponses, IssueMarkErrors, ThrowOnError>({
+      url: "/global/issue/{issueID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
   }
 }
 
@@ -6948,6 +7040,11 @@ export class OpencodeClient extends HeyApiClient {
   constructor(args?: { client?: Client; key?: string }) {
     super(args)
     OpencodeClient.__registry.set(this, args?.key)
+  }
+
+  private _issue?: Issue
+  get issue(): Issue {
+    return (this._issue ??= new Issue({ client: this.client }))
   }
 
   private _auth?: Auth

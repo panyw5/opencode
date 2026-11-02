@@ -10,6 +10,7 @@ import { TaskTool } from "./task"
 import { TaskListTool } from "./task_list"
 import { TaskTranscriptTool } from "./task_transcript"
 import { SessionTranscriptTool } from "./session_transcript"
+import { IssueQueryTool } from "./issue_query"
 import { SessionCreateTool } from "./session_create"
 import { TaskInterruptTool } from "./task_interrupt"
 import { TodoWriteTool } from "./todo"
@@ -135,6 +136,7 @@ const BUILTINS = {
   task_list: TaskListTool,
   task_transcript: TaskTranscriptTool,
   session_transcript: SessionTranscriptTool,
+  issue_query: IssueQueryTool,
   session_create: SessionCreateTool,
   task_interrupt: TaskInterruptTool,
   im_list: IMListTool,

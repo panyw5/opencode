@@ -1,11 +1,42 @@
 import { describe, expect, test } from "bun:test"
-import { markCurrentNotifications, shouldNotifyTurnComplete, type Notification } from "./notification-state"
+import {
+  markCurrentNotifications,
+  shouldNotifySuccessfulTurn,
+  shouldNotifyTurnComplete,
+  type Notification,
+} from "./notification-state"
 
 describe("notification", () => {
+  test("idle is not success: suppress failure, cancellation and incomplete-turn completion notices", () => {
+    expect(shouldNotifySuccessfulTurn({ role: "assistant", finish: "stop" })).toBe(true)
+    expect(shouldNotifySuccessfulTurn({ role: "assistant", finish: "stop", error: { name: "APIError" } })).toBe(false)
+    expect(shouldNotifySuccessfulTurn({ role: "assistant", error: { name: "MessageAbortedError" } })).toBe(false)
+    expect(shouldNotifySuccessfulTurn({ role: "assistant", finish: "tool-calls" })).toBe(false)
+    expect(shouldNotifySuccessfulTurn(undefined)).toBe(false)
+  })
+  test("viewing the current session does not silently consume actionable issues", () => {
+    const item: Notification = {
+      type: "error",
+      issueID: "issue-1",
+      session: "session-1",
+      directory: "/project",
+      time: 1,
+      viewed: false,
+      error: { name: "UnknownError", data: { message: "Login required" } },
+    }
+    expect(markCurrentNotifications([item], "session-1", "/project")[0].viewed).toBe(false)
+  })
   test("marks only matching session notifications in the active directory as viewed", () => {
     const list: Notification[] = [
       { type: "turn-complete", time: 1, viewed: false, session: "a", directory: "/x" },
-      { type: "error", time: 2, viewed: false, session: "a", directory: "/y", error: { name: "UnknownError", data: { message: "boom" } } },
+      {
+        type: "error",
+        time: 2,
+        viewed: false,
+        session: "a",
+        directory: "/y",
+        error: { name: "UnknownError", data: { message: "boom" } },
+      },
       { type: "turn-complete", time: 3, viewed: false, session: "b", directory: "/x" },
       { type: "turn-complete", time: 4, viewed: true, session: "a", directory: "/x" },
     ]

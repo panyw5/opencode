@@ -6,6 +6,7 @@ import path from "path"
 import { BackgroundJob } from "@/background/job"
 import { BusEvent } from "@/bus/bus-event"
 import { Bus } from "@/bus"
+import { Issue } from "@/issue/issue"
 import { Decimal } from "decimal.js"
 import type { ProviderMetadata, Usage } from "@opencode-ai/llm"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
@@ -433,6 +434,7 @@ export const Event = {
     "session.error",
     Schema.Struct({
       sessionID: Schema.optional(SessionID),
+      issueID: Schema.optional(Schema.String),
       // Reuses MessageV2.Assistant.fields.error (already Schema.optional) so
       // the derived zod keeps the same discriminated-union shape on the bus.
       error: MessageV2.Assistant.fields.error,
@@ -796,6 +798,35 @@ export const layer: Layer.Layer<
           part: structuredClone(part),
           time: Date.now(),
         })
+        if (part.type === "tool" && part.state.status === "error") {
+          yield* Issue.report({
+            source: `tool:${part.tool}`,
+            scope: "tool",
+            code: "tool.failed",
+            state: "recorded",
+            sessionID: part.sessionID,
+            messageID: part.messageID,
+            toolCallID: part.callID,
+            message: part.state.error,
+          })
+        }
+        if (
+          part.type === "tool" &&
+          part.state.status === "completed" &&
+          typeof part.state.metadata.exit === "number" &&
+          part.state.metadata.exit !== 0
+        ) {
+          yield* Issue.report({
+            source: `tool:${part.tool}`,
+            scope: "tool",
+            code: "shell.nonzero_exit",
+            state: "recorded",
+            sessionID: part.sessionID,
+            messageID: part.messageID,
+            toolCallID: part.callID,
+            message: `Command exited with code ${part.state.metadata.exit}. See the tool output for details.`,
+          })
+        }
         return part
       }).pipe(Effect.withSpan("Session.updatePart"))
 

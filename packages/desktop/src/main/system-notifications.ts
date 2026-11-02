@@ -8,6 +8,7 @@ export function createSystemNotifications(deps: {
   log: (message: string) => void
 }) {
   const active = new Set<Notification>()
+  const claimed = new Set<string>()
   let sequence = 0
 
   const dispose = (notification: Notification) => {
@@ -17,6 +18,16 @@ export function createSystemNotifications(deps: {
   }
 
   return {
+    claim(key: unknown) {
+      if (typeof key !== "string" || !key || key.length > 256) throw new Error("Invalid notification key")
+      if (claimed.has(key)) {
+        deps.log(`duplicate attention suppressed key=${key}`)
+        return false
+      }
+      claimed.add(key)
+      if (claimed.size > 10_000) claimed.delete(claimed.values().next().value!)
+      return true
+    },
     show(window: BrowserWindow, title: unknown, body?: unknown, href?: unknown, attention: unknown = false) {
       if (
         typeof title !== "string" ||

@@ -1056,8 +1056,8 @@ describe("session.compaction.process", () => {
         const errored = summaries[0]?.info
         const ok = summaries[1]?.info
         if (errored?.role === "assistant") {
-          expect(errored.finish).toBe("error")
-          expect(JSON.stringify(errored.error)).toContain("Session too large to compact")
+          expect(errored.error).toBeUndefined()
+          expect(errored.finish).not.toBe("error")
         }
         if (ok?.role === "assistant") {
           expect(ok.error).toBeUndefined()
@@ -1157,7 +1157,7 @@ describe("session.compaction.process", () => {
         expect(summaries.length).toBe(2)
         const errored = summaries[0]?.info
         const ok = summaries[1]
-        if (errored?.role === "assistant") expect(errored.finish).toBe("error")
+        if (errored?.role === "assistant") expect(errored.error).toBeUndefined()
         const text = ok?.parts.find((p): p is MessageV2.TextPart => p.type === "text")?.text
         expect(text).toContain("## Goal")
       }).pipe(withCompaction({ llm: stub.layer }))

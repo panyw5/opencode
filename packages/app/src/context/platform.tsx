@@ -315,6 +315,7 @@ export type Platform = {
 
   /** Attention requests also notify while the app is focused. */
   notify(title: string, description?: string, href?: string, options?: { attention?: boolean }): Promise<void>
+  claimNotification?(key: string): Promise<boolean>
   openNotificationSettings?(): Promise<void>
 
   /** Open directory picker dialog (native on Tauri, server-backed on web) */

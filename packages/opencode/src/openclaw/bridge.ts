@@ -1134,7 +1134,10 @@ class GwClient {
   }
 }
 
+import { IssueTracker } from "@/issue/external"
+
 class Events {
+  private issues = new IssueTracker("extra-agent/openclaw")
   private list = new Set<(event: Event) => void>()
 
   on(fn: (event: Event) => void) {
@@ -1143,6 +1146,7 @@ class Events {
   }
 
   emit(event: Event) {
+    this.issues.observe(event)
     for (const fn of this.list) fn(event)
   }
 }
@@ -1357,6 +1361,7 @@ export namespace OpenClawBridge {
       sessionID: hit.sessionID,
       role: "assistant" as const,
       time: completed ? { created: Date.now(), completed } : { created: Date.now() },
+      finish: completed ? "stop" : undefined,
       parentID: hit.parentID,
       providerID: String(message?.provider || providerID),
       modelID: String(message?.model || modelID),

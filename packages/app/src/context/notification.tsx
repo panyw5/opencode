@@ -15,7 +15,12 @@ import { EventSessionError } from "@opencode-ai/sdk/v2"
 import { Persist, persisted } from "@/utils/persist"
 import { playSoundById } from "@/utils/sound"
 import { formatServerError } from "@/utils/server-errors"
-import { markCurrentNotifications, shouldNotifyTurnComplete, type Notification } from "./notification-state"
+import {
+  markCurrentNotifications,
+  shouldNotifySuccessfulTurn,
+  shouldNotifyTurnComplete,
+  type Notification,
+} from "./notification-state"
 import {
   BELL_TOAST_TTL_MS,
   bellToastID,
@@ -234,7 +239,13 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
 
     const [titles, setTitles] = createStore<Record<string, string>>({})
 
-    const pushToast = (input: { type: BellToast["type"]; session?: string; directory?: string; title?: string }) => {
+    const pushToast = (input: {
+      type: BellToast["type"]
+      session?: string
+      directory?: string
+      title?: string
+      description?: string
+    }) => {
       if (meta.disposed) return
       const id = bellToastID(input.type, input.session)
       const item: BellToast = { ...input, id, time: Date.now() }
@@ -320,9 +331,9 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
       const domains = Object.entries(store.byDomain)
         .map(([domain, list]) => {
           const unseen = (list ?? []).filter((notification) => !notification.viewed)
-          return `${domain}:all=${list?.length ?? 0}:unseen=${unseen.length}:${unseen
-            .map(notificationDebugValue)
-            .join(",") || "none"}`
+          return `${domain}:all=${list?.length ?? 0}:unseen=${unseen.length}:${
+            unseen.map(notificationDebugValue).join(",") || "none"
+          }`
         })
         .join("|")
       console.debug(`[notification] ready ${domains || "domains=none"}`)
@@ -432,14 +443,48 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
       })
     }
 
+    let restoredIssueServer = ""
+    createEffect(() => {
+      if (!ready()) return
+      const runtime = globalSDK.forDomain(mainDomain)
+      if (restoredIssueServer === runtime.url) return
+      restoredIssueServer = runtime.url
+      void runtime.client.issue
+        .list({ attention: "true", limit: "100" })
+        .then((result) => {
+          if (meta.disposed || restoredIssueServer !== runtime.url) return
+          for (const issue of result.data ?? []) {
+            if (issue.source === "permission" || issue.source === "question") continue
+            const domain = domainFromDirectory(issue.directory)
+            if ((store.byDomain[domain] ?? []).some((item) => item.type === "error" && item.issueID === issue.id))
+              continue
+            append(
+              {
+                type: "error",
+                issueID: issue.id,
+                session: issue.sessionID,
+                directory: issue.directory,
+                time: issue.updatedAt,
+                viewed: !!issue.readAt,
+                error: { name: "UnknownError", data: { message: issue.message } },
+              },
+              domain,
+            )
+          }
+          console.debug(`[notification] restored unresolved issues count=${result.data?.length ?? 0} sound=false`)
+        })
+        .catch((error) => console.debug(`[notification] issue restore unavailable error=${String(error)}`))
+    })
+
     const lookup = async (directory: string, sessionID?: string) => {
       if (!sessionID) return undefined
       const [syncStore] = globalSync.child(directory, { bootstrap: false })
       const match = Binary.search(syncStore.session, sessionID, (s) => s.id)
       if (match.found) return syncStore.session[match.index]
       const domain = domainFromDirectory(directory)
-      return globalSDK.forDomain(domain).client.session
-        .get({ directory, sessionID })
+      return globalSDK
+        .forDomain(domain)
+        .client.session.get({ directory, sessionID })
         .then((x) => x.data)
         .catch(() => undefined)
     }
@@ -467,21 +512,41 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
       domain: DomainId,
     ) => {
       const sessionID = event.properties.sessionID
-      console.debug(`[notification] idle received domain=${domain} directory=${directory} session=${sessionID ?? "none"}`)
-      void lookup(directory, sessionID).then((session) => {
+      console.debug(
+        `[notification] idle received domain=${domain} directory=${directory} session=${sessionID ?? "none"}`,
+      )
+      void lookup(directory, sessionID).then(async (session) => {
         console.debug(
           `[notification] idle lookup directory=${directory} session=${sessionID ?? "none"} found=${session ? 1 : 0} parent=${session?.parentID ?? "none"} archived=${session?.time.archived ?? "none"}`,
         )
         if (meta.disposed) {
-          console.debug(`[notification] idle skip reason=disposed directory=${directory} session=${sessionID ?? "none"}`)
+          console.debug(
+            `[notification] idle skip reason=disposed directory=${directory} session=${sessionID ?? "none"}`,
+          )
           return
         }
         if (!shouldNotifyTurnComplete(session)) {
-          console.debug(`[notification] idle skip reason=not-notifiable directory=${directory} session=${sessionID ?? "none"}`)
+          console.debug(
+            `[notification] idle skip reason=not-notifiable directory=${directory} session=${sessionID ?? "none"}`,
+          )
           return
         }
         if (isQuickAssistantSession(directory)) {
-          console.debug(`[notification] idle skip reason=quick-assistant directory=${directory} session=${sessionID ?? "none"}`)
+          console.debug(
+            `[notification] idle skip reason=quick-assistant directory=${directory} session=${sessionID ?? "none"}`,
+          )
+          return
+        }
+
+        const latest = await globalSDK
+          .forDomain(domain)
+          .client.session.messages({ directory, sessionID: sessionID!, limit: 1 })
+          .then((result) => result.data?.at(-1)?.info)
+          .catch(() => undefined)
+        if (meta.disposed || !shouldNotifySuccessfulTurn(latest)) {
+          console.debug(
+            `[notification] idle skip reason=not-success directory=${directory} session=${sessionID ?? "none"}`,
+          )
           return
         }
 
@@ -514,18 +579,34 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
 
     const handleSessionError = (
       directory: string,
-      event: { properties: { sessionID?: string; error?: EventSessionError["properties"]["error"] } },
+      event: {
+        properties: {
+          sessionID?: string
+          issueID?: string
+          attentionKey?: string
+          error?: EventSessionError["properties"]["error"]
+        }
+      },
       time: number,
       domain: DomainId,
     ) => {
       const sessionID = event.properties.sessionID
-      console.debug(`[notification] error received domain=${domain} directory=${directory} session=${sessionID ?? "none"}`)
-      void lookup(directory, sessionID).then((session) => {
+      if (
+        event.properties.error?.name === "MessageAbortedError" ||
+        event.properties.error?.name === "ContextOverflowError"
+      )
+        return
+      console.debug(
+        `[notification] error received domain=${domain} directory=${directory} session=${sessionID ?? "none"}`,
+      )
+      void lookup(directory, sessionID).then(async (session) => {
         console.debug(
           `[notification] error lookup directory=${directory} session=${sessionID ?? "none"} found=${session ? 1 : 0} parent=${session?.parentID ?? "none"}`,
         )
         if (meta.disposed) {
-          console.debug(`[notification] error skip reason=disposed directory=${directory} session=${sessionID ?? "none"}`)
+          console.debug(
+            `[notification] error skip reason=disposed directory=${directory} session=${sessionID ?? "none"}`,
+          )
           return
         }
         if (session?.parentID) {
@@ -533,7 +614,14 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
           return
         }
 
-        if (settings.sounds.errorsEnabled()) {
+        const claimed =
+          event.properties.issueID && platform.claimNotification
+            ? await platform
+                .claimNotification(event.properties.attentionKey ?? event.properties.issueID)
+                .catch(() => false)
+            : true
+        if (meta.disposed) return
+        if (claimed && settings.sounds.errorsEnabled()) {
           void logErrorSound(platform, {
             directory,
             sessionID,
@@ -545,41 +633,82 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
         }
 
         const error = "error" in event.properties ? event.properties.error : undefined
-        const viewed = viewedInCurrentSession(directory, sessionID)
+        const viewed = event.properties.issueID ? false : viewedInCurrentSession(directory, sessionID)
         append(
           {
             directory,
             time,
             viewed,
             type: "error",
-            session: sessionID ?? "global",
+            session: sessionID,
             error,
+            issueID: event.properties.issueID,
           },
           domain,
         )
-        if (!viewed) {
+        {
           cacheTitle(sessionID, session)
-          pushToast({ type: "error", session: sessionID, directory, title: session?.title })
-        }
-        const description =
-          session?.title ??
-          (typeof error === "string" ? error : language.t("notification.session.error.fallbackDescription"))
-        const href = sessionID ? `/${base64Encode(directory)}/session/${sessionID}` : `/${base64Encode(directory)}`
-        if (settings.notifications.errors()) {
-          void platform.notify(language.t("notification.session.error.title"), description, href)
-        }
-        if (!sessionID) {
-          showToast({
-            title: language.t("notification.session.error.title"),
-            description: formatServerError(error, language.t, language.t("notification.session.error.fallbackDescription")),
+          pushToast({
+            type: "error",
+            session: sessionID,
+            directory,
+            title: formatServerError(error, language.t, language.t("notification.session.error.fallbackDescription")),
+            description: session?.title,
           })
+        }
+        const description = formatServerError(
+          error,
+          language.t,
+          language.t("notification.session.error.fallbackDescription"),
+        )
+        const href = sessionID ? `/${base64Encode(directory)}/session/${sessionID}` : `/${base64Encode(directory)}`
+        if (
+          claimed &&
+          settings.notifications.errors() &&
+          (document.visibilityState === "hidden" || !document.hasFocus())
+        ) {
+          void platform.notify(
+            language.t("notification.session.error.title"),
+            description.length > 4000 ? description.slice(0, 3960) + " ... Open Diagnostics for details." : description,
+            href,
+          )
         }
       })
     }
 
     const unsub = globalSDK.listenAll((e) => {
       const event = e.details
+      if (event.type === "issue.updated") {
+        const { issue, notify } = event.properties
+        console.debug(`[notification] issue id=${issue.id} state=${issue.state} notify=${notify}`)
+        if (issue.state === "resolved" || issue.state === "cancelled" || issue.acknowledgedAt || issue.readAt) {
+          const issueDomain = domainFromDirectory(issue.directory)
+          const current = store.byDomain[issueDomain] ?? []
+          const next = current.map((item) =>
+            item.type === "error" && item.issueID === issue.id ? { ...item, viewed: true } : item,
+          )
+          setStore("byDomain", issueDomain, next)
+          setIndex(reconcile(buildNotificationIndex(store.byDomain), { merge: false }))
+          dismissToast(bellToastID("error", issue.sessionID))
+        }
+        if (!notify) return
+        handleSessionError(
+          issue.directory,
+          {
+            properties: {
+              sessionID: issue.sessionID,
+              issueID: issue.id,
+              attentionKey: `${issue.id}:${issue.updatedAt}`,
+              error: { name: "UnknownError", data: { message: issue.message } },
+            },
+          },
+          issue.updatedAt,
+          domainFromDirectory(issue.directory),
+        )
+        return
+      }
       if (event.type !== "session.idle" && event.type !== "session.error") return
+      if (event.type === "session.error" && event.properties.issueID) return
 
       const directory = e.name
       const domain = e.domain
@@ -606,18 +735,22 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
       }
       const domainIdx = index.byDomain[domain]
       if (!domainIdx) {
-        console.debug(`[notification] mark-current skip reason=no-domain-index domain=${domain} directory=${directory} session=${session}`)
+        console.debug(
+          `[notification] mark-current skip reason=no-domain-index domain=${domain} directory=${directory} session=${session}`,
+        )
         return
       }
       const unseen = domainIdx.session.unseen[session] ?? empty
       console.debug(
-        `[notification] mark-current inspect domain=${domain} directory=${directory} session=${session} unseen=${unseen
-          .map(notificationDebugValue)
-          .join(",") || "none"}`,
+        `[notification] mark-current inspect domain=${domain} directory=${directory} session=${session} unseen=${
+          unseen.map(notificationDebugValue).join(",") || "none"
+        }`,
       )
       if (unseen.length === 0) return
       if (!unseen.some((item) => item.directory === directory)) {
-        console.debug(`[notification] mark-current skip reason=directory-mismatch directory=${directory} session=${session}`)
+        console.debug(
+          `[notification] mark-current skip reason=directory-mismatch directory=${directory} session=${session}`,
+        )
         return
       }
 
@@ -627,10 +760,7 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
       console.debug(`[notification] mark-current apply domain=${domain} directory=${directory} session=${session}`)
       batch(() => {
         setStore("byDomain", domain, nextList)
-        const nextSession = unseen.filter((item) => item.directory !== directory)
-        updateUnseen(domain, "session", session, nextSession)
-        const nextProject = (domainIdx.project.unseen[directory] ?? empty).filter((item) => item.session !== session)
-        updateUnseen(domain, "project", directory, nextProject)
+        setIndex("byDomain", domain, buildNotificationIndex({ [domain]: nextList }).byDomain[domain]!)
       })
     }
 
@@ -718,9 +848,9 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
           if (!domainIdx) return
           const unseen = domainIdx.session.unseen[session] ?? empty
           console.debug(
-            `[notification] mark-session-viewed domain=${domain} session=${session} unseen=${unseen
-              .map(notificationDebugValue)
-              .join(",") || "none"}`,
+            `[notification] mark-session-viewed domain=${domain} session=${session} unseen=${
+              unseen.map(notificationDebugValue).join(",") || "none"
+            }`,
           )
           if (!unseen.length) return
 
@@ -766,9 +896,9 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
           if (!domainIdx) return
           const unseen = domainIdx.project.unseen[directory] ?? empty
           console.debug(
-            `[notification] mark-project-viewed domain=${domain} directory=${directory} unseen=${unseen
-              .map(notificationDebugValue)
-              .join(",") || "none"}`,
+            `[notification] mark-project-viewed domain=${domain} directory=${directory} unseen=${
+              unseen.map(notificationDebugValue).join(",") || "none"
+            }`,
           )
           if (!unseen.length) return
 

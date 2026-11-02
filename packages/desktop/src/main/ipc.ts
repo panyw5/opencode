@@ -651,6 +651,7 @@ export function registerIpcHandlers(deps: Deps) {
     }
     notifications.show(window, title, body, href, attention)
   })
+  ipcMain.handle("claim-notification", (_event, key: unknown) => notifications.claim(key))
 
   ipcMain.handle("open-notification-settings", async () => {
     const url =

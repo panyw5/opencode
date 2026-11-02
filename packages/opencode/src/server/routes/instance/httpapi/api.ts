@@ -5,6 +5,7 @@ import { SyncEvent } from "@/sync"
 import { BackgroundShellApi } from "./groups/background-shell"
 import { BrowserApi, BrowserConnectApi } from "./groups/browser"
 import { ConfigApi } from "./groups/config"
+import { IssueApi } from "./groups/issue"
 import { ControlApi } from "./groups/control"
 import { EventApi } from "./groups/event"
 import { ExperimentalApi } from "./groups/experimental"
@@ -33,6 +34,7 @@ const EventSchema = Schema.Union(BusEvent.effectPayloads()).annotate({ identifie
 const SyncEventSchemas = SyncEvent.effectPayloads()
 
 export const RootHttpApi = HttpApi.make("opencode-root")
+  .addHttpApi(IssueApi)
   .addHttpApi(ControlApi)
   .addHttpApi(GlobalApi)
   .middleware(SchemaErrorMiddleware)

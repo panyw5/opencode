@@ -125,6 +125,8 @@ type ToolPart = {
 type Part = TextPart | ToolPart
 
 type MessageInfo = {
+  finish?: string
+  error?: { name: "UnknownError"; data: { message: string } }
   id: string
   sessionID: string
   role: "user" | "assistant"
@@ -230,13 +232,17 @@ const agent = {
   topP: 1,
 }
 
+import { IssueTracker } from "@/issue/external"
+
 class Events {
+  private issues = new IssueTracker("extra-agent/genericagent")
   private listeners = new Set<(event: Event) => void>()
   on(listener: (event: Event) => void) {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
   }
   emit(event: Event) {
+    this.issues.observe(event)
     for (const listener of this.listeners) listener(event)
   }
 }
@@ -1468,6 +1474,7 @@ export namespace GenericAgentBridge {
                   })
                 }
                 assistant.info.time.completed = Date.now()
+                assistant.info.finish = "stop"
                 emit({ type: "message.updated", properties: { info: assistant.info } })
                 const existing = sessions.get(sessionID)
                 if (existing && existing.title === "New Conversation") {
@@ -1476,6 +1483,9 @@ export namespace GenericAgentBridge {
                   emit({ type: "session.updated", properties: { info: updated } })
                 }
               } else if (event.type === "error") {
+                assistant.info.error = { name: "UnknownError", data: { message: event.message } }
+                assistant.info.time.completed = Date.now()
+                emit({ type: "message.updated", properties: { info: assistant.info } })
                 emit({
                   type: "session.error",
                   properties: {
@@ -1497,6 +1507,9 @@ export namespace GenericAgentBridge {
             } else {
               const message = e instanceof Error ? e.message : String(e)
               log.error("genericagent prompt failed", { sessionID, error: message })
+              assistant.info.error = { name: "UnknownError", data: { message } }
+              assistant.info.time.completed = Date.now()
+              emit({ type: "message.updated", properties: { info: assistant.info } })
               emit({
                 type: "session.error",
                 properties: {
