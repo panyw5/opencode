@@ -213,6 +213,8 @@ html[data-theme="claude"] [data-slot="dialog-content"].settings-dialog {
    background does not fill in their corners */
 html[data-theme="claude"] [data-component="session-prompt-dock"] [data-component="dock-prompt"] {
   border-radius: 24px;
+  /* Question options derive their radius from this */
+  --question-radius: 24px;
 }
 
 html[data-theme="claude"] [data-component="session-prompt-dock"] [data-slot="prompt-editor-scroll"] {

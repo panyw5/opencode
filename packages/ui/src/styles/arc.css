@@ -597,6 +597,8 @@ html[data-theme="arc"] [data-component="session-followup-dock"] {
 /* Keep the dock-prompt wrapper concentric with its shell/tray */
 html[data-theme="arc"] [data-component="dock-prompt"] {
   border-radius: var(--radius-2xl);
+  /* Question options derive their radius from this */
+  --question-radius: var(--radius-2xl);
 }
 
 html[data-theme="arc"] [data-dock-surface="shell"][data-slot="prompt-shell"] {

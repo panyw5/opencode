@@ -1626,8 +1626,17 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
     var(--amber-light-3),
     color-mix(in srgb, var(--background-stronger) 88%, transparent)
   );
+  /* Single source of truth for the dock's radius. Themes that widen the dock
+     (arc/aether/chatgpt -> 4xl, claude -> 24px) override this too, so the
+     options below stay visually concentric instead of hard-coded. */
+  --question-radius: 12px;
+  /* Options sit 14px inside the shell: 4px shell padding + 1px body border
+     + 8px body padding + 1px options padding. Inner radius = outer - 14 would
+     be exactly parallel; we ride 4px rounder than that for a softer option, so
+     the offset is 10px. Small shells clamp to 6px (the default theme's look). */
+  --question-option-radius: max(6px, calc(var(--question-radius) - 10px));
   background-color: var(--question-background);
-  border-radius: 12px;
+  border-radius: var(--question-radius);
   padding: 4px;
 
   [data-slot="question-body"] {
@@ -1932,7 +1941,7 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
     padding: 8px 8px 8px 10px;
     background-color: var(--surface-raised-stronger-non-alpha);
     border: 1px solid var(--border-weak-base);
-    border-radius: 6px;
+    border-radius: var(--question-option-radius);
     box-shadow: none;
     text-align: left;
     width: 100%;
