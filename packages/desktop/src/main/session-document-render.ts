@@ -7,6 +7,11 @@ export const readyScript = `Promise.race([Promise.all([document.fonts.ready,...A
 // Root scrollHeight is at least the viewport height, leaving short exports mostly blank.
 export const heightScript = `Math.max(1, document.body.scrollHeight, Math.ceil(document.body.getBoundingClientRect().height))`
 
+export function pdfPageSize(width = 1200) {
+  // printToPDF uses inches, unlike the micron-based native print API.
+  return { width: width / 96, height: 297 / 25.4 }
+}
+
 export function scrollScript(y: number) {
   if (!Number.isInteger(y) || y < 0 || y > 200_000) throw new Error("Invalid export scroll position")
   return `window.scrollTo({top:${y},left:0,behavior:'instant'});new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(window.scrollY))))`

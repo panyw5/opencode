@@ -9,6 +9,7 @@ import {
   exportErrorName,
   exportWorld,
   heightScript,
+  pdfPageSize,
   readyScript,
   scrollScript,
 } from "./session-document-render"
@@ -98,14 +99,15 @@ export async function exportSessionDocument(parent: BrowserWindow, value: unknow
     const slices = pngSlices(height)
     stage(`render ready; height=${Math.ceil(height)} parts=${slices.length}`)
     if (input.format === "pdf") {
-      stage("printing PDF")
+      const pageSize = pdfPageSize(input.width)
+      stage(`printing PDF pageWidthInches=${pageSize.width} pageHeightInches=${pageSize.height}`)
       const pdf = await window.webContents.printToPDF({
         printBackground: true,
         preferCSSPageSize: true,
-        pageSize: { width: ((input.width ?? 1200) * 25400) / 96, height: 297000 },
+        pageSize,
         margins: { top: 0, bottom: 0, left: 0, right: 0 },
       })
-      stage("writing PDF")
+      stage(`writing PDF bytes=${pdf.length}`)
       await writeFile(result.filePath, pdf)
       stage("complete files=1")
       return { cancelled: false, files: 1 }

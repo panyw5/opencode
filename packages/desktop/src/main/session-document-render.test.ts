@@ -1,9 +1,19 @@
 import { describe, expect, test } from "bun:test"
 import { runInNewContext } from "node:vm"
-import { captureRect, exportErrorName, heightScript, readyScript, scrollScript } from "./session-document-render"
+import { captureRect, exportErrorName, heightScript, pdfPageSize, readyScript, scrollScript } from "./session-document-render"
 import { pngSlices } from "./session-document-policy"
 
 describe("session export render scheduling", () => {
+  test("PDF page size uses inches with the preview width and A4 height", () => {
+    expect(pdfPageSize().width).toBe(12.5)
+    for (const width of [200, 600, 1200, 2400]) {
+      const page = pdfPageSize(width)
+      expect(page.width * 96).toBeCloseTo(width)
+      expect(page.height * 25.4).toBeCloseTo(297)
+    }
+    expect(pdfPageSize(600).width).toBe(6.25)
+  })
+
   test("short document height excludes the minimum viewport height", () => {
     expect(
       runInNewContext(heightScript, {

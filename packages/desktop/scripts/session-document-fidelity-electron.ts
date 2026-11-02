@@ -58,7 +58,14 @@ void app.whenReady().then(async () => {
       } else {
         const data = await readFile(destination)
         if (!data.subarray(0, 5).equals(Buffer.from("%PDF-"))) throw new Error("Invalid PDF")
-        console.log(`[fidelity-test] PDF bytes=${data.length}`)
+        // A PDF signature and nonzero file size do not detect enormous blank-looking pages.
+        const pages = [...data.toString("latin1").matchAll(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/g)]
+        if (pages.length < 2) throw new Error("Long PDF fixture did not paginate")
+        for (const page of pages) {
+          if (Math.abs(Number(page[1]) - 450) > 1 || Math.abs(Number(page[2]) - (297 / 25.4) * 72) > 1)
+            throw new Error(`Invalid PDF page dimensions ${page[1]}x${page[2]} points`)
+        }
+        console.log(`[fidelity-test] PDF bytes=${data.length} pages=${pages.length}; dimensions verified in points`)
       }
     }
   } catch (error) {
