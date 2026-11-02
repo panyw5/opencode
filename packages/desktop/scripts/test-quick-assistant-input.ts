@@ -5,10 +5,34 @@ await withCdp(async (cdp, target) => {
   assert.match(target.url, /^http:\/\/(?:localhost|127\.0\.0\.1):\d+\//)
   assert.equal(await cdp.evaluate("!!window.api"), true, "test requires the dev Electron renderer")
   const panel = `document.querySelector('[data-component="quick-assistant-panel"]:not([hidden])')`
-  const initial = await cdp.evaluate<{ open: boolean; id?: string }>(
-    `({open: ${panel}?.dataset.state === 'open', id: ${panel}?.dataset.windowId})`,
+  const initial = await cdp.evaluate<{ open: boolean; id?: string; href?: string }>(
+    `({open: ${panel}?.dataset.state === 'open', id: ${panel}?.dataset.windowId,
+      href: document.querySelector('a[aria-current="page"][href*="/session/"]')?.getAttribute('href')})`,
   )
+  assert.ok(initial.href, "test requires an active main session to restore")
   let id: string | undefined
+  let navigated = false
+  const navigate = async (href: string, connected: boolean) => {
+    // Desktop uses MemoryRouter: changing the browser URL does not change the active session.
+    await cdp.evaluate(`(() => {
+      const link = document.createElement('a');
+      link.href = ${JSON.stringify(href)};
+      link.setAttribute('link', '');
+      document.body.append(link); link.click(); link.remove();
+    })()`)
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (
+        await cdp.evaluate(`(() => {
+          const p = ${panel};
+          const button = p?.querySelector('[data-action="quick-assistant-context"]');
+          return !!p?.querySelector('[contenteditable="true"]') && button?.disabled === ${!connected};
+        })()`)
+      )
+        return
+      await Bun.sleep(100)
+    }
+    throw new Error("quick assistant did not mount after navigation")
+  }
   const click = async (selector: string) => {
     assert.equal(
       await cdp.evaluate(`(() => {
@@ -29,7 +53,14 @@ await withCdp(async (cdp, target) => {
     }
     await click(action("add-window"))
     id = await cdp.evaluate<string>(`${panel}.dataset.windowId`)
-    await click(action("context"))
+    assert.equal(
+      await cdp.evaluate(
+        `${panel}.querySelector('[data-action="quick-assistant-context"]').getAttribute('aria-pressed')`,
+      ),
+      "true",
+      "new conversations must connect to the current main session by default",
+    )
+    console.log("[quick-input-test] new conversation connects to the main session by default")
     const inspect = () =>
       cdp.evaluate<{
         title: string
@@ -122,6 +153,7 @@ await withCdp(async (cdp, target) => {
       console.log("[quick-input-test] active tab background remains opaque after switching")
     }
 
+    await click(action("context"))
     await cdp.evaluate(`${panel}.querySelector('[contenteditable="true"]').focus()`)
     await cdp.call("Input.insertText", { text: "Reply with exactly QUICK_INPUT_OK. Do not use tools." })
     await click(action("submit"))
@@ -135,10 +167,51 @@ await withCdp(async (cdp, target) => {
       await Bun.sleep(500)
     }
     assert.ok(received, "the resized send button must still send and receive through the real sidecar")
+    assert.equal(
+      await cdp.evaluate(`!!${panel}.querySelector('[data-component="quick-assistant-context"]')`),
+      true,
+      "the sent message must contain injected main-session context",
+    )
     assert.equal((await inspect()).width, 32)
     console.log("[quick-input-test] real sidecar response verified: QUICK_INPUT_OK")
+
+    navigated = true
+    await navigate("/", false)
+    assert.deepEqual(
+      await cdp.evaluate(`(() => {
+        const button = ${panel}.querySelector('[data-action="quick-assistant-context"]');
+        return {disabled:button.disabled,pressed:button.getAttribute('aria-pressed')};
+      })()`),
+      { disabled: true, pressed: "false" },
+      "without a main session, context must be unavailable rather than shown as connected",
+    )
+    await cdp.evaluate(`${panel}.querySelector('[contenteditable="true"]').focus()`)
+    await cdp.call("Input.insertText", { text: "Reply with exactly QUICK_NO_MAIN_OK. Do not use tools." })
+    let readyToSend = false
+    for (let attempt = 0; attempt < 200; attempt++) {
+      readyToSend = await cdp.evaluate<boolean>(`(() => {
+        const button = ${panel}.querySelector('[data-action="quick-assistant-submit"]');
+        return button?.getAttribute('data-icon') === 'arrow-up-bold' && !button.disabled;
+      })()`)
+      if (readyToSend) break
+      await Bun.sleep(100)
+    }
+    assert.ok(readyToSend, "wait for the previous response to finish before sending another message")
+    await click(action("submit"))
+    const standaloneDeadline = Date.now() + 90_000
+    let standalone = false
+    while (Date.now() < standaloneDeadline) {
+      standalone = await cdp.evaluate<boolean>(
+        `[...${panel}.querySelectorAll('[data-role="assistant"]')].some(el=>el.textContent.includes('QUICK_NO_MAIN_OK'))`,
+      )
+      if (standalone) break
+      await Bun.sleep(500)
+    }
+    assert.ok(standalone, "default context must not block standalone messages when no main session exists")
+    console.log("[quick-input-test] no-main-session sidecar response verified: QUICK_NO_MAIN_OK")
   } finally {
     await cdp.call("Emulation.clearDeviceMetricsOverride")
+    if (navigated) await navigate(initial.href, true)
     if (id && (await cdp.evaluate(`!!document.getElementById('quick-assistant-tab-${id}')`))) {
       await click(`#quick-assistant-tab-${id} ~ [data-action="quick-assistant-close-window"]`)
       await Bun.sleep(350)

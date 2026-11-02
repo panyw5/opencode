@@ -66,6 +66,7 @@ import {
   assistantWindowTitle,
   initialAssistantWindows,
   migrateAssistantWindows,
+  newAssistantWindow,
   openAssistantSession,
   type AssistantWindow,
 } from "./windows"
@@ -326,13 +327,13 @@ export function QuickAssistant() {
     const number = saved.next
     batch(() => {
       setPanel("tabScroll", list?.scrollTop ?? 0)
-      setSaved("windows", (items) => [...items, { id, number, context: false }])
+      setSaved("windows", (items) => [...items, newAssistantWindow(id, number)])
       setSaved("active", id)
       setSaved("next", number + 1)
       setSaved("open", true)
     })
     console.debug(
-      `[quick-assistant] window added window=${id} number=${number} count=${saved.windows.length} preservedHeight=${height ?? 0} tabScroll=${panel.tabScroll}`,
+      `[quick-assistant] window added window=${id} number=${number} context=enabled source_session=${params.id ?? "none"} count=${saved.windows.length} preservedHeight=${height ?? 0} tabScroll=${panel.tabScroll}`,
     )
   }
   const open = () => {
@@ -1188,7 +1189,11 @@ function QuickAssistantWindow(props: {
     console.debug(`[quick-assistant] submitted draft cleared text=${quickPromptText(state.prompt).length} images=0`)
     console.debug(`[quick-assistant] send preparation start text=${text.length} images=${images.length}`)
     let body = promptText(draft).trim()
-    if (saved.context) {
+    const includeContext = saved.context && !!currentContext()
+    console.debug(
+      `[quick-assistant] context resolved enabled=${saved.context ? 1 : 0} available=${currentContext() ? 1 : 0} included=${includeContext ? 1 : 0} source_session=${params.id ?? "none"}`,
+    )
+    if (includeContext) {
       const directory = activeDir()
       const sourceID = params.id
       if (!directory || !sourceID) {
@@ -1239,7 +1244,7 @@ function QuickAssistantWindow(props: {
       }
     }
     console.debug(
-      `[quick-assistant] submit context=${saved.context ? 1 : 0} text=${text.length} body=${body.length} model=${pick.model.providerID}/${pick.model.modelID} variant=${variant ?? "none"}`,
+      `[quick-assistant] submit context=${includeContext ? 1 : 0} text=${text.length} body=${body.length} model=${pick.model.providerID}/${pick.model.modelID} variant=${variant ?? "none"}`,
     )
     const client = globalSDK.createClient({ directory: current, throwOnError: true })
     const id = await ensureSession(client, setStore).catch((err: unknown) => {
@@ -1501,7 +1506,7 @@ function QuickAssistantWindow(props: {
                 busy={interacting()}
                 loading={state.loading}
                 ready={!!root()}
-                context={saved.context}
+                context={saved.context && !!currentContext()}
                 contextAvailable={!!currentContext()}
                 contextTitle={currentSession()?.title}
                 variants={variantList()}

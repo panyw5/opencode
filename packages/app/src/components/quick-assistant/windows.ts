@@ -15,11 +15,15 @@ export type AssistantWindows = {
   next: number
 }
 
+export function newAssistantWindow(id: string, number: number): AssistantWindow {
+  return { id, number, context: true }
+}
+
 export function initialAssistantWindows(): AssistantWindows {
   return {
     open: false,
     maximized: false,
-    windows: [{ id: "legacy", number: 1, context: false }],
+    windows: [newAssistantWindow("legacy", 1)],
     active: "legacy",
     next: 2,
   }
@@ -39,7 +43,12 @@ export function migrateAssistantWindows(value: unknown): AssistantWindows {
       open: !!saved.open,
       maximized: !!saved.maximized,
       windows: [
-        { ...initial.windows[0], session: saved.session?.__quick__, context: !!saved.context, variant: saved.variant },
+        {
+          ...initial.windows[0],
+          session: saved.session?.__quick__,
+          context: saved.context ?? initial.windows[0].context,
+          variant: saved.variant,
+        },
       ],
     }
   }

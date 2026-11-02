@@ -4,10 +4,26 @@ import {
   assistantWindowTitle,
   initialAssistantWindows,
   migrateAssistantWindows,
+  newAssistantWindow,
   openAssistantSession,
 } from "./windows"
 
 describe("quick assistant windows", () => {
+  test("initial and newly added conversations enable main-session context by default", () => {
+    expect(initialAssistantWindows().windows).toEqual([{ id: "legacy", number: 1, context: true }])
+    expect(newAssistantWindow("new", 2)).toEqual({ id: "new", number: 2, context: true })
+  })
+
+  test("migration preserves an explicitly disabled context preference", () => {
+    expect(
+      migrateAssistantWindows({ context: false, session: { __quick__: "ses_existing" } }).windows[0],
+    ).toMatchObject({
+      session: "ses_existing",
+      context: false,
+    })
+    expect(migrateAssistantWindows({}).windows[0].context).toBe(true)
+  })
+
   test("migrates the existing conversation and preferences without losing its session", () => {
     const migrated = migrateAssistantWindows({
       open: true,
