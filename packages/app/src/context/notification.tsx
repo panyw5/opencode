@@ -669,7 +669,7 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
         ) {
           void platform.notify(
             language.t("notification.session.error.title"),
-            description.length > 4000 ? description.slice(0, 3960) + " ... Open Diagnostics for details." : description,
+            description.length > 4000 ? description.slice(0, 3960) + " ... Open the session for details." : description,
             href,
           )
         }

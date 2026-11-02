@@ -3,21 +3,6 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
-  "diagnostics.title": "诊断记录",
-  "diagnostics.attention": "{{count}} 项需要处理",
-  "diagnostics.empty": "暂无问题记录。",
-  "diagnostics.history": "恢复历史",
-  "diagnostics.export": "导出诊断报告",
-  "diagnostics.acknowledge": "确认已知晓",
-  "diagnostics.acknowledged": "已确认知晓，不代表问题已解决。",
-  "diagnostics.openSession": "打开会话",
-  "diagnostics.older": "加载更早的记录",
-  "diagnostics.state.recorded": "已记录",
-  "diagnostics.state.recovering": "恢复中",
-  "diagnostics.state.needs_user": "等待用户处理",
-  "diagnostics.state.failed": "失败",
-  "diagnostics.state.resolved": "已恢复",
-  "diagnostics.state.cancelled": "已取消",
   "share.open": "分享…",
   "share.title": "分享会话",
   "share.name": "标题",

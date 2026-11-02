@@ -5,8 +5,6 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { Popover } from "@opencode-ai/ui/popover"
 import { useNotification } from "@/context/notification"
 import { useLanguage } from "@/context/language"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { DialogIssues } from "@/components/issue-panel"
 import { formatServerError } from "@/utils/server-errors"
 import { usePlatform } from "@/context/platform"
 import type { Notification } from "@/context/notification-state"
@@ -36,7 +34,6 @@ export function NotificationBell() {
   const notification = useNotification()
   const language = useLanguage()
   const platform = usePlatform()
-  const dialog = useDialog()
   const compactWidth = createMediaQuery("(max-width: 1439px)")
   const compact = () => platform.platform === "web" && compactWidth()
   const [open, setOpen] = createSignal(false)
@@ -249,7 +246,10 @@ export function NotificationBell() {
       <div class="relative z-30 pointer-events-auto">
         <Popover
           open={open()}
-          onOpenChange={setOpen}
+          onOpenChange={(value) => {
+            console.debug(`[notification-bell] open=${value} diagnostics=backend-only`)
+            setOpen(value)
+          }}
           placement={compact() ? "bottom-end" : "top-end"}
           class="notification-bell-popover-shell"
           trigger={
@@ -296,16 +296,6 @@ export function NotificationBell() {
           >
             <div class="flex shrink-0 items-center justify-between border-b border-border-weak-base px-3 py-2">
               <span class="text-13-medium text-text-strong">{language.t("notification.bell.title")}</span>
-              <button
-                type="button"
-                class="text-12-regular underline"
-                onClick={() => {
-                  setOpen(false)
-                  dialog.show(() => <DialogIssues />)
-                }}
-              >
-                {language.t("diagnostics.title")}
-              </button>
               <Show when={count() > 0}>
                 <button
                   type="button"

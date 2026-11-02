@@ -12,7 +12,6 @@ import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { PromptInput } from "@/components/prompt-input"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { ExternalSessionComposer } from "./external-session-composer"
-import { IssuePanel } from "@/components/issue-panel"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { usePrompt } from "@/context/prompt"
@@ -910,7 +909,6 @@ export function SessionComposerRegion(props: {
       data-component="session-prompt-dock"
       class="relative shrink-0 w-full pb-3 flex flex-col justify-center items-center bg-background-stronger pointer-events-none"
     >
-      <Show when={route.params.id}><div class="w-full max-w-4xl px-3 pb-2"><IssuePanel directory={sdk.directory} sessionID={route.params.id} /></div></Show>
       <Show when={jumpToLatestVisible()}>
         <div
           data-component="composer-scroll-to-latest"
