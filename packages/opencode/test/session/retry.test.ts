@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { NamedError } from "@opencode-ai/core/util/error"
 import { APICallError } from "ai"
 import { setTimeout as sleep } from "node:timers/promises"
-import { Effect, Layer, Schedule, Schema } from "effect"
+import { Effect, Exit, Layer, Schedule, Schema } from "effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { SessionRetry } from "../../src/session/retry"
 import { MessageV2 } from "../../src/session/message-v2"
@@ -31,6 +31,21 @@ function wrap(message: unknown): ReturnType<NamedError["toObject"]> {
 }
 
 describe("session.retry.delay", () => {
+  it.live("stops retrying after the attempt budget", () => Effect.gen(function* () {
+    const error = apiError({ "retry-after-ms": "0" })
+    let attempts = 0
+    const step = yield* Schedule.toStepWithMetadata(SessionRetry.policy({ provider: "test", parse: () => error, set: () => Effect.sync(() => { attempts++ }) }))
+    for (let i = 0; i < SessionRetry.MAX_RETRY_ATTEMPTS; i++) yield* step(error)
+    expect(Exit.isFailure(yield* Effect.exit(step(error)))).toBe(true)
+    expect(attempts).toBe(SessionRetry.MAX_RETRY_ATTEMPTS)
+  }))
+  it.live("does not silently wait beyond the wall-clock retry budget", () => Effect.gen(function* () {
+    const error = apiError({ "retry-after": "3600" })
+    let attempts = 0
+    const step = yield* Schedule.toStepWithMetadata(SessionRetry.policy({ provider: "test", parse: () => error, set: () => Effect.sync(() => { attempts++ }) }))
+    expect(Exit.isFailure(yield* Effect.exit(step(error)))).toBe(true)
+    expect(attempts).toBe(0)
+  }))
   test("caps delay at 30 seconds when headers missing", () => {
     const error = apiError()
     const delays = Array.from({ length: 10 }, (_, index) => SessionRetry.delay(index + 1, error))
