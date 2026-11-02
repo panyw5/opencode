@@ -39,6 +39,7 @@ import { SessionRetry } from "@opencode-ai/ui/session-retry"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { TextReveal } from "@opencode-ai/ui/text-reveal"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
+import { useTheme } from "@opencode-ai/ui/theme"
 import type {
   AssistantMessage,
   Message as MessageType,
@@ -52,6 +53,8 @@ import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
+import { useSDK } from "@/context/sdk"
+import { useGlobalSync } from "@/context/global-sync"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { markSessionProfile } from "@/utils/session-profile"
 import { useComponentMountProfile } from "@/utils/component-mount-profile"
@@ -87,7 +90,7 @@ import { same } from "@/utils/same"
 import { createTimelineProjection } from "./projection"
 import { sortMessages } from "@/utils/message-order"
 import { MessageComment, type SummaryDiff, TimelineRow, TimelineRowMap } from "./rows"
-import { timelineRowCache } from "./row-cache"
+import { rowLayoutVersion, timelineRowCache } from "./row-cache"
 import { DEFAULT_TIMELINE_OVERSCAN, timelineOverscan } from "./windows-performance"
 import { createSessionFind } from "./session-find"
 import { createLiveBottomFollow } from "./live-bottom"
@@ -271,6 +274,7 @@ function TimelineDiffSummaryRow(props: {
 }
 
 export type MessageTimelineViewport = {
+  sessionKey: string
   root: HTMLDivElement
   content: HTMLDivElement
   prepareNavigation: (target: MessageNavigationTarget) => void
@@ -303,7 +307,7 @@ export function MessageTimeline(props: {
   userMessages: UserMessage[]
   shouldAnimateMessage?: (id: string) => boolean
   anchor: (id: string) => string
-  onContentReady?: (detail: { rows: number; cached: boolean }) => void
+  onContentReady?: (detail: { sessionKey: string; rows: number; cached: boolean }) => void
   onViewportTurnChange?: (userMessageID: string | undefined) => void
   onReviewTurnDiff?: (input: { userMessageID: string; file: string; event: MouseEvent }) => void
   onReviewTurnAll?: (userMessageID: string) => void
@@ -311,6 +315,9 @@ export function MessageTimeline(props: {
 }) {
   const sync = useSync()
   const settings = useSettings()
+  const sdk = useSDK()
+  const globalSync = useGlobalSync()
+  const theme = useTheme()
   const language = useLanguage()
   const { params, sessionKey } = useSessionKey()
   const ownerSessionKey = sessionKey()
@@ -437,7 +444,22 @@ export function MessageTimeline(props: {
   const textMetrics = createMemo(() => {
     // Markdown metrics scale with the user's base font size setting.
     settings.appearance.fontSize()
+    theme.themeId()
     return timelineTextMetrics(listRoot())
+  })
+  const layoutVersion = createMemo(() =>
+    rowLayoutVersion({
+      fontSize: settings.appearance.fontSize(),
+      font: settings.appearance.font(),
+      theme: theme.themeId(),
+      scope: JSON.stringify([sdk.url, sdk.directory, globalSync.version]),
+    }),
+  )
+  const measurementVersion = (row: TimelineRow.TimelineRow) =>
+    `${layoutVersion()}:${rowContentVersion(row, getMessagePart)}`
+  createEffect(() => {
+    const version = layoutVersion()
+    console.debug(`[timeline] measurement-layout sid=${sessionID() ?? "none"} version=${version}`)
   })
   const defaultOpen = (part: PartType) => {
     if (part.type !== "tool") return
@@ -465,7 +487,7 @@ export function MessageTimeline(props: {
       element,
       size,
       width: estimatorWidth(),
-      contentVersion: row ? rowContentVersion(row, getMessagePart) : undefined,
+      contentVersion: row ? measurementVersion(row) : undefined,
     })
     if (observerMeasurementFrame !== undefined) return
     observerMeasurementFrame = requestAnimationFrame(() => {
@@ -488,7 +510,7 @@ export function MessageTimeline(props: {
         const index = timelineIndexByKey().get(rowKey)
         if (index === undefined) continue
         const width = estimatorWidth()
-        const contentVersion = currentRow ? rowContentVersion(currentRow, getMessagePart) : undefined
+        const contentVersion = currentRow ? measurementVersion(currentRow) : undefined
         const resolution = resolveObserverMeasurement({
           sampleSize: measurement.size,
           readCurrentSize: () => measurement.element.offsetHeight,
@@ -510,7 +532,7 @@ export function MessageTimeline(props: {
         const currentRow = timelineRowByKey().get(measurement.rowKey)
         if (
           measurement.width !== estimatorWidth() ||
-          measurement.contentVersion !== (currentRow ? rowContentVersion(currentRow, getMessagePart) : undefined)
+          measurement.contentVersion !== (currentRow ? measurementVersion(currentRow) : undefined)
         )
           continue
         const item = virtualizer.measurementsCache[measurement.index]
@@ -920,7 +942,7 @@ export function MessageTimeline(props: {
     for (let index = 0; index < rowsNow.length; index++) {
       const row = rowsNow[index]
       const key = TimelineRow.key(row)
-      const version = rowContentVersion(row, getMessagePart)
+      const version = measurementVersion(row)
       // Use width=0 so any cached width is accepted on initial mount.
       const height = timelineRowCache.getHeight(key, version, 0)
       if (height !== undefined && height > 0) {
@@ -1168,7 +1190,7 @@ export function MessageTimeline(props: {
   const cacheCommittedRowHeight = (rowKey: string, size: number) => {
     const currentRow = timelineRowByKey().get(rowKey)
     if (!currentRow) return
-    timelineRowCache.setMeasured(rowKey, size, rowContentVersion(currentRow, getMessagePart), estimatorWidth())
+    timelineRowCache.setMeasured(rowKey, size, measurementVersion(currentRow), estimatorWidth())
   }
   virtualizer.resizeItem = (index, size) => {
     const profiling = lagging()
@@ -1366,7 +1388,7 @@ export function MessageTimeline(props: {
       "timeline-rows-ready",
       `rows=${String(rows)} messages=${String(messages)} cachedMeasurements=${String(hasCachedMeasurements)}`,
     )
-    props.onContentReady?.({ rows, cached: hasCachedMeasurements })
+    props.onContentReady?.({ sessionKey: ownerSessionKey, rows, cached: hasCachedMeasurements })
   })
   onMount(() => {
     const id = sessionID()
@@ -1401,9 +1423,14 @@ export function MessageTimeline(props: {
     if (root === listRoot()) return
     restoreScrollTopDebug?.()
     setListRoot(root)
-    scrollLedger.rebase(root.scrollTop)
     // ScrollView invokes viewportRef on mount, after its content ref has initialized.
-    const release = props.bindViewport({ root, content: virtualContent!, prepareNavigation: prepareMessageNavigation })
+    const release = props.bindViewport({
+      sessionKey: ownerSessionKey,
+      root,
+      content: virtualContent!,
+      prepareNavigation: prepareMessageNavigation,
+    })
+    scrollLedger.rebase(root.scrollTop)
     onCleanup(release)
     if (lagDebug) {
       const prototypeDescriptor = (() => {

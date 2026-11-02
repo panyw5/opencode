@@ -9,8 +9,13 @@ export function shouldRefreshStaleSession(input: {
   return input.now - input.refreshedAt > input.ttl
 }
 
-export function shouldFinishInitialScroll(input: { stableFrames: number; now: number; deadline: number }) {
-  return input.stableFrames >= 3 || input.now >= input.deadline
+export function shouldFinishInitialScroll(input: {
+  stableFrames: number
+  now: number
+  deadline: number
+  contentReady?: boolean
+}) {
+  return (input.contentReady !== false && input.stableFrames >= 3) || input.now >= input.deadline
 }
 
 /** Secondary session requests must not compete with the first tab paint on Windows Electron. */

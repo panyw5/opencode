@@ -3,6 +3,9 @@ import {
   BoundedTimelineRowMeasurementCache,
   TimelineRowMeasurementCache,
   rowWidthCompatible,
+  rowLayoutVersion,
+  DEFAULT_TIMELINE_ROW_CACHE_MAX,
+  timelineRowCache,
   type RowMeasurement,
 } from "./row-cache"
 
@@ -218,4 +221,40 @@ describe("rowWidthCompatible", () => {
   test("accepts unknown cached width", () => {
     expect(rowWidthCompatible(0, 800)).toBe(true)
   })
+})
+
+test("row measurements cannot cross font, size, or theme changes", () => {
+  const cache = new TimelineRowMeasurementCache()
+  const layout = { fontSize: 14, font: "mono", theme: "oc-2" }
+  const version = (input: typeof layout) => `${rowLayoutVersion(input)}:part:unchanged`
+  cache.setMeasured("row", 120, version(layout), 800)
+  expect(cache.getHeight("row", version(layout), 800)).toBe(120)
+  for (const changed of [
+    { ...layout, fontSize: 18 },
+    { ...layout, font: "other" },
+    { ...layout, theme: "claude" },
+  ]) {
+    expect(cache.getHeight("row", version(changed), 800)).toBeUndefined()
+  }
+  console.info("[row-cache-test] layoutFontSize=true layoutFont=true layoutTheme=true")
+})
+
+test("row measurement scopes separate backend, directory, and connection generations", () => {
+  const cache = new TimelineRowMeasurementCache()
+  const layout = { fontSize: 14, font: "mono", theme: "oc-2" }
+  const version = (scope: string) => `${rowLayoutVersion({ ...layout, scope })}:part:unchanged`
+  const scope = JSON.stringify(["server-a", "/project", 1])
+  cache.setMeasured("same-message-row", 120, version(scope), 800)
+  for (const other of [
+    ["server-b", "/project", 1],
+    ["server-a", "/other", 1],
+    ["server-a", "/project", 2],
+  ]) {
+    expect(cache.getHeight("same-message-row", version(JSON.stringify(other)), 800)).toBeUndefined()
+  }
+})
+
+test("the shared row cache is bounded on non-Windows platforms too", () => {
+  expect(DEFAULT_TIMELINE_ROW_CACHE_MAX).toBe(12_000)
+  expect(timelineRowCache).toBeInstanceOf(BoundedTimelineRowMeasurementCache)
 })

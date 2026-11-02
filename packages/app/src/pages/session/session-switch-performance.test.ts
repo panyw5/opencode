@@ -28,6 +28,12 @@ describe("session switch performance", () => {
     expect(shouldFinishInitialScroll({ stableFrames: 0, now: 1_000, deadline: 1_000 })).toBe(true)
   })
 
+  test("does not mistake stable estimated heights for completed Markdown", () => {
+    expect(shouldFinishInitialScroll({ stableFrames: 10, now: 100, deadline: 1_000, contentReady: false })).toBe(false)
+    expect(shouldFinishInitialScroll({ stableFrames: 3, now: 100, deadline: 1_000, contentReady: true })).toBe(true)
+    expect(shouldFinishInitialScroll({ stableFrames: 0, now: 1_000, deadline: 1_000, contentReady: false })).toBe(true)
+  })
+
   test("defers secondary session requests longer in Windows Electron", () => {
     expect(sessionBackgroundDelay("Mozilla/5.0 Windows Electron/41")).toBe(1_000)
     expect(sessionBackgroundDelay("Mozilla/5.0 Mac OS X")).toBe(250)

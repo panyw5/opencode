@@ -24,6 +24,11 @@ export type RowMeasurement = {
 
 /** Width tolerance reuses cached heights across minor layout shifts (scrollbar, etc). */
 const WIDTH_TOLERANCE = 16
+export const DEFAULT_TIMELINE_ROW_CACHE_MAX = 12_000
+
+export function rowLayoutVersion(input: { fontSize: number; font: string; theme: string; scope?: string }) {
+  return JSON.stringify([input.fontSize, input.font, input.theme, input.scope ?? ""])
+}
 
 export function rowWidthCompatible(cachedWidth: number, currentWidth: number) {
   if (!cachedWidth || !currentWidth) return true
@@ -85,10 +90,7 @@ export class TimelineRowMeasurementCache {
       // Same content: enforce quality + recency precedence.
       if (existing.contentVersion === measurement.contentVersion) {
         if (existing.quality === "measured" && measurement.quality === "estimated") return
-        if (
-          existing.quality === measurement.quality &&
-          existing.measuredAt > measurement.measuredAt
-        ) {
+        if (existing.quality === measurement.quality && existing.measuredAt > measurement.measuredAt) {
           return
         }
       }
@@ -163,9 +165,7 @@ export class TimelineRowMeasurementCache {
    * Only rows with a known height are emitted; the virtualizer falls back to
    * `estimateSize` for the rest.
    */
-  toVirtualMeasurements(
-    rowIndexByKey: Map<string, number>,
-  ): VirtualItem[] {
+  toVirtualMeasurements(rowIndexByKey: Map<string, number>): VirtualItem[] {
     const items: VirtualItem[] = []
     let start = 0
     // Iterate in index order so `start` accumulates correctly.
@@ -225,4 +225,4 @@ const windowsDesktop = typeof navigator !== "undefined" && isWindowsElectron(nav
 
 export const timelineRowCache = windowsDesktop
   ? new BoundedTimelineRowMeasurementCache(WINDOWS_TIMELINE_ROW_CACHE_MAX)
-  : new TimelineRowMeasurementCache()
+  : new BoundedTimelineRowMeasurementCache(DEFAULT_TIMELINE_ROW_CACHE_MAX)

@@ -42,6 +42,7 @@ import { pendingSessionSubmissions } from "@/components/prompt-input/pending-ses
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
 import { ensureSessionProfile, markSessionProfile, startSessionProfile } from "@/utils/session-profile"
+import { initialTimelineLayoutReady } from "./session/initial-timeline-layout"
 import { useComponentMountProfile } from "@/utils/component-mount-profile"
 import {
   resolveSessionRevertBoundary,
@@ -145,7 +146,8 @@ import type { Session } from "@opencode-ai/sdk/v2/client"
 
 const emptyUserMessages: UserMessage[] = []
 const scrollBottomThreshold = SESSION_SCROLL_BOTTOM_THRESHOLD
-const settleMs = 1_500
+// Includes Markdown's 8s parse fallback; normal loads reveal after three stable frames.
+const settleMs = 8_500
 const sessionBackgroundDelayMs = typeof navigator === "undefined" ? 250 : sessionBackgroundDelay(navigator.userAgent)
 const sessionTodoDelayMs = typeof navigator === "undefined" ? 500 : sessionBackgroundDelay(navigator.userAgent, 500)
 // Background-prefetch delay for review data: after the children/todo prefetches
@@ -787,6 +789,10 @@ export default function Page() {
   // Draft readiness is not permission to mount a timeline during a route transition.
   const timelineKey = createMemo(() => (params.id && messagesReady() ? sessionKey() : undefined))
   const [sessionRenderState, setSessionRenderState] = createSignal(initialSessionRenderState)
+  const optimisticSessionEntry = () => {
+    const pending = layout.handoff.tabs()
+    return !!params.id && !!pending && pending.id === params.id && Date.now() - pending.at < 5_000
+  }
   const dispatchSessionRender = (event: SessionRenderEvent, reason?: string) => {
     const previous = sessionRenderState()
     const next = reduceSessionRenderState(previous, event)
@@ -805,10 +811,16 @@ export default function Page() {
     const id = params.id
     const ready = messagesReady()
     const current = sessionRenderState()
-    if (current.sessionID !== id) {
-      const pending = layout.handoff.tabs()
-      const optimistic = !!id && !!pending && pending.id === id && Date.now() - pending.at < 5_000
-      dispatchSessionRender({ type: "session-change", sessionID: id, cached: ready || optimistic })
+    if (current.sessionID !== id || (id && current.sessionKey !== sessionKey())) {
+      const optimistic = optimisticSessionEntry()
+      dispatchSessionRender(
+        { type: "session-change", sessionID: id, sessionKey: sessionKey(), cached: ready, optimistic },
+        `dataCached=${String(ready)} optimistic=${String(optimistic)} layoutReady=false`,
+      )
+      return
+    }
+    if (id && !ready && current.hasContent && !optimisticSessionEntry()) {
+      dispatchSessionRender({ type: "messages-invalidated", sessionID: id }, "data-cache-cleared")
       return
     }
     if (id && ready && !current.hasContent) dispatchSessionRender({ type: "messages-ready", sessionID: id })
@@ -816,14 +828,14 @@ export default function Page() {
   let renderOverlayTimer: number | undefined
   createEffect(
     on(
-      () => [sessionRenderState().sessionID, sessionRenderState().overlay] as const,
-      ([id, overlay]) => {
+      () => [sessionRenderState().sessionID, sessionRenderState().overlay, sessionRenderState().generation] as const,
+      ([id, overlay, generation]) => {
         if (renderOverlayTimer !== undefined) window.clearTimeout(renderOverlayTimer)
         renderOverlayTimer = undefined
         if (!id || overlay !== "hiding") return
         renderOverlayTimer = window.setTimeout(() => {
           renderOverlayTimer = undefined
-          dispatchSessionRender({ type: "overlay-hidden", sessionID: id }, "fade-deadline")
+          dispatchSessionRender({ type: "overlay-hidden", sessionID: id, generation }, "fade-deadline")
         }, 120)
       },
     ),
@@ -837,6 +849,8 @@ export default function Page() {
       const state = sessionRenderState()
       if (!state.sessionID || !state.hasContent || state.overlay === "hidden") return
       markSessionProfile(state.sessionID, "visibility-restored", `source=${event.type}`)
+      // Focus must not expose a cold layout whose Markdown is still parsing.
+      if (state.phase !== "interactive") return
       dispatchSessionRender({ type: "deadline", sessionID: state.sessionID }, event.type)
     }
     document.addEventListener("visibilitychange", restore)
@@ -2492,6 +2506,10 @@ export default function Page() {
   let initialScrollDeadlineTimer: number | undefined
   let initialScrollStableFrames = 0
   let initialScrollHeight: number | undefined
+  let initialScrollContentReady: boolean | undefined
+  let initialScrollGeneration = 0
+  let viewportSnapshot: { key: string; top: number } | undefined
+  let viewportOwnerKey: string | undefined
   let until = 0
 
   const viewportWantsBottom = () => {
@@ -2507,21 +2525,26 @@ export default function Page() {
 
   const armInitialScrollDeadline = (key: string) => {
     clearInitialScrollDeadline()
+    initialScrollContentReady = undefined
+    initialScrollGeneration = sessionRenderState().generation
+    const generation = initialScrollGeneration
     until = performance.now() + settleMs
     initialScrollDeadlineTimer = window.setTimeout(() => {
+      if (initialScrollGeneration !== generation) return
       initialScrollDeadlineTimer = undefined
       if (initialScrollKey !== key || sessionKey() !== key) return
       const id = params.id
       if (!id) return
       markSessionProfile(id, "initial-scroll-deadline", "source=wall-clock")
-      // The wall-clock deadline only reveals readable content. Keep the
+      // The wall-clock deadline prevents a broken renderer trapping the UI. Keep the
       // settling loop alive so late row measurements can still pin the
       // viewport to the bottom until it stabilizes or reaches `until`.
-      dispatchSessionRender({ type: "deadline", sessionID: id }, "initial-scroll")
-    }, 1_000)
+      dispatchSessionRender({ type: "deadline", sessionID: id, generation }, "initial-scroll")
+    }, settleMs)
   }
 
-  const settle = (key: string) => {
+  const settle = (key: string, generation: number) => {
+    if (initialScrollGeneration !== generation || sessionRenderState().generation !== generation) return
     initialScrollFrame = undefined
     if (initialScrollKey !== key) return
     if (sessionKey() !== key) {
@@ -2529,12 +2552,6 @@ export default function Page() {
       clearInitialScrollDeadline()
       return
     }
-    if (!viewportWantsBottom()) {
-      initialScrollKey = undefined
-      clearInitialScrollDeadline()
-      return
-    }
-
     const root = scroller
     if (!root) {
       initialScrollKey = undefined
@@ -2545,7 +2562,17 @@ export default function Page() {
 
     const height = root.scrollHeight
     const gapAfter = Math.round(root.scrollHeight - root.clientHeight - root.scrollTop)
-    if (Math.abs(gapAfter) <= 1 && height === initialScrollHeight) {
+    const contentReady = initialTimelineLayoutReady(root)
+    if (contentReady !== initialScrollContentReady) {
+      initialScrollContentReady = contentReady
+      const id = params.id
+      if (id)
+        markSessionProfile(id, "initial-layout-ready", `ready=${String(contentReady)} height=${height} gap=${gapAfter}`)
+    }
+    const positioned = viewportWantsBottom()
+      ? Math.abs(gapAfter) <= 1
+      : !["waiting", "loading", "seeking"].includes(navigationState.phase)
+    if (contentReady && positioned && height === initialScrollHeight) {
       initialScrollStableFrames += 1
     } else {
       initialScrollStableFrames = 0
@@ -2553,7 +2580,12 @@ export default function Page() {
     initialScrollHeight = height
 
     if (
-      shouldFinishInitialScroll({ stableFrames: initialScrollStableFrames, now: performance.now(), deadline: until })
+      shouldFinishInitialScroll({
+        stableFrames: initialScrollStableFrames,
+        now: performance.now(),
+        deadline: until,
+        contentReady,
+      })
     ) {
       initialScrollKey = undefined
       clearInitialScrollDeadline()
@@ -2564,12 +2596,12 @@ export default function Page() {
           "initial-scroll-settled",
           `frames=${String(initialScrollStableFrames)} gap=${String(gapAfter)} height=${String(height)}`,
         )
-        dispatchSessionRender({ type: "settled", sessionID: id }, "initial-scroll")
+        dispatchSessionRender({ type: "settled", sessionID: id, generation }, "initial-scroll")
       }
       return
     }
 
-    initialScrollFrame = requestAnimationFrame(() => settle(key))
+    initialScrollFrame = requestAnimationFrame(() => settle(key, generation))
   }
 
   const reconcileContentResize = (root: HTMLDivElement) => {
@@ -2606,6 +2638,7 @@ export default function Page() {
     debug("state:before", el)
     const max = scrollHeight - clientHeight
     const top = geometry?.scrollTop ?? el.scrollTop
+    if (viewportOwnerKey === sessionKey()) viewportSnapshot = { key: viewportOwnerKey, top }
     const overflow = max > 1
     const gap = max - top
     const bottom = !overflow || gap <= scrollBottomThreshold
@@ -2689,17 +2722,17 @@ export default function Page() {
         initialScrollStableFrames = 0
         initialScrollHeight = undefined
         armInitialScrollDeadline(key)
+        const generation = initialScrollGeneration
         const id = params.id
         if (id) markSessionProfile(id, "messages-ready")
         if (initialScrollFrame !== undefined) cancelAnimationFrame(initialScrollFrame)
 
-        // Seed the scroll position synchronously, but never hide readable
-        // content while virtual measurements continue in later frames.
+        // Keep cold content covered until async Markdown and virtual measurements settle.
         initialScrollFrame = requestAnimationFrame(() => {
-          if (initialScrollKey !== key) return
+          if (initialScrollKey !== key || initialScrollGeneration !== generation) return
           initialScrollFrame = requestAnimationFrame(() => {
             initialScrollFrame = undefined
-            if (initialScrollKey !== key) return
+            if (initialScrollKey !== key || initialScrollGeneration !== generation) return
             if (sessionKey() !== key) {
               initialScrollKey = undefined
               clearInitialScrollDeadline()
@@ -2707,8 +2740,7 @@ export default function Page() {
             }
             if (!viewportWantsBottom()) {
               console.debug(`[session] initial bottom skipped: key=${key} intent=${viewportIntent()?.kind ?? "none"}`)
-              initialScrollKey = undefined
-              clearInitialScrollDeadline()
+              initialScrollFrame = requestAnimationFrame(() => settle(key, generation))
               return
             }
             const el = scroller
@@ -2720,7 +2752,7 @@ export default function Page() {
             setStore("messageId", undefined)
             scheduleScrollState(el)
             debug("initial:after", el, { key })
-            initialScrollFrame = requestAnimationFrame(() => settle(key))
+            initialScrollFrame = requestAnimationFrame(() => settle(key, generation))
           })
         })
       },
@@ -2730,13 +2762,29 @@ export default function Page() {
 
   const bindViewport = (viewport: MessageTimelineViewport) => {
     const el = viewport.root
+    const key = sessionKey()
+    const id = params.id
+    if (viewport.sessionKey !== key) {
+      console.debug(`[session] scroll-root-reject owner=${viewport.sessionKey} current=${key}`)
+      return () => {}
+    }
     console.debug(
       `[session] scroll-root-bind sid=${params.id ?? "none"} previousConnected=${String(scroller?.isConnected ?? false)} nextConnected=${String(el.isConnected)} same=${String(scroller === el)}`,
     )
     if (!el.isConnected) return () => {}
+    if (id)
+      dispatchSessionRender(
+        { type: "viewport-bound", sessionID: id, optimistic: optimisticSessionEntry() },
+        "viewport-remount",
+      )
     scroller = el
+    viewportOwnerKey = key
     content = viewport.content
     prepareMessageNavigation = viewport.prepareNavigation
+    if (viewportSnapshot?.key === key && navigationState.sessionKey === key && viewportIntent()?.kind === "reading") {
+      el.scrollTop = viewportSnapshot.top
+      console.debug(`[session] viewport-reading-restore key=${key} top=${Math.round(el.scrollTop)}`)
+    }
     debug("scroll-ref", el)
     scheduleScrollState(el)
     fill()
@@ -2745,20 +2793,25 @@ export default function Page() {
     // a plain variable — not reactive. If messagesReady() fired before the DOM
     // mounted, the effect exited early and never re-runs. Compensate here by
     // triggering the initial scroll when the ref arrives late.
-    const key = sessionKey()
-    if (key && messagesReady() && initialScrollKey !== key) {
+    if (key && messagesReady()) {
       initialScrollKey = key
       initialScrollStableFrames = 0
       initialScrollHeight = undefined
       armInitialScrollDeadline(key)
+      const generation = initialScrollGeneration
       if (initialScrollFrame !== undefined) cancelAnimationFrame(initialScrollFrame)
-      initialScrollFrame = requestAnimationFrame(() => settle(key))
+      initialScrollFrame = requestAnimationFrame(() => settle(key, generation))
     }
     return () => {
       const current = scroller === el
       console.debug(`[session] scroll-root-release sid=${params.id ?? "none"} current=${String(current)}`)
       if (!current) return
+      if (initialScrollFrame !== undefined) cancelAnimationFrame(initialScrollFrame)
+      initialScrollFrame = undefined
+      initialScrollKey = undefined
+      clearInitialScrollDeadline()
       scroller = undefined
+      viewportOwnerKey = undefined
       content = undefined
       prepareMessageNavigation = () => {}
     }
@@ -3588,6 +3641,7 @@ export default function Page() {
                         onReviewTurnAll={openTurnReviewAll}
                         anchor={anchor}
                         onContentReady={(detail) => {
+                          if (detail.sessionKey !== sessionKey()) return
                           const id = params.id
                           if (!id) return
                           markSessionProfile(
