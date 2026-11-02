@@ -2,7 +2,7 @@ import { createEffect, createMemo, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useFilteredList } from "@opencode-ai/ui/hooks"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { ImagePreview } from "@opencode-ai/ui/image-preview"
+import { PromptImagePreview } from "../prompt-input/image-preview"
 import type { Agent, Command } from "@opencode-ai/sdk/v2/client"
 import type { ContentPart, ImageAttachmentPart, Prompt } from "@/context/prompt"
 import { useGlobalSDK } from "@/context/global-sdk"
@@ -372,7 +372,7 @@ export function QuickAssistantEditor(props: {
       <PromptImageAttachments
         attachments={images()}
         onRemove={attachments.removeAttachment}
-        onOpen={(item) => dialog.show(() => <ImagePreview src={item.dataUrl} alt={item.filename} />)}
+        onOpen={(attachment) => dialog.showForOwner(() => <PromptImagePreview attachment={attachment} />)}
         removeLabel={language.t("prompt.attachment.remove")}
       />
       <div class="relative">

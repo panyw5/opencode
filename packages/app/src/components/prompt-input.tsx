@@ -100,7 +100,7 @@ import { useComponentMountProfile } from "@/utils/component-mount-profile"
 import { PromptImageAttachments } from "./prompt-input/image-attachments"
 import { PromptDragOverlay } from "./prompt-input/drag-overlay"
 import { promptPlaceholder, promptPlaceholderSuggestions } from "./prompt-input/placeholder"
-import { ImagePreview } from "@opencode-ai/ui/image-preview"
+import { PromptImagePreview } from "./prompt-input/image-preview"
 import { createPromptPair } from "./prompt-input/autocomplete-pair"
 import { createModelAutocomplete, createAutocompleteSettings } from "./prompt-input/autocomplete-model"
 import { GhostText } from "./prompt-input/ghost-text"
@@ -2756,7 +2756,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           <PromptImageAttachments
             attachments={imageAttachments()}
             onOpen={(attachment) =>
-              dialog.showForOwner(() => <ImagePreview src={attachment.dataUrl} alt={attachment.filename} />)
+              dialog.showForOwner(() => <PromptImagePreview attachment={attachment} />)
             }
             onRemove={removeAttachment}
             removeLabel={language.t("prompt.attachment.remove")}
