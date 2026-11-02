@@ -1098,7 +1098,11 @@ export const layer: Layer.Layer<
       sessionID: SessionID
       summary: Info["summary"]
     }) {
-      yield* patch(input.sessionID, { time: { updated: Date.now() }, summary: input.summary })
+      log.info("updating derived summary without touching session activity", {
+        sessionID: input.sessionID,
+        files: input.summary?.files ?? 0,
+      })
+      yield* patch(input.sessionID, { summary: input.summary })
     })
 
     const diff = Effect.fn("Session.diff")(function* (sessionID: SessionID) {
