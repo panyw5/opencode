@@ -1,6 +1,8 @@
 - Delegate implementation, debugging, review, research, or verification work to the local Grok Build CLI.
 - Use when a locally authenticated Grok Build session is useful as an independent agent.
 - Grok can inspect and edit files, execute shell commands, use network tools, and return its response to the current agent.
+- Uses the executable and GROK_HOME configured in Settings > External Agents; automatic CLI updates are disabled for the child process.
+- Only a zero exit code and a successful end_turn terminal event count as success. Interrupted, limited, refused, incomplete, and failed turns retain diagnostics instead of becoming normal answers.
 
 Result handoff:
   - Successful calls include a versioned `external_consultation` block with the OpenCode child `task_id`, summary previews, and intervention flags. The task_id is not the Grok native session_id.

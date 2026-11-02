@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { homedir } from "node:os"
+import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { Schema } from "effect"
 import { Config } from "@/config/config"
@@ -8,9 +9,10 @@ import { parseCodexJsonl, applyCodexJsonlLine, createCodexLiveState } from "@/to
 import { parseClaudeJsonl } from "@/tool/claude_consult"
 import { applyDshJsonlLine, createDshJsonState, dshCapabilities, type DshEventItem } from "@/tool/dsh-protocol"
 import { buildDshExecArgs, buildDshFollowupArgs } from "@/tool/dsh_consult"
+import { tmpdir } from "../fixture/fixture"
 
 describe("external CLI runtime configuration", () => {
-  for (const id of ["codex", "claude", "dsh"] as const) {
+  for (const id of ["codex", "claude", "dsh", "grok"] as const) {
     test(id + " persists a partial configuration and uses the configured executable/home", () => {
       const config = { enabled: true, binaryPath: "/configured/" + id, configHome: "~/custom-agent-home" }
       const decoded = Schema.decodeUnknownSync(Config.Info)({ external_agents: { [id]: config } })
@@ -44,6 +46,18 @@ describe("external CLI runtime configuration", () => {
     )
     expect(runtime.binary).toBe(path.join(homedir(), "bin/codex"))
     expect(runtime.home).toBe(path.join(homedir(), "custom-home"))
+  })
+
+  test("Grok honors GROK_HOME and finds its managed binary when PATH has no Grok", async () => {
+    await using dir = await tmpdir()
+    const binary = path.join(dir.path, "bin", process.platform === "win32" ? "grok.exe" : "grok")
+    await mkdir(path.dirname(binary), { recursive: true })
+    await writeFile(binary, "fixture")
+    const env = { PATH: "", GROK_HOME: dir.path }
+    const runtime = resolveExternalCli("grok", undefined, env)
+    expect(runtime.binary).toBe(binary)
+    expect(runtime.env.GROK_HOME).toBe(dir.path)
+    expect(() => resolveExternalCli("grok", { binaryPath: "missing-grok-fixture" }, env)).toThrow("not found")
   })
 })
 

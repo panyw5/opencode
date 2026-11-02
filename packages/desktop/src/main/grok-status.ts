@@ -10,7 +10,8 @@ const execFileAsync = promisify(execFile)
 const GROK_SOURCE_URL = "https://grok.com"
 
 export function defaultGrokHome() {
-  return join(homedir(), ".grok")
+  const env = process.env.GROK_HOME?.trim()
+  return env ? resolveDesktopPath(env) : join(homedir(), ".grok")
 }
 
 export function resolveGrokHome(config?: CliAgentConfig) {
@@ -33,12 +34,18 @@ export async function resolveGrokBinary(config?: CliAgentConfig): Promise<string
 export async function getGrokInfo(config?: CliAgentConfig): Promise<CliAgentInfo> {
   const configHome = resolveGrokHome(config)
   const configPath = join(configHome, "config.toml")
-  const info: CliAgentInfo = { sourceUrl: GROK_SOURCE_URL, installed: false, configHome, configPath, checkedAt: Date.now() }
+  const info: CliAgentInfo = {
+    sourceUrl: GROK_SOURCE_URL,
+    installed: false,
+    configHome,
+    configPath,
+    checkedAt: Date.now(),
+  }
   try {
     const binaryPath = await resolveGrokBinary(config)
     info.binaryPath = binaryPath
     if (binaryPath) {
-      info.version = await commandVersion(binaryPath)
+      info.version = await commandVersion(binaryPath, configHome)
       info.installed = !!info.version || (await exists(binaryPath))
     }
     info.configExists = await exists(configPath)
@@ -52,6 +59,8 @@ export async function getGrokInfo(config?: CliAgentConfig): Promise<CliAgentInfo
 export function parseGrokConfigToml(text: string): CliAgentDetail[] {
   let section = ""
   let rootModel: string | undefined
+  let defaultModel: string | undefined
+  let legacyModel: string | undefined
   for (const line of text.split(/\r?\n/)) {
     const header = line.match(/^\s*\[([^\]]+)\]\s*$/)
     if (header) {
@@ -60,10 +69,12 @@ export function parseGrokConfigToml(text: string): CliAgentDetail[] {
     }
     const entry = line.match(/^\s*([\w_]+)\s*=\s*["']([^"']+)["']/)
     if (!entry) continue
-    if (section === "ui" && entry[1] === "fork_secondary_model") return [{ label: "Model", value: entry[2]! }]
+    if (section === "models" && entry[1] === "default") defaultModel = entry[2]
+    if (section === "ui" && entry[1] === "fork_secondary_model") legacyModel = entry[2]
     if (!section && entry[1] === "model") rootModel = entry[2]
   }
-  return rootModel ? [{ label: "Model", value: rootModel }] : []
+  const model = defaultModel ?? rootModel ?? legacyModel
+  return model ? [{ label: "Model", value: model }] : []
 }
 
 export async function testGrokConfig(config: CliAgentConfig): Promise<CliAgentTest> {
@@ -82,15 +93,21 @@ export async function testGrokConfig(config: CliAgentConfig): Promise<CliAgentTe
   return { ok: true, logs: [...logs, "Grok Build CLI probe succeeded."] }
 }
 
-async function commandVersion(command: string) {
-  const result = await execFileAsync(command, ["--version"], { timeout: 5000, windowsHide: true, env: process.env }).catch(() => undefined)
+async function commandVersion(command: string, home: string) {
+  const result = await execFileAsync(command, ["--version"], {
+    timeout: 5000,
+    windowsHide: true,
+    env: { ...process.env, GROK_HOME: home, GROK_DISABLE_AUTOUPDATER: "1" },
+  }).catch(() => undefined)
   const text = result?.stdout?.trim() || result?.stderr?.trim()
   return text?.split(/\r?\n/)[0]
 }
 
 async function whichCommand(command: string) {
   const checker = process.platform === "win32" ? "where" : "which"
-  const result = await execFileAsync(checker, [command], { timeout: 3000, windowsHide: true, env: process.env }).catch(() => undefined)
+  const result = await execFileAsync(checker, [command], { timeout: 3000, windowsHide: true, env: process.env }).catch(
+    () => undefined,
+  )
   return result?.stdout?.trim().split(/\r?\n/)[0] || undefined
 }
 

@@ -7356,7 +7356,7 @@ export default function ConfigPage() {
       if (id === "pi") {
         await patchConfig({ pi: { ...config, binaryPath: config.binaryPath ?? "", configHome: config.configHome ?? "" } })
       }
-      if (id === "codex" || id === "claude" || id === "dsh") {
+      if (id === "codex" || id === "claude" || id === "dsh" || id === "grok") {
         console.info("[config] saving external runtime config advisor=" + id)
         await patchConfig({
           external_agents: {

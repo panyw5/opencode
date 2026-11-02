@@ -6,7 +6,8 @@ import * as Tool from "./tool"
 import DESCRIPTION from "./grok_consult.txt"
 import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
-import { which } from "@/util/which"
+import { Config } from "@/config/config"
+import { externalTurnFailure, resolveExternalCli } from "./external-cli"
 import { registerAdvisorIntervention } from "./advisor-intervention"
 import { attachExternalTranscript, type TranscriptItem } from "@/session/external"
 import * as Log from "@opencode-ai/core/util/log"
@@ -57,6 +58,8 @@ export type GrokTranscriptItem = {
 }
 
 export type GrokLiveState = {
+  completed: boolean
+  stopReason?: string
   onTranscript?: (item: TranscriptItem) => void
   runSeq?: number
   sessionId?: string
@@ -73,6 +76,8 @@ export type GrokLiveState = {
 }
 
 export type GrokJsonlParseResult = {
+  completed: boolean
+  stopReason?: string
   finalResponse: string
   sessionId?: string
   error?: string
@@ -127,6 +132,7 @@ export function buildGrokResumeArgs(input: GrokExecBuildInput & { sessionId: str
 
 export function createGrokLiveState(): GrokLiveState {
   return {
+    completed: false,
     assistantText: "",
     assistantSegmentText: "",
     assistantIndex: 0,
@@ -146,6 +152,9 @@ export function beginGrokTurn(state: GrokLiveState) {
   state.thinkingText = ""
   state.thinkingOpen = false
   state.error = undefined
+  state.preview = undefined
+  state.completed = false
+  state.stopReason = undefined
 }
 
 /** Apply one `grok --output-format streaming-json` event into live state. */
@@ -245,22 +254,48 @@ export function applyGrokJsonlLine(state: GrokLiveState, rawLine: string): boole
     closeThinking(state)
     const message = string(item.message) ?? string(item.error) ?? "Grok Build turn failed"
     state.error = message
+    state.completed = false
+    closeAssistant(state, "error")
     upsertTranscript(state, { id: `error:${state.transcript.length}`, kind: "error", title: "Error", text: message })
     return true
   }
 
   if (type === "end" || type === "result" || type === "done") {
     closeThinking(state)
+    const reason = string(item.stopReason) ?? string(item.stop_reason)
+    state.stopReason = reason
+      ?.replace(/([a-z])([A-Z])/g, "$1_$2")
+      .replace(/-/g, "_")
+      .toLowerCase()
     const result = string(item.text) ?? string(item.data)
     if (result && !state.assistantText) state.assistantText = result
     if (state.assistantText) state.preview = state.assistantText
     if (item.error === true) state.error = result ?? "Grok Build turn failed"
-    closeAssistant(state)
+    if (state.stopReason !== "end_turn") {
+      state.error ??= "Grok Build stopped: " + (state.stopReason ?? "missing stopReason")
+    }
+    state.completed = !state.error && state.stopReason === "end_turn"
+    closeAssistant(state, state.completed ? "completed" : "error")
     upsertTranscript(state, {
       id: `result:${state.sessionId ?? state.transcript.length}`,
       kind: state.error ? "error" : "status",
       title: state.error ? "Turn failed" : "Turn completed",
+      text: state.error,
       status: state.error ? "error" : "completed",
+    })
+    return true
+  }
+
+  if (type === "max_turns_reached") {
+    state.error = "Grok Build stopped: max_turn_requests"
+    state.completed = false
+    closeThinking(state)
+    closeAssistant(state, "error")
+    upsertTranscript(state, {
+      id: "limit:" + state.transcript.length,
+      kind: "error",
+      title: "Turn limit reached",
+      text: state.error,
     })
     return true
   }
@@ -271,7 +306,13 @@ export function applyGrokJsonlLine(state: GrokLiveState, rawLine: string): boole
 export function parseGrokJsonl(stdout: string): GrokJsonlParseResult {
   const state = createGrokLiveState()
   for (const line of stdout.split(/\r?\n/)) applyGrokJsonlLine(state, line)
+  if (!state.completed) {
+    closeThinking(state)
+    closeAssistant(state, "error")
+  }
   return {
+    completed: state.completed,
+    stopReason: state.stopReason,
     finalResponse: state.assistantText.trim(),
     sessionId: state.sessionId,
     error: state.error,
@@ -289,6 +330,7 @@ export const GrokConsultTool = Tool.define(
   "grok_consult",
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner
+    const configs = yield* Config.Service
 
     return {
       description: DESCRIPTION,
@@ -310,12 +352,10 @@ export const GrokConsultTool = Tool.define(
           })
           yield* assertExternalDirectoryEffect(ctx, workingDirectory, { kind: "directory" })
 
-          const bin = which("grok")
-          if (!bin) {
-            throw new Error(
-              "Grok Build CLI not found on PATH. Install Grok Build and ensure `grok` is available on PATH, then authenticate and retry.",
-            )
-          }
+          const runtime = resolveExternalCli("grok", (yield* configs.get()).external_agents?.grok)
+          const bin = runtime.binary
+          const env = { ...runtime.env, GROK_DISABLE_AUTOUPDATER: "1" }
+          log.info("runtime resolved advisor=grok binary=" + bin + " home=" + runtime.home + " autoUpdate=false")
           const prompt = params.prompt.trim()
           if (!prompt) throw new Error("prompt must be a non-empty string")
 
@@ -342,6 +382,7 @@ export const GrokConsultTool = Tool.define(
                 title: live.preview ? `Grok: ${clip(live.preview, 80).replace(/\s+/g, " ")}` : "Running Grok Build",
                 metadata: {
                   bin,
+                  config_home: runtime.home,
                   working_directory: workingDirectory,
                   model: params.model,
                   timeout_ms: timeoutMs,
@@ -349,6 +390,7 @@ export const GrokConsultTool = Tool.define(
                   permission_mode: PERMISSION_MODE,
                   prompt,
                   session_id: live.sessionId,
+                  stop_reason: live.stopReason,
                   preview: live.preview,
                   transcript: live.transcript.slice(),
                   intervention: intervention?.snapshot(),
@@ -362,8 +404,9 @@ export const GrokConsultTool = Tool.define(
             Effect.scoped(
               Effect.gen(function* () {
                 beginGrokTurn(live)
+                log.info("process starting advisor=grok run=" + live.runSeq + " resume=" + args.includes("--resume"))
                 const handle = yield* spawner.spawn(
-                  ChildProcess.make(bin, args, { cwd: workingDirectory, extendEnv: true, stdin: "ignore" }),
+                  ChildProcess.make(bin, args, { cwd: workingDirectory, extendEnv: true, env, stdin: "ignore" }),
                 )
                 let stdout = ""
                 let stderr = ""
@@ -410,7 +453,19 @@ export const GrokConsultTool = Tool.define(
                   Effect.orElseSucceed(() => void 0),
                 )
                 if (lineBuffer.trim()) applyGrokJsonlLine(live, lineBuffer)
+                if (!live.completed) {
+                  closeThinking(live)
+                  closeAssistant(live, "error")
+                }
                 yield* publishMetadata(true)
+                log.info(
+                  "process drained advisor=grok exit=" +
+                    exit.code +
+                    " completed=" +
+                    live.completed +
+                    " reason=" +
+                    (live.stopReason ?? "missing"),
+                )
                 return { exit, stdout, stderr }
               }),
             ).pipe(Effect.orDie)
@@ -422,19 +477,17 @@ export const GrokConsultTool = Tool.define(
 
           const parsed = parseGrokJsonl(result.stdout)
           let sessionId = live.sessionId ?? parsed.sessionId
-          let body =
-            live.assistantText.trim() ||
-            parsed.finalResponse ||
-            stripAnsi(result.stdout).trim() ||
-            stripAnsi(result.stderr).trim()
-          if ((live.error ?? parsed.error) && !body) throw new Error(`Grok Build failed: ${live.error ?? parsed.error}`)
-          if (result.exit.code !== 0 && !body) {
-            const detail = (live.error ?? parsed.error ?? result.stderr ?? result.stdout).trim().slice(0, 4000)
-            throw new Error(
-              `Grok Build exited with code ${result.exit.code}${detail ? `: ${detail}` : ""}. Ensure \`grok\` is authenticated and reachable.`,
-            )
-          }
-          if (!body) throw new Error("Grok Build returned an empty response")
+          const failure = externalTurnFailure({
+            advisor: "Grok Build",
+            exitCode: result.exit.code,
+            completed: parsed.completed,
+            error: parsed.error,
+            answer: parsed.finalResponse,
+            stderr: result.stderr,
+          })
+          log.info("turn validated advisor=grok success=" + !failure + " exit=" + result.exit.code)
+          if (failure) throw new Error(failure)
+          let body = parsed.finalResponse
 
           const started = intervention?.isActive() ?? false
           log.info("grok consult turn completed", {
@@ -469,17 +522,22 @@ export const GrokConsultTool = Tool.define(
             if (result.exit.kind === "timeout")
               throw new Error(`Grok Build consultation timed out after ${timeoutMs}ms`)
             const next = parseGrokJsonl(result.stdout)
-            const nextBody =
-              live.assistantText.trim() ||
-              next.finalResponse ||
-              stripAnsi(result.stdout).trim() ||
-              stripAnsi(result.stderr).trim()
-            if (!nextBody) {
+            const nextBody = next.finalResponse
+            const nextError = externalTurnFailure({
+              advisor: "Grok Build",
+              exitCode: result.exit.code,
+              completed: next.completed,
+              error: next.error,
+              answer: nextBody,
+              stderr: result.stderr,
+            })
+            log.info("followup validated advisor=grok success=" + !nextError + " exit=" + result.exit.code)
+            if (nextError) {
               upsertTranscript(live, {
                 id: `intervention-error:${Date.now()}`,
                 kind: "error",
                 title: "Error",
-                text: "Grok Build returned an empty response",
+                text: nextError,
                 status: "error",
               })
               yield* publishMetadata(true)
@@ -511,6 +569,8 @@ export const GrokConsultTool = Tool.define(
               working_directory: workingDirectory,
               prompt,
               session_id: sessionId,
+              config_home: runtime.home,
+              stop_reason: live.stopReason,
               model: params.model,
               exit_code: result.exit.code,
               preview: body,
@@ -535,13 +595,13 @@ function upsertTranscript(state: GrokLiveState, item: GrokTranscriptItem) {
   }
 }
 
-function closeAssistant(state: GrokLiveState) {
+function closeAssistant(state: GrokLiveState, status = "completed") {
   if (!state.assistantOpen) return
   state.assistantOpen = false
   const id = `assistant:${state.assistantIndex}`
   const item = state.transcript.find((entry) => entry.id === id)
   if (item) {
-    item.status = "completed"
+    item.status = status
     state.onTranscript?.({ id: `${state.runSeq ?? 0}:${item.id}`, kind: item.kind, status: item.status })
   }
 }
@@ -593,10 +653,6 @@ function stringify(value: unknown): string {
   } catch {
     return String(value)
   }
-}
-
-function stripAnsi(value: string): string {
-  return value.replace(/\u001b\[[0-9;]*m/g, "")
 }
 
 function clip(value: string, max: number): string {

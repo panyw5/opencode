@@ -1,14 +1,16 @@
 import path from "node:path"
 import { homedir } from "node:os"
+import { existsSync } from "node:fs"
 import { which } from "@/util/which"
 
-export type ExternalCliID = "codex" | "claude" | "dsh"
+export type ExternalCliID = "codex" | "claude" | "dsh" | "grok"
 export type ExternalCliConfig = { enabled?: boolean; binaryPath?: string; configHome?: string }
 
 const homes = {
   codex: ["CODEX_HOME", ".codex"],
   claude: ["CLAUDE_CONFIG_DIR", ".claude"],
   dsh: ["DSH_HOME", ".dsh"],
+  grok: ["GROK_HOME", ".grok"],
 } as const
 
 export function resolveExternalCli(
@@ -36,7 +38,15 @@ export function resolveExternalCli(
   const expand = (value: string) =>
     value === "~" ? homedir() : /^~[/\\]/.test(value) ? path.join(homedir(), value.slice(2)) : value
   const executable = expand(effective.binaryPath?.trim() || id)
-  const binary = /[/\\]/.test(executable) ? path.resolve(base, executable) : which(executable)
+  const managed = path.join(
+    path.resolve(base, expand(env.GROK_HOME?.trim() || path.join(homedir(), ".grok"))),
+    "bin",
+    process.platform === "win32" ? "grok.exe" : "grok",
+  )
+  const binary = /[/\\]/.test(executable)
+    ? path.resolve(base, executable)
+    : (which(executable, env) ??
+      (id === "grok" && !effective.binaryPath?.trim() && existsSync(managed) ? managed : undefined))
   if (!binary)
     throw new Error(id + " CLI not found. Install it or configure its executable in Settings > External agents.")
   const [variable, folder] = homes[id]

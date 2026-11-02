@@ -1284,6 +1284,11 @@ export type Config = {
       binaryPath?: string
       configHome?: string
     }
+    grok?: {
+      enabled?: boolean
+      binaryPath?: string
+      configHome?: string
+    }
   }
   server?: ServerConfig
   command?: {
@@ -2392,6 +2397,11 @@ export type Config7 = {
       configHome?: string
     }
     dsh?: {
+      enabled?: boolean
+      binaryPath?: string
+      configHome?: string
+    }
+    grok?: {
       enabled?: boolean
       binaryPath?: string
       configHome?: string

@@ -11,7 +11,8 @@ const root = await mkdtemp("/tmp/opencode-external-handoff-")
 const workspace = path.join(root, "workspace")
 const bin = path.join(root, "bin")
 const advisor = process.env.EXTERNAL_TEST_ADVISOR ?? "codex"
-assert.ok(["codex", "claude", "dsh"].includes(advisor))
+assert.ok(["codex", "claude", "dsh", "grok"].includes(advisor))
+const expectedTurns = advisor === "grok" ? 7 : 4
 const legacy = process.env.EXTERNAL_TEST_LEGACY === "1"
 const home = path.join(root, "configured home")
 const audit = path.join(root, "invocations.jsonl")
@@ -37,12 +38,13 @@ if (process.argv.includes('--help')) {
   console.log(legacy ? 'Usage: dsh [task]' : 'Options: --json emit events\\n --session-id <id> resume');
   process.exit(0);
 }
-const prompt = process.argv.at(-1);
+const prompt = advisor === 'grok' ? process.argv[process.argv.indexOf('--single')+1] : process.argv.at(-1);
 const initial = legacy ? !prompt.includes('Prior consultation transcript:')
   : !process.argv.some(arg => ['resume', '--resume', '--session-id'].includes(arg));
 const activePrompt = legacy ? prompt.split('New user message:\\n').at(-1) : prompt;
-const homeEnv = advisor === 'codex' ? 'CODEX_HOME' : advisor === 'claude' ? 'CLAUDE_CONFIG_DIR' : 'DSH_HOME';
+const homeEnv = advisor === 'codex' ? 'CODEX_HOME' : advisor === 'claude' ? 'CLAUDE_CONFIG_DIR' : advisor === 'grok' ? 'GROK_HOME' : 'DSH_HOME';
 assert.equal(process.env[homeEnv], process.env.EXTERNAL_TEST_HOME);
+if (advisor === 'grok') assert.equal(process.env.GROK_DISABLE_AUTOUPDATER, '1');
 if (advisor === 'dsh') assert.equal(process.env.DEEPSEEK_API_KEY, 'fixture-key');
 await appendFile(process.env.EXTERNAL_TEST_AUDIT, JSON.stringify({advisor,initial,args:process.argv.slice(2),home:process.env[homeEnv]})+'\\n');
 if (advisor === 'codex') emit({type:'thread.started',thread_id:'thread-handoff-test'});
@@ -69,10 +71,22 @@ if (activePrompt.includes('FAIL_INITIAL')) {
 if (activePrompt.includes('FAIL_FOLLOWUP')) {
   if (advisor === 'codex') emit({type:'turn.failed',error:{message:'FIXTURE_FOLLOWUP_FAILURE'}});
   else if (advisor === 'claude') emit({type:'result',subtype:'error_during_execution',is_error:true,errors:['FIXTURE_FOLLOWUP_FAILURE']});
+  else if (advisor === 'grok') {
+    emit({type:'text',data:'PARTIAL_FAILED_REPLY'});
+    emit({type:'error',message:'FIXTURE_FOLLOWUP_FAILURE'});
+    emit({type:'end',stopReason:'end_turn',sessionId:'session-handoff-test'});
+  }
   else if (legacy) console.error('dsh: FIXTURE_FOLLOWUP_FAILURE');
   else { emit({type:'status',phase:'turn_end',reason:{kind:'error',error:{message:'FIXTURE_FOLLOWUP_FAILURE'}}}); emit({type:'final',text:''}); }
   await writeFile(process.env.EXTERNAL_TEST_FAILED, 'finished');
   process.exit(1);
+}
+if (advisor === 'grok' && ['CANCEL_FOLLOWUP','LIMIT_FOLLOWUP','INCOMPLETE_FOLLOWUP'].some(value=>activePrompt.includes(value))) {
+  emit({type:'text',data:'PARTIAL_INTERRUPTED_REPLY'});
+  if (!activePrompt.includes('INCOMPLETE_FOLLOWUP')) emit({
+    type:'end',stopReason:activePrompt.includes('CANCEL_FOLLOWUP')?'cancelled':'max_turn_requests',sessionId:'session-handoff-test',
+  });
+  process.exit(0);
 }
 if (advisor === 'codex') {
   emit({type:'item.completed',item:{id:'reply',type:'agent_message',text}});
@@ -80,6 +94,9 @@ if (advisor === 'codex') {
 } else if (advisor === 'claude') {
   emit({type:'assistant',message:{id:'reply',content:[{type:'text',text}]}});
   emit({type:'result',subtype:'success',is_error:false,result:text,session_id:'session-handoff-test'});
+} else if (advisor === 'grok') {
+  emit({type:'text',data:text});
+  process.stdout.write(JSON.stringify({type:'end',stopReason:'end_turn',sessionId:'session-handoff-test'}));
 } else if (legacy) console.log(text);
 else {
   emit({type:'status',phase:'turn_end',reason:{kind:'completed'}});
@@ -290,6 +307,24 @@ try {
     return text.includes("FIXTURE_FOLLOWUP_FAILURE") && state.waitingForInput ? true : undefined
   }, "failed follow-up is surfaced without completing the consultation")
   log("received failed follow-up diagnostics; testing recovery")
+  if (advisor === "grok") {
+    for (const [message, reason] of [
+      ["CANCEL_FOLLOWUP", "cancelled"],
+      ["LIMIT_FOLLOWUP", "max_turn_requests"],
+      ["INCOMPLETE_FOLLOWUP", "terminal event"],
+    ]) {
+      await request("/session/" + session.id + "/external-control", { action: "message", message, requestID: message })
+      await until(
+        async () => {
+          const messages = await request("/session/" + session.id + "/message")
+          const state = await request("/session/" + session.id + "/external-control", { action: "status" })
+          return JSON.stringify(messages).includes(reason) && state.waitingForInput ? true : undefined
+        },
+        "Grok does not promote " + reason + " to a successful reply",
+      )
+      log("received unsuccessful Grok turn reason=" + reason)
+    }
+  }
   await request(`/session/${session.id}/external-control`, {
     action: "message",
     message: "SCIENCE_FOLLOWUP",
@@ -322,10 +357,10 @@ try {
     "Full intermediate answer should be read on demand, not inlined",
   )
   assert.ok(result.state.output.includes("task_transcript"))
-  assert.equal(result.state.metadata.interventionTurns, 4)
+  assert.equal(result.state.metadata.interventionTurns, expectedTurns)
   await until(async () => (parentSawFullHistory ? true : undefined), "parent model receiving full history")
   assert.equal(parentRequestedTranscript, true)
-  assert.ok(transcriptPageCount >= 4)
+  assert.ok(transcriptPageCount >= expectedTurns)
   await until(async () => {
     const messages = await request(`/session/${parent.id}/message`)
     return messages
@@ -351,12 +386,15 @@ try {
         .map((file) => readFile(path.join(logs, file), "utf8")),
     )
   ).join("\n")
-  assert.ok(backend.includes("handoff assembled") && backend.includes("turns=4"), "Missing handoff diagnostics")
+  assert.ok(
+    backend.includes("handoff assembled") && backend.includes("turns=" + expectedTurns),
+    "Missing handoff diagnostics",
+  )
   const invocations = (await readFile(audit, "utf8"))
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line))
-  assert.equal(invocations.length, 4)
+  assert.equal(invocations.length, expectedTurns)
   assert.equal(invocations[0].initial, true)
   assert.ok(invocations.slice(1).every((run) => !run.initial && run.home === home))
   if (advisor === "dsh" && !legacy) {

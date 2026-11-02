@@ -164,6 +164,7 @@ export const Info = Schema.Struct({
       codex: Schema.optional(ExternalAgentConfig),
       claude: Schema.optional(ExternalAgentConfig),
       dsh: Schema.optional(ExternalAgentConfig),
+      grok: Schema.optional(ExternalAgentConfig),
     }),
   ).annotate({ description: "Local external advisor executables and configuration directories" }),
   server: Schema.optional(ConfigServer.Server).annotate({

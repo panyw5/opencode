@@ -71,7 +71,7 @@ const cliAgents: Record<CliAgentID, CliAgentDefinition> = {
       label: "Grok Build",
       command: "grok",
       sourceUrl: "https://grok.com",
-      configHomeLabel: "Grok config home",
+      configHomeLabel: "GROK_HOME",
       configHomePlaceholder: "~/.grok",
     },
     getInfo: getGrokInfo,

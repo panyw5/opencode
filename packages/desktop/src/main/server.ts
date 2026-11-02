@@ -7,6 +7,7 @@ import {
   CLAUDE_CONFIG_KEY,
   CODEX_CONFIG_KEY,
   DSH_CONFIG_KEY,
+  GROK_CONFIG_KEY,
   DEFAULT_SERVER_URL_KEY,
   WSL_ENABLED_KEY,
 } from "./constants"
@@ -279,6 +280,7 @@ export const spawnLocalServer = createSpawnLocalServer({
               ["codex", CODEX_CONFIG_KEY],
               ["claude", CLAUDE_CONFIG_KEY],
               ["dsh", DSH_CONFIG_KEY],
+              ["grok", GROK_CONFIG_KEY],
             ].map(([id, key]) => [id, getStore().get(key!) ?? { enabled: false }]),
           ),
         ),
