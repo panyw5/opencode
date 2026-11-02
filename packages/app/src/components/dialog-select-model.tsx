@@ -16,7 +16,7 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { DialogSelectProvider } from "./dialog-select-provider"
 import { DialogManageModels } from "./dialog-manage-models"
 import { ModelTooltip } from "./model-tooltip"
-import { modelProviderIconID } from "./model-provider-icon"
+import { modelProviderIconID, providerGroupIconID } from "./model-provider-icon"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 
@@ -201,6 +201,15 @@ const ModelList: Component<{
       filterKeys={["provider.name", "provider.id", "name", "id", "ref"]}
       sortBy={(a, b) => a.name.localeCompare(b.name)}
       groupBy={(x) => x.provider.name}
+      groupHeader={(group) => (
+        <span
+          data-slot="model-provider-heading"
+          title={[...new Set(group.items.map((item) => item.api?.npm).filter(Boolean))].join(" / ") || undefined}
+        >
+          <ProviderIcon id={providerGroupIconID(group.items)} aria-hidden="true" />
+          <span class="truncate">{group.category}</span>
+        </span>
+      )}
       sortGroupsBy={(a, b) => {
         const aProvider = a.items[0].provider.id
         const bProvider = b.items[0].provider.id
@@ -574,7 +583,7 @@ export function ModelSelectorPopover(props: {
           // trap's pause/resume choreography with a non-modal popover is
           // racy, so this is defense at the yank point.
           data-kb-top-layer=""
-          class="w-[338px] h-[39rem] max-h-[calc(100vh-96px)] flex flex-col p-2 overflow-hidden"
+          class="w-[390px] max-w-[calc(100vw-24px)] h-[39rem] max-h-[calc(100vh-96px)] flex flex-col p-2 overflow-hidden"
           style={{
             ...props.style,
             "z-index": 100,

@@ -1,7 +1,39 @@
 import { describe, expect, test } from "bun:test"
-import { modelProviderIconID } from "./model-provider-icon"
+import { modelProviderIconID, providerGroupIconID } from "./model-provider-icon"
 
 type IconModel = Parameters<typeof modelProviderIconID>[0]
+
+describe("providerGroupIconID", () => {
+  test("preserves native provider icons even when models use another API", () => {
+    expect(
+      providerGroupIconID([{ id: "claude", provider: { id: "github-copilot" }, api: { npm: "@ai-sdk/anthropic" } }]),
+    ).toBe("github-copilot")
+  })
+
+  test("uses a custom gateway API type rather than its model family", () => {
+    expect(
+      providerGroupIconID([
+        { id: "claude", provider: { id: "gateway" }, api: { npm: "@ai-sdk/openai-compatible" } },
+        { id: "gemini", provider: { id: "gateway" }, api: { npm: "@ai-sdk/openai-compatible" } },
+      ]),
+    ).toBe("openai")
+    expect(providerGroupIconID([{ id: "gpt", provider: { id: "gateway" }, api: { npm: "@ai-sdk/anthropic" } }])).toBe(
+      "anthropic",
+    )
+  })
+
+  test("uses a neutral icon for mixed, unknown or missing API types", () => {
+    expect(
+      providerGroupIconID([
+        { id: "a", provider: { id: "gateway" }, api: { npm: "@ai-sdk/openai" } },
+        { id: "b", provider: { id: "gateway" }, api: { npm: "@ai-sdk/anthropic" } },
+      ]),
+    ).toBe("synthetic")
+    expect(providerGroupIconID([{ id: "a", provider: { id: "gateway" } }])).toBe("synthetic")
+    expect(providerGroupIconID([{ id: "a", provider: { id: "gateway" }, api: { npm: "custom" } }])).toBe("synthetic")
+    expect(providerGroupIconID([])).toBe("synthetic")
+  })
+})
 
 describe("modelProviderIconID", () => {
   test("falls back to provider id when external agent model omits api metadata", () => {
