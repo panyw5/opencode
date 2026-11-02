@@ -3,7 +3,13 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
-import { DEFAULT_SERVER_URL_KEY, WSL_ENABLED_KEY } from "./constants"
+import {
+  CLAUDE_CONFIG_KEY,
+  CODEX_CONFIG_KEY,
+  DSH_CONFIG_KEY,
+  DEFAULT_SERVER_URL_KEY,
+  WSL_ENABLED_KEY,
+} from "./constants"
 import { createSidecarEnv, type DesktopStartupPaths } from "./server-env"
 import { getUserShell, loadShellEnv } from "./shell-env"
 import { getStore } from "./store"
@@ -265,7 +271,18 @@ export const spawnLocalServer = createSpawnLocalServer({
   forkSidecar: (sidecar, cwd, paths) =>
     utilityProcess.fork(sidecar, [], {
       cwd,
-      env: createSidecarEnv({ cwd, paths }),
+      env: {
+        ...createSidecarEnv({ cwd, paths }),
+        OPENCODE_EXTERNAL_AGENTS: JSON.stringify(
+          Object.fromEntries(
+            [
+              ["codex", CODEX_CONFIG_KEY],
+              ["claude", CLAUDE_CONFIG_KEY],
+              ["dsh", DSH_CONFIG_KEY],
+            ].map(([id, key]) => [id, getStore().get(key!) ?? { enabled: false }]),
+          ),
+        ),
+      },
       serviceName: SIDECAR_SERVICE_NAME,
       stdio: "pipe",
     }),

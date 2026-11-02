@@ -6,7 +6,8 @@ import * as Tool from "./tool"
 import DESCRIPTION from "./claude_consult.txt"
 import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
-import { which } from "@/util/which"
+import { Config } from "@/config/config"
+import { externalTurnFailure, resolveExternalCli } from "./external-cli"
 import { registerAdvisorIntervention } from "./advisor-intervention"
 import { attachExternalTranscript, type TranscriptItem } from "@/session/external"
 import * as Log from "@opencode-ai/core/util/log"
@@ -83,6 +84,7 @@ export type ClaudeTranscriptItem = {
 }
 
 export type ClaudeLiveState = {
+  completed?: boolean
   onTranscript?: (item: TranscriptItem) => void
   runSeq?: number
   sessionId?: string
@@ -131,6 +133,7 @@ export function buildClaudeExecArgs(input: ClaudeExecBuildInput): string[] {
 }
 
 export type ClaudeJsonlParseResult = {
+  completed?: boolean
   finalResponse: string
   sessionId?: string
   usage?: ClaudeLiveState["usage"]
@@ -243,7 +246,6 @@ export function applyClaudeJsonlLine(state: ClaudeLiveState, rawLine: string): b
         text: state.onTranscript ? text : clip(text, MAX_TRANSCRIPT_TEXT),
         status: isError ? "error" : "completed",
       })
-      if (isError && text) state.error = text
       changed = true
     }
     return changed
@@ -251,18 +253,22 @@ export function applyClaudeJsonlLine(state: ClaudeLiveState, rawLine: string): b
 
   if (type === "result") {
     const resultText = typeof e.result === "string" ? e.result.trim() : ""
-    const isError = e.is_error === true || e.subtype === "error"
+    const isError = e.is_error === true || (typeof e.subtype === "string" && e.subtype !== "success")
+    const errors = Array.isArray(e.errors) ? e.errors.filter((error): error is string => typeof error === "string") : []
+    state.completed = !isError
     state.usage = readObject(e.usage) ?? state.usage
     state.costUsd = typeof e.total_cost_usd === "number" ? e.total_cost_usd : state.costUsd
     state.durationMs = typeof e.duration_ms === "number" ? e.duration_ms : state.durationMs
     if (resultText && !state.agentMessages.includes(resultText)) state.agentMessages.push(resultText)
     if (resultText) state.preview = resultText
-    if (isError) state.error = resultText || "Claude turn failed"
+    state.error = isError ? errors.join("\n") || resultText || String(e.subtype || "Claude turn failed") : undefined
     upsertTranscript(state, {
       id: `result:${state.sessionId ?? state.transcript.length}`,
       kind: isError ? "error" : "status",
       title: isError ? "Turn failed" : "Turn completed",
-      text: resultText ? (state.onTranscript ? resultText : clip(resultText, MAX_TRANSCRIPT_TEXT)) : undefined,
+      text:
+        state.error ||
+        (resultText ? (state.onTranscript ? resultText : clip(resultText, MAX_TRANSCRIPT_TEXT)) : undefined),
       status: isError ? "error" : "completed",
     })
     return true
@@ -292,6 +298,7 @@ export function parseClaudeJsonl(stdout: string): ClaudeJsonlParseResult {
   const finalResponse = state.agentMessages.at(-1)?.trim() ?? ""
   return {
     finalResponse,
+    completed: state.completed,
     sessionId: state.sessionId,
     usage: state.usage,
     costUsd: state.costUsd,
@@ -312,6 +319,7 @@ export const ClaudeConsultTool = Tool.define(
   "claude_consult",
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner
+    const configs = yield* Config.Service
 
     return {
       description: DESCRIPTION,
@@ -334,16 +342,9 @@ export const ClaudeConsultTool = Tool.define(
 
           yield* assertExternalDirectoryEffect(ctx, workingDirectory, { kind: "directory" })
 
-          const bin = which("claude")
-          if (!bin) {
-            throw new Error(
-              [
-                "Claude CLI not found on PATH.",
-                "Install Claude Code and ensure `claude` is available on PATH.",
-                "Then authenticate and retry.",
-              ].join(" "),
-            )
-          }
+          const runtime = resolveExternalCli("claude", (yield* configs.get()).external_agents?.claude)
+          const bin = runtime.binary
+          log.info("runtime resolved advisor=claude binary=" + bin + " home=" + runtime.home)
 
           const prompt = params.prompt.trim()
           if (!prompt) {
@@ -414,6 +415,8 @@ export const ClaudeConsultTool = Tool.define(
           const runProcess = (runArgs: string[]) =>
             Effect.scoped(
               Effect.gen(function* () {
+                live.error = undefined
+                live.completed = false
                 live.runSeq = (live.runSeq ?? 0) + 1
                 const terminatorAt = runArgs.lastIndexOf("--")
                 log.info("spawning claude", {
@@ -428,6 +431,7 @@ export const ClaudeConsultTool = Tool.define(
                   ChildProcess.make(bin, runArgs, {
                     cwd: workingDirectory,
                     extendEnv: true,
+                    env: runtime.env,
                     stdin: "ignore",
                   }),
                 )
@@ -525,26 +529,18 @@ export const ClaudeConsultTool = Tool.define(
           let usage = live.usage ?? parsed.usage
           let costUsd = live.costUsd ?? parsed.costUsd
           let durationMs = live.durationMs ?? parsed.durationMs
-          const error = live.error ?? parsed.error
           let transcript = live.transcript.length ? live.transcript : parsed.transcript
-          const finalResponse = (live.agentMessages.at(-1) ?? parsed.finalResponse)?.trim() || parsed.finalResponse
-
-          if (error && !finalResponse) {
-            throw new Error(`Claude failed: ${error}`)
-          }
-
-          if (exitCode !== 0 && !finalResponse) {
-            const detail = (error || result.stderr || result.stdout).trim().slice(0, 4000)
-            throw new Error(
-              `Claude exited with code ${exitCode}${detail ? `: ${detail}` : ""}. Ensure \`claude\` is authenticated and reachable.`,
-            )
-          }
-
-          let body = finalResponse || stripAnsi(result.stdout).trim() || stripAnsi(result.stderr).trim()
-
-          if (!body) {
-            throw new Error("Claude returned an empty response")
-          }
+          const failure = externalTurnFailure({
+            advisor: "Claude",
+            exitCode,
+            completed: parsed.completed,
+            error: parsed.error,
+            answer: parsed.finalResponse,
+            stderr: result.stderr,
+          })
+          log.info("turn validated advisor=claude success=" + !failure + " exit=" + exitCode)
+          if (failure) throw new Error(failure)
+          let body = parsed.finalResponse
 
           const started = intervention?.isActive() ?? false
           log.info("claude consult turn completed", {
@@ -567,7 +563,6 @@ export const ClaudeConsultTool = Tool.define(
               status: "completed",
             })
             intervention.setBusy(true)
-            const messageCount = live.agentMessages.length
             let next: { exit: { kind: string; code: number | null }; stdout: string; stderr: string }
             try {
               next = yield* runProcess(
@@ -585,12 +580,17 @@ export const ClaudeConsultTool = Tool.define(
             if (next.exit.kind === "abort") throw new Error("Claude consultation was aborted")
             if (next.exit.kind === "timeout") throw new Error(`Claude consultation timed out after ${timeoutMs}ms`)
             const nextParsed = parseClaudeJsonl(next.stdout)
-            const nextError = nextParsed.error
-            const nextBody =
-              (live.agentMessages.slice(messageCount).at(-1) ?? nextParsed.finalResponse)?.trim() ||
-              stripAnsi(next.stdout).trim() ||
-              stripAnsi(next.stderr).trim()
-            if (nextError && !nextBody) {
+            const nextBody = nextParsed.finalResponse
+            const nextError = externalTurnFailure({
+              advisor: "Claude",
+              exitCode: next.exit.code,
+              completed: nextParsed.completed,
+              error: nextParsed.error,
+              answer: nextBody,
+              stderr: next.stderr,
+            })
+            log.info("followup validated advisor=claude success=" + !nextError + " exit=" + next.exit.code)
+            if (nextError) {
               upsertTranscript(live, {
                 id: `intervention-error:${Date.now()}`,
                 kind: "error",

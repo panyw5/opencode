@@ -140,6 +140,12 @@ const LogLevelRef = Schema.Literals(["DEBUG", "INFO", "WARN", "ERROR"]).annotate
   description: "Log level",
 })
 
+const ExternalAgentConfig = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean),
+  binaryPath: Schema.optional(Schema.String),
+  configHome: Schema.optional(Schema.String),
+})
+
 export const Info = Schema.Struct({
   $schema: Schema.optional(Schema.String).annotate({
     description: "JSON schema reference for configuration validation",
@@ -153,6 +159,13 @@ export const Info = Schema.Struct({
     binaryPath: Schema.optional(Schema.String),
     configHome: Schema.optional(Schema.String),
   })).annotate({ description: "Local Pi external advisor executable and configuration directory" }),
+  external_agents: Schema.optional(
+    Schema.Struct({
+      codex: Schema.optional(ExternalAgentConfig),
+      claude: Schema.optional(ExternalAgentConfig),
+      dsh: Schema.optional(ExternalAgentConfig),
+    }),
+  ).annotate({ description: "Local external advisor executables and configuration directories" }),
   server: Schema.optional(ConfigServer.Server).annotate({
     description: "Server configuration for opencode serve and web commands",
   }),

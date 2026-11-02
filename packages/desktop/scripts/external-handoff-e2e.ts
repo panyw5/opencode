@@ -10,18 +10,44 @@ const log = (message: string) => console.log(`[external-handoff-e2e] ${message}`
 const root = await mkdtemp("/tmp/opencode-external-handoff-")
 const workspace = path.join(root, "workspace")
 const bin = path.join(root, "bin")
+const advisor = process.env.EXTERNAL_TEST_ADVISOR ?? "codex"
+assert.ok(["codex", "claude", "dsh"].includes(advisor))
+const legacy = process.env.EXTERNAL_TEST_LEGACY === "1"
+const home = path.join(root, "configured home")
+const audit = path.join(root, "invocations.jsonl")
 const gate = path.join(root, "release-initial-turn")
 await mkdir(workspace)
 await mkdir(bin)
-const cli = path.join(bin, "codex")
+await mkdir(home)
+await writeFile(
+  path.join(home, ".credentials.yaml"),
+  "version: 1\nrefs:\n  DEEPSEEK_API_KEY: fixture-key\nrecords: {}\n",
+)
+const cli = path.join(bin, "configured-advisor.mjs")
 // Exercise the real consult process/JSONL path without external network calls.
 await writeFile(
   cli,
   `#!/usr/bin/env node
-import { access } from 'node:fs/promises';
+import { access, appendFile, writeFile } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const advisor = process.env.EXTERNAL_TEST_ADVISOR;
+const legacy = process.env.EXTERNAL_TEST_LEGACY === '1';
+const emit = value => console.log(JSON.stringify(value));
+if (process.argv.includes('--help')) {
+  console.log(legacy ? 'Usage: dsh [task]' : 'Options: --json emit events\\n --session-id <id> resume');
+  process.exit(0);
+}
 const prompt = process.argv.at(-1);
-const initial = !process.argv.includes('resume');
-console.log(JSON.stringify({type:'thread.started',thread_id:'thread-handoff-test'}));
+const initial = legacy ? !prompt.includes('Prior consultation transcript:')
+  : !process.argv.some(arg => ['resume', '--resume', '--session-id'].includes(arg));
+const activePrompt = legacy ? prompt.split('New user message:\\n').at(-1) : prompt;
+const homeEnv = advisor === 'codex' ? 'CODEX_HOME' : advisor === 'claude' ? 'CLAUDE_CONFIG_DIR' : 'DSH_HOME';
+assert.equal(process.env[homeEnv], process.env.EXTERNAL_TEST_HOME);
+if (advisor === 'dsh') assert.equal(process.env.DEEPSEEK_API_KEY, 'fixture-key');
+await appendFile(process.env.EXTERNAL_TEST_AUDIT, JSON.stringify({advisor,initial,args:process.argv.slice(2),home:process.env[homeEnv]})+'\\n');
+if (advisor === 'codex') emit({type:'thread.started',thread_id:'thread-handoff-test'});
+if (advisor === 'claude') emit({type:'system',subtype:'init',session_id:'session-handoff-test'});
+if (advisor === 'dsh' && !legacy) emit({type:'session',sessionId:'session-handoff-test'});
 if (initial) {
   const deadline = Date.now() + 20000;
   while (true) {
@@ -31,10 +57,34 @@ if (initial) {
   }
 }
 const text = initial ? 'INITIAL_NEWS_RESULT_9281 https://example.test/news'
-  : prompt.includes('SCIENCE_FOLLOWUP') ? 'SCIENCE_RESULT_7315 https://example.test/science'
+  : activePrompt.includes('SCIENCE_FOLLOWUP') ? 'SCIENCE_RESULT_7315 https://example.test/science'
   : 'LATEST_SMALLTALK_RESULT_1948';
-console.log(JSON.stringify({type:'item.completed',item:{id:'reply',type:'agent_message',text}}));
-console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:10,output_tokens:10}}));
+if (activePrompt.includes('FAIL_INITIAL')) {
+  if (advisor === 'codex') emit({type:'error',message:'FIXTURE_INITIAL_FAILURE'});
+  else if (advisor === 'claude') emit({type:'result',subtype:'error_during_execution',is_error:true,errors:['FIXTURE_INITIAL_FAILURE']});
+  else if (legacy) console.error('dsh: FIXTURE_INITIAL_FAILURE');
+  else emit({type:'error',message:'FIXTURE_INITIAL_FAILURE'});
+  process.exit(1);
+}
+if (activePrompt.includes('FAIL_FOLLOWUP')) {
+  if (advisor === 'codex') emit({type:'turn.failed',error:{message:'FIXTURE_FOLLOWUP_FAILURE'}});
+  else if (advisor === 'claude') emit({type:'result',subtype:'error_during_execution',is_error:true,errors:['FIXTURE_FOLLOWUP_FAILURE']});
+  else if (legacy) console.error('dsh: FIXTURE_FOLLOWUP_FAILURE');
+  else { emit({type:'status',phase:'turn_end',reason:{kind:'error',error:{message:'FIXTURE_FOLLOWUP_FAILURE'}}}); emit({type:'final',text:''}); }
+  await writeFile(process.env.EXTERNAL_TEST_FAILED, 'finished');
+  process.exit(1);
+}
+if (advisor === 'codex') {
+  emit({type:'item.completed',item:{id:'reply',type:'agent_message',text}});
+  emit({type:'turn.completed',usage:{input_tokens:10,output_tokens:10}});
+} else if (advisor === 'claude') {
+  emit({type:'assistant',message:{id:'reply',content:[{type:'text',text}]}});
+  emit({type:'result',subtype:'success',is_error:false,result:text,session_id:'session-handoff-test'});
+} else if (legacy) console.log(text);
+else {
+  emit({type:'status',phase:'turn_end',reason:{kind:'completed'}});
+  process.stdout.write(JSON.stringify({type:'final',text}));
+}
 `,
 )
 await chmod(cli, 0o755)
@@ -127,6 +177,11 @@ const child = spawn("node", ["--input-type=module", "--eval", runner, pathToFile
     ...process.env,
     PATH: `${bin}${path.delimiter}${process.env.PATH}`,
     EXTERNAL_HANDOFF_GATE: gate,
+    EXTERNAL_TEST_ADVISOR: advisor,
+    EXTERNAL_TEST_HOME: home,
+    EXTERNAL_TEST_AUDIT: audit,
+    EXTERNAL_TEST_FAILED: path.join(root, "failed-followup"),
+    DEEPSEEK_API_KEY: "",
     XDG_CONFIG_HOME: path.join(root, "config"),
     XDG_DATA_HOME: path.join(root, "data"),
     XDG_STATE_HOME: path.join(root, "state"),
@@ -140,6 +195,7 @@ const child = spawn("node", ["--input-type=module", "--eval", runner, pathToFile
       plugin: [],
       mcp: {},
       permission: { "*": "allow" },
+      external_agents: { [advisor]: { enabled: true, binaryPath: cli, configHome: home } },
       provider: {
         handoff: {
           npm: "@ai-sdk/openai-compatible",
@@ -205,7 +261,7 @@ try {
     model: { providerID: "handoff", modelID: "handoff" },
     parts: [
       { type: "text", text: "EXTERNAL_HANDOFF_NEWS_REQUEST" },
-      { type: "agent", name: "codex" },
+      { type: "agent", name: advisor },
     ],
   })
   const session = await until(async () => (await request(`/session/${parent.id}/children`))[0], "external child")
@@ -222,6 +278,18 @@ try {
     }, expected)
   await waitReply("INITIAL_NEWS_RESULT_9281")
   log("received initial news reply")
+  await request(`/session/${session.id}/external-control`, {
+    action: "message",
+    message: "FAIL_FOLLOWUP",
+    requestID: "failure",
+  })
+  await until(async () => {
+    const messages = await request(`/session/${session.id}/message`)
+    const text = JSON.stringify(messages)
+    const state = await request(`/session/${session.id}/external-control`, { action: "status" })
+    return text.includes("FIXTURE_FOLLOWUP_FAILURE") && state.waitingForInput ? true : undefined
+  }, "failed follow-up is surfaced without completing the consultation")
+  log("received failed follow-up diagnostics; testing recovery")
   await request(`/session/${session.id}/external-control`, {
     action: "message",
     message: "SCIENCE_FOLLOWUP",
@@ -241,7 +309,7 @@ try {
     const messages = await request(`/session/${parent.id}/message`)
     return messages
       .flatMap((message: any) => message.parts)
-      .find((part: any) => part.tool === "codex_consult" && part.state.status === "completed")
+      .find((part: any) => part.tool === advisor + "_consult" && part.state.status === "completed")
   }, "parent tool result")
   const handoff = result.state.metadata.externalHandoff
   assert.equal(handoff.version, 1)
@@ -254,10 +322,10 @@ try {
     "Full intermediate answer should be read on demand, not inlined",
   )
   assert.ok(result.state.output.includes("task_transcript"))
-  assert.equal(result.state.metadata.interventionTurns, 3)
+  assert.equal(result.state.metadata.interventionTurns, 4)
   await until(async () => (parentSawFullHistory ? true : undefined), "parent model receiving full history")
   assert.equal(parentRequestedTranscript, true)
-  assert.equal(transcriptPageCount, 3)
+  assert.ok(transcriptPageCount >= 4)
   await until(async () => {
     const messages = await request(`/session/${parent.id}/message`)
     return messages
@@ -283,7 +351,47 @@ try {
         .map((file) => readFile(path.join(logs, file), "utf8")),
     )
   ).join("\n")
-  assert.ok(backend.includes("handoff assembled") && backend.includes("turns=3"), "Missing handoff diagnostics")
+  assert.ok(backend.includes("handoff assembled") && backend.includes("turns=4"), "Missing handoff diagnostics")
+  const invocations = (await readFile(audit, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+  assert.equal(invocations.length, 4)
+  assert.equal(invocations[0].initial, true)
+  assert.ok(invocations.slice(1).every((run) => !run.initial && run.home === home))
+  if (advisor === "dsh" && !legacy) {
+    assert.ok(invocations.slice(1).every((run) => run.args.includes("--session-id")))
+    assert.ok(invocations.slice(1).every((run) => !run.args.at(-1).includes("Prior consultation transcript")))
+  }
+  assert.ok(!backend.includes("fixture-key"), "Credentials leaked to backend logs")
+  const failed = await request("/session", { title: "External failed first turn" })
+  await request(`/session/${failed.id}/prompt_async`, {
+    agent: "build",
+    model: { providerID: "handoff", modelID: "handoff" },
+    parts: [
+      { type: "text", text: "FAIL_INITIAL" },
+      { type: "agent", name: advisor },
+    ],
+  })
+  await until(async () => {
+    const messages = await request(`/session/${failed.id}/message`)
+    return messages
+      .flatMap((message: any) => message.parts)
+      .some(
+        (part: any) =>
+          part.tool === advisor + "_consult" &&
+          part.state.status === "error" &&
+          part.state.error.includes("FIXTURE_INITIAL_FAILURE"),
+      )
+      ? true
+      : undefined
+  }, "initial failure is an error, not a successful raw JSON reply")
+  log(
+    "PASS configured binary/home, failed initial/follow-up turns, recovery and native/legacy resume advisor=" +
+      advisor +
+      " legacy=" +
+      legacy,
+  )
   assert.ok(
     backend.includes("service=tool.task_transcript") && backend.includes("read completed"),
     "Missing transcript read diagnostics",

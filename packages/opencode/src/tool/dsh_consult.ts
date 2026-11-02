@@ -1,5 +1,5 @@
 import path from "path"
-import { Effect, Schema, Stream } from "effect"
+import { Effect, Fiber, Schema, Stream } from "effect"
 import os from "node:os"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
@@ -8,7 +8,10 @@ import * as Tool from "./tool"
 import DESCRIPTION from "./dsh_consult.txt"
 import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
-import { which } from "@/util/which"
+import { Config } from "@/config/config"
+import { externalTurnFailure, resolveExternalCli } from "./external-cli"
+import { parseDshCredentials } from "@opencode-ai/util/dsh-credentials"
+import { applyDshJsonlLine, createDshJsonState, dshCapabilities, type DshEventItem } from "./dsh-protocol"
 import { registerAdvisorIntervention } from "./advisor-intervention"
 import * as Log from "@opencode-ai/core/util/log"
 
@@ -51,15 +54,11 @@ export type DshExecBuildInput = {
   profile?: string
   /** Resolved patch-file paths, each applied via `dsh --patch <file>` in order. */
   patch?: readonly string[]
+  json?: boolean
+  sessionId?: string
 }
 
-export type DshTranscriptItem = {
-  id: string
-  kind: "message" | "user" | "status" | "error"
-  title?: string
-  text?: string
-  status?: string
-}
+export type DshTranscriptItem = DshEventItem
 
 export type DshTurn = {
   role: "user" | "assistant"
@@ -70,6 +69,7 @@ export function dshTranscriptItem(item: DshTranscriptItem, turn: number): DshTra
   if (item.id === "assistant:live" || item.id === "assistant:final" || item.id.startsWith("intervention-assistant:")) {
     return { ...item, id: `assistant:turn:${turn}` }
   }
+  if (/^(event|call|result):/.test(item.id)) return { ...item, id: "turn:" + turn + ":" + item.id }
   return item
 }
 
@@ -92,15 +92,17 @@ export function buildDshExecArgs(input: DshExecBuildInput): string[] {
 }
 
 /**
- * Headless dsh has no session resume. Continue intervention by replaying prior
- * turns into a fresh one-shot prompt (same UX surface as codex/claude/grok).
+ * Prefer native resume; older headless profiles replay the bounded transcript.
  */
 export function buildDshFollowupArgs(input: {
   history: readonly DshTurn[]
   followup: string
   profile?: string
   patch?: readonly string[]
+  json?: boolean
+  sessionId?: string
 }): string[] {
+  if (input.sessionId) return buildDshArgs(input, input.followup)
   const historyBlock = formatDshHistory(input.history)
   const framed = [
     "You are an external advisor consulted by OpenCode.",
@@ -120,9 +122,12 @@ export function buildDshFollowupArgs(input: {
 }
 
 /** Launcher flags first, then the task as the inner argument. */
-function buildDshArgs(input: { profile?: string; patch?: readonly string[] }, task: string): string[] {
+function buildDshArgs(input: Omit<DshExecBuildInput, "prompt">, task: string): string[] {
   const args = ["--profile", resolveProfile(input.profile)]
   for (const file of input.patch ?? []) args.push("--patch", file)
+  if (input.json) args.push("--json")
+  if (input.sessionId) args.push("--session-id", input.sessionId)
+  if (input.json || input.sessionId) args.push("--")
   args.push(task)
   return args
 }
@@ -176,7 +181,7 @@ export function classifyDshFailure(input: {
     return `dsh exited with code ${input.exitCode}${detail ? `: ${clip(detail, 4000)}` : ""}`
   }
 
-  if (/MISSING_CREDENTIAL|no API key|llm-deepseek/i.test(stderr)) {
+  if (!stdout && /MISSING_CREDENTIAL|no API key/i.test(stderr)) {
     return [
       "dsh has no API credentials.",
       "Export DEEPSEEK_API_KEY, or configure a key via the dsh web Models page (~/.dsh).",
@@ -202,6 +207,7 @@ export const DshConsultTool = Tool.define(
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner
     const fs = yield* AppFileSystem.Service
+    const configs = yield* Config.Service
 
     return {
       description: DESCRIPTION,
@@ -239,16 +245,42 @@ export const DshConsultTool = Tool.define(
               }
             }
 
-            const bin = which("dsh")
-            if (!bin) {
-              throw new Error(
-                [
-                  "DeepSeek Harness CLI (`dsh`) not found on PATH.",
-                  "Install with: npm i -g @deepseek-ai/dsh",
-                  "Then export DEEPSEEK_API_KEY (or configure credentials under ~/.dsh) and retry.",
-                ].join(" "),
-              )
+            const runtime = resolveExternalCli("dsh", (yield* configs.get()).external_agents?.dsh)
+            const bin = runtime.binary
+            const credentialsFile = path.join(runtime.home, ".credentials.yaml")
+            const env: Record<string, string | undefined> = { ...runtime.env }
+            log.info("runtime resolved advisor=dsh binary=" + bin + " home=" + runtime.home)
+            if (yield* fs.exists(credentialsFile).pipe(Effect.orDie)) {
+              log.info("credentials reading advisor=dsh")
+              const document = yield* fs.readFileString(credentialsFile).pipe(Effect.orDie)
+              const key = parseDshCredentials(document).get("DEEPSEEK_API_KEY")
+              if (key) env.DEEPSEEK_API_KEY = key
+              log.info("credentials resolved advisor=dsh storedKey=" + !!key)
             }
+            // Supply the saved key explicitly: modern headless omits the GUI
+            // credential store. Never put secrets in argv or diagnostic logs.
+            const help = yield* spawner
+              .string(
+                ChildProcess.make(
+                  bin,
+                  ["--profile", profile, ...patchFiles.flatMap((file) => ["--patch", file]), "--help"],
+                  {
+                    cwd: workingDirectory,
+                    extendEnv: true,
+                    env,
+                    stdin: "ignore",
+                  },
+                ),
+                { includeStderr: true },
+              )
+              .pipe(
+                Effect.timeout("5 seconds"),
+                Effect.orElseSucceed(() => ""),
+              )
+            const capabilities = dshCapabilities(help)
+            const json = capabilities.json && capabilities.resume
+            let sessionId: string | undefined
+            log.info("capabilities advisor=dsh json=" + capabilities.json + " resume=" + capabilities.resume)
 
             const prompt = params.prompt.trim()
             if (!prompt) throw new Error("prompt must be a non-empty string")
@@ -296,6 +328,8 @@ export const DshConsultTool = Tool.define(
                     working_directory: workingDirectory,
                     timeout_ms: timeoutMs,
                     profile,
+                    session_id: sessionId,
+                    json,
                     patch_count: patchFiles.length,
                     prompt,
                     preview: preview ? clip(preview, MAX_PREVIEW) : undefined,
@@ -323,35 +357,50 @@ export const DshConsultTool = Tool.define(
             const runProcess = (args: string[]) =>
               Effect.scoped(
                 Effect.gen(function* () {
+                  const state = createDshJsonState()
+                  state.onItem = (item) => {
+                    upsertTranscript(item)
+                    if (item.kind === "message") streamPreview = item.text ?? ""
+                  }
+                  log.info("process starting advisor=dsh turn=" + transcriptTurn + " nativeResume=" + !!sessionId)
                   const handle = yield* spawner.spawn(
                     ChildProcess.make(bin, args, {
                       cwd: workingDirectory,
                       extendEnv: true,
+                      env,
                       stdin: "ignore",
                     }),
                   )
 
                   let stdout = ""
                   let stderr = ""
+                  let lineBuffer = ""
                   streamPreview = ""
 
-                  yield* Effect.forkScoped(
+                  const stdoutFiber = yield* Effect.forkScoped(
                     Stream.runForEach(Stream.decodeText(handle.stdout), (chunk) =>
                       Effect.gen(function* () {
                         stdout += chunk
-                        streamPreview = stripAnsi(stdout).trim()
-                        upsertTranscript({
-                          id: "assistant:live",
-                          kind: "message",
-                          title: "Assistant",
-                          text: streamPreview,
-                          status: "running",
-                        })
+                        if (json) {
+                          lineBuffer += chunk
+                          const lines = lineBuffer.split(/\r?\n/)
+                          lineBuffer = lines.pop() ?? ""
+                          for (const line of lines) applyDshJsonlLine(state, line)
+                        } else {
+                          streamPreview = stripAnsi(stdout).trim()
+                          upsertTranscript({
+                            id: "assistant:live",
+                            kind: "message",
+                            title: "Assistant",
+                            text: streamPreview,
+                            status: "running",
+                          })
+                        }
                         yield* publishMetadata()
                       }),
                     ),
                   )
-                  yield* Effect.forkScoped(
+                  const stderrFiber = yield* Effect.forkScoped(
                     Stream.runForEach(Stream.decodeText(handle.stderr), (chunk) =>
                       Effect.sync(() => {
                         stderr += chunk
@@ -381,26 +430,53 @@ export const DshConsultTool = Tool.define(
                     yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
                   }
 
-                  return { exit, stdout, stderr }
+                  yield* Fiber.join(stdoutFiber).pipe(
+                    Effect.timeout("10 seconds"),
+                    Effect.orElseSucceed(() => undefined),
+                  )
+                  yield* Fiber.join(stderrFiber).pipe(
+                    Effect.timeout("10 seconds"),
+                    Effect.orElseSucceed(() => undefined),
+                  )
+                  if (json && lineBuffer.trim()) applyDshJsonlLine(state, lineBuffer)
+                  if (state.sessionId) sessionId = state.sessionId
+                  const answer = json ? state.answer : stripAnsi(stdout).trim()
+                  const failure = json
+                    ? externalTurnFailure({
+                        advisor: "DSH",
+                        exitCode: exit.code,
+                        completed: state.completed && state.final,
+                        error:
+                          state.error || (!state.sessionId ? "DSH stream omitted its session identity" : undefined),
+                        answer,
+                        stderr,
+                      })
+                    : classifyDshFailure({ exitCode: exit.code, stdout, stderr })
+                  log.info(
+                    "process validated advisor=dsh exit=" +
+                      exit.code +
+                      " success=" +
+                      !failure +
+                      " session=" +
+                      (sessionId ?? "legacy"),
+                  )
+                  yield* publishMetadata(true)
+                  return { exit, stdout, stderr, answer, failure }
                 }),
               ).pipe(Effect.orDie)
 
             yield* publishMetadata(true)
             log.info("starting dsh consult", { bin, cwd: workingDirectory, timeoutMs })
 
-            let result = yield* runProcess(buildDshExecArgs({ prompt, profile, patch: patchFiles }))
+            let result = yield* runProcess(buildDshExecArgs({ prompt, profile, patch: patchFiles, json }))
             if (result.exit.kind === "abort") throw new Error("DeepSeek Harness consultation was aborted")
             if (result.exit.kind === "timeout") {
               throw new Error(`DeepSeek Harness consultation timed out after ${timeoutMs}ms`)
             }
 
             lastExitCode = result.exit.code
-            body = stripAnsi(result.stdout).trim()
-            const failure = classifyDshFailure({
-              exitCode: result.exit.code,
-              stdout: result.stdout,
-              stderr: result.stderr,
-            })
+            body = result.answer
+            const failure = result.failure
             if (failure) {
               throw new Error(
                 [
@@ -456,7 +532,14 @@ export const DshConsultTool = Tool.define(
                 activeIntervention.setBusy(true)
                 try {
                   result = yield* runProcess(
-                    buildDshFollowupArgs({ history: history.slice(0, -1), followup, profile, patch: patchFiles }),
+                    buildDshFollowupArgs({
+                      history: history.slice(0, -1),
+                      followup,
+                      profile,
+                      patch: patchFiles,
+                      json,
+                      sessionId,
+                    }),
                   )
                 } finally {
                   activeIntervention.setBusy(false)
@@ -469,12 +552,8 @@ export const DshConsultTool = Tool.define(
                 }
 
                 lastExitCode = result.exit.code
-                const nextBody = stripAnsi(result.stdout).trim()
-                const nextFailure = classifyDshFailure({
-                  exitCode: result.exit.code,
-                  stdout: result.stdout,
-                  stderr: result.stderr,
-                })
+                const nextBody = result.answer
+                const nextFailure = result.failure
                 if (nextFailure) {
                   upsertTranscript({
                     id: `intervention-error:${Date.now()}`,
@@ -531,6 +610,8 @@ export const DshConsultTool = Tool.define(
               output: `${header}\n\n${body}`,
               metadata: {
                 profile,
+                session_id: sessionId,
+                json,
                 patch_count: patchFiles.length,
                 working_directory: workingDirectory,
                 prompt,

@@ -697,6 +697,9 @@
     "packages/util": {
       "name": "@opencode-ai/util",
       "version": "1.18.62",
+      "dependencies": {
+        "yaml": "2.9.0",
+      },
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",

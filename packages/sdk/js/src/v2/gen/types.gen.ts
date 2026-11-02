@@ -1268,6 +1268,23 @@ export type Config = {
     binaryPath?: string
     configHome?: string
   }
+  external_agents?: {
+    codex?: {
+      enabled?: boolean
+      binaryPath?: string
+      configHome?: string
+    }
+    claude?: {
+      enabled?: boolean
+      binaryPath?: string
+      configHome?: string
+    }
+    dsh?: {
+      enabled?: boolean
+      binaryPath?: string
+      configHome?: string
+    }
+  }
   server?: ServerConfig
   command?: {
     [key: string]: {
@@ -2362,6 +2379,23 @@ export type Config7 = {
     enabled?: boolean
     binaryPath?: string
     configHome?: string
+  }
+  external_agents?: {
+    codex?: {
+      enabled?: boolean
+      binaryPath?: string
+      configHome?: string
+    }
+    claude?: {
+      enabled?: boolean
+      binaryPath?: string
+      configHome?: string
+    }
+    dsh?: {
+      enabled?: boolean
+      binaryPath?: string
+      configHome?: string
+    }
   }
   server?: ServerConfig
   command?: {

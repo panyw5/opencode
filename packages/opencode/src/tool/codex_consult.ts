@@ -6,7 +6,8 @@ import * as Tool from "./tool"
 import DESCRIPTION from "./codex_consult.txt"
 import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
-import { which } from "@/util/which"
+import { Config } from "@/config/config"
+import { externalTurnFailure, resolveExternalCli } from "./external-cli"
 import { registerAdvisorIntervention } from "./advisor-intervention"
 import { attachExternalTranscript, type TranscriptItem } from "@/session/external"
 import * as Log from "@opencode-ai/core/util/log"
@@ -87,6 +88,7 @@ export type CodexTranscriptItem = {
 }
 
 export type CodexLiveState = {
+  completed?: boolean
   onTranscript?: (item: TranscriptItem) => void
   threadId?: string
   usage?: {
@@ -139,6 +141,7 @@ export function buildCodexExecArgs(input: CodexExecBuildInput): string[] {
 }
 
 export type CodexJsonlParseResult = {
+  completed?: boolean
   finalResponse: string
   threadId?: string
   usage?: CodexLiveState["usage"]
@@ -187,6 +190,8 @@ export function applyCodexJsonlLine(state: CodexLiveState, rawLine: string): boo
   }
 
   if (type === "turn.started") {
+    state.error = undefined
+    state.completed = false
     upsertTranscript(state, {
       id: codexSeqId(state, `turn-start:${state.transcript.length}`),
       kind: "status",
@@ -196,6 +201,8 @@ export function applyCodexJsonlLine(state: CodexLiveState, rawLine: string): boo
   }
 
   if (type === "turn.completed") {
+    state.completed = true
+    state.error = undefined
     if (e.usage && typeof e.usage === "object") {
       const u = e.usage as Record<string, unknown>
       state.usage = {
@@ -227,6 +234,7 @@ export function applyCodexJsonlLine(state: CodexLiveState, rawLine: string): boo
   }
 
   if (type === "turn.failed") {
+    state.completed = false
     const err = e.error
     if (err && typeof err === "object" && typeof (err as { message?: unknown }).message === "string") {
       state.error = (err as { message: string }).message
@@ -239,6 +247,17 @@ export function applyCodexJsonlLine(state: CodexLiveState, rawLine: string): boo
       id: codexSeqId(state, `turn-failed:${state.transcript.length}`),
       kind: "error",
       title: "Turn failed",
+      text: state.error,
+    })
+    return true
+  }
+
+  if (type === "error") {
+    state.error = typeof e.message === "string" ? e.message : "Codex stream error"
+    upsertTranscript(state, {
+      id: codexSeqId(state, "error:" + state.transcript.length),
+      kind: "error",
+      title: "Error",
       text: state.error,
     })
     return true
@@ -384,6 +403,7 @@ export function parseCodexJsonl(stdout: string): CodexJsonlParseResult {
   const finalResponse = state.agentMessages.at(-1)?.trim() ?? ""
   return {
     finalResponse,
+    completed: state.completed,
     threadId: state.threadId,
     usage: state.usage,
     error: state.error,
@@ -402,6 +422,7 @@ export const CodexConsultTool = Tool.define(
   "codex_consult",
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner
+    const configs = yield* Config.Service
 
     return {
       description: DESCRIPTION,
@@ -424,16 +445,9 @@ export const CodexConsultTool = Tool.define(
 
           yield* assertExternalDirectoryEffect(ctx, workingDirectory, { kind: "directory" })
 
-          const bin = which("codex")
-          if (!bin) {
-            throw new Error(
-              [
-                "Codex CLI not found on PATH.",
-                "Install with: npm install -g @openai/codex",
-                "Then authenticate (codex login) and retry.",
-              ].join(" "),
-            )
-          }
+          const runtime = resolveExternalCli("codex", (yield* configs.get()).external_agents?.codex)
+          const bin = runtime.binary
+          log.info("runtime resolved advisor=codex binary=" + bin + " home=" + runtime.home)
 
           const prompt = params.prompt.trim()
           if (!prompt) {
@@ -497,10 +511,14 @@ export const CodexConsultTool = Tool.define(
           const runProcess = (runArgs: string[]) =>
             Effect.scoped(
               Effect.gen(function* () {
+                live.error = undefined
+                live.completed = false
+                log.info("process starting advisor=codex run=" + ((live.runSeq ?? 0) + 1))
                 const handle = yield* spawner.spawn(
                   ChildProcess.make(bin, runArgs, {
                     cwd: workingDirectory,
                     extendEnv: true,
+                    env: runtime.env,
                     stdin: "ignore",
                   }),
                 )
@@ -580,6 +598,7 @@ export const CodexConsultTool = Tool.define(
                 }
                 yield* publishMetadata(true)
 
+                log.info("process drained advisor=codex exit=" + exit.code + " completed=" + live.completed)
                 return { exit, stdout, stderr }
               }),
             ).pipe(Effect.orDie)
@@ -605,30 +624,18 @@ export const CodexConsultTool = Tool.define(
           const exitCode = result.exit.code
           let threadId = live.threadId ?? parsed.threadId
           let usage = live.usage ?? parsed.usage
-          const error = live.error ?? parsed.error
           let transcript = live.transcript.length ? live.transcript : parsed.transcript
-          const finalResponse = (live.agentMessages.at(-1) ?? parsed.finalResponse)?.trim() || parsed.finalResponse
-
-          if (error && !finalResponse) {
-            throw new Error(`Codex failed: ${error}`)
-          }
-
-          if (exitCode !== 0 && !finalResponse) {
-            const detail = (error || result.stderr || result.stdout).trim().slice(0, 4000)
-            throw new Error(
-              `Codex exited with code ${exitCode}${detail ? `: ${detail}` : ""}. Ensure \`codex\` is authenticated and the custom provider (if any) is reachable.`,
-            )
-          }
-
-          let body =
-            finalResponse ||
-            // Fallback: non-JSON noise or plain text mode
-            stripAnsi(result.stdout).trim() ||
-            stripAnsi(result.stderr).trim()
-
-          if (!body) {
-            throw new Error("Codex returned an empty response")
-          }
+          const failure = externalTurnFailure({
+            advisor: "Codex",
+            exitCode,
+            completed: parsed.completed,
+            error: parsed.error,
+            answer: parsed.finalResponse,
+            stderr: result.stderr,
+          })
+          log.info("turn validated advisor=codex success=" + !failure + " exit=" + exitCode)
+          if (failure) throw new Error(failure)
+          let body = parsed.finalResponse
 
           const started = intervention?.isActive() ?? false
           log.info("codex consult turn completed", {
@@ -651,7 +658,6 @@ export const CodexConsultTool = Tool.define(
               status: "completed",
             })
             intervention.setBusy(true)
-            const messageCount = live.agentMessages.length
             let next: { exit: { kind: string; code: number | null }; stdout: string; stderr: string }
             try {
               next = yield* runProcess(
@@ -669,12 +675,17 @@ export const CodexConsultTool = Tool.define(
             if (next.exit.kind === "abort") throw new Error("Codex consultation was aborted")
             if (next.exit.kind === "timeout") throw new Error(`Codex consultation timed out after ${timeoutMs}ms`)
             const nextParsed = parseCodexJsonl(next.stdout)
-            const nextError = nextParsed.error
-            const nextBody =
-              (live.agentMessages.slice(messageCount).at(-1) ?? nextParsed.finalResponse)?.trim() ||
-              stripAnsi(next.stdout).trim() ||
-              stripAnsi(next.stderr).trim()
-            if (nextError && !nextBody) {
+            const nextBody = nextParsed.finalResponse
+            const nextError = externalTurnFailure({
+              advisor: "Codex",
+              exitCode: next.exit.code,
+              completed: nextParsed.completed,
+              error: nextParsed.error,
+              answer: nextBody,
+              stderr: next.stderr,
+            })
+            log.info("followup validated advisor=codex success=" + !nextError + " exit=" + next.exit.code)
+            if (nextError) {
               upsertTranscript(live, {
                 id: `intervention-error:${Date.now()}`,
                 kind: "error",
@@ -772,10 +783,6 @@ function resolveWorkingDirectory(input: string | undefined, projectDirectory: st
   if (!input?.trim()) return projectDirectory
   const resolved = path.isAbsolute(input) ? path.normalize(input) : path.resolve(projectDirectory, input)
   return resolved
-}
-
-function stripAnsi(text: string): string {
-  return text.replace(/\u001b\[[0-9;]*m/g, "")
 }
 
 function clip(text: string, max: number): string {

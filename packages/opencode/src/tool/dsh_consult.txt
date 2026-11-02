@@ -1,7 +1,7 @@
 - Consult DeepSeek Harness (dsh) as an external coding advisor via the local `dsh` CLI
 - Spawns a one-shot agent: `dsh --profile <profile> [--patch <file>...] "<prompt>"` (profile defaults to headless)
-- Returns the final assistant text on stdout (no streaming JSON transcript)
-- Supports user intervention in the external consultation child session (follow-ups re-run with prior transcript context, same profile and patches)
+- Uses JSON events and native session resume when supported by the selected profile; falls back to final-text output and transcript replay on older CLIs
+- Supports user intervention in the external consultation child session with the same profile and patches
 - Use when you want an independent DeepSeek Harness judgment without making it the primary executor
 
 When to use:
@@ -21,7 +21,7 @@ Usage notes:
   - `patch` accepts inline `cordis.patch.yml` YAML content (or a list) applied via `dsh --patch` after the profile layer, to override model/tools/persona/presets per consult without touching ~/.dsh
   - Requires `dsh` on PATH (`npm i -g @deepseek-ai/dsh`) and `DEEPSEEK_API_KEY` (or credentials under ~/.dsh)
   - dsh is a full coding agent; prefer analysis-scoped prompts unless the user wants implementation
-  - Desktop intervention keeps the tool call open after the first answer; follow-ups are new runs with replayed history
+  - Desktop intervention keeps the tool call open after the first answer; follow-ups resume the native DSH session when supported
 
 Result handoff:
   - Successful calls include a versioned `external_consultation` block with the OpenCode child `task_id`, summary previews, and intervention flags.

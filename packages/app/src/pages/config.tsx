@@ -7356,6 +7356,15 @@ export default function ConfigPage() {
       if (id === "pi") {
         await patchConfig({ pi: { ...config, binaryPath: config.binaryPath ?? "", configHome: config.configHome ?? "" } })
       }
+      if (id === "codex" || id === "claude" || id === "dsh") {
+        console.info("[config] saving external runtime config advisor=" + id)
+        await patchConfig({
+          external_agents: {
+            ...cfg().external_agents,
+            [id]: { ...config, binaryPath: config.binaryPath ?? "", configHome: config.configHome ?? "" },
+          },
+        })
+      }
       await platform.cliAgents.set(id, config)
       setCliAgentConfigs(id, config)
       if (id === "dsh" && platform.cliAgents.setDshHome) {

@@ -1,6 +1,9 @@
-import { access, chmod, mkdir, readFile, writeFile } from "node:fs/promises"
+import { access, chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
+import { randomUUID } from "node:crypto"
+import { setTimeout as wait } from "node:timers/promises"
 import { dirname, join } from "node:path"
 import { homedir } from "node:os"
+import { parseDshCredentials, serializeDshCredentials, updateDshCredential } from "@opencode-ai/util/dsh-credentials"
 import { resolveDesktopPath } from "./native-path"
 
 export const DSH_DEFAULT_PROVIDER = "deepseek-official"
@@ -135,72 +138,57 @@ export async function readDshApiKey(configHome?: string): Promise<string | undef
 export async function writeDshApiKey(configHome: string | undefined, apiKey: string): Promise<void> {
   const key = apiKey.trim()
   if (!key) throw new Error("API key must be non-empty")
-  const home = resolveDshHomePath(configHome)
-  const credentialsPath = join(home, ".credentials.yaml")
-  await mkdir(home, { recursive: true, mode: 0o700 }).catch(() => undefined)
-  await mkdir(dirname(credentialsPath), { recursive: true, mode: 0o700 }).catch(() => undefined)
-
-  let existing = ""
-  try {
-    existing = await readFile(credentialsPath, "utf8")
-  } catch {
-    existing = ""
-  }
-  const map = parseCredentialsYaml(existing)
-  map.set(DSH_API_KEY_REF, key)
-  const next = serializeCredentialsYaml(map)
-  await writeFile(credentialsPath, next, { encoding: "utf8", mode: 0o600 })
-  await chmod(credentialsPath, 0o600).catch(() => undefined)
+  await updateCredentialsFile(configHome, key)
 }
 
 export async function clearDshApiKey(configHome: string | undefined): Promise<void> {
-  const home = resolveDshHomePath(configHome)
-  const credentialsPath = join(home, ".credentials.yaml")
-  let existing = ""
+  await updateCredentialsFile(configHome, undefined)
+}
+
+async function updateCredentialsFile(configHome: string | undefined, value: string | undefined) {
+  const filename = join(resolveDshHomePath(configHome), ".credentials.yaml")
+  await mkdir(dirname(filename), { recursive: true, mode: 0o700 })
+  // Same exclusive-create lock as DSH. Never steal an uncertain/stale lock.
+  const lock = filename + ".lock"
+  const deadline = Date.now() + 5000
+  console.info("[dsh-home] credentials lock-wait operation=" + (value === undefined ? "clear" : "save"))
+  for (;;) {
+    try {
+      await writeFile(lock, process.pid + "\n", { flag: "wx", mode: 0o600 })
+      break
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+      if (Date.now() >= deadline) throw new Error("DSH credentials are locked by another writer; retry later")
+      await wait(50)
+    }
+  }
+  const temp = filename + "." + randomUUID() + ".tmp"
   try {
-    existing = await readFile(credentialsPath, "utf8")
-  } catch {
-    return
+    console.info("[dsh-home] credentials lock-acquired reading-document")
+    const existing = await readFile(filename, "utf8").catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return ""
+      throw error
+    })
+    const next = updateDshCredential(existing, DSH_API_KEY_REF, value)
+    if (existing === next) return
+    console.info("[dsh-home] credentials validated atomic-write")
+    await writeFile(temp, next, { encoding: "utf8", mode: 0o600, flag: "wx" })
+    await rename(temp, filename)
+    console.info("[dsh-home] credentials committed")
+  } finally {
+    await rm(temp, { force: true })
+    await rm(lock, { force: true })
+    console.info("[dsh-home] credentials lock-released")
   }
-  const map = parseCredentialsYaml(existing)
-  if (!map.has(DSH_API_KEY_REF)) return
-  map.delete(DSH_API_KEY_REF)
-  if (map.size === 0) {
-    await writeFile(credentialsPath, "", { encoding: "utf8", mode: 0o600 })
-  } else {
-    await writeFile(credentialsPath, serializeCredentialsYaml(map), { encoding: "utf8", mode: 0o600 })
-  }
-  await chmod(credentialsPath, 0o600).catch(() => undefined)
 }
 
 /** Parse a minimal credentials YAML mapping (ref -> non-empty string). */
 export function parseCredentialsYaml(text: string): Map<string, string> {
-  const map = new Map<string, string>()
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim()
-    if (!line || line.startsWith("#")) continue
-    const m = /^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$/.exec(line)
-    if (!m) continue
-    const key = m[1]!
-    let value = m[2]!.trim()
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1)
-    }
-    if (value) map.set(key, value)
-  }
-  return map
+  return parseDshCredentials(text)
 }
 
 export function serializeCredentialsYaml(map: Map<string, string>): string {
-  const lines: string[] = ["# Managed by OpenCode DeepSeek advisor settings", ""]
-  for (const [key, value] of [...map.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-    lines.push(`${key}: ${yamlScalar(value)}`)
-  }
-  lines.push("")
-  return lines.join("\n")
+  return serializeDshCredentials(map)
 }
 
 /** @deprecated use parseYamlSection("agent-default-model") */
@@ -248,10 +236,7 @@ export function parseYamlSection(text: string, sectionName: string): Record<stri
     const m = /^([A-Za-z_][\w.-]*)\s*:\s*(.+)$/.exec(content)
     if (!m) continue
     let value = m[2]!.trim()
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1)
     }
     if (value) out[m[1]!] = value
@@ -260,11 +245,7 @@ export function parseYamlSection(text: string, sectionName: string): Record<stri
 }
 
 /** Upsert a top-level YAML mapping section; preserves other sections when possible. */
-export function upsertYamlSection(
-  text: string,
-  sectionName: string,
-  fields: Record<string, string>,
-): string {
+export function upsertYamlSection(text: string, sectionName: string, fields: Record<string, string>): string {
   const fieldLines = Object.entries(fields)
     .filter(([, value]) => value.trim() !== "")
     .map(([key, value]) => `  ${key}: ${yamlScalar(value.trim())}`)
