@@ -62,6 +62,30 @@ describe("hand-authored theme identity", () => {
     expect(css).toContain("backdrop-filter: none;")
   })
 
+  test("ChatGPT dark uses neutral gray interaction accents", () => {
+    const variant = DEFAULT_THEMES.chatgpt.dark
+    const tokens = resolveThemeVariant(variant, true)
+    expect(variant.palette!.accent).toBe("#b4b4b4")
+    expect(variant.palette!.interactive).toBe("#b4b4b4")
+    for (const [key, value] of Object.entries({
+      "surface-interactive-base": "#5a5a5a",
+      "surface-interactive-hover": "#686868",
+      "surface-interactive-weak": "#454545",
+      "surface-interactive-weak-hover": "#5a5a5a",
+      "input-active": "#505050",
+      "input-selected": "#5a5a5a",
+      "input-focus": "#505050",
+      "text-interactive-base": "#d4d4d4",
+      "border-interactive-base": "#b4b4b4",
+      "border-interactive-hover": "#949494",
+    })) {
+      expect(tokens[key].toLowerCase(), key).toBe(value)
+    }
+    expect(DEFAULT_THEMES.chatgpt.light.palette!.interactive).toBe("#2964aa")
+    expect(variant.palette!.info).toBe("#63a8f8")
+    expect(variant.overrides!["syntax-info"]).toBe("#63a8f8")
+  })
+
   test("Aether and Arc keep their dedicated component materials", () => {
     const aether = readFileSync(new URL("../styles/aether.css", import.meta.url), "utf8")
     const arc = readFileSync(new URL("../styles/arc.css", import.meta.url), "utf8")

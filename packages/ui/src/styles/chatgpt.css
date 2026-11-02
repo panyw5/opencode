@@ -35,6 +35,195 @@ html[data-theme="chatgpt"][data-color-scheme="dark"] {
   & [data-dock-surface="tray"] {
     background-color: var(--surface-raised-base);
   }
+
+  /* Selection persists after the pointer leaves; hover and press remain separate. */
+  & [data-component="session-tab"],
+  & [data-component="tabs"] [data-slot="tabs-trigger-wrapper"],
+  & #session-side-panel [data-component="tabs"] [data-slot="tabs-trigger-wrapper"],
+  & [data-component="list"] [data-slot="list-item"],
+  & :is([data-component="button"], [data-component="icon-button"])[data-variant="ghost"],
+  & [data-slot="select-select-item"],
+  & [data-slot="question-option"] {
+    &:is(:hover, [data-highlighted], [data-focused="true"]):not(:disabled, [data-disabled]):not(
+        :has([data-slot="tabs-trigger"]:disabled, [data-slot="tabs-trigger"][data-disabled])
+      ) {
+      background-color: var(--surface-base-hover);
+    }
+
+    &:is(
+        [data-active="true"],
+        [data-selected="true"],
+        [aria-pressed="true"],
+        [aria-selected="true"],
+        [data-picked="true"]
+      ):not(:disabled, [data-disabled]),
+    &:has([data-slot="tabs-trigger"][data-selected]):not(
+        :has([data-slot="tabs-trigger"]:disabled, [data-slot="tabs-trigger"][data-disabled])
+      ),
+    &[data-slot="select-select-item"][data-selected]:not([data-disabled]) {
+      background-color: var(--surface-interactive-base);
+      color: var(--text-strong);
+      box-shadow: inset 0 0 0 1px var(--border-interactive-base);
+
+      &:hover {
+        background-color: var(--surface-interactive-hover);
+      }
+
+      &:active:not(:disabled, [data-disabled]) {
+        background-color: var(--surface-base-active);
+      }
+
+      [data-slot="icon-svg"],
+      [data-slot="option-label"],
+      [data-slot="option-description"],
+      [data-slot="question-custom-input"] {
+        color: var(--text-strong);
+      }
+    }
+
+    &:active:not(:disabled, [data-disabled]):not(
+        :has([data-slot="tabs-trigger"]:disabled, [data-slot="tabs-trigger"][data-disabled])
+      ) {
+      background-color: var(--surface-base-active);
+    }
+
+    &:focus-visible:not(:disabled, [data-disabled]),
+    &:has([data-slot="tabs-trigger"]:focus-visible) {
+      outline: 2px solid var(--border-focus);
+      outline-offset: -2px;
+    }
+  }
+
+  & [data-component="session-tab"][data-subagent="true"]:not([data-active="true"]):not(:hover, :active) {
+    background-color: var(--surface-raised-base);
+  }
+
+  & :is([data-component="button"], [data-component="icon-button"])[data-variant="primary"]:disabled {
+    color: var(--text-interactive-base);
+
+    [data-slot="icon-svg"] {
+      color: var(--text-interactive-base);
+    }
+  }
+
+  /* These utility classes have no public selected-color mapping. */
+  & .bg-surface-interactive-selected {
+    background-color: var(--surface-interactive-base);
+  }
+
+  &
+    :is(
+      [data-slot="dropdown-menu-item"],
+      [data-slot="dropdown-menu-checkbox-item"],
+      [data-slot="dropdown-menu-radio-item"],
+      [data-slot="dropdown-menu-sub-trigger"],
+      [data-slot="context-menu-item"],
+      [data-slot="context-menu-checkbox-item"],
+      [data-slot="context-menu-radio-item"],
+      [data-slot="context-menu-sub-trigger"]
+    ) {
+    &:is(:hover, [data-highlighted]):not([data-disabled]) {
+      background-color: var(--surface-base-hover);
+    }
+
+    &:active:not([data-disabled]) {
+      background-color: var(--surface-base-active);
+    }
+  }
+
+  & [data-slot="select-select-item"][data-disabled] {
+    background-color: var(--surface-raised-base);
+  }
+
+  & [data-component="select"] [data-slot="select-select-trigger"][data-expanded]:not(:disabled) {
+    background-color: var(--surface-interactive-base);
+    color: var(--text-strong);
+
+    &:hover {
+      background-color: var(--surface-interactive-hover);
+    }
+
+    &:active {
+      background-color: var(--surface-base-active);
+    }
+
+    [data-slot="select-select-trigger-icon"] {
+      color: var(--text-strong);
+    }
+  }
+
+  & [data-component="select"][data-trigger-style="settings"] [data-slot="select-select-trigger"]:not(:disabled) {
+    &:hover:not([data-expanded]) {
+      background-color: var(--input-hover);
+    }
+
+    &:active:not([data-expanded]) {
+      background-color: var(--input-active);
+    }
+  }
+
+  & [data-component="input"][data-variant="normal"] [data-slot="input-wrapper"] {
+    &:hover:not(:has(:disabled, [data-readonly], [data-invalid])) {
+      background-color: var(--input-hover);
+    }
+
+    &:focus-within:not(:has(:disabled, [data-readonly], [data-invalid])) {
+      background-color: var(--input-focus);
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 1px var(--border-focus);
+    }
+  }
+
+  /* Checked controls must not revert to the unchecked fill on hover. */
+  & [data-component="checkbox"]:not([data-disabled], [data-readonly], [data-invalid]) {
+    [data-slot="checkbox-checkbox-control"] {
+      border-color: var(--border-interactive-base);
+    }
+
+    &[data-checked] [data-slot="checkbox-checkbox-control"],
+    &[data-indeterminate] [data-slot="checkbox-checkbox-control"] {
+      background-color: var(--surface-interactive-base);
+    }
+
+    &[data-checked]:hover [data-slot="checkbox-checkbox-control"],
+    &[data-indeterminate]:hover [data-slot="checkbox-checkbox-control"] {
+      background-color: var(--surface-interactive-hover);
+    }
+
+    [data-slot="checkbox-checkbox-indicator"] {
+      color: var(--text-strong);
+    }
+
+    &:active [data-slot="checkbox-checkbox-control"] {
+      background-color: var(--surface-base-active);
+    }
+  }
+
+  & [data-component="switch"]:not([data-disabled], [data-readonly], [data-invalid]) {
+    [data-slot="switch-control"] {
+      border-color: var(--border-interactive-base);
+    }
+
+    [data-slot="switch-thumb"] {
+      background-color: var(--icon-strong-base);
+    }
+
+    &[data-checked] [data-slot="switch-thumb"] {
+      background-color: var(--button-primary-text);
+    }
+
+    &[data-checked]:hover [data-slot="switch-control"] {
+      background-color: var(--button-primary-hover);
+    }
+
+    &:active [data-slot="switch-control"] {
+      background-color: var(--surface-base-active);
+    }
+
+    &[data-checked]:active [data-slot="switch-control"] {
+      background-color: var(--button-primary-active);
+    }
+  }
 }
 
 /* ─── Buttons / cards / dialogs ─── */
