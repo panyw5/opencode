@@ -42,6 +42,19 @@ export const QuestionApi = HttpApi.make("question")
             description: "Provide answers to a question request from the AI assistant.",
           }),
         ),
+        HttpApiEndpoint.post("pause", `${root}/:requestID/pause`, {
+          params: { requestID: QuestionID },
+          query: WorkspaceRoutingQuery,
+          payload: Schema.Struct({ paused: Schema.Boolean }),
+          success: described(Question.Request, "Updated question countdown"),
+          error: [HttpApiError.BadRequest, QuestionNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "question.pause",
+            summary: "Pause or resume question countdown",
+            description: "Renew a 15-second focus lease, or resume the remaining response timeout.",
+          }),
+        ),
         HttpApiEndpoint.post("reject", `${root}/:requestID/reject`, {
           params: { requestID: QuestionID },
           query: WorkspaceRoutingQuery,

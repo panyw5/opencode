@@ -65,6 +65,7 @@ export const SessionQuestionDock: Component<{
     copiedOption: "",
     focusedOption: -1, // -1 means no option focused, 0-n for options, options.length for custom
     remaining: questionSecondsRemaining(props.request.expiresAt),
+    countdownPaused: false,
   })
 
   let root: HTMLDivElement | undefined
@@ -91,11 +92,14 @@ export const SessionQuestionDock: Component<{
 
   createEffect(() => {
     const expiresAt = props.request.expiresAt
+    const pause = props.request.timeoutPause
     if (expiresAt === undefined) return
     console.debug(`[question-dock] countdown start id=${props.request.id} expiresAt=${expiresAt}`)
     let expired = false
     const update = () => {
-      const remaining = questionSecondsRemaining(expiresAt)
+      const paused = !!pause && pause.until > Date.now()
+      const remaining = paused ? Math.ceil(pause.remaining / 1000) : questionSecondsRemaining(expiresAt)
+      setStore("countdownPaused", paused)
       setStore("remaining", remaining)
       if (remaining !== 0 || expired) return
       expired = true
@@ -163,6 +167,62 @@ export const SessionQuestionDock: Component<{
   }
 
   onMount(() => {
+    let hovered = false
+    let focused = false
+    let stopped = false
+    let updates = Promise.resolve()
+    const updateFocus = (paused: boolean, reason: string) => {
+      console.debug(`[question-dock] countdown focus id=${props.request.id} paused=${paused} reason=${reason}`)
+      updates = updates.then(async () => {
+        if (paused && stopped) return
+        try {
+          const result = await sdk.client.question.pause({ requestID: props.request.id, paused })
+          console.debug(`[question-dock] countdown focus acknowledged id=${props.request.id} paused=${paused}`)
+          if (stopped || !result.data) return
+          const requests = sync.data.question[props.request.sessionID] ?? []
+          sync.set(
+            "question",
+            props.request.sessionID,
+            reconcile(requests.map((q) => (q.id === props.request.id ? result.data! : q))),
+          )
+        } catch (error) {
+          console.debug(`[question-dock] countdown focus failed id=${props.request.id} error=${String(error)}`)
+        }
+      })
+    }
+    const checkFocus = () => {
+      if (stopped) return
+      const next =
+        props.request.expiresAt !== undefined &&
+        !document.hidden &&
+        document.hasFocus() &&
+        (hovered || !!root?.contains(document.activeElement) || store.focusedOption >= 0)
+      if (next === focused) return
+      focused = next
+      updateFocus(next, "interaction")
+    }
+    const enter = () => {
+      hovered = true
+      checkFocus()
+    }
+    const leave = () => {
+      hovered = false
+      checkFocus()
+    }
+    const focus = () => queueMicrotask(checkFocus)
+    root?.addEventListener("pointerenter", enter)
+    root?.addEventListener("pointerleave", leave)
+    document.addEventListener("focusin", focus)
+    document.addEventListener("focusout", focus)
+    window.addEventListener("focus", focus)
+    window.addEventListener("blur", focus)
+    document.addEventListener("visibilitychange", focus)
+    const heartbeat = setInterval(() => {
+      checkFocus()
+      if (focused) updateFocus(true, "heartbeat")
+    }, 5000)
+    checkFocus()
+
     let raf: number | undefined
     const update = () => {
       if (raf !== undefined) cancelAnimationFrame(raf)
@@ -212,6 +272,7 @@ export const SessionQuestionDock: Component<{
                 ? totalOptions - 1
                 : (current - 1 + totalOptions) % totalOptions
           console.debug(`[question-dock] keyboard focus id=${props.request.id} option=${next}`)
+          queueMicrotask(checkFocus)
           return next
         })
         return
@@ -229,12 +290,23 @@ export const SessionQuestionDock: Component<{
       if (store.focusedOption === -1) return
       console.debug(`[question-dock] keyboard focus cleared id=${props.request.id} reason=pointer`)
       setStore("focusedOption", -1)
+      queueMicrotask(checkFocus)
     }
 
     window.addEventListener("keydown", handleKeyDown)
     window.addEventListener("pointerdown", handlePointerDown, true)
 
     onCleanup(() => {
+      stopped = true
+      clearInterval(heartbeat)
+      root?.removeEventListener("pointerenter", enter)
+      root?.removeEventListener("pointerleave", leave)
+      document.removeEventListener("focusin", focus)
+      document.removeEventListener("focusout", focus)
+      window.removeEventListener("focus", focus)
+      window.removeEventListener("blur", focus)
+      document.removeEventListener("visibilitychange", focus)
+      if (focused && !replied) updateFocus(false, "unmount")
       window.removeEventListener("resize", update)
       window.removeEventListener("keydown", handleKeyDown)
       window.removeEventListener("pointerdown", handlePointerDown, true)
@@ -574,6 +646,7 @@ export const SessionQuestionDock: Component<{
             <Show when={store.remaining !== undefined}>
               <span
                 data-slot="question-countdown"
+                data-paused={store.countdownPaused}
                 data-urgent={(store.remaining ?? 0) <= 30}
                 role="timer"
                 aria-label={language.t("session.question.timeout", { seconds: store.remaining ?? 0 })}

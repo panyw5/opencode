@@ -291,6 +291,75 @@ it.instance("reply - answered requests never emit a later timeout", () =>
   }),
 )
 
+it.instance("focus - freezes remaining time, renews without resetting and resumes on blur", () =>
+  Effect.gen(function* () {
+    const question = yield* Question.Service
+    const fiber = yield* question
+      .ask({
+        sessionID: SessionID.make("ses_focus_pause"),
+        questions: [],
+        timeout: 1,
+      })
+      .pipe(Effect.forkScoped)
+    const [request] = yield* waitForPending(1)
+    const paused = yield* question.pause({ requestID: request.id, paused: true })
+    expect(paused.timeoutPause!.remaining).toBeGreaterThan(0)
+    expect(paused.timeoutPause!.remaining).toBeLessThanOrEqual(1000)
+    // Cross the original deadline while the user's focus lease is still valid.
+    yield* Effect.sleep("1200 millis")
+    const renewed = yield* question.pause({ requestID: request.id, paused: true })
+    expect(renewed.timeoutPause!.remaining).toBe(paused.timeoutPause!.remaining)
+    expect(renewed.expiresAt!).toBeGreaterThan(paused.expiresAt!)
+    const resumed = yield* question.pause({ requestID: request.id, paused: false })
+    expect(resumed.timeoutPause).toBeUndefined()
+    expect(resumed.expiresAt! - Date.now()).toBeLessThanOrEqual(paused.timeoutPause!.remaining)
+    const exit = yield* Fiber.await(fiber).pipe(Effect.timeout("4 seconds"))
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) expect((Cause.squash(exit.cause) as Question.RejectedError).timedOut).toBe(true)
+    expect(Exit.isFailure(yield* question.pause({ requestID: request.id, paused: true }).pipe(Effect.exit))).toBe(true)
+  }),
+)
+
+it.instance("focus - accepts an answer after the original deadline while paused", () =>
+  Effect.gen(function* () {
+    const question = yield* Question.Service
+    const fiber = yield* question
+      .ask({
+        sessionID: SessionID.make("ses_focus_reply"),
+        questions: [],
+        timeout: 1,
+      })
+      .pipe(Effect.forkScoped)
+    const [request] = yield* waitForPending(1)
+    yield* question.pause({ requestID: request.id, paused: true })
+    yield* Effect.sleep("1200 millis")
+    yield* question.reply({ requestID: request.id, answers: [["still typing"]] })
+    expect(yield* Fiber.join(fiber)).toEqual([["still typing"]])
+  }),
+)
+
+persistentIt.instance(
+  "focus - persists pause and resumes a recovered request",
+  () =>
+    Effect.gen(function* () {
+      const question = yield* Question.Service
+      const tool = yield* createAssistantQuestionToolPart({
+        requestID: QuestionID.make("que_recovered_focus"),
+        questions: [],
+        expiresAt: Date.now() + 30_000,
+      })
+      yield* question.list()
+      const paused = yield* question.pause({ requestID: tool.request.id, paused: true })
+      expect((yield* questionRequestMetadata(tool))?.timeoutPause).toEqual(paused.timeoutPause)
+      expect((yield* question.list())[0].timeoutPause).toEqual(paused.timeoutPause)
+      const resumed = yield* question.pause({ requestID: tool.request.id, paused: false })
+      expect((yield* questionRequestMetadata(tool))?.timeoutPause).toBeUndefined()
+      expect((yield* question.list())[0].expiresAt).toBe(resumed.expiresAt)
+      yield* question.reject(tool.request.id)
+    }),
+  { git: true },
+)
+
 persistentIt.instance(
   "recovery - preserves the absolute deadline and expires autonomously",
   () =>

@@ -233,6 +233,8 @@ import type {
   QuestionAnswer,
   QuestionListErrors,
   QuestionListResponses,
+  QuestionPauseErrors,
+  QuestionPauseResponses,
   QuestionRejectErrors,
   QuestionRejectResponses,
   QuestionReplyErrors,
@@ -3881,6 +3883,45 @@ export class Question extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<QuestionReplyResponses, QuestionReplyErrors, ThrowOnError>({
       url: "/question/{requestID}/reply",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Pause or resume question countdown
+   *
+   * Renew a 15-second focus lease, or resume the remaining response timeout.
+   */
+  public pause<ThrowOnError extends boolean = false>(
+    parameters: {
+      requestID: string
+      directory?: string
+      workspace?: string
+      paused?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "requestID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "paused" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<QuestionPauseResponses, QuestionPauseErrors, ThrowOnError>({
+      url: "/question/{requestID}/pause",
       ...options,
       ...params,
       headers: {

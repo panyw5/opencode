@@ -6,6 +6,7 @@ import { withCdp } from "./cdp"
 const log = (message: string) => console.log(`[question-timeout-test] ${message}`)
 const source = `/@fs${resolve(import.meta.dir, "../../app/src")}`
 const multiple = process.argv.includes("--multiple")
+const focus = process.argv.includes("--focus")
 
 await withCdp(async (cdp) => {
   const directory = await realpath(await mkdtemp("/tmp/opencode-question-timeout-"))
@@ -45,10 +46,10 @@ await withCdp(async (cdp) => {
       `window.__questionTimeoutNavigation = import(${JSON.stringify(`${source}/utils/notification-click.ts`)}).then(m => { m.handleNotificationClick(${JSON.stringify(route)}); return true })`,
     )
   const countdown = () =>
-    cdp.evaluate<{ text: string; seconds: number; urgent: string; width: number } | null>(`(() => {
+    cdp.evaluate<{ text: string; seconds: number; urgent: string; width: number; paused: boolean } | null>(`(() => {
     const el=document.querySelector('[data-slot="question-countdown"]');
     if(!el)return null;
-    return {text:el.textContent,seconds:Number(el.textContent.match(/[0-9]+/)?.[0]),urgent:el.dataset.urgent,width:el.getBoundingClientRect().width};
+    return {text:el.textContent,seconds:Number(el.textContent.match(/[0-9]+/)?.[0]),urgent:el.dataset.urgent,width:el.getBoundingClientRect().width,paused:el.dataset.paused==='true'};
   })()`)
   let sessionID: string | undefined
   try {
@@ -66,7 +67,7 @@ await withCdp(async (cdp) => {
       parts: [
         {
           type: "text",
-          text: `QA task: call the question tool exactly once with top-level timeout: 12 (seconds). ${multiple ? "Include exactly three questions, titled 'QA countdown check 1', 'QA countdown check 2', 'QA countdown check 3', each with header 'QA' and two options 'One' and 'Two'." : "Ask 'QA countdown check' with header 'QA' and two options 'One' and 'Two'."} Do not call any other tool or modify files. Nobody will answer. After the question tool reports its timeout, respond with exactly QUESTION_TIMEOUT_QA_OK and stop. A timeout is not consent.`,
+          text: `QA task: call the question tool exactly once with top-level timeout: 12 (seconds). ${multiple ? "Include exactly three questions, titled 'QA countdown check 1', 'QA countdown check 2', 'QA countdown check 3', each with header 'QA' and two options 'One' and 'Two'." : "Ask 'QA countdown check' with header 'QA' and two options 'One' and 'Two'."} Do not call any other tool or modify files. ${focus ? "The user will answer. After receiving the answer, respond exactly QUESTION_FOCUS_QA_OK and stop." : "Nobody will answer. After the question tool reports its timeout, respond with exactly QUESTION_TIMEOUT_QA_OK and stop. A timeout is not consent."}`,
         },
       ],
     })
@@ -95,6 +96,65 @@ await withCdp(async (cdp) => {
     })`)
     assert.deepEqual(progress.labels, multiple ? ["1", "2", "3"] : [])
     assert.ok(progress.fontSize >= 14, `countdown too small: ${progress.fontSize}px`)
+    if (focus) {
+      assert.equal(multiple, false, "--focus expects a single question")
+      await cdp.call("Page.bringToFront")
+      await cdp.call("Emulation.setFocusEmulationEnabled", { enabled: true })
+      const point = await cdp.evaluate<{ x: number; y: number }>(`(() => {
+        const r=document.querySelector('[data-slot="question-option"]').getBoundingClientRect();
+        return {x:r.left+r.width/2,y:r.top+r.height/2};
+      })()`)
+      await cdp.call("Input.dispatchMouseEvent", { type: "mouseMoved", ...point })
+      await wait("hover pauses countdown", async () => (await countdown())?.paused === true, 5000)
+      const paused = (await countdown())!
+      await Bun.sleep(13_000)
+      assert.equal((await countdown())?.seconds, paused.seconds)
+      const held = (await request("/question")).find((item: any) => item.id === pending.id)
+      assert.ok(held?.timeoutPause?.until > Date.now())
+      log(`PASS mouse selection stays paused beyond original deadline; remaining=${paused.seconds}`)
+      await cdp.call("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1 })
+      await wait("hover leave resumes", async () => (await countdown())?.paused === false, 5000)
+      await wait("resumed countdown decreases", async () => (await countdown())!.seconds < paused.seconds, 3000)
+      await cdp.evaluate(`document.querySelector('[data-slot="question-option"][data-custom="true"]').click()`)
+      await wait("custom input focused", () =>
+        cdp.evaluate(`document.activeElement?.matches('[data-slot="question-custom-input"]')`),
+      )
+      await cdp.call("Input.insertText", { text: "QUESTION_FOCUS_TYPED_ANSWER" })
+      await wait("typing pauses countdown", async () => (await countdown())?.paused === true, 5000)
+      const typing = (await countdown())!
+      await Bun.sleep(17_000)
+      assert.equal((await countdown())?.seconds, typing.seconds)
+      assert.equal(
+        await cdp.evaluate(`document.querySelector('[data-slot="question-custom-input"]').value`),
+        "QUESTION_FOCUS_TYPED_ANSWER",
+      )
+      log("PASS focused input stays paused across lease renewals with pointer outside question")
+      const screenshot = await cdp.call<{ data: string }>("Page.captureScreenshot", { format: "png" })
+      await Bun.write("/tmp/opencode-question-focus.png", Buffer.from(screenshot.data, "base64"))
+      await cdp.evaluate(`document.querySelector('[data-slot="question-footer-actions"] button:last-child').click()`)
+      await wait("model receives typed answer", async () => {
+        const rows = await request(`/session/${session.id}/message`)
+        return rows.some((row: any) =>
+          row.parts.some(
+            (part: any) =>
+              part.type === "tool" &&
+              part.tool === "question" &&
+              part.state.status === "completed" &&
+              JSON.stringify(part.state.metadata?.answers).includes("QUESTION_FOCUS_TYPED_ANSWER"),
+          ),
+        )
+      })
+      await wait("model acknowledges answer", async () => {
+        const rows = await request(`/session/${session.id}/message`)
+        return rows.some(
+          (row: any) =>
+            row.info.role === "assistant" &&
+            row.parts.some((part: any) => part.type === "text" && part.text.trim() === "QUESTION_FOCUS_QA_OK"),
+        )
+      })
+      log("PASS typed answer persisted after original deadline and model replied QUESTION_FOCUS_QA_OK")
+      return
+    }
     if (multiple) {
       await cdp.evaluate(`document.querySelectorAll('[data-slot="question-progress-segment"]')[2].click()`)
       assert.equal(
@@ -216,6 +276,7 @@ await withCdp(async (cdp) => {
       "PASS model timeout=12 forwarded; automatic dismissal persisted; next model turn read the timeout and replied QUESTION_TIMEOUT_QA_OK",
     )
   } finally {
+    if (focus) await cdp.call("Emulation.setFocusEmulationEnabled", { enabled: false })
     await cdp.call("Emulation.clearDeviceMetricsOverride")
     await navigate(previous)
     if (sessionID) {

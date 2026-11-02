@@ -578,6 +578,24 @@ describe("applyDirectoryEvent", () => {
     expect(store.question[sessionID]?.find((x) => x.id === "q_2")?.questions[0]?.header).toBe("updated")
 
     applyDirectoryEvent({
+      event: {
+        type: "question.updated",
+        properties: {
+          ...questionRequest("q_2", sessionID, "updated"),
+          expiresAt: 20_000,
+          timeoutPause: { until: 15_000, remaining: 5000 },
+        },
+      },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp",
+      loadLsp() {},
+    })
+    expect(store.question[sessionID]?.map((x) => x.id)).toEqual(["q_1", "q_2", "q_3"])
+    expect(store.question[sessionID]?.find((x) => x.id === "q_2")?.timeoutPause?.remaining).toBe(5000)
+
+    applyDirectoryEvent({
       event: { type: "question.rejected", properties: { sessionID, requestID: "q_2" } },
       store,
       setStore,

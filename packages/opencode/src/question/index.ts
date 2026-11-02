@@ -1,4 +1,4 @@
-import { Deferred, Effect, Layer, Schema, Context, Option as EffectOption } from "effect"
+import { Deferred, Effect, Layer, Schema, Context, Semaphore, Option as EffectOption } from "effect"
 import { Bus } from "@/bus"
 import { BusEvent } from "@/bus/bus-event"
 import { InstanceState } from "@/effect/instance-state"
@@ -81,6 +81,12 @@ export const Request = Schema.Struct({
   expiresAt: Schema.optional(Schema.Number.check(Schema.isFinite())).annotate({
     description: "Absolute response deadline in Unix milliseconds",
   }),
+  timeoutPause: Schema.optional(
+    Schema.Struct({
+      until: Schema.Number.check(Schema.isFinite()),
+      remaining: Schema.Number.check(Schema.isFinite()),
+    }),
+  ),
 }).annotate({ identifier: "QuestionRequest" })
 export type Request = Schema.Schema.Type<typeof Request>
 const isRequest = Schema.is(Request)
@@ -108,6 +114,7 @@ const Rejected = Schema.Struct({
 
 export const Event = {
   Asked: BusEvent.define("question.asked", Request),
+  Updated: BusEvent.define("question.updated", Request),
   Replied: BusEvent.define("question.replied", Replied),
   Rejected: BusEvent.define("question.rejected", Rejected),
 }
@@ -136,6 +143,7 @@ interface State {
   recovered: Map<QuestionID, Request>
   settling: Set<QuestionID>
   revision: number
+  lock: Semaphore.Semaphore
 }
 
 const QUESTION_REQUEST_METADATA = "questionRequest"
@@ -246,6 +254,7 @@ export interface Interface {
     answers: ReadonlyArray<Answer>
   }) => Effect.Effect<void, NotFoundError>
   readonly reject: (requestID: QuestionID) => Effect.Effect<void, NotFoundError>
+  readonly pause: (input: { requestID: QuestionID; paused: boolean }) => Effect.Effect<Request, NotFoundError>
   readonly list: () => Effect.Effect<ReadonlyArray<Request>>
   readonly expireSuperseded: (input: { sessionID: SessionID }) => Effect.Effect<number>
 }
@@ -263,6 +272,7 @@ export const layer = Layer.effect(
           recovered: new Map(),
           settling: new Set(),
           revision: 0,
+          lock: Semaphore.makeUnsafe(1),
         }
 
         yield* Effect.sleep("1 second").pipe(
@@ -311,6 +321,14 @@ export const layer = Layer.effect(
       return (yield* InstanceState.get(state)).pending.has(requestID)
     })
 
+    const isCurrent = Effect.fn("Question.isCurrent")(function* (request: Request) {
+      const current = yield* InstanceState.get(state)
+      return current.pending.get(request.id)?.info === request || current.recovered.get(request.id) === request
+    })
+
+    const locked = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      Effect.flatMap(InstanceState.get(state), (current) => current.lock.withPermits(1)(effect))
+
     const persistRequest = Effect.fn("Question.persistRequest")(function* (input: {
       request: Request
       waitForPart: boolean
@@ -333,7 +351,7 @@ export const layer = Layer.effect(
           }
           return false
         }
-        if (!(yield* isPending(request.id))) return false
+        if (!(yield* isCurrent(request))) return false
 
         const metadata = {
           ...stateMetadata(part),
@@ -360,7 +378,7 @@ export const layer = Layer.effect(
                 },
               }
         yield* session.updatePart(next)
-        if (yield* isPending(request.id)) return true
+        if (yield* isCurrent(request)) return true
         const latest = yield* findToolPart(request)
         if (latest?.state.status === "running") {
           yield* session.updatePart({
@@ -722,78 +740,123 @@ export const layer = Layer.effect(
       )
     })
 
-    const settleRequest = Effect.fn("Question.settleRequest")(function* (input: {
-      requestID: QuestionID
-      source: "reply" | "reject" | "timeout" | "superseded"
-      answers?: ReadonlyArray<Answer>
-      request?: Request
-    }) {
-      const current = yield* InstanceState.get(state)
-      const { pending, settling } = current
-      if (settling.has(input.requestID)) {
-        log.info("question settlement already in progress", { requestID: input.requestID, source: input.source })
-        return yield* new NotFoundError({ requestID: input.requestID })
-      }
-      // Claim before any persistence IO so timeout, reply and recovery cannot settle twice.
-      settling.add(input.requestID)
-      current.revision++
-      return yield* Effect.gen(function* () {
-        const existing = pending.get(input.requestID)
-        const known = input.request ?? current.recovered.get(input.requestID)
-        const recovered = existing
-          ? undefined
-          : known
-            ? (yield* scanSessionPersisted(known.sessionID)).find((item) => item.request.id === input.requestID)
-            : yield* findPersisted(input.requestID)
-        const request = existing?.info ?? recovered?.request
-        if (!request) {
-          current.recovered.delete(input.requestID)
-          log.warn("settlement for unknown request", { requestID: input.requestID, source: input.source })
+    const settleRequest = Effect.fn("Question.settleRequest")(
+      function* (input: {
+        requestID: QuestionID
+        source: "reply" | "reject" | "timeout" | "superseded"
+        answers?: ReadonlyArray<Answer>
+        request?: Request
+      }) {
+        const current = yield* InstanceState.get(state)
+        const { pending, settling } = current
+        const latest = pending.get(input.requestID)?.info ?? current.recovered.get(input.requestID)
+        if (input.source === "timeout" && latest?.expiresAt !== undefined && latest.expiresAt > Date.now()) return
+        if (settling.has(input.requestID)) {
+          log.info("question settlement already in progress", { requestID: input.requestID, source: input.source })
           return yield* new NotFoundError({ requestID: input.requestID })
         }
-        const timedOut =
-          input.source === "timeout" || (request.expiresAt !== undefined && request.expiresAt <= Date.now())
-        const answers = input.source === "reply" && !timedOut ? input.answers : undefined
-        const error = new RejectedError({ timedOut })
-        log.info("settling question", {
-          requestID: request.id,
-          source: input.source,
-          timedOut,
-          expiresAt: request.expiresAt,
-          recovered: !existing,
-        })
-        pending.delete(request.id)
-        current.recovered.delete(request.id)
-        if (existing) yield* clearPersistedRequest(request)
-        if (recovered) {
-          if (answers) yield* completePersisted(recovered, answers)
-          else yield* rejectPersisted(recovered, error)
-          if (input.source === "superseded") yield* finalizeQuestionAssistant(request)
-          else yield* finalizeRecoveredAssistant(recovered)
-        }
-        log.info("question persistence settled", { requestID: request.id, timedOut })
-        if (answers) {
-          yield* bus.publish(Event.Replied, {
-            sessionID: request.sessionID,
+        // Claim before any persistence IO so timeout, reply and recovery cannot settle twice.
+        settling.add(input.requestID)
+        current.revision++
+        return yield* Effect.gen(function* () {
+          const existing = pending.get(input.requestID)
+          const known = input.request ?? current.recovered.get(input.requestID)
+          const recovered = existing
+            ? undefined
+            : known
+              ? (yield* scanSessionPersisted(known.sessionID)).find((item) => item.request.id === input.requestID)
+              : yield* findPersisted(input.requestID)
+          const request = existing?.info ?? recovered?.request
+          if (!request) {
+            current.recovered.delete(input.requestID)
+            log.warn("settlement for unknown request", { requestID: input.requestID, source: input.source })
+            return yield* new NotFoundError({ requestID: input.requestID })
+          }
+          const timedOut =
+            input.source === "timeout" || (request.expiresAt !== undefined && request.expiresAt <= Date.now())
+          const answers = input.source === "reply" && !timedOut ? input.answers : undefined
+          const error = new RejectedError({ timedOut })
+          log.info("settling question", {
             requestID: request.id,
-            answers: cloneAnswers(answers),
+            source: input.source,
+            timedOut,
+            expiresAt: request.expiresAt,
+            recovered: !existing,
           })
-          if (existing) yield* Deferred.succeed(existing.deferred, answers)
-        } else {
-          yield* bus.publish(Event.Rejected, { sessionID: request.sessionID, requestID: request.id })
-          if (existing) yield* Deferred.fail(existing.deferred, error)
+          pending.delete(request.id)
+          current.recovered.delete(request.id)
+          if (existing) yield* clearPersistedRequest(request)
+          if (recovered) {
+            if (answers) yield* completePersisted(recovered, answers)
+            else yield* rejectPersisted(recovered, error)
+            if (input.source === "superseded") yield* finalizeQuestionAssistant(request)
+            else yield* finalizeRecoveredAssistant(recovered)
+          }
+          log.info("question persistence settled", { requestID: request.id, timedOut })
+          if (answers) {
+            yield* bus.publish(Event.Replied, {
+              sessionID: request.sessionID,
+              requestID: request.id,
+              answers: cloneAnswers(answers),
+            })
+            if (existing) yield* Deferred.succeed(existing.deferred, answers)
+          } else {
+            yield* bus.publish(Event.Rejected, { sessionID: request.sessionID, requestID: request.id })
+            if (existing) yield* Deferred.fail(existing.deferred, error)
+          }
+          log.info("question settlement published", { requestID: request.id, timedOut, answered: !!answers })
+          if (timedOut && input.source === "reply") return yield* new NotFoundError({ requestID: request.id })
+        }).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              settling.delete(input.requestID)
+              current.revision++
+            }),
+          ),
+        )
+      },
+      locked,
+      Effect.uninterruptible,
+    )
+
+    const pause = Effect.fn("Question.pause")(
+      function* (input: { requestID: QuestionID; paused: boolean }) {
+        const current = yield* InstanceState.get(state)
+        const entry = current.pending.get(input.requestID)
+        const recovered = entry ? undefined : yield* findPersisted(input.requestID)
+        const request = entry?.info ?? current.recovered.get(input.requestID) ?? recovered?.request
+        const now = Date.now()
+        if (!request || (request.expiresAt !== undefined && request.expiresAt <= now)) {
+          log.info("question pause ignored; missing or overdue", input)
+          return yield* new NotFoundError({ requestID: input.requestID })
         }
-        log.info("question settlement published", { requestID: request.id, timedOut, answered: !!answers })
-        if (timedOut && input.source === "reply") return yield* new NotFoundError({ requestID: request.id })
-      }).pipe(
-        Effect.ensuring(
-          Effect.sync(() => {
-            settling.delete(input.requestID)
-            current.revision++
-          }),
-        ),
-      )
-    }, Effect.uninterruptible)
+        if (request.expiresAt === undefined) return request
+        const active = request.timeoutPause && request.timeoutPause.until > now
+        const remaining = active ? request.timeoutPause!.remaining : request.expiresAt - now
+        // A renewable lease also resumes safely after renderer crashes or lost blur events.
+        const timeoutPause = input.paused ? { until: now + 15_000, remaining } : undefined
+        const next: Request = {
+          ...request,
+          timeoutPause,
+          expiresAt: timeoutPause ? timeoutPause.until + remaining : now + remaining,
+        }
+        if (entry) entry.info = next
+        else current.recovered.set(next.id, next)
+        current.revision++
+        log.info("question countdown focus changed", {
+          requestID: next.id,
+          paused: input.paused,
+          remaining,
+          expiresAt: next.expiresAt,
+        })
+        const persisted = yield* persistRequest({ request: next, waitForPart: false })
+        yield* bus.publish(Event.Updated, next)
+        log.info("question countdown update published", { requestID: next.id, persisted })
+        return next
+      },
+      locked,
+      Effect.uninterruptible,
+    )
 
     const reply = (input: { requestID: QuestionID; answers: ReadonlyArray<Answer> }) =>
       settleRequest({ ...input, source: "reply" })
@@ -851,7 +914,7 @@ export const layer = Layer.effect(
       return result
     })
 
-    return Service.of({ ask, reply, reject, list, expireSuperseded })
+    return Service.of({ ask, reply, reject, pause, list, expireSuperseded })
   }),
 )
 

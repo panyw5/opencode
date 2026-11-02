@@ -25,6 +25,7 @@ export type Event =
   | EventSessionStatus
   | EventSessionIdle
   | EventQuestionAsked
+  | EventQuestionUpdated
   | EventQuestionReplied
   | EventQuestionRejected
   | EventSessionCompacted
@@ -329,6 +330,10 @@ export type QuestionRequest = {
   questions: Array<QuestionPrompt>
   tool?: QuestionTool
   expiresAt?: number
+  timeoutPause?: {
+    until: number
+    remaining: number
+  }
 }
 
 export type QuestionImageAnswer = {
@@ -1462,6 +1467,7 @@ export type GlobalEvent = {
     | EventSessionStatus
     | EventSessionIdle
     | EventQuestionAsked
+    | EventQuestionUpdated
     | EventQuestionReplied
     | EventQuestionRejected
     | EventSessionCompacted
@@ -3273,6 +3279,12 @@ export type EventSessionIdle = {
 export type EventQuestionAsked = {
   id: string
   type: "question.asked"
+  properties: QuestionRequest
+}
+
+export type EventQuestionUpdated = {
+  id: string
+  type: "question.updated"
   properties: QuestionRequest
 }
 
@@ -7936,6 +7948,42 @@ export type QuestionReplyResponses = {
 }
 
 export type QuestionReplyResponse = QuestionReplyResponses[keyof QuestionReplyResponses]
+
+export type QuestionPauseData = {
+  body?: {
+    paused: boolean
+  }
+  path: {
+    requestID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/question/{requestID}/pause"
+}
+
+export type QuestionPauseErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * QuestionNotFoundError
+   */
+  404: QuestionNotFoundError
+}
+
+export type QuestionPauseError = QuestionPauseErrors[keyof QuestionPauseErrors]
+
+export type QuestionPauseResponses = {
+  /**
+   * Updated question countdown
+   */
+  200: QuestionRequest
+}
+
+export type QuestionPauseResponse = QuestionPauseResponses[keyof QuestionPauseResponses]
 
 export type QuestionRejectData = {
   body?: never

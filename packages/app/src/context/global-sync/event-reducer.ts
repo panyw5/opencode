@@ -469,7 +469,8 @@ export function applyDirectoryEvent(input: {
       )
       break
     }
-    case "question.asked": {
+    case "question.asked":
+    case "question.updated": {
       const question = event.properties as QuestionRequest
       const questions = input.store.question[question.sessionID]
       if (!questions) {
