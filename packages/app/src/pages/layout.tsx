@@ -44,6 +44,7 @@ import { Dialog } from "@opencode-ai/ui/dialog"
 import { getFilename } from "@opencode-ai/core/util/path"
 import { Session } from "@opencode-ai/sdk/v2/client"
 import { usePlatform } from "@/context/platform"
+import { createUpdateNotification } from "./layout/update-notification"
 import { useSettings } from "@/context/settings"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, closestCenter } from "@thisbeyond/solid-dnd"
@@ -320,6 +321,7 @@ export default function Layout(props: ParentProps) {
   const layout = useLayout()
   const layoutReady = createMemo(() => layout.ready())
   const platform = usePlatform()
+  const updateAvailable = createUpdateNotification(platform)
   const settings = useSettings()
   const server = useServer()
   const notification = useNotification()
@@ -4626,6 +4628,8 @@ export default function Layout(props: ParentProps) {
       onPrefetchConfig={platform.remoteMode ? undefined : prefetchConfigPage}
       settingsLabel={() => language.t("sidebar.settings")}
       settingsKeybind={() => command.keybind("settings.open")}
+      updateAvailable={updateAvailable}
+      updateLabel={() => language.t("toast.update.title")}
       onOpenSettings={openSettings}
       helpLabel={() => language.t("sidebar.help")}
       onOpenHelp={() => platform.openLink("https://opencode.ai/desktop-feedback")}

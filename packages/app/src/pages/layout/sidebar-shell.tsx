@@ -64,6 +64,8 @@ export const SidebarContent = (props: {
   onPrefetchConfig?: () => void
   settingsLabel: Accessor<string>
   settingsKeybind: Accessor<string | undefined>
+  updateAvailable: Accessor<boolean>
+  updateLabel: Accessor<string>
   onOpenSettings: () => void
   helpLabel: Accessor<string>
   onOpenHelp: () => void
@@ -431,14 +433,32 @@ export const SidebarContent = (props: {
               />
             </RailTooltip>
           </Show>
-          <RailTooltip mobile={props.mobile} title={props.settingsLabel()} keybind={props.settingsKeybind()}>
-            <IconButton
-              icon="settings-gear"
-              variant="ghost"
-              size="large"
-              onClick={props.onOpenSettings}
-              aria-label={props.settingsLabel()}
-            />
+          <RailTooltip
+            mobile={props.mobile}
+            title={
+              props.updateAvailable() ? `${props.settingsLabel()} · ${props.updateLabel()}` : props.settingsLabel()
+            }
+            keybind={props.settingsKeybind()}
+          >
+            <div class="relative inline-flex">
+              <IconButton
+                data-action="settings-open"
+                icon="settings-gear"
+                variant="ghost"
+                size="large"
+                onClick={props.onOpenSettings}
+                aria-label={
+                  props.updateAvailable() ? `${props.settingsLabel()} · ${props.updateLabel()}` : props.settingsLabel()
+                }
+              />
+              <Show when={props.updateAvailable()}>
+                <span
+                  data-slot="settings-update-dot"
+                  aria-hidden="true"
+                  class="pointer-events-none absolute top-1 right-1 size-1.5 rounded-full bg-icon-critical-base"
+                />
+              </Show>
+            </div>
           </RailTooltip>
           <RailTooltip mobile={props.mobile} title={props.helpLabel()}>
             <IconButton
