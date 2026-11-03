@@ -107,11 +107,9 @@ export function reduceSessionRenderState(state: SessionRenderState, event: Sessi
     }
   if (event.type === "deadline") {
     if (!state.hasContent) return state
-    return {
-      ...state,
-      phase: state.phase === "fetching" && state.hasContent ? "content-visible" : state.phase,
-      overlay: state.hasContent ? "hidden" : state.overlay,
-    }
+    const phase = state.phase === "fetching" ? "content-visible" : state.phase
+    if (phase === state.phase && state.overlay === "hidden") return state
+    return { ...state, phase, overlay: "hidden" }
   }
   if (event.type === "overlay-hidden") return { ...state, overlay: "hidden" }
   return state

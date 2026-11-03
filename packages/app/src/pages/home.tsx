@@ -1044,6 +1044,12 @@ export default function Home() {
             </section>
           </div>
         </div>
+
+        <Show when={platform.platform === "desktop" && !!platform.resourceUsage}>
+          <div class="mt-9 grid min-w-0 gap-x-8 gap-y-9 lg:grid-cols-2">
+            <HomeResourceUsage />
+          </div>
+        </Show>
       </main>
     </div>
   )

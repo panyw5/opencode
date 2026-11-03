@@ -557,7 +557,7 @@ describe("session.message-v2.toModelMessage", () => {
     ])
   })
 
-  test("preserves jpeg tool-result media for anthropic models", async () => {
+  test("preserves jpeg tool-result media through anthropic message transformation", async () => {
     const anthropicModel: Provider.Model = {
       ...model,
       id: ModelID.make("anthropic/claude-opus-4-7"),
@@ -623,10 +623,10 @@ describe("session.message-v2.toModelMessage", () => {
       },
     ]
 
-    const result = ProviderTransform.message(await MessageV2.toModelMessages(input, anthropicModel), anthropicModel, {})
-    expect(result).toHaveLength(3)
-    expect(result[2].role).toBe("tool")
-    expect(result[2].content[0]).toMatchObject({
+    const messages = await MessageV2.toModelMessages(input, anthropicModel)
+    expect(messages).toHaveLength(3)
+    expect(messages[2].role).toBe("tool")
+    expect(messages[2].content[0]).toMatchObject({
       type: "tool-result",
       toolCallId: "call-anthropic-1",
       toolName: "read",
@@ -638,6 +638,23 @@ describe("session.message-v2.toModelMessage", () => {
         ],
       },
     })
+
+    const result = ProviderTransform.message(messages, anthropicModel, {})
+    expect(result).toHaveLength(4)
+    expect(result[2].role).toBe("tool")
+    expect(result[2].content).toEqual([
+      {
+        type: "tool-result",
+        toolCallId: "call-anthropic-1",
+        toolName: "read",
+        output: { type: "text", value: "Image read successfully" },
+      },
+    ])
+    expect(result[3].role).toBe("user")
+    expect(result[3].content).toEqual([
+      { type: "text", text: "Attached image(s) from tool result:" },
+      { type: "file", mediaType: "image/jpeg", data: `data:image/jpeg;base64,${jpeg}` },
+    ])
   })
 
   test("moves bedrock pdf tool-result media into a separate user message", async () => {

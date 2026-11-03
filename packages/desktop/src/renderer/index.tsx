@@ -428,6 +428,26 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
 
     filterDirectories: (paths: string[]) => desktopApi.filterDirectories(paths),
 
+    // Guarded like statLocalFile: HMR can hot-reload this module against an
+    // older preload bundle that predates the extension-archive channel.
+    extensionArchiveDigest:
+      typeof desktopApi.extensionArchiveDigest === "function"
+        ? (path: string) => desktopApi.extensionArchiveDigest(path)
+        : undefined,
+    extensionArchiveOp:
+      typeof desktopApi.extensionArchiveOp === "function"
+        ? (op: "prepare" | "commit" | "status" | "cancel" | "cleanup-retained", payload: Record<string, unknown>) =>
+            desktopApi.extensionArchiveOp(op, payload)
+        : undefined,
+    extensionArchiveStage:
+      typeof desktopApi.extensionArchiveStage === "function"
+        ? (bytes: Uint8Array) => desktopApi.extensionArchiveStage(bytes)
+        : undefined,
+    extensionArchiveCleanup:
+      typeof desktopApi.extensionArchiveCleanup === "function"
+        ? (path: string) => desktopApi.extensionArchiveCleanup(path)
+        : undefined,
+
     async find(query, dir) {
       return findInPage(query, dir)
     },
@@ -439,9 +459,7 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
     // Guarded: HMR can hot-reload this module against an older preload bundle
     // that predates statLocalFile (preload only refreshes on app restart).
     statLocalFile:
-      typeof desktopApi.statLocalFile === "function"
-        ? (path: string) => desktopApi.statLocalFile(path)
-        : undefined,
+      typeof desktopApi.statLocalFile === "function" ? (path: string) => desktopApi.statLocalFile(path) : undefined,
 
     writeLocalFile: (path: string, content: string) => desktopApi.writeLocalFile(path, content),
 

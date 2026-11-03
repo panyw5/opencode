@@ -36,6 +36,7 @@ import { CommentsProvider } from "@/context/comments"
 import { FileProvider } from "@/context/file"
 import { GlobalSDKProvider } from "@/context/global-sdk"
 import { GlobalSyncProvider } from "@/context/global-sync"
+import { ExtensionHostProvider } from "@/extensions/host"
 import { HighlightsProvider } from "@/context/highlights"
 import { LanguageProvider, type Locale, useLanguage } from "@/context/language"
 import { LayoutProvider, useLayout } from "@/context/layout"
@@ -57,7 +58,7 @@ import Layout from "@/pages/layout"
 import { ErrorPage } from "./pages/error"
 import { useCheckServerHealth } from "./utils/server-health"
 import { decode64 } from "@/utils/base64"
-import { workspaceKey } from "@/pages/layout/helpers"
+import { sameWorkspacePath } from "@/pages/layout/helpers"
 import { pickSessionTabsTarget, useSessionTabs } from "@/context/session-tabs"
 import { ConfigTitlebarActions } from "@/components/config-titlebar-actions"
 
@@ -114,6 +115,12 @@ const CONFIG_FALLBACK_SECTIONS = [
   { id: "agents", key: "config.agents.title", descriptionKey: "config.nav.agentsDescription", icon: "robot" },
   { id: "skills", key: "config.skills.title", descriptionKey: "config.nav.skillsDescription", icon: "book" },
   { id: "plugins", key: "config.plugins.title", descriptionKey: "config.nav.pluginsDescription", icon: "code" },
+  {
+    id: "extensions",
+    key: "config.extensions.title",
+    descriptionKey: "config.nav.extensionsDescription",
+    icon: "dot-grid",
+  },
   { id: "mcp", key: "config.mcp.title", descriptionKey: "config.nav.mcpDescription", icon: "mcp" },
   {
     id: "commands",
@@ -172,17 +179,22 @@ function ConfigRouteFrame(props: ParentProps) {
 // Skeleton shell shown while Config page lazy-loads.
 // MUST stay in sync with pages/config.tsx sidebar and middle column styles
 // (font sizes, titles, descriptions) to avoid a visual flash on first render.
-function ConfigLoadingShell() {
+function ConfigLoadingShell(props: { source: "directory" | "suspense" }) {
   const language = useLanguage()
   const platform = usePlatform()
   const showClawsSection = () => platform.platform === "desktop"
 
   onMount(() => {
-    console.info(`[config-perf] loading-shell mount sinceClick=${configPerfSinceClick()}`)
+    console.info(`[config-perf] loading-shell mount source=${props.source} sinceClick=${configPerfSinceClick()}`)
   })
 
   return (
-    <div class="size-full overflow-hidden bg-background-base">
+    <div
+      class="size-full overflow-hidden bg-background-base"
+      data-component="config-loading-shell"
+      data-loading-source={props.source}
+      aria-busy="true"
+    >
       <div class="flex h-full min-h-0 flex-col bg-[radial-gradient(circle_at_5%_0%,color-mix(in_srgb,var(--surface-brand-base)_7%,transparent),transparent_32%),linear-gradient(135deg,color-mix(in_srgb,var(--surface-brand-base)_3%,var(--background-base)),var(--background-base)_45%)] xl:flex-row">
         <aside class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(165deg,color-mix(in_srgb,var(--surface-brand-base)_7%,var(--surface-base)),color-mix(in_srgb,var(--surface-brand-base)_3%,var(--background-base))_46%,var(--background-base))] xl:w-[236px] xl:border-r xl:border-b-0">
           <div class="flex h-full min-h-0 flex-col">
@@ -197,10 +209,11 @@ function ConfigLoadingShell() {
             </div>
             <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
               <div class="flex flex-col gap-1">
-                <For each={CONFIG_FALLBACK_SECTIONS.slice(0, 7)}>
+                <For each={CONFIG_FALLBACK_SECTIONS.slice(0, 8)}>
                   {(section) => (
                     <SectionButton
                       current={false}
+                      disabled
                       title={"key" in section ? language.t(section.key) : section.label}
                       description={language.t(section.descriptionKey)}
                       icon={section.icon}
@@ -210,11 +223,12 @@ function ConfigLoadingShell() {
               </div>
               <div class="mx-2 my-3 h-px bg-[linear-gradient(90deg,var(--border-weak-base),transparent)]" />
               <div class="flex flex-col gap-1">
-                <For each={CONFIG_FALLBACK_SECTIONS.slice(7)}>
+                <For each={CONFIG_FALLBACK_SECTIONS.slice(8)}>
                   {(section) => (
                     <Show when={section.id !== "claws" || showClawsSection()}>
                       <SectionButton
                         current={false}
+                        disabled
                         title={"key" in section ? language.t(section.key) : section.label}
                         description={language.t(section.descriptionKey)}
                         icon={section.icon}
@@ -241,7 +255,11 @@ function ConfigLoadingShell() {
               </div>
             </div>
           </section>
-          <main class="min-h-0 min-w-0 flex-1 bg-[linear-gradient(155deg,color-mix(in_srgb,var(--surface-brand-base)_2%,var(--background-base)),var(--background-base)_38%)]" />
+          <main class="min-h-0 min-w-0 flex-1 bg-[linear-gradient(155deg,color-mix(in_srgb,var(--surface-brand-base)_2%,var(--background-base)),var(--background-base)_38%)]">
+            <p role="status" class="p-5 text-13-regular text-text-weak">
+              {language.t("common.loading")}
+            </p>
+          </main>
         </div>
       </div>
     </div>
@@ -254,9 +272,15 @@ const SessionRoute = () => {
   const allowed = () => {
     if (params.id) return true
     const directory = decode64(params.dir ?? "") ?? ""
-    return layout.sessionBar
-      .drafts()
-      .some((draft) => draft.id === params.draftID && workspaceKey(draft.directory) === workspaceKey(directory))
+    const drafts = layout.sessionBar.drafts()
+    const match = drafts.some((draft) => draft.id === params.draftID && sameWorkspacePath(draft.directory, directory))
+    if (!match) {
+      const draft = drafts.find((item) => item.id === params.draftID)
+      console.debug(
+        `[session-route] draft rejected id=${params.draftID ?? "none"} routeDir=${directory || "none"} draftDir=${draft?.directory ?? "none"} count=${drafts.length}`,
+      )
+    }
+    return match
   }
   // While a submitted draft promotes into a session, the router transition
   // keeps params.id stale for a while. Keep rendering the draft page (composer
@@ -334,7 +358,7 @@ const ConfigRoute = () => (
         return <ErrorPage error={error} />
       }}
     >
-      <Suspense fallback={<ConfigLoadingShell />}>
+      <Suspense fallback={<ConfigLoadingShell source="suspense" />}>
         <Config />
       </Suspense>
     </ErrorBoundary>
@@ -352,7 +376,7 @@ function GlobalConfigRoute() {
   })
 
   return (
-    <Show when={directory()} keyed fallback={<ConfigLoadingShell />}>
+    <Show when={directory()} keyed fallback={<ConfigLoadingShell source="directory" />}>
       {(directory) => (
         <SDKProvider directory={() => directory}>
           <SyncProvider>
@@ -430,9 +454,11 @@ function AppShellProviders(props: ParentProps) {
               <NotificationProvider>
                 <ModelsProvider>
                   <CommandProvider>
-                    <HighlightsProvider>
-                      <Layout>{props.children}</Layout>
-                    </HighlightsProvider>
+                    <ExtensionHostProvider>
+                      <HighlightsProvider>
+                        <Layout>{props.children}</Layout>
+                      </HighlightsProvider>
+                    </ExtensionHostProvider>
                   </CommandProvider>
                 </ModelsProvider>
               </NotificationProvider>

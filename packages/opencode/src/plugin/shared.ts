@@ -68,7 +68,7 @@ function isAbsolutePath(raw: string) {
   return path.isAbsolute(raw) || /^[A-Za-z]:[\\/]/.test(raw)
 }
 
-function extractExportValue(value: unknown): string | undefined {
+export function extractExportValue(value: unknown): string | undefined {
   if (typeof value === "string") return value
   if (!isRecord(value)) return undefined
   for (const key of ["import", "default"]) {
@@ -86,7 +86,7 @@ function packageMain(pkg: PluginPackage) {
   return next
 }
 
-function resolvePackageFile(spec: string, raw: string, kind: string, pkg: PluginPackage) {
+export function resolvePackageFile(spec: string, raw: string, kind: string, pkg: PluginPackage) {
   const resolved = resolveExportPath(raw, pkg.dir)
   const root = Filesystem.resolve(pkg.dir)
   const next = Filesystem.resolve(resolved)

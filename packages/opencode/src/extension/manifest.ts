@@ -1,0 +1,231 @@
+import path from "path"
+import { lstat, readFile, realpath } from "fs/promises"
+import semver from "semver"
+import { Schema } from "effect"
+import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import { Hash } from "@/util/hash"
+import { Filesystem } from "@/util/filesystem"
+import { ConfigParse } from "@/config/parse"
+import { checkPluginCompatibility, extractExportValue, readPluginPackage, resolvePackageFile } from "@/plugin/shared"
+import { Manifest, type Contributes, type ExtensionID } from "./schema"
+
+export class CompatibilityError extends Error {
+  override readonly name = "ExtensionCompatibilityError"
+}
+
+export type Loaded = {
+  id: ExtensionID
+  name: string
+  version: string
+  displayName: string
+  description?: string
+  permissions: string[]
+  activation: string[]
+  contributes: Contributes
+  dir: string
+  webRoot: string
+  entry?: string
+  styles: string[]
+  icon?: string
+  serverEntry?: string
+  versionSegment: string
+  webFingerprint: string
+  serverFingerprint?: string
+}
+
+async function ordinaryFile(file: string, label: string) {
+  const stat = await lstat(file).catch(() => undefined)
+  if (!stat?.isFile()) throw new Error(`Extension ${label} is not a regular file: ${file}`)
+  return stat
+}
+
+async function inside(root: string, file: string, label: string) {
+  const [canonicalRoot, canonicalFile] = await Promise.all([realpath(root), realpath(file)])
+  if (!Filesystem.contains(canonicalRoot, canonicalFile)) {
+    throw new Error(`Extension ${label} resolves outside web root`)
+  }
+  await ordinaryFile(file, label)
+  return canonicalFile
+}
+
+function packageExport(json: Record<string, unknown>, key: string) {
+  const exports = json.exports
+  if (!exports || typeof exports !== "object" || Array.isArray(exports)) return
+  return extractExportValue((exports as Record<string, unknown>)[key])
+}
+
+function unique(values: string[]) {
+  return Array.from(new Set(values))
+}
+
+async function contentFingerprint(root: string, files: string[]) {
+  const parts = await Promise.all(
+    files.map(async (file) => {
+      const content = await readFile(file)
+      return Buffer.concat([Buffer.from(`${path.relative(root, file)}\0`), content, Buffer.from("\0")])
+    }),
+  )
+  return Hash.fast(Buffer.concat(parts))
+}
+
+function validateContributions(manifest: Manifest) {
+  const contributes = manifest.contributes ?? {}
+  const viewers = new Set<string>()
+  const commands = new Set<string>()
+  const panels = new Set<string>()
+  const ids = new Set<string>()
+  for (const viewer of contributes.fileViewers ?? []) {
+    if (ids.has(viewer.id)) throw new Error(`Extension has duplicate file viewer id: ${viewer.id}`)
+    ids.add(viewer.id)
+    viewers.add(viewer.id)
+    const matchers = [viewer.extensions?.length, viewer.filenames?.length, viewer.mime?.length]
+    if (!matchers.some(Boolean)) throw new Error(`Extension file viewer ${viewer.id} has no matchers`)
+  }
+  const tools = new Set<string>()
+  for (const renderer of contributes.toolRenderers ?? []) {
+    if (tools.has(renderer.tool)) throw new Error(`Extension has duplicate tool renderer: ${renderer.tool}`)
+    tools.add(renderer.tool)
+  }
+  for (const command of contributes.commands ?? []) {
+    if (ids.has(command.id)) throw new Error(`Extension has duplicate command id: ${command.id}`)
+    ids.add(command.id)
+    commands.add(command.id)
+  }
+  for (const panel of contributes.panels ?? []) {
+    if (ids.has(panel.id)) throw new Error(`Extension has duplicate panel id: ${panel.id}`)
+    ids.add(panel.id)
+    panels.add(panel.id)
+  }
+  for (const activation of manifest.activation ?? ["onStartup"]) {
+    if (activation === "onStartup") continue
+    const separator = activation.indexOf(":")
+    const kind = activation.slice(0, separator)
+    const reference = activation.slice(separator + 1)
+    if (kind === "onFileViewer" && !viewers.has(reference))
+      throw new Error(`Extension activation references unknown file viewer: ${reference}`)
+    if (kind === "onCommand" && !commands.has(reference))
+      throw new Error(`Extension activation references unknown command: ${reference}`)
+    if (kind === "onPanel" && !panels.has(reference))
+      throw new Error(`Extension activation references unknown panel: ${reference}`)
+    if (kind === "onTool" && !tools.has(reference))
+      throw new Error(`Extension activation references unknown tool: ${reference}`)
+  }
+  for (const [key, setting] of Object.entries(contributes.settings ?? {})) {
+    if (setting.enum) {
+      if (setting.type === "boolean")
+        throw new Error(`Extension setting ${key} must not declare enum values for boolean type`)
+      if (setting.enum.some((value) => typeof value !== setting.type))
+        throw new Error(`Extension setting ${key} has enum values that do not match its type`)
+    }
+    if (setting.default === undefined) continue
+    if (typeof setting.default !== setting.type)
+      throw new Error(`Extension setting ${key} has a default that does not match its type`)
+    if (setting.enum && !setting.enum.some((value) => value === setting.default))
+      throw new Error(`Extension setting ${key} has a default that is not one of its enum values`)
+  }
+}
+
+export async function load(directory: string, options: { opencodeVersion?: string } = {}): Promise<Loaded> {
+  const dir = await realpath(directory).catch(() => path.resolve(directory))
+  const pkg = await readPluginPackage(dir).catch((error) => {
+    throw new Error(`Extension directory is missing a readable package.json: ${dir}`, { cause: error })
+  })
+  if (Filesystem.resolve(pkg.dir) !== Filesystem.resolve(dir)) {
+    throw new Error(`Extension path must point to a package directory: ${dir}`)
+  }
+
+  const name = typeof pkg.json.name === "string" ? pkg.json.name.trim() : ""
+  if (!name) throw new Error("Extension package is missing name")
+  const version = typeof pkg.json.version === "string" ? pkg.json.version.trim() : ""
+  if (!semver.valid(version)) throw new Error(`Extension package has invalid version: ${version || "missing"}`)
+
+  const raw = pkg.json.opencode
+  if (!raw) throw new Error("Extension package is missing opencode manifest")
+  const manifest = ConfigParse.schema(Manifest, raw, pkg.pkg)
+  validateContributions(manifest)
+
+  try {
+    await checkPluginCompatibility(dir, options.opencodeVersion ?? InstallationVersion, pkg)
+  } catch (error) {
+    throw new CompatibilityError(error instanceof Error ? error.message.replace(/^Plugin/, "Extension") : String(error))
+  }
+
+  const webExported = packageExport(pkg.json, "./web")
+  const serverExported = packageExport(pkg.json, "./server")
+  if (!webExported && !serverExported)
+    throw new Error('Extension package must expose exports["./web"] or exports["./server"]')
+  if (webExported && !manifest.web)
+    throw new Error('Extension manifest requires opencode.web when exports["./web"] is present')
+  if (!webExported && manifest.web)
+    throw new Error('Extension manifest declares opencode.web but the package does not expose exports["./web"]')
+
+  let entry: string | undefined
+  let entryAbsolute: string | undefined
+  let webRoot = dir
+  let icon: string | undefined
+  let iconAbsolute: string | undefined
+  let styleAbsolute: string[] = []
+  if (webExported && manifest.web) {
+    const webEntry = resolvePackageFile(manifest.id, webExported, "web", pkg)
+    await ordinaryFile(webEntry, "web entry")
+    webRoot = path.dirname(await realpath(webEntry))
+    entry = path.relative(webRoot, webEntry).replaceAll("\\", "/")
+    entryAbsolute = webEntry
+
+    styleAbsolute = await Promise.all(
+      unique(manifest.web.styles ?? []).map(async (raw) => {
+        const file = resolvePackageFile(manifest.id, raw, "web style", pkg)
+        return inside(webRoot, file, "web style")
+      }),
+    )
+    if (manifest.icon) {
+      iconAbsolute = await inside(webRoot, resolvePackageFile(manifest.id, manifest.icon, "web icon", pkg), "web icon")
+      icon = path.relative(webRoot, iconAbsolute).replaceAll("\\", "/")
+    }
+  } else if (manifest.icon) {
+    iconAbsolute = await inside(dir, resolvePackageFile(manifest.id, manifest.icon, "web icon", pkg), "web icon")
+    icon = path.relative(dir, iconAbsolute).replaceAll("\\", "/")
+  }
+
+  let serverEntry: string | undefined
+  let serverEntryAbsolute: string | undefined
+  if (serverExported) {
+    serverEntryAbsolute = resolvePackageFile(manifest.id, serverExported, "server", pkg)
+    await ordinaryFile(serverEntryAbsolute, "server entry")
+    serverEntry = path.relative(dir, serverEntryAbsolute).replaceAll("\\", "/")
+  }
+
+  const packageFile = path.join(dir, "package.json")
+  const webFingerprint = await contentFingerprint(dir, [
+    packageFile,
+    ...(entryAbsolute ? [entryAbsolute] : []),
+    ...styleAbsolute,
+    ...(iconAbsolute ? [iconAbsolute] : []),
+  ])
+  const versionSegment = `${version}-${webFingerprint.slice(0, 12)}`
+  const serverFingerprint = serverEntryAbsolute
+    ? await contentFingerprint(dir, [packageFile, serverEntryAbsolute])
+    : undefined
+
+  return {
+    id: manifest.id,
+    name,
+    version,
+    displayName: manifest.displayName,
+    description: manifest.description,
+    permissions: unique(manifest.permissions ?? []),
+    activation: unique(manifest.activation ?? ["onStartup"]),
+    contributes: manifest.contributes ?? {},
+    dir,
+    webRoot,
+    entry,
+    styles: styleAbsolute.map((file) => path.relative(webRoot, file).replaceAll("\\", "/")),
+    icon,
+    serverEntry,
+    versionSegment,
+    webFingerprint,
+    serverFingerprint,
+  }
+}
+
+export * as ExtensionManifest from "./manifest"

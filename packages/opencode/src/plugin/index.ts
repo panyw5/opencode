@@ -33,6 +33,7 @@ import { parsePluginSpecifier, readPluginId, readV1Plugin, resolvePluginId } fro
 import { registerAdapter } from "@/control-plane/adapters"
 import type { WorkspaceAdapter } from "@/control-plane/types"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { ExtensionRuntime } from "@/extension/runtime"
 import { Hash } from "@/util/hash"
 import { SessionID } from "@/session/schema"
 
@@ -43,7 +44,7 @@ type State = {
   controls: HookControl[]
 }
 
-type HookEntry = {
+export type HookEntry = {
   id: string
   hooks: Hooks
 }
@@ -81,6 +82,8 @@ export interface Interface {
     output: Output,
   ) => Effect.Effect<Output>
   readonly list: () => Effect.Effect<Hooks[]>
+  readonly entries: () => Effect.Effect<HookEntry[]>
+  readonly invalidate: () => Effect.Effect<void>
   readonly listHookControls: (sessionID: SessionID) => Effect.Effect<HookControl[]>
   readonly setHookControl: (input: HookControlInput & { sessionID: SessionID }) => Effect.Effect<HookControl[]>
   readonly init: () => Effect.Effect<void>
@@ -462,6 +465,13 @@ export const layer = Layer.effect(
           )
         }
 
+        const extensionHooks = yield* Effect.promise(() =>
+          ExtensionRuntime.instanceHooks(input, { disabled: flags.pure || flags.disableExtensions }),
+        )
+        for (const item of extensionHooks) {
+          hooks.push({ id: `extension:${item.id}`, hooks: item.hooks })
+        }
+
         // Notify plugins of current config
         for (const entry of hooks) {
           yield* Effect.tryPromise({
@@ -491,6 +501,10 @@ export const layer = Layer.effect(
         return data
       }),
     )
+    const unregisterExtensionCache = ExtensionRuntime.registerCacheInvalidator("plugin", () =>
+      Effect.runPromise(InstanceState.invalidateAll(state)),
+    )
+    yield* Effect.addFinalizer(() => Effect.sync(unregisterExtensionCache))
 
     const trigger = Effect.fn("Plugin.trigger")(function* <
       Name extends TriggerName,
@@ -516,6 +530,15 @@ export const layer = Layer.effect(
       return s.hooks.map((entry) => entry.hooks)
     })
 
+    const entries = Effect.fn("Plugin.entries")(function* () {
+      const s = yield* InstanceState.get(state)
+      return s.hooks.slice()
+    })
+
+    const invalidate = Effect.fn("Plugin.invalidate")(function* () {
+      yield* InstanceState.invalidateAll(state)
+    })
+
     const listHookControls = Effect.fn("Plugin.listHookControls")(function* (sessionID: SessionID) {
       const s = yield* InstanceState.get(state)
       return s.controls.filter((control) => control.sessionID === sessionID)
@@ -536,7 +559,7 @@ export const layer = Layer.effect(
       yield* InstanceState.get(state)
     })
 
-    return Service.of({ trigger, list, listHookControls, setHookControl, init })
+    return Service.of({ trigger, list, entries, invalidate, listHookControls, setHookControl, init })
   }),
 )
 

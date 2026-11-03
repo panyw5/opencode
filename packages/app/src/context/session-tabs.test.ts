@@ -49,6 +49,54 @@ describe("session tab fallback", () => {
     ).toEqual({ type: "home" })
   })
 
+  test("keeps existing session tabs on equivalent workspace aliases", () => {
+    for (const [stored, route] of [
+      ["/private/tmp/project", "/tmp/project"],
+      ["/tmp/project", "/private/tmp/project"],
+      ["/private/var/project", "/var/project"],
+    ]) {
+      expect(
+        pickSessionTabsTarget({
+          tabs: [tab("session-alias", stored)],
+          drafts: [],
+          directory: route,
+          fallback: "home",
+        }),
+      ).toEqual({ type: "session", directory: stored, id: "session-alias" })
+    }
+  })
+
+  test("does not select a session tab in an unrelated directory", () => {
+    expect(
+      pickSessionTabsTarget({
+        tabs: [tab("session-other", "/private/tmp/other")],
+        drafts: [],
+        directory: "/tmp/project",
+        fallback: "home",
+      }),
+    ).toEqual({ type: "home" })
+  })
+
+  test("keeps a /private/tmp draft visible on an equivalent /tmp route", () => {
+    const target = pickSessionTabsTarget({
+      tabs: [],
+      drafts: [draft("draft-alias", "/private/tmp/project")],
+      directory: "/tmp/project",
+      fallback: "home",
+    })
+    expect(target).toEqual({ type: "draft", directory: "/private/tmp/project", id: "draft-alias" })
+  })
+
+  test("does not treat unrelated directories as aliases", () => {
+    const target = pickSessionTabsTarget({
+      tabs: [],
+      drafts: [draft("draft-other", "/private/tmp/other")],
+      directory: "/tmp/project",
+      fallback: "home",
+    })
+    expect(target).toEqual({ type: "home" })
+  })
+
   test("uses home only when no session or draft tab exists", () => {
     expect(pickSessionTabsTarget({ tabs: [], drafts: [], directory: "/repo" })).toEqual({ type: "home" })
     expect(sessionTabsTargetHref({ type: "home" })).toBe("/")
@@ -505,9 +553,7 @@ describe("session tabs coordinator", () => {
   test("successful activation opens a missing session tab without waiting for a route observation", async () => {
     const h = harness({ route: { directory: "/repo", id: "current", session: true } })
 
-    expect(await h.coordinator.activate({ type: "session", directory: "/repo", id: "scheduled" })).toBe(
-      "navigated",
-    )
+    expect(await h.coordinator.activate({ type: "session", directory: "/repo", id: "scheduled" })).toBe("navigated")
     expect(h.targets).toEqual([{ type: "session", directory: "/repo", id: "scheduled" }])
     expect(h.tabs()).toEqual([{ directory: "/repo", id: "scheduled" }])
     h.dispose()

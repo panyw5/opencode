@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { Context } from "effect"
+import { symlink, truncate, writeFile } from "fs/promises"
 import path from "path"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { FilePaths } from "../../src/server/routes/instance/httpapi/groups/file"
@@ -69,6 +70,67 @@ describe("file HttpApi", () => {
 
     expect(status.status).toBe(200)
     expect(await status.json()).toContainEqual({ path: "hello.txt", added: 1, removed: 0, status: "added" })
+  })
+
+  test("serves exact raw text and binary bytes", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Bun.write(path.join(tmp.path, "spaced.txt"), "  hello\n")
+    await Bun.write(path.join(tmp.path, "payload.bin"), new Uint8Array([0, 1, 2, 255]))
+
+    const [text, binary] = await Promise.all([
+      request(FilePaths.raw, tmp.path, { path: "spaced.txt" }),
+      request(FilePaths.raw, tmp.path, { path: "payload.bin" }),
+    ])
+
+    expect(text.status).toBe(200)
+    expect(await text.text()).toBe("  hello\n")
+    expect(text.headers.get("cache-control")).toBe("private, no-store")
+    expect(text.headers.get("x-content-type-options")).toBe("nosniff")
+
+    expect(binary.status).toBe(200)
+    expect(new Uint8Array(await binary.arrayBuffer())).toEqual(new Uint8Array([0, 1, 2, 255]))
+  })
+
+  test("forces HTML raw responses to download-safe MIME", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Bun.write(path.join(tmp.path, "unsafe.html"), "<script>window.bad = true</script>")
+
+    const response = await request(FilePaths.raw, tmp.path, { path: "unsafe.html" })
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("application/octet-stream")
+  })
+
+  test("rejects missing, absolute, traversal, directory, and symlink paths", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await using outside = await tmpdir()
+    await Bun.write(path.join(outside.path, "secret.txt"), "secret")
+    await symlink(path.join(outside.path, "secret.txt"), path.join(tmp.path, "escape.txt"))
+
+    const responses = await Promise.all([
+      request(FilePaths.raw, tmp.path, { path: "missing.txt" }),
+      request(FilePaths.raw, tmp.path, { path: path.join(tmp.path, "missing.txt") }),
+      request(FilePaths.raw, tmp.path, { path: "../secret.txt" }),
+      request(FilePaths.raw, tmp.path, { path: "." }),
+      request(FilePaths.raw, tmp.path, { path: "escape.txt" }),
+    ])
+
+    expect(responses.map((response) => response.status)).toEqual([404, 403, 403, 404, 404])
+  })
+
+  test("rejects raw files over 50 MB before reading", async () => {
+    await using tmp = await tmpdir({ git: true })
+    const file = path.join(tmp.path, "large.bin")
+    await writeFile(file, "")
+    await truncate(file, 50 * 1024 * 1024 + 1)
+
+    const response = await request(FilePaths.raw, tmp.path, { path: "large.bin" })
+
+    expect(response.status).toBe(413)
+    expect(await response.json()).toMatchObject({
+      _tag: "PayloadTooLargeError",
+      maxBytes: 50 * 1024 * 1024,
+    })
   })
 
   test("serves search endpoints", async () => {

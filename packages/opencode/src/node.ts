@@ -49,3 +49,10 @@ export function recordDesktopRecovery() {
     Issue.record(process.cwd(), { ...issue, state: "resolved", message: "The local backend restarted successfully." })
   }
 }
+// Desktop sidecar drives managed local-archive installs through the same
+// installation service the CLI and HTTP API use; HTTP stays CLI-only for
+// local paths.
+export { installation } from "@/extension/install-service"
+export type { InstallationService } from "@/extension/install-service"
+export { ExtensionRegistry } from "@/extension/registry"
+export { purgeRetainedData } from "@/extension/install-service"

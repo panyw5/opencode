@@ -78,6 +78,16 @@ beforeAll(async () => {
   rowKey = mod.TimelineRow.key
 })
 
+// Guards against a process-wide narrow mock of @opencode-ai/ui/context (for
+// example from a sibling test file sharing this bun process): rows.ts
+// transitively relies on the real exports, so they must stay functions.
+test("keeps the real @opencode-ai/ui/context exports intact", async () => {
+  const context = await import("@opencode-ai/ui/context")
+  expect(typeof context.useData).toBe("function")
+  expect(typeof context.DataProvider).toBe("function")
+  expect(typeof context.createSimpleContext).toBe("function")
+})
+
 const userMessage = (id: string): UserMessage => ({
   id,
   sessionID: "ses_test",

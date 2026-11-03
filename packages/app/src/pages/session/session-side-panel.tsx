@@ -30,6 +30,9 @@ import { useSync } from "@/context/sync"
 import { createFileTabListSync } from "@/pages/session/file-tab-scroll"
 import { extraAgentByIntegration } from "@/pages/layout/extra-agents"
 import { FileTabContent } from "@/pages/session/file-tabs"
+import { createFileTabKeepAlive } from "@/pages/session/file-tab-keepalive"
+import { ExtensionPanelContent, ExtensionPanelVisual } from "@/extensions/panel-content"
+import { isExtensionPanelTab } from "@/extensions/panel-tab"
 import { BrowserPanel } from "@/pages/session/browser-panel"
 import { PanelCollapseButton } from "@/pages/session/panel-collapse-button"
 import type { ChangeTreeEntry } from "@/pages/session/change-tree-model"
@@ -205,6 +208,23 @@ export function SessionSidePanel(props: {
   const activeFileTab = tabState.activeFileTab
 
   const fileTreeTab = () => layout.fileTree.tab()
+
+  // File viewer tabs stay mounted once shown (extension viewers keep their
+  // local draft and save handlers across tab switches) until the tab closes.
+  // Extension panel tabs keep their previous keyed remount behaviour.
+  const keepAlive = createFileTabKeepAlive({
+    sessionKey,
+    active: fileActive,
+    activeTab: activeFileTab,
+    openedTabs: openedTabs,
+    skip: (tab) => isExtensionPanelTab(tab),
+  })
+  const activeExtPanelTab = createMemo(() => {
+    if (!fileActive()) return
+    const tab = activeFileTab()
+    if (!tab || !isExtensionPanelTab(tab)) return
+    return tab
+  })
 
   const setFileTreeTabValue = (value: string) => {
     if (value !== "changes" && value !== "all") return
@@ -423,10 +443,16 @@ export function SessionSidePanel(props: {
                       </Tabs.Content>
                     </Show>
 
-                    <Show when={fileActive() && activeFileTab()} keyed>
-                      {(tab) => <FileTabContent tab={tab} />}
+                    <Show when={activeExtPanelTab()} keyed>
+                      {(tab) => <ExtensionPanelContent tab={tab} />}
                     </Show>
+
                   </Show>
+                  {/* Keep warmed file viewers outside the preview visibility
+                      gate, so collapsing the panel does not discard drafts. */}
+                  <For each={keepAlive.kept()}>
+                    {(tab) => <FileTabContent tab={tab} forceMount={true} />}
+                  </For>
                 </Tabs>
                 {/* Keep the portaled preview above the composited panel, but below dialogs. */}
                 <DragOverlay style={{ "z-index": 40, "pointer-events": "none" }}>
@@ -436,6 +462,9 @@ export function SessionSidePanel(props: {
                       return (
                         <div data-component="tabs-drag-preview">
                           <Show when={path}>{(p) => <FileVisual active path={p()} />}</Show>
+                          <Show when={isExtensionPanelTab(tab)}>
+                            <ExtensionPanelVisual tab={tab} />
+                          </Show>
                         </div>
                       )
                     }}

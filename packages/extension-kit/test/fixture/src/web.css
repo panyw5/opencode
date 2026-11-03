@@ -1,0 +1,56 @@
+/* Fixture stylesheet exercising every scoping branch of scope.js. */
+:root {
+  --scope-fixture-accent: #ff00ff;
+}
+
+@font-face {
+  font-family: "Scope Fixture Font";
+  src: url("./font.woff2") format("woff2");
+}
+
+@keyframes scope-fixture-pulse {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@property --scope-fixture-size {
+  syntax: "<length>";
+  inherits: false;
+}
+
+html,
+body {
+  margin: 0;
+}
+
+body .scope-fixture-reset {
+  padding: 0;
+}
+
+.scope-fixture-title,
+[data-note="a,b"].scope-fixture-tag::before {
+  color: var(--scope-fixture-accent);
+  animation: scope-fixture-pulse 1s infinite;
+}
+
+.scope-fixture-panel :is(.scope-fixture-a, .scope-fixture-b) {
+  border: 1px solid red;
+}
+
+@media (min-width: 40rem) {
+  .scope-fixture-wide {
+    display: flex;
+  }
+
+  :root {
+    --scope-fixture-wide: 1;
+  }
+}
+
+.scope-fixture-pulsing {
+  animation-name: scope-fixture-pulse;
+}

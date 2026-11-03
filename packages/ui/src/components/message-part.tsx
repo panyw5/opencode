@@ -998,8 +998,16 @@ function contextToolSummary(parts: ToolPart[], i18n: ReturnType<typeof useI18n>)
   ].filter((value): value is string => !!value)
 }
 
+// Returns a disposer that restores the previous component, but only while this
+// registration is still the active one for the type.
 export function registerPartComponent(type: string, component: PartComponent) {
+  const previous = PART_MAPPING[type]
   PART_MAPPING[type] = component
+  return () => {
+    if (PART_MAPPING[type] !== component) return
+    if (previous) PART_MAPPING[type] = previous
+    else delete PART_MAPPING[type]
+  }
 }
 
 export function Message(props: MessageProps) {
@@ -1722,10 +1730,37 @@ const state: Record<
     render?: ToolComponent
   }
 > = {}
+const builtinTools = new Set<string>()
 
+export function registerBuiltinTool(input: { name: string; render?: ToolComponent }) {
+  builtinTools.add(input.name)
+  return registerTool(input)
+}
+
+// A contribution may replace its own placeholder, but never a renderer that
+// the host registered at module initialization.
+export function isBuiltinToolRenderer(name: string) {
+  return builtinTools.has(name)
+}
+
+// Bumped on every register/dispose below. Registrations happen after parts are
+// already mounted (an extension activating late, a contribution being disposed
+// on hot reload), so mounted tool parts must re-read the registry reactively.
+const [registryVersion, setRegistryVersion] = createSignal(0)
+
+// Returns a disposer that restores the previous entry, but only while this
+// registration is still the active one for the tool name.
 export function registerTool(input: { name: string; render?: ToolComponent }) {
-  state[input.name] = input
-  return input
+  const entry = { name: input.name, render: input.render }
+  const previous = state[input.name]
+  state[input.name] = entry
+  setRegistryVersion((v) => v + 1)
+  return () => {
+    if (state[input.name] !== entry) return
+    if (previous) state[input.name] = previous
+    else delete state[input.name]
+    setRegistryVersion((v) => v + 1)
+  }
 }
 
 export function getTool(name: string) {
@@ -1735,6 +1770,9 @@ export function getTool(name: string) {
 export const ToolRegistry = {
   register: registerTool,
   render: getTool,
+  // Reactive read of registry mutations: call it inside a memo/effect to
+  // re-run whenever any tool renderer registers or disposes.
+  version: () => registryVersion(),
 }
 
 function ToolFileAccordion(props: { path: string; actions?: JSX.Element; children: JSX.Element }) {
@@ -1818,7 +1856,13 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     return taskId()
   })
 
-  const render = ToolRegistry.render(tool) ?? GenericTool
+  // Memo over the registry version: a placeholder (GenericTool) mounted before
+  // an extension activates must swap to the contributed renderer, and a
+  // disposed contribution must fall back — without remounting the whole part.
+  const render = createMemo(() => {
+    ToolRegistry.version()
+    return ToolRegistry.render(tool) ?? GenericTool
+  })
 
   return (
     <Show when={!hideQuestion()}>
@@ -1911,7 +1955,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               }
             >
               <Dynamic
-                component={render}
+                component={render()}
                 input={input()}
                 tool={part().tool}
                 part={part()}
@@ -2275,9 +2319,9 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   )
 }
 
-ToolRegistry.register({ name: "execute", render: McpCodeModeTool })
+registerBuiltinTool({ name: "execute", render: McpCodeModeTool })
 
-ToolRegistry.register({
+registerBuiltinTool({
   name: "read",
   render(props) {
     const data = useData()
@@ -2489,7 +2533,7 @@ function ShellTool(props: ToolProps & { title: string }) {
   )
 }
 
-ToolRegistry.register({
+registerBuiltinTool({
   name: "list",
   render(props) {
     const i18n = useI18n()
@@ -2522,7 +2566,7 @@ ToolRegistry.register({
   },
 })
 
-ToolRegistry.register({
+registerBuiltinTool({
   name: "glob",
   render(props) {
     const i18n = useI18n()
@@ -2556,7 +2600,7 @@ ToolRegistry.register({
   },
 })
 
-ToolRegistry.register({
+registerBuiltinTool({
   name: "grep",
   render(props) {
     const i18n = useI18n()
@@ -2594,7 +2638,7 @@ ToolRegistry.register({
   },
 })
 
-ToolRegistry.register({
+registerBuiltinTool({
   name: "webfetch",
   render(props) {
     const i18n = useI18n()
@@ -2642,7 +2686,7 @@ ToolRegistry.register({
   },
 })
 
-ToolRegistry.register({
+registerBuiltinTool({
   name: "task",
   render(props) {
     const data = useData()
@@ -2985,7 +3029,7 @@ ToolRegistry.register({
   },
 })
 
-ToolRegistry.register({
+registerBuiltinTool({
   name: "skill",
   render(props) {
     const i18n = useI18n()
@@ -3026,7 +3070,7 @@ ToolRegistry.register({
   },
 })
 
-ToolRegistry.register({
+registerBuiltinTool({
   name: "bash",
   render(props) {
     const i18n = useI18n()
@@ -3034,14 +3078,14 @@ ToolRegistry.register({
   },
 })
 
-ToolRegistry.register({
+registerBuiltinTool({
   name: "exec",
   render(props) {
     return <ShellTool {...props} title="Exec" />
   },
 })
 
-ToolRegistry.register({
+registerBuiltinTool({
   name: "hook",
   render(props) {
     const i18n = useI18n()
@@ -3077,7 +3121,7 @@ ToolRegistry.register({
   },
 })
 
-ToolRegistry.register({
+registerBuiltinTool({
   name: "edit",
   render(props) {
     const i18n = useI18n()
@@ -3150,7 +3194,7 @@ ToolRegistry.register({
   },
 })
 
-ToolRegistry.register({
+registerBuiltinTool({
   name: "write",
   render(props) {
     const i18n = useI18n()
@@ -3212,7 +3256,7 @@ ToolRegistry.register({
   },
 })
 
-ToolRegistry.register({
+registerBuiltinTool({
   name: "apply_patch",
   render(props) {
     const i18n = useI18n()
@@ -3417,7 +3461,7 @@ ToolRegistry.register({
   },
 })
 
-ToolRegistry.register({
+registerBuiltinTool({
   name: "todowrite",
   render(props) {
     const data = useData()
@@ -3495,7 +3539,7 @@ ToolRegistry.register({
   },
 })
 
-ToolRegistry.register({
+registerBuiltinTool({
   name: "present_task",
   render(props) {
     // Old messages and deleted tasks can carry a payload the card cannot read;
@@ -3526,7 +3570,7 @@ ToolRegistry.register({
   },
 })
 
-ToolRegistry.register({
+registerBuiltinTool({
   name: "question",
   render(props) {
     const i18n = useI18n()
@@ -3719,7 +3763,7 @@ ToolRegistry.register({
   },
 })
 
-ToolRegistry.register({
+registerBuiltinTool({
   name: "skill",
   render(props) {
     const i18n = useI18n()
@@ -3742,7 +3786,7 @@ ToolRegistry.register({
   },
 })
 
-ToolRegistry.register({
+registerBuiltinTool({
   name: "gpt_pro_consult",
   render(props) {
     return <GptProTool {...props} />
@@ -3760,7 +3804,7 @@ for (const kind of [
   "status",
   "error",
 ]) {
-  ToolRegistry.register({
+  registerBuiltinTool({
     name: `external_${kind}`,
     render(props) {
       const output = () => props.output ?? (typeof props.metadata.output === "string" ? props.metadata.output : "")
@@ -3786,7 +3830,7 @@ for (const kind of [
 }
 
 for (const advisor of ["codex", "claude", "grok", "dsh", "pi"] as const) {
-  ToolRegistry.register({
+  registerBuiltinTool({
     name: `${advisor}_consult`,
     render(props) {
       const data = useData()

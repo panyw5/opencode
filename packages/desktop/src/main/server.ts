@@ -25,8 +25,24 @@ type SidecarMessage =
   | { type: "ready" }
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
+  | {
+      type: "extension-archive-result"
+      id: string
+      ok: boolean
+      value?: unknown
+      error?: { code?: string; message: string }
+    }
+
+export type ExtensionArchiveOp = "prepare" | "commit" | "status" | "cancel" | "cleanup-retained"
 
 export type SidecarListener = { stop: () => Promise<void> }
+
+/** Local sidecar only: drives managed local-archive extension installs. */
+export type LocalSidecarServer = {
+  listener: SidecarListener
+  health: { wait: Promise<void> }
+  extensionArchive: (op: ExtensionArchiveOp, payload: Record<string, unknown>) => Promise<unknown>
+}
 
 type SidecarStream = {
   on(event: "data", listener: (chunk: Buffer) => void): unknown
@@ -128,8 +144,24 @@ export function createSpawnLocalServer(deps: SpawnLocalServerDeps) {
     let expectedExit = false
     let ready = false
     const exit = defer<number>()
-
+    let archiveSeq = 0
+    const archivePending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>()
     const onRuntimeMessage = (message: SidecarMessage) => {
+      if (message.type === "extension-archive-result") {
+        const pending = archivePending.get(message.id)
+        if (!pending) return
+        archivePending.delete(message.id)
+        if (message.ok) {
+          pending.resolve(message.value)
+        } else {
+          const error = new Error(message.error?.message ?? "extension archive operation failed") as Error & {
+            code?: string
+          }
+          error.code = message.error?.code
+          pending.reject(error)
+        }
+        return
+      }
       if (message.type !== "error") return
       options.onStderr?.(`sidecar error: ${formatSidecarError(message.error)}`)
     }
@@ -147,6 +179,10 @@ export function createSpawnLocalServer(deps: SpawnLocalServerDeps) {
       exited = true
       deps.app.off("child-process-gone", onProcessGone)
       child.off("message", onRuntimeMessage)
+      for (const [id, pending] of archivePending) {
+        pending.reject(new Error(`Sidecar exited before answering extension-archive request ${id}`))
+      }
+      archivePending.clear()
       options.onStderr?.(
         `sidecar lifecycle exit code=${String(code)} ready=${String(ready)} expected=${String(expectedExit)}`,
       )
@@ -242,7 +278,17 @@ export function createSpawnLocalServer(deps: SpawnLocalServerDeps) {
 
     let stopping: Promise<void> | undefined
 
-    return {
+    const extensionArchive = (op: ExtensionArchiveOp, payload: Record<string, unknown>) => {
+      if (exited) return Promise.reject(new Error("Sidecar is not running"))
+      const id = `archive-${++archiveSeq}`
+      return new Promise<unknown>((resolve, reject) => {
+        archivePending.set(id, { resolve, reject })
+        child.postMessage({ type: "extension-archive", id, op, payload })
+      })
+    }
+
+    const local: LocalSidecarServer = {
+      extensionArchive,
       listener: {
         stop: () => {
           if (stopping) return stopping
@@ -264,6 +310,7 @@ export function createSpawnLocalServer(deps: SpawnLocalServerDeps) {
       },
       health: { wait },
     }
+    return local
   }
 }
 

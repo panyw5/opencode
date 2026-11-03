@@ -467,6 +467,27 @@ export type Platform = {
   /** Filter paths to return only directories (desktop only) */
   filterDirectories?(paths: string[]): Promise<string[]>
 
+  /** Digest of a local .tgz extension archive (desktop only) */
+  extensionArchiveDigest?(
+    path: string,
+  ): Promise<
+    { ok: true; value: { path: string; size: number; sha256: string } } | { ok: false; error: { message: string } }
+  >
+
+  /** Managed local-archive install operation (desktop only) */
+  extensionArchiveOp?(
+    op: "prepare" | "commit" | "status" | "cancel" | "cleanup-retained",
+    payload: Record<string, unknown>,
+  ): Promise<{ ok: true; value: unknown } | { ok: false; error: { code?: string; message: string } }>
+
+  /** Persist renderer-downloaded archive bytes to a staging file (desktop only) */
+  extensionArchiveStage?(
+    bytes: Uint8Array,
+  ): Promise<{ ok: true; value: { path: string } } | { ok: false; error: { message: string } }>
+
+  /** Remove a staged archive file (desktop only) */
+  extensionArchiveCleanup?(path: string): Promise<{ ok: true } | { ok: false; error: { message: string } }>
+
   /** Read image from clipboard (desktop only) */
   readClipboardImage?(): Promise<File | null>
 

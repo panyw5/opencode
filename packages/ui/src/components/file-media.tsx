@@ -1,26 +1,21 @@
 import type { FileContent } from "@opencode-ai/sdk/v2"
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  Match,
-  on,
-  Show,
-  Switch,
-  type JSX,
-} from "solid-js"
+import { ErrorBoundary, createEffect, createMemo, createSignal, Match, on, Show, Switch, type JSX } from "solid-js"
+import { Dynamic } from "solid-js/web"
 import { useI18n } from "../context/i18n"
 import {
   dataUrlFromMediaValue,
   hasMediaValue,
   isBinaryContent,
-  fileExtension,
   mediaKindFromPath,
   normalizeMimeType,
   svgTextFromValue,
 } from "../pierre/media"
-import { parseDelimitedText } from "./file-preview-model"
+import {
+  fileViewerTarget,
+  resolveFileViewers,
+  type FileViewerFile,
+} from "./file-viewer-registry"
+import "./file-table-preview"
 import { IconButton } from "./icon-button"
 import { Tooltip } from "./tooltip"
 
@@ -33,6 +28,11 @@ export type FileMediaOptions = {
   readFile?: (path: string) => Promise<FileContent | undefined>
   onLoad?: () => void
   onError?: (ctx: { kind: "image" | "audio" | "svg" | "pdf" }) => void
+  viewer?: {
+    file: FileViewerFile
+    readBytes(): Promise<Uint8Array>
+    readText(): Promise<string>
+  }
 }
 
 function mediaValue(cfg: FileMediaOptions, mode: "image" | "audio" | "pdf") {
@@ -58,7 +58,6 @@ export function FileMedia(props: {
     if (!media || media.mode === "off") return
     return mediaKindFromPath(media.path)
   })
-  const extension = createMemo(() => fileExtension(cfg()?.path))
   const textSource = createMemo(() => {
     const value = cfg()?.current
     if (typeof value === "string") return value
@@ -66,16 +65,16 @@ export function FileMedia(props: {
     const record = value as { type?: unknown; content?: unknown }
     if (record.type === "text" && typeof record.content === "string") return record.content
   })
-  const previewKind = createMemo(() => {
-    if (!cfg() || cfg()?.mode === "off" || textSource() === undefined) return
-    if (extension() === "csv" || extension() === "tsv") return "table" as const
+  // Text files can get a "preview" viewer (built-in table, or one registered by an
+  // extension); the source view stays one click away.
+  const previewViewer = createMemo(() => {
+    const media = cfg()
+    if (!media || media.mode === "off" || !media.path || textSource() === undefined) return
+    return resolveFileViewers(fileViewerTarget(media.path)).find(
+      (entry) => entry.mode === "preview" && (entry.owner === "builtin" || !!media.viewer),
+    )
   })
   const [sourceMode, setSourceMode] = createSignal(false)
-  const table = createMemo(() => {
-    const source = textSource()
-    if (previewKind() !== "table" || source === undefined) return
-    return parseDelimitedText(source, extension() === "tsv" ? "\t" : undefined)
-  })
   const textPreviewHeader = () => (
     <div class="flex justify-end border-b border-border-weak-base px-3 py-2">
       <div class="inline-flex rounded-md border border-border-weak-base p-0.5">
@@ -301,60 +300,53 @@ export function FileMedia(props: {
 
   return (
     <Switch>
-      <Match when={previewKind() && sourceMode()}>
+      <Match when={previewViewer() && sourceMode()}>
         <div class="flex min-h-full flex-col">
           {textPreviewHeader()}
           {props.fallback()}
         </div>
       </Match>
-      <Match when={previewKind() === "table" && !sourceMode()}>
-        <div class="flex min-h-full flex-col bg-background-base">
-          {textPreviewHeader()}
-          <Show when={table()}>
-            {(value) => (
-              <div class="min-h-0 flex-1 overflow-auto p-4">
-                <table class="w-full border-collapse text-left text-13-regular">
-                  <Show
-                    when={value().rows[0]}
-                    fallback={
-                      <tbody>
-                        <tr>
-                          <td class="px-3 py-2 text-text-weak">{i18n.t("ui.file.table.empty")}</td>
-                        </tr>
-                      </tbody>
-                    }
-                  >
-                    <thead class="sticky top-0 bg-background-stronger text-text-strong">
-                      <tr>
-                        <For each={value().rows[0]}>
-                          {(cell) => <th class="border border-border-weak-base px-3 py-2 font-medium">{cell}</th>}
-                        </For>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <For each={value().rows.slice(1)}>
-                        {(row) => (
-                          <tr class="even:bg-background-stronger/50">
-                            <For each={row}>
-                              {(cell) => (
-                                <td class="max-w-96 whitespace-pre-wrap break-words border border-border-weak-base px-3 py-2 align-top">
-                                  {cell}
-                                </td>
-                              )}
-                            </For>
-                          </tr>
-                        )}
-                      </For>
-                    </tbody>
-                  </Show>
-                </table>
-                <Show when={value().truncated}>
-                  <div class="px-1 py-3 text-12-regular text-text-weak">{i18n.t("ui.file.table.limited")}</div>
-                </Show>
-              </div>
-            )}
-          </Show>
-        </div>
+      <Match when={previewViewer()}>
+        {(viewer) => (
+          <div class="flex min-h-full flex-col bg-background-base">
+            {textPreviewHeader()}
+            <ErrorBoundary
+              fallback={(error) => {
+                const message = error instanceof Error ? error.message : String(error)
+                console.error(
+                  `[file-viewer] preview render failed id=${viewer().id} path=${cfg()?.path ?? ""} error=${message}`,
+                )
+                return (
+                  <div class="flex flex-col items-start gap-3 px-6 py-4 text-text-weak">
+                    <div>{message}</div>
+                    <button
+                      type="button"
+                      class="text-text-strong underline"
+                      onClick={() => setSourceMode(true)}
+                    >
+                      {i18n.t("ui.file.source")}
+                    </button>
+                  </div>
+                )
+              }}
+            >
+              <Dynamic
+                component={viewer().component}
+                file={
+                  cfg()?.viewer?.file ?? {
+                    ...fileViewerTarget(cfg()?.path ?? ""),
+                    absolutePath: cfg()?.path ?? "",
+                    directory: "",
+                  }
+                }
+                text={textSource}
+                readBytes={cfg()?.viewer?.readBytes ?? (async () => new TextEncoder().encode(textSource() ?? ""))}
+                readText={cfg()?.viewer?.readText ?? (async () => textSource() ?? "")}
+                showSource={() => setSourceMode(true)}
+              />
+            </ErrorBoundary>
+          </div>
+        )}
       </Match>
       <Match when={kind() === "image" || kind() === "audio" || kind() === "pdf"}>
         <Show

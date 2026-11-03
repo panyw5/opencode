@@ -39,6 +39,8 @@ import { registerWslIpcHandlers } from "./wsl/ipc"
 import { createSshServersController } from "./ssh/servers"
 import { spawnSshSidecar } from "./ssh/sidecar"
 import { registerSshIpcHandlers } from "./ssh/ipc"
+import { registerExtensionArchiveIpcHandlers, type ExtensionArchiveServer } from "./extension-archive"
+import type { ExtensionArchiveOp, LocalSidecarServer } from "./server"
 import {
   createLoadingWindow,
   createMainWindow,
@@ -74,6 +76,7 @@ const DATABASE_UPGRADE_PROMPT_KEY = "databaseUpgradePrompt.20260710"
 let logger: ReturnType<typeof initLogging>
 let mainWindow: BrowserWindow | null = null
 let server: SidecarListener | null = null
+let extensionArchiveChannel: LocalSidecarServer["extensionArchive"] | null = null
 let isQuitting = false
 let sidecarGeneration = 0
 let remoteUpstream: { url: string; username: string; password: string } | undefined
@@ -123,7 +126,9 @@ async function killSidecar() {
 }
 
 async function quitBackends() {
-  await prepareGptProQuit().catch(() => writeLog("lifecycle", "GPT-Pro durable shutdown failed; previous checkpoints retained", undefined, "warn"))
+  await prepareGptProQuit().catch(() =>
+    writeLog("lifecycle", "GPT-Pro durable shutdown failed; previous checkpoints retained", undefined, "warn"),
+  )
   await killBackends()
 }
 
@@ -217,7 +222,8 @@ const main = Effect.gen(function* () {
   const features = app.commandLine.getSwitchValue("enable-features")
   app.commandLine.appendSwitch("enable-features", features ? `${jsCallStackFeature},${features}` : jsCallStackFeature)
   if (!app.isPackaged) {
-    app.commandLine.appendSwitch("remote-debugging-port", "9222")
+    const cdpPort = process.env.OPENCODE_CDP_PORT?.trim() || "9222"
+    app.commandLine.appendSwitch("remote-debugging-port", cdpPort)
     app.commandLine.appendSwitch("remote-allow-origins", "*")
     // Dev helper for environments where the Chromium sandbox/GPU cannot initialize
     // (e.g. launching from restricted agent shells): OPENCODE_DEV_NO_SANDBOX=1
@@ -377,6 +383,10 @@ const main = Effect.gen(function* () {
   registerSshIpcHandlers(sshController)
   app.on("before-quit", () => sshController.stopAll())
 
+  registerExtensionArchiveIpcHandlers({
+    server: (): ExtensionArchiveServer =>
+      server && extensionArchiveChannel ? { extensionArchive: extensionArchiveChannel } : null,
+  })
   powerMonitor.on("resume", () => {
     if (isQuitting || getStore().get("remote-access.enabled") !== true || !remoteUpstream) return
     writeLog("remote", "remote-controller resume-reconnect-requested")
@@ -460,7 +470,7 @@ const main = Effect.gen(function* () {
     useEnvProxy()
 
     logger.log("spawning sidecar", { url })
-    const { listener, health } = await spawnLocalServer(hostname, port, password, {
+    const { listener, health, extensionArchive } = await spawnLocalServer(hostname, port, password, {
       needsMigration: migrateDatabase,
       startupPaths,
       onSqliteProgress: (progress) => initEmitter.emit("sqlite", progress),
@@ -476,6 +486,7 @@ const main = Effect.gen(function* () {
       },
     })
     server = listener
+    extensionArchiveChannel = extensionArchive
     if (mode === "startup") {
       Effect.runSync(
         Deferred.succeed(serverReady, {

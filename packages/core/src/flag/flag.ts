@@ -64,6 +64,12 @@ export const Flag = {
   get OPENCODE_PLUGIN_META_FILE() {
     return process.env["OPENCODE_PLUGIN_META_FILE"]
   },
+  get OPENCODE_EXTENSION_REGISTRY_FILE() {
+    return process.env["OPENCODE_EXTENSION_REGISTRY_FILE"]
+  },
+  get OPENCODE_DISABLE_EXTENSIONS() {
+    return truthy("OPENCODE_DISABLE_EXTENSIONS")
+  },
   get OPENCODE_CLIENT() {
     return process.env["OPENCODE_CLIENT"] ?? "cli"
   },

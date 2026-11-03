@@ -72,10 +72,38 @@ import type {
   ExperimentalWorkspaceSyncListResponses,
   ExperimentalWorkspaceWarpErrors,
   ExperimentalWorkspaceWarpResponses,
+  ExtensionDisableErrors,
+  ExtensionDisableResponses,
+  ExtensionEnableErrors,
+  ExtensionEnableResponses,
+  ExtensionGetErrors,
+  ExtensionGetResponses,
+  ExtensionInstallationCancelErrors,
+  ExtensionInstallationCancelResponses,
+  ExtensionInstallationInstallErrors,
+  ExtensionInstallationInstallResponses,
+  ExtensionInstallationPrepareErrors,
+  ExtensionInstallationPrepareResponses,
+  ExtensionInstallationStatusErrors,
+  ExtensionInstallationStatusResponses,
+  ExtensionInstallationUninstallErrors,
+  ExtensionInstallationUninstallResponses,
+  ExtensionInstallationUpdateErrors,
+  ExtensionInstallationUpdateResponses,
+  ExtensionListErrors,
+  ExtensionListResponses,
+  ExtensionPrepareInput,
+  ExtensionRpcErrors,
+  ExtensionRpcResponses,
+  ExtensionSettingsPatch,
+  ExtensionSettingsUpdateErrors,
+  ExtensionSettingsUpdateResponses,
   FileListErrors,
   FileListResponses,
   FilePartInput,
   FilePartSource,
+  FileRawErrors,
+  FileRawResponses,
   FileReadErrors,
   FileReadResponses,
   FileStatusErrors,
@@ -687,6 +715,371 @@ export class App extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<AppSkillsResponses, AppSkillsErrors, ThrowOnError>({
       url: "/skill",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Settings extends HeyApiClient {
+  /**
+   * Update extension settings
+   *
+   * Apply a partial settings patch to a linked extension. Unknown keys, wrong value types and enum violations are rejected; secret values are returned masked.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+      extensionSettingsPatch?: ExtensionSettingsPatch
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "id" },
+            { key: "extensionSettingsPatch", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<
+      ExtensionSettingsUpdateResponses,
+      ExtensionSettingsUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/global/extension/{id}/settings",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Extension extends HeyApiClient {
+  /**
+   * List extensions
+   *
+   * List linked OpenCode extensions and their web contributions.
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<ExtensionListResponses, ExtensionListErrors, ThrowOnError>({
+      url: "/global/extension",
+      ...options,
+    })
+  }
+
+  /**
+   * Get extension
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "id" }] }])
+    return (options?.client ?? this.client).get<ExtensionGetResponses, ExtensionGetErrors, ThrowOnError>({
+      url: "/global/extension/{id}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Enable extension
+   */
+  public enable<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "id" }] }])
+    return (options?.client ?? this.client).post<ExtensionEnableResponses, ExtensionEnableErrors, ThrowOnError>({
+      url: "/global/extension/{id}/enable",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Disable extension
+   */
+  public disable<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "id" }] }])
+    return (options?.client ?? this.client).post<ExtensionDisableResponses, ExtensionDisableErrors, ThrowOnError>({
+      url: "/global/extension/{id}/disable",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Call an extension RPC method
+   *
+   * Invoke a server-side extension RPC handler. The optional JSON body is `{ input?: unknown }`. With ?directory the instance-level handler for that directory is preferred and the process-level handler is the fallback; without it only the process-level handler is consulted.
+   */
+  public rpc<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+      method: string
+      directory?: string
+      workspace?: string
+      input?: unknown
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "id" },
+            { in: "path", key: "method" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "input" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<ExtensionRpcResponses, ExtensionRpcErrors, ThrowOnError>({
+      url: "/extension/{id}/rpc/{method}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  private _settings?: Settings
+  get settings(): Settings {
+    return (this._settings ??= new Settings({ client: this.client }))
+  }
+}
+
+export class ExtensionInstallation extends HeyApiClient {
+  /**
+   * Confirm extension removal
+   */
+  public uninstall<ThrowOnError extends boolean = false>(
+    parameters: {
+      "x-opencode-extension-token": string
+      id: string
+      operationId?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "headers", key: "x-opencode-extension-token" },
+            { in: "path", key: "id" },
+            { in: "body", key: "operationId" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<
+      ExtensionInstallationUninstallResponses,
+      ExtensionInstallationUninstallErrors,
+      ThrowOnError
+    >({
+      url: "/global/extension/{id}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Prepare an extension installation operation
+   */
+  public prepare<ThrowOnError extends boolean = false>(
+    parameters?: {
+      extensionPrepareInput?: ExtensionPrepareInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "extensionPrepareInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<
+      ExtensionInstallationPrepareResponses,
+      ExtensionInstallationPrepareErrors,
+      ThrowOnError
+    >({
+      url: "/global/extension/prepare",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Confirm extension installation
+   */
+  public install<ThrowOnError extends boolean = false>(
+    parameters: {
+      "x-opencode-extension-token": string
+      operationId?: string
+      enable?: boolean
+      acceptRegistryUpgrade?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "headers", key: "x-opencode-extension-token" },
+            { in: "body", key: "operationId" },
+            { in: "body", key: "enable" },
+            { in: "body", key: "acceptRegistryUpgrade" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ExtensionInstallationInstallResponses,
+      ExtensionInstallationInstallErrors,
+      ThrowOnError
+    >({
+      url: "/global/extension/install",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Confirm extension update
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      "x-opencode-extension-token": string
+      id: string
+      operationId?: string
+      acceptRegistryUpgrade?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "headers", key: "x-opencode-extension-token" },
+            { in: "path", key: "id" },
+            { in: "body", key: "operationId" },
+            { in: "body", key: "acceptRegistryUpgrade" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ExtensionInstallationUpdateResponses,
+      ExtensionInstallationUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/global/extension/{id}/update",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Cancel an uncommitted extension operation
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      "x-opencode-extension-token": string
+      operationId: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "headers", key: "x-opencode-extension-token" },
+            { in: "path", key: "operationId" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<
+      ExtensionInstallationCancelResponses,
+      ExtensionInstallationCancelErrors,
+      ThrowOnError
+    >({
+      url: "/global/extension/operation/{operationId}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Read extension operation status
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters: {
+      "x-opencode-extension-token": string
+      operationId: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "headers", key: "x-opencode-extension-token" },
+            { in: "path", key: "operationId" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      ExtensionInstallationStatusResponses,
+      ExtensionInstallationStatusErrors,
+      ThrowOnError
+    >({
+      url: "/global/extension/operation/{operationId}",
       ...options,
       ...params,
     })
@@ -2248,6 +2641,38 @@ export class File extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<FileReadResponses, FileReadErrors, ThrowOnError>({
       url: "/file/content",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Read raw file
+   *
+   * Read the exact bytes of a project file up to 50 MB.
+   */
+  public raw<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      path: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "path" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<FileRawResponses, FileRawErrors, ThrowOnError>({
+      url: "/file/raw",
       ...options,
       ...params,
     })
@@ -7096,6 +7521,16 @@ export class OpencodeClient extends HeyApiClient {
   private _app?: App
   get app(): App {
     return (this._app ??= new App({ client: this.client }))
+  }
+
+  private _extension?: Extension
+  get extension(): Extension {
+    return (this._extension ??= new Extension({ client: this.client }))
+  }
+
+  private _extensionInstallation?: ExtensionInstallation
+  get extensionInstallation(): ExtensionInstallation {
+    return (this._extensionInstallation ??= new ExtensionInstallation({ client: this.client }))
   }
 
   private _global?: Global

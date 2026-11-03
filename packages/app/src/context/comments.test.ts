@@ -6,14 +6,15 @@ let createCommentSessionForTest: typeof import("./comments").createCommentSessio
 
 beforeAll(async () => {
   mock.module("@solidjs/router", () => ({
+    A: () => undefined,
+    Navigate: () => undefined,
+    Route: () => undefined,
+    Router: () => undefined,
+    useIsRouting: () => false,
+    useLocation: () => ({ pathname: "/", search: "", hash: "", state: undefined, key: "" }),
     useNavigate: () => () => undefined,
     useParams: () => ({}),
-  }))
-  mock.module("@opencode-ai/ui/context", () => ({
-    createSimpleContext: () => ({
-      use: () => undefined,
-      provider: () => undefined,
-    }),
+    useSearchParams: () => [{}, () => undefined],
   }))
   const mod = await import("./comments")
   createCommentSessionForTest = mod.createCommentSessionForTest

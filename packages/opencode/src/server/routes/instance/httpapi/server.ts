@@ -24,6 +24,7 @@ import * as Observability from "@opencode-ai/core/effect/observability"
 import { File } from "@/file"
 import { FileWatcher } from "@/file/watcher"
 import { Ripgrep } from "@/file/ripgrep"
+import { Extension } from "@/extension"
 import { Format } from "@/format"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { LSP } from "@/lsp/lsp"
@@ -65,7 +66,8 @@ import { Vcs } from "@/project/vcs"
 import { Worktree } from "@/worktree"
 import { Workspace } from "@/control-plane/workspace"
 import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@/server/cors"
-import { serveUIEffect } from "@/server/shared/ui"
+import { EmbeddedWebUI, embeddedWebUILayer, serveUIEffect } from "@/server/shared/ui"
+import { uiAuthorizationRouterMiddleware } from "./middleware/ui-authorization"
 import { ServerAuth } from "@/server/auth"
 import { InstanceHttpApi, RootHttpApi } from "./api"
 import { PublicApi } from "./public"
@@ -77,6 +79,10 @@ import { eventHandlers } from "./handlers/event"
 import { configHandlers } from "./handlers/config"
 import { issueHandlers } from "./handlers/issue"
 import { controlHandlers } from "./handlers/control"
+import { extensionAssetRoute } from "./handlers/extension-asset"
+import { extensionHandlers } from "./handlers/extension"
+import { extensionInstallHandlers } from "./handlers/extension-install"
+import { extensionRpcHandlers } from "./handlers/extension-rpc"
 import { experimentalHandlers } from "./handlers/experimental"
 import { fileHandlers } from "./handlers/file"
 import { globalHandlers } from "./handlers/global"
@@ -125,9 +131,17 @@ const authOnlyRouterLayer = authorizationRouterMiddleware.layer.pipe(Layer.provi
 const httpApiAuthLayer = authorizationLayer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
 const v2HttpApiAuthLayer = v2AuthorizationLayer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
 const rootApiRoutes = HttpApiBuilder.layer(RootHttpApi).pipe(
-  Layer.provide([controlHandlers, globalHandlers, issueHandlers]),
+  Layer.provide([
+    controlHandlers,
+    extensionHandlers,
+    extensionInstallHandlers,
+    extensionRpcHandlers,
+    globalHandlers,
+    issueHandlers,
+  ]),
   Layer.provide(schemaErrorLayer),
   Layer.provide(httpApiAuthLayer),
+  Layer.provide(workspaceRoutingLayer.pipe(Layer.provide(Socket.layerWebSocketConstructorGlobal))),
 )
 const instanceRouterLayer = authorizationRouterMiddleware
   .combine(instanceRouterMiddleware)
@@ -165,9 +179,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
   ]),
 )
 
-const rawInstanceRoutes = Layer.mergeAll(ptyConnectRoute, browserConnectRoute).pipe(
-  Layer.provide(instanceRouterLayer),
-)
+const rawInstanceRoutes = Layer.mergeAll(ptyConnectRoute, browserConnectRoute).pipe(Layer.provide(instanceRouterLayer))
 const instanceRoutes = Layer.mergeAll(rawInstanceRoutes, instanceApiRoutes).pipe(
   Layer.provide([
     httpApiAuthLayer,
@@ -189,16 +201,19 @@ const docRoute = HttpRouter.use((router) => router.add("GET", "/doc", () => Effe
   Layer.provide(authOnlyRouterLayer),
 )
 
+const extensionAssetRoutes = Layer.mergeAll(extensionAssetRoute).pipe(Layer.provide(authOnlyRouterLayer))
+
 const uiRoute = HttpRouter.use((router) =>
   Effect.gen(function* () {
     const fs = yield* AppFileSystem.Service
     const client = yield* HttpClient.HttpClient
     const flags = yield* RuntimeFlags.Service
+    const embedded = yield* EmbeddedWebUI
     yield* router.add("*", "/*", (request) =>
-      serveUIEffect(request, { fs, client, disableEmbeddedWebUi: flags.disableEmbeddedWebUi }),
+      serveUIEffect(request, { fs, client, disableEmbeddedWebUi: flags.disableEmbeddedWebUi, embedded }),
     )
   }),
-).pipe(Layer.provide(authOnlyRouterLayer))
+).pipe(Layer.provide(uiAuthorizationRouterMiddleware.layer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))))
 
 type RouteRequirements =
   | HttpRouter.HttpRouter
@@ -209,8 +224,10 @@ type RouteRequirements =
 
 export function createRoutes(
   corsOptions?: CorsOptions,
+  embeddedLayer: Layer.Layer<EmbeddedWebUI, never, RuntimeFlags.Service> = embeddedWebUILayer,
 ): Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements> {
-  return Layer.mergeAll(rootApiRoutes, eventApiRoutes, instanceRoutes, docRoute, uiRoute).pipe(
+  return Layer.mergeAll(rootApiRoutes, eventApiRoutes, instanceRoutes, docRoute, extensionAssetRoutes, uiRoute).pipe(
+    Layer.provide(embeddedLayer),
     Layer.provide(ScheduledTask.layer),
     Layer.provide(ProjectTask.layer),
     Layer.provide([
@@ -228,6 +245,7 @@ export function createRoutes(
       BrowserTicket.defaultLayer,
       Command.defaultLayer,
       Config.defaultLayer,
+      Extension.defaultLayer,
       File.defaultLayer,
       FileWatcher.defaultLayer,
       Format.defaultLayer,

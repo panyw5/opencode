@@ -29,7 +29,7 @@
     },
     "packages/app": {
       "name": "@opencode-ai/app",
-      "version": "1.18.62",
+      "version": "1.18.63",
       "dependencies": {
         "@kobalte/core": "catalog:",
         "@opencode-ai/core": "workspace:*",
@@ -92,7 +92,7 @@
     },
     "packages/codemode": {
       "name": "@opencode/codemode",
-      "version": "2.2.0",
+      "version": "1.18.63",
       "dependencies": {
         "acorn": "8.16.0",
         "effect": "catalog:",
@@ -105,7 +105,7 @@
     },
     "packages/console/app": {
       "name": "@opencode-ai/console-app",
-      "version": "1.18.62",
+      "version": "1.18.63",
       "dependencies": {
         "@cloudflare/vite-plugin": "1.15.2",
         "@ibm/plex": "6.4.1",
@@ -140,7 +140,7 @@
     },
     "packages/console/core": {
       "name": "@opencode-ai/console-core",
-      "version": "1.18.62",
+      "version": "1.18.63",
       "dependencies": {
         "@aws-sdk/client-sts": "3.782.0",
         "@jsx-email/render": "1.1.1",
@@ -167,7 +167,7 @@
     },
     "packages/console/function": {
       "name": "@opencode-ai/console-function",
-      "version": "1.18.62",
+      "version": "1.18.63",
       "dependencies": {
         "@ai-sdk/anthropic": "3.0.64",
         "@ai-sdk/openai": "3.0.48",
@@ -189,7 +189,7 @@
     },
     "packages/console/mail": {
       "name": "@opencode-ai/console-mail",
-      "version": "1.18.62",
+      "version": "1.18.63",
       "dependencies": {
         "@jsx-email/all": "2.2.3",
         "@jsx-email/cli": "1.4.3",
@@ -213,7 +213,7 @@
     },
     "packages/core": {
       "name": "@opencode-ai/core",
-      "version": "1.18.62",
+      "version": "1.18.63",
       "bin": {
         "opencode": "./bin/opencode",
       },
@@ -273,7 +273,7 @@
     },
     "packages/desktop": {
       "name": "@opencode-ai/desktop",
-      "version": "1.18.62",
+      "version": "1.18.63",
       "dependencies": {
         "@opencode-ai/core": "workspace:*",
         "@opencode-ai/remote-tunnel": "workspace:*",
@@ -331,7 +331,7 @@
     },
     "packages/effect-drizzle-sqlite": {
       "name": "@opencode-ai/effect-drizzle-sqlite",
-      "version": "1.18.62",
+      "version": "1.18.63",
       "dependencies": {
         "drizzle-orm": "catalog:",
         "effect": "catalog:",
@@ -345,7 +345,7 @@
     },
     "packages/enterprise": {
       "name": "@opencode-ai/enterprise",
-      "version": "1.18.62",
+      "version": "1.18.63",
       "dependencies": {
         "@opencode-ai/core": "workspace:*",
         "@opencode-ai/ui": "workspace:*",
@@ -373,9 +373,61 @@
         "vite": "catalog:",
       },
     },
+    "packages/extension-kit": {
+      "name": "@opencode-ai/extension-kit",
+      "version": "1.18.63",
+      "devDependencies": {
+        "@opencode-ai/plugin": "workspace:*",
+        "@opencode-ai/ui": "workspace:*",
+        "@tsconfig/node22": "catalog:",
+        "@types/bun": "catalog:",
+        "@typescript/native-preview": "catalog:",
+        "solid-js": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vite-plugin-solid": "catalog:",
+      },
+      "peerDependencies": {
+        "solid-js": "~1.9.0",
+        "vite": "^7.0.0",
+        "vite-plugin-solid": "^2.11.0",
+      },
+    },
+    "packages/extensions/hello-viewer": {
+      "name": "@opencode-ai/hello-viewer-extension",
+      "version": "1.18.63",
+      "dependencies": {
+        "@opencode-ai/extension-kit": "workspace:*",
+        "@opencode-ai/plugin": "workspace:*",
+      },
+      "devDependencies": {
+        "@opencode-ai/ui": "workspace:*",
+        "@tsconfig/node22": "catalog:",
+        "@typescript/native-preview": "catalog:",
+        "solid-js": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vite-plugin-solid": "catalog:",
+      },
+    },
+    "packages/extensions/wls-repl": {
+      "name": "@opencode-ai/wls-repl-extension",
+      "version": "1.18.63",
+      "devDependencies": {
+        "@opencode-ai/extension-kit": "workspace:*",
+        "@opencode-ai/plugin": "workspace:*",
+        "@opencode-ai/ui": "workspace:*",
+        "@tsconfig/node22": "catalog:",
+        "@typescript/native-preview": "catalog:",
+        "solid-js": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vite-plugin-solid": "catalog:",
+      },
+    },
     "packages/function": {
       "name": "@opencode-ai/function",
-      "version": "1.18.62",
+      "version": "1.18.63",
       "dependencies": {
         "@octokit/auth-app": "8.0.1",
         "@octokit/rest": "catalog:",
@@ -391,7 +443,7 @@
     },
     "packages/http-recorder": {
       "name": "@opencode-ai/http-recorder",
-      "version": "1.18.62",
+      "version": "1.18.63",
       "dependencies": {
         "@effect/platform-node": "catalog:",
         "effect": "catalog:",
@@ -404,7 +456,7 @@
     },
     "packages/llm": {
       "name": "@opencode-ai/llm",
-      "version": "1.18.62",
+      "version": "1.18.63",
       "dependencies": {
         "@smithy/eventstream-codec": "4.2.14",
         "@smithy/util-utf8": "4.2.2",
@@ -422,7 +474,7 @@
     },
     "packages/opencode": {
       "name": "opencode",
-      "version": "1.18.62",
+      "version": "1.18.63",
       "bin": {
         "opencode": "./bin/opencode",
       },
@@ -508,6 +560,7 @@
         "remeda": "catalog:",
         "semver": "^7.6.3",
         "strip-ansi": "7.1.2",
+        "tar-stream": "3.2.0",
         "tree-sitter-bash": "0.25.0",
         "tree-sitter-powershell": "0.25.10",
         "turndown": "7.2.0",
@@ -525,6 +578,7 @@
         "@babel/core": "7.28.4",
         "@octokit/webhooks-types": "7.6.1",
         "@opencode-ai/core": "workspace:*",
+        "@opencode-ai/extension-kit": "workspace:*",
         "@opencode-ai/http-recorder": "workspace:*",
         "@opencode-ai/script": "workspace:*",
         "@opencode/codemode": "workspace:*",
@@ -544,6 +598,7 @@
         "@types/mime-types": "3.0.1",
         "@types/npm-package-arg": "6.1.4",
         "@types/semver": "^7.5.8",
+        "@types/tar-stream": "3.1.4",
         "@types/turndown": "5.0.5",
         "@types/which": "3.0.4",
         "@types/ws": "8.18.1",
@@ -559,7 +614,7 @@
     },
     "packages/plugin": {
       "name": "@opencode-ai/plugin",
-      "version": "1.18.62",
+      "version": "1.18.63",
       "dependencies": {
         "@opencode-ai/sdk": "workspace:*",
         "effect": "catalog:",
@@ -574,7 +629,7 @@
     },
     "packages/remote-tunnel": {
       "name": "@opencode-ai/remote-tunnel",
-      "version": "1.18.62",
+      "version": "1.18.63",
       "dependencies": {
         "@opentunnel/client": "0.5.1",
         "effect": "4.0.2",
@@ -592,7 +647,7 @@
     },
     "packages/sdk/js": {
       "name": "@opencode-ai/sdk",
-      "version": "1.18.62",
+      "version": "1.18.63",
       "dependencies": {
         "cross-spawn": "catalog:",
       },
@@ -607,7 +662,7 @@
     },
     "packages/slack": {
       "name": "@opencode-ai/slack",
-      "version": "1.18.62",
+      "version": "1.18.63",
       "dependencies": {
         "@opencode-ai/sdk": "workspace:*",
         "@slack/bolt": "^3.17.1",
@@ -641,7 +696,7 @@
     },
     "packages/ui": {
       "name": "@opencode-ai/ui",
-      "version": "1.18.62",
+      "version": "1.18.63",
       "dependencies": {
         "@kobalte/core": "catalog:",
         "@opencode-ai/core": "workspace:*",
@@ -696,7 +751,7 @@
     },
     "packages/util": {
       "name": "@opencode-ai/util",
-      "version": "1.18.62",
+      "version": "1.18.63",
       "dependencies": {
         "yaml": "2.9.0",
       },
@@ -707,7 +762,7 @@
     },
     "packages/web": {
       "name": "@opencode-ai/web",
-      "version": "1.18.62",
+      "version": "1.18.63",
       "dependencies": {
         "@astrojs/cloudflare": "12.6.3",
         "@astrojs/markdown-remark": "6.3.1",
@@ -1608,7 +1663,11 @@
 
     "@opencode-ai/enterprise": ["@opencode-ai/enterprise@workspace:packages/enterprise"],
 
+    "@opencode-ai/extension-kit": ["@opencode-ai/extension-kit@workspace:packages/extension-kit"],
+
     "@opencode-ai/function": ["@opencode-ai/function@workspace:packages/function"],
+
+    "@opencode-ai/hello-viewer-extension": ["@opencode-ai/hello-viewer-extension@workspace:packages/extensions/hello-viewer"],
 
     "@opencode-ai/http-recorder": ["@opencode-ai/http-recorder@workspace:packages/http-recorder"],
 
@@ -1631,6 +1690,8 @@
     "@opencode-ai/util": ["@opencode-ai/util@workspace:packages/util"],
 
     "@opencode-ai/web": ["@opencode-ai/web@workspace:packages/web"],
+
+    "@opencode-ai/wls-repl-extension": ["@opencode-ai/wls-repl-extension@workspace:packages/extensions/wls-repl"],
 
     "@opencode/codemode": ["@opencode/codemode@workspace:packages/codemode"],
 
@@ -2581,6 +2642,8 @@
     "@types/serve-static": ["@types/serve-static@1.15.10", "", { "dependencies": { "@types/http-errors": "*", "@types/node": "*", "@types/send": "<1" } }, "sha512-tRs1dB+g8Itk72rlSI2ZrW6vZg0YrLI81iQSTkMmOqnqCaNr/8Ek4VwWcN5vZgCYWbg/JJSGBlUaYGAOP73qBw=="],
 
     "@types/ssri": ["@types/ssri@7.1.5", "", { "dependencies": { "@types/node": "*" } }, "sha512-odD/56S3B51liILSk5aXJlnYt99S6Rt9EFDDqGtJM26rKHApHcwyU/UoYHrzKkdkHMAIquGWCuHtQTbes+FRQw=="],
+
+    "@types/tar-stream": ["@types/tar-stream@3.1.4", "", { "dependencies": { "@types/node": "*" } }, "sha512-921gW0+g29mCJX0fRvqeHzBlE/XclDaAG0Ousy1LCghsOhvaKacDeRGEVzQP9IPfKn8Vysy7FEXAIxycpc/CMg=="],
 
     "@types/trusted-types": ["@types/trusted-types@2.0.7", "", {}, "sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw=="],
 

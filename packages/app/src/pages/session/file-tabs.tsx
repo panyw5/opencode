@@ -1,8 +1,27 @@
-import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js"
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  getOwner,
+  Match,
+  on,
+  onCleanup,
+  Show,
+  Switch,
+  type Accessor,
+} from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import type { FileSearchHandle, FileScrollControl, FileScrollHandle } from "@opencode-ai/ui/file"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
+import {
+  fileViewerTabKey,
+  fileViewerTabState,
+  fileViewerTarget,
+  resolveFileViewers,
+  saveFileViewerTab,
+} from "@opencode-ai/ui/file-viewer-registry"
 import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
 import { cloneSelectedLineRange, previewSelectedLines } from "@opencode-ai/ui/pierre/selection-bridge"
@@ -19,12 +38,16 @@ import { usePrompt } from "@/context/prompt"
 import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
 import { useServer } from "@/context/server"
+import { authTokenFromCredentials } from "@/utils/server"
 import { getSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { fileContentCacheKey } from "@/pages/session/file-cache-key"
 import { openInBrowserTab } from "@/pages/session/browser-panel"
+import { createFileViewerContent } from "@/pages/session/file-viewer-content"
 import { OpenInApp } from "@/components/open-in-app"
+
+const DEFAULT_VIEWER = "default"
 
 function FileCommentMenu(props: {
   moreLabel: string
@@ -59,14 +82,14 @@ function FileCommentMenu(props: {
   )
 }
 
-export function FileTabContent(props: { tab: string }) {
+export function FileTabContent(props: { tab: string; forceMount?: boolean }) {
   const file = useFile()
   const comments = useComments()
   const language = useLanguage()
   const prompt = usePrompt()
   const platform = usePlatform()
-  const sdk = useSDK()
   const server = useServer()
+  const sdk = useSDK()
   const fileComponent = useFileComponent()
   const { sessionKey, tabs, view } = useSessionLayout()
   const activeFileTab = createSessionTabs({
@@ -74,6 +97,13 @@ export function FileTabContent(props: { tab: string }) {
     pathFromTab: file.pathFromTab,
     normalizeTab: (tab) => (tab.startsWith("file://") ? file.tab(tab) : tab),
   }).activeFileTab
+
+  // A kept-alive (forceMount) tab stays mounted while inactive; its handlers
+  // must only act when this tab is actually the one on screen: the file
+  // preview is open, the review panel is not covering the tab strip, and the
+  // session's active tab is this tab. activeFileTab alone still points at the
+  // last file tab while the review tab is shown, so it cannot decide alone.
+  const tabActive = () => activeFileTab() === props.tab && !!view().filePreview.opened() && !view().reviewPanel.opened()
 
   let scroll: HTMLDivElement | undefined
   const [actionsMount, setActionsMount] = createSignal<HTMLDivElement>()
@@ -146,8 +176,132 @@ export function FileTabContent(props: { tab: string }) {
     view().browser.open()
     openInBrowserTab(target)
   }
-  const openWithAction = (
+  const openWithAction = <OpenInApp path={fullPath()} logPrefix="file-preview" />
+
+  // Replace-mode viewers (registered by extensions) can take over the whole tab.
+  // The default viewer is always available through the "Open with" menu.
+  const [viewer, setViewer] = createStore({ choice: undefined as string | undefined })
+  const viewerCandidates = createMemo(() => {
+    const p = path()
+    if (!p) return []
+    const mime = state()?.content?.mimeType
+    return resolveFileViewers(fileViewerTarget(p, mime)).filter((entry) => entry.mode === "replace")
+  })
+  const activeViewer = createMemo(() => {
+    const list = viewerCandidates()
+    const choice = viewer.choice
+    if (choice === DEFAULT_VIEWER) return
+    return list.find((entry) => entry.id === choice) ?? list[0]
+  })
+  const selectViewer = (id: string) => {
+    // A dirty tab means the active extension viewer holds unsaved edits that
+    // only that component instance has. Switching viewers would silently drop
+    // the draft, so block the switch and prompt for a save instead — the
+    // current viewer and its draft stay untouched.
+    if (viewerSave.dirty() && id !== activeViewer()?.id) {
+      console.debug(`[file-preview] viewer switch blocked dirty path=${path() ?? ""} viewer=${id}`)
+      showToast({ variant: "error", title: language.t("common.unsavedChanges") })
+      return
+    }
+    console.debug(`[file-preview] select viewer path=${path() ?? ""} viewer=${id}`)
+    setViewer("choice", id)
+  }
+  const fileViewer = createMemo(() => {
+    const p = path() ?? ""
+    return {
+      ...fileViewerTarget(p, state()?.content?.mimeType),
+      absolutePath: fullPath() ?? p,
+      directory: sdk.directory,
+    }
+  })
+  const readBytes = async () => {
+    const p = path()
+    const connection = server.current
+    if (!p || !connection) throw new Error("File path is unavailable")
+    const url = new URL("/file/raw", connection.http.url)
+    url.searchParams.set("directory", sdk.directory)
+    url.searchParams.set("path", p)
+    const headers = new Headers()
+    if (connection.http.password) {
+      headers.set(
+        "authorization",
+        `Basic ${authTokenFromCredentials({
+          username: connection.http.username,
+          password: connection.http.password,
+        })}`,
+      )
+    }
+    const response = await (platform.fetch ?? fetch)(url, { headers })
+    if (!response.ok) throw new Error(`Failed to read raw file ${p} (${response.status})`)
+    return new Uint8Array(await response.arrayBuffer())
+  }
+  const readText = async () => new TextDecoder().decode(await readBytes())
+  const showSource = () => selectViewer(DEFAULT_VIEWER)
+
+  // File viewer save bridge (P2): extension viewers can edit the file in
+  // place. The dirty flag and save handlers must outlive this component —
+  // switching tabs unmounts the active tab content while the tab itself stays
+  // open — so they live in the viewer registry, keyed by session and tab. The
+  // tab close site disposes the state when the tab goes away.
+  const viewerSave = fileViewerTabState(fileViewerTabKey(sessionKey(), props.tab))
+  const [revision, setRevision] = createSignal(0)
+  // The revision changes together with the text: every reload from disk
+  // replaces the cached text and the cache key with it, so counting cache key
+  // changes counts disk-side refreshes of the file while the tab is mounted.
+  createEffect(
+    on(
+      cacheKey,
+      () => {
+        const next = revision() + 1
+        setRevision(next)
+        console.debug(`[file-preview] revision path=${path() ?? ""} revision=${String(next)}`)
+      },
+      { defer: true },
+    ),
+  )
+  const viewerMenu = () => (
+    <Show when={viewerCandidates().length > 0}>
+      <DropdownMenu gutter={4} placement="bottom-end">
+        <DropdownMenu.Trigger
+          as={IconButton}
+          icon="layout-right"
+          variant="secondary"
+          class="pointer-events-auto h-8 w-8 rounded-md"
+          aria-label={language.t("session.fileTab.viewer.openWith")}
+        />
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content class="[&_[data-slot=dropdown-menu-radio-item]]:pl-1">
+            <DropdownMenu.Group>
+              <DropdownMenu.GroupLabel class="!px-1 !py-1">
+                {language.t("session.fileTab.viewer.openWith")}
+              </DropdownMenu.GroupLabel>
+              <DropdownMenu.RadioGroup class="mt-1" value={activeViewer()?.id ?? DEFAULT_VIEWER}>
+                <DropdownMenu.RadioItem value={DEFAULT_VIEWER} onSelect={() => selectViewer(DEFAULT_VIEWER)}>
+                  <DropdownMenu.ItemLabel>{language.t("session.fileTab.viewer.default")}</DropdownMenu.ItemLabel>
+                  <DropdownMenu.ItemIndicator>
+                    <Icon name="check-small" size="small" class="text-icon-weak" />
+                  </DropdownMenu.ItemIndicator>
+                </DropdownMenu.RadioItem>
+                <For each={viewerCandidates()}>
+                  {(entry) => (
+                    <DropdownMenu.RadioItem value={entry.id} onSelect={() => selectViewer(entry.id)}>
+                      <DropdownMenu.ItemLabel>{entry.title}</DropdownMenu.ItemLabel>
+                      <DropdownMenu.ItemIndicator>
+                        <Icon name="check-small" size="small" class="text-icon-weak" />
+                      </DropdownMenu.ItemIndicator>
+                    </DropdownMenu.RadioItem>
+                  )}
+                </For>
+              </DropdownMenu.RadioGroup>
+            </DropdownMenu.Group>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu>
+    </Show>
+  )
+  const fileActions = (
     <>
+      {viewerMenu()}
       {refreshAction()}
       <Show when={html()}>
         <Tooltip value={language.t("panel.browser.openFile")} placement="bottom">
@@ -160,7 +314,7 @@ export function FileTabContent(props: { tab: string }) {
           />
         </Tooltip>
       </Show>
-      <OpenInApp path={fullPath()} logPrefix="file-preview" />
+      {openWithAction}
     </>
   )
   const [copyState, setCopyState] = createStore({ kind: "" as "path" | "content" | "" })
@@ -378,13 +532,32 @@ export function FileTabContent(props: { tab: string }) {
     if (typeof window === "undefined") return
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (activeFileTab() !== props.tab) return
+      if (!tabActive()) return
       if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return
-      if (event.key.toLowerCase() !== "f") return
 
-      event.preventDefault()
-      event.stopPropagation()
-      find?.focus()
+      const key = event.key.toLowerCase()
+      if (key === "f") {
+        event.preventDefault()
+        event.stopPropagation()
+        find?.focus()
+        return
+      }
+
+      // Save bridge: only intercept when the active extension viewer
+      // registered a save handler, so read-only tabs keep the platform
+      // default behaviour. A successful run clears the dirty flag; a failure
+      // leaves the tab dirty and surfaces the error.
+      if (key === "s") {
+        if (!viewerSave.hasSave()) return
+        event.preventDefault()
+        event.stopPropagation()
+        console.debug(`[file-preview] save path=${path() ?? ""}`)
+        saveFileViewerTab(fileViewerTabKey(sessionKey(), props.tab)).catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error)
+          console.warn(`[file-preview] save failed path=${path() ?? ""} error=${message}`)
+          showToast({ variant: "error", title: language.t("common.requestFailed"), description: message })
+        })
+      }
     }
 
     window.addEventListener("keydown", onKeyDown, { capture: true })
@@ -406,7 +579,7 @@ export function FileTabContent(props: { tab: string }) {
     const p = path()
     if (!focus || !p) return
     if (focus.file !== p) return
-    if (activeFileTab() !== props.tab) return
+    if (!tabActive()) return
 
     const target = fileComments().find((comment) => comment.id === focus.id)
     if (!target) return
@@ -567,7 +740,7 @@ export function FileTabContent(props: { tab: string }) {
   createEffect(() => {
     const loaded = !!state()?.loaded
     const ready = file.ready()
-    const active = activeFileTab() === props.tab
+    const active = tabActive()
     const restore = (loaded && !prev.loaded) || (ready && !prev.ready) || (active && loaded && !prev.active)
     prev = { loaded, ready, active }
     if (!restore) return
@@ -583,64 +756,115 @@ export function FileTabContent(props: { tab: string }) {
     if (restoreFrame !== undefined) cancelAnimationFrame(restoreFrame)
   })
 
-  const renderFile = (source: string) => (
-    <div class={`relative flex flex-col overflow-hidden ${pdf() ? "h-full" : "min-h-full"}`}>
-      <Dynamic
-        component={fileComponent}
-        mode="text"
-        file={{
-          name: path() ?? "",
-          contents: source,
-          cacheKey: cacheKey(),
-        }}
-        enableLineSelection={!md()}
-        enableHoverUtility={!md()}
-        selectedLines={activeSelection()}
-        commentedLines={md() ? [] : commentedLines()}
-        onRendered={() => {
-          queueRestore()
-        }}
-        annotations={md() ? [] : commentsUi.annotations()}
-        renderAnnotation={md() ? undefined : commentsUi.renderAnnotation}
-        renderHoverUtility={md() ? undefined : commentsUi.renderHoverUtility}
-        onLineSelected={(range: SelectedLineRange | null) => {
-          if (md()) return
-          commentsUi.onLineSelected(range)
-        }}
-        onLineNumberSelectionEnd={commentsUi.onLineNumberSelectionEnd}
-        onLineSelectionEnd={(range: SelectedLineRange | null) => {
-          if (md()) return
-          commentsUi.onLineSelectionEnd(range)
-        }}
-        search={search}
-        scrollControl={scrollControl}
-        class="select-text"
-        actionsMount={actionsMount}
-        media={{
-          mode: "auto",
-          path: path(),
-          current: state()?.content,
-          onLoad: queueRestore,
-        }}
-        copyPath={copyPath}
-        copyContent={state()?.content?.type === "text" ? copyContent : undefined}
-        copyPathCopied={copyState.kind === "path"}
-        copyContentCopied={copyState.kind === "content"}
-        openWith={openWithAction}
-        openFolder={
-          platform.openInFinder
-            ? () => {
-                const target = fullPath()
-                if (target) void platform.openInFinder?.(target)
-              }
-            : undefined
-        }
-      />
-    </div>
-  )
+  // The viewer branch element must not depend on the file text: an external
+  // content refresh (watcher reload) changes contents() but must not re-run
+  // the render branch, or the active extension viewer would be remounted and
+  // lose its local draft, owner and save handlers. The text therefore flows
+  // into the viewer as an accessor (see file-viewer-content.ts), and the
+  // branch is built inside the loaded render branch like before, so the
+  // viewer mounts only once the file content exists.
+  const renderFile = (text: Accessor<string | undefined>) =>
+    createFileViewerContent({
+      activeViewer,
+      defaultContent: () => (
+        <div class={`relative flex flex-col overflow-hidden ${pdf() ? "h-full" : "min-h-full"}`}>
+          <Dynamic
+            component={fileComponent}
+            mode="text"
+            file={{
+              name: path() ?? "",
+              contents: contents(),
+              cacheKey: cacheKey(),
+            }}
+            enableLineSelection={!md()}
+            enableHoverUtility={!md()}
+            selectedLines={activeSelection()}
+            commentedLines={md() ? [] : commentedLines()}
+            onRendered={() => {
+              queueRestore()
+            }}
+            annotations={md() ? [] : commentsUi.annotations()}
+            renderAnnotation={md() ? undefined : commentsUi.renderAnnotation}
+            renderHoverUtility={md() ? undefined : commentsUi.renderHoverUtility}
+            onLineSelected={(range: SelectedLineRange | null) => {
+              if (md()) return
+              commentsUi.onLineSelected(range)
+            }}
+            onLineNumberSelectionEnd={commentsUi.onLineNumberSelectionEnd}
+            onLineSelectionEnd={(range: SelectedLineRange | null) => {
+              if (md()) return
+              commentsUi.onLineSelectionEnd(range)
+            }}
+            search={search}
+            scrollControl={scrollControl}
+            class="select-text"
+            actionsMount={actionsMount}
+            media={{
+              mode: "auto",
+              path: path(),
+              current: state()?.content,
+              onLoad: queueRestore,
+              viewer: {
+                file: fileViewer(),
+                readBytes,
+                readText,
+              },
+            }}
+            copyPath={copyPath}
+            copyContent={state()?.content?.type === "text" ? copyContent : undefined}
+            copyPathCopied={copyState.kind === "path"}
+            copyContentCopied={copyState.kind === "content"}
+            openWith={fileActions}
+            openFolder={
+              platform.openInFinder
+                ? () => {
+                    const target = fullPath()
+                    if (target) void platform.openInFinder?.(target)
+                  }
+                : undefined
+            }
+          />
+        </div>
+      ),
+      text,
+      revision,
+      file: fileViewer,
+      setDirty: (dirty: boolean) => viewerSave.setDirty(dirty),
+      onSave: (handler: () => Promise<void>) => {
+        // Host-side lifecycle guarantee: the handler is unregistered
+        // when the viewer component instance that registered it is
+        // disposed, even if the viewer forgets to call the returned
+        // disposer itself. The disposer contract stays intact.
+        const dispose = viewerSave.onSave(handler)
+        if (getOwner()) onCleanup(dispose)
+        return dispose
+      },
+      readBytes,
+      readText,
+      showSource,
+      path: () => path() ?? "",
+      menu: () => viewerMenu(),
+      openWith: () => <OpenInApp path={fullPath()} logPrefix="file-preview" />,
+      onRenderError: ({ id, path: errorPath, message }) =>
+        console.error(`[file-viewer] render failed id=${id} path=${errorPath} error=${message}`),
+      errorFallback: (message) => (
+        <div class="flex flex-col items-start gap-3 px-6 py-4 text-text-weak">
+          <div>{message}</div>
+          <button type="button" class="text-text-strong underline" onClick={showSource}>
+            {language.t("session.fileTab.viewer.default")}
+          </button>
+        </div>
+      ),
+    })
 
   return (
-    <Tabs.Content value={props.tab} class="relative h-full">
+    <Tabs.Content
+      value={props.tab}
+      forceMount={props.forceMount ? true : undefined}
+      classList={{ hidden: !!props.forceMount && !tabActive() }}
+      inert={props.forceMount ? !tabActive() : undefined}
+      class="relative h-full"
+    >
       <div
         ref={setActionsMount}
         data-slot="file-preview-actions-layer"
@@ -658,7 +882,7 @@ export function FileTabContent(props: { tab: string }) {
             onScroll={handleScroll as any}
           >
             <Switch>
-              <Match when={state()?.loaded}>{renderFile(contents())}</Match>
+              <Match when={state()?.loaded}>{renderFile(contents)}</Match>
               <Match when={state()?.loading}>
                 <div class="px-6 py-4 text-text-weak">{language.t("common.loading")}...</div>
               </Match>
@@ -674,7 +898,7 @@ export function FileTabContent(props: { tab: string }) {
           </ScrollView>
         }
       >
-        {renderFile(contents())}
+        {renderFile(contents)}
       </Show>
     </Tabs.Content>
   )

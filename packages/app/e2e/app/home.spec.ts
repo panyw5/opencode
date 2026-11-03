@@ -28,6 +28,31 @@ test("fixed rail home button returns from another route", async ({ page }) => {
   await expect(home).toHaveAttribute("aria-current", "page")
 })
 
+test("extensions navigation waits for the real config page and opens release installation", async ({ page }) => {
+  await page.goto("/config")
+  const config = page.locator('[data-component="config-page"]')
+  await expect(config).toBeVisible()
+  const extensions = config.locator("aside").getByRole("button", { name: "Extensions", exact: false })
+  await extensions.click()
+  await expect(extensions).toHaveAttribute("aria-current", "page")
+  await config.locator('[data-action="extension-install-open"]').click()
+  const dialog = page.getByRole("dialog", { name: "Install extension" })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.locator('[data-field="source-type"]')).toHaveValue("release")
+  await expect(dialog.getByRole("textbox", { name: "Extension release URL" })).toBeVisible()
+  await expect(dialog.getByRole("textbox", { name: "SHA-256", exact: false })).toHaveCount(0)
+  await closeDialog(page, dialog)
+
+  await page.goto("/config?section=extensions")
+  const direct = page.locator('[data-component="config-page"]')
+  await expect(direct).toBeVisible()
+  await expect(direct.locator("aside").getByRole("button", { name: "Extensions", exact: false })).toHaveAttribute(
+    "aria-current",
+    "page",
+  )
+  await expect(direct.locator('[data-action="extension-install-open"]')).toBeVisible()
+})
+
 test("server picker dialog opens from home", async ({ page }) => {
   await page.goto("/")
 

@@ -205,6 +205,34 @@ describe("HttpApi UI fallback", () => {
     }),
   )
 
+  it.live("does not forward local credentials or token-bearing referrers to the UI upstream", () =>
+    Effect.gen(function* () {
+      let forwarded: Record<string, string> = {}
+      let url = ""
+      const response = yield* uiApp({
+        password: "secret",
+        disableEmbeddedWebUi: true,
+        client: httpClient(new Response("ui"), (request) => {
+          forwarded = { ...request.headers }
+          url = request.url
+        }),
+      }).request("/?auth_token=b3BlbmNvZGU6c2VjcmV0", {
+        headers: {
+          authorization: "Basic b3BlbmNvZGU6c2VjcmV0",
+          cookie: "local-session=private",
+          referer: "http://localhost/?auth_token=private",
+          "accept-language": "en",
+        },
+      })
+      expect(response.status).toBe(200)
+      expect(url).toBe("https://app.opencode.ai/")
+      expect(forwarded.authorization).toBeUndefined()
+      expect(forwarded.cookie).toBeUndefined()
+      expect(forwarded.referer).toBeUndefined()
+      expect(forwarded["accept-language"]).toBe("en")
+    }),
+  )
+
   it.live("strips upstream transfer encoding headers from proxied assets", () =>
     Effect.gen(function* () {
       let proxiedUrl: string | undefined
@@ -352,6 +380,9 @@ describe("HttpApi UI fallback", () => {
       expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval'")
       expect(csp).toContain(`'sha256-${createHash("sha256").update(script).digest("base64")}'`)
       expect(csp).toContain("connect-src * data:")
+      expect(csp).toContain("img-src 'self' data: blob: https:")
+      expect(csp).toContain("media-src 'self' data: blob:")
+      expect(csp).toContain("worker-src 'self' blob:")
     }),
   )
 

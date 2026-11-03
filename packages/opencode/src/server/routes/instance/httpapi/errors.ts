@@ -10,6 +10,15 @@ export class InvalidRequestError extends Schema.TaggedErrorClass<InvalidRequestE
   { httpApiStatus: 400 },
 ) {}
 
+export class PayloadTooLargeError extends Schema.TaggedErrorClass<PayloadTooLargeError>()(
+  "PayloadTooLargeError",
+  {
+    message: Schema.String,
+    maxBytes: Schema.Number,
+  },
+  { httpApiStatus: 413 },
+) {}
+
 export class UnauthorizedError extends Schema.TaggedErrorClass<UnauthorizedError>()(
   "UnauthorizedError",
   { message: Schema.String },
@@ -57,6 +66,17 @@ export class TimeoutError extends Schema.TaggedErrorClass<TimeoutError>()(
     operation: Schema.optional(Schema.String),
   },
   { httpApiStatus: 504 },
+) {}
+
+// Typed failure raised by an extension RPC handler. `code` is the extension's
+// own stable error code and is returned to the caller verbatim with 400.
+export class ExtensionRpcError extends Schema.TaggedErrorClass<ExtensionRpcError>()(
+  "ExtensionRpcError",
+  {
+    code: Schema.String,
+    message: Schema.String,
+  },
+  { httpApiStatus: 400 },
 ) {}
 
 export class UnknownError extends Schema.TaggedErrorClass<UnknownError>()(

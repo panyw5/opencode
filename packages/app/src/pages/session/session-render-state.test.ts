@@ -124,7 +124,23 @@ describe("session render state", () => {
     expect(sessionContentVisible(visible)).toBe(true)
 
     const interactive = reduceSessionRenderState(visible, { type: "settled", sessionID })
-    expect(reduceSessionRenderState(interactive, { type: "deadline", sessionID }).phase).toBe("interactive")
+    expect(reduceSessionRenderState(interactive, { type: "deadline", sessionID })).toBe(interactive)
+    expect(reduceSessionRenderState(visible, { type: "deadline", sessionID })).toBe(visible)
+  })
+
+  test("a deadline reveals available content even while the phase is fetching", () => {
+    const fetching: SessionRenderState = {
+      sessionID,
+      generation: 1,
+      phase: "fetching",
+      overlay: "showing",
+      hasContent: true,
+    }
+    const visible = reduceSessionRenderState(fetching, { type: "deadline", sessionID })
+    expect(visible.phase).toBe("content-visible")
+    expect(visible.overlay).toBe("hidden")
+    expect(sessionContentVisible(visible)).toBe(true)
+    expect(reduceSessionRenderState(visible, { type: "deadline", sessionID })).toBe(visible)
   })
 
   test("same-session hot remount starts a new covered layout generation", () => {
