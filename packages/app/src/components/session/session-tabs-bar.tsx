@@ -1147,19 +1147,10 @@ function SessionTab(props: {
   }
 
   const showInSidebar = () => {
-    const owner = projectOwner(props.tab.directory, layout.projects.list())
-    if (!owner) {
-      console.debug(
-        `[session-tab] show in sidebar ignored id=${props.tab.id} dir=${props.tab.directory} reason=no-project`,
-      )
-      return
-    }
-
     console.debug(
-      `[session-tab] show in sidebar id=${props.tab.id} dir=${props.tab.directory} root=${owner.root} sandbox=${String(owner.sandbox)}`,
+      `[session-tab] show in sidebar id=${props.tab.id} dir=${props.tab.directory} selected=${layout.sidebar.project() ?? "none"} opened=${layout.sidebar.opened()}`,
     )
-    layout.sidebar.setProject(owner.root)
-    layout.sidebar.open()
+    layout.sidebar.revealSession(props.tab.directory, props.tab.id)
   }
 
   const generateTitle = () => {
@@ -1367,6 +1358,19 @@ function SessionTab(props: {
             <ContextMenu.ItemLabel>{language.t("session.copyReference")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
           <ContextMenu.Item
+            data-action="session-tab-copy-info"
+            data-session={base64Encode(props.tab.id)}
+            onSelect={copy}
+          >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="copy" size="small" />
+              </span>
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{language.t("session.copyInfo")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+          <ContextMenu.Separator />
+          <ContextMenu.Item
             data-action="session-tab-show-in-sidebar"
             data-session={base64Encode(props.tab.id)}
             onSelect={showInSidebar}
@@ -1377,6 +1381,31 @@ function SessionTab(props: {
               </span>
             </ContextMenu.Icon>
             <ContextMenu.ItemLabel>{language.t("command.sessionTabs.showInSidebar")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            data-action="session-tab-close-descendants"
+            data-session={base64Encode(props.tab.id)}
+            disabled={!props.hasOpenDescendants}
+            onSelect={props.onCloseDescendants}
+          >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base [transform:scaleY(-1)]">
+                <Icon name="branch" size="small" />
+              </span>
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{language.t("command.sessionTabs.closeDescendants")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            data-action="session-tab-close"
+            data-session={base64Encode(props.tab.id)}
+            onSelect={props.onClose}
+          >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="close-small" size="small" />
+              </span>
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{language.t("command.sessionTabs.close")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
           <ContextMenu.Separator />
           <ContextMenu.Item
@@ -1405,44 +1434,6 @@ function SessionTab(props: {
             <ContextMenu.ItemLabel>{language.t("session.editTitle")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
           <ContextMenu.Separator />
-          <ContextMenu.Item
-            data-action="session-tab-close-descendants"
-            data-session={base64Encode(props.tab.id)}
-            disabled={!props.hasOpenDescendants}
-            onSelect={props.onCloseDescendants}
-          >
-            <ContextMenu.Icon>
-              <span class="flex shrink-0 text-icon-base [transform:scaleY(-1)]">
-                <Icon name="branch" size="small" />
-              </span>
-            </ContextMenu.Icon>
-            <ContextMenu.ItemLabel>{language.t("command.sessionTabs.closeDescendants")}</ContextMenu.ItemLabel>
-          </ContextMenu.Item>
-          <ContextMenu.Item
-            data-action="session-tab-close"
-            data-session={base64Encode(props.tab.id)}
-            onSelect={props.onClose}
-          >
-            <ContextMenu.Icon>
-              <span class="flex shrink-0 text-icon-base">
-                <Icon name="close-small" size="small" />
-              </span>
-            </ContextMenu.Icon>
-            <ContextMenu.ItemLabel>{language.t("command.sessionTabs.close")}</ContextMenu.ItemLabel>
-          </ContextMenu.Item>
-          <ContextMenu.Separator />
-          <ContextMenu.Item
-            data-action="session-tab-copy-info"
-            data-session={base64Encode(props.tab.id)}
-            onSelect={copy}
-          >
-            <ContextMenu.Icon>
-              <span class="flex shrink-0 text-icon-base">
-                <Icon name="copy" size="small" />
-              </span>
-            </ContextMenu.Icon>
-            <ContextMenu.ItemLabel>{language.t("session.copyInfo")}</ContextMenu.ItemLabel>
-          </ContextMenu.Item>
           <ContextMenu.Item onSelect={() => dialog.show(() => <SessionShareDialog directory={props.tab.directory} sessionID={props.tab.id} title={session()?.title || props.tab.title || "Session"} />)}>
             <ContextMenu.Icon>
               <span class="flex shrink-0 text-icon-base">
