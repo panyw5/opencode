@@ -1,10 +1,10 @@
 # P2 交付清单
 
-更新时间：2026-10-14。工作树 `.claude/worktrees/extensions-p0`，分支 `claude/extensions-p2-design`。
+状态核对：2026-11-03；以下 P2 清单历史基线更新于 2026-10-14。工作树 `.claude/worktrees/extensions-p0`，分支 `claude/extensions-p2-design`。
 
-> 2026-10-18 核对说明：本文以下为P2交付历史，不代表当前HEAD、版本或未提交状态。P3a主实现现已提交为 `86619dfa4a`，仍未标记完整交付；最新按钮布局收尾、验证结果和集成待办见 `specs/extensions/progress.md` 与 `specs/extensions/p3a-tasks.md`。本轮未重生成或重新验收本页全部产物，旧验收结果不自动升级为当前发布证据。
+> 当前完整交付摘要见 `specs/extensions/delivery.md`。HEAD 为 `6faed064da`，P3a、release 安装、wls-repl、目录/拖拽安装及重装修复均已本地提交，仍未完成最终集成/发布验收。本文保留 P2 的文件级范围与历史证据；旧版本、候选文件数、“当前”“本轮”“未提交”等描述仅适用于所属日期。本次未重生成或重新验收本页全部产物。
 
-## 当前交付说明（权威摘要）
+## P2 历史交付说明（2026-10-14）
 
 **P2 已提交，不再是未跟踪候选清单。** `eeac7a5adc`（2026-10-07）交付 125 个文件，包含服务端运行时/RPC/设置/watcher、Web 宿主/贡献点/保存桥、配置页入口和启停管理、测试夹具、SDK v2 与 hello-viewer 产物，以及历史任务记录。P0/P1 已此前提交；`660c95bdd3` 为独立 JPEG 测试修复。
 
@@ -29,7 +29,7 @@
 
 缺失的 OpenAPI 操作：GET `/global/extension`、GET `/global/extension/{id}`、POST `/global/extension/{id}/enable`、POST `/global/extension/{id}/disable`、PATCH `/global/extension/{id}/settings`、POST `/extension/{id}/rpc/{method}`；事件为 `extension.status`、`extension.event`。本轮只读取 JSON 验证缺项，没有生成或手改快照。
 
-### 当前自动化与验收状态
+### 当时自动化与验收状态
 
 - 本轮当前基线：App 全量 1671/0、UI 全量 268/0、扩展服务端/选定 HTTP 150/0、扩展 browser-condition 22/0、extension-kit 17/0、hello-viewer 14/0；App/opencode/kit/示例 4 项 typecheck 通过。
 - 未运行最新生产构建、全仓 opencode suite、完整 workspace typecheck、完整 Electron/Vite/内嵌 GUI 矩阵；不将旧构建或旧截图计为当前验收。
@@ -308,4 +308,3 @@ NEW specs/extensions/toggle-management-tasks.md
 - 页面实测确认停用/取消、列表/详情状态、viewer/CSS撤销与恢复、文件标签保留、child PID退出；已查看截图。恢复后RPC/dirty门禁后续浏览器操作被明确拒绝，按用户选择保留未验证项；真实多server/provider完整并发未实测，不以静态审读或helper测试冒充。
 - manager内部settings更新不参与页面mutation锁（迟到守卫存在）；可产生短暂last-writer快照，为现有边界。新前端未重建内嵌二进制。
 - 本轮浏览器/API/前端均清理。交付总数125候选（116+9），另有1模型快照生成变化；未暂存/提交/推送/合入dev。
-

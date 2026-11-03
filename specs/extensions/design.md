@@ -1,8 +1,8 @@
 # OpenCode 扩展（Extensions）系统设计
 
-状态：设计稿，待评审。本文只规定方案，不代表相关功能已实现。
+状态：架构设计与分阶段范围说明。P0/P1/P2 核心、P3a 安装管理、发布地址安装和首个 `.wls` 调试 REPL 已有实现与本地提交；完整市场、Notebook 及最终集成/发布验收未完成。本文能力描述不是逐项实现或验收证明。
 
-补充设计（2026-10-18，实施更新2026-10-19）：免手填 SHA-256 的发布地址安装方案见 `specs/extensions/release-install-design.md`。release来源、自动摘要、显式registry v3及客户端核心已在工作树实现，**未提交、未发布，完整实机交付未完成**；证据与限制见 `specs/extensions/release-install-tasks.md`。本文旧分发章节不作为最新实现状态，当前交付以 `specs/extensions/progress.md` 为准，P3a历史见 `specs/extensions/p3a-tasks.md`。
+状态核对（2026-11-03）：当前分支 HEAD `6faed064da`；release 来源、自动摘要、显式 registry v3、模板、wls-repl 与桌面拖拽已随 `6216969c38` 提交，后续目录安装和重装修复也已提交。当前交付状态以 `specs/extensions/delivery.md` 为入口，阶段历史见 `progress.md`、`p3a-tasks.md`、`release-install-tasks.md` 与 `wls-repl-tasks.md`；本文旧分发章节不作为最新状态或完整交付证明。发布地址协议补充见 `specs/extensions/release-install-design.md`。
 
 项目路径：`/Users/lelouch/apps/opencode`
 

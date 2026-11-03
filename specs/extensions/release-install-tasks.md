@@ -1,10 +1,12 @@
 # 发布地址安装实施任务
 
-状态：核心实现与自动化回归完成，尚未完整交付。计划于2026-10-19获批；本轮未提交、未推送、未合并，未操作真实用户registry。
+状态：核心实现与自动化回归完成，已随 `6216969c38` 本地提交，尚未完整交付。计划于 2026-10-19 获批；状态核对：2026-11-03，当前 HEAD `6faed064da`，未合入当前本地 dev。本次不提交、不推送、不合并，未操作真实用户 registry。
 
-设计：`specs/extensions/release-install-design.md`。本清单记录本轮新增工作，不替代P3a原有交付与验收缺口。
+设计：`specs/extensions/release-install-design.md`；当前交付入口：`specs/extensions/delivery.md`。后续桌面目录已通过 renderer 下载 + 摘要校验 + 本地归档通道完成真实安装，**不等于 CLI/server release 下载器正向验收**；后者仍受本机 fake-IP 网络边界影响。公网 CLI/server、最终三形态、多服务器、故障/跨平台缺口保留。
 
-## 阶段与会话待办
+以下记录按原日期保留；旧“未提交”“不上传”等为当轮状态与授权边界，不代表后续没有提交或分发。wls-repl 外部发布记录及 10 月 25 日目录安装证据见 `wls-repl-tasks.md`，本次未联网复核外部资产。
+
+## 历史阶段与会话待办（2026-10-19）
 
 - [x] 协议与兼容：release来源、显式release-current请求、版本化registry schema、首次升v3确认。
 - [x] descriptor：安全获取、64KiB、严格JSON、原始字节摘要、URL规范化与单元测试。
@@ -16,7 +18,7 @@
 - [x] 组合回归、类型检查、生产App构建、OpenAPI确定性及文档记录。
 - [ ] 公网HTTPS正向、完整三形态GUI、多服务器、全故障/跨平台验收。
 
-## 并行分工
+## 历史并行分工（2026-10-19）
 
 - 注册表/共享schema及其测试。
 - 下载helper/descriptor resolver及其测试。
@@ -103,4 +105,3 @@
 - 原三个包版本改动及模型快照前后SHA-256一致，本轮未重写；既有34px右侧按钮布局保留并扩展至发布地址模式。
 - 本轮仅工作树实施，不暂存、不提交、不推送、不合入dev、不发布npm/GitHub资产。最低支持宿主版本待正式版本决定。
 - 使用说明见 `specs/extensions/release-authoring.md`；生成器只本地计算/校验，已有输出拒绝覆盖，不提供force。
-
