@@ -3908,6 +3908,38 @@ export default function Layout(props: ParentProps) {
     layout.sidebar.open()
   }
 
+  createEffect(
+    on(layout.sidebar.reveal, (target) => {
+      if (!target) return
+      const project = resolveProject(target.directory)
+      layout.sidebar.clearReveal()
+      if (!project) {
+        console.debug(
+          `[sidebar-reveal] ignored session=${target.sessionID} directory=${target.directory} reason=no-project`,
+        )
+        return
+      }
+      const request = ++sidebarDomainRequest
+      console.debug(
+        `[sidebar-reveal] select request=${request} session=${target.sessionID} directory=${target.directory} root=${project.root} previous=${sidebarProjectRoot() ?? "none"} panel=${store.sidebarPanel} navigated=false`,
+      )
+      batch(() => {
+        setSidebarRouteState("pending", undefined)
+        setSidebarProjectRoot(project.root)
+        setStore("sidebarPanel", "project")
+        if (layout.sidebar.workspaces(project.root)()) {
+          setStore("workspaceExpanded", target.directory, true)
+        }
+        layout.sidebar.open()
+      })
+      warmProjectSessions(project.root)
+      if (workspaceKey(target.directory) !== workspaceKey(project.root)) warmProjectSessions(target.directory)
+      console.debug(
+        `[sidebar-reveal] selected request=${request} root=${sidebarProjectRoot() ?? "none"} panel=${store.sidebarPanel} opened=${layout.sidebar.opened()}`,
+      )
+    }),
+  )
+
   function openNewSessionFromDialog(directory: string) {
     const project = layout.projects.list().find((item) => workspaceKey(item.worktree) === workspaceKey(directory))
     if (project) {

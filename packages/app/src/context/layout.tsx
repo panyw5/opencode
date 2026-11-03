@@ -525,6 +525,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
 
     // Transient sidebar selection may differ from the project owning the current route.
     const [sidebarProject, setSidebarProject] = createSignal<string | undefined>()
+    const [sidebarReveal, setSidebarReveal] = createSignal<{ directory: string; sessionID: string }>()
     const usage = {
       active: undefined as string | undefined,
       pruned: false,
@@ -1079,6 +1080,13 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         },
       },
       sidebar: {
+        reveal: sidebarReveal,
+        revealSession(directory: string, sessionID: string) {
+          setSidebarReveal({ directory, sessionID })
+        },
+        clearReveal() {
+          setSidebarReveal(undefined)
+        },
         project: sidebarProject,
         setProject(directory: string | undefined) {
           setSidebarProject(directory)

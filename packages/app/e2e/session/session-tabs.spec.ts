@@ -1,7 +1,14 @@
 import { test, expect } from "../fixtures"
-import { cleanupSession, sessionIDFromUrl, withSession } from "../actions"
+import {
+  cleanupSession,
+  cleanupTestProject,
+  createTestProject,
+  openPalette,
+  sessionIDFromUrl,
+  withSession,
+} from "../actions"
 import { projectSwitchSelector, promptSelector, sessionItemSelector, sessionNewButtonSelector } from "../selectors"
-import { dirSlug, sessionPath } from "../utils"
+import { createSdk, dirSlug, sessionPath } from "../utils"
 
 type TabPermissionRequest = {
   id: string
@@ -379,6 +386,94 @@ test("session tab can reveal its project sessions in the sidebar", async ({ page
     await expect(page.locator(sessionItemSelector(session.id))).toBeVisible()
   })
 })
+
+for (const panel of [false, true]) {
+  test(`session tab reveals another project without activating its tab (task panel=${panel})`, async ({
+    page,
+    withProject,
+  }) => {
+    await page.setViewportSize({ width: 1400, height: 800 })
+    const logs: string[] = []
+    page.on("console", (message) => {
+      const text = message.text()
+      if (/\[(session-tab|sidebar-project|sidebar-reveal)\]/.test(text)) logs.push(text)
+    })
+    const other = await createTestProject()
+    const otherSdk = createSdk(other)
+    let otherID: string | undefined
+    try {
+      const otherSession = await otherSdk.session
+        .create({ title: `e2e reveal other ${Date.now()}` })
+        .then((r) => r.data)
+      if (!otherSession) throw new Error("Session create did not return an id")
+      otherID = otherSession.id
+      await withProject(
+        async ({ directory, slug, gotoSession, trackSession }) => {
+          const current = await createSdk(directory)
+            .session.create({ title: `e2e reveal current ${Date.now()}` })
+            .then((r) => r.data)
+          if (!current) throw new Error("Session create did not return an id")
+          trackSession(current.id)
+          await gotoSession(current.id)
+          const navigate = async (href: string) => {
+            await page.evaluate((href) => {
+              const anchor = document.createElement("a")
+              anchor.href = href
+              document.body.append(anchor)
+              anchor.click()
+              anchor.remove()
+            }, href)
+            await expect(page).toHaveURL(href)
+          }
+          await navigate(new URL(sessionPath(other, otherSession.id), page.url()).href)
+          const otherTab = page.locator(`[data-component="session-tab"][data-session-id="${otherSession.id}"]`)
+          await expect(otherTab).toBeVisible()
+          await navigate(new URL(sessionPath(directory, current.id), page.url()).href)
+          const originalURL = page.url()
+          const currentTab = page.locator(`[data-component="session-tab"][data-session-id="${current.id}"]`)
+          await expect(currentTab).toHaveAttribute("data-active", "true")
+          if (panel) {
+            const palette = await openPalette(page, "Shift+P")
+            await palette.getByRole("textbox").first().fill("Open project tasks")
+            await palette.locator('[data-slot="list-item"]').filter({ hasText: "Open project tasks" }).first().click()
+            await expect(page.locator(sessionItemSelector(current.id))).toBeHidden()
+          }
+          await otherTab.click({ button: "right" })
+          await page.locator('[data-action="session-tab-show-in-sidebar"]').click()
+          const selected = page.locator(projectSwitchSelector(dirSlug(other))).first()
+          await expect(selected, logs.join("\n")).toHaveAttribute("data-sidebar-expanded", "true")
+          await expect(page.locator(projectSwitchSelector(slug)).first()).toHaveAttribute(
+            "data-sidebar-expanded",
+            "false",
+          )
+          await expect(page.locator(sessionItemSelector(otherSession.id)), logs.join("\n")).toBeVisible()
+          await expect(page).toHaveURL(originalURL)
+          await expect(currentTab).toHaveAttribute("data-active", "true")
+          await expect(otherTab).not.toHaveAttribute("data-active", "true")
+          await expect(selected).toHaveAttribute("data-session-current", "false")
+          await expect(page.locator(projectSwitchSelector(slug)).first()).toHaveAttribute(
+            "data-session-current",
+            "true",
+          )
+          await currentTab.click({ button: "right" })
+          await page.locator('[data-action="session-tab-show-in-sidebar"]').click()
+          await expect(page.locator(projectSwitchSelector(slug)).first()).toHaveAttribute(
+            "data-sidebar-expanded",
+            "true",
+          )
+          await expect(page.locator(sessionItemSelector(current.id))).toBeVisible()
+          await expect(page).toHaveURL(originalURL)
+          await expect(currentTab).toHaveAttribute("data-active", "true")
+        },
+        { extra: [other] },
+      )
+    } finally {
+      console.log(logs.join("\n"))
+      if (otherID) await cleanupSession({ sdk: otherSdk, sessionID: otherID })
+      await cleanupTestProject(other)
+    }
+  })
+}
 
 test("session tab can generate a title from its context menu", async ({ page, sdk, gotoSession }) => {
   await page.setViewportSize({ width: 1400, height: 800 })
