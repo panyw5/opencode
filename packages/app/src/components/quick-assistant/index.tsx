@@ -9,6 +9,7 @@ import type {
 import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
 import { Binary } from "@opencode-ai/core/util/binary"
+import { linkedSessionIDs, projectReadAllowed, sessionContextRules } from "@opencode-ai/core/session-context-access"
 import { useParams } from "@solidjs/router"
 import { batch, createEffect, createMemo, For, onCleanup, Show, untrack, type JSX } from "solid-js"
 import { createStore, reconcile, type SetStoreFunction } from "solid-js/store"
@@ -54,6 +55,7 @@ import {
 import { QuickAssistantInput } from "./input"
 import { QuickAssistantMessages } from "./messages"
 import { QuickAssistantRequests } from "./requests"
+import type { ContextAccess } from "./context-access"
 import { type Prompt, type ImageAttachmentPart } from "@/context/prompt"
 import { emptyQuickPrompt, quickPromptText, recoverQuickPrompt } from "./editor-model"
 import { buildRequestParts } from "../prompt-input/build-request-parts"
@@ -433,8 +435,7 @@ export function QuickAssistant() {
                 tabIndex={saved.active === item.id ? 0 : -1}
                 class="relative isolate flex h-9 w-full min-w-0 items-center gap-2 rounded-l-full border border-r-0 border-border-weak-base bg-surface-base-active pl-3 pr-7 text-left text-12-medium text-text-weak transition-colors hover:bg-surface-base-hover aria-selected:text-text-strong max-sm:h-10 max-sm:pl-2"
                 style={{
-                  "background-color":
-                    saved.active === item.id ? "var(--quick-assistant-surface)" : undefined,
+                  "background-color": saved.active === item.id ? "var(--quick-assistant-surface)" : undefined,
                 }}
                 onClick={() => {
                   setSaved("active", item.id)
@@ -578,6 +579,9 @@ function QuickAssistantWindow(props: {
     prompt: emptyQuickPrompt(),
     history: [] as Prompt[],
     loading: false,
+    accessUpdating: false,
+    contextSessions: {} as Record<string, Session>,
+    fileChoices: {} as Record<string, boolean | undefined>,
   })
   let input!: HTMLDivElement
   let sendSequence = 0
@@ -754,6 +758,81 @@ function QuickAssistantWindow(props: {
     return context(current, id, session, messages.length)
   })
 
+  const contextIDs = createMemo(() => [
+    ...new Set([
+      ...linkedSessionIDs(session()?.permission),
+      ...(saved.context && activeDir() && params.id ? [params.id] : []),
+      ...state.prompt.flatMap((part) => (part.type === "session" ? [part.reference.sessionID] : [])),
+    ]),
+  ])
+  createEffect(() => {
+    const ids = contextIDs()
+    const directory = root()
+    if (!directory) return
+    let disposed = false
+    for (const id of ids) {
+      if (untrack(() => state.contextSessions[id])) continue
+      console.debug(`[quick-assistant:access] source metadata load session=${id}`)
+      void globalSDK
+        .createClient({ directory, throwOnError: true })
+        .session.get({ sessionID: id })
+        .then((result) => {
+          if (disposed || !result.data) return
+          setState("contextSessions", id, result.data)
+          console.debug(`[quick-assistant:access] source metadata loaded session=${id}`)
+        })
+        .catch((error) =>
+          console.warn(`[quick-assistant:access] source metadata failed session=${id} error=${String(error)}`),
+        )
+    }
+    onCleanup(() => {
+      disposed = true
+    })
+  })
+  const contextAccess = createMemo((): ContextAccess[] =>
+    contextIDs().map((id) => {
+      const source = state.contextSessions[id] ?? (params.id === id ? currentSession() : undefined)
+      const mention = state.prompt.find((part) => part.type === "session" && part.reference.sessionID === id)
+      return {
+        sessionID: id,
+        title: source?.title ?? (mention?.type === "session" ? mention.reference.title : id),
+        directory: source?.directory ?? (params.id === id ? activeDir() : ""),
+        readFiles: state.fileChoices[id] ?? projectReadAllowed(session()?.permission, id),
+      }
+    }),
+  )
+  const setContextFiles = async (sourceID: string, readFiles: boolean) => {
+    if (state.accessUpdating || state.loading) return
+    const id = sessionID()
+    console.debug(
+      `[quick-assistant:access] project read toggle reader=${id ?? "new"} source=${sourceID} enabled=${readFiles}`,
+    )
+    if (!id || !linkedSessionIDs(session()?.permission).includes(sourceID)) {
+      setState("fileChoices", sourceID, readFiles)
+      return
+    }
+    setState("accessUpdating", true)
+    try {
+      const client = globalSDK.createClient({ directory: root(), throwOnError: true })
+      const current = await client.session.get({ sessionID: id })
+      const updated = await client.session.update({
+        sessionID: id,
+        permission: sessionContextRules(current.data?.permission ?? [], [{ sessionID: sourceID, readFiles }]),
+      })
+      const store = setData()
+      if (store && updated.data) seed(store, updated.data)
+      setState("fileChoices", sourceID, undefined)
+      console.debug(
+        `[quick-assistant:access] project read updated reader=${id} source=${sourceID} enabled=${readFiles}`,
+      )
+    } catch (error) {
+      console.error(`[quick-assistant:access] project read update failed reader=${id} error=${String(error)}`)
+      showToast({ title: "Quick Assistant", description: language.t("common.requestFailed") })
+    } finally {
+      setState("accessUpdating", false)
+    }
+  }
+
   const toggleContext = () => {
     const available = !!currentContext()
     if (!available) {
@@ -790,6 +869,7 @@ function QuickAssistantWindow(props: {
     if (!id) return
     const setStore = setData()
     props.onSession(undefined)
+    setState("fileChoices", {})
     if (!setStore) return
     batch(() => {
       setStore("session_status", (items) => {
@@ -1096,7 +1176,7 @@ function QuickAssistantWindow(props: {
   })
 
   async function submit() {
-    if (state.loading) {
+    if (state.loading || state.accessUpdating) {
       console.debug("[quick-assistant] prompt blocked reason=loading")
       return
     }
@@ -1112,6 +1192,7 @@ function QuickAssistantWindow(props: {
     }
     const current = root()
     const draft = clonePromptParts(state.prompt)
+    const access = untrack(contextAccess)
     const text = quickPromptText(draft).trim()
     const images = draft.filter((part): part is ImageAttachmentPart => part.type === "image")
     const store = data()
@@ -1208,6 +1289,7 @@ function QuickAssistantWindow(props: {
       `[quick-assistant] submit context=${saved.context ? 1 : 0} text=${text.length} body=${body.length} model=${pick.model.providerID}/${pick.model.modelID} variant=${variant ?? "none"}`,
     )
     const client = globalSDK.createClient({ directory: current, throwOnError: true })
+    const previousSessionID = sessionID()
     const id = await ensureSession(client, setStore).catch((err: unknown) => {
       if (!activeSend()) return undefined
       console.error(`[quick-assistant] session setup failed error=${String(err)}`)
@@ -1223,6 +1305,42 @@ function QuickAssistantWindow(props: {
       setState("loading", false)
       restoreDraft("session-failed")
       return
+    }
+
+    {
+      try {
+        // Replacing a missing/archived assistant must not inherit its grants.
+        const selectedIDs = new Set([
+          ...(saved.context && params.id ? [params.id] : []),
+          ...draft.flatMap((part) => (part.type === "session" ? [part.reference.sessionID] : [])),
+        ])
+        const grants =
+          previousSessionID && previousSessionID !== id
+            ? access.filter((item) => selectedIDs.has(item.sessionID)).map((item) => ({ ...item, readFiles: false }))
+            : access
+        console.debug(
+          `[quick-assistant:access] grants save reader=${id} sources=${grants.map((item) => item.sessionID).join(",")}`,
+        )
+        const current = await client.session.get({ sessionID: id })
+        const rules = current.data?.permission ?? []
+        const permission = sessionContextRules(rules, grants)
+        if (rules.findLast((rule) => rule.permission === "question" && rule.pattern === "*")?.action !== "allow") {
+          permission.push({ permission: "question", pattern: "*", action: "allow" })
+        }
+        const updated = permission.length ? await client.session.update({ sessionID: id, permission }) : current
+        if (!activeSend()) return
+        if (!updated.data) throw new Error("Session access update returned no session")
+        seed(setStore, updated.data)
+        for (const item of grants) setState("fileChoices", item.sessionID, undefined)
+        console.debug(`[quick-assistant:access] grants saved reader=${id}`)
+      } catch (error) {
+        if (!activeSend()) return
+        console.error(`[quick-assistant:access] grants failed reader=${id} error=${String(error)}`)
+        setState("loading", false)
+        restoreDraft("context-access-failed")
+        showToast({ title: "Quick Assistant", description: language.t("quickAssistant.access.failed") })
+        return
+      }
     }
 
     const messageID = Identifier.ascending("message")
@@ -1296,7 +1414,6 @@ function QuickAssistantWindow(props: {
             model: pick.model,
             messageID,
             variant,
-            tools: { question: true },
             parts: requestParts,
           })
     )
@@ -1406,8 +1523,7 @@ function QuickAssistantWindow(props: {
             "w-[min(520px,calc(100vw-192px))] max-sm:w-[calc(100vw-128px)]": !expanded(),
           }}
           style={{
-            "--quick-assistant-surface":
-              "color-mix(in srgb, var(--background-base) 20%, var(--background-stronger))",
+            "--quick-assistant-surface": "color-mix(in srgb, var(--background-base) 20%, var(--background-stronger))",
             "background-color": "var(--quick-assistant-surface)",
           }}
         >
@@ -1471,6 +1587,9 @@ function QuickAssistantWindow(props: {
                 context={saved.context}
                 contextAvailable={!!currentContext()}
                 contextTitle={currentSession()?.title}
+                contextAccess={contextAccess()}
+                accessUpdating={state.accessUpdating}
+                onContextFiles={(id, value) => void setContextFiles(id, value)}
                 variants={variantList()}
                 variant={effectiveVariant()}
                 onPrompt={(next) => setState("prompt", reconcile(next))}

@@ -2683,6 +2683,7 @@ export const layer = Layer.effect(
             const tools = isLastStep
               ? {}
               : yield* SessionTools.resolve({
+                  getSession: sessions.get,
                   agent,
                   session,
                   model,

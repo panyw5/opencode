@@ -18,6 +18,7 @@ import { SessionProcessor } from "./processor"
 import { PartID } from "./schema"
 import * as Log from "@opencode-ai/core/util/log"
 import { EffectBridge } from "@/effect/bridge"
+import { readRules } from "./context-access"
 
 const log = Log.create({ service: "session.tools" })
 
@@ -25,6 +26,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
   model: Provider.Model
   session: Session.Info
+  getSession: Session.Interface["get"]
   processor: Pick<
     SessionProcessor.Handle,
     "message" | "startToolCall" | "updateToolCall" | "completeToolCall" | "failToolCall" | "captureToolFiles"
@@ -42,7 +44,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const mcp = yield* MCP.Service
   const truncate = yield* Truncate.Service
 
-  const context = (args: Record<string, unknown>, options: ToolExecutionOptions): Tool.Context => ({
+  const context = (args: Record<string, unknown>, options: ToolExecutionOptions, toolID: string): Tool.Context => ({
     sessionID: input.session.id,
     abort: options.abortSignal!,
     messageID: input.processor.message.id,
@@ -73,14 +75,24 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         }
       }),
     ask: (req) =>
-      permission
-        .ask({
+      Effect.gen(function* () {
+        // Reload for every check so revocation takes effect during a running response.
+        const current = yield* input.getSession(input.session.id)
+        const rules = Permission.merge(input.agent.permission, current.permission ?? [])
+        const scoped = yield* readRules({
+          tool: toolID,
+          request: req,
+          session: current,
+          rules,
+          getSession: input.getSession,
+        })
+        yield* permission.ask({
           ...req,
           sessionID: input.session.id,
           tool: { messageID: input.processor.message.id, callID: options.toolCallId },
-          ruleset: Permission.merge(input.agent.permission, input.session.permission ?? []),
+          ruleset: Permission.merge(rules, scoped),
         })
-        .pipe(Effect.orDie),
+      }).pipe(Effect.orDie),
   })
 
   for (const item of yield* registry.tools({
@@ -95,7 +107,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute(args, options) {
         return run.promise(
           Effect.gen(function* () {
-            const ctx = context(args, options)
+            const ctx = context(args, options, item.id)
             yield* input.processor.startToolCall(options.toolCallId, item.id, args)
             yield* plugin.trigger(
               "tool.execute.before",
@@ -148,7 +160,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     item.execute = (args, opts) =>
       run.promise(
         Effect.gen(function* () {
-          const ctx = context(args, opts)
+          const ctx = context(args, opts, key)
           yield* input.processor.startToolCall(opts.toolCallId, key, args)
           yield* plugin.trigger(
             "tool.execute.before",
