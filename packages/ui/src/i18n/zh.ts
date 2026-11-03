@@ -217,6 +217,10 @@ export const dict = {
   "ui.textField.copied": "已复制",
 
   "ui.imagePreview.alt": "图片预览",
+  "ui.imagePreview.zoomIn": "放大",
+  "ui.imagePreview.zoomOut": "缩小",
+  "ui.imagePreview.reset": "重置缩放",
+  "ui.imagePreview.save": "保存",
   "ui.scrollView.ariaLabel": "可滚动内容",
 
   "ui.tool.read": "读取",

@@ -53,7 +53,7 @@ import { Checkbox } from "./checkbox"
 import { DiffChanges } from "./diff-changes"
 import { Markdown } from "./markdown"
 import type { MarkdownStage } from "./markdown"
-import { ImagePreview } from "./image-preview"
+import { AttachmentImagePreview } from "./attachment-image-preview"
 import { getDirectory as _getDirectory, getFilename } from "@opencode-ai/core/util/path"
 import { base64Encode, checksum } from "@opencode-ai/core/util/encode"
 import { readSessionReference } from "./session-reference"
@@ -1371,7 +1371,8 @@ export function UserMessageDisplay(props: {
     return items.filter((x) => !!x).join("\u00A0\u00B7\u00A0")
   })
   const openImagePreview = (url: string, alt?: string) => {
-    dialog.show(() => <ImagePreview src={url} alt={alt} />)
+    console.debug(`[image-preview] sent thumbnail clicked message=${props.message.id} filename=${alt}`)
+    dialog.show(() => <AttachmentImagePreview src={url} filename={alt ?? i18n.t("ui.message.attachment.alt")} />)
   }
 
   const handleCopy = async () => {
@@ -3728,9 +3729,9 @@ registerBuiltinTool({
                                 data-slot="answer-image-button"
                                 onClick={() =>
                                   dialog.show(() => (
-                                    <ImagePreview
+                                    <AttachmentImagePreview
                                       src={image.url}
-                                      alt={image.filename ?? i18n.t("ui.message.attachment.alt")}
+                                      filename={image.filename ?? i18n.t("ui.message.attachment.alt")}
                                     />
                                   ))
                                 }
