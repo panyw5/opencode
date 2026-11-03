@@ -679,14 +679,16 @@
   }
 
   [data-component="sidebar-session"] {
-    --sidebar-session-accent: light-dark(#2f2f2f, #c98a6d);
-    --sidebar-session-hover-bg: light-dark(#f1f1f1, #2c2924);
-    --sidebar-session-hover-border: light-dark(rgba(0, 0, 0, 0.03), rgba(201, 138, 109, 0.14));
-    --sidebar-session-hover-fg: light-dark(#2f2f2f, var(--text-strong));
-    --sidebar-session-hover-icon: light-dark(#8a8a8a, var(--icon-base));
-    --sidebar-session-active-bg-top: light-dark(#f1f1f1, #302c27);
-    --sidebar-session-active-bg-bottom: light-dark(#eeeeee, #292622);
-    --sidebar-session-active-border: light-dark(rgba(0, 0, 0, 0.03), rgba(201, 138, 109, 0.2));
+    --sidebar-session-accent: var(--text-strong);
+    --sidebar-session-hover-bg: color-mix(in srgb, var(--text-strong) 6%, var(--background-stronger));
+    --sidebar-session-hover-border: color-mix(in srgb, var(--text-strong) 8%, transparent);
+    --sidebar-session-hover-fg: var(--text-strong);
+    --sidebar-session-hover-icon: var(--icon-base);
+    --sidebar-session-active-bg-top: color-mix(in srgb, var(--text-strong) 12%, var(--background-stronger));
+    --sidebar-session-active-bg-bottom: color-mix(in srgb, var(--text-strong) 10%, var(--background-stronger));
+    --sidebar-session-active-border: color-mix(in srgb, var(--text-strong) 14%, transparent);
+    --sidebar-session-active-hover-bg: color-mix(in srgb, var(--text-strong) 16%, var(--background-stronger));
+    --sidebar-session-active-hover-border: color-mix(in srgb, var(--text-strong) 20%, transparent);
     --sidebar-session-active-shadow: light-dark(rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.34));
   }
 
@@ -812,16 +814,6 @@
     background-color: var(--surface-base-active);
   }
 
-  html[data-theme="aether"] [data-component="sidebar-session"] {
-    --sidebar-session-accent: light-dark(#2f2f2f, #c98a6d);
-    --sidebar-session-hover-bg: light-dark(#f8e4d8, #2c2924);
-    --sidebar-session-hover-border: light-dark(#e9bda8, rgba(201, 138, 109, 0.14));
-    --sidebar-session-active-bg-top: light-dark(#f3d4c4, rgb(65, 65, 65));
-    --sidebar-session-active-bg-bottom: light-dark(#ebc5b2, rgb(65, 65, 65));
-    --sidebar-session-active-border: light-dark(#dfa58c, rgba(201, 138, 109, 0.2));
-    --sidebar-session-active-shadow: light-dark(rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.34));
-  }
-
   /* Arc keeps its warm purple-gray treatment in dark mode. Light mode is also
      light-on-dark chrome (Arc's light theme uses a light violet mauve sidebar
      against a white main pane), so the light values here are the mauve scale
@@ -867,15 +859,18 @@
       0 10px 24px -18px var(--sidebar-session-active-shadow);
   }
 
-  [data-component="sidebar-session"][data-active="true"]:hover,
-  [data-component="sidebar-session"][data-active="true"]:has(:focus-visible) {
-    background: light-dark(#f1f1f1, linear-gradient(180deg, #34302b, #2c2824));
-    border-color: light-dark(rgba(0, 0, 0, 0.03), rgba(201, 138, 109, 0.28));
+  [data-component="sidebar-session"][data-active="true"] [data-slot="session-meta"] span {
+    color: var(--text-base) !important;
   }
 
-  html[data-theme="aether"] [data-component="sidebar-session"][data-active="true"]:hover,
-  html[data-theme="aether"] [data-component="sidebar-session"][data-active="true"]:has(:focus-visible) {
-    background: light-dark(#e9bda8, rgb(65, 65, 65));
+  html[data-theme="arc"] [data-component="sidebar-session"][data-active="true"] [data-slot="session-meta"] span {
+    color: var(--sidebar-session-accent) !important;
+  }
+
+  [data-component="sidebar-session"][data-active="true"]:hover,
+  [data-component="sidebar-session"][data-active="true"]:has(:focus-visible) {
+    background: var(--sidebar-session-active-hover-bg);
+    border-color: var(--sidebar-session-active-hover-border);
   }
 
   /* Arc: stronger overlay on active+hover */
