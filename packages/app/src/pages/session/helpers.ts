@@ -18,6 +18,7 @@ type TabsInput = {
   normalizeTab: (tab: string) => string
   review?: Accessor<boolean>
   hasReview?: Accessor<boolean>
+  canClose?: Accessor<boolean>
 }
 
 export const getSessionKey = (dir: string | undefined, id: string | undefined) => `${dir ?? ""}${id ? `/${id}` : ""}`
@@ -95,6 +96,7 @@ export const createSessionTabs = (input: TabsInput) => {
     return active
   })
   const closableTab = createMemo(() => {
+    if (input.canClose?.() === false) return
     const active = activeTab()
     if (active === "context") return active
     if (!openedTabs().includes(active)) return

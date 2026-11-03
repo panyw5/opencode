@@ -149,6 +149,25 @@ describe("getTabReorderIndex", () => {
 })
 
 describe("createSessionTabs", () => {
+  test("hidden preview tabs do not consume the session close shortcut", () => {
+    for (const active of ["file://src/a.ts", "context"]) {
+      for (const visible of [false, true]) {
+        createRoot((dispose) => {
+          const result = createSessionTabs({
+            tabs: () => ({ active: () => active, all: () => [active] }),
+            pathFromTab: (tab) => (tab.startsWith("file://") ? tab.slice("file://".length) : undefined),
+            normalizeTab: (tab) => tab,
+            canClose: () => visible,
+          })
+
+          expect(result.activeTab()).toBe(active)
+          expect(result.closableTab()).toBe(visible ? active : undefined)
+          dispose()
+        })
+      }
+    }
+  })
+
   test("normalizes the effective file tab", () => {
     createRoot((dispose) => {
       const [state] = createStore({

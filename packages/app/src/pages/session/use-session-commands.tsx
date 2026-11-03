@@ -1,4 +1,5 @@
 import { useNavigate } from "@solidjs/router"
+import { createMediaQuery } from "@solid-primitives/media"
 import { useCommand, type CommandOption, type CommandSource } from "@/context/command"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { previewSelectedLines } from "@opencode-ai/ui/pierre/selection-bridge"
@@ -77,12 +78,14 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     if (!tab.startsWith("file://")) return tab
     return file.tab(tab)
   }
+  const isDesktop = createMediaQuery(platform.platform === "web" ? "(min-width: 1024px)" : "(min-width: 768px)")
   const tabState = createSessionTabs({
     tabs,
     pathFromTab: file.pathFromTab,
     normalizeTab,
     review: actions.review,
     hasReview,
+    canClose: () => isDesktop() && view().filePreview.opened(),
   })
   const activeFileTab = tabState.activeFileTab
   const closableTab = tabState.closableTab
@@ -327,10 +330,17 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         title: language.t("command.tab.close"),
         keywords: kw("command.tab.close"),
         keybind: "mod+w",
-        disabled: !closableTab() && !(view().browser.opened() && layout.browserTabs.tabs().length > 0),
+        disabled:
+          !closableTab() &&
+          !params.id &&
+          !params.draftID &&
+          !(view().browser.opened() && layout.browserTabs.tabs().length > 0),
         onSelect: (source) => {
           if (closeFocusedBrowserTab(source, command.trigger)) return
           const tab = closableTab()
+          console.debug(
+            `[tab-close] source=${source ?? "unknown"} session=${params.id ?? params.draftID ?? "none"} preview=${view().filePreview.opened()} desktop=${isDesktop()} stored=${tabState.activeTab()} target=${tab ?? "session"}`,
+          )
           if (!tab) {
             if (source === "keybind") command.trigger("sessionTabs.close", source)
             return
