@@ -1138,6 +1138,10 @@ export const dict = {
   "quickAssistant.context.disable": "Stop including current session context",
   "quickAssistant.context.attached": "Current session context",
   "quickAssistant.context.loadFailed": "Could not read the current session. Nothing was sent.",
+  "quickAssistant.access.scope":
+    "Linked sessions are readable. File access is read-only, for this assistant session only.",
+  "quickAssistant.access.files": "Read project files",
+  "quickAssistant.access.failed": "Could not update context access. Nothing was sent.",
   "notification.permission.title": "Permission required",
   "notification.permission.description": "{{sessionTitle}} in {{projectName}} needs permission",
   "notification.question.title": "Question",

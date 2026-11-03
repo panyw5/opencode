@@ -15,6 +15,8 @@ import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
 import { Tool } from "@/tool/tool"
 import { Instruction } from "@/session/instruction"
+import { sessionContextRules } from "@opencode-ai/core/session-context-access"
+import { tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(Layer.empty)
@@ -48,6 +50,7 @@ const fixture = Effect.fn("test.mcpCodeMode.fixture")(function* (
     deny?: string
     builtins?: Tool.Def[]
     noMcp?: boolean
+    getSession?: Session.Interface["get"]
     before?: (tool: string, args: Record<string, unknown>) => void
     call?: (args: unknown, options: Parameters<NonNullable<AITool["execute"]>>[1]) => Promise<unknown>
   } = {},
@@ -56,6 +59,7 @@ const fixture = Effect.fn("test.mcpCodeMode.fixture")(function* (
   const messageID = MessageID.make("msg_codemode")
   const started: string[] = []
   const permissions: string[] = []
+  const permissionChecks: Array<Parameters<Permission.Interface["ask"]>[0]> = []
   const hooks: string[] = []
   const requests: unknown[] = []
   const progress: unknown[] = []
@@ -105,6 +109,7 @@ const fixture = Effect.fn("test.mcpCodeMode.fixture")(function* (
       ask: (input) =>
         Effect.gen(function* () {
           permissions.push(input.permission)
+          permissionChecks.push(input)
           if (input.permission === options.deny) return yield* new Permission.RejectedError()
         }),
     }),
@@ -124,6 +129,8 @@ const fixture = Effect.fn("test.mcpCodeMode.fixture")(function* (
     parts: [],
   }
   const tools = yield* SessionTools.resolve({
+    getSession:
+      options.getSession ?? (() => Effect.succeed({ id: sessionID, permission: [] } as unknown as Session.Info)),
     agent: {
       name: "build",
       mode: "primary",
@@ -175,7 +182,7 @@ const fixture = Effect.fn("test.mcpCodeMode.fixture")(function* (
           attachments: MessageV2.FilePart[]
         }>,
     )
-  return { tools, execute, started, permissions, hooks, requests, progress, completed }
+  return { tools, execute, started, permissions, permissionChecks, hooks, requests, progress, completed }
 })
 
 const queryParameters = Schema.Struct({ filePath: Schema.String })
@@ -189,6 +196,73 @@ const queryTool = (
   parameters: queryParameters,
   execute,
 })
+
+it.instance("direct and Code Mode reads share scoped grants and observe revocation after resolve", () =>
+  Effect.gen(function* () {
+    const directory = yield* tmpdirScoped()
+    const filePath = `${directory}/fixture.txt`
+    yield* Effect.promise(() => Bun.write(filePath, "scoped content"))
+    const source = { id: SessionID.make("ses_source"), directory } as Session.Info
+    let current = {
+      id: SessionID.make("ses_codemode"),
+      permission: sessionContextRules([], [{ sessionID: source.id, readFiles: true }]),
+    } as Session.Info
+    const read = queryTool((args, ctx) =>
+      Effect.gen(function* () {
+        yield* ctx.ask({
+          permission: "external_directory",
+          patterns: [`${directory}/*`],
+          always: [`${directory}/*`],
+          metadata: { filepath: args.filePath },
+        })
+        return { title: "fixture", output: "scoped content", metadata: {} }
+      }),
+    )
+    const test = yield* fixture({
+      noMcp: true,
+      builtins: [read],
+      rules: [{ permission: "external_directory", pattern: "*", action: "ask" }],
+      getSession: (id) => Effect.sync(() => (id === source.id ? source : current)),
+    })
+    yield* Effect.promise(
+      () =>
+        test.tools.read.execute!(
+          { filePath },
+          { toolCallId: "direct", messages: [], abortSignal: new AbortController().signal },
+        ) as Promise<unknown>,
+    )
+    yield* test.execute(`return await tools.builtin.read({filePath:${JSON.stringify(filePath)}})`)
+    current = { ...current, permission: sessionContextRules([], [{ sessionID: source.id, readFiles: false }]) }
+    yield* test.execute(`return await tools.builtin.read({filePath:${JSON.stringify(filePath)}})`)
+    const checks = test.permissionChecks.filter((check) => check.permission === "external_directory")
+    expect(checks).toHaveLength(3)
+    expect(
+      checks.map((check) => Permission.evaluate("external_directory", `${directory}/*`, check.ruleset).action),
+    ).toEqual(["allow", "allow", "ask"])
+  }),
+)
+
+it.instance("Code Mode delegates transcript authorization once to the transcript tool", () =>
+  Effect.gen(function* () {
+    const transcript = queryTool(
+      (args, ctx) =>
+        Effect.gen(function* () {
+          yield* ctx.ask({
+            permission: "session_transcript",
+            patterns: [args.filePath],
+            always: [args.filePath],
+            metadata: {},
+          })
+          return { title: "transcript", output: "history", metadata: {} }
+        }),
+      "session_transcript",
+    )
+    const test = yield* fixture({ noMcp: true, builtins: [transcript] })
+    yield* test.execute('return await tools.builtin.session_transcript({filePath:"ses_source"})')
+    expect(test.permissions).toEqual(["execute", "session_transcript"])
+    expect(test.permissionChecks[1]?.patterns).toEqual(["ses_source"])
+  }),
+)
 
 it.instance("Code Mode composes read-only queries with MCP and retains direct query tools", () =>
   Effect.gen(function* () {

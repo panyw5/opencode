@@ -18,6 +18,7 @@ import { SessionProcessor } from "./processor"
 import { PartID } from "./schema"
 import * as Log from "@opencode-ai/core/util/log"
 import { EffectBridge } from "@/effect/bridge"
+import { readRules } from "./context-access"
 import { SessionCodeMode } from "./code-mode"
 import { CodeModeQuery } from "./code-mode-query"
 import type { CodeModeCatalog } from "./code-mode-catalog"
@@ -37,6 +38,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
   model: Provider.Model
   session: Session.Info
+  getSession: Session.Interface["get"]
   processor: Pick<
     SessionProcessor.Handle,
     "message" | "startToolCall" | "updateToolCall" | "completeToolCall" | "failToolCall" | "captureToolFiles"
@@ -75,7 +77,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     )
   >()
 
-  const context = (args: Record<string, unknown>, options: ToolExecutionOptions): Tool.Context => ({
+  const context = (args: Record<string, unknown>, options: ToolExecutionOptions, toolID: string): Tool.Context => ({
     sessionID: input.session.id,
     abort: options.abortSignal!,
     messageID: input.processor.message.id,
@@ -116,14 +118,30 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         }
       }),
     ask: (req) =>
-      permission
-        .ask({
+      Effect.gen(function* () {
+        // Reload for every check so revocation takes effect during a running response.
+        const current = yield* input.getSession(input.session.id)
+        const rules = Permission.merge(input.agent.permission, current.permission ?? [])
+        const scoped = yield* readRules({
+          tool: toolID,
+          request: req,
+          session: current,
+          rules,
+          getSession: input.getSession,
+        })
+        log.debug("tool permission checked", {
+          tool: toolID,
+          sessionID: current.id,
+          permission: req.permission,
+          scoped: scoped.length,
+        })
+        yield* permission.ask({
           ...req,
           sessionID: input.session.id,
           tool: { messageID: input.processor.message.id, callID: options.toolCallId },
-          ruleset: Permission.merge(input.agent.permission, input.session.permission ?? []),
+          ruleset: Permission.merge(rules, scoped),
         })
-        .pipe(Effect.orDie),
+      }).pipe(Effect.orDie),
   })
 
   for (const item of localTools) {
@@ -134,7 +152,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute(args, options) {
         return run.promise(
           Effect.gen(function* () {
-            const ctx = context(args, options)
+            const ctx = context(args, options, item.id)
             yield* input.processor.startToolCall(options.toolCallId, item.id, args)
             yield* plugin.trigger(
               "tool.execute.before",
@@ -234,7 +252,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     item.execute = (args, opts) =>
       run.promise(
         Effect.gen(function* () {
-          const ctx = context(args, opts)
+          const ctx = context(args, opts, key)
           yield* input.processor.startToolCall(opts.toolCallId, key, args)
           yield* plugin.trigger(
             "tool.execute.before",
@@ -330,7 +348,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         return run.promise(
           SessionCodeMode.withAbort(
             Effect.gen(function* () {
-              const ctx = context(args, options)
+              const ctx = context(args, options, "execute")
               yield* input.processor.startToolCall(options.toolCallId, "execute", args)
               if (typeof args.code !== "string" || args.code.length > SessionCodeMode.MAX_CODE_LENGTH) {
                 return yield* new Tool.InvalidArgumentsError({
@@ -403,7 +421,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                     call.input = JSON.stringify(nested).slice(0, 2048)
                     if (registered.kind === "builtin") {
                       // These query tools do not ask internally; preserve catalog permissions here too.
-                      if (["task_list", "task_transcript", "session_transcript"].includes(entry.key)) {
+                      if (["task_list", "task_transcript"].includes(entry.key)) {
                         yield* ctx.ask({
                           permission: entry.key,
                           patterns: [String(nested.task_id ?? nested.session_id ?? "*")],
@@ -416,6 +434,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                         (controller) =>
                           registered.tool.execute(nested, {
                             ...ctx,
+                            ask: context(nested, options, entry.key).ask,
                             recordFileChange: (change) =>
                               input.processor
                                 .updateToolCall(options.toolCallId, (part) => ({

@@ -204,7 +204,7 @@ export function context(
     `history_scope: ${options?.complete === false ? "partial" : "complete"}`,
     `text_scope: ${recent.length} bounded excerpts`,
     "snapshot_source: OpenCode app",
-    "snapshot_note: The messages below were attached by the app. Do not try to read this session through a localhost URL or SQLite.",
+    "snapshot_note: The messages below were attached by the app. Use session_transcript with session_id if more history is needed. Do not read localhost URLs or SQLite. Project file access is separate and read-only when granted.",
   ]
   if (recent.length > 0) {
     metadata.push(

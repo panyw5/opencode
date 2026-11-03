@@ -49,6 +49,40 @@ const context = (sessionID: SessionID) => ({
 })
 
 describe("tool.session_transcript", () => {
+  it.instance("checks the exact target session before reading its transcript", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const reader = yield* sessions.create({ title: "Reader" })
+      const target = yield* sessions.create({ title: "Target" })
+      const requests: string[][] = []
+      const tool = yield* SessionTranscriptTool
+      const def = yield* tool.init()
+      const result = yield* def.execute(
+        { session_id: target.id },
+        {
+          ...context(reader.id),
+          ask: (request) =>
+            Effect.sync(() => {
+              expect(request.permission).toBe("session_transcript")
+              requests.push([...request.patterns])
+            }),
+        },
+      )
+      expect(requests).toEqual([[target.id]])
+      expect(result.output).toContain(target.id)
+      const denied = yield* def
+        .execute(
+          { session_id: target.id },
+          {
+            ...context(reader.id),
+            ask: () => Effect.die(new Error("Transcript access denied")),
+          },
+        )
+        .pipe(Effect.exit)
+      expect(Exit.isFailure(denied)).toBe(true)
+    }),
+  )
+
   it.instance("reads an unrelated root session that task_transcript would reject", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service

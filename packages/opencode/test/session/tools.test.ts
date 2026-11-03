@@ -188,6 +188,7 @@ it.instance("session tools settle processor tool calls after successful local ex
     } as Session.Info
 
     const tools = yield* SessionTools.resolve({
+      getSession: () => Effect.succeed(session),
       agent,
       model,
       session,
@@ -255,6 +256,7 @@ it.instance("tool metadata updates retain the first running start time", () =>
     }
     const starts: number[] = []
     const tools = yield* SessionTools.resolve({
+      getSession: () => Effect.succeed(session),
       agent,
       model,
       session,

@@ -52,9 +52,7 @@ function assistantError(error: NonNullable<MessageV2.Assistant["error"]>) {
 }
 
 function renderMessage(message: MessageV2.WithParts, include: Set<string>) {
-  const lines = [
-    `[${message.info.role}] message_id: ${message.info.id} created: ${message.info.time.created}`,
-  ]
+  const lines = [`[${message.info.role}] message_id: ${message.info.id} created: ${message.info.time.created}`]
   if (message.info.role === "assistant") {
     if (message.info.finish) lines.push(`finish: ${message.info.finish}`)
     if (message.info.error) lines.push(`error: ${assistantError(message.info.error)}`)
@@ -94,8 +92,12 @@ export const SessionTranscriptTool = Tool.define(
         targetSessionID: params.session_id,
       })
 
-      // Any session id is allowed here, unlike `task_transcript` which is
-      // restricted to descendants of the current session.
+      yield* ctx.ask({
+        permission: "session_transcript",
+        patterns: [params.session_id],
+        always: [params.session_id],
+        metadata: { targetSessionID: params.session_id },
+      })
       const session = yield* sessions.get(params.session_id)
       const page = yield* MessageV2.page({
         sessionID: params.session_id,
@@ -103,7 +105,8 @@ export const SessionTranscriptTool = Tool.define(
         before: params.cursor,
       })
       const include = new Set(params.include ?? ["text", "tool"])
-      const content = page.items.map((message) => renderMessage(message, include)).join("\n\n") || "No messages in this page."
+      const content =
+        page.items.map((message) => renderMessage(message, include)).join("\n\n") || "No messages in this page."
       const cursor = page.cursor ? `next_cursor: ${page.cursor}\n` : ""
 
       yield* log.info("session transcript read completed", {
@@ -150,7 +153,8 @@ export const SessionTranscriptTool = Tool.define(
     return {
       description: DESCRIPTION,
       parameters: Parameters,
-      execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) => run(params, ctx).pipe(Effect.orDie),
+      execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
+        run(params, ctx).pipe(Effect.orDie),
     }
   }),
 )
