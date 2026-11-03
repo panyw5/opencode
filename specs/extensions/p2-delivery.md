@@ -1,5 +1,7 @@
 # P2 交付清单
 
+> 集成更新（2026-11-03）：已通过 `2cca27da78` 合入本地 dev，未推送、未发布；当前证据、版本及保留问题见 `specs/extensions/delivery.md` 顶部。以下为合入前和 P2 历史清单，不用旧 HEAD/未集成描述当前状态。
+
 状态核对：2026-11-03；以下 P2 清单历史基线更新于 2026-10-14。工作树 `.claude/worktrees/extensions-p0`，分支 `claude/extensions-p2-design`。
 
 > 当前完整交付摘要见 `specs/extensions/delivery.md`。HEAD 为 `6faed064da`，P3a、release 安装、wls-repl、目录/拖拽安装及重装修复均已本地提交，仍未完成最终集成/发布验收。本文保留 P2 的文件级范围与历史证据；旧版本、候选文件数、“当前”“本轮”“未提交”等描述仅适用于所属日期。本次未重生成或重新验收本页全部产物。

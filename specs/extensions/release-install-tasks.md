@@ -1,5 +1,7 @@
 # 发布地址安装实施任务
 
+> 集成更新（2026-11-03）：已通过 `2cca27da78` 合入本地 dev，未推送、未发布；生成契约、构建与集成验证见 `specs/extensions/delivery.md` 顶部。公网 CLI/server release 正向验收仍未完成。以下为合入前核对及原日期历史，不代表仍未集成。
+
 状态：核心实现与自动化回归完成，已随 `6216969c38` 本地提交，尚未完整交付。计划于 2026-10-19 获批；状态核对：2026-11-03，当前 HEAD `6faed064da`，未合入当前本地 dev。本次不提交、不推送、不合并，未操作真实用户 registry。
 
 设计：`specs/extensions/release-install-design.md`；当前交付入口：`specs/extensions/delivery.md`。后续桌面目录已通过 renderer 下载 + 摘要校验 + 本地归档通道完成真实安装，**不等于 CLI/server release 下载器正向验收**；后者仍受本机 fake-IP 网络边界影响。公网 CLI/server、最终三形态、多服务器、故障/跨平台缺口保留。

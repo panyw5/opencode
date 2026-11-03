@@ -2,6 +2,32 @@
 
 更新时间：2026-11-03。本文为当前交付状态入口；`p2-delivery.md` 保留 P2 历史文件清单，各任务文档保留原日期与验证范围。已实现、已提交、已验收与已发布是不同状态，不互相替代。
 
+## 本地 dev 集成结果（2026-11-03）
+
+**已合入本地 dev，未推送、未发布。** 合并提交 `2cca27da78`，父提交为 dev `17ad1e4b02` 与扩展分支 `c7d9be56c8`；后者先单独提交了本次交付文档更新。集成工作树为 `.worktrees/extensions-dev-integration`。主目录仍在 `fix/session-tab-sidebar-reveal`，其未提交改动未被切换、暂存或改写；扩展原工作树的 4 个搜索/模型未提交文件也未纳入合并。
+
+- 已处理 13 个冲突文件。保留 dev 的分享/外部智能体翻译、配置页样式、Issue HTTP 路由、sidecar Issue 记录及 Electron readiness 修复；同时接入扩展 API、归档 IPC、工具注册/注销与响应式切换。新增回归确认 execute、外部工具和各 advisor 的内置 renderer 标记未丢失。
+- 扩展三包与 kit fixture 已按当前 `VERSION` 对齐 **1.18.63**，锁文件同步；`bun install --frozen-lockfile --ignore-scripts` 通过。SDK v2/OpenAPI 从合并后路由重新生成，OpenAPI 第二次生成逐字节一致。未手工拼接生成类型。
+- App 生产构建、Node sidecar 构建、开发 Electron 主进程/预加载/renderer 构建及 wls-repl 构建通过。构建有既有大 chunk、eval/导入警告；未制作或发布安装包，未将 wls-repl dist 改为 Git 追踪。
+
+| 集成基线验证                                               | 结果                                                                                                                                                                                                             |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 后端 extension + HTTP 扩展/安装/设置/鉴权                  | 655 pass / 0 fail，28 文件；首轮沙箱的监听/监控失败在获权限复跑后全部通过                                                                                                                                        |
+| App unit / browser-condition / UI                          | 2018/0、79/0（含新增内置 renderer 回归）、591/0                                                                                                                                                                  |
+| extension-kit / hello-viewer / wls-repl 非真实 kernel 定向 | 17/0、14/0、14/0；本轮未重跑真实 Wolfram 集成                                                                                                                                                                    |
+| App / opencode / Desktop / UI / SDK typecheck              | 5 项通过                                                                                                                                                                                                         |
+| Desktop sidecar 协调 + 归档摘要定向                        | 21 pass / 0 fail                                                                                                                                                                                                 |
+| Desktop 全量                                               | **576 pass / 8 fail / 5 errors**；Electron app/netLog/safeStorage 导入/mock 失败仍保留，不标全量通过                                                                                                             |
+| 合并前 dev 完整导出副本                                    | 573 pass / 8 fail / 5 errors，同样 8 项 Electron 导入/mock 失败；集成版多 3 个通过的归档摘要测试。副本复用同一依赖，不改主目录源码                                                                               |
+| 9222 CDP / 实际 sidecar                                    | 隔离开发 Electron 配置页 Extensions 和目录条目可见；假模型发送用户消息后收到 `MERGE_SIDECAR_OK`，两方消息持久化并在 UI 显示；无真实模型调用                                                                      |
+| 本地归档 IPC + HTTP 实机                                   | 独立 server-only 模板打包，摘要 → prepare → commit/enable 得 committed/synced=true；ping RPC 200 且 message=extension-starter-ok；卸载 committed/synced=true 后 RPC 404，Node purge 如实报告 cleanupPending=true |
+
+日志：`/tmp/extensions-dev-merge-backend-unrestricted.log`、`/tmp/extensions-dev-merge-app-tests.log`、`/tmp/extensions-dev-merge-browser-tests.log`、`/tmp/extensions-dev-merge-ui-tests.log`、`/tmp/extensions-dev-merge-desktop-tests-unrestricted.log`、`/tmp/extensions-dev-merge-desktop-baseline-full.log`、`/tmp/extensions-dev-merge-desktop-focused-unrestricted.log`、`/tmp/extensions-dev-merge-electron.log` 与 `/tmp/extensions-dev-merge-fixture.log`；截图 `/tmp/extensions-dev-merge-config.png`、`/tmp/extensions-dev-merge-chat.png` 已查看。CDP 首次把导航和结果放在同次 evaluate 时出现 Promise was collected，随后独立读取服务端持久化消息并核对 UI，确认发送/接收成功，不把首次工具错误计为应用失败或丢失消息。
+
+保留问题：Desktop 全量上述 8 项基线失败；隔离 onboarding 的 quick-assistant 路径拒绝/不存在日志，未绕过权限或额外修复。相对合并前 dev 的完整 diff check 还报告源分支自带 hello-viewer 生成 bundle 中 3 行模板字符串空白和 release-authoring.md 末尾空行，本次未为消除此警告改写历史构建产物。最终发布、真实公网 CLI/server/npm、多服务器、全故障/跨平台、生产内嵌 Web 复验仍待完成；合并不等于这些门槛通过。
+
+以下第 1 至 4 节为**合入前核对快照**：旧 HEAD、43/91、1.18.61/1.18.58、未提交/未集成及当轮“不提交”描述只适用于该快照；当前集成状态、已解决项与测试结果以上方为准。
+
 ## 1. 分支与提交状态
 
 - 工作树：`.claude/worktrees/extensions-p0`；实际分支：`claude/extensions-p2-design`。

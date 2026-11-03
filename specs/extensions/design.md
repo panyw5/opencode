@@ -1,5 +1,7 @@
 # OpenCode 扩展（Extensions）系统设计
 
+> 集成更新（2026-11-03）：本文实现已通过 `2cca27da78` 合入本地 dev，未推送、未发布；架构目标不等于逐项交付。当前范围、验证与保留问题见 `specs/extensions/delivery.md` 顶部，以下状态核对保留合入前基线。
+
 状态：架构设计与分阶段范围说明。P0/P1/P2 核心、P3a 安装管理、发布地址安装和首个 `.wls` 调试 REPL 已有实现与本地提交；完整市场、Notebook 及最终集成/发布验收未完成。本文能力描述不是逐项实现或验收证明。
 
 状态核对（2026-11-03）：当前分支 HEAD `6faed064da`；release 来源、自动摘要、显式 registry v3、模板、wls-repl 与桌面拖拽已随 `6216969c38` 提交，后续目录安装和重装修复也已提交。当前交付状态以 `specs/extensions/delivery.md` 为入口，阶段历史见 `progress.md`、`p3a-tasks.md`、`release-install-tasks.md` 与 `wls-repl-tasks.md`；本文旧分发章节不作为最新状态或完整交付证明。发布地址协议补充见 `specs/extensions/release-install-design.md`。

@@ -1,5 +1,7 @@
 # wls-repl（WolframScript REPL + 断点调试）任务记录
 
+> 集成更新（2026-11-03）：已通过 `2cca27da78` 合入本地 dev，未推送、未发布。本包及锁文件已对齐1.18.63，构建和非真实 kernel 定向14/0通过；真实 Wolfram、最终分发/跨平台矩阵未重跑，dist 仍未追踪。当前证据见 `specs/extensions/delivery.md` 顶部，以下保留合入前及原日期历史。
+
 状态：**v1 + wolfram_eval 工具已实现，macOS 定向验收通过**。主体已随 `6216969c38` 提交，目录安装与重装修复也已本地提交；状态核对：2026-11-03，当前 HEAD `6faed064da`。这是扩展系统 P4 计划中的首个业务扩展（design.md §11 的 `.wls` 方向变体：断点调试 REPL + 共享 kernel 工具），不是完整 Notebook 或跨平台交付。
 
 当前交付入口：`specs/extensions/delivery.md`。本包 manifest 为 1.18.61，锁文件条目仍为 1.18.58；`dist/` 未被 Git 追踪，历史本地已构建/外部已发布不代表干净 checkout 自带当前产物。本次只改文档、不重建、不提交、不推送、不发布。下方记录保持原日期，旧“未提交”及临时产物描述不代表当前 Git/发行状态；最新修正优先于早期结论。

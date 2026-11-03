@@ -1,5 +1,7 @@
 # 发布地址安装设计：免手填 SHA-256
 
+> 集成更新（2026-11-03）：实现已通过 `2cca27da78` 合入本地 dev，未推送、未发布。完整验收缺口仍保留；当前集成证据见 `specs/extensions/delivery.md` 顶部，以下状态核对保留合入前基线，协议说明不变。
+
 状态：**方案已批准，核心链路已实现并随 `6216969c38` 本地提交；完整集成/发布验收未完成。** 状态核对：2026-11-03，当前 HEAD `6faed064da`；当前交付入口为 `specs/extensions/delivery.md`。
 
 设计日期：2026-10-18；实施批准及核对：2026-10-19。实施基线 `86619dfa4a`，新增 release 来源、注册表 v3、自动摘要解析、HTTP/SDK/CLI/UI 及作者本地工具；当时的未提交限制不代表后续提交状态。本次只更新文档，不提交、不推送、不合并、不操作真实用户注册表。桌面目录辅助下载已另行实现并验证，不替代本文 CLI/server release 下载器的公网正向验收；实际结果与未验证项见 `specs/extensions/release-install-tasks.md`、`specs/extensions/wls-repl-tasks.md`。

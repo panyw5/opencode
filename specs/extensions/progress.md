@@ -2,7 +2,14 @@
 
 更新时间：2026-11-03
 
-## 当前交付状态（2026-11-03）
+## 本地 dev 集成（2026-11-03）
+
+- 扩展分支 `c7d9be56c8` 已通过 `2cca27da78` 合入本地 dev，集成基线为 dev `17ad1e4b02`。未推送、未发布；两个原工作区的未提交代码改动均未纳入。
+- 13 个冲突文件已处理，SDK/OpenAPI 重生成且 OpenAPI 二次生成一致，扩展包/kit fixture/锁文件对齐 1.18.63。后端扩展/HTTP/鉴权 655/0、App 2018/0、browser-condition 79/0、UI 591/0、kit17/0、hello14/0、wls 非真实 kernel 定向14/0、5 项 typecheck 通过。
+- Desktop 全量 576 pass / 8 fail / 5 errors，合并前 dev 完整导出副本复现同样 8 项 Electron mock/import 失败；桌面 sidecar/归档定向21/0。不宣称 Desktop 全量通过。
+- 已在隔离开发 Electron 9222 验证配置页、假模型消息发送/接收/持久化/UI、实际本地归档 IPC 安装/启用/RPC/卸载。Node purge 正确报告延后；App/Node sidecar/Electron/wls 构建通过。详见 `delivery.md` 顶部集成记录与保留门槛，不等于正式发布或完整跨平台验收。
+
+## 合入前交付状态（2026-11-03 历史快照）
 
 - 统一交付入口：`specs/extensions/delivery.md`，包含提交依据、按日期区分的验收证据、版本/产物缺口与最终交付待办。
 - 实际分支 `claude/extensions-p2-design`，HEAD `6faed064da`（2026-10-25）。P0/P1/P2、P3a、release 安装、wls-repl、拖拽/目录安装以及重装修复均已在本地分支提交；下方历史“未提交”不代表当前状态。
