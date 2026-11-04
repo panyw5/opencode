@@ -29,6 +29,7 @@ import { mainDomain } from "@/pages/layout/extra-agents"
 import { parseQuickEditor, quickEditorHistoryKey, quickPromptText } from "./editor-model"
 import { createInputUndoEntry, createInputUndoState, recordInputUndo, stepInputUndo } from "../prompt-input/input-undo"
 import { mayFocusComposer } from "../prompt-input/composer-boundary"
+import { scrollQuickEditorCaretIntoView } from "./editor-scroll"
 
 export function QuickAssistantEditor(props: {
   prompt: Prompt
@@ -193,6 +194,7 @@ export function QuickAssistantEditor(props: {
     selection.addRange(range)
     sync()
     closeMenu()
+    requestAnimationFrame(() => scrollQuickEditorCaretIntoView(editor))
     return true
   }
   const atKey = (item: AtOption | undefined) =>
