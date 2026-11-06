@@ -23,10 +23,32 @@ export type NativePath = string & { readonly __pathBrand: "native" }
 /** A URL-safe route segment, never a filesystem path. */
 export type RouteSlug = string & { readonly __pathBrand: "route-slug" }
 
+/** One filesystem component derived from an opaque ID, never a whole path. */
+export type StorageName = string & { readonly __pathBrand: "storage-name" }
+
 const logical = (value: string): LogicalPath => value as LogicalPath
 const identity = (value: string): PathIdentity => value as PathIdentity
 const native = (value: string): NativePath => value as NativePath
 const routeSlug = (value: string): RouteSlug => value as RouteSlug
+
+function storageName(input: string, context: PathContext): StorageName {
+  if (context.kind === "url" || context.kind === "virtual") {
+    throw new TypeError("Storage names require a filesystem context")
+  }
+  const escape = (char: string) => `%${char.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`
+  // Reserve `%` so literal escape sequences never alias an escaped ID.
+  let value = input.replace(context.platform === "win32" ? /[%<>:"/\\|?*\x00-\x1f]/g : /[%/\0]/g, escape)
+  if (!value) return "%" as StorageName
+  if (value === "." || value === "..") value = value.replace(/\./g, escape)
+  if (context.platform === "win32") {
+    value = value.replace(/[ .]+$/, (suffix) => [...suffix].map(escape).join(""))
+    // Windows device names remain reserved with extensions (e.g. NUL.txt).
+    if (/^(?:con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])(?:[ .]|$)/i.test(value)) {
+      value = escape(value[0]!) + value.slice(1)
+    }
+  }
+  return value as StorageName
+}
 
 /**
  * Return whether a value is an absolute Windows drive path. The check is
@@ -107,7 +129,8 @@ function parsePath(value: string, context: PathContext): ParsedPath {
     if (unc) return { root: `//${unc[1]}/${unc[2]}`, segments: splitSegments(unc[3] ?? "", true), absolute: true }
   }
 
-  if (normalized.startsWith("/")) return { root: "/", segments: splitSegments(normalized.slice(1), true), absolute: true }
+  if (normalized.startsWith("/"))
+    return { root: "/", segments: splitSegments(normalized.slice(1), true), absolute: true }
   return { root: "", segments: splitSegments(normalized, false), absolute: false }
 }
 
@@ -129,17 +152,30 @@ function sameRoot(a: ParsedPath, b: ParsedPath, context: PathContext) {
   if (a.absolute !== b.absolute) return false
   if (a.root === b.root) return true
   if (!a.root || !b.root) return false
-  if (context.platform === "win32" && context.kind === "local-filesystem" && isWindowsDrivePath(a.root) && isWindowsDrivePath(b.root)) {
+  if (
+    context.platform === "win32" &&
+    context.kind === "local-filesystem" &&
+    isWindowsDrivePath(a.root) &&
+    isWindowsDrivePath(b.root)
+  ) {
     return a.root.toLowerCase() === b.root.toLowerCase()
   }
-  if (context.platform === "win32" && context.kind === "local-filesystem" && isWindowsUNCPath(a.root) && isWindowsUNCPath(b.root)) {
+  if (
+    context.platform === "win32" &&
+    context.kind === "local-filesystem" &&
+    isWindowsUNCPath(a.root) &&
+    isWindowsUNCPath(b.root)
+  ) {
     return a.root.toLowerCase() === b.root.toLowerCase()
   }
   return false
 }
 
 function sameSegment(a: string, b: string, context: PathContext, root: string) {
-  const fold = context.platform === "win32" && context.kind === "local-filesystem" && (isWindowsDrivePath(root) || isWindowsUNCPath(root))
+  const fold =
+    context.platform === "win32" &&
+    context.kind === "local-filesystem" &&
+    (isWindowsDrivePath(root) || isWindowsUNCPath(root))
   return fold ? a.toLowerCase() === b.toLowerCase() : a === b
 }
 
@@ -149,6 +185,13 @@ function sameSegment(a: string, b: string, context: PathContext, root: string) {
  * POSIX workspace.
  */
 export const Path = {
+  /**
+   * Map an opaque storage ID to one legal filesystem component. Unlike native()
+   * this encodes names; never apply it to an existing file path. Git hashes and
+   * POSIX `dir:<hash>` names retain their existing on-disk locations.
+   */
+  storageName,
+
   logical(input: string, context: PathContext): LogicalPath {
     return logicalPath(input, context)
   },
@@ -175,7 +218,9 @@ export const Path = {
     const descendant = parsePath(child, context)
     if (!sameRoot(parent, descendant, context)) return false
     if (parent.segments.length > descendant.segments.length) return false
-    return parent.segments.every((segment, index) => sameSegment(segment, descendant.segments[index]!, context, parent.root))
+    return parent.segments.every((segment, index) =>
+      sameSegment(segment, descendant.segments[index]!, context, parent.root),
+    )
   },
 
   relative(root: string, child: string, context: PathContext): LogicalPath {
@@ -191,10 +236,7 @@ export const Path = {
     ) {
       common++
     }
-    const result = [
-      ...parent.segments.slice(common).map(() => ".."),
-      ...descendant.segments.slice(common),
-    ]
+    const result = [...parent.segments.slice(common).map(() => ".."), ...descendant.segments.slice(common)]
     return logical(result.join("/"))
   },
 

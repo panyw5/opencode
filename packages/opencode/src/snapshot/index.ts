@@ -10,6 +10,8 @@ import { Global } from "@opencode-ai/core/global"
 import * as Log from "@opencode-ai/core/util/log"
 import { Flock } from "@opencode-ai/core/util/flock"
 import { randomUUID } from "node:crypto"
+import { Path } from "@opencode-ai/core/util/path"
+import { localPathContext } from "@/project/instance-context"
 
 export const Patch = Schema.Struct({
   hash: Schema.String,
@@ -149,12 +151,16 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
 
       const state = yield* InstanceState.make<State>(
         Effect.fn("Snapshot.state")(function* (ctx) {
+          const projectDirectory = Path.storageName(ctx.project.id, localPathContext)
           const state = {
             directory: ctx.directory,
             worktree: ctx.worktree,
-            gitdir: path.join(Global.Path.data, "snapshot", ctx.project.id, Hash.fast(ctx.worktree)),
+            gitdir: path.join(Global.Path.data, "snapshot", projectDirectory, Hash.fast(ctx.worktree)),
             vcs: ctx.project.vcs,
           }
+          log.info(
+            `snapshot storage resolved projectID=${ctx.project.id} projectDirectory=${projectDirectory} cwd=${state.directory} gitdir=${state.gitdir} vcs=${state.vcs ?? "none"}`,
+          )
           const patchCache = new Map<string, { patch: string; bytes: number }>()
           const snapshotDiffCache = new Map<string, { patch?: string; size?: number; binary: boolean; bytes: number }>()
           let patchCacheBytes = 0
@@ -315,21 +321,31 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
             Effect.acquireUseRelease(
               Effect.gen(function* () {
                 const index = `${state.gitdir}.index-${randomUUID()}`
+                log.info(`snapshot temporary index preparing cwd=${state.directory} index=${index}`)
                 yield* fs.ensureDir(path.dirname(index)).pipe(Effect.orDie)
                 const current = path.join(state.gitdir, "index")
                 if (yield* exists(current)) yield* fs.copyFile(current, index).pipe(Effect.orDie)
                 activeIndex = index
-                log.info("snapshot temporary index prepared", { cwd: state.directory })
+                log.info(`snapshot temporary index prepared cwd=${state.directory} index=${index}`)
                 return index
-              }),
+              }).pipe(
+                Effect.tapCause((cause) =>
+                  Effect.sync(() =>
+                    log.error(
+                      `snapshot temporary index preparation failed cwd=${state.directory} cause=${Cause.pretty(cause)}`,
+                    ),
+                  ),
+                ),
+              ),
               (index) =>
                 Effect.gen(function* () {
                   const result = yield* fx
                   if (yield* exists(index)) {
+                    log.info(`snapshot temporary index installing cwd=${state.directory} index=${index}`)
                     yield* fs
                       .rename(index, path.join(state.gitdir, "index"))
                       .pipe(Effect.retry({ times: 3, schedule: Schedule.spaced("20 millis") }), Effect.orDie)
-                    log.info("snapshot temporary index installed", { cwd: state.directory })
+                    log.info(`snapshot temporary index installed cwd=${state.directory} index=${index}`)
                   }
                   return result
                 }),
@@ -338,12 +354,20 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                   activeIndex = undefined
                   yield* remove(index)
                   yield* remove(`${index}.lock`)
+                  log.info(`snapshot temporary index removed cwd=${state.directory} index=${index}`)
                 }),
             )
 
           const enabled = Effect.fnUntraced(function* () {
-            if (state.vcs !== "git") return false
-            return (yield* config.get()).snapshot !== false
+            if (state.vcs !== "git") {
+              log.info(`snapshot skipped reason=non-git cwd=${state.directory}`)
+              return false
+            }
+            if ((yield* config.get()).snapshot === false) {
+              log.info(`snapshot skipped reason=disabled cwd=${state.directory}`)
+              return false
+            }
+            return true
           })
 
           const excludes = Effect.fnUntraced(function* () {
@@ -435,9 +459,9 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
           })
 
           const cleanup = Effect.fnUntraced(function* () {
+            if (!(yield* enabled())) return
             return yield* locked(
               Effect.gen(function* () {
-                if (!(yield* enabled())) return
                 if (!(yield* exists(state.gitdir))) return
                 const result = yield* git(args(["gc", `--prune=${prune}`]), { cwd: state.directory })
                 if (result.code !== 0) {
@@ -453,9 +477,12 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
           })
 
           const track = Effect.fnUntraced(function* () {
+            // Check before acquiring a lock or preparing the temporary index:
+            // disabled/non-git snapshots must not touch snapshot storage at all.
+            if (!(yield* enabled())) return
+            log.info(`snapshot capture starting cwd=${state.directory} gitdir=${state.gitdir}`)
             return yield* locked(
               Effect.gen(function* () {
-                if (!(yield* enabled())) return
                 const initialized = yield* exists(path.join(state.gitdir, "HEAD"))
                 yield* fs.ensureDir(state.gitdir).pipe(Effect.orDie)
                 if (!initialized) {
