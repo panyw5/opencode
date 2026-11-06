@@ -12,7 +12,6 @@ import type { Agent, Command } from "@opencode-ai/sdk/v2/client"
 import type { Prompt } from "@/context/prompt"
 import { QuickAssistantEditor } from "./editor"
 import { quickPromptCanSend, quickPromptText } from "./editor-model"
-import { QuickAssistantContextAccess, type ContextAccess } from "./context-access"
 
 type Props = {
   setRef: (node: HTMLDivElement) => void
@@ -28,9 +27,6 @@ type Props = {
   context: boolean
   contextAvailable: boolean
   contextTitle?: string
-  contextAccess: ContextAccess[]
-  accessUpdating: boolean
-  onContextFiles: (sessionID: string, value: boolean) => void
   variants: string[]
   variant: string | undefined
   onPrompt: (prompt: Prompt) => void
@@ -263,11 +259,6 @@ export function QuickAssistantInput(props: Props) {
             />
           </Tooltip>
         </div>
-        <QuickAssistantContextAccess
-          references={props.contextAccess}
-          disabled={props.loading || props.accessUpdating}
-          onFiles={props.onContextFiles}
-        />
       </form>
     </div>
   )

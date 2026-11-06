@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { createScrollLedger } from "../../pages/session/timeline/scroll-ledger"
 import { createQuickAssistantReadingAnchor } from "./reading-anchor"
 
 const cleanups: Array<() => void> = []
@@ -42,19 +43,22 @@ function fixture() {
   const viewport = document.createElement("div")
   document.body.append(viewport)
   let height = 2000
+  let clientHeight = 400
   let top = 600
-  let following = false
+  let isReading = true
+  let userDisplacement = 0
   let writes = 0
-  let current: HTMLElement | undefined = viewport
+  const ledger = createScrollLedger({ initialTop: top })
   const positions = new Map<string, { top: number; height: number }>()
+  const maximum = () => Math.max(0, height - clientHeight)
   Object.defineProperties(viewport, {
-    clientHeight: { get: () => 400 },
+    clientHeight: { get: () => clientHeight },
     clientTop: { get: () => 0 },
     scrollHeight: { get: () => height },
     scrollTop: {
-      get: () => Math.max(0, Math.min(top, height - 400)),
+      get: () => top,
       set: (value: number) => {
-        top = Math.max(0, Math.min(value, height - 400))
+        top = Math.max(0, Math.min(value, maximum()))
       },
     },
   })
@@ -69,7 +73,7 @@ function fixture() {
       x: 0,
       y: start,
     }) as DOMRect
-  viewport.getBoundingClientRect = () => rect(100, 400)
+  viewport.getBoundingClientRect = () => rect(100, clientHeight)
   const message = (id: string, start: number, size: number) => {
     const node = document.createElement("div")
     node.dataset.messageId = id
@@ -98,10 +102,19 @@ function fixture() {
   const below = message("below", 1500, 500)
   block(below, "1", 1500, 500)
   const logs: string[] = []
+  const write = (root: HTMLElement, target: number) => {
+    const before = root.scrollTop
+    root.scrollTop = target
+    const after = root.scrollTop
+    ledger.recordWrite(before, after, "layout")
+    writes++
+    return after - before
+  }
   const anchor = createQuickAssistantReadingAnchor({
-    viewport: () => current,
-    following: () => following,
-    written: () => writes++,
+    viewport: () => viewport,
+    reading: () => isReading,
+    userDisplacement: () => userDisplacement,
+    write,
     log: (line) => logs.push(line),
   })
   return {
@@ -122,11 +135,23 @@ function fixture() {
     height: (next: number) => {
       height = next
     },
-    follow: (next: boolean) => {
-      following = next
+    shrinkClamp() {
+      const before = viewport.scrollTop
+      // Model the browser's native clamp separately from the sole application write adapter.
+      top = Math.min(top, maximum())
+      ledger.recordWrite(before, top, "layout")
     },
-    replaceViewport: (next: HTMLElement | undefined) => {
-      current = next
+    userScroll(next: number) {
+      viewport.scrollTop = next
+      const motion = ledger.observe(viewport.scrollTop, { user: true })
+      userDisplacement += motion.userDisplacement
+      return motion.userDisplacement
+    },
+    setReading: (next: boolean) => {
+      isReading = next
+    },
+    clientHeight: (next: number) => {
+      clientHeight = next
     },
     replaceBlock() {
       const replacement = block(reading, "7", positions.get("reading:7")!.top, 200)
@@ -139,9 +164,9 @@ function fixture() {
 describe("quick assistant reading anchor", () => {
   test("compensates growth above the reading block inside a message spanning the viewport top", () => {
     const f = fixture()
-    const restore = f.anchor.beforeUpdate(f.reading)
+    const captured = f.anchor.snapshot()
     f.grow(300)
-    restore()
+    expect(f.anchor.restoreSnapshot(captured)).toBe(300)
     expect(f.viewport.scrollTop).toBe(900)
     expect(f.selected.getBoundingClientRect().top).toBe(150)
     expect(f.writes()).toBe(1)
@@ -159,18 +184,18 @@ describe("quick assistant reading anchor", () => {
 
   test("finds replacement blocks by message and source line after morphing", () => {
     const f = fixture()
-    const restore = f.anchor.beforeUpdate(f.reading)
+    const captured = f.anchor.snapshot()
     f.grow(200)
     const replacement = f.replaceBlock()
-    restore()
+    f.anchor.restoreSnapshot(captured)
     expect(replacement.getBoundingClientRect().top).toBe(150)
   })
 
   test("content growth below the reading block does not write the viewport", () => {
     const f = fixture()
-    const restore = f.anchor.beforeUpdate(f.below)
+    const captured = f.anchor.snapshot()
     f.height(2500)
-    restore()
+    expect(f.anchor.restoreSnapshot(captured)).toBe(0)
     expect(f.viewport.scrollTop).toBe(600)
     expect(f.writes()).toBe(0)
   })
@@ -178,83 +203,75 @@ describe("quick assistant reading anchor", () => {
   test("preserves actual user movement between a saved snapshot and a resize", () => {
     const f = fixture()
     const captured = f.anchor.snapshot()
-    f.viewport.scrollTop = 650
-    expect(f.anchor.scrolled(f.viewport)).toBe(false)
+    expect(f.userScroll(650)).toBe(50)
     f.grow(200)
     f.anchor.restoreSnapshot(captured)
     expect(f.viewport.scrollTop).toBe(850)
     expect(f.selected.getBoundingClientRect().top).toBe(100)
   })
 
-  test("recognizes only unchanged programmatic scroll acknowledgments", () => {
+  test("the shared ledger excludes anchor writes from subsequent user movement", () => {
     const f = fixture()
-    const restore = f.anchor.beforeUpdate(f.reading)
+    const captured = f.anchor.snapshot()
     f.grow(200)
-    restore()
-    expect(f.anchor.scrolled(f.viewport)).toBe(true)
-    f.viewport.scrollTop -= 30
-    expect(f.anchor.scrolled(f.viewport)).toBe(false)
-
-    const snapshot = f.anchor.snapshot()
+    f.anchor.restoreSnapshot(captured)
+    expect(f.userScroll(770)).toBe(-30)
     f.grow(100)
-    f.anchor.restoreSnapshot(snapshot)
-    f.viewport.scrollTop -= 40
-    expect(f.anchor.scrolled(f.viewport)).toBe(false)
+    expect(f.anchor.restoreSnapshot(captured)).toBe(100)
+    expect(f.viewport.scrollTop).toBe(870)
+    expect(f.selected.getBoundingClientRect().top).toBe(180)
   })
 
-  test("does not restore a missing block, detached root, replaced root, or reset generation", () => {
-    for (const change of ["block", "detach", "replace", "reset"]) {
+  test("does not restore a missing block or detached viewport", () => {
+    for (const change of ["block", "detach"]) {
       const f = fixture()
-      const restore = f.anchor.beforeUpdate(f.reading)
+      const captured = f.anchor.snapshot()
       f.grow(200)
       if (change === "block") f.selected.remove()
       if (change === "detach") f.viewport.remove()
-      if (change === "replace") f.replaceViewport(document.createElement("div"))
-      if (change === "reset") f.anchor.reset()
-      restore()
+      expect(f.anchor.restoreSnapshot(captured)).toBe(0)
       expect(f.writes()).toBe(0)
       f.viewport.remove()
     }
   })
 
-  test("pins following mode to the actual new bottom", () => {
+  test("does not capture or restore outside reading mode", () => {
     const f = fixture()
-    f.follow(true)
-    f.viewport.scrollTop = 1600
-    const restore = f.anchor.beforeUpdate(f.below)
-    f.height(2300)
-    restore()
-    expect(f.viewport.scrollTop).toBe(1900)
-    expect(f.anchor.scrolled(f.viewport)).toBe(true)
-  })
-
-  test("an upward takeover cancels a pending bottom restore", () => {
-    const f = fixture()
-    f.follow(true)
-    const restore = f.anchor.beforeUpdate(f.below)
-    f.follow(false)
-    f.height(2300)
-    restore()
+    const captured = f.anchor.snapshot()
+    f.setReading(false)
+    expect(f.anchor.snapshot()).toBeUndefined()
+    f.grow(200)
+    expect(f.anchor.restoreSnapshot(captured)).toBe(0)
     expect(f.writes()).toBe(0)
   })
 
-  test("clips corrections to the scroll range and applies a restore only once", () => {
+  test("does not capture or restore a hidden viewport with zero clientHeight", () => {
     const f = fixture()
-    const restore = f.anchor.beforeUpdate(f.reading)
+    const captured = f.anchor.snapshot()
+    f.clientHeight(0)
+    expect(f.anchor.snapshot()).toBeUndefined()
+    f.grow(200)
+    expect(f.anchor.restoreSnapshot(captured)).toBe(0)
+    expect(f.writes()).toBe(0)
+  })
+
+  test("delegates out-of-range corrections to the write adapter", () => {
+    const f = fixture()
+    const captured = f.anchor.snapshot()
     f.grow(-800)
-    restore()
+    expect(f.anchor.restoreSnapshot(captured)).toBe(-600)
     expect(f.viewport.scrollTop).toBe(0)
-    expect(f.writes()).toBe(1)
-    restore()
     expect(f.writes()).toBe(1)
   })
 
   test("does not confuse a synchronous layout clamp with user scroll intent", () => {
     const f = fixture()
-    const restore = f.anchor.beforeUpdate(f.reading)
+    const captured = f.anchor.snapshot()
     f.grow(-450)
     f.height(800)
-    restore()
+    f.shrinkClamp()
+    expect(f.viewport.scrollTop).toBe(400)
+    f.anchor.restoreSnapshot(captured)
     expect(f.viewport.scrollTop).toBe(150)
     expect(f.selected.getBoundingClientRect().top).toBe(150)
   })
@@ -262,18 +279,9 @@ describe("quick assistant reading anchor", () => {
   test("does not restore stale asynchronous snapshots after the reader passes the block", () => {
     const f = fixture()
     const captured = f.anchor.snapshot()
-    f.viewport.scrollTop = 1000
-    f.anchor.scrolled(f.viewport)
+    f.userScroll(1000)
     f.grow(200)
     expect(f.anchor.restoreSnapshot(captured)).toBe(0)
-    expect(f.writes()).toBe(0)
-  })
-
-  test("ignores an update outside the active viewport", () => {
-    const f = fixture()
-    const restore = f.anchor.beforeUpdate(document.createElement("div"))
-    f.grow(200)
-    restore()
     expect(f.writes()).toBe(0)
   })
 
@@ -367,8 +375,7 @@ describe("quick assistant reading anchor", () => {
       () => inset,
     )
     const captured = f.anchor.snapshot()
-    f.viewport.scrollTop = 630
-    f.anchor.scrolled(f.viewport)
+    f.userScroll(630)
     inset = 10
     expect(f.anchor.restoreSnapshot(captured)).toBe(-20)
     expect(f.viewport.scrollTop).toBe(610)
@@ -377,26 +384,24 @@ describe("quick assistant reading anchor", () => {
 
   test("recognizes delayed layout clamping before ResizeObserver restores its snapshot", () => {
     const f = fixture()
-    f.viewport.scrollTop = 800
-    f.anchor.scrolled(f.viewport)
+    f.userScroll(800)
     const captured = f.anchor.snapshot()
     f.grow(-450)
     f.height(1000)
+    f.shrinkClamp()
     expect(f.viewport.scrollTop).toBe(600)
-    expect(f.anchor.scrolled(f.viewport)).toBe(true)
     expect(f.anchor.restoreSnapshot(captured)).toBe(-250)
     expect(f.viewport.scrollTop).toBe(350)
   })
 
   test("counts only actual user movement when a delayed clamp and wheel event coalesce", () => {
     const f = fixture()
-    f.viewport.scrollTop = 800
-    f.anchor.scrolled(f.viewport)
+    f.userScroll(800)
     const captured = f.anchor.snapshot()
     f.grow(-450)
     f.height(1000)
-    f.viewport.scrollTop = 550
-    expect(f.anchor.scrolled(f.viewport)).toBe(false)
+    f.shrinkClamp()
+    expect(f.userScroll(550)).toBe(-50)
     expect(f.anchor.restoreSnapshot(captured)).toBe(-250)
     expect(f.viewport.scrollTop).toBe(300)
   })

@@ -18,6 +18,7 @@ export const useSessionHashScroll = (input: {
   directory?: () => string
   messagesReady: () => boolean
   visibleUserMessages: () => UserMessage[]
+  messagePartsReady: (id: string) => boolean
   historyMore: () => boolean
   historyBusy: () => boolean
   loadMore: (sessionID: string) => Promise<void>
@@ -41,6 +42,12 @@ export const useSessionHashScroll = (input: {
   const viewportTarget = () => navigationState.viewportTarget
   const viewportIntent = () => navigationState.target
   const messageById = createMemo(() => new Map(input.visibleUserMessages().map((message) => [message.id, message])))
+  // Summary/SSE updates can cache a user message before any of its parts.
+  // Metadata alone cannot supply the timeline anchor that a seek requires.
+  const targetReady = createMemo(() => {
+    const id = navigationTargetId()
+    return !!id && messageById().has(id) && input.messagePartsReady(id)
+  })
 
   const trace = (stage: string, id?: string, extra = "") => {
     const root = input.scroller()
@@ -64,12 +71,16 @@ export const useSessionHashScroll = (input: {
       const id = state.target?.kind === "message" ? state.target.id : undefined
       const action = navigation.reconcile({
         ready: input.messagesReady(),
-        loaded: !!id && messageById().has(id),
+        loaded: targetReady(),
         more: input.historyMore(),
         busy: input.historyBusy(),
       })
       if (!action) return
-      trace(`action-${action.kind}`, id)
+      trace(
+        `action-${action.kind}`,
+        id,
+        `metadata=${!!id && messageById().has(id)} parts=${!!id && input.messagePartsReady(id)}`,
+      )
       if (action.kind === "unavailable") {
         fail(action.token, action.id, "history exhausted or message hidden")
         return
@@ -200,7 +211,14 @@ export const useSessionHashScroll = (input: {
   )
   createEffect(
     on(
-      () => [input.messagesReady(), input.visibleUserMessages(), input.historyMore(), input.historyBusy()] as const,
+      () =>
+        [
+          input.messagesReady(),
+          input.visibleUserMessages(),
+          targetReady(),
+          input.historyMore(),
+          input.historyBusy(),
+        ] as const,
       () => {
         drive()
       },
@@ -220,6 +238,11 @@ export const useSessionHashScroll = (input: {
     navigationState,
     finishNavigation: (token: MessageNavigationToken, success: boolean) => {
       const finished = navigation.finishSeek(token, success)
+      trace(
+        finished ? "seek-finish" : "seek-deferred",
+        navigationTargetId(),
+        `success=${success} generation=${token.generation}`,
+      )
       return finished
     },
     failNavigation: (token: MessageNavigationToken) => {

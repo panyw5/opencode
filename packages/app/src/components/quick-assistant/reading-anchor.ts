@@ -2,20 +2,18 @@ type BlockKey = { messageID: string; sourceLine?: string; occurrence: number }
 type TextAnchor = { text: string; character: number; offset: number }
 
 export type QuickAssistantReadingSnapshot = {
-  viewport: HTMLElement
-  generation: number
-  following: boolean
   userDisplacement: number
-  key?: BlockKey
-  offset?: number
-  height?: number
+  key: BlockKey
+  offset: number
+  height: number
   text?: TextAnchor
 }
 
 type Options = {
   viewport: () => HTMLElement | undefined
-  following: () => boolean
-  written: (viewport: HTMLElement) => void
+  reading: () => boolean
+  userDisplacement: () => number
+  write: (viewport: HTMLElement, target: number) => number
   log?: (message: string) => void
   tolerance?: number
 }
@@ -176,107 +174,45 @@ function findBlock(viewport: HTMLElement, key: BlockKey) {
 
 export function createQuickAssistantReadingAnchor(options: Options) {
   const tolerance = options.tolerance ?? 1
-  const log = options.log ?? ((message: string) => console.debug(message))
-  let generation = 0
-  let userDisplacement = 0
-  let previousTop = options.viewport()?.scrollTop ?? 0
-  let previousMaximum = Math.max(0, (options.viewport()?.scrollHeight ?? 0) - (options.viewport()?.clientHeight ?? 0))
-  let pendingTop: number | undefined
+  const log = options.log ?? (() => {})
 
   const snapshot = (): QuickAssistantReadingSnapshot | undefined => {
     const viewport = options.viewport()
-    if (!viewport?.isConnected || viewport.clientHeight <= 0) return
-    const following = options.following()
-    const block = following ? undefined : captureBlock(viewport)
-    if (!following && !block) return
-    // Capture immediately before a commit, not at an earlier render-stage notification.
-    previousTop = viewport.scrollTop
-    return { viewport, generation, following, userDisplacement, ...block }
-  }
-
-  const write = (viewport: HTMLElement, target: number, reason: string) => {
-    const before = viewport.scrollTop
-    const maximum = Math.max(0, viewport.scrollHeight - viewport.clientHeight)
-    viewport.scrollTop = Math.min(maximum, Math.max(0, target))
-    const actual = viewport.scrollTop
-    pendingTop = actual
-    previousTop = actual
-    previousMaximum = maximum
-    options.written(viewport)
-    const delta = actual - before
-    if (Math.abs(delta) > tolerance) {
-      log(`[quick-assistant:anchor] restore reason=${reason} before=${before} after=${actual} delta=${delta}`)
-    }
-    return delta
+    if (!options.reading() || !viewport?.isConnected || viewport.clientHeight <= 0) return
+    const block = captureBlock(viewport)
+    if (!block || !Number.isFinite(block.offset) || !Number.isFinite(block.height)) return
+    return { userDisplacement: options.userDisplacement(), ...block }
   }
 
   const restoreSnapshot = (captured: QuickAssistantReadingSnapshot | undefined) => {
     const viewport = options.viewport()
-    if (!captured || captured.generation !== generation || captured.viewport !== viewport || !viewport?.isConnected) {
-      return 0
-    }
-    if (captured.following) {
-      if (!options.following()) return 0
-      return write(viewport, viewport.scrollHeight - viewport.clientHeight, "bottom")
-    }
-    if (options.following() || !captured.key || captured.offset === undefined) return 0
+    if (!captured || !options.reading() || !viewport?.isConnected || viewport.clientHeight <= 0) return 0
     const block = findBlock(viewport, captured.key)
     if (!block?.isConnected) {
       log(`[quick-assistant:anchor] restore skipped reason=missing-block message=${captured.key.messageID}`)
       return 0
     }
-    const expected = captured.offset - (userDisplacement - captured.userDisplacement)
+    const displacement = options.userDisplacement() - captured.userDisplacement
+    const expected = captured.offset - displacement
     // A delayed resize must not pull the reader back to an already passed block.
-    if (captured.height !== undefined && expected < -captured.height) return 0
+    if (expected < -captured.height) return 0
+    const rect = block.getBoundingClientRect()
+    if (rect.height <= 0) return 0
     const viewportTop = viewport.getBoundingClientRect().top + viewport.clientTop
     const text = captured.text && resolveText(block, captured.text)
-    const actual = (text ?? block.getBoundingClientRect()).top - viewportTop
-    const desired =
-      text && captured.text ? captured.text.offset - (userDisplacement - captured.userDisplacement) : expected
+    const actual = (text ?? rect).top - viewportTop
+    const desired = text && captured.text ? captured.text.offset - displacement : expected
     const correction = actual - desired
-    if (Math.abs(correction) <= tolerance) return 0
-    return write(viewport, viewport.scrollTop + correction, text ? "reading-character" : "reading-block")
+    if (!Number.isFinite(correction) || Math.abs(correction) <= tolerance) return 0
+    const before = viewport.scrollTop
+    const delta = options.write(viewport, before + correction)
+    if (Math.abs(delta) > tolerance) {
+      log(
+        `[quick-assistant:anchor] restore reason=${text ? "reading-character" : "reading-block"} before=${before} after=${viewport.scrollTop} delta=${delta}`,
+      )
+    }
+    return delta
   }
 
-  return {
-    snapshot,
-    restoreSnapshot,
-    beforeUpdate(container: HTMLElement) {
-      const viewport = options.viewport()
-      const captured = viewport?.contains(container) ? snapshot() : undefined
-      if (captured) {
-        log(
-          `[quick-assistant:anchor] capture mode=${captured.following ? "bottom" : "reading"} message=${captured.key?.messageID ?? "none"} line=${captured.key?.sourceLine ?? "none"} offset=${captured.offset ?? 0} character=${captured.text?.character ?? "none"}`,
-        )
-      }
-      let restored = false
-      return () => {
-        if (restored) return
-        restored = true
-        restoreSnapshot(captured)
-      }
-    },
-    scrolled(viewport: HTMLElement) {
-      if (viewport !== options.viewport()) return false
-      const top = viewport.scrollTop
-      const maximum = Math.max(0, viewport.scrollHeight - viewport.clientHeight)
-      const clamped = maximum < previousMaximum && previousTop > maximum
-      const baseline = clamped ? maximum : previousTop
-      const acknowledged =
-        (pendingTop !== undefined && Math.abs(top - Math.min(pendingTop, maximum)) <= tolerance) ||
-        (clamped && Math.abs(top - maximum) <= tolerance)
-      pendingTop = undefined
-      if (!acknowledged) userDisplacement += top - baseline
-      previousTop = top
-      previousMaximum = maximum
-      return acknowledged
-    },
-    reset() {
-      generation++
-      userDisplacement = 0
-      pendingTop = undefined
-      previousTop = options.viewport()?.scrollTop ?? 0
-      previousMaximum = Math.max(0, (options.viewport()?.scrollHeight ?? 0) - (options.viewport()?.clientHeight ?? 0))
-    },
-  }
+  return { snapshot, restoreSnapshot }
 }

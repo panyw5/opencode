@@ -74,6 +74,7 @@ function setup(options: { keepViewOnMount?: boolean } = {}) {
     ready: true,
     visible: [] as UserMessage[],
     activeID: undefined as string | undefined,
+    missingParts: [] as string[],
   })
   const loadCalls: string[] = []
   const loadResolvers: Array<() => void> = []
@@ -91,6 +92,7 @@ function setup(options: { keepViewOnMount?: boolean } = {}) {
       sessionID: sessionKey,
       messagesReady: () => store.ready,
       visibleUserMessages: () => store.visible,
+      messagePartsReady: (id) => !store.missingParts.includes(id),
       historyMore: () => true,
       historyBusy: () => false,
       loadMore,
@@ -122,6 +124,30 @@ function setup(options: { keepViewOnMount?: boolean } = {}) {
     store,
   }
 }
+
+test("metadata-only messages keep loading history until their parts arrive", async () => {
+  const fixture = setup()
+  fixture.setStore("visible", [userMessage("first")])
+  fixture.setStore("missingParts", ["first"])
+  await tick()
+  fixture.controller().scrollToMessageId("first")
+  await tick()
+  expect(fixture.loadCalls).toEqual(["session-a"])
+  expect(fixture.controller().navigationState.phase).not.toBe("seeking")
+
+  fixture.loadResolvers.shift()?.()
+  await tick()
+  expect(fixture.loadCalls).toHaveLength(2)
+  // Parts can arrive without changing the cached message metadata array.
+  fixture.setStore("missingParts", [])
+  await tick()
+  expect(fixture.controller().navigationState.phase).toBe("seeking")
+  fixture.loadResolvers.shift()?.()
+  await tick()
+  expect(fixture.store.activeID).toBe("first")
+  expect(fixture.controller().navigationState.historyPending).toBe(false)
+  fixture.dispose()
+})
 
 test("user takeover clears a pending message/hash and stale history completion cannot revive it", async () => {
   const fixture = setup()

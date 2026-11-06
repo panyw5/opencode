@@ -5,6 +5,7 @@ import { join, resolve } from "node:path"
 import { createServer } from "vite"
 import appPlugin from "../../app/vite.js"
 import { CdpClient, connectCdp, listTargets } from "./cdp"
+import { projectReadAllowed, sessionContextRules } from "../../core/src/session-context-access"
 
 // Real sidecar/SDK/tool execution, with deterministic local model responses.
 // Only an isolated view in the already-running development Electron is opened.
@@ -180,7 +181,6 @@ let parent: CdpClient | undefined
 let cdp: CdpClient | undefined
 const viewID = `context-access-qa-${Date.now()}`
 const panel = `[data-component="quick-assistant-panel"]:not([hidden])`
-const control = `${panel} [data-action="quick-assistant-project-read"]`
 let readerID = ""
 try {
   // Never launch or terminate an Electron app; require the dev renderer at :9222.
@@ -209,6 +209,8 @@ try {
     "isolated Electron view",
   )
   cdp = await CdpClient.connect(target.webSocketDebuggerUrl)
+  await cdp.call("Page.bringToFront")
+  await cdp.call("Emulation.setFocusEmulationEnabled", { enabled: true })
   const visible = (selector: string) => `!!document.querySelector(${JSON.stringify(selector)})`
   const click = async (selector: string) => {
     assert.equal(
@@ -233,11 +235,23 @@ try {
   await click('[data-component="quick-assistant-launcher"]')
   await rendered(visible(`${panel} [data-action="quick-assistant-context"]:not(:disabled)`), "context link")
   await enableContext()
-  await rendered(visible(control), "project read option")
-  assert.equal(await cdp.evaluate(`document.querySelector(${JSON.stringify(control)}).checked`), false)
+  const assertNoAccessUI = async () => {
+    assert.equal(
+      await cdp!.evaluate(
+        `!!document.querySelector('[data-component="quick-assistant-context-access"], [data-action="quick-assistant-project-read"]')`,
+      ),
+      false,
+      "project read is automatic and must not show a permission footer or checkbox",
+    )
+  }
+  await assertNoAccessUI()
   // Empty input legitimately disables send; focus/type before waiting for readiness.
   const prompt = async (text: string) => {
     await rendered(visible(`${panel} [contenteditable="true"]`), "editor ready")
+    await rendered(
+      `[...document.querySelectorAll(${JSON.stringify(`${panel} button span`)})].some(el => el.textContent === 'QA Model')`,
+      "model provider loaded",
+    )
     await cdp!.evaluate(`document.querySelector(${JSON.stringify(`${panel} [contenteditable="true"]`)}).focus()`)
     await cdp!.call("Input.insertText", { text })
     await rendered(
@@ -248,12 +262,61 @@ try {
   }
   const received = (marker: string) =>
     rendered(
-      `document.querySelector(${JSON.stringify(panel)})?.innerText.includes(${JSON.stringify(marker)})`,
+      `(() => {
+        const messages = document.querySelectorAll(${JSON.stringify(`${panel} [data-component="quick-assistant-message"]`)});
+        const last = messages[messages.length - 1];
+        return last?.dataset.role === 'assistant' && last.textContent.includes(${JSON.stringify(marker)});
+      })()`,
       `received ${marker}`,
     )
   await prompt("QA_TRANSCRIPT")
   await received("QA_OK_TRANSCRIPT")
   assert.match(lastToolResult, /QA_SOURCE_TRANSCRIPT/)
+  const contextBlock = `${panel} [data-component="quick-assistant-context"]`
+  const inspectContext = () =>
+    cdp!.evaluate<{
+      width: number
+      height: number
+      available: number
+      rightGap: number
+      overflow: number
+      text: string
+    }>(
+      `(() => {
+        const block = document.querySelector(${JSON.stringify(contextBlock)});
+        const box = block.getBoundingClientRect();
+        const parent = block.parentElement.getBoundingClientRect();
+        return {width:box.width,height:box.height,available:parent.width,rightGap:parent.right-box.right,
+          overflow:block.scrollWidth-block.clientWidth,text:block.textContent};
+      })()`,
+    )
+  try {
+    for (const width of [1728, 430]) {
+      await cdp.call("Emulation.setDeviceMetricsOverride", { width, height: 1000, deviceScaleFactor: 1, mobile: false })
+      const compact = await wait(async () => {
+        const box = await inspectContext()
+        return box.available <= width && box.width > 0 ? box : undefined
+      }, `compact context layout at ${width}px`)
+      assert.ok(compact.width < compact.available * 0.8, "collapsed context must not stretch across the message")
+      assert.ok(compact.height <= 32, "collapsed context must remain a compact single row")
+      assert.ok(Math.abs(compact.rightGap) <= 1, "context must align with the user message on the right")
+      await click(`${contextBlock} summary`)
+      const expanded = await inspectContext()
+      assert.ok(expanded.width > compact.width, "expanded context must retain a wide reading area")
+      assert.ok(expanded.height > compact.height, "click must reveal the context preview")
+      assert.ok(expanded.overflow <= 1, "expanded context must not overflow at narrow widths")
+      assert.match(expanded.text, /QA_SOURCE_TRANSCRIPT/)
+      await click(`${contextBlock} summary`)
+      assert.ok((await inspectContext()).height <= 32, "context must collapse back to one row")
+      const shot = await cdp.call<{ data: string }>("Page.captureScreenshot", { format: "png" })
+      await Bun.write(join(scratch, `context-compact-${width}.png`), Buffer.from(shot.data, "base64"))
+      console.log(
+        `[context-access-qa] compact context viewport=${width} collapsed=${compact.width}x${compact.height} expanded=${expanded.width}x${expanded.height} rightGap=${compact.rightGap}`,
+      )
+    }
+  } finally {
+    await cdp.call("Emulation.clearDeviceMetricsOverride")
+  }
   const assistantDir = join(scratch, "config/opencode/quick-assistant")
   readerID = await wait(
     async () =>
@@ -263,16 +326,15 @@ try {
   assert.equal((await api("/permission", "GET", undefined, assistantDir)).length, 0)
   console.log("[context-access-qa] linked transcript received without directory access")
 
-  await click(control)
-  await rendered(
-    `document.querySelector(${JSON.stringify(control)})?.checked && !document.querySelector(${JSON.stringify(control)})?.disabled`,
-    "project opt-in saved",
-  )
   await prompt("QA_READ")
   await received("QA_OK_READ")
   assert.match(lastToolResult, /QA_PROJECT_CONTENT/)
   assert.equal((await api("/permission", "GET", undefined, assistantDir)).length, 0)
-  console.log("[context-access-qa] associated project file received without permission prompt")
+  assert.equal(
+    projectReadAllowed((await api(`/session/${readerID}`, "GET", undefined, assistantDir)).permission, sourceID),
+    true,
+  )
+  console.log("[context-access-qa] associated project file received by default without permission prompt or opt-in UI")
 
   const idle = () =>
     wait(async () => {
@@ -280,10 +342,9 @@ try {
       return !status[readerID] || status[readerID].type === "idle" ? true : undefined
     }, "assistant idle after rejected tool")
 
-  // Switching the main session changes injected context, not existing grants.
+  // Switching the main session grants read access to its linked project on send.
   const originalReader = readerID
   const originalPanel = await cdp.evaluate<string>(`document.querySelector(${JSON.stringify(panel)}).dataset.windowId`)
-  const sourceControl = (id: string) => `${control}[data-session-id="${id}"]`
   const navigate = async (directory: string, sessionID: string, title: string) => {
     await idle()
     await cdp!.evaluate(`window.dispatchEvent(new CustomEvent('context-access-qa:navigate', {
@@ -311,18 +372,12 @@ try {
     parts: [{ type: "text", text: "QA_SIBLING_SOURCE_CONTENT" }],
   })
   await navigate(directory, sibling.id, sibling.title)
-  assert.equal(
-    await cdp.evaluate(`document.querySelector(${JSON.stringify(sourceControl(sibling.id))}).checked`),
-    false,
-  )
-  assert.equal(await cdp.evaluate(`document.querySelector(${JSON.stringify(sourceControl(sourceID))}).checked`), true)
+  await assertNoAccessUI()
   await prompt("QA_SAME_PROJECT_READ")
   await received("QA_OK_SAME_PROJECT_READ")
   assert.match(lastToolResult, /QA_PROJECT_CONTENT/)
   assert.equal((await api("/permission", "GET", undefined, assistantDir)).length, 0)
-  console.log(
-    "[context-access-qa] same-project switch uses the existing directory grant without transferring its checkbox",
-  )
+  console.log("[context-access-qa] same-project switch reads the linked directory by default")
 
   const otherDirectory = join(scratch, "other-project")
   await mkdir(otherDirectory)
@@ -339,8 +394,7 @@ try {
     otherDirectory,
   )
   await navigate(otherDirectory, other.id, other.title)
-  assert.equal(await cdp.evaluate(`document.querySelector(${JSON.stringify(sourceControl(other.id))}).checked`), false)
-  assert.equal(await cdp.evaluate(`document.querySelector(${JSON.stringify(sourceControl(sourceID))}).checked`), true)
+  await assertNoAccessUI()
   const beforeSwitchSend = await api(`/session/${readerID}`, "GET", undefined, assistantDir)
   assert.equal(
     beforeSwitchSend.permission.some((rule: { pattern: string }) => rule.pattern === other.id),
@@ -360,34 +414,29 @@ try {
     ),
   )
   await prompt("QA_SWITCH_READ")
-  const switchedRead = await wait(
-    async () =>
-      (await api("/permission", "GET", undefined, assistantDir)).find(
-        (item: { sessionID: string }) => item.sessionID === readerID,
-      ),
-    "new project still requires file permission after switching main session",
-  )
-  assert.equal(switchedRead.permission, "external_directory")
-  assert.equal(switchedRead.metadata.filepath, otherFile)
-  await api(`/permission/${switchedRead.id}/reply`, "POST", { reply: "reject" }, assistantDir)
+  await received("QA_OK_SWITCH_READ")
+  assert.match(lastToolResult, /QA_OTHER_PROJECT_CONTENT/)
+  assert.equal((await api("/permission", "GET", undefined, assistantDir)).length, 0)
   await idle()
-  console.log("[context-access-qa] cross-project switch changed transcript/context but did not grant the new directory")
+  console.log("[context-access-qa] cross-project switch grants read-only access to the newly linked project")
   transcriptID = sourceID
   readPath = file
   await navigate(directory, sourceID, source.title)
-  assert.equal(await cdp.evaluate(`document.querySelector(${JSON.stringify(sourceControl(sourceID))}).checked`), true)
-  assert.equal(await cdp.evaluate(`document.querySelector(${JSON.stringify(sourceControl(other.id))}).checked`), false)
-  console.log(
-    "[context-access-qa] switching back retained the original project grant; other project remained unapproved",
-  )
+  await assertNoAccessUI()
+  console.log("[context-access-qa] switching back retained the assistant's linked project grants")
 
   // A renderer reload retains grants only for the same assistant session.
   const origin = await cdp.evaluate<number>("performance.timeOrigin")
   await cdp.call("Page.reload")
+  await cdp.call("Page.bringToFront")
   await rendered(
-    `performance.timeOrigin !== ${origin} && document.querySelector(${JSON.stringify(control)})?.checked === true`,
+    `performance.timeOrigin !== ${origin} && !!document.querySelector(${JSON.stringify(`${panel} [contenteditable="true"]`)})`,
     "same-session grant restored after reload",
   )
+  await assertNoAccessUI()
+  await prompt("QA_READ")
+  await received("QA_OK_READ")
+  assert.match(lastToolResult, /QA_PROJECT_CONTENT/)
   const originalWindow = await cdp.evaluate<string>(`document.querySelector(${JSON.stringify(panel)}).dataset.windowId`)
   await click(`${panel} [data-action="quick-assistant-add-window"]`)
   await rendered(
@@ -395,24 +444,35 @@ try {
     "new assistant context link",
   )
   await enableContext()
-  await rendered(visible(control), "new assistant project option")
-  assert.equal(await cdp.evaluate(`document.querySelector(${JSON.stringify(control)}).checked`), false)
+  await assertNoAccessUI()
   await prompt("QA_READ")
+  await received("QA_OK_READ")
+  assert.match(lastToolResult, /QA_PROJECT_CONTENT/)
   const separate = await wait(
     async () =>
-      (await api("/permission", "GET", undefined, assistantDir)).find(
-        (item: { sessionID: string }) => item.sessionID !== readerID,
-      ),
-    "new assistant does not inherit project access",
+      (await api("/session", "GET", undefined, assistantDir)).find((item: { id: string }) => item.id !== readerID),
+    "new assistant session",
   )
-  assert.equal(separate.permission, "external_directory")
-  await api(`/permission/${separate.id}/reply`, "POST", { reply: "reject" }, assistantDir)
+  assert.equal(projectReadAllowed(separate.permission, sourceID), true)
+  assert.equal(projectReadAllowed(separate.permission, other.id), false, "new assistants must not inherit old links")
+  readPath = otherFile
+  await prompt("QA_SWITCH_READ")
+  const unlinked = await wait(
+    async () =>
+      (await api("/permission", "GET", undefined, assistantDir)).find(
+        (item: { sessionID: string }) => item.sessionID === separate.id,
+      ),
+    "unlinked project still requires confirmation",
+  )
+  assert.equal(unlinked.permission, "external_directory")
+  await api(`/permission/${unlinked.id}/reply`, "POST", { reply: "reject" }, assistantDir)
+  readPath = file
   await wait(async () => {
     const status = await api("/session/status", "GET", undefined, assistantDir)
-    return !status[separate.sessionID] || status[separate.sessionID].type === "idle" ? true : undefined
+    return !status[separate.id] || status[separate.id].type === "idle" ? true : undefined
   }, "new assistant idle")
   await click(`#quick-assistant-tab-${originalWindow}`)
-  console.log("[context-access-qa] reload retained the same-session grant; new assistant did not inherit it")
+  console.log("[context-access-qa] reload and new assistant use default reads; unrelated project still prompts")
 
   for (const action of ["WRITE", "BASH"]) {
     await prompt(`QA_${action}`)
@@ -428,23 +488,21 @@ try {
     await idle()
   }
   assert.equal(await Bun.file(file).text(), "QA_PROJECT_CONTENT")
-  await click(control)
-  await rendered(
-    `!document.querySelector(${JSON.stringify(control)})?.checked && !document.querySelector(${JSON.stringify(control)})?.disabled`,
-    "project access revoked",
+  const legacy = await api(`/session/${readerID}`, "GET", undefined, assistantDir)
+  await api(
+    `/session/${readerID}`,
+    "PATCH",
+    {
+      permission: sessionContextRules(legacy.permission, [{ sessionID: sourceID, readFiles: false }]),
+    },
+    assistantDir,
   )
   await prompt("QA_REVOKED")
-  const revoked = await wait(
-    async () =>
-      (await api("/permission", "GET", undefined, assistantDir)).find(
-        (item: { sessionID: string }) => item.sessionID === readerID,
-      ),
-    "revoked read prompts again",
-  )
-  assert.equal(revoked.permission, "external_directory")
-  await api(`/permission/${revoked.id}/reply`, "POST", { reply: "reject" }, assistantDir)
+  await received("QA_OK_REVOKED")
+  assert.match(lastToolResult, /QA_PROJECT_CONTENT/)
+  assert.equal((await api("/permission", "GET", undefined, assistantDir)).length, 0)
   await idle()
-  console.log("[context-access-qa] writes/shell still prompt; revocation restored read confirmation")
+  console.log("[context-access-qa] writes/shell still prompt; legacy unchecked option upgraded to default read")
   await prompt("QA_UNKNOWN")
   const unknown = await wait(
     async () =>

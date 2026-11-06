@@ -1,4 +1,6 @@
 import { createStore } from "solid-js/store"
+import { createRoot } from "solid-js"
+import { createQuickAssistantScroll } from "../../app/src/components/quick-assistant/scroll-controller"
 import { render } from "solid-js/web"
 import { MarkedProvider } from "../../ui/src/context/marked"
 import { LanguageProvider } from "../../app/src/context/language"
@@ -262,6 +264,7 @@ export function mountQuickAssistantScrollFixture(options: { width?: number; para
   })) as Message[]
   const [state, setState] = createStore({
     busy: false,
+    list,
     parts: Object.fromEntries(
       list.map((message, index) => [
         message.id,
@@ -293,20 +296,58 @@ export function mountQuickAssistantScrollFixture(options: { width?: number; para
     notify: async () => {},
     storage: () => ({ getItem: () => null, setItem: () => {}, removeItem: () => {} }),
   }
+  const scroll = createRoot(() => createQuickAssistantScroll())
+  scroll.session("scroll-fixture")
   const dispose = render(
     () => (
       <PlatformProvider value={platform}>
         <LanguageProvider>
           <MarkedProvider>
-            <QuickAssistantMessages list={list} parts={state.parts} busy={state.busy} waiting={true} />
+            <QuickAssistantMessages
+              scroll={scroll}
+              list={state.list}
+              parts={state.parts}
+              busy={state.busy}
+              waiting={true}
+            />
           </MarkedProvider>
         </LanguageProvider>
       </PlatformProvider>
     ),
     host,
   )
+  let stream: ReturnType<typeof setInterval> | undefined
+  let ticks = 0
+  const stop = () => {
+    if (stream !== undefined) clearInterval(stream)
+    stream = undefined
+    setState("list", list.length - 1, "time", "completed", Date.now())
+    setState("busy", false)
+    return ticks
+  }
   console.debug(`[quick-scroll-fixture] mounted width=${host.style.width} messages=${list.length}`)
   return {
+    stream(interval = 40, limit = 120) {
+      stop()
+      ticks = 0
+      setState("list", list.length - 1, "time", "completed", undefined)
+      setState("busy", true)
+      stream = setInterval(() => {
+        ticks++
+        setState("parts", list[list.length - 1].id, 0, "text", (text) => `${text} streamed token ${ticks}.`)
+        if (ticks >= limit) stop()
+      }, interval)
+    },
+    stop,
+    mode: () => (scroll.following() ? "live" : "reading"),
+    resume: () => scroll.resume(),
+    visible(value: boolean) {
+      if (!value) scroll.visible(false)
+      host.style.display = value ? "flex" : "none"
+      if (value) scroll.visible(true)
+    },
+    session: (key: string) => scroll.session(key),
+    ticks: () => ticks,
     resize(width: number) {
       host.style.width = `${Math.min(width, innerWidth - 80)}px`
       console.debug(`[quick-scroll-fixture] resize width=${host.style.width}`)
@@ -348,7 +389,9 @@ export function mountQuickAssistantScrollFixture(options: { width?: number; para
       console.debug(`[quick-scroll-fixture] paragraph index=${index} chars=${text.length}`)
     },
     dispose() {
+      stop()
       dispose()
+      scroll.dispose()
       host.remove()
       document.documentElement.lang = originalLocale
       document.cookie = originalLocaleCookie
