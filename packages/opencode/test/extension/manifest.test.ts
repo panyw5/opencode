@@ -22,6 +22,22 @@ describe("extension manifest", () => {
     expect(manifest.versionSegment).toMatch(/^1\.2\.3-[a-f0-9]{12}$/)
   })
 
+  test("preserves optional viewer content ownership and rejects unknown values", async () => {
+    await using tmp = await tmpdir()
+    for (const content of [undefined, "text", "self"] as const) {
+      const root = await extensionPackage(tmp.path, {
+        id: `test.content-${content ?? "legacy"}`,
+        fileViewers: [{ id: "hello", title: "Hello", extensions: ["hello"], ...(content ? { content } : {}) }],
+      })
+      expect((await load(root)).contributes.fileViewers?.[0].content).toBe(content)
+    }
+    const invalid = await extensionPackage(tmp.path, {
+      id: "test.content-invalid",
+      fileViewers: [{ id: "hello", title: "Hello", extensions: ["hello"], content: "binary" }],
+    })
+    await expect(load(invalid)).rejects.toThrow()
+  })
+
   test("rejects ids, duplicate viewers, missing matchers and unknown activations", async () => {
     await using tmp = await tmpdir()
     const invalid = await extensionPackage(tmp.path, { id: "Invalid" })

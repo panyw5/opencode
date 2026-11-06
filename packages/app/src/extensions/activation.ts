@@ -123,7 +123,12 @@ export class ExtensionActivationManager {
     const module = await this.deps.importModule(entry.href)
     if (!valid()) return
     const extension = module.default
-    if (!extension || extension.id !== runtime.manifest.id || extension.apiVersion !== 1 || typeof extension.activate !== "function") {
+    if (
+      !extension ||
+      extension.id !== runtime.manifest.id ||
+      extension.apiVersion !== 1 ||
+      typeof extension.activate !== "function"
+    ) {
       throw new Error(`Extension module has an invalid default export: ${runtime.manifest.id}`)
     }
 
@@ -155,16 +160,13 @@ export class ExtensionActivationManager {
               if (!valid()) return
               return (extension.activate as (context: WebExtensionContext) => unknown)(context)
             })
-            .then(
-              async (cleanup) => {
-                if (typeof cleanup === "function") {
-                  if (valid()) runtime.cleanup = cleanup as () => void | Promise<void>
-                  else await Promise.resolve((cleanup as () => void | Promise<void>)()).catch(() => undefined)
-                }
-                resolve()
-              },
-              reject,
-            )
+            .then(async (cleanup) => {
+              if (typeof cleanup === "function") {
+                if (valid()) runtime.cleanup = cleanup as () => void | Promise<void>
+                else await Promise.resolve((cleanup as () => void | Promise<void>)()).catch(() => undefined)
+              }
+              resolve()
+            }, reject)
         })
       })
     })
@@ -239,14 +241,77 @@ export function importExtensionModule(url: string): Promise<WebExtensionModule> 
   return import(/* @vite-ignore */ url)
 }
 
-export function addExtensionStyle(url: string, extensionID: string) {
-  return new Promise<() => void>((resolve) => {
+export class ExtensionStyleLoadError extends Error {
+  constructor(extensionID: string, asset: string, reason: string) {
+    super(`Extension stylesheet ${reason}: ${extensionID} (${asset})`)
+    this.name = "ExtensionStyleLoadError"
+  }
+}
+
+export async function activateWithStyleRecovery(input: {
+  id: string
+  current(): ExtensionInfo | undefined
+  available(): boolean
+  activate(manifest: ExtensionInfo): Promise<void>
+  refresh(): Promise<void>
+}): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const manifest = input.current()
+    if (!input.available() || !manifest?.enabled || manifest.state !== "ready" || !manifest.web?.entry) return false
+    try {
+      await input.activate(manifest)
+      return input.available()
+    } catch (error) {
+      if (!(error instanceof ExtensionStyleLoadError) || attempt > 0 || !input.available()) throw error
+      // A linked extension rebuild invalidates its old fingerprinted URLs.
+      // Re-read the manifest before retrying instead of reusing the stale URL.
+      console.warn(`[extension-host] stylesheet activation retry id=${input.id} refresh=required`)
+      await input.refresh()
+    }
+  }
+  return false
+}
+
+export function addExtensionStyle(url: string, extensionID: string, options: { timeoutMs?: number } = {}) {
+  return new Promise<() => void>((resolve, reject) => {
     const link = document.createElement("link")
+    const asset = new URL(url, document.baseURI).pathname.split("/").at(-1) ?? "stylesheet"
     link.rel = "stylesheet"
     link.href = url
     link.dataset.extension = extensionID
-    link.addEventListener("load", () => resolve(() => link.remove()), { once: true })
-    link.addEventListener("error", () => resolve(() => link.remove()), { once: true })
+    let settled = false
+    let removed = false
+    const remove = () => {
+      if (removed) return
+      removed = true
+      link.remove()
+      console.debug(`[extension-host] stylesheet removed id=${extensionID} asset=${asset}`)
+    }
+    const cleanup = () => {
+      clearTimeout(timer)
+      link.removeEventListener("load", loaded)
+      link.removeEventListener("error", failed)
+    }
+    const fail = (reason: string) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      remove()
+      console.warn(`[extension-host] stylesheet failed id=${extensionID} asset=${asset} reason=${reason}`)
+      reject(new ExtensionStyleLoadError(extensionID, asset, reason))
+    }
+    const loaded = () => {
+      if (settled) return
+      settled = true
+      cleanup()
+      console.debug(`[extension-host] stylesheet loaded id=${extensionID} asset=${asset}`)
+      resolve(remove)
+    }
+    const failed = () => fail("failed to load")
+    const timer = setTimeout(() => fail("timed out"), options.timeoutMs ?? 4_000)
+    link.addEventListener("load", loaded, { once: true })
+    link.addEventListener("error", failed, { once: true })
+    console.debug(`[extension-host] stylesheet loading id=${extensionID} asset=${asset}`)
     document.head.append(link)
   })
 }

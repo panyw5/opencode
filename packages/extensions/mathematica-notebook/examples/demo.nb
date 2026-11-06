@@ -1,0 +1,8 @@
+(* Content-type: application/vnd.wolfram.mathematica *)
+Notebook[{
+Cell["A notebook, inside OpenCode", "Title"],
+Cell["Run cells in order. The agent shares this notebook's kernel and can inspect or edit its cells.", "Text"],
+Cell[BoxData["q = 7"], "Input"],
+Cell[BoxData["q * 7"], "Input"],
+Cell[BoxData["Print[\"Hello from Wolfram\"];\nPlot[Sin[x], {x, 0, 2 Pi}, ImageSize -> 480]"], "Input"]
+}, WindowSize -> {900, 700}, StyleDefinitions -> "Default.nb"]

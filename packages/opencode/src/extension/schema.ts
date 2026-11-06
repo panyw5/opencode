@@ -28,6 +28,7 @@ export const FileViewerContribution = Schema.Struct({
   mime: Schema.optional(Schema.Array(Schema.String)),
   priority: Schema.optional(Schema.Number.check(Schema.isFinite())),
   mode: Schema.optional(Schema.Literals(["replace", "preview"])),
+  content: Schema.optional(Schema.Literals(["text", "self"])),
 }).annotate({ identifier: "ExtensionFileViewerContribution" })
 export type FileViewerContribution = Types.DeepMutable<Schema.Schema.Type<typeof FileViewerContribution>>
 

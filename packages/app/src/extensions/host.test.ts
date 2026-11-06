@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot, getOwner } from "solid-js"
-import { ExtensionActivationManager, type WebExtensionModule } from "./activation"
+import { ExtensionActivationManager, ExtensionStyleLoadError, type WebExtensionModule } from "./activation"
 import { createExtensionApi } from "./api"
 import { declaredViewer, extensionViewerID } from "./context"
 import { safeModeFromURL } from "./safe-mode"
@@ -27,7 +27,7 @@ const manifest = (): ExtensionInfo => ({
   },
 })
 
-function manager(input: { load?: () => Promise<WebExtensionModule> } = {}) {
+function manager(input: { load?: () => Promise<WebExtensionModule>; style?: () => Promise<void> } = {}) {
   const events: string[] = []
   const owner = createRoot((dispose) => {
     const current = getOwner()
@@ -39,6 +39,7 @@ function manager(input: { load?: () => Promise<WebExtensionModule> } = {}) {
     importModule: input.load ?? (async () => ({ default: { id: "test.viewer", apiVersion: 1, activate() {} } })),
     addStyle: async () => {
       events.push("style:add")
+      await input.style?.()
       return () => events.push("style:remove")
     },
     registerViewer: (_manifest, contribution) => {
@@ -125,6 +126,41 @@ describe("extension host helpers", () => {
     await instance.deactivate("test.viewer")
     expect(events).toEqual(["style:add", "style:remove"])
     dispose()
+  })
+
+  test("does not import or register a viewer until CSS succeeds, and can retry", async () => {
+    let fail = true
+    let imports = 0
+    const { instance, events, dispose } = manager({
+      style: async () => {
+        if (fail) throw new ExtensionStyleLoadError("test.viewer", "index.css", "failed to load")
+      },
+      load: async () => {
+        imports++
+        return {
+          default: {
+            id: "test.viewer",
+            apiVersion: 1,
+            activate(ctx: any) {
+              ctx.fileViewers.register({ id: "hello", component: () => null })
+            },
+          },
+        }
+      },
+    })
+    try {
+      await expect(instance.activate(manifest())).rejects.toBeInstanceOf(ExtensionStyleLoadError)
+      expect(imports).toBe(0)
+      expect(events).toEqual(["style:add"])
+      expect(instance.get("test.viewer")).toBeUndefined()
+      fail = false
+      await instance.activate(manifest())
+      expect(imports).toBe(1)
+      expect(events).toEqual(["style:add", "style:add", "viewer:add:hello"])
+    } finally {
+      await instance.deactivate("test.viewer")
+      dispose()
+    }
   })
 
   test("drops a late activation after deactivate", async () => {

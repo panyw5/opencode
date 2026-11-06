@@ -29,10 +29,39 @@ describe("extension definition signature", () => {
     const next = manifest({
       contributes: {
         fileViewers: [{ id: "hello", title: "Hello", extensions: ["hello"] }],
-        commands: [{ id: "restart", title: "Restart" }, { id: "reload", title: "Reload" }],
+        commands: [
+          { id: "restart", title: "Restart" },
+          { id: "reload", title: "Reload" },
+        ],
       },
     })
     expect(extensionDefinitionChanged(previous, next)).toBe(true)
+  })
+
+  test("detects viewer content ownership changes without a version bump", () => {
+    const previous = manifest()
+    const next = manifest({
+      contributes: {
+        ...previous.contributes,
+        fileViewers: [{ ...previous.contributes.fileViewers![0], content: "self" }],
+      },
+    })
+    expect(extensionDefinitionChanged(previous, next)).toBe(true)
+    expect(reconcilePlan([previous], [next], new Map([[previous.id, extensionDefinition(previous)]]))).toEqual({
+      deactivate: [previous.id],
+      register: [next],
+    })
+    expect(
+      extensionDefinitionChanged(
+        next,
+        manifest({
+          contributes: {
+            ...next.contributes,
+            fileViewers: [{ ...next.contributes.fileViewers![0], content: "text" }],
+          },
+        }),
+      ),
+    ).toBe(true)
   })
 
   test("detects enablement, state, version and web changes", () => {
@@ -41,13 +70,26 @@ describe("extension definition signature", () => {
     expect(extensionDefinitionChanged(manifest(), manifest({ version: "1.0.1" }))).toBe(true)
     expect(extensionDefinitionChanged(manifest(), manifest({ web: undefined }))).toBe(true)
     expect(
-      extensionDefinitionChanged(manifest(), manifest({ web: { base: "http://127.0.0.1:4096/asset2/", entry: "index.js", styles: [], apiVersion: 1 } })),
+      extensionDefinitionChanged(
+        manifest(),
+        manifest({ web: { base: "http://127.0.0.1:4096/asset2/", entry: "index.js", styles: [], apiVersion: 1 } }),
+      ),
     ).toBe(true)
   })
 
   test("ignores settings snapshots and display-only renames", () => {
     expect(extensionDefinitionChanged(manifest(), manifest({ settings: { theme: "dark" } }))).toBe(false)
     expect(extensionDefinitionChanged(manifest(), manifest({ displayName: "Renamed" }))).toBe(false)
+  })
+
+  test("detects stylesheet URL changes even when the JS entry is unchanged", () => {
+    const previous = manifest()
+    const next = manifest({ web: { ...previous.web!, styles: ["http://127.0.0.1:4096/asset/next.css"] } })
+    expect(extensionDefinitionChanged(previous, next)).toBe(true)
+    expect(reconcilePlan([previous], [next], new Map([[previous.id, extensionDefinition(previous)]]))).toEqual({
+      deactivate: [previous.id],
+      register: [next],
+    })
   })
 })
 

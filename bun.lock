@@ -410,6 +410,21 @@
         "vite-plugin-solid": "catalog:",
       },
     },
+    "packages/extensions/mathematica-notebook": {
+      "name": "@opencode-ai/mathematica-notebook-extension",
+      "version": "1.18.63",
+      "devDependencies": {
+        "@opencode-ai/extension-kit": "workspace:*",
+        "@opencode-ai/plugin": "workspace:*",
+        "@tsconfig/node22": "catalog:",
+        "@typescript/native-preview": "catalog:",
+        "solid-js": "catalog:",
+        "typescript": "catalog:",
+        "virtua": "catalog:",
+        "vite": "catalog:",
+        "vite-plugin-solid": "catalog:",
+      },
+    },
     "packages/extensions/wls-repl": {
       "name": "@opencode-ai/wls-repl-extension",
       "version": "1.18.63",
@@ -1672,6 +1687,8 @@
     "@opencode-ai/http-recorder": ["@opencode-ai/http-recorder@workspace:packages/http-recorder"],
 
     "@opencode-ai/llm": ["@opencode-ai/llm@workspace:packages/llm"],
+
+    "@opencode-ai/mathematica-notebook-extension": ["@opencode-ai/mathematica-notebook-extension@workspace:packages/extensions/mathematica-notebook"],
 
     "@opencode-ai/plugin": ["@opencode-ai/plugin@workspace:packages/plugin"],
 

@@ -6,6 +6,7 @@ export type FileViewerContribution = {
   mime?: string[]
   priority?: number | string
   mode?: "replace" | "preview"
+  content?: "text" | "self"
 }
 
 export type ToolRendererDeclaration = {

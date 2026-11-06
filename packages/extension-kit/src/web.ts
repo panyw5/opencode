@@ -15,7 +15,8 @@ export type ExtensionFile = {
 export type FileViewerProps = {
   file: ExtensionFile
   text: Accessor<string | undefined>
-  // Bumped when the host refreshes cached file text while the tab is mounted.
+  // Bumped on cached text refresh, or file invalidation for self-reading viewers.
+  // Self-reading viewers may mount before text is available.
   revision?: Accessor<number>
   readBytes(): Promise<Uint8Array>
   readText(): Promise<string>
@@ -26,6 +27,9 @@ export type FileViewerProps = {
   // (see file-viewer-registry.ts `onSave`), so the returned value must be
   // called directly to unregister the handler.
   onSave?(handler: () => Promise<void>): () => void
+  // Replaces the host toolbar until disposed or the registering owner cleans
+  // up. An older disposer never clears a later registration.
+  setToolbar?(element: HTMLElement): () => void
   showSource(): void
 }
 

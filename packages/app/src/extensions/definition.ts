@@ -10,7 +10,9 @@ export function extensionDefinition(item: ExtensionInfo): string {
     enabled: item.enabled,
     state: item.state,
     version: item.version,
-    web: item.web ? { base: item.web.base, entry: item.web.entry } : undefined,
+    web: item.web
+      ? { base: item.web.base, entry: item.web.entry, styles: item.web.styles, apiVersion: item.web.apiVersion }
+      : undefined,
     // Contributions are part of the change signal: a manifest can ship new
     // viewers/commands/panels without bumping its version.
     contributes: item.contributes ?? {},

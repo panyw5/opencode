@@ -36,7 +36,12 @@ import {
   type InstallationResult,
   type InstallationStatus,
 } from "./install-api"
-import { addExtensionStyle, ExtensionActivationManager, importExtensionModule } from "./activation"
+import {
+  activateWithStyleRecovery,
+  addExtensionStyle,
+  ExtensionActivationManager,
+  importExtensionModule,
+} from "./activation"
 import { extensionDefinition } from "./definition"
 import {
   declaredCommand,
@@ -51,6 +56,7 @@ import { installExtensionHostModules } from "./modules"
 import { extensionScopedMount } from "./mount"
 import { createExtensionMutationTracker, ExtensionMutationStaleError } from "./mutation"
 import { reconcileExtensions } from "./reconcile"
+import { createExtensionReadiness } from "./readiness"
 import { registerExtensionPanel, type ExtensionPanelProps } from "./panel-registry"
 import { safeModeFromURL } from "./safe-mode"
 import type { CommandDeclaration, ExtensionInfo, ExtensionStatusEvent, PanelDeclaration } from "./types"
@@ -63,6 +69,10 @@ export type ExtensionHost = {
   activate(id: string): Promise<void>
   refresh(options?: { strict?: boolean }): Promise<void>
   enabled(): boolean
+  // First manifest list has settled for the current connection (including
+  // safe mode or a failed list request, which falls back to source text).
+  ready(): boolean
+  whenReady(): Promise<void>
   extensions(): ExtensionInfo[]
   updateSettings(id: string, patch: Record<string, unknown>): Promise<ExtensionInfo>
   // Toggles the persisted enabled flag and reconciles the host with the
@@ -81,7 +91,12 @@ export type ExtensionHost = {
 
 const ExtensionHostContext = createContext<ExtensionHost>()
 
-function LoadingViewer(props: { activate: () => Promise<void>; failed: () => boolean; retry: () => void }) {
+function LoadingViewer(props: {
+  activate: () => Promise<void>
+  failed: () => boolean
+  retry: () => void
+  showSource?: () => void
+}) {
   onMount(() => {
     if (!props.failed()) void props.activate()
   })
@@ -91,6 +106,11 @@ function LoadingViewer(props: { activate: () => Promise<void>; failed: () => boo
         <button type="button" class="text-text-strong underline" onClick={props.retry}>
           Retry extension
         </button>
+        <Show when={props.showSource}>
+          <button type="button" class="text-text-strong underline" onClick={() => props.showSource?.()}>
+            Show source
+          </button>
+        </Show>
       </Show>
     </div>
   )
@@ -128,6 +148,15 @@ export function ExtensionHostProvider(props: ParentProps) {
     createStore({ disabled: false }),
   )
   const mode = createMemo(() => safeModeFromURL(location.search, safe.disabled))
+  const [readinessVersion, setReadinessVersion] = createSignal(0)
+  const readiness = createExtensionReadiness(
+    () => ({ url: globalSDK.url, client: globalSDK.client, disabled: mode().disabled, safeReady: safeReady() }),
+    () => setReadinessVersion((version) => version + 1),
+  )
+  const ready = () => {
+    readinessVersion()
+    return readiness.ready()
+  }
   const [manifests, setManifests] = createSignal<ExtensionInfo[]>([])
   const [failures, setFailures] = createSignal<ReadonlySet<string>>(new Set())
   const placeholders = new Map<string, Array<() => void>>()
@@ -197,6 +226,7 @@ export function ExtensionHostProvider(props: ParentProps) {
         owner: manifest.id,
         title: declared.title,
         mode: declared.mode ?? "replace",
+        content: declared.content,
         priority: typeof declared.priority === "number" ? declared.priority : undefined,
         extensions: declared.extensions,
         filenames: declared.filenames,
@@ -300,9 +330,20 @@ export function ExtensionHostProvider(props: ParentProps) {
     if (!item || !item.enabled || item.state !== "ready" || mode().disabled) return
     // Server-only extensions have nothing to load in the UI.
     if (!item.web?.entry) return
-    await manager.activate(item).then(
-      () => clearFailure(id),
+    const serverURL = globalSDK.url
+    const client = globalSDK.client
+    await activateWithStyleRecovery({
+      id,
+      current: () => manifest(id),
+      available: () => !disposed && !mode().disabled && globalSDK.url === serverURL && globalSDK.client === client,
+      activate: (current) => manager.activate(current),
+      refresh: () => refresh({ strict: true }),
+    }).then(
+      (active) => {
+        if (active) clearFailure(id)
+      },
       (error) => {
+        if (disposed || globalSDK.url !== serverURL || globalSDK.client !== client) return
         setFailures((current) => new Set(current).add(id))
         const message = error instanceof Error ? error.message : String(error)
         console.error(`[extension-host] activate failed id=${id} error=${message}`)
@@ -311,9 +352,15 @@ export function ExtensionHostProvider(props: ParentProps) {
     )
   }
 
-  const retryActivation = (id: string) => {
+  const retryActivation = async (id: string) => {
+    try {
+      await refresh({ strict: true })
+    } catch (error) {
+      console.warn(`[extension-host] retry manifest refresh failed id=${id} error=${String(error)}`)
+      return
+    }
     clearFailure(id)
-    void activate(id)
+    await activate(id)
   }
 
   const clearPlaceholders = (id: string) => {
@@ -340,15 +387,17 @@ export function ExtensionHostProvider(props: ParentProps) {
         owner: item.id,
         title: viewer.title,
         mode: viewer.mode ?? "replace",
+        content: viewer.content,
         priority: typeof viewer.priority === "number" ? viewer.priority : undefined,
         extensions: viewer.extensions,
         filenames: viewer.filenames,
         mime: viewer.mime,
-        component: () => (
+        component: (props) => (
           <LoadingViewer
             activate={() => activate(item.id)}
             failed={() => failures().has(item.id)}
             retry={() => retryActivation(item.id)}
+            showSource={() => props.showSource()}
           />
         ),
       }),
@@ -428,7 +477,7 @@ export function ExtensionHostProvider(props: ParentProps) {
   // reconcileExtensions re-checks the epoch after every await, so a refresh
   // parked on a slow deactivation cannot clobber the newer refresh's state.
   let refreshEpoch = 0
-  const reconcile = (next: ExtensionInfo[], epoch: number) =>
+  const reconcile = (next: ExtensionInfo[], epoch: number, scope = readiness.capture()) =>
     reconcileExtensions(next, {
       manifests: () => manifests(),
       setManifests: (list) => setManifests(list),
@@ -438,7 +487,7 @@ export function ExtensionHostProvider(props: ParentProps) {
       clearFailure,
       registerPlaceholders,
       activate,
-      isStale: () => epoch !== refreshEpoch,
+      isStale: () => disposed || epoch !== refreshEpoch || !readiness.isCurrent(scope),
     })
 
   // State-changing operations (enable/disable, settings updates) share one
@@ -458,53 +507,69 @@ export function ExtensionHostProvider(props: ParentProps) {
   }
 
   let activeServerURL = globalSDK.url
+  let activeClient = globalSDK.client
+  let connectionCleanup = Promise.resolve()
   const refresh = async (options?: { strict?: boolean }) => {
     const stale = () => {
       if (options?.strict) throw new ExtensionMutationStaleError("Extension refresh was superseded")
     }
     if (disposed) return stale()
+    const scope = readiness.capture()
     const epoch = ++refreshEpoch
-    const serverURL = globalSDK.url
-    const client = globalSDK.client
-    if (activeServerURL !== serverURL) {
-      // Free locks held against the server we are leaving so an orphaned
-      // in-flight toggle cannot keep the id busy on the new server.
-      tracker.releaseServer(activeServerURL)
-      syncMutating()
-      activeServerURL = serverURL
-      await manager.disposeAll()
-      if (epoch !== refreshEpoch) return stale()
-      for (const id of placeholders.keys()) clearPlaceholders(id)
-      setManifests([])
-      setFailures(new Set<string>())
+    const isStale = () => disposed || epoch !== refreshEpoch || !readiness.isCurrent(scope)
+    try {
+      if (activeServerURL !== scope.url || activeClient !== scope.client) {
+        // A recreated client at the same URL is a new connection too. All
+        // refreshes wait for its cleanup before registering new placeholders.
+        tracker.releaseServer(activeServerURL)
+        syncMutating()
+        activeServerURL = scope.url
+        activeClient = scope.client
+        const previousCleanup = connectionCleanup
+        connectionCleanup = (async () => {
+          await previousCleanup
+          await manager.disposeAll()
+          if (disposed || activeServerURL !== scope.url || activeClient !== scope.client) return
+          for (const id of placeholders.keys()) clearPlaceholders(id)
+          setManifests([])
+          setFailures(new Set<string>())
+        })()
+      }
+      await connectionCleanup
+      if (isStale()) return stale()
+      if (scope.disabled) {
+        const applied = await reconcile([], epoch, scope)
+        if (!applied || isStale()) return stale()
+        return
+      }
+      const list = await api.list().then(
+        (value) => value,
+        (error) => {
+          const message = error instanceof Error ? error.message : String(error)
+          console.warn(`[extension-host] manifest refresh failed error=${message}`)
+          // Strict callers (post-toggle sync) need the failure to propagate so
+          // a swallowed list error cannot turn into a false-green result.
+          if (options?.strict) throw error
+          return undefined
+        },
+      )
+      if (isStale()) return stale()
+      if (!list) return
+      const applied = await reconcile(list, epoch, scope)
+      if (!applied || isStale()) return stale()
+    } finally {
+      // Failure is a settled first attempt: allow text fallback rather than
+      // hanging file previews. A stale refresh must never resolve a new scope.
+      if (!isStale()) readiness.settle(scope)
     }
-    if (mode().disabled) {
-      if (epoch !== refreshEpoch) return stale()
-      await reconcile([], epoch)
-      return
-    }
-    const list = await api.list().then(
-      (value) => value,
-      (error) => {
-        const message = error instanceof Error ? error.message : String(error)
-        console.warn(`[extension-host] manifest refresh failed error=${message}`)
-        // Strict callers (post-toggle sync) need the failure to propagate so
-        // a swallowed list error cannot turn into a false-green result.
-        if (options?.strict) throw error
-        return undefined
-      },
-    )
-    if (disposed || globalSDK.client !== client || epoch !== refreshEpoch) return stale()
-    if (!list) return
-    const applied = await reconcile(list, epoch)
-    if (!applied || disposed || globalSDK.client !== client) return stale()
   }
 
   createEffect(() => {
-    if (!safeReady()) return
-    globalSDK.url
-    mode().disabled
-    void refresh()
+    const scope = readiness.capture()
+    if (!scope.safeReady) return
+    void refresh().catch((error) => {
+      console.warn(`[extension-host] initial manifest refresh failed error=${String(error)}`)
+    })
   })
   const stop = globalSDK.listenAll((event) => {
     // Status events arrive on the shared stream for every connected domain
@@ -580,6 +645,7 @@ export function ExtensionHostProvider(props: ParentProps) {
 
   onCleanup(() => {
     disposed = true
+    readiness.dispose()
     stop()
     // Invalidate any in-flight refresh/reconcile so a pass parked on a slow
     // deactivation cannot re-register placeholders after the host is gone.
@@ -730,6 +796,8 @@ export function ExtensionHostProvider(props: ParentProps) {
     activate,
     refresh,
     enabled: () => !mode().disabled,
+    ready,
+    whenReady: readiness.whenReady,
     extensions: manifests,
     updateSettings: updateSettingsByID,
     setEnabled: setEnabledByID,

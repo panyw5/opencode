@@ -1,0 +1,576 @@
+import { batch, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, untrack } from "solid-js"
+import { Virtualizer } from "virtua/solid"
+import { defineWebExtension, type ExtensionContext, type FileViewerProps } from "@opencode-ai/extension-kit/web"
+import type { Output } from "./kernel"
+import { canHighlightWolfram, tokenizeWolfram } from "./highlight"
+import {
+  cellText,
+  createEditorResizeQueue,
+  createReloadGate,
+  draftEdits,
+  isLargeText,
+  listStartMargin,
+  pinnedCellPositions,
+  textPreview,
+  viewerContent,
+  VIRTUAL_BUFFER_PX,
+  type EditorResizeQueue,
+  type ViewerCell,
+  type ViewerContent,
+  type ViewerDocument,
+} from "./viewer"
+import "./web.css"
+
+const ID = "local.mathematica-notebook"
+
+function CodeTokens(props: { value: string }) {
+  const tokens = createMemo(() => tokenizeWolfram(props.value))
+  return <For each={tokens()}>{(token) => <span data-token={token.kind}>{token.text}</span>}</For>
+}
+
+function TextPreview(props: { value: string; onLoad(): void }) {
+  const preview = createMemo(() => textPreview(props.value))
+  return (
+    <div class="oc-nb-preview">
+      <p class="oc-nb-muted">Large content ({props.value.length.toLocaleString()} characters). Preview only.</p>
+      <pre>{preview()}</pre>
+      <button onClick={props.onLoad}>Load full content</button>
+    </div>
+  )
+}
+
+function DeferredText(props: { value: string; full: boolean; onLoad(): void; printed?: boolean }) {
+  return (
+    <Show
+      when={!isLargeText(props.value) || props.full}
+      fallback={<TextPreview value={props.value} onLoad={props.onLoad} />}
+    >
+      <pre classList={{ "oc-nb-printed": props.printed }}>
+        <CodeTokens value={props.value} />
+      </pre>
+    </Show>
+  )
+}
+
+function CellEditor(props: {
+  label: string
+  value: string
+  disabled: boolean
+  highlight?: boolean
+  resize: EditorResizeQueue
+  onComposition(active: boolean): void
+  onInput(value: string): void
+}) {
+  let field!: HTMLTextAreaElement
+  let mirror: HTMLPreElement | undefined
+  const [composing, setComposing] = createSignal(false)
+  const highlighted = createMemo(() => !!props.highlight && !composing() && canHighlightWolfram(props.value))
+  const syncScroll = () => {
+    if (!mirror || !field) return
+    mirror.scrollTop = field.scrollTop
+    mirror.scrollLeft = field.scrollLeft
+  }
+  const resize = () => props.resize.schedule({ field, syncScroll })
+  createEffect(() => {
+    props.value
+    highlighted()
+    resize()
+  })
+  onMount(() => {
+    let width = -1
+    const observer = new ResizeObserver(([entry]) => {
+      const next = entry.contentRect.width
+      if (next === width) return
+      width = next
+      resize()
+    })
+    observer.observe(field)
+    onCleanup(() => observer.disconnect())
+  })
+  onCleanup(() => props.resize.remove(field))
+  return (
+    <div class="oc-nb-editor" classList={{ "is-code": props.highlight, "is-highlighted": highlighted() }}>
+      <Show when={highlighted()}>
+        <pre ref={mirror} class="oc-nb-highlight" aria-hidden="true">
+          <CodeTokens value={props.value} />
+          {"​"}
+        </pre>
+      </Show>
+      <textarea
+        ref={field}
+        aria-label={props.label}
+        value={props.value}
+        disabled={props.disabled}
+        rows={1}
+        spellcheck={props.highlight ? false : undefined}
+        autocapitalize={props.highlight ? "off" : undefined}
+        autocorrect={props.highlight ? "off" : undefined}
+        onScroll={syncScroll}
+        onCompositionStart={() => {
+          props.onComposition(true)
+          setComposing(true)
+        }}
+        onCompositionEnd={() => {
+          // Capture the committed value before releasing the composition pin.
+          props.onInput(field.value)
+          setComposing(false)
+          props.onComposition(false)
+          resize()
+        }}
+        onInput={(event) => {
+          props.onInput(event.currentTarget.value)
+          resize()
+        }}
+      />
+    </div>
+  )
+}
+
+export function NotebookViewer(props: FileViewerProps & { context: ExtensionContext }) {
+  const [document, setDocument] = createSignal<ViewerContent>()
+  const [drafts, setDrafts] = createSignal<Record<number, string>>({})
+  const [outputs, setOutputs] = createSignal<Record<number, Output>>({})
+  const [details, setDetails] = createSignal<Record<string, boolean>>({})
+  const [full, setFull] = createSignal<Record<string, boolean>>({})
+  const [focused, setFocused] = createSignal<number>()
+  const [composing, setComposing] = createSignal<number>()
+  const [busy, setBusy] = createSignal(false)
+  const [running, setRunning] = createSignal<number>()
+  const [error, setError] = createSignal("")
+  const [notice, setNotice] = createSignal("")
+  const [dirty, setDirty] = createSignal(false)
+  const [startMargin, setStartMargin] = createSignal(0)
+  let scroller!: HTMLElement
+  let toolbar!: HTMLElement
+  let messages!: HTMLDivElement
+  let paper!: HTMLDivElement
+  let listAnchor!: HTMLDivElement
+  let alive = true
+  let runController: AbortController | undefined
+  let runBatch = false
+  const reloadGate = createReloadGate()
+  const resize = createEditorResizeQueue((message) => props.context.log.debug(message))
+  const keepMounted = createMemo(() => pinnedCellPositions(document()?.cells ?? [], focused(), composing()))
+  const loadFull = (key: string) => setFull((prev) => ({ ...prev, [key]: true }))
+  const toggleDetails = (key: string, open: boolean) =>
+    setDetails((prev) => (prev[key] === open ? prev : { ...prev, [key]: open }))
+  const call = <T,>(method: string, data: object = {}, signal?: AbortSignal) =>
+    props.context.rpc.call<T>(
+      method,
+      { path: props.file.absolutePath, ...data },
+      { directory: props.file.directory, signal, timeoutMs: 3_660_000 },
+    )
+  const adopt = (next: ViewerDocument) => {
+    reloadGate.invalidate()
+    props.context.log.info(`notebook loaded path=${next.path} cells=${next.cells.length}`)
+    const changed = document()?.revision !== next.revision || document()?.path !== next.path
+    batch(() => {
+      // Do not retain next.outputs inside document as well as in the live outputs signal.
+      setDocument(viewerContent(next))
+      setOutputs(next.outputs)
+      setDrafts({})
+      setDirty(false)
+      setNotice("")
+      setFocused(undefined)
+      setComposing(undefined)
+      if (changed) {
+        setDetails({})
+        setFull({})
+      }
+    })
+    props.setDirty?.(false)
+  }
+  const reload = async (discard = false) => {
+    const request = reloadGate.begin()
+    const started = performance.now()
+    props.context.log.debug(`notebook reload path=${props.file.absolutePath}`)
+    try {
+      const next = await call<ViewerDocument>("notebook.read", { view: true }, request.signal)
+      props.context.log.debug(
+        `notebook rpc completed cells=${next.cells.length} rpcMs=${Math.round(performance.now() - started)}`,
+      )
+      if (!alive || !request.current()) return
+      const current = untrack(document)
+      if (!discard && current?.revision === next.revision && current.path === next.path) {
+        setOutputs(next.outputs)
+        setError("")
+        props.context.log.debug(`notebook reload unchanged cells=${next.cells.length}`)
+        return
+      }
+      // Never replace a draft when an external refresh races with typing.
+      if (dirty()) {
+        setNotice("File changed. Your draft is kept. Reload discards it; save checks for conflicts.")
+        return
+      }
+      adopt(next)
+      setError("")
+    } catch (error) {
+      if (alive && request.current()) {
+        props.context.log.error(`notebook reload failed path=${props.file.absolutePath} error=${String(error)}`)
+        setError(error instanceof Error ? error.message : String(error))
+      }
+    } finally {
+      request.finish()
+    }
+  }
+  const action = async (fn: () => Promise<void>, propagate = false) => {
+    if (busy()) {
+      if (propagate) throw new Error("Notebook is busy")
+      return
+    }
+    // An earlier refresh must not race a save or replace current evaluation state.
+    reloadGate.invalidate()
+    setBusy(true)
+    setError("")
+    try {
+      await fn()
+    } catch (error) {
+      if (alive) setError(error instanceof Error ? error.message : String(error))
+      if (propagate) throw error
+    } finally {
+      if (alive) {
+        setBusy(false)
+        setRunning(undefined)
+      }
+    }
+  }
+  const save = async (append?: { style: "Input" | "Text"; text: string }) => {
+    const current = document()
+    if (!current) throw new Error("Notebook has not loaded")
+    const next = await call<ViewerDocument>("notebook.save", {
+      view: true,
+      revision: current.revision,
+      edits: draftEdits(drafts()),
+      append,
+    })
+    if (alive) adopt(next)
+  }
+  const run = async (cell: ViewerCell) => {
+    const current = document()
+    if (!current) return
+    setRunning(cell.index)
+    const controller = new AbortController()
+    runController = controller
+    try {
+      const output = await call<Output>(
+        "notebook.run",
+        { index: cell.index, revision: current.revision, code: cellText(cell, drafts()) },
+        controller.signal,
+      )
+      if (alive && document()?.revision === current.revision) setOutputs((prev) => ({ ...prev, [cell.index]: output }))
+      if (!output.ok) throw new Error("Cell evaluation failed. See its output.")
+    } finally {
+      if (alive) setRunning(undefined)
+      if (runController === controller) runController = undefined
+    }
+  }
+  const stop = async () => {
+    runBatch = false
+    runController?.abort()
+    try {
+      await call("kernel.stop")
+      if (alive) setNotice("Kernel stopped. Variables have been reset.")
+    } catch (error) {
+      if (alive) setError(String(error))
+    }
+  }
+  const edit = (cell: ViewerCell, value: string) => {
+    setDrafts((prev) => {
+      const next = { ...prev }
+      if (value === cell.text) delete next[cell.index]
+      else next[cell.index] = value
+      return next
+    })
+    const changed = Object.keys(drafts()).length > 0
+    setDirty(changed)
+    props.setDirty?.(changed)
+  }
+  createEffect(() => {
+    props.revision?.()
+    untrack(() => void reload())
+  })
+  const offSave = props.onSave?.(() => action(() => save(), true))
+  const events = props.context.events.on(`${ID}/change`, (data) => {
+    const event = data as { path: string; type: string; index: number; output: Output; revision: string }
+    if (event.path !== (document()?.path ?? props.file.absolutePath)) return
+    if (event.type === "output" && event.revision === document()?.revision)
+      setOutputs((prev) => ({ ...prev, [event.index]: event.output }))
+    if (event.type === "saved" && !busy()) void reload()
+    if (event.type === "saved" && busy()) setNotice("Notebook saved externally. Reload before saving further edits.")
+    if (event.type === "stopped") setNotice("Kernel stopped. Variables have been reset.")
+  })
+  onMount(() => {
+    const releaseToolbar = props.setToolbar?.(toolbar)
+    onCleanup(() => releaseToolbar?.())
+    props.context.log.debug(`notebook toolbar mounted host=${!!props.setToolbar}`)
+    let frame: number | undefined
+    const measure = () => {
+      frame = undefined
+      if (!alive) return
+      // The host surface uses min-height, not a fixed height. Stay out of flow so
+      // notebook rows cannot expand its viewport, but preserve the host menu row.
+      const surface = scroller.parentElement
+      const menu = scroller.previousElementSibling
+      if (surface && menu instanceof HTMLElement) {
+        const top = Math.max(
+          0,
+          menu.getBoundingClientRect().bottom - surface.getBoundingClientRect().top - surface.clientTop,
+        )
+        scroller.style.setProperty("--oc-nb-surface-top", `${top}px`)
+      }
+      // Includes actual toolbar wrapping, messages, paper padding and container border.
+      const next = listStartMargin(scroller, listAnchor)
+      if (Math.abs(next - startMargin()) < 0.5) return
+      setStartMargin(next)
+      props.context.log.debug(`notebook virtual layout startMargin=${Math.round(next)} buffer=${VIRTUAL_BUFFER_PX}`)
+    }
+    const schedule = () => {
+      if (frame === undefined) frame = requestAnimationFrame(measure)
+    }
+    const observer = new ResizeObserver(schedule)
+    for (const element of [scroller, toolbar, messages, paper, scroller.previousElementSibling]) {
+      if (element) observer.observe(element)
+    }
+    measure()
+    onCleanup(() => {
+      observer.disconnect()
+      if (frame !== undefined) cancelAnimationFrame(frame)
+    })
+  })
+  onCleanup(() => {
+    alive = false
+    reloadGate.invalidate()
+    runBatch = false
+    runController?.abort()
+    resize.dispose()
+    offSave?.()
+    events.dispose()
+    props.setDirty?.(false)
+  })
+
+  return (
+    <section
+      ref={scroller}
+      class="oc-nb"
+      data-notebook-path={props.file.absolutePath}
+      aria-label="Mathematica Notebook"
+    >
+      <header ref={toolbar} class="oc-nb-toolbar" data-hosted={!!props.setToolbar} aria-label="Notebook actions">
+        <div class="oc-nb-actions">
+          <button
+            disabled={busy() || !document()}
+            onClick={() =>
+              void action(async () => {
+                runBatch = true
+                try {
+                  // Evaluation always reads original text/drafts, never the display preview or mounted DOM.
+                  for (const cell of document()!.cells) {
+                    if (!runBatch || !alive) break
+                    if (cell.runnable) await run(cell)
+                  }
+                } finally {
+                  runBatch = false
+                }
+              })
+            }
+          >
+            Run all
+          </button>
+          <button disabled={!document()} onClick={() => void stop()}>
+            Stop / reset
+          </button>
+          <button disabled={busy() || !dirty()} onClick={() => void action(() => save())}>
+            Save{dirty() ? " *" : ""}
+          </button>
+          <button
+            disabled={busy()}
+            onClick={() => {
+              const discard = dirty()
+              setDirty(false)
+              props.setDirty?.(false)
+              void reload(discard)
+            }}
+          >
+            {dirty() ? "Discard & reload" : "Reload"}
+          </button>
+          <button onClick={props.showSource}>Source</button>
+        </div>
+      </header>
+      <div ref={messages} class="oc-nb-messages">
+        <Show when={error()}>
+          <div class="oc-nb-error" role="alert">
+            {error()}
+          </div>
+        </Show>
+        <Show when={notice()}>
+          <div class="oc-nb-notice" role="status">
+            {notice()}
+          </div>
+        </Show>
+      </div>
+      <div ref={paper} class="oc-nb-paper">
+        <div ref={listAnchor} class="oc-nb-list">
+          <Show
+            when={document()}
+            fallback={
+              <p class="oc-nb-muted">
+                {error() ? "Notebook could not be loaded. Reload to retry or open Source." : "Loading notebook..."}
+              </p>
+            }
+          >
+            <Virtualizer
+              data={document()?.cells ?? []}
+              scrollRef={scroller}
+              startMargin={startMargin()}
+              bufferSize={VIRTUAL_BUFFER_PX}
+              keepMounted={keepMounted()}
+            >
+              {(cell) => (
+                <article
+                  class="oc-nb-cell"
+                  data-cell-index={cell.index}
+                  data-style={cell.style}
+                  onFocusIn={() => setFocused(cell.index)}
+                  onFocusOut={(event) => {
+                    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
+                    setFocused((current) => (current === cell.index ? undefined : current))
+                  }}
+                >
+                  <aside class="oc-nb-label">
+                    <span class="oc-nb-cell-label">
+                      {cell.style === "Input" || cell.style === "Code" ? `In[${cell.index + 1}]:=` : cell.style}
+                    </span>
+                    <Show when={cell.runnable}>
+                      <button
+                        class="oc-nb-run"
+                        aria-label={`Run cell ${cell.index + 1}`}
+                        aria-busy={running() === cell.index}
+                        disabled={busy()}
+                        onClick={() => void action(() => run(cell))}
+                      >
+                        {running() === cell.index ? "Running..." : "Run"}
+                      </button>
+                    </Show>
+                  </aside>
+                  <div class="oc-nb-content">
+                    <Show
+                      when={cell.editable}
+                      fallback={
+                        <details
+                          class="oc-nb-opaque"
+                          open={!!details()[`opaque:${cell.index}`]}
+                          onToggle={(event) => toggleDetails(`opaque:${cell.index}`, event.currentTarget.open)}
+                        >
+                          <summary>{cell.style}: unsupported rich boxes (preserved)</summary>
+                          <Show when={details()[`opaque:${cell.index}`]}>
+                            <DeferredText
+                              value={cell.text}
+                              full={!!full()[`cell:${cell.index}`]}
+                              onLoad={() => loadFull(`cell:${cell.index}`)}
+                            />
+                          </Show>
+                        </details>
+                      }
+                    >
+                      <Show
+                        when={!isLargeText(cell.text) || full()[`cell:${cell.index}`]}
+                        fallback={<TextPreview value={cell.text} onLoad={() => loadFull(`cell:${cell.index}`)} />}
+                      >
+                        <CellEditor
+                          label={`Cell ${cell.index + 1} (${cell.style})`}
+                          disabled={busy()}
+                          highlight={cell.style === "Input" || cell.style === "Code" || cell.style === "Output"}
+                          value={cellText(cell, drafts())}
+                          resize={resize}
+                          onComposition={(active) =>
+                            setComposing((current) =>
+                              active ? cell.index : current === cell.index ? undefined : current,
+                            )
+                          }
+                          onInput={(value) => edit(cell, value)}
+                        />
+                      </Show>
+                    </Show>
+                    <Show when={outputs()[cell.index]}>
+                      {(output) => (
+                        <div
+                          class="oc-nb-output"
+                          classList={{ "is-error": !output().ok }}
+                          aria-label={`Output cell ${cell.index + 1}`}
+                        >
+                          <span class="oc-nb-out-label">Out[{cell.index + 1}]=</span>
+                          <Show when={output().printed}>
+                            <DeferredText
+                              printed
+                              value={output().printed}
+                              full={!!full()[`printed:${cell.index}`]}
+                              onLoad={() => loadFull(`printed:${cell.index}`)}
+                            />
+                          </Show>
+                          <Show
+                            when={output().image}
+                            fallback={
+                              <DeferredText
+                                value={output().text || (output().printed ? "" : "Null")}
+                                full={!!full()[`output:${cell.index}`]}
+                                onLoad={() => loadFull(`output:${cell.index}`)}
+                              />
+                            }
+                          >
+                            <img
+                              loading="lazy"
+                              decoding="async"
+                              alt={`Wolfram graphic from cell ${cell.index + 1}`}
+                              src={`data:image/png;base64,${output().image}`}
+                            />
+                            <details
+                              open={!!details()[`expression:${cell.index}`]}
+                              onToggle={(event) => toggleDetails(`expression:${cell.index}`, event.currentTarget.open)}
+                            >
+                              <summary>Expression</summary>
+                              <Show when={details()[`expression:${cell.index}`]}>
+                                <DeferredText
+                                  value={output().text}
+                                  full={!!full()[`output:${cell.index}`]}
+                                  onLoad={() => loadFull(`output:${cell.index}`)}
+                                />
+                              </Show>
+                            </details>
+                          </Show>
+                        </div>
+                      )}
+                    </Show>
+                  </div>
+                </article>
+              )}
+            </Virtualizer>
+            <div class="oc-nb-add">
+              <button disabled={busy()} onClick={() => void action(() => save({ style: "Input", text: "" }))}>
+                + Input cell
+              </button>
+              <button disabled={busy()} onClick={() => void action(() => save({ style: "Text", text: "" }))}>
+                + Text cell
+              </button>
+            </div>
+          </Show>
+        </div>
+        <footer class="oc-nb-footnote">
+          Local Wolfram kernel · Shared with agent · Run results are temporary; Save writes cell edits only.
+        </footer>
+      </div>
+    </section>
+  )
+}
+
+export default defineWebExtension({
+  id: ID,
+  apiVersion: 1,
+  activate(context) {
+    context.log.info("activating Mathematica Notebook viewer")
+    const viewer = context.fileViewers.register({
+      id: "mathematica-notebook",
+      component: (props) => <NotebookViewer {...props} context={context} />,
+    })
+    return () => viewer.dispose()
+  },
+})
