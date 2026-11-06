@@ -23,7 +23,7 @@ export function AttachmentImagePreview(props: { src: string; filename: string })
     const link = document.createElement("a")
     link.href = props.src
     link.download = props.filename
-    document.body.append(link)
+    document.body.appendChild(link)
     link.click()
     link.remove()
   }
