@@ -15,6 +15,71 @@ const windowsUrl: PathContext = { platform: "win32", kind: "url" }
 const linuxLocal: PathContext = { platform: "linux", kind: "local-filesystem" }
 const darwinLocal: PathContext = { platform: "darwin", kind: "local-filesystem" }
 
+describe("filesystem storage names", () => {
+  test("preserves existing git storage and POSIX directory project names", () => {
+    const hash = "bca02598aca3cc2b9d600db1b969eb711ddb1ab8"
+    for (const context of [windowsLocal, linuxLocal, darwinLocal]) {
+      expect(Path.storageName(hash, context)).toBe(hash)
+      expect(Path.storageName("global", context)).toBe("global")
+      expect(Path.storageName("project_001", context)).toBe("project_001")
+    }
+    expect(Path.storageName(`dir:${hash}`, windowsLocal)).toBe(`dir%3A${hash}`)
+    expect(Path.storageName(`dir:${hash}`, linuxLocal)).toBe(`dir:${hash}`)
+    expect(Path.storageName(`dir:${hash}`, darwinLocal)).toBe(`dir:${hash}`)
+  })
+
+  test("encodes all Windows filename restrictions and reserved devices", () => {
+    for (const value of [
+      "a:b",
+      "a/b",
+      "a\\b",
+      "a*b",
+      "a?b",
+      'a"b',
+      "a|b",
+      "a<b",
+      "a>b",
+      "\0",
+      "\x1f",
+      ".",
+      "..",
+      "CON",
+      "nul.txt",
+      "COM¹",
+      "lpt9.log",
+      "CONIN$",
+      "name.",
+      "name ",
+      "",
+    ]) {
+      const name = Path.storageName(value, windowsLocal)
+      expect(name.length).toBeGreaterThan(0)
+      expect(name).not.toMatch(/[<>:"/\\|?*\x00-\x1f]|[ .]$/)
+      expect(name).not.toMatch(/^(?:con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])(?:[ .]|$)/i)
+    }
+    expect(Path.storageName("nul.txt", windowsLocal)).toBe("%6Eul.txt")
+    expect(Path.storageName("name. ", windowsLocal)).toBe("name%2E%20")
+  })
+
+  test("keeps encoded IDs distinct from literal escape sequences", () => {
+    const values = ["dir:a", "dir%3Aa", "a/b", "a%2Fb", "CON", "%43ON", "", "%", "\0", "%00"]
+    for (const context of [windowsLocal, linuxLocal]) {
+      expect(new Set(values.map((value) => Path.storageName(value, context))).size).toBe(values.length)
+    }
+  })
+
+  test("uses the owning filesystem rules without altering whole-path normalization", () => {
+    expect(Path.storageName("dir:a\\b*", linuxLocal)).toBe("dir:a\\b*")
+    expect(Path.storageName("CON", darwinLocal)).toBe("CON")
+    expect(Path.storageName("项目🙂", windowsLocal)).toBe("项目🙂")
+    expect(Path.storageName("a/b\0", linuxLocal)).toBe("a%2Fb%00")
+    expect(Path.storageName("dir:a", windowsRemote)).toBe("dir%3Aa")
+    expect(Path.native("C:/repo/dir:a", windowsLocal)).toBe("C:\\repo\\dir:a")
+    expect(() => Path.storageName("a", windowsUrl)).toThrow(TypeError)
+    expect(() => Path.storageName("a", { platform: "linux", kind: "virtual" })).toThrow(TypeError)
+  })
+})
+
 describe("context-aware path identity", () => {
   test("folds Windows local drive and UNC variants only", () => {
     const drives = ["D:/chat", "d:/chat", "D:\\chat", "D:\\chat\\"]

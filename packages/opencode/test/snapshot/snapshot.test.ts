@@ -13,8 +13,64 @@ import { testEffect } from "../lib/effect"
 import { Global } from "@opencode-ai/core/global"
 import { Hash } from "@opencode-ai/core/util/hash"
 import { InstanceRef } from "../../src/effect/instance-ref"
+import { ProjectID } from "../../src/project/schema"
 
 const it = testEffect(Layer.mergeAll(Snapshot.defaultLayer, AppFileSystem.defaultLayer))
+
+it.instance("skips snapshot storage for a non-git project", () =>
+  Effect.gen(function* () {
+    const ctx = yield* InstanceRef
+    if (!ctx) throw new Error("missing instance")
+    expect(ctx.project.id).toStartWith("dir:")
+    const snapshots = yield* Snapshot.Service
+    expect(yield* snapshots.track()).toBeUndefined()
+    yield* snapshots.cleanup()
+    const root = path.join(Global.Path.data, "snapshot")
+    const entries = yield* Effect.promise(() => fs.readdir(root).catch(() => [] as string[]))
+    expect(entries).not.toContain(ctx.project.id)
+    expect(entries).not.toContain(encodeURIComponent(ctx.project.id))
+  }),
+)
+
+it.instance(
+  "skips snapshot storage when snapshots are disabled",
+  () =>
+    Effect.gen(function* () {
+      const ctx = yield* InstanceRef
+      if (!ctx) throw new Error("missing instance")
+      expect(ctx.project.vcs).toBe("git")
+      const snapshots = yield* Snapshot.Service
+      expect(yield* snapshots.track()).toBeUndefined()
+      yield* snapshots.cleanup()
+      expect(yield* exists(path.join(Global.Path.data, "snapshot", ctx.project.id))).toBe(false)
+      expect(yield* exists(path.join(Global.Path.data, "snapshot", encodeURIComponent(ctx.project.id)))).toBe(false)
+    }),
+  { git: true, config: { snapshot: false } },
+)
+
+it.instance(
+  "captures and restores snapshots for a git project retaining a dir project ID",
+  () =>
+    Effect.gen(function* () {
+      const ctx = yield* InstanceRef
+      if (!ctx) throw new Error("missing instance")
+      const projectID = ProjectID.make(`dir:${Hash.fast(ctx.directory)}`)
+      yield* Effect.gen(function* () {
+        const snapshots = yield* Snapshot.Service
+        const file = path.join(ctx.directory, "retained-id.txt")
+        yield* write(file, "before")
+        const before = yield* snapshots.track()
+        expect(before).toMatch(/^[0-9a-f]{40,64}$/)
+        yield* write(file, "after")
+        expect(yield* snapshots.track()).not.toBe(before)
+        yield* snapshots.restore(before!)
+        expect(yield* readText(file)).toBe("before")
+        const name = process.platform === "win32" ? encodeURIComponent(projectID) : projectID
+        expect(yield* exists(path.join(Global.Path.data, "snapshot", name, Hash.fast(ctx.worktree), "HEAD"))).toBe(true)
+      }).pipe(Effect.provideService(InstanceRef, { ...ctx, project: { ...ctx.project, id: projectID } }))
+    }),
+  { git: true },
+)
 
 it.instance(
   "captures through a private index despite a stale index lock without touching the source index",
@@ -29,7 +85,7 @@ it.instance(
       yield* write(path.join(directory, "before.txt"), "before")
       const before = yield* snapshots.track()
       yield* write(path.join(gitdir, "index.lock"), "abandoned writer")
-      const name = " padded\n[*].txt "
+      const name = process.platform === "win32" ? " padded [literal].txt" : " padded\n[*].txt "
       yield* write(path.join(directory, name), "after")
       const after = yield* snapshots.track()
       expect(after).toMatch(/^[0-9a-f]{40,64}$/)
@@ -1273,6 +1329,7 @@ it.instance(
   Effect.gen(function* () {
     const tmp = yield* bootstrap()
     const snapshot = yield* Snapshot.Service
+    // Exercise the richer POSIX filenames there, and valid special characters on Windows.
     const files = [
       "space 中文.txt",
       "tab\tname.txt",
@@ -1282,7 +1339,7 @@ it.instance(
       "line\nbreak.txt",
       "empty-added.txt",
       "empty-deleted.txt",
-    ]
+    ].map((name) => (process.platform === "win32" ? name.replace(/[\x00-\x1f<>:"/\\|?*]/g, "_") : name))
     const before = new Map<string, string>()
     const after = new Map<string, string>()
     for (const [index, name] of files.entries()) {

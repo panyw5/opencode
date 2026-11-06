@@ -13,12 +13,14 @@ import { errorMessage } from "../util/error"
 import { BusEvent } from "@/bus/bus-event"
 import { GlobalBus } from "@/bus/global"
 import { Git } from "@/git"
-import { Effect, Layer, Path, Schema, Scope, Context } from "effect"
+import { Cause, Effect, Layer, Path, Schema, Scope, Context } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { NodePath } from "@effect/platform-node"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { AppProcess } from "@opencode-ai/core/process"
 import { InstanceState } from "@/effect/instance-state"
+import { Path as FilePath } from "@opencode-ai/core/util/path"
+import { localPathContext } from "@/project/instance-context"
 
 const log = Log.create({ service: "worktree" })
 
@@ -216,8 +218,18 @@ export const layer: Layer.Layer<
         return yield* new NotGitError({ message: "Worktrees are only supported for git projects" })
       }
 
-      const root = pathSvc.join(Global.Path.data, "worktree", ctx.project.id)
-      yield* fs.makeDirectory(root, { recursive: true }).pipe(Effect.orDie)
+      const projectDirectory = FilePath.storageName(ctx.project.id, localPathContext)
+      const root = pathSvc.join(Global.Path.data, "worktree", projectDirectory)
+      log.info(
+        `worktree storage preparing projectID=${ctx.project.id} projectDirectory=${projectDirectory} root=${root}`,
+      )
+      yield* fs.makeDirectory(root, { recursive: true }).pipe(
+        Effect.tapCause((cause) =>
+          Effect.sync(() => log.error(`worktree storage preparation failed root=${root} cause=${Cause.pretty(cause)}`)),
+        ),
+        Effect.orDie,
+      )
+      log.info(`worktree storage ready projectID=${ctx.project.id} root=${root}`)
 
       return yield* candidate({ root, name: input?.name ? slugify(input.name) : "", detached: input?.detached })
     })

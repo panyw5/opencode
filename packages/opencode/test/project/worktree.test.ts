@@ -11,6 +11,9 @@ import { Worktree } from "../../src/worktree"
 import { disposeAllInstances, provideInstance, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { ProjectLocation } from "@/project/location"
+import { ProjectID } from "../../src/project/schema"
+import { Global } from "@opencode-ai/core/global"
+import { Hash } from "@opencode-ai/core/util/hash"
 
 const it = testEffect(
   Layer.mergeAll(Worktree.defaultLayer, AppFileSystem.defaultLayer, CrossSpawnSpawner.defaultLayer, Git.defaultLayer),
@@ -83,6 +86,24 @@ describe("Worktree", () => {
   afterEach(() => disposeAllInstances())
 
   describe("makeWorktreeInfo", () => {
+    it.instance(
+      "uses safe project storage for a retained dir project ID",
+      () =>
+        Effect.gen(function* () {
+          const ctx = yield* InstanceRef
+          if (!ctx) throw new Error("missing test instance")
+          const id = ProjectID.make(`dir:${Hash.fast(ctx.directory)}`)
+          const svc = yield* Worktree.Service
+          const info = yield* svc
+            .makeWorktreeInfo({ name: "retained-id", detached: true })
+            .pipe(Effect.provideService(InstanceRef, { ...ctx, project: { ...ctx.project, id } }))
+          const name = process.platform === "win32" ? `dir%3A${Hash.fast(ctx.directory)}` : id
+          expect(info.directory).toBe(path.join(Global.Path.data, "worktree", name, "retained-id"))
+          expect(yield* (yield* AppFileSystem.Service).isDir(path.dirname(info.directory))).toBe(true)
+        }),
+      { git: true },
+    )
+
     it.instance(
       "returns info with name, branch, and directory",
       () =>
