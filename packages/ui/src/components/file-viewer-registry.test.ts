@@ -84,6 +84,25 @@ describe("file viewer registry", () => {
     expect(resolveFileViewers(fileViewerTarget("a.dup"))).toEqual([])
   })
 
+  test("preserves content opt-in across live and placeholder registrations", () => {
+    const target = fileViewerTarget("a.ownership")
+    const disposePlaceholder = registerFileViewer(
+      entry({ id: "t:ownership", extensions: ["ownership"], content: "self" }),
+    )
+    const disposeLive = registerFileViewer(entry({ id: "t:ownership", extensions: ["ownership"], content: "self" }))
+    expect(resolveFileViewers(target)[0].content).toBe("self")
+    disposeLive()
+    expect(resolveFileViewers(target)[0].content).toBe("self")
+    disposePlaceholder()
+    const disposeText = registerFileViewer(entry({ id: "t:ownership", extensions: ["ownership"], content: "text" }))
+    expect(resolveFileViewers(target)[0].content).toBe("text")
+    disposeText()
+    const disposeLegacy = registerFileViewer(entry({ id: "t:ownership", extensions: ["ownership"] }))
+    expect(resolveFileViewers(target)[0].content).toBeUndefined()
+    disposeLegacy()
+    expect(resolveFileViewers(target)).toEqual([])
+  })
+
   test("built-in table preview covers csv and tsv", async () => {
     await import("./file-table-preview")
     for (const path of ["a.csv", "b.TSV"]) {
@@ -204,7 +223,12 @@ describe("file viewer tab save state", () => {
     const key = "t:policy-edit-during-save\nfile://a.ts"
     const state = fileViewerTabState(key)
     let complete!: () => void
-    state.onSave(() => new Promise<void>((resolve) => { complete = resolve }))
+    state.onSave(
+      () =>
+        new Promise<void>((resolve) => {
+          complete = resolve
+        }),
+    )
     state.setDirty(true)
     const pending = saveFileViewerTab(key)
     state.setDirty(true)

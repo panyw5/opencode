@@ -1,9 +1,10 @@
 import { fallbackAnchoredMarkdown, useMarked } from "../context/marked"
 import { useI18n } from "../context/i18n"
-import DOMPurify from "dompurify"
+import { sanitizeMarkdown } from "./markdown-sanitize"
 import morphdom from "morphdom"
 import { checksum } from "@opencode-ai/core/util/encode"
 import { stream as streamMarkdown } from "./markdown-stream"
+import { markdownHtmlCache as cache, markdownRendererScope, renderMarkdownWithFallback } from "./markdown-cache"
 import { applyResolvedIcon, readDocumentIconPack, refreshDomIcons, resolveIcon, type IconName } from "./icon"
 import { chooseIconName } from "./file-icon"
 import fileIconSprite from "./file-icons/sprite.svg"
@@ -21,11 +22,6 @@ import {
   untrack,
 } from "solid-js"
 import { isServer } from "solid-js/web"
-
-type Entry = {
-  hash: string
-  html: string
-}
 
 type Mark = Record<string, string | number | boolean | undefined>
 
@@ -82,9 +78,6 @@ export function upgradeStreamingMath(
   if (input.mode !== "fast" || input.math !== "full" || !renderMath) return html
   return renderMath(html)
 }
-
-const max = 200
-const cache = new Map<string, Entry>()
 
 // Tall code blocks render inside a fixed-height window instead of pushing the
 // whole timeline open. The window is a share of the enclosing session scroll
@@ -233,29 +226,11 @@ function markImpact(kind: string, data: Mark = {}) {
   mark(kind, data)
 }
 
-if (typeof window !== "undefined" && DOMPurify.isSupported) {
-  DOMPurify.addHook("afterSanitizeAttributes", (node: Element) => {
-    if (!(node instanceof HTMLAnchorElement)) return
-    if (node.target !== "_blank") return
-
-    const rel = node.getAttribute("rel") ?? ""
-    const set = new Set(rel.split(/\s+/).filter(Boolean))
-    set.add("noopener")
-    set.add("noreferrer")
-    node.setAttribute("rel", Array.from(set).join(" "))
-  })
-}
-
-const config = {
-  USE_PROFILES: { html: true, svg: true, mathMl: true },
-  SANITIZE_NAMED_PROPS: true,
-  FORBID_TAGS: ["style"],
-  FORBID_CONTENTS: ["style", "script"],
-}
-
 function sanitize(html: string) {
-  if (!DOMPurify.isSupported) return ""
-  return DOMPurify.sanitize(html, config)
+  const start = performance.now()
+  const safe = sanitizeMarkdown(html)
+  mark("sanitize", { source: html.length, html: safe.length, took: Math.round(performance.now() - start) })
+  return safe
 }
 
 function escape(text: string) {
@@ -639,17 +614,6 @@ function setupCodeCopy(root: HTMLDivElement, labels: CopyLabels) {
   }
 }
 
-function touch(key: string, value: Entry) {
-  cache.delete(key)
-  cache.set(key, value)
-
-  if (cache.size <= max) return
-
-  const first = cache.keys().next().value
-  if (!first) return
-  cache.delete(first)
-}
-
 export function markdownCacheMode(input: {
   highlight?: "full" | "defer"
   chunked?: boolean
@@ -957,6 +921,7 @@ export function Markdown(
     "onBeforeDomUpdate",
   ])
   const marked = useMarked()
+  const rendererScope = markdownRendererScope(marked)
   const i18n = useI18n()
   const [root, setRoot] = createSignal<HTMLDivElement>()
   const [ready, setReady] = createSignal(true)
@@ -1001,7 +966,7 @@ export function Markdown(
     const math: "full" | "defer" = mathReady() ? "full" : "defer"
     const annotated = !!local.annotateLines && !local.streaming
     const anchored = !!local.anchorBlocks
-    const cache = markdownCacheMode({ highlight: local.highlight, chunked: local.chunked, math, annotated, anchored })
+    const cache = `${rendererScope}:${markdownCacheMode({ highlight: local.highlight, chunked: local.chunked, math, annotated, anchored })}`
     const key = hash ? `${cache}:${current}:${hash}` : undefined
     return {
       markdown,
@@ -1031,28 +996,27 @@ export function Markdown(
     })
   })
 
-  const [html, { mutate: setHtml }] = createResource(
+  const [html] = createResource(
     src,
     async (input) => {
-      if (!input) return ""
-      if (isServer) return fallback(input.markdown)
+      if (!input) return { html: "", fallback: false }
+      if (isServer) return { html: fallback(input.markdown), fallback: false }
 
       const key = input.cacheKey ?? input.key
       if (key && input.hash) {
-        const hit = cache.get(key)
-        if (hit && hit.hash === input.hash) {
-          touch(key, hit)
+        const hit = cache.get(key, input.hash, input.normalized)
+        if (hit !== undefined) {
           mark("cache-hit", {
             key: input.cacheKey ?? input.key,
             mode: input.mode,
             math: input.math,
             text: input.markdown.length,
           })
-          return hit.html
+          return { html: hit, fallback: false }
         }
       }
 
-      const PARSE_TIMEOUT_MS = 8_000
+      const ticket = key && input.hash ? cache.begin(key, input.hash, input.normalized) : undefined
       const time = performance.now()
       // Line-annotated rendering requires the local full pipeline (KaTeX-aware
       // tokenization); anything else silently falls back to plain rendering.
@@ -1068,38 +1032,31 @@ export function Markdown(
         console.error(
           `[markdown] render failed key=${input.cacheKey ?? input.key ?? "none"} text=${input.markdown.length} error=${err instanceof Error ? err.message : String(err)}`,
         )
-        return renderFallback()
       }
-      let renderPromise =
-        input.anchored && input.mode !== "plain"
-          ? await marked.parseAnchored(input.normalized, { mode: input.mode, math: input.math }).catch(renderFailure)
-          : useAnnotated && parseAnnotated
-            ? await parseAnnotated(input.normalized)
-            : input.mode === "plain"
-              ? fallback(input.normalized)
-              : await (
-                  input.mode === "lite"
-                    ? marked.parseLite
-                    : input.mode === "fast"
-                      ? marked.parseFast
-                      : input.math === "defer" && marked.parseNoMath
-                        ? marked.parseNoMath
-                        : marked.parse
-                )(input.normalized).catch(renderFailure)
-
-      renderPromise = upgradeStreamingMath(renderPromise, input, marked.renderMath)
-
-      let rendered: string
-      if (input.mode === "plain") {
-        rendered = renderPromise
-      } else {
-        rendered = await Promise.race([
-          renderPromise,
-          new Promise<string>((resolve) => setTimeout(() => resolve(renderFallback()), PARSE_TIMEOUT_MS)),
-        ])
-      }
-
-      const safe = input.mode === "plain" ? rendered : sanitize(rendered)
+      const rendered = await renderMarkdownWithFallback({
+        fallback: renderFallback,
+        onError: renderFailure,
+        render: async () => {
+          const parsed =
+            input.anchored && input.mode !== "plain"
+              ? await marked.parseAnchored(input.normalized, { mode: input.mode, math: input.math })
+              : useAnnotated && parseAnnotated
+                ? await parseAnnotated(input.normalized)
+                : input.mode === "plain"
+                  ? fallback(input.normalized)
+                  : await (
+                      input.mode === "lite"
+                        ? marked.parseLite
+                        : input.mode === "fast"
+                          ? marked.parseFast
+                          : input.math === "defer" && marked.parseNoMath
+                            ? marked.parseNoMath
+                            : marked.parse
+                    )(input.normalized)
+          return upgradeStreamingMath(parsed, input, marked.renderMath)
+        },
+      })
+      const safe = input.mode === "plain" ? rendered.html : sanitize(rendered.html)
       mark("parse", {
         key: input.cacheKey ?? input.key,
         mode: input.mode,
@@ -1109,12 +1066,17 @@ export function Markdown(
         html: safe.length,
         took: Math.round(performance.now() - time),
       })
-      if (!input.streaming && key && input.hash) {
-        touch(key, { hash: input.hash, html: safe })
+      if (key && input.hash) {
+        cache.set(key, input.hash, safe, {
+          streaming: input.streaming,
+          fallback: rendered.fallback,
+          ticket,
+          source: input.normalized,
+        })
       }
-      return safe
+      return { html: safe, fallback: rendered.fallback }
     },
-    { initialValue: isServer || local.instant ? fallback(local.text) : "" },
+    { initialValue: { html: isServer || local.instant ? fallback(local.text) : "", fallback: false } },
   )
 
   let cancelCopySetup: (() => void) | undefined
@@ -1241,9 +1203,12 @@ export function Markdown(
 
   createEffect(() => {
     const container = root()
-    const content = html()
+    const rendered = html()
+    const content = rendered?.html
     if (!container) return
     if (isServer) return
+    if (rendered?.fallback || html.loading) container.dataset.markdownFallback = "true"
+    else delete container.dataset.markdownFallback
 
     markImpact("dom-effect", {
       key: local.cacheKey ?? "",
@@ -1258,7 +1223,8 @@ export function Markdown(
         : undefined
       container.innerHTML = ""
       delete container.dataset.html
-      delete container.dataset.markdownRenderedStage
+      if (!html.loading) container.dataset.markdownRenderedStage = stage()
+      else delete container.dataset.markdownRenderedStage
       afterDomUpdate?.()
       return
     }

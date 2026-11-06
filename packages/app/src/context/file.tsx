@@ -2,6 +2,8 @@ import { batch, createEffect, createMemo, onCleanup, untrack } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { showToast } from "@opencode-ai/ui/toast"
+import { fileViewerTarget, resolveFileViewers } from "@opencode-ai/ui/file-viewer-registry"
+import { useExtensionHost } from "@/extensions/host"
 import { useParams } from "@solidjs/router"
 import { getFilename } from "@opencode-ai/core/util/path"
 import { useSDK } from "./sdk"
@@ -28,6 +30,8 @@ import { useWorkspaceTree } from "./file/workspace-tree"
 import { createFileContentLoader } from "./file/content-loader"
 import { createWatcherInvalidator } from "./file/watcher"
 import { createFileRevalidation } from "./file/revalidation"
+import { createFilePreviewPreparer, filePreviewContent } from "./file/preview-policy"
+import { createFileWatchRegistry, type FileContentMode } from "./file/watch-policy"
 import { watchVisibleFile } from "./file/visible-watch"
 import { useGlobalSDK } from "./global-sdk"
 import { domainFromDirectory } from "@/pages/layout/extra-agents"
@@ -69,6 +73,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
     const platform = usePlatform()
     const language = useLanguage()
     const layout = useLayout()
+    const extensionHost = useExtensionHost()
 
     const scope = createMemo(() => sdk.directory)
     const path = createPathHelpers(scope)
@@ -108,7 +113,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
     const ensure = (file: string) => {
       if (!file) return
       if (store.file[file]) return
-      setStore("file", file, { path: file, name: getFilename(file) })
+      setStore("file", file, { path: file, name: getFilename(file), changeRevision: 0 })
     }
 
     const setLoading = (file: string) => {
@@ -174,22 +179,49 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       onError: (file, error) => setLoadError(file, errorMessage(error, language.t("error.chain.unknown"))),
     })
     const load = loader.load
+    const watches = createFileWatchRegistry((file, count) => setStore("visible", file, count))
+    const previewContent = (file: string) =>
+      filePreviewContent(resolveFileViewers(fileViewerTarget(file, store.file[file]?.content?.mimeType)))
     const visible = () => (store.foreground ? Object.keys(store.visible).filter((file) => store.visible[file] > 0) : [])
     const revalidation = createFileRevalidation({
       visible,
       stale: loader.invalidate,
       load: (file) => load(file, { force: true }),
+      content: (file) => watches.mode(file) ?? previewContent(file),
+      changed: (file) => {
+        ensure(file)
+        setStore("file", file, "changeRevision", (revision = 0) => revision + 1)
+      },
+    })
+    const preview = createFilePreviewPreparer({
+      scope,
+      client: () => sdk.client,
+      normalize: path.normalize,
+      whenReady: () => extensionHost.whenReady(),
+      ensure,
+      self: (file) => previewContent(file) === "self",
+      load,
+      // A source reader sharing this path still wins over a self-reading preview.
+      refreshSelf: (file) => revalidation.refresh(file, watches.mode(file) === "text" ? "text" : "self"),
     })
     createEffect(() => {
       scope()
       sdk.client
+      preview.reset()
       loader.reset()
       revalidation.reset()
+      watches.reset()
       invalidator.dispose()
       resetFileContentLru()
       batch(() => {
         setStore("file", reconcile({}))
+        setStore("visible", reconcile({}))
       })
+    })
+    createEffect(() => {
+      visible()
+      // Never turn the first watch into a reload; only replay hidden changes.
+      untrack(() => revalidation.resume())
     })
 
     const search = (query: string, dirs: "true" | "false") =>
@@ -300,6 +332,8 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
         window.removeEventListener("online", foreground)
         document.removeEventListener("visibilitychange", foreground)
       }
+      preview.reset()
+      watches.reset()
       loader.reset()
       invalidator.dispose()
       viewCache.clear()
@@ -329,11 +363,17 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       },
       get,
       load,
+      preparePreview: preview.prepare,
       refresh: (input: string) => revalidation.refresh(path.normalize(input)),
-      watch(input: string) {
+      watch(input: string, options?: { content?: FileContentMode }) {
+        // Keep owner effects subscribed even if a new directory uses the same path.
+        scope()
+        sdk.client
         const file = path.normalize(input)
-        setStore("visible", file, (count = 0) => count + 1)
-        return () => setStore("visible", file, (count = 0) => Math.max(0, count - 1))
+        if (!file) return () => {}
+        const release = watches.acquire(file, options?.content)
+        untrack(() => revalidation.resume())
+        return release
       },
       scrollTop,
       scrollLeft,

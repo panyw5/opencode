@@ -9,7 +9,8 @@ import {
   onCleanup,
   Show,
   Switch,
-  type Accessor,
+  untrack,
+  type JSX,
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
@@ -45,6 +46,14 @@ import { createSessionTabs } from "@/pages/session/helpers"
 import { fileContentCacheKey } from "@/pages/session/file-cache-key"
 import { openInBrowserTab } from "@/pages/session/browser-panel"
 import { createFileViewerContent } from "@/pages/session/file-viewer-content"
+import {
+  advanceFileViewerRevision,
+  fileViewerReadsSelf,
+  fileViewerSelectionRequest,
+  fileViewerSwitchAllowed,
+  type FileViewerRevision,
+} from "@/pages/session/file-viewer-policy"
+import { useExtensionHost } from "@/extensions/host"
 import { OpenInApp } from "@/components/open-in-app"
 
 const DEFAULT_VIEWER = "default"
@@ -84,6 +93,7 @@ function FileCommentMenu(props: {
 
 export function FileTabContent(props: { tab: string; forceMount?: boolean }) {
   const file = useFile()
+  const extensionHost = useExtensionHost()
   const comments = useComments()
   const language = useLanguage()
   const prompt = usePrompt()
@@ -120,12 +130,6 @@ export function FileTabContent(props: { tab: string; forceMount?: boolean }) {
   }
 
   const path = createMemo(() => file.pathFromTab(props.tab))
-  createEffect(() => {
-    const target = path()
-    if (!target || activeFileTab() !== props.tab || !view().filePreview.opened()) return
-    const release = file.watch(target)
-    onCleanup(release)
-  })
   const state = createMemo(() => {
     const p = path()
     if (!p) return
@@ -134,7 +138,6 @@ export function FileTabContent(props: { tab: string; forceMount?: boolean }) {
   const md = createMemo(() => /\.(md|markdown|mdx)$/i.test(path() ?? ""))
   const pdf = createMemo(() => /\.pdf$/i.test(path() ?? ""))
   const contents = createMemo(() => state()?.content?.content ?? "")
-  const cacheKey = createMemo(() => fileContentCacheKey(path() ?? "", contents()))
   const fullPath = createMemo(() => {
     const p = path()
     if (!p) return
@@ -188,23 +191,51 @@ export function FileTabContent(props: { tab: string; forceMount?: boolean }) {
     return resolveFileViewers(fileViewerTarget(p, mime)).filter((entry) => entry.mode === "replace")
   })
   const activeViewer = createMemo(() => {
+    if (!extensionHost.ready()) return
     const list = viewerCandidates()
     const choice = viewer.choice
     if (choice === DEFAULT_VIEWER) return
     return list.find((entry) => entry.id === choice) ?? list[0]
+  })
+  const selfReading = createMemo(() => fileViewerReadsSelf(activeViewer()))
+  // A self reader must never checksum a possibly cached notebook JSON. Text
+  // viewers and Source keep the existing cache identity/revision contract.
+  const cacheKey = createMemo(() => {
+    const target = path() ?? ""
+    if (!extensionHost.ready() || selfReading()) return target
+    return fileContentCacheKey(target, contents())
+  })
+  createEffect(() => {
+    const target = path()
+    if (!target || !tabActive() || !extensionHost.ready()) return
+    const content = selfReading() ? "self" : "text"
+    const release = file.watch(target, { content })
+    onCleanup(release)
+    // The manifest is now known. Only the selected text/Source branch asks
+    // for full content; self preview preparation never performs that read.
+    untrack(() => {
+      if (content === "self") void file.preparePreview(target)
+      else void file.load(target)
+    })
   })
   const selectViewer = (id: string) => {
     // A dirty tab means the active extension viewer holds unsaved edits that
     // only that component instance has. Switching viewers would silently drop
     // the draft, so block the switch and prompt for a save instead — the
     // current viewer and its draft stay untouched.
-    if (viewerSave.dirty() && id !== activeViewer()?.id) {
+    if (!fileViewerSwitchAllowed(viewerSave.dirty(), activeViewer()?.id, id)) {
       console.debug(`[file-preview] viewer switch blocked dirty path=${path() ?? ""} viewer=${id}`)
       showToast({ variant: "error", title: language.t("common.unsavedChanges") })
-      return
+      return false
     }
     console.debug(`[file-preview] select viewer path=${path() ?? ""} viewer=${id}`)
     setViewer("choice", id)
+    // Source is an explicit full-text request, even when manifest preparation
+    // elsewhere still prefers the self-reading viewer. Never clear its draft
+    // or dirty flag here; a blocked switch performs no load at all.
+    const target = path()
+    if (id === DEFAULT_VIEWER && target) void file.load(target)
+    return true
   }
   const fileViewer = createMemo(() => {
     const p = path() ?? ""
@@ -245,20 +276,17 @@ export function FileTabContent(props: { tab: string; forceMount?: boolean }) {
   // tab close site disposes the state when the tab goes away.
   const viewerSave = fileViewerTabState(fileViewerTabKey(sessionKey(), props.tab))
   const [revision, setRevision] = createSignal(0)
-  // The revision changes together with the text: every reload from disk
-  // replaces the cached text and the cache key with it, so counting cache key
-  // changes counts disk-side refreshes of the file while the tab is mounted.
-  createEffect(
-    on(
-      cacheKey,
-      () => {
-        const next = revision() + 1
-        setRevision(next)
-        console.debug(`[file-preview] revision path=${path() ?? ""} revision=${String(next)}`)
-      },
-      { defer: true },
-    ),
-  )
+  let revisionState: FileViewerRevision | undefined
+  createEffect(() => {
+    const mode = !extensionHost.ready() ? undefined : selfReading() ? "self" : "text"
+    const value = mode === "self" ? (state()?.changeRevision ?? 0) : mode === "text" ? cacheKey() : undefined
+    const next = advanceFileViewerRevision(revisionState, mode, value)
+    const changed = next.revision !== (revisionState?.revision ?? 0)
+    revisionState = next
+    if (!changed) return
+    setRevision(next.revision)
+    console.debug(`[file-preview] revision path=${path() ?? ""} revision=${String(next.revision)} mode=${mode}`)
+  })
   const viewerMenu = () => (
     <Show when={viewerCandidates().length > 0}>
       <DropdownMenu gutter={4} placement="bottom-end">
@@ -400,6 +428,29 @@ export function FileTabContent(props: { tab: string; forceMount?: boolean }) {
     if (!p) return null
     if (file.ready()) return (file.selectedLines(p) as SelectedLineRange | undefined) ?? null
     return (getSessionHandoff(sessionKey())?.files[p] as SelectedLineRange | undefined) ?? null
+  })
+
+  let handledSelection: { path: string; seq: number } | undefined
+  createEffect(() => {
+    const target = path()
+    if (!target || !extensionHost.ready()) return
+    const seq = file.selectionSeq(target)
+    if (
+      !fileViewerSelectionRequest({
+        path: target,
+        seq,
+        active: tabActive(),
+        pending: file.selectionPending(target),
+        hasRange: !!selectedLines(),
+        handled: handledSelection,
+      })
+    )
+      return
+    handledSelection = { path: target, seq }
+    // requestSelection (including the same range requested twice) is an
+    // explicit Source intent. Dirty rejection must not be retried on save or
+    // clear a draft; a new selection sequence can ask again.
+    untrack(showSource)
   })
 
   const selectionPreview = (source: string, selection: FileSelection) => {
@@ -756,77 +807,111 @@ export function FileTabContent(props: { tab: string; forceMount?: boolean }) {
     if (restoreFrame !== undefined) cancelAnimationFrame(restoreFrame)
   })
 
-  // The viewer branch element must not depend on the file text: an external
-  // content refresh (watcher reload) changes contents() but must not re-run
-  // the render branch, or the active extension viewer would be remounted and
-  // lose its local draft, owner and save handlers. The text therefore flows
-  // into the viewer as an accessor (see file-viewer-content.ts), and the
-  // branch is built inside the loaded render branch like before, so the
-  // viewer mounts only once the file content exists.
-  const renderFile = (text: Accessor<string | undefined>) =>
+  const renderSource = () => (
+    <div class={`relative flex flex-col overflow-hidden ${pdf() ? "h-full" : "min-h-full"}`}>
+      <Dynamic
+        component={fileComponent}
+        mode="text"
+        file={{
+          name: path() ?? "",
+          contents: contents(),
+          cacheKey: cacheKey(),
+        }}
+        enableLineSelection={!md()}
+        enableHoverUtility={!md()}
+        selectedLines={activeSelection()}
+        commentedLines={md() ? [] : commentedLines()}
+        onRendered={() => {
+          queueRestore()
+        }}
+        annotations={md() ? [] : commentsUi.annotations()}
+        renderAnnotation={md() ? undefined : commentsUi.renderAnnotation}
+        renderHoverUtility={md() ? undefined : commentsUi.renderHoverUtility}
+        onLineSelected={(range: SelectedLineRange | null) => {
+          if (md()) return
+          commentsUi.onLineSelected(range)
+        }}
+        onLineNumberSelectionEnd={commentsUi.onLineNumberSelectionEnd}
+        onLineSelectionEnd={(range: SelectedLineRange | null) => {
+          if (md()) return
+          commentsUi.onLineSelectionEnd(range)
+        }}
+        search={search}
+        scrollControl={scrollControl}
+        class="select-text"
+        actionsMount={actionsMount}
+        media={{
+          mode: "auto",
+          path: path(),
+          current: state()?.content,
+          onLoad: queueRestore,
+          viewer: {
+            file: fileViewer(),
+            readBytes,
+            readText,
+          },
+        }}
+        copyPath={copyPath}
+        copyContent={state()?.content?.type === "text" ? copyContent : undefined}
+        copyPathCopied={copyState.kind === "path"}
+        copyContentCopied={copyState.kind === "content"}
+        openWith={fileActions}
+        openFolder={
+          platform.openInFinder
+            ? () => {
+                const target = fullPath()
+                if (target) void platform.openInFinder?.(target)
+              }
+            : undefined
+        }
+      />
+    </div>
+  )
+
+  const renderScroll = (content: () => JSX.Element) => (
+    <ScrollView
+      class="h-full"
+      viewportRef={(el: HTMLDivElement) => {
+        scroll = el
+        restoreScroll()
+      }}
+      onScroll={handleScroll as any}
+    >
+      {content()}
+    </ScrollView>
+  )
+  // Loading/error are Source state, not tab state. The self surface remains
+  // mounted even if another consumer fails a text read or evicts its cache.
+  const renderFile = () =>
     createFileViewerContent({
       activeViewer,
+      loaded: () => !!state()?.loaded,
+      wrapViewer: (surface) => (pdf() ? surface : renderScroll(() => surface)),
       defaultContent: () => (
-        <div class={`relative flex flex-col overflow-hidden ${pdf() ? "h-full" : "min-h-full"}`}>
-          <Dynamic
-            component={fileComponent}
-            mode="text"
-            file={{
-              name: path() ?? "",
-              contents: contents(),
-              cacheKey: cacheKey(),
-            }}
-            enableLineSelection={!md()}
-            enableHoverUtility={!md()}
-            selectedLines={activeSelection()}
-            commentedLines={md() ? [] : commentedLines()}
-            onRendered={() => {
-              queueRestore()
-            }}
-            annotations={md() ? [] : commentsUi.annotations()}
-            renderAnnotation={md() ? undefined : commentsUi.renderAnnotation}
-            renderHoverUtility={md() ? undefined : commentsUi.renderHoverUtility}
-            onLineSelected={(range: SelectedLineRange | null) => {
-              if (md()) return
-              commentsUi.onLineSelected(range)
-            }}
-            onLineNumberSelectionEnd={commentsUi.onLineNumberSelectionEnd}
-            onLineSelectionEnd={(range: SelectedLineRange | null) => {
-              if (md()) return
-              commentsUi.onLineSelectionEnd(range)
-            }}
-            search={search}
-            scrollControl={scrollControl}
-            class="select-text"
-            actionsMount={actionsMount}
-            media={{
-              mode: "auto",
-              path: path(),
-              current: state()?.content,
-              onLoad: queueRestore,
-              viewer: {
-                file: fileViewer(),
-                readBytes,
-                readText,
-              },
-            }}
-            copyPath={copyPath}
-            copyContent={state()?.content?.type === "text" ? copyContent : undefined}
-            copyPathCopied={copyState.kind === "path"}
-            copyContentCopied={copyState.kind === "content"}
-            openWith={fileActions}
-            openFolder={
-              platform.openInFinder
-                ? () => {
-                    const target = fullPath()
-                    if (target) void platform.openInFinder?.(target)
-                  }
-                : undefined
-            }
-          />
-        </div>
+        <Show
+          when={pdf() && state()?.loaded}
+          fallback={renderScroll(() => (
+            <Switch>
+              <Match when={extensionHost.ready() && state()?.loaded}>{renderSource()}</Match>
+              <Match when={!extensionHost.ready() || state()?.loading}>
+                <div class="px-6 py-4 text-text-weak">{language.t("common.loading")}...</div>
+              </Match>
+              <Match when={state()?.error}>
+                {(err) => (
+                  <div class="flex items-center gap-2 px-6 py-4 text-text-weak">
+                    <span>{err()}</span>
+                    {refreshAction()}
+                    {viewerMenu()}
+                  </div>
+                )}
+              </Match>
+            </Switch>
+          ))}
+        >
+          {renderSource()}
+        </Show>
       ),
-      text,
+      text: () => (selfReading() ? undefined : contents()),
       revision,
       file: fileViewer,
       setDirty: (dirty: boolean) => viewerSave.setDirty(dirty),
@@ -870,36 +955,7 @@ export function FileTabContent(props: { tab: string; forceMount?: boolean }) {
         data-slot="file-preview-actions-layer"
         class="pointer-events-none absolute inset-0 z-20"
       />
-      <Show
-        when={pdf() && state()?.loaded}
-        fallback={
-          <ScrollView
-            class="h-full"
-            viewportRef={(el: HTMLDivElement) => {
-              scroll = el
-              restoreScroll()
-            }}
-            onScroll={handleScroll as any}
-          >
-            <Switch>
-              <Match when={state()?.loaded}>{renderFile(contents)}</Match>
-              <Match when={state()?.loading}>
-                <div class="px-6 py-4 text-text-weak">{language.t("common.loading")}...</div>
-              </Match>
-              <Match when={state()?.error}>
-                {(err) => (
-                  <div class="flex items-center gap-2 px-6 py-4 text-text-weak">
-                    <span>{err()}</span>
-                    {refreshAction()}
-                  </div>
-                )}
-              </Match>
-            </Switch>
-          </ScrollView>
-        }
-      >
-        {renderFile(contents)}
-      </Show>
+      {renderFile()}
     </Tabs.Content>
   )
 }

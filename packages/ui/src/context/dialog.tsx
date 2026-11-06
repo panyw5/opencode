@@ -16,6 +16,7 @@ import {
 } from "solid-js"
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
 import { makeEventListener } from "@solid-primitives/event-listener"
+import { nestedDialogEscape } from "./dialog-escape"
 
 type DialogElement = () => JSX.Element
 
@@ -83,7 +84,7 @@ function init() {
       // handling must win. This capture-phase listener would otherwise close
       // the whole dialog before the popover sees the event.
       const target = event.target
-      if (target instanceof Element && target.closest('[role="dialog"]:not([data-slot="dialog-content"])')) return
+      if (nestedDialogEscape(target)) return
       close()
       event.preventDefault()
       event.stopPropagation()

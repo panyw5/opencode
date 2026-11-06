@@ -23,11 +23,10 @@ export type FileViewerFile = FileViewerTarget & {
 export type FileViewerProps = {
   file: FileViewerFile
   text: Accessor<string | undefined>
-  // Changes together with `text`: the host bumps it every time it reloads the
-  // file text from disk while the tab is mounted (0 until the first observed
-  // refresh). Viewers compare it against the revision they last rendered to
-  // react to external changes. Wired for replace-mode tab viewers (file tabs);
-  // preview-mode hosts may omit it.
+  // Host-observed content revision while the tab is mounted (0 initially).
+  // Text-backed viewers observe host text reloads; self-owned replace viewers
+  // observe external file changes without forcing the host to read text.
+  // Preview-mode hosts may omit it.
   revision?: Accessor<number>
   readBytes(): Promise<Uint8Array>
   readText(): Promise<string>
@@ -38,6 +37,9 @@ export type FileViewerProps = {
   // active tab (Cmd+S) and clears the dirty flag after it completes. The
   // disposer removes exactly that handler; earlier handlers stay.
   onSave?(handler: () => Promise<void>): () => void
+  // Replaces the host toolbar until disposed or the registering owner cleans
+  // up. An older disposer never clears a later registration.
+  setToolbar?(element: HTMLElement): () => void
   showSource(): void
 }
 
@@ -46,6 +48,9 @@ export type FileViewerEntry = {
   owner: string
   title: string
   mode: FileViewerMode
+  // Only explicit self-owned replace viewers opt out of host text loading.
+  // Omitted content preserves the existing host-provided text behavior.
+  content?: "text" | "self"
   priority?: number
   extensions?: readonly string[]
   filenames?: readonly string[]

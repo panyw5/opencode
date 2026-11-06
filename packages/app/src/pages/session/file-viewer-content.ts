@@ -3,20 +3,20 @@ import {
   Show,
   createComponent,
   createRenderEffect,
+  getOwner,
+  onCleanup,
   type Accessor,
   type Component,
   type JSX,
 } from "solid-js"
 import { Dynamic, insert } from "solid-js/web"
 import type { FileViewerEntry, FileViewerFile } from "@opencode-ai/ui/file-viewer-registry"
+import { fileViewerCanMount, fileViewerReadsSelf } from "./file-viewer-policy"
 
-// Render boundary for a file tab's extension viewer: the Show that picks
-// between a registered replace-mode extension viewer and the default source
-// view, plus the extension viewer surface (scope root, menu row, host bridge).
-//
-// The host must invoke this inside its loaded render branch, so the viewer
-// mounts only once the file content exists and remounts on branch flips
-// exactly like the previous inline implementation.
+// The boundary is mounted outside the source loading/error gate. Only an
+// explicitly self-reading replace viewer may mount before host text exists.
+// Its surface and bridge survive loaded/error/cache changes; the source view
+// owns those gates inside defaultContent instead.
 //
 // Neither the branch props nor this module may read the file text in a scope
 // whose re-run re-creates the subtree. In Solid the Switch/Show children are
@@ -30,9 +30,11 @@ export type FileViewerContentInput = {
   // A registered replace-mode viewer takes over the tab; undefined renders the
   // default source view.
   activeViewer: Accessor<FileViewerEntry | undefined>
+  loaded: Accessor<boolean>
   // Default source view element. Invoked inside the Show fallback scope, so
   // its reactive reads only ever rebuild the source view itself.
   defaultContent: () => JSX.Element
+  wrapViewer?: (content: HTMLElement) => JSX.Element
   // Extension viewer surface inputs. `text` and `revision` must stay
   // accessors so external content refreshes reach the mounted viewer without
   // recreating it.
@@ -69,12 +71,18 @@ const ViewerErrorBoundary = ErrorBoundary as unknown as Component<{
 export function createFileViewerContent(input: FileViewerContentInput): JSX.Element {
   return createComponent(ViewerShow, {
     get when() {
-      return input.activeViewer()
+      const viewer = input.activeViewer()
+      // Short-circuit before loaded(): self viewers never subscribe to the
+      // source gate, even when another consumer loads or evicts host text.
+      return fileViewerCanMount(viewer, fileViewerReadsSelf(viewer) ? false : input.loaded()) ? viewer : undefined
     },
     get fallback() {
       return input.defaultContent()
     },
-    children: (entry) => createExtensionSurface(input, entry),
+    children: (entry) => {
+      const surface = createExtensionSurface(input, entry)
+      return input.wrapViewer?.(surface) ?? surface
+    },
   })
 }
 
@@ -96,14 +104,57 @@ function createExtensionSurface(input: FileViewerContentInput, entry: Accessor<F
   })
 
   const row = document.createElement("div")
+  row.dataset.slot = "file-viewer-toolbar"
   row.className = "flex justify-end gap-2 border-b border-border-weak-base px-3 py-2"
-  insert(row, input.menu())
-  insert(row, input.openWith())
+  const defaultToolbar = document.createElement("div")
+  defaultToolbar.dataset.slot = "file-viewer-default-toolbar"
+  const defaultControls = document.createElement("div")
+  defaultControls.className = "flex items-center justify-end gap-2"
+  insert(defaultControls, input.menu())
+  insert(defaultControls, input.openWith())
+  defaultToolbar.appendChild(defaultControls)
+  const customToolbar = document.createElement("div")
+  customToolbar.dataset.slot = "file-viewer-custom-toolbar"
+  customToolbar.className = "min-w-0 flex-1"
+  customToolbar.hidden = true
+  row.append(defaultToolbar, customToolbar)
   root.appendChild(row)
+
+  let toolbarToken: object | undefined
+  let disposed = false
+  const clearToolbar = () => {
+    toolbarToken = undefined
+    customToolbar.replaceChildren()
+    customToolbar.hidden = true
+    defaultToolbar.hidden = false
+  }
+  const setToolbar = (element: HTMLElement) => {
+    if (disposed) return () => {}
+    // Registration identity must not depend on the element: the same node
+    // can be registered again while an earlier disposer is still alive.
+    const token = {}
+    toolbarToken = token
+    customToolbar.replaceChildren(element)
+    customToolbar.hidden = false
+    defaultToolbar.hidden = true
+    const off = () => {
+      if (toolbarToken !== token) return
+      clearToolbar()
+    }
+    if (getOwner()) onCleanup(off)
+    return off
+  }
+  onCleanup(() => {
+    disposed = true
+    clearToolbar()
+  })
 
   const boundary = createComponent(ViewerErrorBoundary, {
     get fallback() {
       return (error: unknown) => {
+        // A failing onMount can register after the boundary's initial child
+        // cleanup, so owner cleanup alone cannot restore the host controls.
+        clearToolbar()
         const message = error instanceof Error ? error.message : String(error)
         input.onRenderError({ id: entry().id, path: input.path(), message })
         return input.errorFallback(message)
@@ -124,13 +175,18 @@ function createExtensionSurface(input: FileViewerContentInput, entry: Accessor<F
         revision: input.revision,
         setDirty: input.setDirty,
         onSave: input.onSave,
+        get setToolbar() {
+          return setToolbar
+        },
         readBytes: input.readBytes,
         readText: input.readText,
         showSource: input.showSource,
       })
     },
   })
-  insert(root, boundary)
+  // Use multi-node insertion so boundary updates only replace their own
+  // content, never the toolbar sibling already mounted in the root.
+  insert(root, boundary, null)
 
   return root
 }

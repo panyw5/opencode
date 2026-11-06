@@ -36,6 +36,8 @@ export type FileState = {
   loading?: boolean
   error?: string
   content?: FileContent
+  // Independent of full-text cache state; 0 until an observed invalidation.
+  changeRevision?: number
 }
 
 export function selectionFromLines(range: SelectedLineRange): FileSelection {

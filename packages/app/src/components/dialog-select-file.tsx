@@ -606,7 +606,7 @@ function DialogSelectFileWithSessionContext(props: {
     tabs().setActive(value)
 
     requestAnimationFrame(() => {
-      void file.load(path)
+      void file.preparePreview(path)
     })
   }
 
