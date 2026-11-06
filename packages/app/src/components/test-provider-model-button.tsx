@@ -237,17 +237,17 @@ export function TestProviderModelButton(props: Props) {
         contentClass="!max-w-[min(360px,80vw)]"
         value={
           <div class="flex max-w-[min(360px,80vw)] flex-col gap-0.5 py-0.5">
-            <span class="text-[10px] font-medium uppercase tracking-wide text-text-weak">
+            <span class="text-[10px] font-medium uppercase tracking-wide">
               {language.t("config.custom.models.test.path")}
             </span>
-            <span class="break-all font-mono text-[11px] leading-snug text-text-strong">{probeUrl()}</span>
-            <span class="text-[10px] text-text-weak">
+            <span class="break-all font-mono text-[11px] leading-snug">{probeUrl()}</span>
+            <span class="text-[10px]">
               {language.t("config.custom.models.test.timeout", {
                 seconds: String(TEST_PROVIDER_MODEL_TIMEOUT_MS / 1000),
               })}
             </span>
             <Show when={isTesting()}>
-              <span class="text-[10px] text-text-weak">{language.t("config.custom.models.test.cancelHint")}</span>
+              <span class="text-[10px]">{language.t("config.custom.models.test.cancelHint")}</span>
             </Show>
           </div>
         }

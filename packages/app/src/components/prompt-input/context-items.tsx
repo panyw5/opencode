@@ -72,9 +72,7 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
               <Tooltip
                 value={
                   <span class="flex max-w-[300px]">
-                    <span class="text-text-invert-base truncate-start [unicode-bidi:plaintext] min-w-0">
-                      {directory}
-                    </span>
+                    <span class="truncate-start [unicode-bidi:plaintext] min-w-0">{directory}</span>
                     <span class="shrink-0">{filename}</span>
                   </span>
                 }

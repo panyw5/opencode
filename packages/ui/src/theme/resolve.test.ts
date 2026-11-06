@@ -104,6 +104,10 @@ describe("floating surface foreground colors", () => {
           contrast(tokens["text-on-float-base-hover"] as HexColor, tokens["surface-float-base-hover"] as HexColor),
           `${label} project tooltip contrast`,
         ).toBeGreaterThanOrEqual(4.5)
+        expect(
+          contrast(tokens["text-on-float-highlight"] as HexColor, tokens["surface-float-highlight"] as HexColor),
+          `${label} project name highlight contrast`,
+        ).toBeGreaterThanOrEqual(4.5)
       }
     }
   })
@@ -144,10 +148,16 @@ describe("floating surface foreground colors", () => {
     const tokens = resolveThemeVariant(
       {
         ...theme.light,
-        overrides: { ...theme.light.overrides, "surface-float-base": "var(--external-surface)" },
+        overrides: {
+          ...theme.light.overrides,
+          "surface-float-base": "var(--external-surface)",
+          "surface-float-base-hover": "var(--external-surface)",
+        },
       },
       false,
     )
     expect(tokens["text-on-float-base"]).toBe(tokens["text-invert-strong"])
+    expect(tokens["surface-float-highlight"]).toBe("var(--external-surface)")
+    expect(tokens["text-on-float-highlight"]).toBe(tokens["text-on-float-base-hover"])
   })
 })

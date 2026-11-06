@@ -1,6 +1,6 @@
 import type { ColorValue, DesktopTheme, HexColor, ResolvedTheme, ThemeVariant } from "./types"
 import { blend, generateNeutralScale, generateScale, hexToOklch, hexToRgb, shift, withAlpha } from "./color"
-import { enforceThemeContrast, opaqueColor } from "./contrast"
+import { enforceThemeContrast, opaqueColor, readableColor } from "./contrast"
 import { preserveTextHierarchy, restrainedColor, restrainThemeChroma, surfaceTokens } from "./surfaces"
 
 export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): ResolvedTheme {
@@ -554,6 +554,18 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
 
   enforceThemeContrast(tokens, isDark)
   if (variant.surfaces) preserveTextHierarchy(tokens, isDark, overrides)
+
+  // Accents inside a floating surface need contrast against that surface, not the page.
+  const float = opaqueColor(tokens["surface-float-base-hover"], tokens, background)
+  const floatAccent = float && opaqueColor(tokens["text-interactive-base"], tokens, float)
+  if (float && floatAccent) {
+    const highlight = blend(floatAccent, float, 0.16)
+    tokens["surface-float-highlight"] = highlight
+    tokens["text-on-float-highlight"] = readableColor(floatAccent, [highlight], 4.6)
+  } else {
+    tokens["surface-float-highlight"] = tokens["surface-float-base-hover"]
+    tokens["text-on-float-highlight"] = tokens["text-on-float-base-hover"]
+  }
   return tokens
 }
 

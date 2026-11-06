@@ -150,6 +150,8 @@ function applyThemeCss(theme: DesktopTheme, themeId: string, mode: "light" | "da
       tooltipText: tokens["text-on-float-base"],
       railTooltipBackground: tokens["surface-float-base-hover"],
       railTooltipText: tokens["text-on-float-base-hover"],
+      tooltipHighlightBackground: tokens["surface-float-highlight"],
+      tooltipHighlightText: tokens["text-on-float-highlight"],
       iconBase: tokens["icon-base"],
       textStrong: tokens["text-strong"],
       textSuccess: tokens["text-success-base"],

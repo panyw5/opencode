@@ -186,7 +186,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--text-interactive-base) 16%, transparent);
-  color: var(--text-interactive-base);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-interactive-base) 28%, transparent);
+  background: var(--surface-float-highlight, var(--surface-float-base-hover));
+  color: var(--text-on-float-highlight, var(--text-on-float-base-hover));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 28%, transparent);
 }

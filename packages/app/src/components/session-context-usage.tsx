@@ -163,19 +163,19 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
         {(ctx) => (
           <>
             <div class="flex items-center gap-2">
-              <span class="text-text-invert-strong">{ctx().total.toLocaleString(language.intl())}</span>
-              <span class="text-text-invert-base">{language.t("context.usage.tokens")}</span>
+              <span>{ctx().total.toLocaleString(language.intl())}</span>
+              <span>{language.t("context.usage.tokens")}</span>
             </div>
             <div class="flex items-center gap-2">
-              <span class="text-text-invert-strong">{ctx().usage ?? 0}%</span>
-              <span class="text-text-invert-base">{language.t("context.usage.usage")}</span>
+              <span>{ctx().usage ?? 0}%</span>
+              <span>{language.t("context.usage.usage")}</span>
             </div>
           </>
         )}
       </Show>
       <div class="flex items-center gap-2">
-        <span class="text-text-invert-strong">{cost()}</span>
-        <span class="text-text-invert-base">{language.t("context.usage.cost")}</span>
+        <span>{cost()}</span>
+        <span>{language.t("context.usage.cost")}</span>
       </div>
     </div>
   )
