@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process"
-import { access, mkdir, readFile, writeFile } from "node:fs/promises"
+import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { assertDshPermissionSupport, parseDshConsultDefaults } from "@opencode-ai/util/dsh-config"
 import { isAbsolute, join } from "node:path"
 import { promisify } from "node:util"
 import type {
@@ -36,6 +38,30 @@ export function resolveDshHome(config?: CliAgentConfig) {
 }
 
 export type { DshHomeSnapshot, DshModelSelection }
+
+/** Installed profile names usable as headless candidates, without loading plugin code. */
+export async function listDshProfiles(configHome?: string): Promise<string[]> {
+  const excluded = new Set(["desktop", "web", "sdk", "sdk-minimal", "acp", "node_modules"])
+  const directories = await readdir(join(resolveDshHomePath(configHome), "profiles"), { withFileTypes: true }).catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return []
+      throw error
+    },
+  )
+  return [
+    ...new Set([
+      "headless",
+      ...directories
+        .filter(
+          (entry) =>
+            (entry.isDirectory() || entry.isSymbolicLink()) &&
+            !excluded.has(entry.name) &&
+            /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(entry.name),
+        )
+        .map((entry) => entry.name),
+    ]),
+  ].sort()
+}
 
 export async function resolveDshBinary(config?: CliAgentConfig): Promise<string | undefined> {
   const override = config?.binaryPath?.trim()
@@ -81,6 +107,7 @@ export async function getDshInfo(config?: CliAgentConfig): Promise<CliAgentInfo>
   }
 
   try {
+    if (info.dsh) info.dsh.profiles = await listDshProfiles(config?.configHome)
     const binaryPath = await resolveDshBinary(config)
     info.binaryPath = binaryPath
     if (binaryPath) {
@@ -149,9 +176,45 @@ export async function testDshConfig(config: CliAgentConfig): Promise<CliAgentTes
       return { ok: false, logs }
     }
 
-    if (!info.version) {
+    if (!info.version || !info.binaryPath) {
       logs.push("dsh binary was found but `-V` returned no output.")
       return { ok: false, logs }
+    }
+
+    if (config.defaults !== undefined) {
+      const defaults = parseDshConsultDefaults(config.defaults)
+      const profile = defaults.profile ?? "headless"
+      const patches = typeof defaults.patch === "string" ? [defaults.patch] : (defaults.patch ?? [])
+      const temp = await mkdtemp(join(tmpdir(), "opencode-dsh-probe-"))
+      try {
+        const args = ["--profile", profile]
+        for (const [index, patch] of patches.entries()) {
+          if (!patch.trim()) continue
+          const file = join(temp, `patch-${index}.yml`)
+          await writeFile(file, patch, { mode: 0o600 })
+          args.push("--patch", file)
+        }
+        args.push("--help")
+        if (defaults.working_directory && !isAbsolute(defaults.working_directory)) {
+          throw new Error("DSH working_directory must be an absolute directory path")
+        }
+        if (defaults.additional_writable_roots?.some((root) => !isAbsolute(root))) {
+          throw new Error("DSH additional_writable_roots must contain absolute directory paths")
+        }
+        logs.push(`Checking profile: ${profile}; patches: ${patches.length}`)
+        const key = await readDshApiKey(config.configHome)
+        const result = await execFileAsync(info.binaryPath, args, {
+          cwd: defaults.working_directory,
+          env: { ...process.env, DSH_HOME: resolveDshHome(config), ...(key ? { DEEPSEEK_API_KEY: key } : {}) },
+          timeout: 5000,
+          windowsHide: true,
+          maxBuffer: 1024 * 1024,
+        })
+        assertDshPermissionSupport(result.stdout + result.stderr, defaults)
+        logs.push("Profile help and requested permission flags are supported.")
+      } finally {
+        await rm(temp, { recursive: true, force: true })
+      }
     }
 
     logs.push("DeepSeek Harness CLI probe succeeded.")
@@ -441,10 +504,7 @@ function setEntryDisabled(entry: string, disabled: boolean): string {
 
 function unquoteYamlScalar(value: string): string {
   let text = value.trim()
-  if (
-    (text.startsWith("'") && text.endsWith("'")) ||
-    (text.startsWith('"') && text.endsWith('"'))
-  ) {
+  if ((text.startsWith("'") && text.endsWith("'")) || (text.startsWith('"') && text.endsWith('"'))) {
     text = text.slice(1, -1)
   }
   return text

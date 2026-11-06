@@ -16,9 +16,14 @@ When NOT to use:
 Usage notes:
   - Provide a self-contained prompt: goal, relevant absolute paths, constraints, and desired output format
   - dsh starts cold — it cannot see this conversation unless you put the context in `prompt`
-  - Defaults to the current project directory; optional `working_directory` overrides cwd
-  - `profile` selects the dsh plugin composition to boot (default "headless"); a custom profile changes which model adapters, tools, presets, and bundles mount
-  - `patch` accepts inline `cordis.patch.yml` YAML content (or a list) applied via `dsh --patch` after the profile layer, to override model/tools/persona/presets per consult without touching ~/.dsh
+  - Uses saved `external_agents.dsh.defaults` for profile, working_directory, timeout_ms, patch, permission_mode, approval_policy, and additional_writable_roots; explicit call parameters replace individual defaults
+  - Without saved defaults, uses headless, the current project directory, a 10-minute timeout, and the selected profile's permissions
+  - `profile` selects a composition with a compatible one-shot headless runner; web/sdk/acp profiles are not one-shot consult runners
+  - `patch` accepts inline `cordis.patch.yml` YAML content (or a list) applied via `dsh --patch` after the profile layer; [] or an empty string clears the saved patches for this call
+  - `permission_mode` selects a configured DSH preset; built-ins include read-only, workspace-write, and danger-full-access
+  - `approval_policy` accepts ask or never; never rejects requests requiring approval, rather than granting full access
+  - `additional_writable_roots` replaces the saved directory grants; [] clears them. The same grants and policies are passed again on follow-ups
+  - Requested permission flags must be supported by the installed CLI and selected profile; unsupported flags fail before submitting the task
   - Requires `dsh` on PATH (`npm i -g @deepseek-ai/dsh`) and `DEEPSEEK_API_KEY` (or credentials under ~/.dsh)
   - dsh is a full coding agent; prefer analysis-scoped prompts unless the user wants implementation
   - Desktop intervention keeps the tool call open after the first answer; follow-ups resume the native DSH session when supported

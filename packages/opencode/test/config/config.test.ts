@@ -333,6 +333,43 @@ test("updates global config and omits empty shell key in jsonc", async () => {
   }
 })
 
+for (const extension of ["json", "jsonc"]) {
+  test(`replaces and clears DSH invocation defaults in global ${extension} config`, async () => {
+    await using tmp = await tmpdir()
+    const file = path.join(tmp.path, `opencode.${extension}`)
+    await Filesystem.write(
+      file,
+      JSON.stringify({
+        model: "test/model",
+        external_agents: {
+          dsh: {
+            binaryPath: "/installed/dsh",
+            defaults: { profile: "review", timeout_ms: 60000, permission_mode: "read-only" },
+          },
+          codex: { enabled: true },
+        },
+      }),
+    )
+    const prev = Global.Path.config
+    ;(Global.Path as { config: string }).config = tmp.path
+    await clear(true)
+    try {
+      await saveGlobal({ external_agents: { dsh: { defaults: { timeout_ms: 120000 } } } })
+      let parsed = ConfigParse.jsonc(await Filesystem.readText(file), file)
+      expect(parsed.external_agents.dsh.defaults).toEqual({ timeout_ms: 120000 })
+      expect(parsed.external_agents.dsh.binaryPath).toBe("/installed/dsh")
+      expect(parsed.external_agents.codex.enabled).toBe(true)
+      await saveGlobal({ external_agents: { dsh: { defaults: {} } } })
+      parsed = ConfigParse.jsonc(await Filesystem.readText(file), file)
+      expect(parsed.external_agents.dsh.defaults).toEqual({})
+      expect(parsed.model).toBe("test/model")
+    } finally {
+      ;(Global.Path as { config: string }).config = prev
+      await clear(true)
+    }
+  })
+}
+
 test("replaces the MCP map in global JSONC config", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {

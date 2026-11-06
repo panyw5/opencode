@@ -12,6 +12,36 @@ import { buildDshExecArgs, buildDshFollowupArgs } from "@/tool/dsh_consult"
 import { tmpdir } from "../fixture/fixture"
 
 describe("external CLI runtime configuration", () => {
+  test("DSH defaults survive config decoding and desktop startup while live values replace them", () => {
+    const defaults = {
+      profile: "review",
+      timeout_ms: 120000,
+      permission_mode: "read-only",
+      approval_policy: "never" as const,
+      patch: ["[]"],
+      additional_writable_roots: [],
+    }
+    const config = { binaryPath: "/installed/dsh", defaults }
+    const decoded = Schema.decodeUnknownSync(Config.Info)({ external_agents: { dsh: config } })
+    expect(decoded.external_agents?.dsh).toEqual(config)
+    const env = { OPENCODE_EXTERNAL_AGENTS: JSON.stringify({ dsh: config }) }
+    expect(resolveExternalCli("dsh", undefined, env).defaults).toEqual(defaults)
+    expect(resolveExternalCli("dsh", { defaults: {} }, env).defaults).toEqual({})
+    for (const invalid of [
+      { timeout_ms: 0 },
+      { approval_policy: "always" },
+      { patch: 1 },
+      { profile: "../other" },
+      { additional_writable_roots: [1] },
+    ]) {
+      expect(() => Schema.decodeUnknownSync(Config.Info)({ external_agents: { dsh: { defaults: invalid } } })).toThrow()
+      expect(() =>
+        resolveExternalCli("dsh", undefined, {
+          OPENCODE_EXTERNAL_AGENTS: JSON.stringify({ dsh: { ...config, defaults: invalid } }),
+        }),
+      ).toThrow()
+    }
+  })
   for (const id of ["codex", "claude", "dsh", "grok"] as const) {
     test(id + " persists a partial configuration and uses the configured executable/home", () => {
       const config = { enabled: true, binaryPath: "/configured/" + id, configHome: "~/custom-agent-home" }

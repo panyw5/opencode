@@ -9,6 +9,8 @@ import {
   Parameters,
   resolveProfile,
   resolveTimeoutMs,
+  resolveDshConsultOptions,
+  assertDshPolicySupport,
 } from "../../src/tool/dsh_consult"
 
 const parse = <S extends Schema.Decoder<unknown>>(schema: S, input: unknown): S["Type"] =>
@@ -18,6 +20,119 @@ const accepts = (schema: Schema.Decoder<unknown>, input: unknown): boolean =>
   Result.isSuccess(Schema.decodeUnknownResult(schema)(input))
 
 describe("tool.dsh_consult helpers", () => {
+  test("saved defaults apply to omitted parameters and individual call fields replace them", () => {
+    const defaults = {
+      profile: "review",
+      working_directory: "/repo",
+      timeout_ms: 120000,
+      patch: ["first", "second"],
+      permission_mode: "read-only",
+      approval_policy: "never" as const,
+      additional_writable_roots: ["/shared"],
+    }
+    expect(resolveDshConsultOptions({}, defaults)).toEqual({
+      profile: "review",
+      workingDirectory: "/repo",
+      timeoutMs: 120000,
+      patchSources: ["first", "second"],
+      permissionMode: "read-only",
+      approvalPolicy: "never",
+      additionalWritableRoots: ["/shared"],
+    })
+    const options = resolveDshConsultOptions(
+      {
+        profile: "implementation",
+        timeout_ms: 60000,
+        working_directory: "/other",
+        patch: ["replacement"],
+        permission_mode: "workspace-write",
+        approval_policy: "ask",
+        additional_writable_roots: ["/new", "/new"],
+      },
+      defaults,
+    )
+    expect(options).toEqual({
+      profile: "implementation",
+      workingDirectory: "/other",
+      timeoutMs: 60000,
+      patchSources: ["replacement"],
+      permissionMode: "workspace-write",
+      approvalPolicy: "ask",
+      additionalWritableRoots: ["/new"],
+    })
+    expect(defaults.patch).toEqual(["first", "second"])
+    expect(resolveDshConsultOptions({ timeout_ms: 90000 }, defaults).permissionMode).toBe("read-only")
+    for (const patch of [[], ""]) {
+      const cleared = resolveDshConsultOptions({ patch, additional_writable_roots: [] }, defaults)
+      expect(cleared.patchSources).toEqual([])
+      expect(cleared.additionalWritableRoots).toEqual([])
+    }
+  })
+
+  test("defaults remain optional and invalid paths or permission values fail before launch", () => {
+    const options = resolveDshConsultOptions({})
+    expect(options.profile).toBe("headless")
+    expect(options.timeoutMs).toBe(600000)
+    expect(options.permissionMode).toBeUndefined()
+    expect(options.approvalPolicy).toBeUndefined()
+    expect(() => resolveDshConsultOptions({ working_directory: "relative" })).toThrow("absolute")
+    expect(() => resolveDshConsultOptions({ additional_writable_roots: ["relative"] })).toThrow("absolute")
+    expect(() => resolveDshConsultOptions({ permission_mode: " " })).toThrow("preset")
+    for (const profile of ["../outside", "/absolute", "--help", "bad profile"]) {
+      expect(() => resolveDshConsultOptions({ profile })).toThrow("profile")
+    }
+  })
+
+  test("permission flags follow launcher overlays and survive native and replay follow-ups", () => {
+    const policy = {
+      permissionMode: "workspace-write",
+      approvalPolicy: "never" as const,
+      additionalWritableRoots: ["/shared one", "/shared-two"],
+    }
+    const prefix = [
+      "--profile",
+      "review",
+      "--patch",
+      "/tmp/patch.yml",
+      "--permission-mode",
+      "workspace-write",
+      "--approval-policy",
+      "never",
+      "--add-dir",
+      "/shared one",
+      "--add-dir",
+      "/shared-two",
+    ]
+    const initial = buildDshExecArgs({ prompt: "review", profile: "review", patch: ["/tmp/patch.yml"], ...policy })
+    expect(initial.slice(0, prefix.length)).toEqual(prefix)
+    expect(initial[prefix.length]).toBe("--")
+    for (const sessionId of [undefined, "session opaque id"]) {
+      const args = buildDshFollowupArgs({
+        history: [],
+        followup: "continue",
+        profile: "review",
+        patch: ["/tmp/patch.yml"],
+        sessionId,
+        ...policy,
+      })
+      expect(args.slice(0, prefix.length)).toEqual(prefix)
+      expect(args).toContain("--")
+      if (sessionId) expect(args.slice(-4)).toEqual(["--session-id", sessionId, "--", "continue"])
+    }
+  })
+
+  test("old installed CLIs cannot silently discard requested permissions", () => {
+    expect(() => assertDshPolicySupport("legacy help", {})).not.toThrow()
+    for (const [flag, policy] of [
+      ["--permission-mode", { permissionMode: "read-only" }],
+      ["--approval-policy", { approvalPolicy: "never" as const }],
+      ["--add-dir", { additionalWritableRoots: ["/shared"] }],
+    ] as const) {
+      expect(() => assertDshPolicySupport("legacy help", policy)).toThrow(flag)
+      expect(() => assertDshPolicySupport(`${flag} <value>`, policy)).not.toThrow()
+      expect(() => assertDshPolicySupport(`${flag}-unsupported`, policy)).toThrow(flag)
+    }
+  })
   test("buildDshExecArgs uses headless profile and frames the prompt", () => {
     const args = buildDshExecArgs({ prompt: "Review auth flow" })
     expect(args[0]).toBe("--profile")
@@ -106,8 +221,7 @@ describe("tool.dsh_consult helpers", () => {
     const err = classifyDshFailure({
       exitCode: 0,
       stdout: "",
-      stderr:
-        'dsh: MISSING_CREDENTIAL: llm-deepseek: no API key for provider route "deepseek-official"',
+      stderr: 'dsh: MISSING_CREDENTIAL: llm-deepseek: no API key for provider route "deepseek-official"',
     })
     expect(err).toContain("no API credentials")
   })
@@ -141,6 +255,17 @@ describe("tool.dsh_consult helpers", () => {
 })
 
 describe("tool.dsh_consult parameters", () => {
+  test("accepts permission overrides and rejects invalid approval policies", () => {
+    const input = {
+      prompt: "review",
+      permission_mode: "read-only",
+      approval_policy: "never",
+      additional_writable_roots: [],
+    }
+    expect(parse(Parameters, input)).toEqual(input)
+    expect(accepts(Parameters, { prompt: "review", approval_policy: "always" })).toBe(false)
+    expect(accepts(Parameters, { prompt: "review", additional_writable_roots: "/root" })).toBe(false)
+  })
   test("requires prompt", () => {
     expect(accepts(Parameters, {})).toBe(false)
     expect(parse(Parameters, { prompt: "hi" })).toEqual({ prompt: "hi" })

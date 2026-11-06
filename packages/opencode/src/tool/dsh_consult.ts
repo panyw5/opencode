@@ -11,15 +11,20 @@ import { assertExternalDirectoryEffect } from "./external-directory"
 import { Config } from "@/config/config"
 import { externalTurnFailure, resolveExternalCli } from "./external-cli"
 import { parseDshCredentials } from "@opencode-ai/util/dsh-credentials"
+import {
+  DSH_DEFAULT_TIMEOUT_MS as DEFAULT_TIMEOUT_MS,
+  DSH_MIN_TIMEOUT_MS as MIN_TIMEOUT_MS,
+  DSH_MAX_TIMEOUT_MS as MAX_TIMEOUT_MS,
+  parseDshConsultDefaults,
+  assertDshPermissionSupport,
+  type DshConsultDefaults,
+} from "@opencode-ai/util/dsh-config"
 import { applyDshJsonlLine, createDshJsonState, dshCapabilities, type DshEventItem } from "./dsh-protocol"
 import { registerAdvisorIntervention } from "./advisor-intervention"
 import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "tool.dsh_consult" })
 
-const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000
-const MAX_TIMEOUT_MS = 30 * 60 * 1000
-const MIN_TIMEOUT_MS = 30 * 1000
 const METADATA_THROTTLE_MS = 200
 const MAX_PREVIEW = 8_000
 const MAX_TRANSCRIPT_ITEMS = 80
@@ -32,24 +37,42 @@ export const Parameters = Schema.Struct({
   }),
   working_directory: Schema.optional(Schema.String).annotate({
     description:
-      "Absolute directory dsh should run in. Defaults to the current project directory. Must stay inside an allowed workspace path.",
+      "Absolute directory dsh should run in. Overrides the saved working directory; otherwise uses the current project. External directories require OpenCode approval.",
   }),
   timeout_ms: Schema.optional(Schema.Number).annotate({
-    description: `Timeout in milliseconds (default ${DEFAULT_TIMEOUT_MS}, max ${MAX_TIMEOUT_MS}).`,
+    description: `Timeout in milliseconds. Overrides the user's default (otherwise ${DEFAULT_TIMEOUT_MS}, max ${MAX_TIMEOUT_MS}).`,
   }),
   profile: Schema.optional(Schema.String).annotate({
     description:
-      'dsh profile to boot (default "headless"). A profile is a named plugin composition; a custom profile changes which model adapters, tools, presets, and bundles mount for this consult. Must be a single token (no whitespace).',
+      'dsh profile to boot. Overrides the saved default (otherwise "headless"). Custom profiles must provide a compatible one-shot headless runner.',
   }),
   patch: Schema.optional(Schema.Union([Schema.String, Schema.Array(Schema.String)])).annotate({
     description:
-      "Inline cordis.patch.yml YAML content (or a list of such). Each entry is written to a temp file and applied via `dsh --patch <file>` after the profile layer, so this consult can dynamically override model, tools, persona, presets, or other config rows at boot without touching ~/.dsh. Entries layer in the order given. A patch that fails to apply fails the consult with the dsh error.",
+      "Inline cordis.patch.yml YAML content (or a list of such). Replaces the saved patches; [] or an empty string skips them. Each entry is materialized as a temp file and applied via dsh --patch in order, without editing the shared DSH profile. Config replaces the whole plugin config. Patch errors fail the consult.",
+  }),
+  permission_mode: Schema.optional(Schema.String).annotate({
+    description:
+      "DSH permission preset, e.g. read-only, workspace-write, or danger-full-access. Overrides the saved default for this consult.",
+  }),
+  approval_policy: Schema.optional(Schema.Literals(["ask", "never"])).annotate({
+    description:
+      "DSH approval policy. never rejects actions that require approval; it does not grant unrestricted access. Overrides the saved default.",
+  }),
+  additional_writable_roots: Schema.optional(Schema.Array(Schema.String)).annotate({
+    description:
+      "Additional absolute directories writable under workspace-write. Replaces the saved list; [] clears it for this consult. External directories require OpenCode approval.",
   }),
 })
 
 export type DshConsultParams = Schema.Schema.Type<typeof Parameters>
 
-export type DshExecBuildInput = {
+type DshPolicyOptions = {
+  permissionMode?: string
+  approvalPolicy?: "ask" | "never"
+  additionalWritableRoots?: readonly string[]
+}
+
+export type DshExecBuildInput = DshPolicyOptions & {
   prompt: string
   profile?: string
   /** Resolved patch-file paths, each applied via `dsh --patch <file>` in order. */
@@ -94,14 +117,16 @@ export function buildDshExecArgs(input: DshExecBuildInput): string[] {
 /**
  * Prefer native resume; older headless profiles replay the bounded transcript.
  */
-export function buildDshFollowupArgs(input: {
-  history: readonly DshTurn[]
-  followup: string
-  profile?: string
-  patch?: readonly string[]
-  json?: boolean
-  sessionId?: string
-}): string[] {
+export function buildDshFollowupArgs(
+  input: DshPolicyOptions & {
+    history: readonly DshTurn[]
+    followup: string
+    profile?: string
+    patch?: readonly string[]
+    json?: boolean
+    sessionId?: string
+  },
+): string[] {
   if (input.sessionId) return buildDshArgs(input, input.followup)
   const historyBlock = formatDshHistory(input.history)
   const framed = [
@@ -125,9 +150,19 @@ export function buildDshFollowupArgs(input: {
 function buildDshArgs(input: Omit<DshExecBuildInput, "prompt">, task: string): string[] {
   const args = ["--profile", resolveProfile(input.profile)]
   for (const file of input.patch ?? []) args.push("--patch", file)
+  if (input.permissionMode) args.push("--permission-mode", input.permissionMode)
+  if (input.approvalPolicy) args.push("--approval-policy", input.approvalPolicy)
+  for (const root of input.additionalWritableRoots ?? []) args.push("--add-dir", root)
   if (input.json) args.push("--json")
   if (input.sessionId) args.push("--session-id", input.sessionId)
-  if (input.json || input.sessionId) args.push("--")
+  if (
+    input.json ||
+    input.sessionId ||
+    input.permissionMode ||
+    input.approvalPolicy ||
+    input.additionalWritableRoots?.length
+  )
+    args.push("--")
   args.push(task)
   return args
 }
@@ -135,8 +170,8 @@ function buildDshArgs(input: Omit<DshExecBuildInput, "prompt">, task: string): s
 /** Resolve the profile name, defaulting to the headless one-shot bundle. */
 export function resolveProfile(profile: string | undefined): string {
   const value = profile?.trim()
-  if (value && /\s/.test(value)) {
-    throw new Error(`dsh profile must not contain whitespace: ${JSON.stringify(value)}`)
+  if (value && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)) {
+    throw new Error(`dsh profile must be a name without whitespace or path separators: ${JSON.stringify(value)}`)
   }
   return value || "headless"
 }
@@ -165,6 +200,42 @@ export function formatDshHistory(history: readonly DshTurn[]): string {
 export function resolveTimeoutMs(value: number | undefined): number {
   if (value === undefined || !Number.isFinite(value)) return DEFAULT_TIMEOUT_MS
   return Math.min(MAX_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, Math.floor(value)))
+}
+
+/** Resolve one consult once; follow-ups retain its configuration and write grants. */
+export function resolveDshConsultOptions(params: Omit<DshConsultParams, "prompt">, defaults?: DshConsultDefaults) {
+  const saved = defaults === undefined ? {} : parseDshConsultDefaults(defaults)
+  const workingDirectory = params.working_directory ?? saved.working_directory
+  if (workingDirectory !== undefined && (!path.isAbsolute(workingDirectory) || workingDirectory.includes("\0"))) {
+    throw new Error("DSH working_directory must be an absolute directory path")
+  }
+  const additionalWritableRoots = [
+    ...new Set(params.additional_writable_roots ?? saved.additional_writable_roots ?? []),
+  ]
+  if (additionalWritableRoots.some((root) => !path.isAbsolute(root) || root.includes("\0"))) {
+    throw new Error("DSH additional_writable_roots must contain absolute directory paths")
+  }
+  const permissionMode = params.permission_mode ?? saved.permission_mode
+  if (permissionMode !== undefined && (!permissionMode.trim() || permissionMode.includes("\0"))) {
+    throw new Error("DSH permission_mode must name a permission preset")
+  }
+  return {
+    profile: resolveProfile(params.profile ?? saved.profile),
+    workingDirectory,
+    timeoutMs: resolveTimeoutMs(params.timeout_ms ?? saved.timeout_ms),
+    patchSources: normalizePatchSources(params.patch ?? saved.patch),
+    permissionMode: permissionMode?.trim(),
+    approvalPolicy: params.approval_policy ?? saved.approval_policy,
+    additionalWritableRoots,
+  }
+}
+
+export function assertDshPolicySupport(help: string, policy: DshPolicyOptions): void {
+  assertDshPermissionSupport(help, {
+    permission_mode: policy.permissionMode,
+    approval_policy: policy.approvalPolicy,
+    additional_writable_roots: policy.additionalWritableRoots?.slice(),
+  })
 }
 
 /** Detect credential / runner failures that may still exit 0 with empty stdout. */
@@ -217,7 +288,26 @@ export const DshConsultTool = Tool.define(
         return Effect.scoped(
           Effect.gen(function* () {
             const ins = yield* InstanceState.context
-            const workingDirectory = resolveWorkingDirectory(params.working_directory, ins.directory)
+            const runtime = resolveExternalCli("dsh", (yield* configs.get()).external_agents?.dsh)
+            const options = resolveDshConsultOptions(params, runtime.defaults)
+            const { profile, timeoutMs, patchSources, permissionMode, approvalPolicy, additionalWritableRoots } =
+              options
+            const policy = { permissionMode, approvalPolicy, additionalWritableRoots }
+            const workingDirectory = resolveWorkingDirectory(options.workingDirectory, ins.directory)
+            log.info(
+              "invocation resolved advisor=dsh profile=" +
+                profile +
+                " timeoutMs=" +
+                timeoutMs +
+                " permissionMode=" +
+                (permissionMode ?? "inherit") +
+                " approvalPolicy=" +
+                (approvalPolicy ?? "inherit") +
+                " extraRoots=" +
+                additionalWritableRoots.length +
+                " patches=" +
+                patchSources.length,
+            )
 
             yield* ctx.ask({
               permission: "dsh_consult",
@@ -225,14 +315,20 @@ export const DshConsultTool = Tool.define(
               always: ["*"],
               metadata: {
                 working_directory: workingDirectory,
+                permission_mode: permissionMode,
+                approval_policy: approvalPolicy,
+                additional_writable_roots: additionalWritableRoots,
+                profile,
+                patch_count: patchSources.length,
                 prompt_preview: params.prompt.slice(0, 200),
               },
             })
 
             yield* assertExternalDirectoryEffect(ctx, workingDirectory, { kind: "directory" })
+            for (const root of additionalWritableRoots) {
+              yield* assertExternalDirectoryEffect(ctx, root, { kind: "directory" })
+            }
 
-            const profile = resolveProfile(params.profile)
-            const patchSources = normalizePatchSources(params.patch)
             const patchFiles: string[] = []
             if (patchSources.length > 0) {
               const tmpDir = yield* fs
@@ -245,7 +341,6 @@ export const DshConsultTool = Tool.define(
               }
             }
 
-            const runtime = resolveExternalCli("dsh", (yield* configs.get()).external_agents?.dsh)
             const bin = runtime.binary
             const credentialsFile = path.join(runtime.home, ".credentials.yaml")
             const env: Record<string, string | undefined> = { ...runtime.env }
@@ -278,6 +373,7 @@ export const DshConsultTool = Tool.define(
                 Effect.orElseSucceed(() => ""),
               )
             const capabilities = dshCapabilities(help)
+            assertDshPolicySupport(help, policy)
             const json = capabilities.json && capabilities.resume
             let sessionId: string | undefined
             log.info("capabilities advisor=dsh json=" + capabilities.json + " resume=" + capabilities.resume)
@@ -285,7 +381,6 @@ export const DshConsultTool = Tool.define(
             const prompt = params.prompt.trim()
             if (!prompt) throw new Error("prompt must be a non-empty string")
 
-            const timeoutMs = resolveTimeoutMs(params.timeout_ms)
             const history: DshTurn[] = [{ role: "user", text: prompt }]
             const transcript: DshTranscriptItem[] = [
               {
@@ -328,6 +423,9 @@ export const DshConsultTool = Tool.define(
                     working_directory: workingDirectory,
                     timeout_ms: timeoutMs,
                     profile,
+                    permission_mode: permissionMode,
+                    approval_policy: approvalPolicy,
+                    additional_writable_roots: additionalWritableRoots,
                     session_id: sessionId,
                     json,
                     patch_count: patchFiles.length,
@@ -468,7 +566,7 @@ export const DshConsultTool = Tool.define(
             yield* publishMetadata(true)
             log.info("starting dsh consult", { bin, cwd: workingDirectory, timeoutMs })
 
-            let result = yield* runProcess(buildDshExecArgs({ prompt, profile, patch: patchFiles, json }))
+            let result = yield* runProcess(buildDshExecArgs({ prompt, profile, patch: patchFiles, json, ...policy }))
             if (result.exit.kind === "abort") throw new Error("DeepSeek Harness consultation was aborted")
             if (result.exit.kind === "timeout") {
               throw new Error(`DeepSeek Harness consultation timed out after ${timeoutMs}ms`)
@@ -539,6 +637,7 @@ export const DshConsultTool = Tool.define(
                       patch: patchFiles,
                       json,
                       sessionId,
+                      ...policy,
                     }),
                   )
                 } finally {
@@ -610,6 +709,10 @@ export const DshConsultTool = Tool.define(
               output: `${header}\n\n${body}`,
               metadata: {
                 profile,
+                timeout_ms: timeoutMs,
+                permission_mode: permissionMode,
+                approval_policy: approvalPolicy,
+                additional_writable_roots: additionalWritableRoots,
                 session_id: sessionId,
                 json,
                 patch_count: patchFiles.length,

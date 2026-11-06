@@ -146,6 +146,23 @@ const ExternalAgentConfig = Schema.Struct({
   configHome: Schema.optional(Schema.String),
 })
 
+const DshAgentConfig = Schema.Struct({
+  ...ExternalAgentConfig.fields,
+  defaults: Schema.optional(
+    Schema.Struct({
+      profile: Schema.optional(Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._-]*$/))),
+      working_directory: Schema.optional(Schema.String),
+      timeout_ms: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 30000, maximum: 1800000 }))),
+      patch: Schema.optional(Schema.Union([Schema.String, Schema.Array(Schema.String)])),
+      permission_mode: Schema.optional(Schema.String),
+      approval_policy: Schema.optional(Schema.Literals(["ask", "never"])),
+      additional_writable_roots: Schema.optional(Schema.Array(Schema.String)),
+    }),
+  ).annotate({
+    description: "Installed DSH invocation defaults; explicit consult parameters replace individual fields",
+  }),
+})
+
 export const Info = Schema.Struct({
   $schema: Schema.optional(Schema.String).annotate({
     description: "JSON schema reference for configuration validation",
@@ -154,16 +171,18 @@ export const Info = Schema.Struct({
     description: "Default shell to use for terminal and bash tool",
   }),
   logLevel: Schema.optional(LogLevelRef).annotate({ description: "Log level" }),
-  pi: Schema.optional(Schema.Struct({
-    enabled: Schema.optional(Schema.Boolean),
-    binaryPath: Schema.optional(Schema.String),
-    configHome: Schema.optional(Schema.String),
-  })).annotate({ description: "Local Pi external advisor executable and configuration directory" }),
+  pi: Schema.optional(
+    Schema.Struct({
+      enabled: Schema.optional(Schema.Boolean),
+      binaryPath: Schema.optional(Schema.String),
+      configHome: Schema.optional(Schema.String),
+    }),
+  ).annotate({ description: "Local Pi external advisor executable and configuration directory" }),
   external_agents: Schema.optional(
     Schema.Struct({
       codex: Schema.optional(ExternalAgentConfig),
       claude: Schema.optional(ExternalAgentConfig),
-      dsh: Schema.optional(ExternalAgentConfig),
+      dsh: Schema.optional(DshAgentConfig),
       grok: Schema.optional(ExternalAgentConfig),
     }),
   ).annotate({ description: "Local external advisor executables and configuration directories" }),
@@ -406,11 +425,13 @@ function globalConfigFile() {
 }
 
 function patchJsonc(input: string, patch: unknown, path: string[] = []): string {
-  const providerDelete = path.length === 2 && path[0] === "provider" && isRecord(patch) && Object.keys(patch).length === 0
+  const providerDelete =
+    path.length === 2 && path[0] === "provider" && isRecord(patch) && Object.keys(patch).length === 0
   const providerModels = path.length === 3 && path[0] === "provider" && path[2] === "models"
   const providerHeaders = path.length === 4 && path[0] === "provider" && path[2] === "options" && path[3] === "headers"
   const providerApiKey = path.length === 4 && path[0] === "provider" && path[2] === "options" && path[3] === "apiKey"
-  if (!isRecord(patch) || providerDelete || providerModels || providerHeaders) {
+  const dshDefaults = path.length === 3 && path[0] === "external_agents" && path[1] === "dsh" && path[2] === "defaults"
+  if (!isRecord(patch) || providerDelete || providerModels || providerHeaders || dshDefaults) {
     const value =
       providerDelete ||
       (providerHeaders && isRecord(patch) && Object.keys(patch).length === 0) ||
@@ -441,6 +462,11 @@ function patchJsonc(input: string, patch: unknown, path: string[] = []): string 
 function mergeWritableConfig(existing: Info, patch: Info): Info {
   const merged = mergeDeep(writable(existing), writable(patch)) as Info
   if ("mcp" in patch) merged.mcp = patch.mcp
+  if (patch.external_agents?.dsh && "defaults" in patch.external_agents.dsh) {
+    merged.external_agents ??= {}
+    merged.external_agents.dsh ??= {}
+    merged.external_agents.dsh.defaults = patch.external_agents.dsh.defaults
+  }
   for (const [providerID, provider] of Object.entries(patch.provider ?? {})) {
     if (Object.keys(provider).length === 0) {
       if (merged.provider) delete merged.provider[providerID]
@@ -580,10 +606,7 @@ export const layer = Layer.effect(
       }
     })
 
-    const deleteProvidersFromSiblingConfigs = Effect.fnUntraced(function* (
-      primary: string,
-      providerIDs: string[],
-    ) {
+    const deleteProvidersFromSiblingConfigs = Effect.fnUntraced(function* (primary: string, providerIDs: string[]) {
       let changed = false
       for (const file of mainConfigCandidates()) {
         if (file === primary) continue

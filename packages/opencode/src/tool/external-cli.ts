@@ -2,9 +2,15 @@ import path from "node:path"
 import { homedir } from "node:os"
 import { existsSync } from "node:fs"
 import { which } from "@/util/which"
+import { parseDshConsultDefaults, type DshConsultDefaults } from "@opencode-ai/util/dsh-config"
 
 export type ExternalCliID = "codex" | "claude" | "dsh" | "grok"
-export type ExternalCliConfig = { enabled?: boolean; binaryPath?: string; configHome?: string }
+export type ExternalCliConfig = {
+  enabled?: boolean
+  binaryPath?: string
+  configHome?: string
+  defaults?: DshConsultDefaults
+}
 
 const homes = {
   codex: ["CODEX_HOME", ".codex"],
@@ -27,6 +33,7 @@ export function resolveExternalCli(
         enabled: typeof value.enabled === "boolean" ? value.enabled : undefined,
         binaryPath: typeof value.binaryPath === "string" ? value.binaryPath : undefined,
         configHome: typeof value.configHome === "string" ? value.configHome : undefined,
+        defaults: id === "dsh" && value.defaults !== undefined ? parseDshConsultDefaults(value.defaults) : undefined,
       }
     } catch {
       throw new Error("Invalid desktop external agent configuration")
@@ -54,7 +61,7 @@ export function resolveExternalCli(
     base,
     expand(effective.configHome?.trim() || env[variable]?.trim() || path.join(homedir(), folder)),
   )
-  return { binary, home, env: { [variable]: home } }
+  return { binary, home, env: { [variable]: home }, defaults: effective.defaults }
 }
 
 export function externalTurnFailure(input: {

@@ -21,6 +21,7 @@ import {
 } from "./dsh-status"
 import { getGrokInfo, testGrokConfig } from "./grok-status"
 import { getPiInfo, testPiConfig } from "./pi-status"
+import { parseDshConsultDefaults } from "@opencode-ai/util/dsh-config"
 
 type CliAgentDefinition = {
   descriptor: CliAgentDescriptor
@@ -98,6 +99,9 @@ export function getCliAgent(id: CliAgentID) {
 }
 
 export function setCliAgent(id: CliAgentID, config: CliAgentConfig) {
+  if (id === "dsh" && config.defaults !== undefined) {
+    config = { ...config, defaults: parseDshConsultDefaults(config.defaults) }
+  }
   setCliAgentConfig(id, config)
 }
 
