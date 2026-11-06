@@ -913,10 +913,15 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
       // here is the only safe replay point we have.
       // Use a single space so the separator survives replay without changing
       // the neighboring signed reasoning blocks.
-      const hasSignedReasoning = msg.parts.some((part) => {
-        if (part.type !== "reasoning") return false
-        return part.metadata?.anthropic?.signature != null
-      })
+      const reasoningInterrupted = msg.parts.some((part) => part.type === "reasoning" && part.time.end === undefined)
+      const skipReasoning = msg.info.error !== undefined || reasoningInterrupted
+      const hasSignedReasoning =
+        !skipReasoning &&
+        !differentModel &&
+        msg.parts.some((part) => {
+          if (part.type !== "reasoning") return false
+          return part.metadata?.anthropic?.signature != null
+        })
       for (const part of dedupeReplayToolParts(msg.parts)) {
         if (part.type === "text") {
           const text = part.text === "" && hasSignedReasoning ? " " : part.text
@@ -1034,18 +1039,28 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
           }
         }
         if (part.type === "reasoning") {
-          if (differentModel) {
-            if (part.text.trim().length > 0)
-              assistantMessage.parts.push({
-                type: "text",
-                text: part.text,
-              })
+          if (skipReasoning) {
+            yield* log.info("skipping interrupted reasoning replay", {
+              messageID: msg.info.id,
+              partID: part.id,
+              differentModel,
+              reason: msg.info.error ? "assistant-error" : "unfinished-reasoning",
+            })
             continue
+          }
+          if (differentModel && !part.text) continue
+          if (differentModel) {
+            yield* log.info("replaying reasoning without model-scoped metadata", {
+              messageID: msg.info.id,
+              partID: part.id,
+              providerID: model.providerID,
+              modelID: model.id,
+            })
           }
           assistantMessage.parts.push({
             type: "reasoning",
             text: part.text,
-            providerMetadata: part.metadata,
+            ...(differentModel ? {} : { providerMetadata: part.metadata }),
           })
         }
       }

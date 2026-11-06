@@ -10,14 +10,27 @@ export function neighboringMessagePrefetch<T>(items: readonly T[], index: number
   return [items[index - 1], items[index + 1]].filter((item): item is T => item !== undefined)
 }
 
-type Meta = {
+type Meta = Readonly<{
   count: number
   cursor?: string
   complete: boolean
   at: number
+}>
+
+export function validSessionPrefetch(info: Meta | undefined): info is Meta {
+  return (
+    !!info &&
+    Number.isSafeInteger(info.count) &&
+    info.count >= 0 &&
+    typeof info.complete === "boolean" &&
+    Number.isFinite(info.at) &&
+    info.at >= 0 &&
+    (info.cursor === undefined || (typeof info.cursor === "string" && (info.cursor.length > 0 || info.complete)))
+  )
 }
 
 export function shouldSkipSessionPrefetch(input: { message: boolean; info?: Meta; chunk: number; now?: number }) {
+  if (input.info !== undefined && !validSessionPrefetch(input.info)) return false
   if (input.message) {
     if (!input.info) return true
     if (input.info.complete) return true
@@ -38,7 +51,15 @@ let sequence = 0
 const version = (id: string) => rev.get(id) ?? 0
 
 export function getSessionPrefetch(directory: string, sessionID: string) {
-  return cache.get(key(directory, sessionID))
+  const id = key(directory, sessionID)
+  const info = cache.get(id)
+  if ((info !== undefined || cache.has(id)) && !validSessionPrefetch(info)) {
+    cache.delete(id)
+    if (!inflight.has(id)) rev.delete(id)
+    console.debug(`[session-prefetch] discard directory=${directory} sid=${sessionID} reason=invalid-metadata`)
+    return
+  }
+  return info
 }
 
 export function getSessionPrefetchPromise(directory: string, sessionID: string) {
@@ -102,13 +123,20 @@ export function setSessionPrefetch(input: {
   at?: number
 }) {
   const id = key(input.directory, input.sessionID)
-  cache.delete(id)
-  cache.set(id, {
+  const info = {
     count: input.count,
-    cursor: input.cursor,
+    cursor: input.complete && input.cursor === "" ? undefined : input.cursor,
     complete: input.complete,
     at: input.at ?? Date.now(),
-  })
+  }
+  if (!validSessionPrefetch(info)) {
+    console.debug(
+      `[session-prefetch] reject directory=${input.directory} sid=${input.sessionID} reason=invalid-metadata`,
+    )
+    return
+  }
+  cache.delete(id)
+  cache.set(id, Object.freeze(info))
   while (cache.size > SESSION_PREFETCH_MAX) {
     const oldest = cache.keys().next().value
     if (!oldest) break

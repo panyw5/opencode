@@ -9,6 +9,17 @@ import type { HexColor } from "../theme/types"
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8")
 
 describe("question foreground contrast", () => {
+  test("countdown fades only while paused and restores full opacity when running", () => {
+    const css = read("../components/message-part.css")
+    const countdown = css.slice(
+      css.indexOf('  [data-slot="question-countdown"] {'),
+      css.indexOf('  [data-slot="question-progress-segment"] {'),
+    )
+    expect(countdown).toContain("opacity: 1;")
+    expect(countdown).toContain("transition: opacity 160ms ease;")
+    expect(countdown).toMatch(/&\[data-paused="true"\]\s*\{\s*opacity: 0\.45;/)
+  })
+
   test("custom placeholders inherit the state-aware input color without fading", () => {
     const css = read("../components/message-part.css")
     const input = css.slice(css.indexOf('  [data-slot="question-custom-input"] {'))

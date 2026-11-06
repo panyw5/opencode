@@ -30,7 +30,24 @@ export function rowLayoutVersion(input: { fontSize: number; font: string; theme:
   return JSON.stringify([input.fontSize, input.font, input.theme, input.scope ?? ""])
 }
 
+export function validRowMeasurement(value: RowMeasurement | undefined): value is RowMeasurement {
+  return (
+    !!value &&
+    Number.isFinite(value.height) &&
+    value.height > 0 &&
+    Number.isFinite(value.width) &&
+    value.width >= 0 &&
+    Number.isFinite(value.measuredAt) &&
+    value.measuredAt >= 0 &&
+    typeof value.contentVersion === "string" &&
+    value.contentVersion.length > 0 &&
+    (value.quality === "estimated" || value.quality === "measured")
+  )
+}
+
 export function rowWidthCompatible(cachedWidth: number, currentWidth: number) {
+  if (!Number.isFinite(cachedWidth) || !Number.isFinite(currentWidth) || cachedWidth < 0 || currentWidth < 0)
+    return false
   if (!cachedWidth || !currentWidth) return true
   return Math.abs(cachedWidth - currentWidth) <= WIDTH_TOLERANCE
 }
@@ -56,20 +73,29 @@ export class TimelineRowMeasurementCache {
   protected rows = new Map<string, RowMeasurement>()
 
   get(rowKey: string): RowMeasurement | undefined {
-    return this.rows.get(rowKey)
+    const entry = this.rows.get(rowKey)
+    if ((entry !== undefined || this.rows.has(rowKey)) && !validRowMeasurement(entry)) {
+      this.rows.delete(rowKey)
+      console.debug(`[timeline-row-cache] discard key=${rowKey} reason=invalid-measurement`)
+      return
+    }
+    return entry
   }
 
   /** Returns a valid cached height, or undefined when stale/missing/incompatible. */
   getHeight(rowKey: string, contentVersion: string, width: number): number | undefined {
-    const entry = this.rows.get(rowKey)
+    const entry = this.get(rowKey)
     if (!entry) return undefined
-    if (entry.contentVersion !== contentVersion) return undefined
-    if (!rowWidthCompatible(entry.width, width)) return undefined
+    if (entry.contentVersion !== contentVersion || !rowWidthCompatible(entry.width, width)) {
+      this.rows.delete(rowKey)
+      console.debug(`[timeline-row-cache] discard key=${rowKey} reason=stale-layout-or-content`)
+      return
+    }
     return entry.height
   }
 
   getQuality(rowKey: string): RowMeasurementQuality | undefined {
-    return this.rows.get(rowKey)?.quality
+    return this.get(rowKey)?.quality
   }
 
   /**
@@ -84,18 +110,26 @@ export class TimelineRowMeasurementCache {
    *   of equal quality, preventing a late async measure from regressing a
    *   freshly committed height.
    */
-  set(rowKey: string, measurement: RowMeasurement): void {
-    const existing = this.rows.get(rowKey)
+  set(rowKey: string, measurement: RowMeasurement): boolean {
+    if (!validRowMeasurement(measurement)) {
+      console.debug(`[timeline-row-cache] reject key=${rowKey} reason=invalid-measurement`)
+      return false
+    }
+    const existing = this.get(rowKey)
     if (existing) {
       // Same content: enforce quality + recency precedence.
-      if (existing.contentVersion === measurement.contentVersion) {
-        if (existing.quality === "measured" && measurement.quality === "estimated") return
+      if (
+        existing.contentVersion === measurement.contentVersion &&
+        rowWidthCompatible(existing.width, measurement.width)
+      ) {
+        if (existing.quality === "measured" && measurement.quality === "estimated") return false
         if (existing.quality === measurement.quality && existing.measuredAt > measurement.measuredAt) {
-          return
+          return false
         }
       }
     }
-    this.rows.set(rowKey, measurement)
+    this.rows.set(rowKey, Object.freeze({ ...measurement }))
+    return true
   }
 
   /** Convenience for measured heights. */
@@ -139,7 +173,7 @@ export class TimelineRowMeasurementCache {
   }
 
   has(rowKey: string): boolean {
-    return this.rows.has(rowKey)
+    return this.get(rowKey) !== undefined
   }
 
   /**
@@ -147,7 +181,12 @@ export class TimelineRowMeasurementCache {
    * The returned map is a shallow copy; callers must not mutate entries.
    */
   snapshot(): Map<string, RowMeasurement> {
-    return new Map(this.rows)
+    const entries = new Map<string, RowMeasurement>()
+    for (const key of this.rows.keys()) {
+      const entry = this.get(key)
+      if (entry) entries.set(key, entry)
+    }
+    return entries
   }
 
   /** Restore a previous snapshot, merging over the current entries. */
@@ -175,7 +214,7 @@ export class TimelineRowMeasurementCache {
     const count = rowIndexByKey.size
     for (let index = 0; index < count; index++) {
       const key = keyByIndex.get(index)
-      const entry = key ? this.rows.get(key) : undefined
+      const entry = key ? this.get(key) : undefined
       const size = entry?.height ?? 0
       if (entry && size > 0) {
         items.push({
@@ -198,18 +237,18 @@ export class BoundedTimelineRowMeasurementCache extends TimelineRowMeasurementCa
     super()
   }
 
-  override set(rowKey: string, measurement: RowMeasurement): void {
-    super.set(rowKey, measurement)
-    // A rejected lower-quality/older write did not install this object and
-    // must not refresh the entry's recency.
-    if (this.rows.get(rowKey) !== measurement) return
+  override set(rowKey: string, measurement: RowMeasurement): boolean {
+    // Rejected writes must not refresh the entry's recency.
+    if (!super.set(rowKey, measurement)) return false
+    const stored = this.rows.get(rowKey)!
     this.rows.delete(rowKey)
-    this.rows.set(rowKey, measurement)
+    this.rows.set(rowKey, stored)
     while (this.rows.size > this.maxEntries) {
       const oldest = this.rows.keys().next().value
       if (!oldest) break
       this.rows.delete(oldest)
     }
+    return true
   }
 }
 

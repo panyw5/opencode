@@ -702,7 +702,7 @@ export const layer = Layer.effect(
       }
       const entry: PendingEntry = { info, deferred, phase: "registering" }
       pending.set(id, entry)
-      const persisted = yield* persistRequest({ request: info, waitForPart: false })
+      const persisted = yield* persistRequest({ request: info, waitForPart: false }).pipe(locked)
       const supersededAtRegistration = yield* isSuperseded(info)
       log.info("question registered", {
         id,
@@ -730,7 +730,7 @@ export const layer = Layer.effect(
         // rejected through the normal event path, preserving Asked -> Rejected.
         yield* expireSuperseded({ sessionID: input.sessionID })
       }
-      if (!persisted && info.tool) yield* persistRequest({ request: info, waitForPart: true })
+      if (!persisted && info.tool) yield* persistRequest({ request: info, waitForPart: true }).pipe(locked)
 
       return yield* Effect.ensuring(
         Deferred.await(deferred),
@@ -823,7 +823,8 @@ export const layer = Layer.effect(
       function* (input: { requestID: QuestionID; paused: boolean }) {
         const current = yield* InstanceState.get(state)
         const entry = current.pending.get(input.requestID)
-        const recovered = entry ? undefined : yield* findPersisted(input.requestID)
+        const recovered =
+          entry || current.recovered.has(input.requestID) ? undefined : yield* findPersisted(input.requestID)
         const request = entry?.info ?? current.recovered.get(input.requestID) ?? recovered?.request
         const now = Date.now()
         if (!request || (request.expiresAt !== undefined && request.expiresAt <= now)) {
@@ -849,7 +850,7 @@ export const layer = Layer.effect(
           remaining,
           expiresAt: next.expiresAt,
         })
-        const persisted = yield* persistRequest({ request: next, waitForPart: false })
+        const persisted = yield* persistRequest({ request: next, waitForPart: !!entry })
         yield* bus.publish(Event.Updated, next)
         log.info("question countdown update published", { requestID: next.id, persisted })
         return next

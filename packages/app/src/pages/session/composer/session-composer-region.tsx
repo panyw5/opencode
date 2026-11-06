@@ -32,7 +32,10 @@ import { SessionFollowupDock } from "@/pages/session/composer/session-followup-d
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
 import type { SessionComposerState } from "@/pages/session/composer/session-composer-state"
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
-import { createChildAgentMenuEntries } from "@/pages/session/composer/session-child-agent-menu-state"
+import {
+  createChildAgentMenuEntries,
+  createChildAgentMenuGroups,
+} from "@/pages/session/composer/session-child-agent-menu-state"
 import type { FollowupDraft, SubmitOptions } from "@/components/prompt-input/submit"
 import type { SessionChildAgentEntry } from "@/pages/session/session-child-agents"
 import type { PermissionRequest, QuestionRequest, Session } from "@opencode-ai/sdk/v2"
@@ -405,6 +408,8 @@ function SessionChildAgentMenu(props: {
 }) {
   const language = useLanguage()
   const entries = createChildAgentMenuEntries(() => props.entries)
+  const groups = createChildAgentMenuGroups(entries)
+  const visibleGroups = createMemo(() => groups.filter((group) => group.entries().length > 0))
   let contentRef: HTMLDivElement | undefined
   let scrollTimer: number | undefined
   const [store, setStore] = createStore({ open: false, scrolling: false })
@@ -516,87 +521,96 @@ function SessionChildAgentMenu(props: {
             onKeyDown={handleKeyDown}
             onScroll={handleScroll}
           >
-            <DropdownMenu.Group>
-              <DropdownMenu.GroupLabel class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
-                {language.t("session.childAgents.menuLabel")}
-              </DropdownMenu.GroupLabel>
-              <For each={entries}>
-                {(entry) => {
-                  const itemIndexBadge = () => indexBadge(entry)
-                  const itemAgent = () => agent(entry)
-                  const itemStatus = () => status(entry)
-                  const itemTime = () => formatChildAgentTime(entry.created, language.intl())
-                  const itemBackground = () => entry.background === true
+            <For each={visibleGroups()}>
+              {(group, index) => (
+                <>
+                  <Show when={index() > 0}>
+                    <DropdownMenu.Separator />
+                  </Show>
+                  <DropdownMenu.Group data-status={group.status}>
+                    <DropdownMenu.GroupLabel class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
+                      {language.t(`session.childAgents.status.${group.status}`)}
+                    </DropdownMenu.GroupLabel>
+                    <For each={group.entries()}>
+                      {(entry) => {
+                        const itemIndexBadge = () => indexBadge(entry)
+                        const itemAgent = () => agent(entry)
+                        const itemStatus = () => status(entry)
+                        const itemTime = () => formatChildAgentTime(entry.created, language.intl())
+                        const itemBackground = () => entry.background === true
 
-                  return (
-                    <DropdownMenu.Item
-                      class="min-w-0"
-                      onSelect={() => props.onOpen(entry)}
-                      data-testid="session-child-agent-menu-item"
-                      data-background={itemBackground() ? "true" : undefined}
-                    >
-                      <div class="min-w-0 flex flex-col gap-0.5">
-                        <DropdownMenu.ItemLabel class="flex min-w-0 items-center gap-1.5 text-13-medium text-text-strong">
-                          <Show when={itemIndexBadge()}>
-                            {(mark) => (
-                              <span
-                                class={
-                                  entry.resume
-                                    ? "shrink-0 font-semibold text-text-warning-base"
-                                    : "shrink-0 font-semibold text-text-info-base"
-                                }
-                              >
-                                {mark()}
-                              </span>
-                            )}
-                          </Show>
-                          <span class="min-w-0 truncate">{title(entry)}</span>
-                          <Show when={itemBackground()}>
-                            <span
-                              class="inline-flex shrink-0 items-center rounded-full border border-border-weak-base bg-surface-base px-2 py-0.5 text-11-medium font-medium text-text-info-base"
-                              data-testid="session-child-agent-background-badge"
-                            >
-                              {backgroundLabel()}
-                            </span>
-                          </Show>
-                          <Show when={itemStatus()}>
-                            {(value) => (
-                              <span
-                                class={`shrink-0 text-11-medium font-medium ${statusClass(value())}`}
-                                data-testid="session-child-agent-status"
-                                data-status={value()}
-                                title={
-                                  value() === "unknown"
-                                    ? language.t("session.childAgents.statusUnknownHint")
-                                    : undefined
-                                }
-                              >
-                                {language.t(`session.childAgents.status.${value()}`)}
-                              </span>
-                            )}
-                          </Show>
-                        </DropdownMenu.ItemLabel>
-                        <Show when={itemAgent() || itemTime()}>
-                          <DropdownMenu.ItemDescription class="truncate text-11-regular text-text-weak">
-                            <Show when={itemAgent()}>{(value) => <span>{value()}</span>}</Show>
-                            <Show when={itemTime()}>
-                              {(time) => (
-                                <>
-                                  <Show when={itemAgent()}>
-                                    <span> - </span>
+                        return (
+                          <DropdownMenu.Item
+                            class="min-w-0"
+                            onSelect={() => props.onOpen(entry)}
+                            data-testid="session-child-agent-menu-item"
+                            data-background={itemBackground() ? "true" : undefined}
+                          >
+                            <div class="min-w-0 flex flex-col gap-0.5">
+                              <DropdownMenu.ItemLabel class="flex min-w-0 items-center gap-1.5 text-13-medium text-text-strong">
+                                <Show when={itemIndexBadge()}>
+                                  {(mark) => (
+                                    <span
+                                      class={
+                                        entry.resume
+                                          ? "shrink-0 font-semibold text-text-warning-base"
+                                          : "shrink-0 font-semibold text-text-info-base"
+                                      }
+                                    >
+                                      {mark()}
+                                    </span>
+                                  )}
+                                </Show>
+                                <span class="min-w-0 truncate">{title(entry)}</span>
+                                <Show when={itemBackground()}>
+                                  <span
+                                    class="inline-flex shrink-0 items-center rounded-full border border-border-weak-base bg-surface-base px-2 py-0.5 text-11-medium font-medium text-text-info-base"
+                                    data-testid="session-child-agent-background-badge"
+                                  >
+                                    {backgroundLabel()}
+                                  </span>
+                                </Show>
+                                <Show when={itemStatus()}>
+                                  {(value) => (
+                                    <span
+                                      class={`shrink-0 text-11-medium font-medium ${statusClass(value())}`}
+                                      data-testid="session-child-agent-status"
+                                      data-status={value()}
+                                      title={
+                                        value() === "unknown"
+                                          ? language.t("session.childAgents.statusUnknownHint")
+                                          : undefined
+                                      }
+                                    >
+                                      {language.t(`session.childAgents.status.${value()}`)}
+                                    </span>
+                                  )}
+                                </Show>
+                              </DropdownMenu.ItemLabel>
+                              <Show when={itemAgent() || itemTime()}>
+                                <DropdownMenu.ItemDescription class="truncate text-11-regular text-text-weak">
+                                  <Show when={itemAgent()}>{(value) => <span>{value()}</span>}</Show>
+                                  <Show when={itemTime()}>
+                                    {(time) => (
+                                      <>
+                                        <Show when={itemAgent()}>
+                                          <span> - </span>
+                                        </Show>
+                                        <span>{time()}</span>
+                                      </>
+                                    )}
                                   </Show>
-                                  <span>{time()}</span>
-                                </>
-                              )}
-                            </Show>
-                          </DropdownMenu.ItemDescription>
-                        </Show>
-                      </div>
-                    </DropdownMenu.Item>
-                  )
-                }}
-              </For>
-            </DropdownMenu.Group>
+                                </DropdownMenu.ItemDescription>
+                              </Show>
+                            </div>
+                          </DropdownMenu.Item>
+                        )
+                      }}
+                    </For>
+                  </DropdownMenu.Group>
+                </>
+              )}
+            </For>
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu>

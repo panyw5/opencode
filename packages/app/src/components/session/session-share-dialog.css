@@ -255,10 +255,14 @@
   color-scheme: light;
 }
 .session-share-paper {
-  padding: 24px;
+  box-sizing: border-box;
+  padding: var(--share-padding, 24px);
   background: var(--background-base);
-  font-size: 14px;
-  line-height: 1.6;
+  --font-size-base: var(--share-font-size, 16px);
+  --line-height-large: 1.5;
+  --line-height-x-large: 1.7;
+  font-size: var(--font-size-base);
+  line-height: 1.7;
 }
 .session-share-paper,
 .session-share-paper * {
@@ -276,11 +280,61 @@
   display: none !important;
 }
 .session-share-paper [data-component="markdown"] {
-  font-size: 14px;
+  font-size: var(--font-size-base);
+}
+.session-share-paper [data-component="markdown"] :is(h1, h2, h3, h4, h5, h6) {
+  margin-top: 2em;
+  margin-bottom: 0.75em;
+}
+.session-share-paper [data-component="markdown"] p {
+  margin-bottom: 1em;
+}
+.session-share-paper [data-component="markdown"] :is(ul, ol) {
+  margin-top: 0.5em;
+  margin-bottom: 1em;
+  padding-left: 1.5em;
+}
+.session-share-paper [data-component="markdown"] ol {
+  padding-left: 2.25em;
+}
+.session-share-paper [data-component="markdown"] li {
+  margin-bottom: 0.5em;
+}
+.session-share-paper [data-component="markdown"] li > p:first-child {
+  margin: 0;
+}
+.session-share-paper [data-component="markdown"] :is(blockquote, table, img) {
+  margin-block: 1.5em;
+}
+.session-share-paper [data-component="markdown"] blockquote {
+  padding-left: 0.5em;
+}
+.session-share-paper [data-component="markdown"] table {
+  display: table;
+  table-layout: fixed;
+}
+.session-share-paper [data-component="markdown"] :is(th, td) {
+  padding: 0.75em 0.5em;
+  overflow-wrap: anywhere;
+}
+.session-share-paper [data-component="markdown"] pre {
+  margin-block: 2em;
+}
+.session-share-paper [data-component="markdown"] .shiki {
+  padding: 0.6em 0.8em;
+}
+.session-share-paper [data-component="markdown-math"] {
+  margin-block: 1em;
+}
+.session-share-paper [data-component="markdown"] > :first-child {
+  margin-top: 0;
+}
+.session-share-paper [data-component="markdown"] > :last-child {
+  margin-bottom: 0;
 }
 .session-share-paper [data-component="markdown"] hr {
   height: 0;
-  margin: 24px 0;
+  margin: 1.5em 0;
   border: 0;
   border-top: 1px solid var(--border-base, currentColor);
 }
@@ -311,6 +365,10 @@
   }
   .session-share-settings-row {
     gap: 8px;
+    flex-wrap: wrap;
+  }
+  .session-share-title {
+    flex-basis: 100%;
   }
   .session-share-preview-heading {
     flex-wrap: wrap;
@@ -339,8 +397,5 @@
   .session-share-layout[data-pane="selection"] .session-share-preview,
   .session-share-layout[data-pane="preview"] .session-share-selection {
     display: none;
-  }
-  .session-share-paper {
-    padding: 16px;
   }
 }

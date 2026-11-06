@@ -49,6 +49,11 @@ describe("session document policy", () => {
       expect(html).toContain(directive)
     expect(html).toContain("color-scheme:dark")
   })
+  test("export viewport hides scrollbars without disabling programmatic scrolling", () => {
+    const html = isolatedHTML("<p>long document</p>")
+    expect(html).toContain("scrollbar-width:none")
+    expect(html).not.toContain("overflow:hidden")
+  })
   test("slices cover every row exactly once and bound bitmap allocations", () => {
     expect(pngSlices(4096)).toEqual([{ y: 0, height: 4096 }])
     expect(pngSlices(8193)).toEqual([

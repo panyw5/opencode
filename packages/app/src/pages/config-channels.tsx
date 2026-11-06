@@ -6,13 +6,11 @@ import {
   createEffect,
   createMemo,
   createSignal,
-  onMount,
   on,
   onCleanup,
   type Component,
 } from "solid-js"
 import { createStore } from "solid-js/store"
-import { getFilename } from "@opencode-ai/core/util/path"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
@@ -33,17 +31,7 @@ import {
   type FeishuRegistrationSession,
 } from "@/lib/feishu-app-registration"
 import { defaultChannelDirectory } from "@/pages/layout/helpers"
-import { createConfigLocalLoader } from "./config-local-loader"
-import {
-  directoryAbsoluteToDisplay,
-  directoryBrowseLeaf,
-  directoryBrowsePath,
-  displayToAbsolute,
-  normalizeDirectoryPath,
-  trimDirectoryTrailing,
-  type BrowseEntry,
-} from "@/components/dialog-select-directory"
-import { usePlatform } from "@/context/platform"
+import { DirectoryInput } from "@/components/directory-input"
 import { ModelSelectorPopover, useBoundModelState } from "@/components/dialog-select-model"
 import { probeQQ } from "@/lib/qq-official"
 import { parseRetentionDays, rebaseChannelMap } from "./config-channel-helpers"
@@ -147,108 +135,17 @@ const ChannelDirectoryInput: Component<{
   errorText: string
   onChange: (value: string) => void
 }> = (props) => {
-  const platform = usePlatform()
-  let rootRef: HTMLDivElement | undefined
-  const [state, setState] = createStore({ query: props.value, open: false, highlighted: 0 })
-
-  onMount(() => {
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target
-      if (!(target instanceof Node) || !rootRef?.contains(target)) setState("open", false)
-    }
-    document.addEventListener("pointerdown", onPointerDown, true)
-    onCleanup(() => document.removeEventListener("pointerdown", onPointerDown, true))
-  })
-
-  const browsePath = createMemo(() => directoryBrowsePath(state.query))
-  const absolutePath = createMemo(() => displayToAbsolute(browsePath(), props.home, props.home))
-  const entries = createConfigLocalLoader(
-    () => (state.open ? absolutePath() : false),
-    async (directory) => {
-      if (!directory || !platform.listLocalDirectory) return [] as BrowseEntry[]
-      const list = await platform.listLocalDirectory(directory).catch(() => [])
-      return list
-        .filter((item) => item.kind === "directory")
-        .map((item) => ({
-          name: getFilename(item.path),
-          path: trimDirectoryTrailing(normalizeDirectoryPath(item.path)),
-        }))
-        .sort((a, b) => a.name.localeCompare(b.name))
-    },
-    "channels.directory-entries",
-  )
-  const filtered = createMemo(() => {
-    const leaf = directoryBrowseLeaf(state.query).toLocaleLowerCase()
-    return (entries.latest ?? []).filter((entry) => entry.name.toLocaleLowerCase().startsWith(leaf)).slice(0, 8)
-  })
-
-  const commit = (value: string) => {
-    const normalized = normalizeDirectoryPath(value).replace(/[\\/]$/, "")
-    setState({ query: normalized, open: false })
-    props.onChange(normalized)
-  }
-
+  const language = useLanguage()
   return (
-    <div ref={(node) => (rootRef = node)} class="relative">
-      <div class="flex h-10 overflow-hidden rounded-xl border border-border-weak-base bg-background-base transition-colors focus-within:border-border-focus">
-        <input
-          role="combobox"
-          aria-autocomplete="list"
-          aria-expanded={state.open && !!platform.listLocalDirectory}
-          value={state.query}
-          onFocus={() => setState("open", true)}
-          onInput={(event) => {
-            const value = normalizeDirectoryPath(event.currentTarget.value)
-            setState({ query: value, open: true, highlighted: 0 })
-            props.onChange(value)
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-              event.preventDefault()
-              const count = filtered().length
-              if (!count) return
-              const delta = event.key === "ArrowDown" ? 1 : -1
-              setState("highlighted", Math.max(0, Math.min(count - 1, state.highlighted + delta)))
-            }
-            if (event.key === "Enter" && filtered()[state.highlighted] && !state.query.endsWith("/")) {
-              event.preventDefault()
-              commit(directoryAbsoluteToDisplay(filtered()[state.highlighted].path, props.home))
-            }
-            if (event.key === "Escape") setState("open", false)
-          }}
-          spellcheck={false}
-          autocomplete="off"
-          autocorrect="off"
-          autocapitalize="off"
-          aria-invalid={!isValidChannelDirectory(state.query)}
-          class="min-w-0 flex-1 bg-transparent px-3 font-mono text-13-regular text-text-strong outline-none placeholder:text-text-weaker"
-        />
-        <span class="flex shrink-0 items-center border-l border-border-weak-base bg-surface-base/60 px-3 font-mono text-13-regular text-text-weak">
-          /{channelNameSegment(props.name)}
-        </span>
-      </div>
-      <Show when={!isValidChannelDirectory(state.query)}>
-        <div class="mt-1 text-12-regular text-text-danger">{props.errorText}</div>
-      </Show>
-      <Show when={state.open && !!platform.listLocalDirectory && filtered().length > 0}>
-        <div class="absolute inset-x-0 top-[calc(100%+0.375rem)] z-20 rounded-xl border border-border-base bg-surface-raised-base p-1.5">
-          <For each={filtered()}>
-            {(entry, index) => (
-              <button
-                type="button"
-                class="flex w-full items-center rounded-lg px-3 py-2 text-left text-13-regular outline-none transition-colors hover:bg-surface-base-hover active:bg-surface-base-active"
-                classList={{ "bg-surface-base-active": state.highlighted === index() }}
-                onMouseEnter={() => setState("highlighted", index())}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => commit(directoryAbsoluteToDisplay(entry.path, props.home))}
-              >
-                <span class="min-w-0 truncate font-mono">{entry.name}</span>
-              </button>
-            )}
-          </For>
-        </div>
-      </Show>
-    </div>
+    <DirectoryInput
+      label={language.t("config.channels.field.directory")}
+      hideLabel
+      home={props.home}
+      value={props.value}
+      suffix={"/" + channelNameSegment(props.name)}
+      error={!isValidChannelDirectory(props.value) ? props.errorText : undefined}
+      onChange={props.onChange}
+    />
   )
 }
 

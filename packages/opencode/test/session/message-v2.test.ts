@@ -410,7 +410,10 @@ describe("session.message-v2.toModelMessage", () => {
                 },
               ],
             },
-            metadata: { openai: { tool: "meta" }, fileChanges: [{ before: "private baseline", after: "private output" }] },
+            metadata: {
+              openai: { tool: "meta" },
+              fileChanges: [{ before: "private baseline", after: "private output" }],
+            },
           },
         ] as MessageV2.Part[],
       },
@@ -793,7 +796,7 @@ describe("session.message-v2.toModelMessage", () => {
             type: "reasoning",
             text: "thinking",
             metadata: { openai: { reasoning: "meta" } },
-            time: { start: 0 },
+            time: { start: 0, end: 1 },
           },
           {
             ...basePart(assistantID, "a3"),
@@ -823,7 +826,7 @@ describe("session.message-v2.toModelMessage", () => {
         role: "assistant",
         content: [
           { type: "text", text: "done" },
-          { type: "text", text: "thinking" },
+          { type: "reasoning", text: "thinking", providerOptions: undefined },
           {
             type: "tool-call",
             toolCallId: "call-1",
@@ -1272,11 +1275,82 @@ describe("session.message-v2.toModelMessage", () => {
     expect(await MessageV2.toModelMessages(input, model)).toStrictEqual([
       {
         role: "assistant",
+        content: [{ type: "text", text: "partial answer" }],
+      },
+    ])
+  })
+
+  test.each([false, true])("drops an interrupted reasoning group across model switch=%s", async (switched) => {
+    const id = "m-interrupted"
+    const input: MessageV2.WithParts[] = [
+      {
+        info: assistantInfo(
+          id,
+          "m-parent",
+          undefined,
+          switched ? { providerID: "other", modelID: "other" } : undefined,
+        ),
+        parts: [
+          {
+            ...basePart(id, "r1"),
+            type: "reasoning",
+            text: "finished thinking",
+            time: { start: 0, end: 1 },
+            metadata: { anthropic: { signature: "signed" } },
+          },
+          { ...basePart(id, "r2"), type: "reasoning", text: "cut thinking", time: { start: 2 } },
+          { ...basePart(id, "t1"), type: "text", text: "partial answer" },
+        ] as MessageV2.Part[],
+      },
+    ]
+    expect(await MessageV2.toModelMessages(input, model)).toStrictEqual([
+      { role: "assistant", content: [{ type: "text", text: "partial answer" }] },
+    ])
+  })
+
+  test("keeps completed signed reasoning for its producing model", async () => {
+    const id = "m-signed"
+    const metadata = { anthropic: { signature: "signed" } }
+    const input: MessageV2.WithParts[] = [
+      {
+        info: assistantInfo(id, "m-parent"),
+        parts: [
+          { ...basePart(id, "r1"), type: "reasoning", text: "thinking", time: { start: 0, end: 1 }, metadata },
+          { ...basePart(id, "t1"), type: "text", text: "answer" },
+        ] as MessageV2.Part[],
+      },
+    ]
+    expect(await MessageV2.toModelMessages(input, model)).toStrictEqual([
+      {
+        role: "assistant",
         content: [
-          { type: "reasoning", text: "thinking", providerOptions: undefined },
-          { type: "text", text: "partial answer" },
+          { type: "reasoning", text: "thinking", providerOptions: metadata },
+          { type: "text", text: "answer" },
         ],
       },
+    ])
+  })
+
+  test("drops even completed reasoning when the assistant turn was aborted", async () => {
+    const id = "m-aborted-signed"
+    const aborted = new MessageV2.AbortedError({ message: "aborted" }).toObject() as MessageV2.Assistant["error"]
+    const input: MessageV2.WithParts[] = [
+      {
+        info: assistantInfo(id, "m-parent", aborted),
+        parts: [
+          {
+            ...basePart(id, "r1"),
+            type: "reasoning",
+            text: "thinking",
+            time: { start: 0, end: 1 },
+            metadata: { anthropic: { signature: "signed" } },
+          },
+          { ...basePart(id, "t1"), type: "text", text: "partial answer" },
+        ] as MessageV2.Part[],
+      },
+    ]
+    expect(await MessageV2.toModelMessages(input, model)).toStrictEqual([
+      { role: "assistant", content: [{ type: "text", text: "partial answer" }] },
     ])
   })
 
@@ -1316,7 +1390,7 @@ describe("session.message-v2.toModelMessage", () => {
             ...basePart(assistantID, "a1"),
             type: "reasoning",
             text: "thinking",
-            time: { start: 0 },
+            time: { start: 0, end: 1 },
             metadata: {
               openrouter: {
                 reasoning_details: reasoningDetails,

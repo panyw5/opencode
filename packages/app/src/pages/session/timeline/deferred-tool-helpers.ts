@@ -69,6 +69,25 @@ const viewportHydrationQueue = new Set<Element>()
 let viewportHydrationFrame: number | undefined
 let viewportHydrationBlockedUntil = 0
 
+/** Restore only visible cached cards before paint; offscreen tools stay deferred. */
+export function hydrateCachedViewportTools(root: HTMLElement) {
+  const box = root.getBoundingClientRect()
+  const visible: Array<{ element: Element; hydrate: () => void }> = []
+  for (const element of root.querySelectorAll<HTMLElement>('[data-slot="deferred-tool-part"]')) {
+    const hydrate = viewportCallbacks.get(element)
+    if (!hydrate) continue
+    const rect = element.getBoundingClientRect()
+    if (rect.bottom <= box.top || rect.top >= box.bottom) continue
+    visible.push({ element, hydrate })
+  }
+  // Hydrating a card changes layout. Finish all viewport reads first.
+  for (const item of visible) {
+    viewportHydrationQueue.delete(item.element)
+    item.hydrate()
+  }
+  return visible.length
+}
+
 /** Keep expensive completed-tool hydration out of active wheel/touch frames. */
 export function markToolHydrationScrollActivity(now = performance.now()) {
   viewportHydrationBlockedUntil = Math.max(viewportHydrationBlockedUntil, now + 160)

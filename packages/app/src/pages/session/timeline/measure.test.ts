@@ -780,6 +780,18 @@ test("changes the timeline cache version when streaming text grows", () => {
   )
 })
 
+test("completed equal-length text replacements invalidate the measurement fingerprint", () => {
+  const part = { type: "text", text: "a\nb", time: { start: 1, end: 2 } } as Extract<Part, { type: "text" }>
+  const first = partMeasurementKey(part)
+  part.text = "a b"
+  expect(partMeasurementKey(part)).not.toBe(first)
+  expect(partMeasurementKey(part)).toBe(partMeasurementKey(part))
+  delete part.time!.end
+  const prompt = partMeasurementKey(part, true)
+  part.text = "a\nb"
+  expect(partMeasurementKey(part, true)).not.toBe(prompt)
+})
+
 test("rowContentVersion returns a stable value for a TurnGap", () => {
   expect(rowContentVersion({ _tag: "TurnGap", userMessageID: "msg_1" }, () => undefined)).toBe("gap")
 })

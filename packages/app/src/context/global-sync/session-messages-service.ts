@@ -108,14 +108,15 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
         await Promise.all(
           [...parents].map(async (messageID) => {
             const cached = child[0].message[input.sessionID]?.find((message) => message.id === messageID)
+            const cachedParts = child[0].part[messageID]
+            const reusable = cached?.role === "user" && !!cachedParts?.length
             console.debug(
-              `[session-messages] parent-recovery start sid=${input.sessionID} parent=${messageID} cached=${cached?.role === "user"}`,
+              `[session-messages] parent-recovery start sid=${input.sessionID} parent=${messageID} cached=${cached?.role === "user"} parts=${cachedParts?.length ?? 0} source=${reusable ? "cache" : "fetch"}`,
             )
             try {
-              const item =
-                cached?.role === "user"
-                  ? { info: cached, parts: child[0].part[messageID] ?? [] }
-                  : (await deps.sdk(directory).session.message({ sessionID: input.sessionID, messageID })).data
+              const item = reusable
+                ? { info: cached, parts: cachedParts }
+                : (await deps.sdk(directory).session.message({ sessionID: input.sessionID, messageID })).data
               if (
                 item?.info?.id !== messageID ||
                 item.info.role !== "user" ||
@@ -125,7 +126,9 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
                 return
               }
               items.push(item)
-              console.debug(`[session-messages] parent-recovery ready sid=${input.sessionID} parent=${messageID}`)
+              console.debug(
+                `[session-messages] parent-recovery ready sid=${input.sessionID} parent=${messageID} parts=${item.parts.length}`,
+              )
             } catch (error) {
               console.warn(
                 `[session-messages] parent-recovery failed sid=${input.sessionID} parent=${messageID} error=${error instanceof Error ? error.message : String(error)}`,

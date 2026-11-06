@@ -65,6 +65,7 @@ await withCdp(async (cdp, target) => {
     cdp.evaluate(`(() => {
     window.__lifecycleStop = true;
     window.__lifecycleFrames = [];
+    window.__opencodeSessionProfile?.clear();
     const run = {};
     window.__lifecycleRun = run;
     let previous;
@@ -92,12 +93,15 @@ await withCdp(async (cdp, target) => {
     const frames = await cdp.evaluate<State[]>("window.__lifecycleRun = null; window.__lifecycleFrames ?? []")
     report.push({ name, state, frames })
     if (covered) {
+      const warm = await cdp.evaluate<boolean>(
+        `window.__opencodeSessionProfile?.snapshot().some(e => e.sessionID === ${JSON.stringify(id)} && e.stage === 'warm-layout-restored') ?? false`,
+      )
       assert.ok(
-        frames.some((s) => s.sid === id && s.overlay === "showing"),
-        `${name}: missing remount overlay`,
+        frames.some((s) => s.sid === id && s.overlay === "showing") || warm,
+        `${name}: neither protected loading nor a validated warm viewport`,
       )
       const start = frames.findIndex((s) => s.sid === id && s.overlay === "showing")
-      for (const sample of frames.slice(start).filter((s) => s.sid === id && s.overlay !== "showing")) {
+      for (const sample of frames.slice(Math.max(0, start)).filter((s) => s.sid === id && s.overlay !== "showing")) {
         assert.ok(sample.rows > 0, `${name}: exposed an empty viewport`)
         if (requireBottom) assert.ok(bottom(sample), `${name}: exposed the wrong scroll position`)
       }
@@ -185,7 +189,13 @@ await withCdp(async (cdp, target) => {
     await cdp.call("Emulation.clearDeviceMetricsOverride")
     await wait(bottom, "restored window bottom")
 
-    const prefetchModule = `/@fs${resolve(import.meta.dir, "../../app/src/context/global-sync/session-prefetch.ts")}`
+    const prefetchModule = await cdp.evaluate<string>(`(async () => {
+      const source = await (await fetch(${JSON.stringify(`/@fs${resolve(import.meta.dir, "../../app/src/context/sync.tsx")}`)})).text();
+      const line = source.split('\\n').find(line => line.includes('from "') && line.includes('/session-prefetch.ts'));
+      const path = line?.match(/from "([^"]+)"/)?.[1];
+      if (!path) throw new Error('active prefetch module missing');
+      return path;
+    })()`)
     await cdp.evaluate(
       `import(${JSON.stringify(prefetchModule)}).then(module => module.clearSessionPrefetch(${JSON.stringify(directory)}, [${JSON.stringify(a)}]))`,
     )
@@ -217,6 +227,17 @@ await withCdp(async (cdp, target) => {
     assert.ok(Math.abs(reloaded.top - selected.top) <= 2, "hash reload did not restore the selected message")
     await navigate(b)
     await ready(b)
+    await begin()
+    await navigate(a, hash)
+    const warmHash = await finish("warm-message-hash", a, false)
+    assert.equal(warmHash.intent, "message")
+    const warmHashFrames = report.at(-1)!.frames!.filter((state) => state.sid === a)
+    assert.ok(
+      warmHashFrames.length > 0 && warmHashFrames.every((state) => state.overlay === "hidden"),
+      "valid cached message hash must skip loading",
+    )
+    await navigate(b)
+    await ready(b)
     await navigate(a)
     await ready(a)
     await begin()
@@ -230,6 +251,16 @@ await withCdp(async (cdp, target) => {
     await navigate(temporary.id)
     const empty = await finish("empty-session", temporary.id)
     assert.equal(empty.rows, 0)
+    await navigate(a)
+    await ready(a)
+    await begin()
+    await navigate(temporary.id)
+    await finish("warm-empty-session", temporary.id)
+    const emptyFrames = report.at(-1)!.frames!.filter((state) => state.sid === temporary.id)
+    assert.ok(
+      emptyFrames.length > 0 && emptyFrames.every((state) => state.overlay === "hidden"),
+      "valid cached empty sessions must skip loading",
+    )
     console.log(`[session-lifecycle] sidecar send session=${temporary.id}`)
     await request(`/session/${temporary.id}/shell`, "POST", { agent: "build", command: "printf SESSION_LIFECYCLE_OK" })
     const messages = (await request(`/session/${temporary.id}/message`)) as Array<{

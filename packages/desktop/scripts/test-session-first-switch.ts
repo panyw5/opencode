@@ -67,7 +67,13 @@ await withCdp(async (cdp, target) => {
     link.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
     return true;
   })()`)
-  const prefetchModule = `/@fs${resolve(import.meta.dir, "../../app/src/context/global-sync/session-prefetch.ts")}`
+  const prefetchModule = await cdp.evaluate<string>(`(async () => {
+    const source = await (await fetch(${JSON.stringify(`/@fs${resolve(import.meta.dir, "../../app/src/pages/layout.tsx")}`)})).text();
+    const line = source.split('\\n').find(line => line.includes('from "') && line.includes('/session-prefetch.ts'));
+    const path = line?.match(/from "([^"]+)"/)?.[1];
+    if (!path) throw new Error('active prefetch module missing');
+    return path;
+  })()`)
   await waitFor(
     `import(${JSON.stringify(prefetchModule)}).then(module =>
     (module.getSessionPrefetch(${JSON.stringify(directory)}, ${JSON.stringify(toID)})?.count ?? 0) > 0

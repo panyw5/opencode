@@ -44,7 +44,7 @@ export function documentName(name: string) {
 
 // Multiple CSP policies intersect: content cannot loosen this policy using another meta tag.
 export function isolatedHTML(html: string, theme?: "light" | "dark") {
-  return `<!doctype html><html style="color-scheme:${theme ?? "light"}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><style>html{margin:0}body{margin:0;overflow-wrap:anywhere}*{animation:none!important;transition:none!important}img{max-width:100%}pre{white-space:pre-wrap}</style></head><body>${html}</body></html>`
+  return `<!doctype html><html style="color-scheme:${theme ?? "light"}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"><style>html{margin:0;scrollbar-width:none}body{margin:0;overflow-wrap:anywhere}*{animation:none!important;transition:none!important}img{max-width:100%}pre{white-space:pre-wrap}</style></head><body>${html}</body></html>`
 }
 
 export function pngSlices(height: number) {

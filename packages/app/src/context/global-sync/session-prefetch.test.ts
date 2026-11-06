@@ -13,10 +13,37 @@ import {
   SESSION_PREFETCH_MAX,
   setSessionPrefetch,
   shouldSkipSessionPrefetch,
+  validSessionPrefetch,
 } from "./session-prefetch"
 import { deferred } from "./session-service-test-utils"
 
 describe("session prefetch", () => {
+  test("rejects malformed metadata instead of treating corrupt complete history as cached", () => {
+    const directory = "/tmp/prefetch-corruption"
+    for (const info of [
+      { count: NaN, complete: true, at: 1 },
+      { count: -1, complete: true, at: 1 },
+      { count: 1, complete: true, at: Infinity },
+      { count: 1, complete: false, at: 1, cursor: "" },
+    ]) {
+      expect(validSessionPrefetch(info)).toBe(false)
+      expect(shouldSkipSessionPrefetch({ message: true, info, chunk: 200 })).toBe(false)
+      setSessionPrefetch({ ...info, directory, sessionID: "broken" })
+      expect(getSessionPrefetch(directory, "broken")).toBeUndefined()
+    }
+    setSessionPrefetch({ directory, sessionID: "broken", count: 1, complete: true })
+    expect(getSessionPrefetch(directory, "broken")?.count).toBe(1)
+    clearSessionPrefetchDirectory(directory)
+  })
+
+  test("normalizes a complete history's empty cursor instead of rejecting a valid cache", () => {
+    const directory = "/tmp/prefetch-empty-cursor"
+    setSessionPrefetch({ directory, sessionID: "complete", count: 1, cursor: "", complete: true, at: 1 })
+    const info = getSessionPrefetch(directory, "complete")
+    expect(info).toEqual({ count: 1, cursor: undefined, complete: true, at: 1 })
+    expect(shouldSkipSessionPrefetch({ message: true, info, chunk: 80 })).toBe(true)
+    clearSessionPrefetchDirectory(directory)
+  })
   test("repeated clear never makes an old prefetch token current again", async () => {
     const request = deferred<void>()
     let current = true

@@ -33,7 +33,11 @@ import {
   type MessageProps,
   type UserActions,
 } from "@opencode-ai/ui/message-part"
-import { clearToolPartHydration, markToolHydrationScrollActivity } from "./deferred-tool-helpers"
+import {
+  clearToolPartHydration,
+  hydrateCachedViewportTools,
+  markToolHydrationScrollActivity,
+} from "./deferred-tool-helpers"
 import { DeferredMessagePart } from "./deferred-tool-part"
 import { SessionRetry } from "@opencode-ai/ui/session-retry"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
@@ -65,6 +69,7 @@ import {
   captureVisibleSuccessorAnchor,
   heightFromResizeObserverEntry,
   markdownMeasurementPending,
+  partMeasurementKey,
   READING_LINE_RATIO,
   virtualViewportAnchorCorrection,
   rowContentVersion,
@@ -107,6 +112,7 @@ import type {
 } from "../message-navigation"
 import { createScrollLedger, type ScrollOrigin, type ScrollRuntime } from "./scroll-ledger"
 import type { HistoryInput } from "../history-edge"
+import { inspectCachedTimelineLayout } from "../initial-timeline-layout"
 
 const emptyMessages: MessageType[] = []
 const emptyParts: PartType[] = []
@@ -308,6 +314,7 @@ export function MessageTimeline(props: {
   shouldAnimateMessage?: (id: string) => boolean
   anchor: (id: string) => string
   onContentReady?: (detail: { sessionKey: string; rows: number; cached: boolean }) => void
+  onWarmReady?: (sessionKey: string) => void
   onViewportTurnChange?: (userMessageID: string | undefined) => void
   onReviewTurnDiff?: (input: { userMessageID: string; file: string; event: MouseEvent }) => void
   onReviewTurnAll?: (userMessageID: string) => void
@@ -452,11 +459,24 @@ export function MessageTimeline(props: {
       fontSize: settings.appearance.fontSize(),
       font: settings.appearance.font(),
       theme: theme.themeId(),
-      scope: JSON.stringify([sdk.url, sdk.directory, globalSync.version]),
+      scope: JSON.stringify([
+        sdk.url,
+        sdk.directory,
+        globalSync.version,
+        settings.general.shellToolPartsExpanded(),
+        settings.general.editToolPartsExpanded(),
+      ]),
     }),
   )
-  const measurementVersion = (row: TimelineRow.TimelineRow) =>
-    `${layoutVersion()}:${rowContentVersion(row, getMessagePart)}`
+  const measurementVersion = (row: TimelineRow.TimelineRow) => {
+    const prompt =
+      row._tag === "UserMessage" || row._tag === "CommentStrip"
+        ? getMessageParts(row.userMessageID)
+            .map((part) => partMeasurementKey(part, true))
+            .join(",")
+        : ""
+    return `${layoutVersion()}:${rowContentVersion(row, getMessagePart)}:${prompt}`
+  }
   createEffect(() => {
     const version = layoutVersion()
     console.debug(`[timeline] measurement-layout sid=${sessionID() ?? "none"} version=${version}`)
@@ -1271,7 +1291,13 @@ export function MessageTimeline(props: {
     const totalSize = virtualizer.getTotalSize()
     const item = index === undefined ? undefined : virtualizer.measurementsCache[index]
     const anchor = item ? undefined : document.getElementById(id)
-    if (!item && (!(anchor instanceof HTMLElement) || !root.contains(anchor))) return
+    if (!item && (!(anchor instanceof HTMLElement) || !root.contains(anchor))) {
+      if (source === "layout")
+        console.debug(
+          `[timeline] message-position-wait sid=${sessionID() ?? "none"} id=${id} index=${index ?? "none"} phase=${props.navigationState().phase} historyPending=${props.navigationState().historyPending}`,
+        )
+      return
+    }
     const inset = Number.parseFloat(getComputedStyle(root).getPropertyValue("--session-title-inset")) || 0
     if (virtualContent) virtualContent.style.height = `${totalSize}px`
     const top = timelineMessageScrollTop({
@@ -1293,7 +1319,16 @@ export function MessageTimeline(props: {
   }
   createEffect(
     on(
-      () => [props.navigationState().positionTarget, messageRowIndex(), listRoot()] as const,
+      // A loaded row can align before the seek begins or its fetch releases.
+      // Retry completion on that handoff even when no geometry changes follow.
+      () =>
+        [
+          props.navigationState().positionTarget,
+          props.navigationState().phase,
+          props.navigationState().historyPending,
+          messageRowIndex(),
+          listRoot(),
+        ] as const,
       ([id]) => {
         if (id) positionMessage(id, "layout")
       },
@@ -1503,11 +1538,77 @@ export function MessageTimeline(props: {
     // measure() would otherwise discard every valid cached height on each
     // mount and defeat the row cache. Rebuild only when at least one restored
     // measurement came from a meaningfully different width.
-    const cachedWidthCompatible = initialMeasurements.every((item) => {
+    const incompatibleWidths = initialMeasurements.filter((item) => {
       const cached = timelineRowCache.get(String(item.key))
-      return !cached || timelineMeasurementsMatchWidth(cached.width, estimatorWidth())
+      return cached && !timelineMeasurementsMatchWidth(cached.width, estimatorWidth())
     })
-    if (!cachedWidthCompatible) virtualizer.measure()
+    const cachedWidthCompatible = incompatibleWidths.length === 0
+    if (!cachedWidthCompatible) {
+      // Leaving stale offscreen widths in the shared cache would invalidate
+      // every later warm return, even after visible rows have been repaired.
+      for (const item of incompatibleWidths) timelineRowCache.evict(String(item.key))
+      virtualizer.measure()
+      console.debug(`[timeline] cache-invalidate sid=${sessionID()} reason=width rows=${incompatibleWidths.length}`)
+    }
+    // Cache hits resolve in microtasks, before the browser's first paint. Keep
+    // cold/prefetched data covered, but do not animate a spinner over a fully
+    // restored viewport just to wait for three otherwise identical frames.
+    queueMicrotask(() => {
+      if (!mounted || !root.isConnected || root !== listRoot()) return
+      const id = sessionID()
+      const empty = () =>
+        !!id &&
+        timelineRows().length === 0 &&
+        sessionMessages().length === 0 &&
+        sync.data.session_history?.[id]?.complete === true
+      if ((!hasCachedMeasurements && !empty()) || !cachedWidthCompatible) {
+        console.debug(`[timeline] warm-restore miss sid=${sessionID()} reason=measurements`)
+        return
+      }
+      const state = props.navigationState()
+      if (state.sessionKey !== ownerSessionKey) return
+      const token = currentNavigationToken()
+      if (state.following) {
+        if (virtualContent) virtualContent.style.height = `${virtualizer.getTotalSize()}px`
+        applyPosition(root, root.scrollHeight - root.clientHeight, "initial", currentNavigationToken())
+      } else if (state.target?.kind === "message" || state.target?.kind === "anchor") {
+        positionMessage(state.target.id, "layout")
+      } else if (state.target?.kind !== "reading") {
+        return
+      }
+      queueMicrotask(() => {
+        if (!mounted || !root.isConnected || root !== listRoot()) return
+        const current = props.navigationState()
+        if (current.sessionKey !== token.sessionKey || current.generation !== token.generation) return
+        const hydrated = hydrateCachedViewportTools(root)
+        if (hydrated) console.debug(`[timeline] warm-tools sid=${id} hydrated=${hydrated}`)
+        const heights = new Map(initialMeasurements.map((item) => [String(item.key), item.size]))
+        const inspection = empty()
+          ? { ready: true, reason: "empty-session", repairs: [] }
+          : inspectCachedTimelineLayout(root, (key) => heights.get(key))
+        const ready = inspection.ready
+        const bottom =
+          !props.navigationState().following || Math.abs(root.scrollHeight - root.clientHeight - root.scrollTop) <= 1
+        const positioned =
+          current.target?.kind === "live" || current.target?.kind === "reading" || current.phase === "settled"
+        console.debug(
+          `[timeline] warm-restore ${ready && bottom && positioned ? "hit" : "miss"} sid=${sessionID()} ready=${ready} bottom=${bottom} positioned=${positioned} reason=${inspection.reason}`,
+        )
+        if (inspection.repairs.length) {
+          // Finish every DOM read above before invalidating geometry and writing repairs.
+          for (const repair of inspection.repairs) {
+            const index = timelineIndexByKey().get(repair.key)
+            if (index === undefined) continue
+            timelineRowCache.evict(repair.key)
+            virtualizer.itemSizeCache.delete(repair.key)
+            const measured = rowHeightHandlers.get(repair.key)?.(repair.height) ?? repair.height
+            virtualizer.resizeItem(index, measured)
+            console.debug(`[timeline] cache-repair sid=${id} key=${repair.key} height=${measured}`)
+          }
+        }
+        if (ready && bottom && positioned) props.onWarmReady?.(ownerSessionKey)
+      })
+    })
   }
   let touchSequence = 0
   const markBoundaryGesture = (

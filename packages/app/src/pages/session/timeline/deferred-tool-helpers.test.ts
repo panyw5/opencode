@@ -7,6 +7,8 @@ import {
   releaseToolPartHydration,
   shouldDeferToolPart,
   toolHydrationKey,
+  observeToolPartViewport,
+  hydrateCachedViewportTools,
 } from "./deferred-tool-helpers"
 
 const tool = (input: { id?: string; tool?: string; status?: ToolPart["state"]["status"] }): ToolPart =>
@@ -68,6 +70,34 @@ describe("shouldDeferToolPart", () => {
 })
 
 describe("tool hydration cache", () => {
+  test("hydrates only visible warm cards and batches viewport reads before layout writes", () => {
+    const root = document.createElement("div")
+    root.getBoundingClientRect = () => ({ top: 0, bottom: 800 }) as DOMRect
+    let reads = 0
+    const hydrated: number[] = []
+    const stops: Array<() => void> = []
+    for (const [index, top] of [0, 200, 900].entries()) {
+      const card = document.createElement("div")
+      card.dataset.slot = "deferred-tool-part"
+      card.getBoundingClientRect = () => {
+        reads++
+        return { top, bottom: top + 100 } as DOMRect
+      }
+      root.append(card)
+      stops.push(
+        observeToolPartViewport(card, () => {
+          expect(reads).toBe(3)
+          hydrated.push(index)
+        }),
+      )
+    }
+    try {
+      expect(hydrateCachedViewportTools(root)).toBe(2)
+      expect(hydrated).toEqual([0, 1])
+    } finally {
+      for (const stop of stops) stop()
+    }
+  })
   test("tracks hydrated keys per session", () => {
     clearToolPartHydration()
     const key = toolHydrationKey("ses_a", "part_1")

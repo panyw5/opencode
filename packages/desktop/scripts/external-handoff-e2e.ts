@@ -35,7 +35,7 @@ const advisor = process.env.EXTERNAL_TEST_ADVISOR;
 const legacy = process.env.EXTERNAL_TEST_LEGACY === '1';
 const emit = value => console.log(JSON.stringify(value));
 if (process.argv.includes('--help')) {
-  console.log(legacy ? 'Usage: dsh [task]' : 'Options: --json emit events\\n --session-id <id> resume');
+  console.log(legacy ? 'Usage: dsh [task]' : 'Options: --json emit events\\n --session-id <id> resume\\n --permission-mode <preset>\\n --approval-policy <policy>\\n --add-dir <path>');
   process.exit(0);
 }
 const prompt = advisor === 'grok' ? process.argv[process.argv.indexOf('--single')+1] : process.argv.at(-1);
@@ -212,7 +212,25 @@ const child = spawn("node", ["--input-type=module", "--eval", runner, pathToFile
       plugin: [],
       mcp: {},
       permission: { "*": "allow" },
-      external_agents: { [advisor]: { enabled: true, binaryPath: cli, configHome: home } },
+      external_agents: {
+        [advisor]: {
+          enabled: true,
+          binaryPath: cli,
+          configHome: home,
+          ...(advisor === "dsh" && !legacy
+            ? {
+                defaults: {
+                  profile: "review",
+                  timeout_ms: 90000,
+                  permission_mode: "read-only",
+                  approval_policy: "never",
+                  additional_writable_roots: [workspace],
+                  patch: ["[]"],
+                },
+              }
+            : {}),
+        },
+      },
       provider: {
         handoff: {
           npm: "@ai-sdk/openai-compatible",
@@ -398,6 +416,19 @@ try {
   assert.equal(invocations[0].initial, true)
   assert.ok(invocations.slice(1).every((run) => !run.initial && run.home === home))
   if (advisor === "dsh" && !legacy) {
+    for (const run of invocations) {
+      assert.deepEqual(run.args.slice(0, 2), ["--profile", "review"])
+      const mode = run.args.indexOf("--permission-mode")
+      assert.deepEqual(run.args.slice(mode, mode + 6), [
+        "--permission-mode",
+        "read-only",
+        "--approval-policy",
+        "never",
+        "--add-dir",
+        workspace,
+      ])
+      assert.ok(run.args.includes("--patch"))
+    }
     assert.ok(invocations.slice(1).every((run) => run.args.includes("--session-id")))
     assert.ok(invocations.slice(1).every((run) => !run.args.at(-1).includes("Prior consultation transcript")))
   }

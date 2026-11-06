@@ -13,6 +13,21 @@ function transition(state: SessionRenderState, ...events: Parameters<typeof redu
 }
 
 describe("session render state", () => {
+  test("a validated warm viewport skips the spinner and fade, not the initial data-only hit", () => {
+    const entering = reduceSessionRenderState(initialSessionRenderState, {
+      type: "session-change",
+      sessionID,
+      cached: true,
+    })
+    expect(entering.overlay).toBe("showing")
+    const bound = reduceSessionRenderState(entering, { type: "viewport-bound", sessionID })
+    const warm = reduceSessionRenderState(bound, { type: "warm-ready", sessionID, generation: bound.generation })
+    expect(warm.overlay).toBe("hidden")
+    expect(warm.phase).toBe("interactive")
+    expect(reduceSessionRenderState(bound, { type: "warm-ready", sessionID, generation: entering.generation })).toBe(
+      bound,
+    )
+  })
   test("prefetched data can mount but must remain covered until its first layout settles", () => {
     const state = reduceSessionRenderState(initialSessionRenderState, {
       type: "session-change",

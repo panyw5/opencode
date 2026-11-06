@@ -2,8 +2,10 @@ import type { Config } from "@/config/config"
 import type { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
 import type { MessageV2 } from "./message-v2"
+import * as Log from "@opencode-ai/core/util/log"
 
 const COMPACTION_BUFFER = 20_000
+const log = Log.create({ service: "session.overflow" })
 export const DEFAULT_THRESHOLD = 0.9
 
 export function usable(input: { cfg: Config.Info; model: Provider.Model; outputTokenMax?: number }) {
@@ -16,8 +18,16 @@ export function usable(input: { cfg: Config.Info; model: Provider.Model; outputT
     context >= 2 * ProviderTransform.SUMMARY_OUTPUT_TOKEN_MAX ? context : Math.floor(context * 0.1),
   )
   const reserved = input.cfg.compaction?.reserved ?? Math.min(COMPACTION_BUFFER, summaryOutput)
+  if (input.model.limit.input && input.model.limit.input > context) {
+    log.debug("capping compaction input at context window", {
+      modelID: input.model.id,
+      input: input.model.limit.input,
+      context,
+      reserved,
+    })
+  }
   return input.model.limit.input
-    ? Math.max(0, input.model.limit.input - reserved)
+    ? Math.max(0, Math.min(input.model.limit.input, context) - reserved)
     : Math.max(0, context - summaryOutput)
 }
 
@@ -35,5 +45,14 @@ export function isOverflow(input: {
   const limit = usable(input)
   const ratio = input.cfg.compaction?.threshold ?? DEFAULT_THRESHOLD
   const threshold = Number.isFinite(ratio) ? Math.min(1, Math.max(0, ratio)) : DEFAULT_THRESHOLD
-  return count >= Math.floor(limit * threshold)
+  const ceiling = Math.floor(limit * threshold)
+  log.debug("checked compaction budget", {
+    modelID: input.model.id,
+    count,
+    limit,
+    threshold,
+    ceiling,
+    due: count >= ceiling,
+  })
+  return count >= ceiling
 }

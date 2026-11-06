@@ -456,6 +456,19 @@ describe("session.compaction.isOverflow", () => {
   )
 
   it.live(
+    "caps an overstated input limit at the context window",
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const compact = yield* SessionCompaction.Service
+        const model = createModel({ context: 128_000, input: 272_000, output: 32_000 })
+        const tokens = { input: 97_199, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+        expect(yield* compact.isOverflow({ tokens, model })).toBe(false)
+        expect(yield* compact.isOverflow({ tokens: { ...tokens, input: 97_200 }, model })).toBe(true)
+      }),
+    ),
+  )
+
+  it.live(
     "returns false when input/output are within input caps",
     provideTmpdirInstance(() =>
       Effect.gen(function* () {

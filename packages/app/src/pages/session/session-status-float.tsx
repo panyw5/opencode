@@ -74,7 +74,7 @@ export function SessionStatusFloat(props: {
     normalizeTab: (tab) => (tab.startsWith("file://") ? file.tab(tab) : tab),
     openTab: tabs().open,
     pathFromTab: file.pathFromTab,
-    loadFile: file.load,
+    loadFile: file.preparePreview,
     openReviewPanel: openFilePreview,
     setActive: tabs().setActive,
   })

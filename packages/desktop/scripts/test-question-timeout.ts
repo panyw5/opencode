@@ -7,6 +7,8 @@ const log = (message: string) => console.log(`[question-timeout-test] ${message}
 const source = `/@fs${resolve(import.meta.dir, "../../app/src")}`
 const multiple = process.argv.includes("--multiple")
 const focus = process.argv.includes("--focus")
+const recovered = process.argv.includes("--recovered")
+assert.ok(!recovered || focus, "--recovered is only supported with --focus")
 
 await withCdp(async (cdp) => {
   const directory = await realpath(await mkdtemp("/tmp/opencode-question-timeout-"))
@@ -46,10 +48,17 @@ await withCdp(async (cdp) => {
       `window.__questionTimeoutNavigation = import(${JSON.stringify(`${source}/utils/notification-click.ts`)}).then(m => { m.handleNotificationClick(${JSON.stringify(route)}); return true })`,
     )
   const countdown = () =>
-    cdp.evaluate<{ text: string; seconds: number; urgent: string; width: number; paused: boolean } | null>(`(() => {
+    cdp.evaluate<{
+      text: string
+      seconds: number
+      urgent: string
+      width: number
+      paused: boolean
+      opacity: number
+    } | null>(`(() => {
     const el=document.querySelector('[data-slot="question-countdown"]');
     if(!el)return null;
-    return {text:el.textContent,seconds:Number(el.textContent.match(/[0-9]+/)?.[0]),urgent:el.dataset.urgent,width:el.getBoundingClientRect().width,paused:el.dataset.paused==='true'};
+    return {text:el.textContent,seconds:Number(el.textContent.match(/[0-9]+/)?.[0]),urgent:el.dataset.urgent,width:el.getBoundingClientRect().width,paused:el.dataset.paused==='true',opacity:Number(getComputedStyle(el).opacity)};
   })()`)
   let sessionID: string | undefined
   try {
@@ -62,22 +71,65 @@ await withCdp(async (cdp) => {
         `document.querySelector('[data-component="session-page"]')?.dataset.sessionId===${JSON.stringify(session.id)}`,
       ),
     )
-    await request(`/session/${session.id}/prompt_async`, "POST", {
-      agent: "build",
-      parts: [
+    if (recovered) {
+      await request(`/session/${session.id}/shell`, "POST", {
+        agent: "build",
+        command: "printf QUESTION_FOCUS_SIDECAR_OK",
+      })
+      const rows = await request(`/session/${session.id}/message`)
+      const tool = rows
+        .flatMap((row: any) => row.parts)
+        .find((part: any) => part.type === "tool" && part.state.status === "completed")
+      assert.ok(tool?.state.output.includes("QUESTION_FOCUS_SIDECAR_OK"))
+      log("PASS sidecar message sent and completed reply received")
+      const questions = [
         {
-          type: "text",
-          text: `QA task: call the question tool exactly once with top-level timeout: 12 (seconds). ${multiple ? "Include exactly three questions, titled 'QA countdown check 1', 'QA countdown check 2', 'QA countdown check 3', each with header 'QA' and two options 'One' and 'Two'." : "Ask 'QA countdown check' with header 'QA' and two options 'One' and 'Two'."} Do not call any other tool or modify files. ${focus ? "The user will answer. After receiving the answer, respond exactly QUESTION_FOCUS_QA_OK and stop." : "Nobody will answer. After the question tool reports its timeout, respond with exactly QUESTION_TIMEOUT_QA_OK and stop. A timeout is not consent."}`,
+          question: "QA recovered focus countdown",
+          header: "QA",
+          options: [
+            { label: "One", description: "First option" },
+            { label: "Two", description: "Second option" },
+          ],
         },
-      ],
-    })
-    log(`sent model message session=${session.id}`)
+      ]
+      const question = {
+        id: `que_focus_${Date.now()}`,
+        sessionID: session.id,
+        questions,
+        tool: { messageID: tool.messageID, callID: tool.callID },
+        expiresAt: Date.now() + 12_000,
+      }
+      await request(`/session/${session.id}/message/${tool.messageID}/part/${tool.id}`, "PATCH", {
+        ...tool,
+        tool: "question",
+        state: {
+          status: "running",
+          input: { questions, timeout: 12 },
+          metadata: { questionRequest: question },
+          time: { start: Date.now() },
+        },
+      })
+      // Rehydrate through the backend list, then publish an update even if this
+      // directory's frontend bootstrap is already cached.
+      await request("/question")
+      await request(`/question/${question.id}/pause`, "POST", { paused: false })
+    } else
+      await request(`/session/${session.id}/prompt_async`, "POST", {
+        agent: "build",
+        parts: [
+          {
+            type: "text",
+            text: `QA task: call the question tool exactly once with top-level timeout: 12 (seconds). ${multiple ? "Include exactly three questions, titled 'QA countdown check 1', 'QA countdown check 2', 'QA countdown check 3', each with header 'QA' and two options 'One' and 'Two'." : "Ask 'QA countdown check' with header 'QA' and two options 'One' and 'Two'."} Do not call any other tool or modify files. ${focus ? "The user will answer. After receiving the answer, respond exactly QUESTION_FOCUS_QA_OK and stop." : "Nobody will answer. After the question tool reports its timeout, respond with exactly QUESTION_TIMEOUT_QA_OK and stop. A timeout is not consent."}`,
+          },
+        ],
+      })
+    log(`registered ${recovered ? "recovered" : "model"} question test session=${session.id}`)
     let pending: any
     await wait("model question with deadline", async () => {
       pending = (await request("/question")).find((item: any) => item.sessionID === session.id)
       return !!pending?.expiresAt
     })
-    log(`received model question id=${pending.id} expiresAt=${pending.expiresAt}`)
+    log(`received ${recovered ? "recovered" : "model"} question id=${pending.id} expiresAt=${pending.expiresAt}`)
     assert.equal(pending.questions.length, multiple ? 3 : 1)
     await wait("visible countdown", async () => !!(await countdown()))
     await wait("dock enter animation settled", () =>
@@ -106,6 +158,7 @@ await withCdp(async (cdp) => {
       })()`)
       await cdp.call("Input.dispatchMouseEvent", { type: "mouseMoved", ...point })
       await wait("hover pauses countdown", async () => (await countdown())?.paused === true, 5000)
+      await wait("paused countdown fades", async () => (await countdown())!.opacity <= 0.46, 2000)
       const paused = (await countdown())!
       await Bun.sleep(13_000)
       assert.equal((await countdown())?.seconds, paused.seconds)
@@ -114,6 +167,8 @@ await withCdp(async (cdp) => {
       log(`PASS mouse selection stays paused beyond original deadline; remaining=${paused.seconds}`)
       await cdp.call("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1 })
       await wait("hover leave resumes", async () => (await countdown())?.paused === false, 5000)
+      await wait("running countdown returns to full opacity", async () => (await countdown())!.opacity >= 0.99, 2000)
+      log("PASS countdown opacity fades to 0.45 while paused and returns to 1 on blur")
       await wait("resumed countdown decreases", async () => (await countdown())!.seconds < paused.seconds, 3000)
       await cdp.evaluate(`document.querySelector('[data-slot="question-option"][data-custom="true"]').click()`)
       await wait("custom input focused", () =>
@@ -124,6 +179,7 @@ await withCdp(async (cdp) => {
       const typing = (await countdown())!
       await Bun.sleep(17_000)
       assert.equal((await countdown())?.seconds, typing.seconds)
+      assert.ok((await countdown())!.opacity <= 0.46, "focused input keeps countdown faded")
       assert.equal(
         await cdp.evaluate(`document.querySelector('[data-slot="question-custom-input"]').value`),
         "QUESTION_FOCUS_TYPED_ANSWER",
@@ -144,15 +200,20 @@ await withCdp(async (cdp) => {
           ),
         )
       })
-      await wait("model acknowledges answer", async () => {
-        const rows = await request(`/session/${session.id}/message`)
-        return rows.some(
-          (row: any) =>
-            row.info.role === "assistant" &&
-            row.parts.some((part: any) => part.type === "text" && part.text.trim() === "QUESTION_FOCUS_QA_OK"),
-        )
-      })
-      log("PASS typed answer persisted after original deadline and model replied QUESTION_FOCUS_QA_OK")
+      if (!recovered)
+        await wait("model acknowledges answer", async () => {
+          const rows = await request(`/session/${session.id}/message`)
+          return rows.some(
+            (row: any) =>
+              row.info.role === "assistant" &&
+              row.parts.some((part: any) => part.type === "text" && part.text.trim() === "QUESTION_FOCUS_QA_OK"),
+          )
+        })
+      log(
+        recovered
+          ? "PASS sidecar persisted recovered typed answer after original deadline"
+          : "PASS typed answer persisted after original deadline and model replied QUESTION_FOCUS_QA_OK",
+      )
       return
     }
     if (multiple) {
@@ -280,7 +341,10 @@ await withCdp(async (cdp) => {
     await cdp.call("Emulation.clearDeviceMetricsOverride")
     await navigate(previous)
     if (sessionID) {
-      await request(`/session/${sessionID}/abort`, "POST")
+      if (!recovered)
+        await request(`/session/${sessionID}/abort`, "POST").catch((error) =>
+          log(`abort cleanup failed: ${String(error)}`),
+        )
       await request(`/session/${sessionID}`, "DELETE")
     }
     await rm(directory, { recursive: true, force: true })

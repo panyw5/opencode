@@ -167,7 +167,7 @@ export const SessionQuestionDock: Component<{
   }
 
   onMount(() => {
-    let hovered = false
+    let hovered = root?.matches(":hover") ?? false
     let focused = false
     let stopped = false
     let updates = Promise.resolve()
@@ -178,7 +178,7 @@ export const SessionQuestionDock: Component<{
         try {
           const result = await sdk.client.question.pause({ requestID: props.request.id, paused })
           console.debug(`[question-dock] countdown focus acknowledged id=${props.request.id} paused=${paused}`)
-          if (stopped || !result.data) return
+          if (stopped || result.data?.id !== props.request.id) return
           const requests = sync.data.question[props.request.sessionID] ?? []
           sync.set(
             "question",
@@ -199,6 +199,9 @@ export const SessionQuestionDock: Component<{
         (hovered || !!root?.contains(document.activeElement) || store.focusedOption >= 0)
       if (next === focused) return
       focused = next
+      console.debug(
+        `[question-dock] countdown interaction id=${props.request.id} focused=${next} hovered=${hovered} window=${document.hasFocus()} hidden=${document.hidden} target=${document.activeElement?.getAttribute("data-slot") ?? document.activeElement?.tagName ?? "none"}`,
+      )
       updateFocus(next, "interaction")
     }
     const enter = () => {

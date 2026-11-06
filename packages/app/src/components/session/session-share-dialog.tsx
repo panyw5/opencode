@@ -1,7 +1,9 @@
-import { For, Show, createMemo, onMount } from "solid-js"
+import { For, Show, createMemo, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Button } from "@opencode-ai/ui/button"
+import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
+import { Icon } from "@opencode-ai/ui/icon"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { Markdown } from "@opencode-ai/ui/markdown"
 import { useTheme } from "@opencode-ai/ui/theme/context"
@@ -21,6 +23,7 @@ import {
 } from "./session-share-model"
 import { shareHTML, waitForShareRender } from "./session-share-html"
 import { SessionShareMessage } from "./session-share-message"
+import { shareImageLayout, shareImageLayouts, sharePreviewScale, type ShareImageLayout } from "./session-share-layout"
 import "./session-share-dialog.css"
 
 export function SessionShareDialog(props: { directory: string; sessionID: string; title: string }) {
@@ -42,8 +45,26 @@ export function SessionShareDialog(props: { directory: string; sessionID: string
     role: "all",
     pane: "selection" as "selection" | "preview",
     theme: "light" as "light" | "dark",
+    imageLayout: "phone-hd" as ShareImageLayout,
+    previewWidth: 0,
+    imageMenuOpen: false,
   })
   let preview: HTMLDivElement | undefined
+  let previewScroll: HTMLDivElement | undefined
+  const imageLayout = createMemo(() => shareImageLayout(state.imageLayout))
+  onMount(() => {
+    if (!previewScroll) return
+    let frame = 0
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => setState("previewWidth", previewScroll!.clientWidth))
+    })
+    observer.observe(previewScroll)
+    onCleanup(() => {
+      observer.disconnect()
+      cancelAnimationFrame(frame)
+    })
+  })
   const paperTheme = createMemo(() => {
     const current = theme.themes()[theme.themeId()]
     return current ? themeToCss(resolveThemeVariant(current[state.theme], state.theme === "dark")) : ""
@@ -78,25 +99,36 @@ export function SessionShareDialog(props: { directory: string; sessionID: string
     }
   }
   onMount(load)
+  const exportDisabled = () =>
+    state.loading || !state.selected.length || !!state.busy || !platform.exportSessionDocument
+  const selectImageLayout = (id: ShareImageLayout) => {
+    if (state.busy || state.imageLayout === id) return
+    console.debug(`[session-share] layout changed id=${id} width=${shareImageLayout(id).width}`)
+    setState({ imageLayout: id, result: "" })
+  }
   const exportDocument = async (format: "png" | "pdf" | "markdown") => {
     if (!platform.exportSessionDocument || !state.selected.length || state.busy) return
     setState({ busy: format, stage: "preparing", error: "", result: "" })
     try {
       if (format !== "markdown") {
+        // Narrow windows hide the preview while selecting messages.
+        setState("pane", "preview")
         if (!preview || !preview.getBoundingClientRect().width) throw new Error(t("share.notReady"))
         console.debug("[session-share] waiting for full render and fonts")
         await waitForShareRender(preview)
       }
       const html = format !== "markdown" && preview ? await shareHTML(preview, state.theme) : undefined
       setState("stage", "saving")
-      console.debug(`[session-share] export start format=${format} selected=${state.selected.length}`)
+      console.debug(
+        `[session-share] export start format=${format} selected=${state.selected.length} layout=${state.imageLayout} width=${imageLayout().width} font=${imageLayout().fontSize}`,
+      )
       const result = await runShareExport(state.selected, () =>
         platform.exportSessionDocument!({
           format,
           name: state.title,
           markdown: markdown(),
           html,
-          width: format !== "markdown" && preview ? Math.ceil(preview.getBoundingClientRect().width) : undefined,
+          width: format !== "markdown" ? imageLayout().width : undefined,
           theme: state.theme,
         }),
       )
@@ -112,7 +144,12 @@ export function SessionShareDialog(props: { directory: string; sessionID: string
     } catch (error) {
       console.error("[session-share] export failed")
       const message = error instanceof Error ? error.message : String(error)
-      setState("error", message.includes("32 MiB") ? t("share.tooLarge") : `${t("share.exportError")} ${message.replace(/^Error:\s*/i, "")}`)
+      setState(
+        "error",
+        message.includes("32 MiB")
+          ? t("share.tooLarge")
+          : `${t("share.exportError")} ${message.replace(/^Error:\s*/i, "")}`,
+      )
     } finally {
       setState({ busy: "", stage: "" })
     }
@@ -229,23 +266,73 @@ export function SessionShareDialog(props: { directory: string; sessionID: string
                 </select>
               </label>
             </div>
-            <div class="session-share-paper-scroll" data-theme={state.theme} style={paperTheme()}>
-              <div ref={preview} class="session-share-paper">
-                <Show when={markdown()} keyed>
-                  {(text) => <Markdown text={text} eager stage="full" />}
-                </Show>
+            <div ref={previewScroll} class="session-share-paper-scroll" data-theme={state.theme} style={paperTheme()}>
+              <div
+                class="session-share-paper-fit"
+                style={{ zoom: sharePreviewScale(state.previewWidth, imageLayout().width) }}
+              >
+                <div ref={preview} class="session-share-paper" style={imageLayout().paperStyle}>
+                  <Show when={markdown()} keyed>
+                    {(text) => <Markdown text={text} eager stage="full" />}
+                  </Show>
+                </div>
               </div>
             </div>
           </section>
         </div>
         <footer class="session-share-footer">
           <div class="session-share-export-buttons">
-            <For each={["png", "markdown", "pdf"] as const}>
-              {(format) => (
-                <Button
-                  disabled={state.loading || !state.selected.length || !!state.busy || !platform.exportSessionDocument}
-                  onClick={() => exportDocument(format)}
+            <DropdownMenu
+              placement="top-start"
+              gutter={6}
+              open={state.imageMenuOpen}
+              onOpenChange={(open) => {
+                console.debug(`[session-share] image menu open=${open}`)
+                setState("imageMenuOpen", open)
+              }}
+            >
+              <DropdownMenu.Trigger as={Button} disabled={exportDisabled()} data-action="share-image-export">
+                {t("share.png")}
+                <Icon name="chevron-down" size="small" />
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  aria-label={t("share.resolution")}
+                  data-kb-top-layer=""
+                  onEscapeKeyDown={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    console.debug("[session-share] image menu closed reason=escape")
+                    setState("imageMenuOpen", false)
+                  }}
                 >
+                  <DropdownMenu.Group>
+                    <DropdownMenu.GroupLabel>{t("share.resolution")}</DropdownMenu.GroupLabel>
+                    <For each={shareImageLayouts}>
+                      {(layout) => (
+                        <DropdownMenu.Item
+                          data-share-layout={layout.id}
+                          disabled={exportDisabled()}
+                          onFocus={() => selectImageLayout(layout.id)}
+                          onSelect={() => {
+                            selectImageLayout(layout.id)
+                            console.debug(`[session-share] export menu selected layout=${layout.id}`)
+                            void exportDocument("png")
+                          }}
+                        >
+                          <DropdownMenu.ItemLabel>
+                            {t(`share.device.${layout.device}`)} · {layout.width}px
+                          </DropdownMenu.ItemLabel>
+                        </DropdownMenu.Item>
+                      )}
+                    </For>
+                  </DropdownMenu.Group>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu>
+            <For each={["markdown", "pdf"] as const}>
+              {(format) => (
+                <Button disabled={exportDisabled()} onClick={() => exportDocument(format)}>
                   {t(`share.${format}`)}
                 </Button>
               )}

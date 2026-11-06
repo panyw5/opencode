@@ -16,6 +16,25 @@ const response = (messages: Message[], parts: Part[] = []) => ({
 })
 
 describe("session messages controller", () => {
+  test.each([false, true])("fetches metadata-only parent parts (empty cache=%s)", async (empty) => {
+    const parent = { ...message("parent"), role: "user" } as Message
+    const parentPart = { ...part("original question"), id: "parent-text", messageID: parent.id }
+    const calls: string[] = []
+    const harness = createSessionControllerHarness({
+      messages: async () => response([{ ...message("a1"), parentID: parent.id } as Message]),
+      message: async ({ messageID }) => {
+        calls.push(messageID)
+        return { data: { info: parent, parts: [parentPart] } }
+      },
+    })
+    harness.child[1]("message", "session", [parent])
+    if (empty) harness.child[1]("part", parent.id, [])
+    const service = createSessionMessagesService(harness.deps)
+    await service.load({ directory: "/project", sessionID: "session", limit: 2 })
+    expect(calls).toEqual(["parent"])
+    expect(service.parts("/project", "parent")).toEqual([parentPart])
+  })
+
   test("recovers a paginated turn's user anchor once without moving the history cursor", async () => {
     const parent = { ...message("parent"), role: "user" } as Message
     const assistants = ["a1", "a2"].map((id) => ({ ...message(id), parentID: parent.id }) as Message)

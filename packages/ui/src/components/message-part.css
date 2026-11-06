@@ -1741,6 +1741,12 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
     font-weight: var(--font-weight-medium);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+    opacity: 1;
+    transition: opacity 160ms ease;
+
+    &[data-paused="true"] {
+      opacity: 0.45;
+    }
 
     &[data-urgent="true"] {
       color: var(--text-warning-base);

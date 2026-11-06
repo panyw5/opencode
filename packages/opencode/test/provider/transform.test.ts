@@ -1,6 +1,77 @@
 import { describe, expect, test } from "bun:test"
 import { ProviderTransform } from "@/provider/transform"
 import { ModelID, ProviderID } from "../../src/provider/schema"
+import type { Provider } from "../../src/provider/provider"
+import type { ModelMessage } from "ai"
+
+describe("ProviderTransform.message - unsigned reasoning replay", () => {
+  function model(npm: string): Provider.Model {
+    return {
+      id: ModelID.make("test"),
+      providerID: ProviderID.make("custom"),
+      api: { id: "test", url: "https://example.com", npm },
+      name: "Test",
+      capabilities: {
+        temperature: true,
+        reasoning: true,
+        attachment: false,
+        toolcall: true,
+        input: { text: true, image: false, audio: false, video: false, pdf: false },
+        output: { text: true, image: false, audio: false, video: false, pdf: false },
+        interleaved: false,
+      },
+      cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+      limit: { context: 100_000, output: 8192 },
+      status: "active",
+      options: {},
+      headers: {},
+      release_date: "2026-01-01",
+    }
+  }
+
+  test.each(["@ai-sdk/anthropic", "@ai-sdk/google-vertex/anthropic", "@ai-sdk/amazon-bedrock", "@ai-sdk/mistral"])(
+    "drops unsigned reasoning without flattening it to text for %s",
+    (npm) => {
+      const messages: ModelMessage[] = [
+        {
+          role: "assistant",
+          content: [
+            { type: "reasoning", text: "private reasoning" },
+            { type: "text", text: "answer" },
+          ],
+        },
+      ]
+      const result = ProviderTransform.message(messages, model(npm), { cacheControl: true })
+      expect(result).toHaveLength(1)
+      expect(result[0].content).toEqual([{ type: "text", text: "answer" }])
+      expect(
+        ProviderTransform.message(
+          [{ role: "assistant", content: [{ type: "reasoning", text: "thinking" }] }],
+          model(npm),
+          { cacheControl: true },
+        ),
+      ).toEqual([])
+    },
+  )
+
+  test.each([
+    ["@ai-sdk/anthropic", { signature: "signed" }],
+    ["@ai-sdk/anthropic", { redactedData: "redacted" }],
+    ["@ai-sdk/amazon-bedrock", { signature: "signed" }],
+    ["@ai-sdk/amazon-bedrock", { redactedContent: "redacted" }],
+    ["@ai-sdk/mistral", { thinking: { type: "thinking", thinking: [{ type: "text", text: "thinking" }] } }],
+  ] as const)("keeps protocol-native reasoning after custom provider key remapping for %s", (npm, metadata) => {
+    const messages: ModelMessage[] = [
+      { role: "assistant", content: [{ type: "reasoning", text: "thinking", providerOptions: { custom: metadata } }] },
+    ]
+    expect(ProviderTransform.message(messages, model(npm), { cacheControl: true })[0].content).toHaveLength(1)
+  })
+
+  test("keeps unsigned reasoning for protocols that support it", () => {
+    const messages: ModelMessage[] = [{ role: "assistant", content: [{ type: "reasoning", text: "thinking" }] }]
+    expect(ProviderTransform.message(messages, model("@ai-sdk/openai-compatible"), {})).toEqual(messages)
+  })
+})
 
 describe("ProviderTransform.options - setCacheKey", () => {
   const sessionID = "ses_00000000000000000000000000"
@@ -2317,7 +2388,7 @@ describe("ProviderTransform.message - anthropic empty content filtering", () => 
       {
         role: "assistant",
         content: [
-          { type: "reasoning", text: "Thinking..." },
+          { type: "reasoning", text: "Thinking...", providerOptions: { anthropic: { signature: "signed" } } },
           { type: "text", text: "" },
           { type: "text", text: "Result" },
         ],
@@ -2328,7 +2399,11 @@ describe("ProviderTransform.message - anthropic empty content filtering", () => 
 
     expect(result).toHaveLength(1)
     expect(result[0].content).toHaveLength(2)
-    expect(result[0].content[0]).toEqual({ type: "reasoning", text: "Thinking..." })
+    expect(result[0].content[0]).toEqual({
+      type: "reasoning",
+      text: "Thinking...",
+      providerOptions: { anthropic: { signature: "signed" } },
+    })
     expect(result[0].content[1]).toEqual({ type: "text", text: "Result" })
   })
 

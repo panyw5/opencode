@@ -171,6 +171,7 @@ export type ExtensionFileViewerContribution = {
   mime?: Array<string>
   priority?: number
   mode?: "replace" | "preview"
+  content?: "text" | "self"
 }
 
 export type ExtensionToolRendererContribution = {
@@ -1599,6 +1600,15 @@ export type Config = {
       enabled?: boolean
       binaryPath?: string
       configHome?: string
+      defaults?: {
+        profile?: string
+        working_directory?: string
+        timeout_ms?: number
+        patch?: string | Array<string>
+        permission_mode?: string
+        approval_policy?: "ask" | "never"
+        additional_writable_roots?: Array<string>
+      }
     }
     grok?: {
       enabled?: boolean
@@ -2702,6 +2712,15 @@ export type Config7 = {
       enabled?: boolean
       binaryPath?: string
       configHome?: string
+      defaults?: {
+        profile?: string
+        working_directory?: string
+        timeout_ms?: number
+        patch?: string | Array<string>
+        permission_mode?: string
+        approval_policy?: "ask" | "never"
+        additional_writable_roots?: Array<string>
+      }
     }
     grok?: {
       enabled?: boolean

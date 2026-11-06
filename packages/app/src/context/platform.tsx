@@ -130,6 +130,7 @@ export type CliAgentConfig = {
   enabled: boolean
   binaryPath?: string
   configHome?: string
+  defaults?: import("@opencode-ai/util/dsh-config").DshConsultDefaults
 }
 
 export type DshHomeConfig = {
@@ -191,6 +192,7 @@ export type CliAgentInfo = {
   checkedAt?: number
   error?: string
   dsh?: {
+    profiles?: string[]
     provider: string
     model: string
     baseURL: string

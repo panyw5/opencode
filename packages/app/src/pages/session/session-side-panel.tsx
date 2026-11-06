@@ -190,7 +190,7 @@ export function SessionSidePanel(props: {
     normalizeTab,
     openTab: tabs().open,
     pathFromTab: file.pathFromTab,
-    loadFile: file.load,
+    loadFile: file.preparePreview,
     openReviewPanel: openFilePreview,
     setActive: tabs().setActive,
   })

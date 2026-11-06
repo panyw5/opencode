@@ -1,4 +1,16 @@
 import type { Part } from "@opencode-ai/sdk/v2"
+import { checksum } from "@opencode-ai/core/util/encode"
+
+const fingerprints = new WeakMap<Part, Map<string, { source: string; hash: string }>>()
+function partFingerprint(part: Part, field: string, source: string) {
+  let fields = fingerprints.get(part)
+  const hit = fields?.get(field)
+  if (hit?.source === source) return hit.hash
+  const hash = checksum(source) ?? "empty"
+  if (!fields) fingerprints.set(part, (fields = new Map()))
+  fields.set(field, { source, hash })
+  return hash
+}
 
 type VirtualItemGeometry = {
   key: string | number | bigint
@@ -411,10 +423,10 @@ export function markdownMeasurementPending(
 }
 
 /** Keeps virtual row identity independent from the data that determines its height. */
-export function partMeasurementKey(part: Part | undefined) {
+export function partMeasurementKey(part: Part | undefined, complete = false) {
   if (!part) return "missing"
   if (part.type === "text" || part.type === "reasoning")
-    return `${part.type}:${part.text.length}:${part.time?.end ?? "live"}`
+    return `${part.type}:${part.text.length}:${part.time?.end ?? "live"}:${complete || part.time?.end !== undefined ? partFingerprint(part, "text", part.text) : "streaming"}`
   if (part.type === "tool") {
     const state = part.state
     const output = state.status === "completed" ? state.output : state.status === "error" ? state.error : ""
@@ -440,14 +452,19 @@ export function partMeasurementKey(part: Part | undefined) {
       const value = diagram as Record<string, unknown>
       return `tool:${part.tool}:${state.status}:${String(value.id ?? "")}:${String(value.syntax ?? "")}:${String(value.title ?? "")}:${String(value.caption ?? "")}`
     }
-    return `tool:${part.tool}:${state.status}:${title}:${output.length}:${JSON.stringify(metadata ?? {}).length}`
+    const meta = JSON.stringify(metadata ?? {})
+    const content =
+      state.status === "completed" || state.status === "error"
+        ? `${partFingerprint(part, "output", output)}:${partFingerprint(part, "metadata", meta)}:${partFingerprint(part, "input", JSON.stringify(state.input ?? {}))}`
+        : `${output.length}:${meta.length}`
+    return `tool:${part.tool}:${state.status}:${title}:${content}`
   }
   return `${part.type}:${JSON.stringify(part).length}`
 }
 
 export function timelineContentVersion(messages: readonly { id: string }[], parts: Record<string, Part[] | undefined>) {
   return messages
-    .map((message) => `${message.id}:${(parts[message.id] ?? []).map(partMeasurementKey).join(",")}`)
+    .map((message) => `${message.id}:${(parts[message.id] ?? []).map((part) => partMeasurementKey(part)).join(",")}`)
     .join("|")
 }
 
@@ -522,16 +539,16 @@ export function rowContentVersion(
         .join(",")}`
 
     case "Thinking":
-      return `thinking:${row.phase ?? ""}:${row.reasoningHeading?.length ?? 0}`
+      return `thinking:${row.phase ?? ""}:${checksum(row.reasoningHeading ?? "") ?? "empty"}`
 
     case "Retry":
       return "retry"
 
     case "DiffSummary":
-      return `diff:${row.diffs?.length ?? 0}`
+      return `diff:${row.diffs?.map((diff) => diff.file).join("|") ?? ""}`
 
     case "Error":
-      return `error:${(row.text ?? "").length}`
+      return `error:${checksum(row.text ?? "") ?? "empty"}`
 
     default:
       return `unknown:${row._tag}`

@@ -996,7 +996,7 @@ export default function Page() {
     if (!tab) return
 
     const path = file.pathFromTab(tab)
-    if (path) file.load(path)
+    if (path) file.preparePreview(path)
   })
 
   createEffect(
@@ -2001,7 +2001,7 @@ export default function Page() {
     tabForPath: file.tab,
     openTab: tabs().open,
     setActive: tabs().setActive,
-    loadFile: file.load,
+    loadFile: file.preparePreview,
   })
 
   const openFileLinkPreview = (raw: string, path: string, line?: number, endLine?: number) => {
@@ -2010,7 +2010,7 @@ export default function Page() {
       `[file-link] preview start session=${params.id ?? "none"} root=${sdk.directory} raw=${raw} path=${path} line=${line ?? "none"} endLine=${endLine ?? "none"} tab=${tab}`,
     )
     tabs().open(tab)
-    void file.load(path).then(() => {
+    void file.preparePreview(path).then(() => {
       const state = file.get(path)
       console.debug(
         `[file-link] load session=${params.id ?? "none"} root=${sdk.directory} path=${path} loaded=${String(!!state?.loaded)} error=${state?.error ?? "none"}`,
@@ -2484,7 +2484,7 @@ export default function Page() {
         if (!tab) return
         const path = file.pathFromTab(tab)
         if (!path) return
-        void file.load(path, { force: true })
+        void file.preparePreview(path, { force: true })
       },
       { defer: true },
     ),
@@ -3491,6 +3491,7 @@ export default function Page() {
     directory: () => sdk.directory,
     messagesReady,
     visibleUserMessages,
+    messagePartsReady: (id) => (sync.data.part[id]?.length ?? 0) > 0,
     historyMore,
     historyBusy: () => historyLoading() || historyInFlight(),
     loadMore: () => loadEarlier(),
@@ -3650,6 +3651,20 @@ export default function Page() {
                             `rows=${String(detail.rows)} cached=${String(detail.cached)}`,
                           )
                           dispatchSessionRender({ type: "content-ready", sessionID: id })
+                        }}
+                        onWarmReady={(key) => {
+                          const id = params.id
+                          if (!id || key !== sessionKey() || viewportOwnerKey !== key) return
+                          if (initialScrollFrame !== undefined) cancelAnimationFrame(initialScrollFrame)
+                          initialScrollFrame = undefined
+                          initialScrollKey = undefined
+                          clearInitialScrollDeadline()
+                          markSessionProfile(id, "warm-layout-restored", "source=validated-viewport-cache")
+                          dispatchSessionRender(
+                            { type: "warm-ready", sessionID: id, generation: initialScrollGeneration },
+                            "viewport-cache",
+                          )
+                          if (scroller) scheduleScrollState(scroller)
                         }}
                         onViewportTurnChange={(id) => setRailActiveMessageId(() => id)}
                       />

@@ -64,6 +64,17 @@ describe("canonical GPT-Pro runtime cards", () => {
     expect(card(html, "model")).toContain('data-tone="neutral"')
     expect(card(html, "storage")).toContain("OS-encrypted")
   })
+  test("runtime cards keep a single border without shadow, ring or outline overlays", () => {
+    const r = runtime()
+    r.session.authentication = { phase: "invalid", checkedAt: 1 }
+    const html = render(r)
+    for (const kind of ["identity", "model", "connection", "storage"]) {
+      const classes = card(html, kind).match(/<article\b[^>]*\bclass="([^"]*)"/)?.[1].split(/\s+/)
+      expect(classes).toBeDefined()
+      expect(classes).toContain("border")
+      expect(classes?.filter((name) => /^(?:shadow|ring|outline)(?:-|$)/.test(name))).toEqual([])
+    }
+  })
   const phases = {
     unverified: ["neutral", "gptPro.auth.unknown"],
     verifying: ["neutral", "gptPro.auth.loading"],

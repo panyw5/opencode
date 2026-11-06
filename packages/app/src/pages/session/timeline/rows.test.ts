@@ -58,6 +58,7 @@ const kobalteStub = () => {
 let construct: (typeof import("./rows"))["Timeline"]["constructMessageRows"]
 let expandTools: (typeof import("./rows"))["Timeline"]["expandToolRows"]
 let rowKey: (typeof import("./rows"))["TimelineRow"]["key"]
+let Row: (typeof import("./rows"))["TimelineRow"]
 
 beforeAll(async () => {
   mock.module("@solidjs/router", () => ({
@@ -76,6 +77,65 @@ beforeAll(async () => {
   construct = mod.Timeline.constructMessageRows
   expandTools = mod.Timeline.expandToolRows
   rowKey = mod.TimelineRow.key
+  Row = mod.TimelineRow
+})
+
+describe("timeline row field comparison", () => {
+  const group = () => ({ type: "context" as const, key: "context:p1", refs: [{ messageID: "a1", partID: "p1" }] })
+  test("compares freshly constructed groups by value without structural hashing", () => {
+    const a = new Row.AssistantPart({ userMessageID: "u1", group: group(), previousAssistantPart: false })
+    const b = new Row.AssistantPart({
+      userMessageID: "u1",
+      group: group(),
+      previousAssistantPart: false,
+      topSpacing: undefined,
+    })
+    expect(Row.equals(a, b)).toBe(true)
+    expect(
+      Row.equals(a, new Row.AssistantPart({ ...b, group: { ...group(), refs: [{ messageID: "a1", partID: "p2" }] } })),
+    ).toBe(false)
+    expect(Row.equals(a, new Row.AssistantPart({ ...b, topSpacing: true }))).toBe(false)
+    expect(Row.equals(a, new Row.AssistantPart({ ...b, userMessageID: "u2" }))).toBe(false)
+  })
+
+  test("detects tool-group ordering, lifecycle and nested-reference changes", () => {
+    const a = new Row.ToolGroup({ userMessageID: "u1", groups: [group()], previousAssistantPart: false })
+    const b = new Row.ToolGroup({ ...a, groups: [group()] })
+    expect(Row.equals(a, b)).toBe(true)
+    expect(Row.equals(a, new Row.ToolGroup({ ...b, continuing: true }))).toBe(false)
+    expect(Row.equals(a, new Row.ToolGroup({ ...b, end: 1 }))).toBe(false)
+    expect(Row.equals(a, new Row.ToolGroup({ ...b, groups: [] }))).toBe(false)
+    expect(Row.equals(a, new Row.ToolGroup({ ...b, groups: [{ ...group(), key: "context:p2" }] }))).toBe(false)
+  })
+
+  test("compares diff list entries by identity and detects replaced entries", () => {
+    const diff = { file: "a.ts", additions: 1, deletions: 0, before: "", after: "x", status: "added" as const }
+    const a = new Row.DiffSummary({ userMessageID: "u1", diffs: [diff] })
+    expect(Row.equals(a, new Row.DiffSummary({ ...a, diffs: [diff] }))).toBe(true)
+    expect(Row.equals(a, new Row.DiffSummary({ ...a, diffs: [{ ...diff, additions: 2 }] }))).toBe(false)
+  })
+
+  test("compares every simple row variant and its display fields", () => {
+    const rows = [
+      new Row.TurnGap({ userMessageID: "u1" }),
+      new Row.CommentStrip({ userMessageID: "u1" }),
+      new Row.Retry({ userMessageID: "u1" }),
+      new Row.UserMessage({ userMessageID: "u1", anchor: true }),
+      new Row.TurnDivider({ userMessageID: "u1", label: "interrupted" }),
+      new Row.Thinking({ userMessageID: "u1", phase: "thinking", reasoningHeading: "Plan" }),
+      new Row.Error({ userMessageID: "u1", text: "error" }),
+    ]
+    for (const row of rows) {
+      expect(Row.equals(row, row)).toBe(true)
+      expect(Row.equals(row, { ...row })).toBe(true)
+      expect(Row.equals(row, { ...row, userMessageID: "u2" })).toBe(false)
+    }
+    expect(Row.equals(rows[0], rows[1])).toBe(false)
+    expect(Row.equals(rows[3], new Row.UserMessage({ userMessageID: "u1", anchor: false }))).toBe(false)
+    expect(Row.equals(rows[4], new Row.TurnDivider({ userMessageID: "u1", label: "compaction" }))).toBe(false)
+    expect(Row.equals(rows[5], new Row.Thinking({ userMessageID: "u1", phase: "sending" }))).toBe(false)
+    expect(Row.equals(rows[6], new Row.Error({ userMessageID: "u1", text: "other" }))).toBe(false)
+  })
 })
 
 // Guards against a process-wide narrow mock of @opencode-ai/ui/context (for

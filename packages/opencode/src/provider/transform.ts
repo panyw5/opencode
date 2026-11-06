@@ -555,6 +555,30 @@ function unsupportedParts(msgs: ModelMessage[], model: Provider.Model): ModelMes
   })
 }
 
+function filterReasoningReplay(msgs: ModelMessage[], model: Provider.Model) {
+  const key = sdkKey(model.api.npm)
+  if (key !== "anthropic" && key !== "bedrock" && key !== "mistral") return msgs
+  return msgs.flatMap((msg): ModelMessage[] => {
+    if (msg.role !== "assistant" || !Array.isArray(msg.content)) return [msg]
+    const content = msg.content.filter((part) => {
+      if (part.type !== "reasoning") return true
+      const metadata = part.providerOptions?.[key]
+      const thinking = metadata?.thinking
+      const supported =
+        key === "mistral"
+          ? isPlainObject(thinking) && thinking.type === "thinking"
+          : metadata?.signature != null ||
+            metadata?.redactedData != null ||
+            (key === "bedrock" && metadata?.redactedContent != null)
+      if (!supported) log.debug("dropping unsigned reasoning before provider lowering", { modelID: model.id, sdk: key })
+      return supported
+    })
+    // Some SDKs otherwise flatten unsigned reasoning into answer text; native
+    // signed protocols reject it. Neither path should receive an empty message.
+    return content.length ? [{ ...msg, content }] : []
+  })
+}
+
 export function message(msgs: ModelMessage[], model: Provider.Model, options: Record<string, unknown>) {
   msgs = unsupportedParts(msgs, model)
   msgs = normalizeMessages(msgs, model, options)
@@ -603,7 +627,7 @@ export function message(msgs: ModelMessage[], model: Provider.Model, options: Re
     })
   }
 
-  return msgs
+  return filterReasoningReplay(msgs, model)
 }
 
 export function temperature(model: Provider.Model) {

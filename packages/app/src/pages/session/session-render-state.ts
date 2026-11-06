@@ -24,6 +24,7 @@ export type SessionRenderEvent = (
   | { type: "messages-invalidated"; sessionID: string }
   | { type: "messages-ready"; sessionID: string }
   | { type: "content-ready"; sessionID: string }
+  | { type: "warm-ready"; sessionID: string }
   | { type: "reconcile"; sessionID: string }
   | { type: "settle"; sessionID: string }
   | { type: "settled"; sessionID: string }
@@ -78,6 +79,7 @@ export function reduceSessionRenderState(state: SessionRenderState, event: Sessi
       phase: "settling",
       overlay: event.optimistic ? "hidden" : "showing",
     }
+  if (event.type === "warm-ready") return { ...state, phase: "interactive", overlay: "hidden", hasContent: true }
 
   if (event.type === "messages-ready") {
     if (state.hasContent && state.overlay === "hidden") return state

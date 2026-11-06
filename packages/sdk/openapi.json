@@ -20483,6 +20483,10 @@
           "mode": {
             "type": "string",
             "enum": ["replace", "preview"]
+          },
+          "content": {
+            "type": "string",
+            "enum": ["text", "self"]
           }
         },
         "required": ["id", "title"],
@@ -24950,6 +24954,50 @@
                   },
                   "configHome": {
                     "type": "string"
+                  },
+                  "defaults": {
+                    "type": "object",
+                    "properties": {
+                      "profile": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+                      },
+                      "working_directory": {
+                        "type": "string"
+                      },
+                      "timeout_ms": {
+                        "type": "integer",
+                        "minimum": 30000,
+                        "maximum": 1800000
+                      },
+                      "patch": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        ]
+                      },
+                      "permission_mode": {
+                        "type": "string"
+                      },
+                      "approval_policy": {
+                        "type": "string",
+                        "enum": ["ask", "never"]
+                      },
+                      "additional_writable_roots": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "additionalProperties": false
                   }
                 },
                 "additionalProperties": false
@@ -28473,6 +28521,50 @@
                   },
                   "configHome": {
                     "type": "string"
+                  },
+                  "defaults": {
+                    "type": "object",
+                    "properties": {
+                      "profile": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+                      },
+                      "working_directory": {
+                        "type": "string"
+                      },
+                      "timeout_ms": {
+                        "type": "integer",
+                        "minimum": 30000,
+                        "maximum": 1800000
+                      },
+                      "patch": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        ]
+                      },
+                      "permission_mode": {
+                        "type": "string"
+                      },
+                      "approval_policy": {
+                        "type": "string",
+                        "enum": ["ask", "never"]
+                      },
+                      "additional_writable_roots": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "additionalProperties": false
                   }
                 },
                 "additionalProperties": false

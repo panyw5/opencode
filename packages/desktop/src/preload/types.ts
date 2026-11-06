@@ -143,6 +143,7 @@ export type CliAgentConfig = {
   binaryPath?: string
   /** Optional CLI configuration home override. */
   configHome?: string
+  defaults?: import("@opencode-ai/util/dsh-config").DshConsultDefaults
 }
 
 /** DeepSeek Harness home settings managed from the config page. */
@@ -211,6 +212,7 @@ export type CliAgentInfo = {
   error?: string
   /** Present for the DeepSeek (dsh) advisor. */
   dsh?: {
+    profiles?: string[]
     provider: string
     model: string
     baseURL: string
@@ -427,7 +429,14 @@ export type ElectronAPI = {
   cancelUpdate: () => Promise<void>
   onUpdaterStateChanged: (cb: (state: UpdaterState) => void) => () => void
   setBackgroundColor: (color: string) => Promise<void>
-  exportSessionDocument: (input: { format: "png" | "pdf" | "markdown"; name: string; markdown?: string; html?: string; width?: number; theme?: "light" | "dark" }) => Promise<{ cancelled: boolean; files: number }>
+  exportSessionDocument: (input: {
+    format: "png" | "pdf" | "markdown"
+    name: string
+    markdown?: string
+    html?: string
+    width?: number
+    theme?: "light" | "dark"
+  }) => Promise<{ cancelled: boolean; files: number }>
   exportDebugLogs: () => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>
   fetchExternal: (

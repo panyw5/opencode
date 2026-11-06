@@ -6,10 +6,51 @@ import {
   rowLayoutVersion,
   DEFAULT_TIMELINE_ROW_CACHE_MAX,
   timelineRowCache,
+  validRowMeasurement,
   type RowMeasurement,
 } from "./row-cache"
 
 describe("TimelineRowMeasurementCache", () => {
+  test("a corrupted stored entry is evicted on read and can be rebuilt", () => {
+    class FaultCache extends TimelineRowMeasurementCache {
+      damage() {
+        this.rows.set("row", { height: Infinity } as RowMeasurement)
+        this.rows.set("missing-value", undefined as unknown as RowMeasurement)
+      }
+    }
+    const cache = new FaultCache()
+    cache.damage()
+    expect(cache.get("row")).toBeUndefined()
+    expect(cache.get("missing-value")).toBeUndefined()
+    expect(cache.size).toBe(0)
+    cache.setMeasured("row", 100, "repaired", 800)
+    expect(cache.getHeight("row", "repaired", 800)).toBe(100)
+  })
+  test("rejects corrupt numbers, protects valid entries, and accepts a repaired measurement", () => {
+    const cache = new TimelineRowMeasurementCache()
+    const valid: RowMeasurement = { height: 100, quality: "measured", contentVersion: "v1", width: 800, measuredAt: 1 }
+    cache.set("row", valid)
+    for (const invalid of [
+      { ...valid, height: NaN },
+      { ...valid, height: Infinity },
+      { ...valid, height: -1 },
+      { ...valid, height: 0 },
+      { ...valid, width: NaN },
+      { ...valid, width: -1 },
+      { ...valid, measuredAt: Infinity },
+      { ...valid, contentVersion: "" },
+      { ...valid, quality: "corrupt" as "measured" },
+    ]) {
+      expect(validRowMeasurement(invalid)).toBe(false)
+      expect(cache.set("row", invalid)).toBe(false)
+      expect(cache.getHeight("row", "v1", 800)).toBe(100)
+    }
+    valid.height = 900
+    expect(cache.getHeight("row", "v1", 800)).toBe(100)
+    expect(Object.isFrozen(cache.get("row"))).toBe(true)
+    cache.setMeasured("row", 120, "v1", 800)
+    expect(cache.getHeight("row", "v1", 800)).toBe(120)
+  })
   test("returns undefined for a missing row", () => {
     const cache = new TimelineRowMeasurementCache()
     expect(cache.getHeight("row-1", "v1", 800)).toBeUndefined()
@@ -39,6 +80,16 @@ describe("TimelineRowMeasurementCache", () => {
     const cache = new TimelineRowMeasurementCache()
     cache.setMeasured("row-1", 120, "v1", 800)
     expect(cache.getHeight("row-1", "v1", 840)).toBeUndefined()
+    expect(cache.has("row-1")).toBe(false)
+  })
+
+  test("a replacement estimate at a different width is not blocked by stale measured quality", () => {
+    const cache = new TimelineRowMeasurementCache()
+    cache.setMeasured("row", 100, "v1", 800)
+    cache.setEstimated("row", 200, "v1", 1000)
+    expect(cache.getHeight("row", "v1", 1000)).toBe(200)
+    cache.setMeasured("row", 210, "v1", 1000)
+    expect(cache.getHeight("row", "v1", 1000)).toBe(210)
   })
 
   test("accepts a width within tolerance", () => {

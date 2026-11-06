@@ -338,6 +338,28 @@ it.instance("focus - accepts an answer after the original deadline while paused"
   }),
 )
 
+it.instance(
+  "focus - abandoned renderer lease eventually expires without list polling",
+  () =>
+    Effect.gen(function* () {
+      const question = yield* Question.Service
+      const fiber = yield* question
+        .ask({
+          sessionID: SessionID.make("ses_abandoned_focus"),
+          questions: [],
+          timeout: 1,
+        })
+        .pipe(Effect.forkScoped)
+      const [request] = yield* waitForPending(1)
+      const paused = yield* question.pause({ requestID: request.id, paused: true })
+      expect(paused.timeoutPause!.until).toBeLessThanOrEqual(Date.now() + 15_000)
+      const exit = yield* Fiber.await(fiber).pipe(Effect.timeout("18 seconds"))
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect((Cause.squash(exit.cause) as Question.RejectedError).timedOut).toBe(true)
+    }),
+  20_000,
+)
+
 persistentIt.instance(
   "focus - persists pause and resumes a recovered request",
   () =>

@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { directoryBrowsePath, displayToAbsolute, withDirectoryTrailing } from "@/components/dialog-select-directory"
-import { filterHomeDirectoryEntries, moveHomeDirectoryHighlight } from "./home-path-input"
+import {
+  filterDirectoryEntries as filterHomeDirectoryEntries,
+  moveDirectoryHighlight as moveHomeDirectoryHighlight,
+} from "@/components/directory-completion"
 
 describe("home path input", () => {
   const entries = [

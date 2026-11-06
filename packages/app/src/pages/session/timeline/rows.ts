@@ -4,7 +4,7 @@ import { AssistantMessage, Part, SessionStatus, SnapshotFileDiff, UserMessage } 
 import { isInjectionTextPart } from "@opencode-ai/ui/injected-prompt-model"
 import { attached } from "@opencode-ai/ui/message-file"
 import { groupParts, PartGroup, renderable } from "@opencode-ai/ui/message-part"
-import { Data, Equal } from "effect"
+import { Data } from "effect"
 
 export type SummaryDiff = SnapshotFileDiff & { file: string }
 
@@ -125,8 +125,65 @@ export namespace TimelineRow {
   }
 
   export function equals(a: TimelineRow, b: TimelineRow) {
-    return Equal.equals(a, b)
+    if (a === b) return true
+    if (a.userMessageID !== b.userMessageID) return false
+    switch (a._tag) {
+      case "TurnGap":
+        return b._tag === "TurnGap"
+      case "CommentStrip":
+        return b._tag === "CommentStrip"
+      case "Retry":
+        return b._tag === "Retry"
+      case "UserMessage":
+        return b._tag === "UserMessage" && a.anchor === b.anchor
+      case "TurnDivider":
+        return b._tag === "TurnDivider" && a.label === b.label
+      case "Thinking":
+        return b._tag === "Thinking" && a.phase === b.phase && a.reasoningHeading === b.reasoningHeading
+      case "Error":
+        return b._tag === "Error" && a.text === b.text
+      case "AssistantPart":
+        return (
+          b._tag === "AssistantPart" &&
+          a.previousAssistantPart === b.previousAssistantPart &&
+          a.topSpacing === b.topSpacing &&
+          sameGroup(a.group, b.group)
+        )
+      case "ToolGroup":
+        return (
+          b._tag === "ToolGroup" &&
+          a.continuing === b.continuing &&
+          a.end === b.end &&
+          a.previousAssistantPart === b.previousAssistantPart &&
+          a.topSpacing === b.topSpacing &&
+          a.groups.length === b.groups.length &&
+          a.groups.every((group, index) => sameGroup(group, b.groups[index]))
+        )
+      case "DiffSummary":
+        return (
+          b._tag === "DiffSummary" &&
+          a.diffs.length === b.diffs.length &&
+          a.diffs.every((diff, index) => diff === b.diffs[index])
+        )
+    }
+    const exhaustive: never = a
+    return exhaustive
   }
+}
+
+function sameGroup(a: PartGroup, b: PartGroup) {
+  if (a === b) return true
+  if (a.key !== b.key) return false
+  if (a.type === "part")
+    return b.type === "part" && a.ref.messageID === b.ref.messageID && a.ref.partID === b.ref.partID
+  return (
+    b.type === "context" &&
+    a.refs.length === b.refs.length &&
+    a.refs.every((ref, index) => {
+      const other = b.refs[index]
+      return ref.messageID === other.messageID && ref.partID === other.partID
+    })
+  )
 }
 
 export namespace Timeline {
