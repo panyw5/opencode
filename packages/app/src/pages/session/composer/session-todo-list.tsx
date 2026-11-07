@@ -32,7 +32,17 @@ function dot(status: Todo["status"]) {
   )
 }
 
-export function TodoList(props: { todos: Todo[]; open: boolean; maxHeight?: string; completedAsCircle?: boolean }) {
+export function TodoList(props: {
+  todos: Todo[]
+  open: boolean
+  maxHeight?: string
+  completedAsCircle?: boolean
+  /** Item typography; the dock/float default to 14px with tight leading. */
+  textClass?: string
+  itemLineHeight?: string
+  /** Row gap; the dock default is 10px. */
+  gap?: string
+}) {
   const [store, setStore] = createStore({
     stuck: false,
     scrolling: false,
@@ -86,7 +96,7 @@ export function TodoList(props: { todos: Todo[]; open: boolean; maxHeight?: stri
       <div
         class="px-3 pb-11 flex flex-col gap-2.5 overflow-y-auto no-scrollbar"
         ref={scrollRef}
-        style={{ "overflow-anchor": "none", "max-height": maxHeight() }}
+        style={{ "overflow-anchor": "none", "max-height": maxHeight(), gap: props.gap }}
         onScroll={(e) => {
           setStore("stuck", e.currentTarget.scrollTop > 0)
           setStore("scrolling", true)
@@ -115,7 +125,9 @@ export function TodoList(props: { todos: Todo[]; open: boolean; maxHeight?: stri
                 data-state={todo().status}
               >
                 {props.completedAsCircle && todo().status === "completed" ? (
-                  <Icon name="circle-check" size="normal" class="size-4 text-icon-weak" />
+                  // Green check marks "done" at a glance; the dock keeps the
+                  // neutral checkbox because its rows are denser.
+                  <Icon name="circle-check" size="normal" class="size-4 text-icon-success-base" />
                 ) : todo().status === "in_progress" ? (
                   // In-progress: breathing dot only, no checkbox frame.
                   dot(todo().status)
@@ -134,9 +146,9 @@ export function TodoList(props: { todos: Todo[]; open: boolean; maxHeight?: stri
               <TextStrikethrough
                 active={todo().status === "completed" || todo().status === "cancelled"}
                 text={todo().content}
-                class="text-14-regular min-w-0 break-words"
+                class={`${props.textClass ?? "text-14-regular"} min-w-0 break-words`}
                 style={{
-                  "line-height": "var(--line-height-normal)",
+                  "line-height": props.itemLineHeight ?? "var(--line-height-normal)",
                   transition:
                     "color 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1)), opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
                   color:

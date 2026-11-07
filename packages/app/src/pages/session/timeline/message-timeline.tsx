@@ -22,6 +22,7 @@ import {
 import { Button } from "@opencode-ai/ui/button"
 import { Card } from "@opencode-ai/ui/card"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
+import { ContextMenu } from "@opencode-ai/ui/context-menu"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -174,6 +175,10 @@ function TimelineDiffSummaryRow(props: {
   diffs: SummaryDiff[]
   onReviewDiff?: (file: string, event: MouseEvent) => void
   onReviewAll?: () => void
+  onPreviewFile?: (file: string) => void
+  onRevealFile?: (file: string) => void
+  onCopyFilePath?: (file: string) => void
+  canRevealFile?: () => boolean
 }) {
   const language = useLanguage()
   const sync = useSync()
@@ -235,37 +240,90 @@ function TimelineDiffSummaryRow(props: {
       <div ref={grid} data-component="session-turn-diffs-content">
         <For each={visible()}>
           {(diff) => (
-            <button
-              type="button"
-              data-slot="session-turn-diff-card"
-              aria-label={diff.file}
-              title={diff.file}
-              onClick={(event) => props.onReviewDiff?.(diff.file, event)}
-            >
-              <FileIcon node={{ path: diff.file, type: "file" }} class="size-8 shrink-0" />
-              <span data-slot="session-turn-diff-details">
-                <span data-slot="session-turn-diff-filename">{getFilename(diff.file)}</span>
-                <span data-slot="session-turn-diff-meta">
-                  <Show when={diff.status === "added"}>
-                    <span data-slot="session-turn-diff-status" data-status="added">
-                      {language.t("ui.sessionReview.change.added")} +{diff.additions}
+            <ContextMenu modal>
+              <ContextMenu.Trigger
+                as="div"
+                data-slot="session-turn-diff-card-trigger"
+                data-file={diff.file}
+                class="flex min-w-0"
+              >
+                <button
+                  type="button"
+                  data-slot="session-turn-diff-card"
+                  aria-label={diff.file}
+                  title={diff.file}
+                  onClick={(event) => props.onReviewDiff?.(diff.file, event)}
+                >
+                  <FileIcon node={{ path: diff.file, type: "file" }} class="size-8 shrink-0" />
+                  <span data-slot="session-turn-diff-details">
+                    <span data-slot="session-turn-diff-filename">{getFilename(diff.file)}</span>
+                    <span data-slot="session-turn-diff-meta">
+                      <Show when={diff.status === "added"}>
+                        <span data-slot="session-turn-diff-status" data-status="added">
+                          {language.t("ui.sessionReview.change.added")} +{diff.additions}
+                        </span>
+                      </Show>
+                      <Show when={diff.status === "deleted"}>
+                        <span data-slot="session-turn-diff-status" data-status="deleted">
+                          {language.t("ui.sessionReview.change.removed")}
+                        </span>
+                      </Show>
+                      <Show when={diff.status !== "added" && diff.status !== "deleted"}>
+                        <DiffChanges changes={diff} />
+                      </Show>
+                      <Show when={resolvedSize(diff) !== undefined}>
+                        <span data-slot="session-turn-diff-size">{formatFileSize(resolvedSize(diff)!)}</span>
+                      </Show>
                     </span>
-                  </Show>
-                  <Show when={diff.status === "deleted"}>
-                    <span data-slot="session-turn-diff-status" data-status="deleted">
-                      {language.t("ui.sessionReview.change.removed")}
-                    </span>
-                  </Show>
-                  <Show when={diff.status !== "added" && diff.status !== "deleted"}>
-                    <DiffChanges changes={diff} />
-                  </Show>
-                  <Show when={resolvedSize(diff) !== undefined}>
-                    <span data-slot="session-turn-diff-size">{formatFileSize(resolvedSize(diff)!)}</span>
-                  </Show>
-                </span>
-              </span>
-              <Icon name="chevron-right" size="normal" />
-            </button>
+                  </span>
+                  <Icon name="chevron-right" size="normal" />
+                </button>
+              </ContextMenu.Trigger>
+              <ContextMenu.Portal>
+                <ContextMenu.Content>
+                  <ContextMenu.Item
+                    data-action="session-turn-diff-preview-file"
+                    data-file={diff.file}
+                    // Deleted files no longer exist, so there is nothing to preview.
+                    disabled={diff.status === "deleted" || !props.onPreviewFile}
+                    onSelect={() => props.onPreviewFile?.(diff.file)}
+                  >
+                    <ContextMenu.Icon>
+                      <span class="flex shrink-0 text-icon-base">
+                        <Icon name="read" size="small" />
+                      </span>
+                    </ContextMenu.Icon>
+                    <ContextMenu.ItemLabel>{language.t("session.fileLink.preview")}</ContextMenu.ItemLabel>
+                  </ContextMenu.Item>
+                  <ContextMenu.Item
+                    data-action="session-turn-diff-reveal-file"
+                    data-file={diff.file}
+                    disabled={!props.onRevealFile || !(props.canRevealFile?.() ?? false)}
+                    onSelect={() => props.onRevealFile?.(diff.file)}
+                  >
+                    <ContextMenu.Icon>
+                      <span class="flex shrink-0 text-icon-base">
+                        <Icon name="folder" size="small" />
+                      </span>
+                    </ContextMenu.Icon>
+                    <ContextMenu.ItemLabel>{language.t("session.fileLink.openFolder")}</ContextMenu.ItemLabel>
+                  </ContextMenu.Item>
+                  <ContextMenu.Item
+                    data-action="session-turn-diff-copy-file-path"
+                    data-file={diff.file}
+                    disabled={!props.onCopyFilePath}
+                    onSelect={() => props.onCopyFilePath?.(diff.file)}
+                  >
+                    <ContextMenu.Icon>
+                      <span class="flex shrink-0 text-icon-base">
+                        <Icon name="copy" size="small" />
+                      </span>
+                    </ContextMenu.Icon>
+                    <ContextMenu.ItemLabel>{language.t("session.fileLink.copyPath")}</ContextMenu.ItemLabel>
+                  </ContextMenu.Item>
+                </ContextMenu.Content>
+              </ContextMenu.Portal>
+            </ContextMenu>
           )}
         </For>
         <Show when={overflow()}>
@@ -318,6 +376,10 @@ export function MessageTimeline(props: {
   onViewportTurnChange?: (userMessageID: string | undefined) => void
   onReviewTurnDiff?: (input: { userMessageID: string; file: string; event: MouseEvent }) => void
   onReviewTurnAll?: (userMessageID: string) => void
+  onPreviewDiffFile?: (file: string) => void
+  onRevealDiffFile?: (file: string) => void
+  onCopyDiffFilePath?: (file: string) => void
+  canRevealDiffFile?: () => boolean
   onSelectionToPrompt: (text: string) => void
 }) {
   const sync = useSync()
@@ -2084,6 +2146,10 @@ export function MessageTimeline(props: {
                   props.onReviewTurnDiff?.({ userMessageID: item().userMessageID, file, event })
                 }
                 onReviewAll={() => props.onReviewTurnAll?.(item().userMessageID)}
+                onPreviewFile={props.onPreviewDiffFile}
+                onRevealFile={props.onRevealDiffFile}
+                onCopyFilePath={props.onCopyDiffFilePath}
+                canRevealFile={props.canRevealDiffFile}
               />
             </div>
           </TimelineRowFrame>

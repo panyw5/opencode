@@ -82,7 +82,7 @@ import {
   createSessionComposerState,
   SessionComposerRegion,
   SessionStatusFloat,
-  SessionTodoFloat,
+  SessionProjectTaskFloat,
 } from "@/pages/session/composer"
 import { SessionMathFloat, type SessionMathWorkerEntry } from "@/pages/session/session-math-float"
 import { SessionMathInitializeDialog } from "@/pages/session/composer/session-math-initialize-dialog"
@@ -2383,6 +2383,51 @@ export default function Page() {
   }
   const openTurnReviewAll = (userMessageID: string) => openTurnReview({ userMessageID })
 
+  // Diff-card context menu: preview the real file (not the diff), reveal it in
+  // the OS file manager, or copy its absolute path.
+  const previewTurnDiffFile = (path: string) => {
+    console.debug(`[turn-review] card preview file session=${params.id ?? "none"} file=${path}`)
+    openFileLinkPreview(path, file.normalize(path))
+  }
+
+  const revealTurnDiffFile = (path: string) => {
+    console.debug(`[turn-review] card reveal file session=${params.id ?? "none"} file=${path}`)
+    revealFileLocation(path, file.normalize(path))
+  }
+
+  const copyTurnDiffFilePath = (path: string) => {
+    const target = absoluteFileLinkPath(sdk.directory, path, file.normalize(path))
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+    console.debug(`[turn-review] card copy path session=${params.id ?? "none"} file=${path} target=${target}`)
+    if (!clipboard?.writeText) {
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: "Clipboard unavailable",
+      })
+      return
+    }
+    void clipboard.writeText(target).then(
+      () => {
+        console.debug(`[turn-review] card copy done session=${params.id ?? "none"} target=${target}`)
+        showToast({
+          variant: "success",
+          icon: "circle-check",
+          title: language.t("session.selection.copied"),
+          description: target,
+        })
+      },
+      (err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err)
+        console.warn(`[turn-review] card copy failed session=${params.id ?? "none"} target=${target} err=${message}`)
+        showToast({ variant: "error", title: language.t("common.requestFailed"), description: message })
+      },
+    )
+  }
+
+  const canRevealTurnDiffFile = () =>
+    platform.platform === "desktop" && server.isLocal() === true && !!platform.openInFinder
+
   createEffect(() => {
     const pending = tree.pendingDiff
     if (!pending) return
@@ -3640,6 +3685,10 @@ export default function Page() {
                         userMessages={visibleUserMessages()}
                         onReviewTurnDiff={openTurnReviewDiff}
                         onReviewTurnAll={openTurnReviewAll}
+                        onPreviewDiffFile={previewTurnDiffFile}
+                        onRevealDiffFile={revealTurnDiffFile}
+                        onCopyDiffFilePath={copyTurnDiffFilePath}
+                        canRevealDiffFile={canRevealTurnDiffFile}
                         anchor={anchor}
                         onContentReady={(detail) => {
                           if (detail.sessionKey !== sessionKey()) return
@@ -3711,9 +3760,8 @@ export default function Page() {
             {/* Always show on desktop session routes (including new session) so users can
                 mount a project task before the first message creates the session. */}
             <Show when={platform.platform === "desktop"}>
-              <SessionTodoFloat
+              <SessionProjectTaskFloat
                 sessionID={params.id}
-                todos={composer.todos()}
                 collapseLabel={language.t("session.todo.collapse")}
                 expandLabel={language.t("session.todo.expand")}
               />

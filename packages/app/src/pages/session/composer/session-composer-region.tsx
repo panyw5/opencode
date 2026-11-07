@@ -32,6 +32,7 @@ import { SessionFollowupDock } from "@/pages/session/composer/session-followup-d
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
 import type { SessionComposerState } from "@/pages/session/composer/session-composer-state"
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
+import { SessionTodoHover } from "@/pages/session/composer/session-todo-hover"
 import {
   createChildAgentMenuEntries,
   createChildAgentMenuGroups,
@@ -783,13 +784,20 @@ export function SessionComposerRegion(props: {
     return props.subagentNavigation
   })
   const jumpToLatestVisible = createMemo(() => !!props.onScrollToBottom && props.showJumpToLatest === true)
+  // Desktop surfaces session todos as a hover capsule in the composer toolbar
+  // row (alongside the child-agent / background-shell chips); the web layout
+  // keeps the inline dock instead.
+  const showTodoHover = createMemo(
+    () => platform.platform === "desktop" && !props.externalSession && props.state.todos().length > 0,
+  )
   const showPromptToolbar = createMemo(
     () =>
       !!props.subagentTitle ||
       (childAgentMenu()?.entries.length ?? 0) > 0 ||
       (platform.platform === "desktop" && backgroundShells().length > 0) ||
       !!visibleSubagentNavigation() ||
-      skippedQuestionCount() > 0,
+      skippedQuestionCount() > 0 ||
+      showTodoHover(),
   )
 
   createEffect(() => {
@@ -1113,7 +1121,7 @@ export function SessionComposerRegion(props: {
                     </div>
                   )}
                 </Show>
-                <Show when={!!visibleSubagentNavigation() || skippedQuestionCount() > 0}>
+                <Show when={!!visibleSubagentNavigation() || skippedQuestionCount() > 0 || showTodoHover()}>
                   <div
                     classList={{
                       "min-w-0 flex items-center justify-end gap-2": true,
@@ -1134,6 +1142,13 @@ export function SessionComposerRegion(props: {
                           { count: skippedQuestionCount() },
                         )}
                       </Button>
+                    </Show>
+                    {/* Session todo capsule: shares the toolbar row with the
+                        child-agent / shell chips, hover reveals the list. */}
+                    <Show when={showTodoHover()}>
+                      <div data-slot="session-todo-hover-anchor" class="shrink-0">
+                        <SessionTodoHover sessionID={route.params.id} todos={props.state.todos()} />
+                      </div>
                     </Show>
                   </div>
                 </Show>

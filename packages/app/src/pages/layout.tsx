@@ -380,7 +380,7 @@ export default function Layout(props: ParentProps) {
     pendingSessionSelectionTimer = undefined
   }
 
-  function selectSession(session: Session) {
+  function selectSession(session: Pick<Session, "id" | "directory">) {
     if (sessionRouteMatches(session.directory, session.id)) {
       clearPendingSessionSelection()
       return
@@ -1441,6 +1441,9 @@ export default function Layout(props: ParentProps) {
                     layout.sidebar.close()
                   }}
                   current={() => currentProject()?.entry}
+                  loadSessions={loadRecentSessions}
+                  currentSessionID={() => params.id}
+                  onSelectSession={navigateToSession}
                 />
               ),
               undefined,
@@ -1569,6 +1572,9 @@ export default function Layout(props: ParentProps) {
                 onSelect={switchProjectFromDialog}
                 onSelectNewSession={openNewSessionFromDialog}
                 current={() => currentProject()?.entry}
+                loadSessions={loadRecentSessions}
+                currentSessionID={() => params.id}
+                onSelectSession={navigateToSession}
               />
             ),
             undefined,
@@ -2591,7 +2597,7 @@ export default function Layout(props: ParentProps) {
     navigateWithSidebarReset(`/${base64Encode(root)}`)
   }
 
-  function navigateToSession(session: Session | undefined) {
+  function navigateToSession(session: Pick<Session, "id" | "directory"> | undefined) {
     if (!session) return
     selectSession(session)
     setSwitching(undefined)
