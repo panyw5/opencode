@@ -19,7 +19,7 @@ const homes = {
   grok: ["GROK_HOME", ".grok"],
 } as const
 
-export function resolveExternalCli(
+export function resolveExternalAgentConfig(
   id: ExternalCliID,
   config?: ExternalCliConfig,
   env: NodeJS.ProcessEnv = process.env,
@@ -39,7 +39,15 @@ export function resolveExternalCli(
       throw new Error("Invalid desktop external agent configuration")
     }
   })()
-  const effective = { ...stored, ...config }
+  return { ...stored, ...config }
+}
+
+export function resolveExternalCli(
+  id: ExternalCliID,
+  config?: ExternalCliConfig,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const effective = resolveExternalAgentConfig(id, config, env)
   if (effective.enabled === false) throw new Error(id + " integration is disabled")
   const base = env.OPENCODE_CLIENT === "desktop" ? homedir() : process.cwd()
   const expand = (value: string) =>

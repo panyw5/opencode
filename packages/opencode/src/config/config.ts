@@ -24,6 +24,7 @@ import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
 import { containsPath, type InstanceContext } from "../project/instance-context"
 import { NonNegativeInt, PositiveInt, type DeepMutable } from "@opencode-ai/core/schema"
 import { ConfigAgent } from "./agent"
+import { AgentBackends } from "@/agent-backend/schema"
 import { ConfigAttachment } from "./attachment"
 import { ConfigCommand } from "./command"
 import { ConfigFormatter } from "./formatter"
@@ -164,6 +165,10 @@ const DshAgentConfig = Schema.Struct({
 })
 
 export const Info = Schema.Struct({
+  agent_backends: Schema.optional(AgentBackends).annotate({
+    description:
+      "External advisor transport overrides. Omitted advisors keep their existing CLI JSON or native RPC backend.",
+  }),
   $schema: Schema.optional(Schema.String).annotate({
     description: "JSON schema reference for configuration validation",
   }),

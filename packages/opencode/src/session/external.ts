@@ -20,6 +20,7 @@ import { MessageID, PartID, SessionID } from "./schema"
 import type { Advisor, ExternalSessionState } from "./external-schema"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { externalConversationOutput } from "./external-handoff"
+import type { AgentEvent } from "@/agent-backend/backend"
 
 export { externalConversationOutput } from "./external-handoff"
 
@@ -35,7 +36,7 @@ const advisors: Record<string, Advisor> = {
   pi_consult: "pi",
 }
 
-export type TranscriptItem = { id: string; kind: string; title?: string; text?: string; status?: string }
+export type TranscriptItem = AgentEvent
 
 export function externalSessionID(parentID: string, partID: string) {
   return SessionID.make(

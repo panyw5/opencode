@@ -80,6 +80,8 @@ import { BackgroundJob } from "@/background/job"
 import { BackgroundShell } from "@/background/shell"
 import { SessionStatus } from "@/session/status"
 import { makeExternalSessions } from "@/session/external"
+import { routeAgentBackend } from "@/agent-backend/router"
+import type { Advisor } from "@/session/external-schema"
 import { SessionInput } from "@/session/input"
 import { IM } from "@/im/service"
 import { IMOwner } from "@/im/owner"
@@ -390,7 +392,8 @@ export const layer: Layer.Layer<
           if (CODE_MODE_READONLY.has(def.id)) Object.assign(def, { codemode: "readonly" })
         }
         for (const id of ["codex_consult", "claude_consult", "grok_consult", "dsh_consult", "pi_consult"] as const) {
-          defs[id] = external.wrap(defs[id]) as (typeof defs)[typeof id]
+          const advisor = id.replace("_consult", "") as Advisor
+          defs[id] = external.wrap(routeAgentBackend(advisor, defs[id], config)) as (typeof defs)[typeof id]
         }
 
         // Gating is the only thing that keeps a declared tool away from the model.
