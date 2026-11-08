@@ -1577,6 +1577,113 @@ export type AttachmentConfig = {
 }
 
 export type Config = {
+  agent_backends?: {
+    codex?:
+      | {
+          type: "cli-json"
+        }
+      | {
+          type: "native-rpc"
+        }
+      | {
+          type: "acp"
+          command: Array<string>
+          managed?: {
+            advisor: "claude" | "codex" | "pi"
+            version: string
+          }
+          env?: {
+            [key: string]: string
+          }
+          model?: string
+          mode?: string
+          permission?: "deny" | "ask"
+        }
+    claude?:
+      | {
+          type: "cli-json"
+        }
+      | {
+          type: "native-rpc"
+        }
+      | {
+          type: "acp"
+          command: Array<string>
+          managed?: {
+            advisor: "claude" | "codex" | "pi"
+            version: string
+          }
+          env?: {
+            [key: string]: string
+          }
+          model?: string
+          mode?: string
+          permission?: "deny" | "ask"
+        }
+    grok?:
+      | {
+          type: "cli-json"
+        }
+      | {
+          type: "native-rpc"
+        }
+      | {
+          type: "acp"
+          command: Array<string>
+          managed?: {
+            advisor: "claude" | "codex" | "pi"
+            version: string
+          }
+          env?: {
+            [key: string]: string
+          }
+          model?: string
+          mode?: string
+          permission?: "deny" | "ask"
+        }
+    dsh?:
+      | {
+          type: "cli-json"
+        }
+      | {
+          type: "native-rpc"
+        }
+      | {
+          type: "acp"
+          command: Array<string>
+          managed?: {
+            advisor: "claude" | "codex" | "pi"
+            version: string
+          }
+          env?: {
+            [key: string]: string
+          }
+          model?: string
+          mode?: string
+          permission?: "deny" | "ask"
+        }
+    pi?:
+      | {
+          type: "cli-json"
+        }
+      | {
+          type: "native-rpc"
+        }
+      | {
+          type: "acp"
+          command: Array<string>
+          managed?: {
+            advisor: "claude" | "codex" | "pi"
+            version: string
+          }
+          env?: {
+            [key: string]: string
+          }
+          model?: string
+          mode?: string
+          permission?: "deny" | "ask"
+        }
+  }
   $schema?: string
   shell?: string
   logLevel?: LogLevel
@@ -2689,6 +2796,113 @@ export type BackgroundShell3 = {
 }
 
 export type Config7 = {
+  agent_backends?: {
+    codex?:
+      | {
+          type: "cli-json"
+        }
+      | {
+          type: "native-rpc"
+        }
+      | {
+          type: "acp"
+          command: Array<string>
+          managed?: {
+            advisor: "claude" | "codex" | "pi"
+            version: string
+          }
+          env?: {
+            [key: string]: string
+          }
+          model?: string
+          mode?: string
+          permission?: "deny" | "ask"
+        }
+    claude?:
+      | {
+          type: "cli-json"
+        }
+      | {
+          type: "native-rpc"
+        }
+      | {
+          type: "acp"
+          command: Array<string>
+          managed?: {
+            advisor: "claude" | "codex" | "pi"
+            version: string
+          }
+          env?: {
+            [key: string]: string
+          }
+          model?: string
+          mode?: string
+          permission?: "deny" | "ask"
+        }
+    grok?:
+      | {
+          type: "cli-json"
+        }
+      | {
+          type: "native-rpc"
+        }
+      | {
+          type: "acp"
+          command: Array<string>
+          managed?: {
+            advisor: "claude" | "codex" | "pi"
+            version: string
+          }
+          env?: {
+            [key: string]: string
+          }
+          model?: string
+          mode?: string
+          permission?: "deny" | "ask"
+        }
+    dsh?:
+      | {
+          type: "cli-json"
+        }
+      | {
+          type: "native-rpc"
+        }
+      | {
+          type: "acp"
+          command: Array<string>
+          managed?: {
+            advisor: "claude" | "codex" | "pi"
+            version: string
+          }
+          env?: {
+            [key: string]: string
+          }
+          model?: string
+          mode?: string
+          permission?: "deny" | "ask"
+        }
+    pi?:
+      | {
+          type: "cli-json"
+        }
+      | {
+          type: "native-rpc"
+        }
+      | {
+          type: "acp"
+          command: Array<string>
+          managed?: {
+            advisor: "claude" | "codex" | "pi"
+            version: string
+          }
+          env?: {
+            [key: string]: string
+          }
+          model?: string
+          mode?: string
+          permission?: "deny" | "ask"
+        }
+  }
   $schema?: string
   shell?: string
   logLevel?: LogLevel
@@ -6017,6 +6231,261 @@ export type EventSubscribeResponses = {
 }
 
 export type EventSubscribeResponse = EventSubscribeResponses[keyof EventSubscribeResponses]
+
+export type AgentBackendStatusData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/agent-backend"
+}
+
+export type AgentBackendStatusErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * UpstreamError
+   */
+  502: UpstreamError
+}
+
+export type AgentBackendStatusError = AgentBackendStatusErrors[keyof AgentBackendStatusErrors]
+
+export type AgentBackendStatusResponses = {
+  /**
+   * Success
+   */
+  200: {
+    target: string
+    platform: string
+    arch: string
+    directory: string
+    node: string
+    npm: string
+    adapters: Array<{
+      advisor: "claude" | "codex" | "pi"
+      package: string
+      source: string
+      loginHelp: string
+      requires: Array<string>
+      recommended: string
+      releases: Array<string>
+      installed: Array<{
+        version: string
+        installedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        command: Array<string>
+      }>
+    }>
+  }
+}
+
+export type AgentBackendStatusResponse = AgentBackendStatusResponses[keyof AgentBackendStatusResponses]
+
+export type AgentBackendPrepareData = {
+  body?: {
+    advisor: "claude" | "codex" | "pi"
+    version: string
+    action: "install" | "remove"
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/agent-backend/prepare"
+}
+
+export type AgentBackendPrepareErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * UpstreamError
+   */
+  502: UpstreamError
+}
+
+export type AgentBackendPrepareError = AgentBackendPrepareErrors[keyof AgentBackendPrepareErrors]
+
+export type AgentBackendPrepareResponses = {
+  /**
+   * Success
+   */
+  200: {
+    token: string
+    expiresAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    advisor: "claude" | "codex" | "pi"
+    version: string
+    action: "install" | "remove"
+    package: string
+    source: string
+    integrity: string
+    target: string
+    directory: string
+  }
+}
+
+export type AgentBackendPrepareResponse = AgentBackendPrepareResponses[keyof AgentBackendPrepareResponses]
+
+export type AgentBackendCommitData = {
+  body?: {
+    token: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/agent-backend/commit"
+}
+
+export type AgentBackendCommitErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * UpstreamError
+   */
+  502: UpstreamError
+}
+
+export type AgentBackendCommitError = AgentBackendCommitErrors[keyof AgentBackendCommitErrors]
+
+export type AgentBackendCommitResponses = {
+  /**
+   * Success
+   */
+  200: {
+    target: string
+    platform: string
+    arch: string
+    directory: string
+    node: string
+    npm: string
+    adapters: Array<{
+      advisor: "claude" | "codex" | "pi"
+      package: string
+      source: string
+      loginHelp: string
+      requires: Array<string>
+      recommended: string
+      releases: Array<string>
+      installed: Array<{
+        version: string
+        installedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        command: Array<string>
+      }>
+    }>
+  }
+}
+
+export type AgentBackendCommitResponse = AgentBackendCommitResponses[keyof AgentBackendCommitResponses]
+
+export type AgentBackendProbeData = {
+  body?: {
+    advisor: "claude" | "codex" | "pi" | "grok" | "dsh"
+    config:
+      | {
+          type: "cli-json"
+        }
+      | {
+          type: "native-rpc"
+        }
+      | {
+          type: "acp"
+          command: Array<string>
+          managed?: {
+            advisor: "claude" | "codex" | "pi"
+            version: string
+          }
+          env?: {
+            [key: string]: string
+          }
+          model?: string
+          mode?: string
+          permission?: "deny" | "ask"
+        }
+    authMethod?: string
+    message?: boolean
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/agent-backend/probe"
+}
+
+export type AgentBackendProbeErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * UpstreamError
+   */
+  502: UpstreamError
+}
+
+export type AgentBackendProbeError = AgentBackendProbeErrors[keyof AgentBackendProbeErrors]
+
+export type AgentBackendProbeResponses = {
+  /**
+   * Success
+   */
+  200: {
+    status: "ready" | "authentication_required" | "error"
+    message: string
+    authMethods: Array<{
+      id: string
+      name: string
+      description?: string
+      type: "agent" | "env_var" | "terminal"
+      environment: Array<string>
+    }>
+    response?: string
+  }
+}
+
+export type AgentBackendProbeResponse = AgentBackendProbeResponses[keyof AgentBackendProbeResponses]
 
 export type BackgroundShellListData = {
   body?: never

@@ -3,6 +3,14 @@
 import { client } from "./client.gen.js"
 import { buildClientParams, type Client, type Options as Options2, type TDataShape } from "./client/index.js"
 import type {
+  AgentBackendCommitErrors,
+  AgentBackendCommitResponses,
+  AgentBackendPrepareErrors,
+  AgentBackendPrepareResponses,
+  AgentBackendProbeErrors,
+  AgentBackendProbeResponses,
+  AgentBackendStatusErrors,
+  AgentBackendStatusResponses,
   AgentPartInput,
   AppAgentsErrors,
   AppAgentsResponses,
@@ -1253,6 +1261,173 @@ export class Event extends HeyApiClient {
       url: "/event",
       ...options,
       ...params,
+    })
+  }
+}
+
+export class AgentBackend extends HeyApiClient {
+  /**
+   * Inspect managed ACP adapters on this backend
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<AgentBackendStatusResponses, AgentBackendStatusErrors, ThrowOnError>({
+      url: "/agent-backend",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Prepare an explicit adapter install/removal confirmation
+   */
+  public prepare<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      advisor?: "claude" | "codex" | "pi"
+      version?: string
+      action?: "install" | "remove"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "advisor" },
+            { in: "body", key: "version" },
+            { in: "body", key: "action" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<AgentBackendPrepareResponses, AgentBackendPrepareErrors, ThrowOnError>(
+      {
+        url: "/agent-backend/prepare",
+        ...options,
+        ...params,
+        headers: {
+          "Content-Type": "application/json",
+          ...options?.headers,
+          ...params.headers,
+        },
+      },
+    )
+  }
+
+  /**
+   * Confirm an adapter installation or removal
+   */
+  public commit<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      token?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "token" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<AgentBackendCommitResponses, AgentBackendCommitErrors, ThrowOnError>({
+      url: "/agent-backend/commit",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Explicitly connect, authenticate or send an ACP test message
+   */
+  public probe<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      advisor?: "claude" | "codex" | "pi" | "grok" | "dsh"
+      config?:
+        | {
+            type: "cli-json"
+          }
+        | {
+            type: "native-rpc"
+          }
+        | {
+            type: "acp"
+            command: Array<string>
+            managed?: {
+              advisor: "claude" | "codex" | "pi"
+              version: string
+            }
+            env?: {
+              [key: string]: string
+            }
+            model?: string
+            mode?: string
+            permission?: "deny" | "ask"
+          }
+      authMethod?: string
+      message?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "advisor" },
+            { in: "body", key: "config" },
+            { in: "body", key: "authMethod" },
+            { in: "body", key: "message" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<AgentBackendProbeResponses, AgentBackendProbeErrors, ThrowOnError>({
+      url: "/agent-backend/probe",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 }
@@ -7541,6 +7716,11 @@ export class OpencodeClient extends HeyApiClient {
   private _event?: Event
   get event(): Event {
     return (this._event ??= new Event({ client: this.client }))
+  }
+
+  private _agentBackend?: AgentBackend
+  get agentBackend(): AgentBackend {
+    return (this._agentBackend ??= new AgentBackend({ client: this.client }))
   }
 
   private _backgroundShell?: BackgroundShell
