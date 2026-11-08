@@ -77,6 +77,7 @@ import { backgroundShellHandlers } from "./handlers/background-shell"
 import { browserConnectRoute, browserHandlers } from "./handlers/browser"
 import { eventHandlers } from "./handlers/event"
 import { configHandlers } from "./handlers/config"
+import { agentBackendHandlers } from "./handlers/agent-backend"
 import { issueHandlers } from "./handlers/issue"
 import { controlHandlers } from "./handlers/control"
 import { extensionAssetRoute } from "./handlers/extension-asset"
@@ -156,6 +157,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     backgroundShellHandlers,
     browserHandlers,
     configHandlers,
+    agentBackendHandlers,
     // Share BackgroundJob / RuntimeFlags with SessionPrompt + ToolRegistry
     // (provided below in createRoutes). A private BackgroundJob layer here
     // would isolate jobs and make promote always return false.
