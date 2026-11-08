@@ -1174,7 +1174,6 @@
   }
 
   [data-component="quick-assistant-message"] .quick-assistant-markdown {
-    --font-size-base: 15px;
     --line-height-x-large: 1.7;
     --markdown-link: var(--text-interactive-base);
     --markdown-heading: var(--text-strong);

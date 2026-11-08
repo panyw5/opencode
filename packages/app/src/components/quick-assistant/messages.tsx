@@ -221,7 +221,7 @@ export function QuickAssistantMessages(props: Props) {
                             item.role === "assistant",
                         }}
                       >
-                        <div class="quick-assistant-markdown break-words text-[15px] leading-7 text-text-base select-text">
+                        <div class="quick-assistant-markdown break-words text-14-regular text-text-base select-text">
                           <Markdown
                             text={display().message || (item.role === "assistant" && props.busy ? "Thinking..." : "")}
                             math={item.role === "user" ? "full" : "defer"}
