@@ -19,6 +19,7 @@ import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { GptProSettings } from "@/components/gpt-pro-settings"
 import { DshDefaultsEditor } from "@/components/dsh-defaults-editor"
+import { AgentBackendSettings, RemoteAgentBackendSettings } from "@/components/agent-backend-settings"
 import { DirectoryInput } from "@/components/directory-input"
 import { ExtraAgentInfoCard } from "@/components/extra-agent-info-card"
 import { AgentStatusCard, AgentStatusGrid, type AgentStatusTone } from "@/components/agent-status-card"
@@ -2855,6 +2856,7 @@ function DshPluginInventoryCard(props: {
 }
 
 function CliAgentEditor(props: {
+  backendSettings?: JSX.Element
   item?: ClawItem
   descriptor: CliAgentDescriptor
   info?: CliAgentInfo
@@ -2916,6 +2918,7 @@ function CliAgentEditor(props: {
 
         <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
           <div class="flex w-full flex-col gap-6">
+            {props.backendSettings}
             <Show when={props.infoLoading || props.info}>
               <CliAgentInfoCard descriptor={props.descriptor} info={props.info} loading={props.infoLoading} />
             </Show>
@@ -3616,7 +3619,7 @@ export default function ConfigPage() {
   const t = language.t
   const platform = usePlatform()
   if (platform.remoteMode) {
-    return <div class="p-6 text-14-regular text-text-weak">{t("settings.remote.configUnsupported")}</div>
+    return <RemoteAgentBackendSettings />
   }
   const globalSDK = useGlobalSDK()
   const globalSync = useGlobalSync()
@@ -4315,7 +4318,10 @@ export default function ConfigPage() {
             await Promise.allSettled(
               descriptors.map(async ({ id }) => {
                 setCliAgentLoading(id, { config: true, info: true })
-                const config = await cliAgents.get(id)
+                const config = {
+                  ...(await cliAgents.get(id)),
+                  ...(id === "pi" ? cfg().pi : cfg().external_agents?.[id]),
+                }
                 if (run !== cliAgentsRun) return
                 setCliAgentConfigs(id, config)
                 setState("cliAgents", id, cliAgentCfg(config))
@@ -9578,6 +9584,18 @@ export default function ConfigPage() {
                     <Match when={cliAgentDescriptors().find((agent) => `claw:${agent.id}` === selectedClaw()?.id)}>
                       {(descriptor) => (
                         <CliAgentEditor
+                          backendSettings={
+                            <AgentBackendSettings
+                              advisor={descriptor().id}
+                              config={cfg()}
+                              client={globalSDK.forDomain(mainDomain).client}
+                              remote={server.current?.type !== "sidecar"}
+                              onSave={async (patch) => {
+                                await patchConfig(patch)
+                                setState("cliAgents", descriptor().id, "enabled", true)
+                              }}
+                            />
+                          }
                           item={selectedClaw()}
                           descriptor={descriptor()}
                           info={cliAgentInfo[descriptor().id]}
