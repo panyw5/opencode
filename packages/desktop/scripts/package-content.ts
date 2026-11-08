@@ -1,5 +1,6 @@
 import { open, readdir, stat } from "node:fs/promises"
 import path from "node:path"
+import { isPrunedPackagePath } from "./package-pruning"
 
 type Entry = { size?: number; offset?: string; unpacked?: boolean; files?: Record<string, Entry> }
 export type PackageEntry = { path: string; size: number; offset?: string; unpacked?: boolean }
@@ -43,7 +44,8 @@ export function assertPackageEntries(entries: PackageEntry[]) {
       /^node_modules\/@opencode-ai\/(core|util|remote-tunnel)\/(src|test|tests|scripts)\//.test(path) ||
       path.startsWith("node_modules/@opencode-ai/remote-tunnel/node_modules/") ||
       /^node_modules\/@opentunnel\/(client|protocol)\/(src|dist)\//.test(path) ||
-      /^node_modules\/effect\/(src|ai-docs)\//.test(path),
+      /^node_modules\/effect\/(src|ai-docs)\//.test(path) ||
+      isPrunedPackagePath(path),
   )
   if (unwanted) throw new Error(`Redundant packaged dependency/source: ${unwanted.path}`)
   if (!paths.has("node_modules/effect/dist/Effect.js")) throw new Error("Effect runtime must remain available")

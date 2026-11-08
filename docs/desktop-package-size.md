@@ -128,3 +128,100 @@ The packaged Node-sidecar variant also passed public HTTPS pairing, permission
 approval, harmless command execution, persisted assistant output and revocation;
 the actual browser composer/Allow once flow and settings layout passed against
 that production backend too. Its backend log was inspected directly.
+
+## Conservative dependency pruning (2026-11-08)
+
+The ARM64 draft `OpenCode_1.18.64_aarch64.dmg` is 210,262,013 bytes
+(SHA-256 `0ea9add97babcf4f0eb790136af8540612957db68a5f28c041799ba428b7ec47`).
+Version 1.18.63 was already 209,873,790 bytes; this draft grew by only
+388,223 bytes, not a new jump to 200 MB.
+
+`packages/desktop/scripts/package-pruning.ts` defines the additional exclusions.
+It removes dependency declarations (`.d.ts`, `.d.mts`, `.d.cts`), the bundled
+core workspace's redundant nested dependencies, and `src` trees from an explicit
+list of SDKs with JavaScript runtime entry points. The exclusions also match
+nested SDK copies. They do **not** remove arbitrary `src` trees, TypeScript
+runtime packages, Zod's conditional source exports, licenses, native modules,
+CLI executables, languages, fonts, or remote-web assets. Effect runtime and the
+AJV/fast-json-stringify files used by generated runtime code remain available.
+The existing `afterPack` audit rejects the same excluded paths. Tests exercise
+electron-builder's real file matcher, not just the pattern strings.
+
+### Same-input local comparison
+
+Both builds use the same existing desktop `out`, CLI and remote-web bytes
+(1,271 input files checked by SHA-256), dependency installation, Electron 41.2.1,
+electron-builder 26.8.1, ARM64, dev channel, ad-hoc signing and UDZO DMG format.
+No prebuild, formal signing, notarization or publishing ran. The baseline omits
+only the new pruning patterns and their new audit; the after build enables them.
+These are **local A/B numbers**, not a rebuilt notarized draft. Local main/sidecar
+bytes are not identical to the published draft, so compare the two local builds
+with each other, not either directly with the draft.
+
+| Component                              | Before (bytes) | After (bytes) | Saved (bytes) |
+| -------------------------------------- | -------------: | ------------: | ------------: |
+| DMG                                    |      211426599 |     206353391 |       5073208 |
+| ZIP                                    |      202843528 |     198011813 |       4831715 |
+| app.asar                               |      191681442 |     163451503 |      28229939 |
+| App (logical bytes, symlinks excluded) |      599983880 |     571753941 |      28229939 |
+| Removed file payload                   |       26402343 |             0 |      26402343 |
+| Remote web                             |       37155405 |      37155405 |             0 |
+
+DMG savings are **2.40%**. ASAR savings include its smaller metadata header;
+raw file savings must not be reported as compressed installer savings.
+The comparison removed 6,930 files, added none, and verified every retained
+file's content was unchanged (including unpacked native files). Every removal
+matches the explicit pruning policy; the CLI and remote-web trees are unchanged.
+
+Local comparison artifacts and logs are under
+`.artifacts/package-pruning-TS9Xtu/` (ignored, not a release location).
+To reproduce, package once per policy with frozen inputs into separate output
+directories using electron-builder's API: `publish: "never"`, `mac.identity: "-"`,
+`mac.notarize: false`, `dmg.sign: false`, and absolute entitlement paths. Preserve
+all other options, and verify input hashes before and after both runs. Do not
+invoke `package:mac` twice: its build/prebuild lifecycle can change inputs.
+
+### Validation
+
+- Package pruning/audit tests: 5 passed, including real builder-filter parity,
+  nested SDK copies and preservation of runtime/source-exported modules. The
+  loopback smoke helpers add 9 passing tests (14 total), including environment
+  credential/config isolation and the sidecar's numeric-port start protocol.
+- Backend/remote regression: 71 passed when the controller's Electron mock test
+  is run in its own Bun process. A combined run failed with the existing
+  `safeStorage` Electron export/mock conflict; it is not a pruning failure.
+- Desktop `typecheck`: passed. The normal project scope is `src`; a separate
+  strict `tsgo --ignoreConfig` check of the pruning/audit scripts, tests and
+  electron-builder config also passed.
+- The actual pruned app started with temporary onboarding data. CDP on isolated
+  port 9237 verified the home, settings and provider views; backend logs confirmed
+  `bundle-ready` and `listen-ready`. Port 9222 belonged to another project and
+  was not touched. The first launch stalled after a Chromium network-service
+  crash; a fresh isolated launch with `--disable-gpu` succeeded. This does not
+  establish GPU-enabled startup reliability.
+- Windows/Linux and macOS x64 were not rebuilt in this comparison. Their normal
+  packaging still runs the shared audit; native startup needs platform-specific
+  verification. No production provider credentials or public tunnel were used.
+
+Run the focused checks from `packages/desktop`:
+
+```sh
+bun test scripts/package-content.test.ts scripts/packaged-size-smoke.test.ts
+bun test src/main/remote/controller.test.ts
+bun test src/main/remote/gateway.test.ts src/main/remote/ipc-origin.test.ts \
+  src/main/remote/storage.test.ts src/main/server.test.ts src/main/relaunch.test.ts
+bun run typecheck
+```
+
+The loopback fixture is a development tool, not part of the packaged application.
+Build it outside the empty runtime-artifacts directory and run it with the
+existing development Electron binary:
+
+```sh
+bun build --target=node --format=esm --external=electron \
+  packages/desktop/scripts/packaged-size-smoke.ts \
+  --outfile /path/to/tools/packaged-size-smoke.mjs
+packages/desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron \
+  /path/to/tools/packaged-size-smoke.mjs \
+  '/path/to/built.app/Contents/Resources' /path/to/new-empty-smoke-artifacts
+```

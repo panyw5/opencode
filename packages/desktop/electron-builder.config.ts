@@ -5,6 +5,7 @@ import { promisify } from "node:util"
 
 import type { Configuration } from "electron-builder"
 import { auditPackage } from "./scripts/package-content"
+import { packagePruningPatterns } from "./scripts/package-pruning"
 
 const execFileAsync = promisify(execFile)
 const packageDir = path.dirname(fileURLToPath(import.meta.url))
@@ -64,6 +65,7 @@ const getBase = (appId: string): Configuration => ({
     "!node_modules/effect/src/**/*",
     "!node_modules/effect/ai-docs/**/*",
     "!**/node_modules/**/{AGENTS,CLAUDE}.md",
+    ...packagePruningPatterns,
   ],
   afterPack: async (context) => {
     const resources =
