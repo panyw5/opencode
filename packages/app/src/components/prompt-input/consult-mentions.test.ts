@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { CliAgentConfig, CliAgentDescriptor, CliAgentInfo, CliAgents } from "@/context/platform"
-import {
-  filterAgentsForConsultMentions,
-  isConsultMentionID,
-  loadReadyConsultMentions,
-} from "./consult-mentions"
+import { filterAgentsForConsultMentions, isConsultMentionID, loadReadyConsultMentions } from "./consult-mentions"
 
 function descriptor(id: "codex" | "claude" | "grok" | "dsh" | "pi", label?: string): CliAgentDescriptor {
   return {
@@ -42,10 +38,29 @@ function mockCliAgents(input: {
 }
 
 describe("consult-mentions", () => {
+  test("configured ACP agents do not require a locally installed CLI", async () => {
+    const config = {
+      agent_backends: { claude: { type: "acp" as const, command: ["adapter"] } },
+      external_agents: { claude: { enabled: true } },
+    }
+    expect(await loadReadyConsultMentions(undefined, undefined, config)).toEqual([
+      { id: "claude", name: "claude", display: "Claude (ACP)" },
+    ])
+    const api = mockCliAgents({ list: [descriptor("claude")], get: { claude: { enabled: false } } })
+    expect(await loadReadyConsultMentions(api, undefined, config)).toHaveLength(1)
+    expect(
+      await loadReadyConsultMentions(api, undefined, { ...config, external_agents: { claude: { enabled: false } } }),
+    ).toEqual([])
+    expect(await loadReadyConsultMentions(api, undefined, { agent_backends: config.agent_backends })).toEqual([])
+  })
   test("gpt-pro is reserved and enabled independently of CLI installations", async () => {
     expect(isConsultMentionID("gpt-pro")).toBe(true)
-    expect(await loadReadyConsultMentions(undefined, { getConfig: async () => ({ enabled: true, timeoutMinutes: 30 }) })).toEqual([{ id: "gpt-pro", name: "gpt-pro", display: "GPT-6 Pro (Chat)" }])
-    expect(await loadReadyConsultMentions(undefined, { getConfig: async () => ({ enabled: false, timeoutMinutes: 30 }) })).toEqual([])
+    expect(
+      await loadReadyConsultMentions(undefined, { getConfig: async () => ({ enabled: true, timeoutMinutes: 30 }) }),
+    ).toEqual([{ id: "gpt-pro", name: "gpt-pro", display: "GPT-6 Pro (Chat)" }])
+    expect(
+      await loadReadyConsultMentions(undefined, { getConfig: async () => ({ enabled: false, timeoutMinutes: 30 }) }),
+    ).toEqual([])
   })
   test("isConsultMentionID matches reserved ids", () => {
     expect(isConsultMentionID("pi")).toBe(true)
@@ -94,7 +109,11 @@ describe("consult-mentions", () => {
   })
 
   test("Pi is shown only when enabled and its executable is runnable", async () => {
-    const api = mockCliAgents({ list: [descriptor("pi", "Pi")], get: { pi: { enabled: true } }, info: { pi: { sourceUrl: "x", installed: true } } })
+    const api = mockCliAgents({
+      list: [descriptor("pi", "Pi")],
+      get: { pi: { enabled: true } },
+      info: { pi: { sourceUrl: "x", installed: true } },
+    })
     expect(await loadReadyConsultMentions(api)).toEqual([{ id: "pi", name: "pi", display: "Pi" }])
     api.get = async () => ({ enabled: false })
     expect(await loadReadyConsultMentions(api)).toEqual([])

@@ -77,10 +77,18 @@ export function QuickAssistantEditor(props: {
   const images = createMemo(() => props.prompt.filter((part): part is ImageAttachmentPart => part.type === "image"))
   createEffect(() => {
     let cancelled = false
-    const refresh = () =>
-      void loadReadyConsultMentions(platform.cliAgents, platform.gptPro).then((items) => {
+    const refresh = async () => {
+      const config = await sdk
+        .forDomain(mainDomain)
+        .createClient({ directory: props.directory })
+        .config.get()
+        .then((result) => result.data)
+        .catch(() => undefined)
+      console.debug(`[agent-backend] loading quick-assistant mentions directory=${props.directory}`)
+      void loadReadyConsultMentions(platform.cliAgents, platform.gptPro, config).then((items) => {
         if (!cancelled) setState("consults", items)
       })
+    }
     refresh()
     window.addEventListener("gpt-pro:changed", refresh)
     window.addEventListener("focus", refresh)

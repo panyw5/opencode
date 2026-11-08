@@ -1112,14 +1112,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   createEffect(() => {
     const api = platform.cliAgents
     let cancelled = false
-    if (!api && !platform.gptPro) {
-      setReadyConsults([])
-      return
-    }
-    const refresh = () =>
-      void loadReadyConsultMentions(api, platform.gptPro).then((items) => {
+    const refresh = async () => {
+      const config = await sdk.client.config
+        .get()
+        .then((result) => result.data)
+        .catch(() => undefined)
+      console.debug(
+        `[agent-backend] loading consult mentions directory=${sdk.directory} acp=${Object.values(config?.agent_backends ?? {}).filter((item) => item?.type === "acp").length}`,
+      )
+      void loadReadyConsultMentions(api, platform.gptPro, config).then((items) => {
         if (!cancelled) setReadyConsults(items)
       })
+    }
     refresh()
     window.addEventListener("gpt-pro:changed", refresh)
     window.addEventListener("focus", refresh)
@@ -2755,9 +2759,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           />
           <PromptImageAttachments
             attachments={imageAttachments()}
-            onOpen={(attachment) =>
-              dialog.showForOwner(() => <PromptImagePreview attachment={attachment} />)
-            }
+            onOpen={(attachment) => dialog.showForOwner(() => <PromptImagePreview attachment={attachment} />)}
             onRemove={removeAttachment}
             removeLabel={language.t("prompt.attachment.remove")}
           />

@@ -201,7 +201,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                                 icon: "synthetic",
                                 tone: "neutral",
                               })}
-                              label={item.name}
+                              label={item.display || item.name}
                             />
                           </Show>
                           <Show when={item.type === "consult"}>
