@@ -10,12 +10,24 @@ afterEach(() => {
 function fixture() {
   const root = document.createElement("div")
   const content = document.createElement("div")
+  const message = document.createElement("div")
+  message.dataset.messageId = "reading"
+  const block = document.createElement("p")
+  block.dataset.sourceLine = "1"
+  block.textContent = "reading marker"
+  message.append(block)
+  content.append(message)
   root.append(content)
   document.body.append(root)
   let top = 800
   let height = 1000
+  let blockTop = 0
   let client = 200
   let writes = 0
+  root.getBoundingClientRect = () => new DOMRect(0, 0, 500, client)
+  content.getBoundingClientRect = () => new DOMRect(0, -root.scrollTop, 500, height)
+  message.getBoundingClientRect = () => new DOMRect(0, blockTop - root.scrollTop, 500, height - blockTop)
+  block.getBoundingClientRect = () => message.getBoundingClientRect()
   Object.defineProperties(root, {
     scrollTop: {
       get: () => Math.max(0, Math.min(top, height - client)),
@@ -63,10 +75,17 @@ function fixture() {
     settle: () => {
       for (let i = 0; i < 100 && frames.size; i++) frame()
     },
+    native: (value: number) => {
+      top = value
+    },
     move: (value: number) => {
       top = value
       scroll.scroll()
     },
+    shiftBlock: (value: number) => {
+      blockTop += value
+    },
+    observer: () => resize!,
     grow: (value: number) => {
       height = value
       resize?.()
@@ -146,6 +165,17 @@ describe("quick assistant shared viewport ownership", () => {
     expect(f.frames.size).toBe(0)
   })
 
+  test("a shrink does not swallow native motion when the viewport was not clamped", () => {
+    const f = fixture()
+    f.scroll.position(700, -1)
+    f.scroll.endInput()
+    f.native(500)
+    f.grow(800)
+    expect(f.root.scrollTop).toBe(500)
+    expect(f.scroll.reading()).toBe(true)
+    expect(f.frames.size).toBe(0)
+  })
+
   test("controlled keyboard or thumb movement records user displacement once", () => {
     const f = fixture()
     f.scroll.position(600, -1)
@@ -155,6 +185,176 @@ describe("quick assistant shared viewport ownership", () => {
     f.scroll.position(800, 1)
     expect(f.scroll.following()).toBe(true)
   })
+
+  test("native upward motion after endInput stays at the reader's new position", () => {
+    const f = fixture()
+    f.scroll.position(600, -1)
+    f.scroll.endInput()
+    const writes = f.writes()
+
+    f.move(550)
+    f.scroll.scroll()
+    f.scroll.layout()
+
+    expect(f.scroll.reading()).toBe(true)
+    expect(f.root.scrollTop).toBe(550)
+    expect(f.writes()).toBe(writes)
+    expect(f.frames.size).toBe(0)
+  })
+
+  for (const first of ["commit", "resize"] as const) {
+    test(`${first} compensates layout without cancelling native motion during a reading transaction`, () => {
+      const f = fixture()
+      f.scroll.position(600, -1)
+      f.scroll.endInput()
+      const commit = f.scroll.beforeUpdate(f.content)
+      const writes = f.writes()
+
+      // The browser moves before its scroll event is delivered; layout also grows above the reading block.
+      f.native(550)
+      f.shiftBlock(100)
+      if (first === "commit") {
+        commit()
+        f.grow(1100)
+      } else {
+        f.grow(1100)
+        commit()
+      }
+      expect(f.root.scrollTop).toBe(650)
+      expect(f.writes()).toBe(writes + 1)
+
+      // A coalesced native event, duplicate commit, and duplicate RO must not compensate a second time.
+      f.scroll.scroll()
+      commit()
+      f.grow(1100)
+      expect(f.root.scrollTop).toBe(650)
+      expect(f.writes()).toBe(writes + 1)
+      expect(f.scroll.reading()).toBe(true)
+      expect(f.frames.size).toBe(0)
+    })
+  }
+
+  test("a DOM update preserves the baseline of an earlier unobserved layout change", () => {
+    const f = fixture()
+    f.scroll.position(600, -1)
+    f.scroll.endInput()
+    f.shiftBlock(100)
+    Object.defineProperty(f.content, "offsetHeight", { value: 1100, configurable: true })
+    const update = f.scroll.beforeUpdate(f.content)
+    update()
+    expect(f.root.scrollTop).toBe(700)
+    f.grow(1100)
+    expect(f.root.scrollTop).toBe(700)
+  })
+
+  for (const boundary of ["hide", "rebind"] as const) {
+    test(`${boundary} preserves a reading baseline while a DOM transaction is pending`, () => {
+      const f = fixture()
+      f.scroll.position(600, -1)
+      f.scroll.endInput()
+      const commit = f.scroll.beforeUpdate(f.content)
+      f.shiftBlock(100)
+      if (boundary === "hide") {
+        f.hide()
+        f.show()
+      } else {
+        f.scroll.bind(undefined)
+        f.scroll.bind(f.root)
+      }
+      commit()
+      expect(f.root.scrollTop).toBe(700)
+      expect(f.scroll.reading()).toBe(true)
+    })
+  }
+
+  test("remount waits for the saved source block before replacing its baseline", () => {
+    const f = fixture()
+    f.scroll.position(600, -1)
+    f.scroll.endInput()
+    f.scroll.bind(undefined)
+    const message = f.content.firstElementChild!
+    message.remove()
+    f.native(0)
+    f.scroll.bind(f.root)
+    expect(f.root.scrollTop).toBe(0)
+    f.content.append(message)
+    f.scroll.layout()
+    expect(f.root.scrollTop).toBe(600)
+    expect(f.scroll.reading()).toBe(true)
+  })
+
+  test("reversed native input coalesced with a layout write is counted once", () => {
+    const f = fixture()
+    f.scroll.position(600, -1)
+    f.scroll.input(1)
+    const commit = f.scroll.beforeUpdate(f.content)
+    const writes = f.writes()
+    f.shiftBlock(100)
+    commit()
+    expect(f.root.scrollTop).toBe(700)
+    expect(f.writes()).toBe(writes + 1)
+
+    // The pending +100 programmatic scroll and a -40 reversal arrive as one net +60 native event.
+    f.native(660)
+    f.scroll.input(-1)
+    f.scroll.scroll()
+    f.scroll.endInput()
+    commit()
+    f.grow(1100)
+    expect(f.root.scrollTop).toBe(660)
+    expect(f.writes()).toBe(writes + 1)
+
+    // Another layout change must retain the already-accounted reversal rather than applying it twice.
+    f.shiftBlock(30)
+    f.grow(1130)
+    f.scroll.scroll()
+    commit()
+    expect(f.root.scrollTop).toBe(690)
+    expect(f.writes()).toBe(writes + 2)
+    expect(f.scroll.reading()).toBe(true)
+  })
+
+  for (const boundary of ["session", "root"] as const) {
+    test(`old reading transactions and observers cannot write across ${boundary} replacement`, () => {
+      const f = fixture()
+      f.scroll.position(600, -1)
+      f.scroll.endInput()
+      const commit = f.scroll.beforeUpdate(f.content)
+      const resize = f.observer()
+      let reboundWrites = 0
+      if (boundary === "session") {
+        f.scroll.session("b")
+        f.scroll.takeover()
+      } else {
+        f.scroll.bind(undefined)
+        const root = document.createElement("div")
+        document.body.append(root)
+        root.append(f.content)
+        let top = 600
+        Object.defineProperties(root, {
+          scrollTop: {
+            get: () => top,
+            set: (value: number) => {
+              top = value
+              reboundWrites++
+            },
+          },
+          scrollHeight: { get: () => 1000 },
+          clientHeight: { get: () => 200 },
+        })
+        root.getBoundingClientRect = () => new DOMRect(0, 0, 500, 200)
+        f.scroll.bind(root)
+      }
+      const writes = f.writes()
+      const rebound = reboundWrites
+      f.shiftBlock(100)
+      commit()
+      resize()
+      expect(f.writes()).toBe(writes)
+      expect(reboundWrites).toBe(rebound)
+      expect(f.frames.size).toBe(0)
+    })
+  }
 
   test("hidden viewports do not write and live views resume on reveal", () => {
     const f = fixture()
@@ -182,31 +382,24 @@ describe("quick assistant shared viewport ownership", () => {
 
   test("reading compensation preserves a semantic block through hide and remount", () => {
     const f = fixture()
-    let blockTop = 650
-    const message = document.createElement("div")
-    message.dataset.messageId = "reading"
-    const block = document.createElement("p")
-    block.dataset.sourceLine = "1"
-    block.textContent = "reading marker"
-    message.append(block)
-    f.content.append(message)
-    f.root.getBoundingClientRect = () => new DOMRect(0, 0, 500, 200)
-    message.getBoundingClientRect = () => new DOMRect(0, 0, 500, 2000)
-    block.getBoundingClientRect = () => new DOMRect(0, blockTop - f.root.scrollTop, 500, 200)
+    f.shiftBlock(650)
     f.scroll.input(-1)
     f.move(600)
     const commit = f.scroll.beforeUpdate(f.content)
-    blockTop += 100
+    f.shiftBlock(100)
     commit()
     expect(f.root.scrollTop).toBe(700)
     f.hide()
-    blockTop += 50
+    f.shiftBlock(50)
     f.show()
     expect(f.root.scrollTop).toBe(750)
     f.grow(1400)
     f.scroll.input(1)
-    blockTop += 40
+    const update = f.scroll.beforeUpdate(f.content)
+    f.shiftBlock(40)
     f.move(780)
+    expect(f.root.scrollTop).toBe(780)
+    update()
     expect(f.root.scrollTop).toBe(820)
     f.scroll.bind(undefined)
     f.scroll.bind(f.root)

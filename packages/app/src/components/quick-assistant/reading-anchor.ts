@@ -214,5 +214,12 @@ export function createQuickAssistantReadingAnchor(options: Options) {
     return delta
   }
 
-  return { snapshot, restoreSnapshot }
+  return {
+    snapshot,
+    restoreSnapshot,
+    available: (captured: QuickAssistantReadingSnapshot) => {
+      const viewport = options.viewport()
+      return !!viewport && !!findBlock(viewport, captured.key)
+    },
+  }
 }

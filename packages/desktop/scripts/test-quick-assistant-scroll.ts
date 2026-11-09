@@ -14,7 +14,7 @@ type Tracking = {
 }
 
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/(?:localhost|127\.0\.0\.1):\d+\//)
   await cdp.call("Page.reload")
   await Bun.sleep(2000)
   await cdp.call("Page.enable")
@@ -350,4 +350,4 @@ await withCdp(async (cdp, target) => {
     await cdp.call("Emulation.setFocusEmulationEnabled", { enabled: false })
     socket.removeEventListener("message", onProtocol)
   }
-})
+}, Bun.env.OPENCODE_CDP_ENDPOINT)

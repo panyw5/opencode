@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert"
-import { CdpClient, listTargets } from "./cdp.ts"
+import { withCdp, type CdpClient } from "./cdp.ts"
 
 const fixtureURL = `/@fs${new URL("quick-assistant-scroll-fixture.tsx", import.meta.url).pathname}`
 type Driver = Pick<CdpClient, "evaluate" | "call">
@@ -35,6 +35,28 @@ export async function runScrollChecks(cdp: Driver, moduleURL = fixtureURL) {
   })()`)
   try {
     await until(cdp, "initial bottom", (v) => v.height > 2000 && v.gap <= 1)
+    await wheel(cdp, -360)
+    await until(cdp, "initial reading", (v) => v.mode === "reading" && v.gap > 100)
+    const native = await cdp.evaluate<{ wanted: number; actual: number }>(`(async () => {
+      const view=document.querySelector('[data-quick-scroll-fixture] [data-component="quick-assistant-viewport"]');
+      view.dispatchEvent(new Event('scrollend'));
+      const wanted=view.scrollTop-100;
+      view.scrollTop=wanted;
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      return {wanted,actual:view.scrollTop};
+    })()`)
+    assert.ok(Math.abs(native.actual - native.wanted) <= 1, "native motion without provenance must not be undone")
+    console.log("[quick-scroll] PASS native motion after scrollend")
+    await cdp.evaluate(`(() => {
+      window.fixture.resume();
+      const block=document.querySelector('[data-quick-scroll-fixture] [data-role="assistant"] p');
+      const text=[...block.childNodes].find(node=>node.nodeType===Node.TEXT_NODE && node.length>5);
+      const range=document.createRange();range.setStart(text,0);range.setEnd(text,5);
+      getSelection().removeAllRanges();getSelection().addRange(range);
+    })()`)
+    await until(cdp, "selection takeover before mouseup", (v) => v.mode === "reading")
+    await cdp.evaluate("getSelection().removeAllRanges(); true")
+    console.log("[quick-scroll] PASS selection takeover before mouseup")
     for (const delta of [-360, -1, -4]) {
       await cdp.evaluate("window.fixture.resume(); window.fixture.stream(200, 600); true")
       const start = await inspect(cdp)
@@ -70,26 +92,10 @@ export async function runScrollChecks(cdp: Driver, moduleURL = fixtureURL) {
 
 async function main() {
   const endpoint = process.env.OPENCODE_CDP_ENDPOINT ?? "http://127.0.0.1:9222"
-  const version = (await (await fetch(`${endpoint}/json/version`)).json()) as { webSocketDebuggerUrl: string }
-  const browser = await CdpClient.connect(version.webSocketDebuggerUrl)
-  let targetId: string | undefined
-  let page: CdpClient | undefined
-  try {
-    const target = await browser.call<{ targetId: string }>("Target.createTarget", { url: "about:blank" })
-    targetId = target.targetId
-    const info = (await listTargets(endpoint)).find((item) => item.id === targetId)
-    assert.ok(info)
-    page = await CdpClient.connect(info.webSocketDebuggerUrl)
-    await page.call("Page.navigate", { url: process.env.OPENCODE_QUICK_SCROLL_URL ?? "http://localhost:4444" })
+  await withCdp(async (page, target) => {
+    assert.match(target.url, /^http:\/\/(?:localhost|127\.0\.0\.1):\d+\//)
     await page.call("Page.bringToFront")
-    await page.evaluate(
-      "new Promise(resolve=>document.readyState==='complete'?resolve():addEventListener('load',resolve,{once:true}))",
-    )
     await runScrollChecks(page)
-  } finally {
-    page?.close()
-    if (targetId) await browser.call("Target.closeTarget", { targetId })
-    browser.close()
-  }
+  }, endpoint)
 }
 if (import.meta.main) await main()

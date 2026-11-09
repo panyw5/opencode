@@ -19,6 +19,16 @@ export function createQuickAssistantScroll(
   } = {},
 ) {
   const [state, setState] = createStore({ version: 0, overflow: false })
+  const debug = typeof window !== "undefined" && window.localStorage.getItem("opencode.session.lag.debug") === "1"
+  const log = (message: string) => {
+    options.log?.(message)
+    if (!debug) return
+    const target = window as Window & { __opencodeQuickScrollDebug?: string[] }
+    const entries = (target.__opencodeQuickScrollDebug ??= [])
+    entries.push(message)
+    if (entries.length > 1000) entries.splice(0, entries.length - 1000)
+    console.debug(message)
+  }
   let root: HTMLDivElement | undefined
   let content: HTMLElement | undefined
   let visible = true
@@ -29,15 +39,21 @@ export function createQuickAssistantScroll(
   let knownMaximum = 0
   let direction: Direction | undefined
   let saved: QuickAssistantReadingSnapshot | undefined
+  let capturedGeometry = ""
+  let pendingUpdates = 0
+  let restoring = false
   let observer: Pick<ResizeObserver, "observe" | "disconnect"> | undefined
   let follow: ReturnType<typeof createLiveBottomFollow<HTMLDivElement>> | undefined
   const ledger = createScrollLedger()
   const navigation = createMessageNavigation({
     onChange: (next, previous) => {
       follow?.cancel("intent-change")
-      if (next.generation !== previous.generation) saved = undefined
+      if (next.generation !== previous.generation) {
+        saved = undefined
+        restoring = false
+      }
       setState("version", (value) => value + 1)
-      options.log?.(`[quick-assistant:scroll] intent=${next.target?.kind ?? "none"} generation=${next.generation}`)
+      log(`[quick-assistant:scroll] intent=${next.target?.kind ?? "none"} generation=${next.generation}`)
     },
   })
   const token = (): Token => {
@@ -57,6 +73,10 @@ export function createQuickAssistantScroll(
     root.scrollTop = Math.max(0, Math.min(maximum(), top))
     const after = root.scrollTop
     ledger.recordWrite(before, after, origin)
+    if (after !== before)
+      log(
+        `[quick-assistant:scroll] write origin=${origin} session=${owner.sessionKey} generation=${owner.generation} epoch=${owner.epoch} mode=${following() ? "live" : "reading"} direction=${direction ?? "none"} before=${before} after=${after}`,
+      )
     knownTop = after
     knownMaximum = maximum()
     return after - before
@@ -66,33 +86,38 @@ export function createQuickAssistantScroll(
     reading,
     userDisplacement: () => displacement,
     write: (_root, top) => applyPosition(top, "layout"),
-    log: options.log,
+    log,
   })
+  const geometry = () =>
+    root ? `${root.scrollHeight}/${root.clientHeight}/${root.clientWidth}/${content?.offsetHeight ?? 0}` : ""
   const capture = () => {
-    if (!valid() || !reading()) return
+    if (!valid() || !reading() || restoring) return
     saved = anchor.snapshot() ?? saved
+    capturedGeometry = geometry()
   }
-  const observe = () => {
+  const observe = (refresh = true) => {
     if (!valid() || !root) return
     const max = maximum()
     // Native height clamps are layout motion, not user input.
-    if (max < knownMaximum && knownTop > max) ledger.recordWrite(knownTop, max, "layout")
+    if (max < knownMaximum && knownTop > max && root.scrollTop === max) ledger.recordWrite(knownTop, max, "layout")
     const motion = ledger.observe(root.scrollTop, { user: direction !== undefined })
+    if (motion.displacement || motion.compensationDelta)
+      log(
+        `[quick-assistant:scroll] observe mode=${following() ? "live" : "reading"} direction=${direction ?? "none"} top=${root.scrollTop} user=${motion.userDisplacement} system=${motion.compensationDelta} displacement=${displacement}`,
+      )
     knownTop = root.scrollTop
     knownMaximum = max
+    // Net physical motion must survive even without wheel/touch provenance (for
+    // example native selection scrolling). Provenance only changes intent.
+    displacement += motion.userDisplacement
     if (direction !== undefined && Math.abs(motion.userDisplacement) > 0.01) {
-      displacement += motion.userDisplacement
       if (motion.userDisplacement < 0) navigation.userInput({ direction: "up", atBottom: false })
       if (direction === "down" && motion.userDisplacement > 0 && atPhysicalBottom(root)) {
         navigation.observeUserMotion({ direction: "down", atBottom: true })
         if (following()) follow?.follow()
       }
     }
-    if (reading()) {
-      // Restore the pre-layout position before replacing it with a new snapshot.
-      if (saved) anchor.restoreSnapshot(saved)
-      capture()
-    }
+    if (reading() && refresh && !pendingUpdates && capturedGeometry === geometry()) capture()
     setState("overflow", max > 1)
   }
   follow = createLiveBottomFollow<HTMLDivElement>({
@@ -101,12 +126,24 @@ export function createQuickAssistantScroll(
     write: (_root, top) => applyPosition(top, "bottom"),
     request: options.request,
     cancel: options.cancel,
-    log: options.log,
+    log,
   })
+  const restore = () => {
+    if (!valid()) return
+    observe(false)
+    if (reading()) {
+      if (saved && restoring && !anchor.available(saved)) return
+      anchor.restoreSnapshot(saved)
+      restoring = false
+      capture()
+    } else if (following()) follow?.follow()
+  }
   const layout = () => {
     if (!valid()) return
-    observe()
-    if (following()) follow?.follow()
+    if (following()) {
+      observe(false)
+      follow?.follow()
+    } else if (!pendingUpdates) restore()
   }
   const reconnectObserver = () => {
     observer?.disconnect()
@@ -122,11 +159,13 @@ export function createQuickAssistantScroll(
   }
   const bind = (node: HTMLDivElement | undefined) => {
     if (root === node) return
-    capture()
+    if (!pendingUpdates && (!saved || capturedGeometry === geometry())) capture()
     follow?.cancel("root-change")
     observer?.disconnect()
     epoch++
+    pendingUpdates = 0
     root = node
+    restoring = !!saved && reading()
     direction = undefined
     knownTop = node?.scrollTop ?? 0
     knownMaximum = maximum()
@@ -155,7 +194,7 @@ export function createQuickAssistantScroll(
     if (delta < 0) {
       navigation.userInput({ direction: "up", atBottom: false })
       follow?.cancel("user-input")
-      capture()
+      if (!pendingUpdates && (!saved || capturedGeometry === geometry())) capture()
     }
   }
   navigation.reset("", "")
@@ -182,6 +221,9 @@ export function createQuickAssistantScroll(
       follow?.cancel("session-change")
       epoch++
       saved = undefined
+      restoring = false
+      capturedGeometry = ""
+      pendingUpdates = 0
       displacement = 0
       direction = undefined
       navigation.reset(key, "")
@@ -194,9 +236,10 @@ export function createQuickAssistantScroll(
     },
     visible(value: boolean) {
       if (visible === value) return
-      capture()
+      if (!pendingUpdates && (!saved || capturedGeometry === geometry())) capture()
       visible = value
       epoch++
+      pendingUpdates = 0
       direction = undefined
       follow?.cancel("visibility")
       reconnectObserver()
@@ -237,14 +280,20 @@ export function createQuickAssistantScroll(
       if (!valid() || !root?.contains(node)) return () => {}
       observe()
       const owner = token()
-      const snapshot = reading() ? anchor.snapshot() : undefined
+      const snapshot = reading() && (!saved || capturedGeometry === geometry()) ? anchor.snapshot() : undefined
+      if (!pendingUpdates && snapshot) saved = snapshot
+      pendingUpdates++
+      let committed = false
       return () => {
-        if (!current(owner) || !valid()) return
-        if (following()) follow?.follow()
-        else {
-          anchor.restoreSnapshot(snapshot)
-          capture()
+        if (committed) return
+        committed = true
+        if (owner.epoch !== epoch) return
+        pendingUpdates = Math.max(0, pendingUpdates - 1)
+        if (!current(owner) || !valid()) {
+          if (!pendingUpdates) layout()
+          return
         }
+        if (!pendingUpdates) restore()
       }
     },
     dispose() {

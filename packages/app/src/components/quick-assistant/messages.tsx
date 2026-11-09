@@ -77,6 +77,21 @@ export function QuickAssistantMessages(props: Props) {
   const [view, setView] = createStore<{ viewport?: HTMLDivElement }>({})
   let touchY: number | undefined
   const beforeDomUpdate = (node: HTMLDivElement) => scroll.beforeUpdate(node)
+  const selectionChanged = () => {
+    const selection = window.getSelection()
+    const viewport = view.viewport
+    if (
+      viewport &&
+      selection &&
+      !selection.isCollapsed &&
+      viewport.contains(selection.anchorNode) &&
+      viewport.contains(selection.focusNode) &&
+      scroll.following()
+    )
+      scroll.takeover()
+  }
+  document.addEventListener("selectionchange", selectionChanged)
+  onCleanup(() => document.removeEventListener("selectionchange", selectionChanged))
   createEffect(() => {
     if (props.list.length) return
     scroll.bind(undefined)
@@ -145,10 +160,7 @@ export function QuickAssistantMessages(props: Props) {
             else scroll.takeover()
           }}
           onScrollPosition={(_node, top, input) => scroll.position(top, input.delta)}
-          onMouseUp={() => {
-            const selection = window.getSelection()
-            if (selection && !selection.isCollapsed && view.viewport?.contains(selection.anchorNode)) scroll.takeover()
-          }}
+          onMouseUp={selectionChanged}
         >
           <div ref={(node) => scroll.content(node)} class="flex flex-col gap-3">
             <For each={props.list}>
