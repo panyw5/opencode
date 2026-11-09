@@ -188,7 +188,9 @@ invoke `package:mac` twice: its build/prebuild lifecycle can change inputs.
   loopback smoke helpers add 9 passing tests (14 total), including environment
   credential/config isolation and the sidecar's numeric-port start protocol.
 - Backend/remote regression: 71 passed when the controller's Electron mock test
-  is run in its own Bun process. A combined run failed with the existing
+  is run in its own Bun process; the remaining encoding/presence tests add 5
+  passes (76 total including package tests). All six remote test files also pass
+  in separate processes (51 tests). A combined run failed with the existing
   `safeStorage` Electron export/mock conflict; it is not a pruning failure.
 - Desktop `typecheck`: passed. The normal project scope is `src`; a separate
   strict `tsgo --ignoreConfig` check of the pruning/audit scripts, tests and
@@ -199,6 +201,11 @@ invoke `package:mac` twice: its build/prebuild lifecycle can change inputs.
   was not touched. The first launch stalled after a Chromium network-service
   crash; a fresh isolated launch with `--disable-gpu` succeeded. This does not
   establish GPU-enabled startup reliability.
+- The pruned ASAR also passed the complete loopback-only smoke: Node sidecar
+  startup/health, isolated session message, bash permission ask/approve-once,
+  persisted echo reply and tool output, and remote-worker import/stop handshake.
+  It used a deterministic local provider and an isolated database, no gateway
+  or public tunnel. The sidecar log was inspected and confirmed clean shutdown.
 - Windows/Linux and macOS x64 were not rebuilt in this comparison. Their normal
   packaging still runs the shared audit; native startup needs platform-specific
   verification. No production provider credentials or public tunnel were used.
