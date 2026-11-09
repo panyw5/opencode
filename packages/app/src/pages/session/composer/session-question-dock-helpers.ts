@@ -5,8 +5,13 @@ import { sortMessages } from "@/utils/message-order"
 
 export type QuestionImage = ImageAttachmentPart
 
-export function questionSecondsRemaining(expiresAt: number | undefined, now = Date.now()) {
+export function questionSecondsRemaining(
+  expiresAt: number | undefined,
+  now = Date.now(),
+  pause?: QuestionRequest["timeoutPause"],
+) {
   if (expiresAt === undefined || !Number.isFinite(expiresAt)) return undefined
+  if (pause && pause.until > now) return Math.max(0, Math.ceil(pause.remaining / 1000))
   return Math.max(0, Math.ceil((expiresAt - now) / 1000))
 }
 

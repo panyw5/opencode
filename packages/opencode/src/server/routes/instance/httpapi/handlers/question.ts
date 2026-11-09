@@ -65,6 +65,27 @@ export const questionHandlers = HttpApiBuilder.group(InstanceHttpApi, "question"
       )
     })
 
-    return handlers.handle("list", list).handle("reply", reply).handle("reject", reject).handle("pause", pause)
+    const focus = Effect.fn("QuestionHttpApi.focus")(function* (ctx: {
+      params: { requestID: QuestionID }
+      payload: { focused: boolean }
+    }) {
+      return yield* svc.focus({ requestID: ctx.params.requestID, focused: ctx.payload.focused }).pipe(
+        Effect.catchTag("Question.NotFoundError", (error) =>
+          Effect.fail(
+            new QuestionNotFoundError({
+              requestID: String(error.requestID),
+              message: `Question request not found: ${error.requestID}`,
+            }),
+          ),
+        ),
+      )
+    })
+
+    return handlers
+      .handle("list", list)
+      .handle("reply", reply)
+      .handle("reject", reject)
+      .handle("pause", pause)
+      .handle("focus", focus)
   }),
 )

@@ -270,6 +270,51 @@ it.instance("timeout - expires without a browser or list polling and rejects lat
   }),
 )
 
+it.instance(
+  "focus - freezes the budget past the original deadline and resumes on blur",
+  () =>
+    Effect.gen(function* () {
+      const question = yield* Question.Service
+      const fiber = yield* question
+        .ask({ sessionID: SessionID.make("ses_focus"), questions: [], timeout: 2 })
+        .pipe(Effect.forkScoped)
+      const [request] = yield* waitForPending(1)
+      const paused = yield* question.focus({ requestID: request.id, focused: true })
+      expect(paused.timeoutPause!.remaining).toBeGreaterThan(0)
+      expect(paused.expiresAt).toBe(paused.timeoutPause!.until + paused.timeoutPause!.remaining)
+      yield* Effect.sleep("2200 millis")
+      const renewed = yield* question.focus({ requestID: request.id, focused: true })
+      expect(renewed.timeoutPause!.remaining).toBe(paused.timeoutPause!.remaining)
+      const resumed = yield* question.focus({ requestID: request.id, focused: false })
+      expect(resumed.timeoutPause).toBeUndefined()
+      expect(resumed.expiresAt! - Date.now()).toBeGreaterThan(paused.timeoutPause!.remaining - 200)
+      const exit = yield* Fiber.await(fiber).pipe(Effect.timeout("4 seconds"))
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(yield* question.list()).toEqual([])
+      expect(Exit.isFailure(yield* question.focus({ requestID: request.id, focused: true }).pipe(Effect.exit))).toBe(
+        true,
+      )
+    }),
+  10_000,
+)
+
+it.instance(
+  "focus - abandoned focus lease cannot keep a question alive forever",
+  () =>
+    Effect.gen(function* () {
+      const question = yield* Question.Service
+      const fiber = yield* question
+        .ask({ sessionID: SessionID.make("ses_focus_abandoned"), questions: [], timeout: 1 })
+        .pipe(Effect.forkScoped)
+      const [request] = yield* waitForPending(1)
+      yield* question.focus({ requestID: request.id, focused: true })
+      const exit = yield* Fiber.await(fiber).pipe(Effect.timeout(`${Question.FOCUS_LEASE_MS + 3000} millis`))
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(yield* question.list()).toEqual([])
+    }),
+  Question.FOCUS_LEASE_MS + 5000,
+)
+
 it.instance("reply - answered requests never emit a later timeout", () =>
   Effect.gen(function* () {
     const question = yield* Question.Service
@@ -452,6 +497,35 @@ persistentIt.instance(
       yield* Effect.promise(() => reloadTestInstance({ directory: ctx.directory }))
       expect((yield* question.list())[0].expiresAt).toBe(expiresAt)
       yield* question.reject(tool.request.id)
+    }),
+  { git: true },
+)
+
+persistentIt.instance(
+  "focus - recovered timeout pause survives reload and blur persists the remaining budget",
+  () =>
+    Effect.gen(function* () {
+      const question = yield* Question.Service
+      const ctx = yield* InstanceRef
+      if (!ctx) return yield* Effect.die(new Error("missing instance"))
+      const tool = yield* createAssistantQuestionToolPart({
+        requestID: QuestionID.make("que_focus_recovered"),
+        questions: [],
+        expiresAt: Date.now() + 60_000,
+      })
+      // Exercise direct recovery without an initial list/bootstrap call.
+      const paused = yield* question.focus({ requestID: tool.request.id, focused: true })
+      yield* Effect.promise(() => reloadTestInstance({ directory: ctx.directory }))
+      const [restored] = yield* question.list()
+      expect(restored.timeoutPause).toEqual(paused.timeoutPause)
+      expect(restored.expiresAt).toBe(paused.expiresAt)
+      const resumed = yield* question.focus({ requestID: tool.request.id, focused: false })
+      yield* Effect.promise(() => reloadTestInstance({ directory: ctx.directory }))
+      const [afterBlur] = yield* question.list()
+      expect(afterBlur.timeoutPause).toBeUndefined()
+      expect(afterBlur.expiresAt).toBe(resumed.expiresAt)
+      yield* question.reply({ requestID: tool.request.id, answers: [["One"]] })
+      expect(yield* question.list()).toEqual([])
     }),
   { git: true },
 )

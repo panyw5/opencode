@@ -267,6 +267,8 @@ import type {
   PtyUpdateErrors,
   PtyUpdateResponses,
   QuestionAnswer,
+  QuestionFocusErrors,
+  QuestionFocusResponses,
   QuestionListErrors,
   QuestionListResponses,
   QuestionPauseErrors,
@@ -4561,6 +4563,45 @@ export class Question extends HeyApiClient {
       url: "/question/{requestID}/reject",
       ...options,
       ...params,
+    })
+  }
+
+  /**
+   * Update question focus
+   *
+   * Pause the timeout while focused. Renew every few seconds; blur resumes the remaining budget.
+   */
+  public focus<ThrowOnError extends boolean = false>(
+    parameters: {
+      requestID: string
+      directory?: string
+      workspace?: string
+      focused?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "requestID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "focused" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<QuestionFocusResponses, QuestionFocusErrors, ThrowOnError>({
+      url: "/question/{requestID}/focus",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 }

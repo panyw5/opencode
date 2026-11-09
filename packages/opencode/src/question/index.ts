@@ -13,6 +13,7 @@ import { ScheduledTaskUnattended } from "@/scheduled-task/unattended"
 const log = Log.create({ service: "question" })
 
 export const DEFAULT_TIMEOUT_SECONDS = 300
+export const FOCUS_LEASE_MS = 15_000
 export const Timeout = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 86_400 })).annotate({
   description:
     "Seconds to wait for the entire question request (1-86400). Defaults to 300. On timeout the question is dismissed without selecting an answer.",
@@ -254,6 +255,7 @@ export interface Interface {
     answers: ReadonlyArray<Answer>
   }) => Effect.Effect<void, NotFoundError>
   readonly reject: (requestID: QuestionID) => Effect.Effect<void, NotFoundError>
+  readonly focus: (input: { requestID: QuestionID; focused: boolean }) => Effect.Effect<Request, NotFoundError>
   readonly pause: (input: { requestID: QuestionID; paused: boolean }) => Effect.Effect<Request, NotFoundError>
   readonly list: () => Effect.Effect<ReadonlyArray<Request>>
   readonly expireSuperseded: (input: { sessionID: SessionID }) => Effect.Effect<number>
@@ -835,7 +837,7 @@ export const layer = Layer.effect(
         const active = request.timeoutPause && request.timeoutPause.until > now
         const remaining = active ? request.timeoutPause!.remaining : request.expiresAt - now
         // A renewable lease also resumes safely after renderer crashes or lost blur events.
-        const timeoutPause = input.paused ? { until: now + 15_000, remaining } : undefined
+        const timeoutPause = input.paused ? { until: now + FOCUS_LEASE_MS, remaining } : undefined
         const next: Request = {
           ...request,
           timeoutPause,
@@ -915,7 +917,9 @@ export const layer = Layer.effect(
       return result
     })
 
-    return Service.of({ ask, reply, reject, pause, list, expireSuperseded })
+    const focus: Interface["focus"] = (input) => pause({ requestID: input.requestID, paused: input.focused })
+
+    return Service.of({ ask, reply, reject, pause, focus, list, expireSuperseded })
   }),
 )
 

@@ -67,6 +67,19 @@ export const QuestionApi = HttpApi.make("question")
             description: "Reject a question request from the AI assistant.",
           }),
         ),
+        HttpApiEndpoint.post("focus", `${root}/:requestID/focus`, {
+          params: { requestID: QuestionID },
+          query: WorkspaceRoutingQuery,
+          payload: Schema.Struct({ focused: Schema.Boolean }),
+          success: described(Question.Request, "Updated question timeout"),
+          error: [HttpApiError.BadRequest, QuestionNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "question.focus",
+            summary: "Update question focus",
+            description: "Pause the timeout while focused. Renew every few seconds; blur resumes the remaining budget.",
+          }),
+        ),
       )
       .annotateMerge(
         OpenApi.annotations({

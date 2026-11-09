@@ -64,7 +64,7 @@ export const SessionQuestionDock: Component<{
     sending: false,
     copiedOption: "",
     focusedOption: -1, // -1 means no option focused, 0-n for options, options.length for custom
-    remaining: questionSecondsRemaining(props.request.expiresAt),
+    remaining: questionSecondsRemaining(props.request.expiresAt, Date.now(), props.request.timeoutPause),
     countdownPaused: false,
   })
 
@@ -98,7 +98,7 @@ export const SessionQuestionDock: Component<{
     let expired = false
     const update = () => {
       const paused = !!pause && pause.until > Date.now()
-      const remaining = paused ? Math.ceil(pause.remaining / 1000) : questionSecondsRemaining(expiresAt)
+      const remaining = questionSecondsRemaining(expiresAt, Date.now(), pause)
       setStore("countdownPaused", paused)
       setStore("remaining", remaining)
       if (remaining !== 0 || expired) return
@@ -176,7 +176,7 @@ export const SessionQuestionDock: Component<{
       updates = updates.then(async () => {
         if (paused && stopped) return
         try {
-          const result = await sdk.client.question.pause({ requestID: props.request.id, paused })
+          const result = await sdk.client.question.focus({ requestID: props.request.id, focused: paused })
           console.debug(`[question-dock] countdown focus acknowledged id=${props.request.id} paused=${paused}`)
           if (stopped || result.data?.id !== props.request.id) return
           const requests = sync.data.question[props.request.sessionID] ?? []
@@ -213,10 +213,16 @@ export const SessionQuestionDock: Component<{
       checkFocus()
     }
     const focus = () => queueMicrotask(checkFocus)
+    const focusOut = () =>
+      queueMicrotask(() => {
+        if (stopped) return
+        if (!root?.contains(document.activeElement)) setStore("focusedOption", -1)
+        checkFocus()
+      })
     root?.addEventListener("pointerenter", enter)
     root?.addEventListener("pointerleave", leave)
     document.addEventListener("focusin", focus)
-    document.addEventListener("focusout", focus)
+    document.addEventListener("focusout", focusOut)
     window.addEventListener("focus", focus)
     window.addEventListener("blur", focus)
     document.addEventListener("visibilitychange", focus)
@@ -289,10 +295,16 @@ export const SessionQuestionDock: Component<{
       }
     }
 
-    const handlePointerDown = () => {
-      if (store.focusedOption === -1) return
+    const handlePointerDown = (event: PointerEvent) => {
       console.debug(`[question-dock] keyboard focus cleared id=${props.request.id} reason=pointer`)
       setStore("focusedOption", -1)
+      if (
+        event.target instanceof Element &&
+        root?.contains(event.target) &&
+        !event.target.closest("button, input, textarea, select, a, [contenteditable]")
+      ) {
+        root.focus({ preventScroll: true })
+      }
       queueMicrotask(checkFocus)
     }
 
@@ -305,7 +317,7 @@ export const SessionQuestionDock: Component<{
       root?.removeEventListener("pointerenter", enter)
       root?.removeEventListener("pointerleave", leave)
       document.removeEventListener("focusin", focus)
-      document.removeEventListener("focusout", focus)
+      document.removeEventListener("focusout", focusOut)
       window.removeEventListener("focus", focus)
       window.removeEventListener("blur", focus)
       document.removeEventListener("visibilitychange", focus)
@@ -639,7 +651,10 @@ export const SessionQuestionDock: Component<{
   return (
     <DockPrompt
       kind="question"
-      ref={(el) => (root = el)}
+      ref={(el) => {
+        root = el
+        el.tabIndex = -1
+      }}
       expandLabel={language.t("session.question.expand")}
       collapseLabel={language.t("session.question.collapse")}
       header={

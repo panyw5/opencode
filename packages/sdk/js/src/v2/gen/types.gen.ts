@@ -9359,6 +9359,42 @@ export type QuestionRejectResponses = {
 
 export type QuestionRejectResponse = QuestionRejectResponses[keyof QuestionRejectResponses]
 
+export type QuestionFocusData = {
+  body?: {
+    focused: boolean
+  }
+  path: {
+    requestID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/question/{requestID}/focus"
+}
+
+export type QuestionFocusErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * QuestionNotFoundError
+   */
+  404: QuestionNotFoundError
+}
+
+export type QuestionFocusError = QuestionFocusErrors[keyof QuestionFocusErrors]
+
+export type QuestionFocusResponses = {
+  /**
+   * Updated question timeout
+   */
+  200: QuestionRequest
+}
+
+export type QuestionFocusResponse = QuestionFocusResponses[keyof QuestionFocusResponses]
+
 export type PermissionListData = {
   body?: never
   path?: never

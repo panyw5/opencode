@@ -59,6 +59,15 @@ describe("session question dock helpers", () => {
     expect(guard.acquire()).toBe(true)
   })
 
+  test("focus freezes the remaining budget until its lease expires", () => {
+    const pause = { remaining: 2501, until: 10_000 }
+    expect(questionSecondsRemaining(12_501, 2000, pause)).toBe(3)
+    expect(questionSecondsRemaining(12_501, 9000, pause)).toBe(3)
+    expect(questionSecondsRemaining(12_501, 10_000, pause)).toBe(3)
+    expect(questionSecondsRemaining(12_501, 11_501, pause)).toBe(1)
+    expect(questionSecondsRemaining(12_501, 12_501, pause)).toBe(0)
+  })
+
   test("marks custom answers with images as answered even after editing closes", () => {
     expect(
       questionAnswered([], "", true, [
