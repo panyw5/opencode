@@ -7,9 +7,14 @@ import {
   ndJsonStream,
   PROTOCOL_VERSION,
   RequestError,
+  type AgentCapabilities,
   type AuthMethod,
+  type McpServer,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
+  type SessionConfigOption,
+  type SessionModeState,
+  type SessionModelState,
   type SessionNotification,
 } from "@agentclientprotocol/sdk"
 import * as Log from "@opencode-ai/core/util/log"
@@ -33,14 +38,25 @@ export class AcpAgentClient {
   private permissionAbort = new AbortController()
   sessionID?: string
   model?: string
+  mode?: string
   capabilities?: unknown
   authMethods: AuthMethod[] = []
+  configOptions?: Array<SessionConfigOption>
+  models?: SessionModelState
+  modes?: SessionModeState
+
+  get alive() {
+    return !!this.child && !this.exited && !this.failure
+  }
 
   constructor(
     private readonly options: {
       config: AcpConfig
       cwd: string
       model?: string
+      mcpServers?: Array<McpServer> | ((capabilities: AgentCapabilities | null | undefined) => Array<McpServer>)
+      /** Keep the process alive when a single turn is aborted (session channels). */
+      keepAlive?: boolean
       onEvent: (event: SessionNotification) => void
       requestPermission: (request: RequestPermissionRequest, signal: AbortSignal) => Promise<RequestPermissionResponse>
     },
@@ -59,7 +75,8 @@ export class AcpAgentClient {
         new Promise<never>((_, reject) => {
           abort = () => {
             operation.abort()
-            void this.cancel().finally(() => this.stop())
+            if (this.options.keepAlive) void this.cancel()
+            else void this.cancel().finally(() => this.stop())
             reject(new Error("ACP operation aborted"))
           }
           signal.addEventListener("abort", abort, { once: true })
@@ -79,7 +96,10 @@ export class AcpAgentClient {
     }
   }
 
-  async start(signal: AbortSignal, options: { initializeOnly?: boolean; authMethod?: string } = {}) {
+  async start(
+    signal: AbortSignal,
+    options: { initializeOnly?: boolean; authMethod?: string; resumeSessionID?: string } = {},
+  ) {
     if (signal.aborted) throw new Error("ACP startup aborted")
     if (this.child) throw new Error("ACP client already started")
     const [command, ...args] = this.options.config.command
@@ -178,38 +198,43 @@ export class AcpAgentClient {
             log.info(`authenticate method=${options.authMethod}`)
             await connection.authenticate({ methodId: options.authMethod })
           }
-          const session = await connection.newSession({ cwd: this.options.cwd, mcpServers: [] })
-          this.sessionID = session.sessionId
-          const select = async (category: "model" | "mode", value: string) => {
-            const option = session.configOptions?.find((item) => item.category === category || item.id === category)
-            if (!option || option.type !== "select") return false
-            const values = option.options.flatMap((item) => ("options" in item ? item.options : [item]))
-            if (!values.some((item) => item.value === value))
-              throw new Error(`ACP agent does not advertise requested ${category} ${value}`)
-            if (option.currentValue !== value)
-              await connection.setSessionConfigOption({ sessionId: session.sessionId, configId: option.id, value })
-            return true
-          }
+          const mcpServers =
+            typeof this.options.mcpServers === "function"
+              ? this.options.mcpServers(init.agentCapabilities)
+              : (this.options.mcpServers ?? [])
+          const resumable = Boolean(options.resumeSessionID && init.agentCapabilities?.loadSession)
+          if (options.resumeSessionID && !resumable)
+            log.warn(`agent does not support loadSession; starting a new session requested=${options.resumeSessionID}`)
+          const session = resumable
+            ? await connection.loadSession({
+                sessionId: options.resumeSessionID!,
+                cwd: this.options.cwd,
+                mcpServers,
+              })
+            : await connection.newSession({ cwd: this.options.cwd, mcpServers })
+          this.sessionID = resumable ? options.resumeSessionID! : (session as { sessionId: string }).sessionId
+          this.configOptions = session.configOptions ?? undefined
+          this.models = session.models ?? undefined
+          this.modes = session.modes ?? undefined
+          log.info(`session ready id=${this.sessionID} resumed=${resumable} mcp=${mcpServers.length}`)
+
           const model = this.options.model ?? this.options.config.model
-          if (model && !(await select("model", model))) {
-            if (!session.models?.availableModels.some((item) => item.modelId === model))
+          if (model && !(await this.selectConfigOption("model", model))) {
+            if (!this.models?.availableModels.some((item) => item.modelId === model))
               throw new Error(`ACP agent does not advertise requested model ${model}`)
-            if (session.models.currentModelId !== model)
-              await connection.unstable_setSessionModel({ sessionId: session.sessionId, modelId: model })
+            if (this.models.currentModelId !== model)
+              await connection.unstable_setSessionModel({ sessionId: this.sessionID, modelId: model })
           }
-          const modelOption = session.configOptions?.find((item) => item.category === "model" && item.type === "select")
-          this.model =
-            model ??
-            session.models?.currentModelId ??
-            (typeof modelOption?.currentValue === "string" ? modelOption.currentValue : undefined)
+          this.model = model ?? this.defaultModel()
           const mode = this.options.config.mode
-          if (mode && !(await select("mode", mode))) {
-            if (!session.modes?.availableModes.some((item) => item.id === mode))
+          if (mode && !(await this.selectConfigOption("mode", mode))) {
+            if (!this.modes?.availableModes.some((item) => item.id === mode))
               throw new Error(`ACP agent does not advertise requested mode ${mode}`)
-            if (session.modes.currentModeId !== mode)
-              await connection.setSessionMode({ sessionId: session.sessionId, modeId: mode })
+            if (this.modes.currentModeId !== mode)
+              await connection.setSessionMode({ sessionId: this.sessionID, modeId: mode })
           }
-          log.info(`ready session=${this.sessionID} model=${this.model ?? "default"}`)
+          this.mode = mode ?? this.modes?.currentModeId ?? this.mode
+          log.info(`ready session=${this.sessionID} model=${this.model ?? "default"} mode=${this.mode ?? "default"}`)
         },
         signal,
         options.authMethod ? 300000 : 30000,
@@ -219,6 +244,54 @@ export class AcpAgentClient {
       if (error instanceof RequestError && error.code === -32000) throw new AcpAuthenticationRequired(this.authMethods)
       throw new Error(`ACP startup failed: ${String(error)}${this.stderr ? `; stderr: ${this.stderr}` : ""}`)
     }
+  }
+
+  private defaultModel() {
+    const option = this.configOptions?.find((item) => item.category === "model" && item.type === "select")
+    return this.models?.currentModelId ?? (typeof option?.currentValue === "string" ? option.currentValue : undefined)
+  }
+
+  private async selectConfigOption(category: "model" | "mode", value: string) {
+    const connection = this.connection
+    if (!connection || !this.sessionID) throw new Error("ACP client is not ready")
+    const option = this.configOptions?.find((item) => item.category === category || item.id === category)
+    if (!option || option.type !== "select") return false
+    const values = option.options.flatMap((item) => ("options" in item ? item.options : [item]))
+    if (!values.some((item) => item.value === value))
+      throw new Error(`ACP agent does not advertise requested ${category} ${value}`)
+    if (option.currentValue !== value)
+      await connection.setSessionConfigOption({ sessionId: this.sessionID, configId: option.id, value })
+    return true
+  }
+
+  async setModel(model: string) {
+    if (await this.selectConfigOption("model", model)) {
+      this.model = model
+      return
+    }
+    const connection = this.connection
+    if (!connection || !this.sessionID) throw new Error("ACP client is not ready")
+    if (!this.models?.availableModels.some((item) => item.modelId === model))
+      throw new Error(`ACP agent does not advertise requested model ${model}`)
+    if (this.models.currentModelId !== model)
+      await connection.unstable_setSessionModel({ sessionId: this.sessionID, modelId: model })
+    this.models = { ...this.models, currentModelId: model }
+    this.model = model
+  }
+
+  async setMode(mode: string) {
+    if (await this.selectConfigOption("mode", mode)) {
+      this.mode = mode
+      return
+    }
+    const connection = this.connection
+    if (!connection || !this.sessionID) throw new Error("ACP client is not ready")
+    if (!this.modes?.availableModes.some((item) => item.id === mode))
+      throw new Error(`ACP agent does not advertise requested mode ${mode}`)
+    if (this.modes.currentModeId !== mode)
+      await connection.setSessionMode({ sessionId: this.sessionID, modeId: mode })
+    this.modes = { ...this.modes, currentModeId: mode }
+    this.mode = mode
   }
 
   async prompt(message: string, signal: AbortSignal, timeout: number) {
@@ -238,7 +311,7 @@ export class AcpAgentClient {
       throw this.failure ?? error
     })
     log.info(`completed session=${sessionId} reason=${result.stopReason}`)
-    if (result.stopReason !== "end_turn") throw new Error(`ACP turn stopped: ${result.stopReason}`)
+    return result
   }
 
   async cancel() {

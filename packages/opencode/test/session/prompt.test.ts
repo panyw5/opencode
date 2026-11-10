@@ -34,6 +34,7 @@ import { SessionSummary } from "../../src/session/summary"
 import { Instruction } from "../../src/session/instruction"
 import { SessionProcessor } from "../../src/session/processor"
 import { SessionPrompt } from "../../src/session/prompt"
+import { SessionChannel } from "../../src/agent-backend/channel"
 import { SessionRevert } from "../../src/session/revert"
 import { SessionRunState } from "../../src/session/run-state"
 import { SessionHistory } from "../../src/session/history"
@@ -238,6 +239,11 @@ function makePrompt(input?: { processor?: "blocking"; browser?: Layer.Layer<Brow
     Layer.provideMerge(deps),
   )
   const trunc = Truncate.layer.pipe(Layer.provideMerge(deps))
+  const channel = SessionChannel.layer.pipe(
+    Layer.provideMerge(registry),
+    Layer.provideMerge(trunc),
+    Layer.provideMerge(deps),
+  )
   const proc =
     input?.processor === "blocking"
       ? blockingProcessor
@@ -265,6 +271,7 @@ function makePrompt(input?: { processor?: "blocking"; browser?: Layer.Layer<Brow
     Layer.provideMerge(proc),
     Layer.provideMerge(registry),
     Layer.provideMerge(trunc),
+    Layer.provideMerge(channel),
     Layer.provide(Instruction.defaultLayer),
     Layer.provide(SystemPrompt.defaultLayer),
     Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),

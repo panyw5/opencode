@@ -52,6 +52,7 @@ import { Effect, Layer, Option, Context, Schema, Types } from "effect"
 import { NonNegativeInt, optionalOmitUndefined } from "@opencode-ai/core/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ExternalSession } from "./external-schema"
+import { SessionChannel } from "./channel-schema"
 
 const log = Log.create({ service: "session" })
 
@@ -122,6 +123,7 @@ export function fromRow(row: SessionRow): Info {
   if (row.path != null) result.path = row.path
   if (row.parent_id != null) result.parentID = row.parent_id
   if (row.metadata?.external) result.external = Schema.decodeUnknownSync(ExternalSession)(row.metadata.external)
+  if (row.metadata?.channel) result.channel = Schema.decodeUnknownSync(SessionChannel)(row.metadata.channel)
   if (row.agent != null) result.agent = row.agent
   if (row.share_url) result.share = { url: row.share_url }
   if (row.revert != null) result.revert = row.revert
@@ -160,7 +162,14 @@ export function toRow(info: Info) {
     project_id: info.projectID,
     workspace_id: info.workspaceID,
     parent_id: info.parentID,
-    ...(info.external ? { metadata: { external: info.external } } : {}),
+    ...(info.external || info.channel
+      ? {
+          metadata: {
+            ...(info.external ? { external: info.external } : {}),
+            ...(info.channel ? { channel: info.channel } : {}),
+          },
+        }
+      : {}),
     slug: info.slug,
     // Normalize to the canonical logical-path form (`/`) on write so future
     // list queries stay consistent regardless of how the directory arrived
@@ -272,6 +281,7 @@ export const Info = Schema.Struct({
   path: optionalOmitUndefined(Schema.String),
   parentID: optionalOmitUndefined(SessionID),
   external: optionalOmitUndefined(ExternalSession),
+  channel: optionalOmitUndefined(SessionChannel),
   summary: optionalOmitUndefined(Summary),
   cost: optionalOmitUndefined(Schema.Finite),
   tokens: optionalOmitUndefined(Tokens),
@@ -308,6 +318,7 @@ export const CreateInput = Schema.optional(
     title: Schema.optional(Schema.String),
     agent: Schema.optional(Schema.String),
     model: Schema.optional(Model),
+    channel: Schema.optional(SessionChannel),
     permission: Schema.optional(Permission.Ruleset),
     workspaceID: Schema.optional(WorkspaceID),
   }),
@@ -390,6 +401,7 @@ const UpdatedInfo = Schema.Struct({
   title: Schema.optional(Schema.NullOr(Schema.String)),
   agent: Schema.optional(Schema.NullOr(Schema.String)),
   model: Schema.optional(Schema.NullOr(Model)),
+  channel: Schema.optional(Schema.NullOr(SessionChannel)),
   version: Schema.optional(Schema.NullOr(Schema.String)),
   time: Schema.optional(UpdatedTime),
   permission: Schema.optional(Schema.NullOr(Permission.Ruleset)),
@@ -582,6 +594,7 @@ export interface Interface {
     title?: string
     agent?: string
     model?: Schema.Schema.Type<typeof Model>
+    channel?: SessionChannel
     permission?: Permission.Ruleset
     /** Null explicitly disables inheritance from the active workspace. */
     workspaceID?: WorkspaceID | null
@@ -600,6 +613,7 @@ export interface Interface {
    */
   readonly setFavorited: (input: { sessionID: SessionID; time?: number | null }) => Effect.Effect<void>
   readonly setPermission: (input: { sessionID: SessionID; permission: Permission.Ruleset }) => Effect.Effect<void>
+  readonly setChannel: (input: { sessionID: SessionID; channel: SessionChannel }) => Effect.Effect<void>
   readonly setMountedTask: (input: { sessionID: SessionID; taskID: ProjectTaskID | null }) => Effect.Effect<void>
   readonly setInjectTaskContext: (input: { sessionID: SessionID; enabled: boolean }) => Effect.Effect<void>
   readonly setRevert: (input: {
@@ -669,6 +683,7 @@ export const layer: Layer.Layer<
       title?: string
       agent?: string
       model?: Schema.Schema.Type<typeof Model>
+      channel?: SessionChannel
       parentID?: SessionID
       workspaceID?: WorkspaceID
       directory: string
@@ -688,6 +703,7 @@ export const layer: Layer.Layer<
         workspaceID: input.workspaceID,
         parentID: input.parentID,
         external: input.external,
+        channel: input.channel,
         title: input.title ?? createDefaultTitle(!!input.parentID),
         agent: input.agent,
         model: input.model,
@@ -904,6 +920,7 @@ export const layer: Layer.Layer<
       title?: string
       agent?: string
       model?: Schema.Schema.Type<typeof Model>
+      channel?: SessionChannel
       permission?: Permission.Ruleset
       workspaceID?: WorkspaceID | null
       archived?: boolean
@@ -919,6 +936,7 @@ export const layer: Layer.Layer<
         title: input?.title,
         agent: input?.agent,
         model: input?.model,
+        channel: input?.channel,
         permission: input?.permission,
         workspaceID: input?.workspaceID === null ? undefined : (input?.workspaceID ?? workspace),
         archived: input?.archived,
@@ -1063,6 +1081,13 @@ export const layer: Layer.Layer<
       permission: Permission.Ruleset
     }) {
       yield* patch(input.sessionID, { permission: [...input.permission], time: { updated: Date.now() } })
+    })
+
+    const setChannel = Effect.fn("Session.setChannel")(function* (input: {
+      sessionID: SessionID
+      channel: SessionChannel
+    }) {
+      yield* patch(input.sessionID, { channel: input.channel, time: { updated: Date.now() } })
     })
 
     const setMountedTask = Effect.fn("Session.setMountedTask")(function* (input: {
@@ -1329,6 +1354,7 @@ export const layer: Layer.Layer<
       setArchived,
       setFavorited,
       setPermission,
+      setChannel,
       setMountedTask,
       setInjectTaskContext,
       setRevert,

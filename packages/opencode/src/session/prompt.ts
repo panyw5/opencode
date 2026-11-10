@@ -63,6 +63,7 @@ import * as EffectLogger from "@opencode-ai/core/effect/logger"
 import { InstanceState } from "@/effect/instance-state"
 import { TaskTool, type TaskPromptOps } from "@/tool/task"
 import { isConsultMention } from "@/tool/consult-mention"
+import { SessionChannel } from "@/agent-backend/channel"
 import { ConsultMentions } from "./consult-mentions"
 import { SessionRunState } from "./run-state"
 import { SessionHistory } from "./history"
@@ -172,6 +173,7 @@ export const layer = Layer.effect(
     const mcp = yield* MCP.Service
     const lsp = yield* LSP.Service
     const registry = yield* ToolRegistry.Service
+    const channel = yield* SessionChannel.Service
     const truncate = yield* Truncate.Service
     const image = yield* Image.Service
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
@@ -244,6 +246,15 @@ export const layer = Layer.effect(
     const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID) {
       yield* backgroundPro.suppress(sessionID, true)
       yield* elog.info("cancel start", { sessionID })
+      const target = yield* sessions.get(sessionID).pipe(Effect.option)
+      if (Option.isSome(target) && target.value.channel) {
+        yield* elog.info("cancel external channel", {
+          sessionID,
+          advisor: target.value.channel.advisor,
+        })
+        yield* channel.cancel(sessionID)
+        return
+      }
       const match = yield* sessionOwnerMatch(sessionID)
       const cancelDesktopConsultations = browser.cancelGptProOwner(match.ownerDirectory, sessionID).pipe(
         Effect.tap((cancelled) =>
@@ -296,6 +307,12 @@ export const layer = Layer.effect(
     // blocked on a subagent session receives the restarted run's final result
     // instead of the interrupted turn's partial output.
     const flush = Effect.fn("SessionPrompt.flush")(function* (sessionID: SessionID) {
+      const target = yield* sessions.get(sessionID).pipe(Effect.option)
+      if (Option.isSome(target) && target.value.channel) {
+        yield* elog.info("flush external channel", { sessionID })
+        yield* channel.cancel(sessionID)
+        return
+      }
       const current = yield* status.get(sessionID)
       yield* elog.info("flush start", { sessionID, status: current.type })
       if (current.type !== "idle") {
@@ -605,6 +622,8 @@ export const layer = Layer.effect(
       force?: boolean
     }) {
       const session = yield* sessions.get(input.sessionID)
+      // External channel agents own their titles and use a synthetic provider.
+      if (session.channel) return session
       const history = yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
       const real = (m: MessageV2.WithParts) =>
         m.info.role === "user" && !m.parts.every((p) => "synthetic" in p && p.synthetic)
@@ -2071,8 +2090,17 @@ export const layer = Layer.effect(
     const prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts, Image.Error> = Effect.fn(
       "SessionPrompt.prompt",
     )(function* (input: PromptInput) {
-      if ((yield* sessions.get(input.sessionID).pipe(Effect.orDie)).external) {
+      const existing = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      if (existing.external) {
         throw new Error("External CLI sessions only accept external-control operations")
+      }
+      if (existing.channel) {
+        yield* requireSessionOwner(input.sessionID, "channel-prompt")
+        yield* elog.info("prompt routed to external channel", {
+          sessionID: input.sessionID,
+          advisor: existing.channel.advisor,
+        })
+        return yield* channel.prompt(input)
       }
       let revision = yield* state.revision(input.sessionID, lastAssistant(input.sessionID))
       yield* elog.info("prompt preparation registered", { sessionID: input.sessionID, revision })
@@ -2867,16 +2895,18 @@ export const layer = Layer.effect(
     const shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts, Session.BusyError> = Effect.fn(
       "SessionPrompt.shell",
     )(function* (input: ShellInput) {
-      if ((yield* sessions.get(input.sessionID).pipe(Effect.orDie)).external)
-        throw new Error("Shell is unavailable in external CLI sessions")
+      const target = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      if (target.external) throw new Error("Shell is unavailable in external CLI sessions")
+      if (target.channel) throw new Error("Shell is unavailable in external channel sessions")
       yield* ensureBackgroundShellSubscription()
       const ready = yield* Latch.make()
       return yield* state.startShell(input.sessionID, lastAssistant(input.sessionID), shellImpl(input, ready), ready)
     })
 
     const command = Effect.fn("SessionPrompt.command")(function* (input: CommandInput) {
-      if ((yield* sessions.get(input.sessionID).pipe(Effect.orDie)).external)
-        throw new Error("Commands are unavailable in external CLI sessions")
+      const target = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      if (target.external) throw new Error("Commands are unavailable in external CLI sessions")
+      if (target.channel) throw new Error("Commands are unavailable in external channel sessions")
       yield* ensureBackgroundShellSubscription()
       yield* elog.info("command", { sessionID: input.sessionID, command: input.command, agent: input.agent })
       const cmd = yield* commands.get(input.command)
@@ -3095,6 +3125,7 @@ export const defaultLayer = Layer.suspend(() =>
       SessionRunState.defaultLayer,
       BackgroundGptPro.defaultLayer,
       SessionHistory.defaultLayer,
+      SessionChannel.defaultLayer,
     ]),
     Layer.provide(SessionStatus.defaultLayer),
     Layer.provide(SessionCompaction.defaultLayer),

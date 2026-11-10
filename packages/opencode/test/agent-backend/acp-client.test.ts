@@ -85,7 +85,6 @@ describe("ACP subprocess backend", () => {
     ["bad", "Invalid ACP output"],
     ["hang", "timed out"],
     ["exit", /closed|exited/],
-    ["limit", "max_tokens"],
   ]) {
     test(`reports ${prompt} without silently replaying the request`, async () => {
       const { client, live } = make()
@@ -98,6 +97,18 @@ describe("ACP subprocess backend", () => {
       }
     })
   }
+
+  test("returns non-end turn stop reasons to the caller", async () => {
+    const { client, live } = make()
+    try {
+      await client.start(signal())
+      live.beginTurn("limit")
+      const response = await client.prompt("limit", signal(), 1000)
+      expect(response.stopReason).toBe("max_tokens")
+    } finally {
+      await client.stop()
+    }
+  })
 
   test("cancels in-flight work and shuts down idempotently", async () => {
     const abort = new AbortController()

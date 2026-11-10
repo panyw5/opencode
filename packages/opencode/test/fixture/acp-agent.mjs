@@ -1,10 +1,11 @@
 import { createInterface } from "node:readline"
 import { appendFileSync } from "node:fs"
 
-const sessionId = `acp-fixture-${process.pid}`
+let sessionId = `acp-fixture-${process.pid}`
 let turn = 0
 let pendingPermission
 let authenticated = false
+let mcpNames = []
 const send = (value) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...value }) + "\n")
 const reply = (id, result) => send({ id, result })
 const update = (value, id = sessionId) => send({ method: "session/update", params: { sessionId: id, update: value } })
@@ -23,7 +24,7 @@ for await (const line of createInterface({ input: process.stdin })) {
   } else if (method === "initialize") {
     reply(id, {
       protocolVersion: process.env.ACP_FIXTURE_VERSION ? 999 : 1,
-      agentCapabilities: { loadSession: false },
+      agentCapabilities: { loadSession: process.env.ACP_FIXTURE_LOAD_SESSION === "1" },
       agentInfo: { name: "fixture", version: "1" },
       ...(process.env.ACP_FIXTURE_AUTH
         ? {
@@ -40,11 +41,32 @@ for await (const line of createInterface({ input: process.stdin })) {
           }
         : {}),
     })
+  } else if (method === "session/load") {
+    sessionId = params.sessionId
+    mcpNames = (params.mcpServers ?? []).map((server) => server.name)
+    reply(id, {
+      configOptions: [],
+      models: {
+        currentModelId: "fixture/default",
+        availableModels: [
+          { modelId: "fixture/default", name: "Default" },
+          { modelId: "fixture/other", name: "Other" },
+        ],
+      },
+      modes: {
+        currentModeId: "ask",
+        availableModes: [
+          { id: "ask", name: "Ask" },
+          { id: "code", name: "Code" },
+        ],
+      },
+    })
   } else if (method === "session/new") {
     if (process.env.ACP_FIXTURE_AUTH && !authenticated) {
       send({ id, error: { code: -32000, message: "Authentication required" } })
       continue
     }
+    mcpNames = (params.mcpServers ?? []).map((server) => server.name)
     if (process.env.ACP_FIXTURE_CONFIG_OPTIONS) {
       reply(id, {
         sessionId,
@@ -99,6 +121,16 @@ for await (const line of createInterface({ input: process.stdin })) {
     if (prompt === "exit") process.exit(3)
     if (prompt === "bad") {
       process.stdout.write("not-json\n")
+      continue
+    }
+    if (prompt === "mcp") {
+      text(`MCP=${mcpNames.join(",") || "none"}`)
+      reply(id, { stopReason: "end_turn" })
+      continue
+    }
+    if (prompt === "loaded") {
+      text(`SESSION=${sessionId}`)
+      reply(id, { stopReason: "end_turn" })
       continue
     }
     if (prompt === "permission" || prompt.endsWith("\n\npermission")) {

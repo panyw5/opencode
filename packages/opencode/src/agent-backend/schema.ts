@@ -30,3 +30,12 @@ export const AgentBackends = Schema.Struct({
   dsh: Schema.optional(BackendConfig),
   pi: Schema.optional(BackendConfig),
 })
+
+export const AgentChannels = Schema.Struct({
+  /** MCP servers forwarded to channel agents: all configured servers, an allow list, or none. */
+  mcp: Schema.optional(Schema.Union([Schema.Literal("all"), Schema.Array(NonEmpty), Schema.Literal(false)])),
+  idle_timeout_ms: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
+  max_processes: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
+  timeout_ms: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
+}).annotate({ identifier: "AgentChannels" })
+export type AgentChannels = typeof AgentChannels.Type

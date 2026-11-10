@@ -98,7 +98,15 @@ export function toPartialRow(info: DeepPartial<Session.Info>) {
     time_favorited: grab(info, "time", (v) => grab(v, "favorited")),
   }
 
-  return Object.fromEntries(Object.entries(obj).filter(([_, val]) => val !== undefined))
+  const row = Object.fromEntries(Object.entries(obj).filter(([_, val]) => val !== undefined))
+  const channel = info.channel ?? undefined
+  if (info.external !== undefined || channel !== undefined) {
+    row.metadata = {
+      ...(info.external !== undefined ? { external: info.external } : {}),
+      ...(channel !== undefined ? { channel } : {}),
+    }
+  }
+  return row
 }
 
 export default [

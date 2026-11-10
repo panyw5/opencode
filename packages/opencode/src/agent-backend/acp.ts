@@ -138,7 +138,7 @@ export function acpBackend(advisor: Advisor, config: AcpConfig): AgentBackend {
           const run = (message: string) =>
             Effect.gen(function* () {
               live.beginTurn(message)
-              yield* Effect.promise(() => client.prompt(message, ctx.abort, timeout)).pipe(
+              const response = yield* Effect.promise(() => client.prompt(message, ctx.abort, timeout)).pipe(
                 Effect.ensuring(
                   Effect.gen(function* () {
                     clearTimeout(timer)
@@ -148,6 +148,7 @@ export function acpBackend(advisor: Advisor, config: AcpConfig): AgentBackend {
                   }),
                 ),
               )
+              if (response.stopReason !== "end_turn") throw new Error(`ACP turn stopped: ${response.stopReason}`)
               if (publicationError) throw publicationError
               if (!live.text.trim()) throw new Error("ACP agent returned an empty response")
             })
