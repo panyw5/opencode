@@ -23,6 +23,12 @@ import { AgentBackendSettings, RemoteAgentBackendSettings } from "@/components/a
 import { DirectoryInput } from "@/components/directory-input"
 import { ExtraAgentInfoCard } from "@/components/extra-agent-info-card"
 import { AgentStatusCard, AgentStatusGrid, type AgentStatusTone } from "@/components/agent-status-card"
+import {
+  AgentSettingsCard,
+  AgentSettingsDetails,
+  AgentSettingsField,
+  AgentSettingsGrid,
+} from "@/components/agent-settings-layout"
 import { dshDefaultsForm, dshDefaultsInput, type DshDefaultsForm } from "./config-dsh-defaults"
 import { DEFAULT_GPT_PRO_CONFIG } from "@opencode-ai/util/gpt-pro"
 import { ChannelBrandIcon } from "@/components/channel-brand-icon"
@@ -2232,10 +2238,9 @@ function ClawHeader(props: {
         </div>
         <Show when={props.item?.sourceUrl}>
           {(sourceUrl) => (
-            <div class="mt-2 break-all font-mono text-[12px] leading-5 text-text-weak">
-              <span>{language.t("config.claws.source.github")}: </span>
-              <Link href={sourceUrl()} class="text-text-base">
-                {sourceUrl()}
+            <div class="mt-2 text-12-regular text-text-weak">
+              <Link href={sourceUrl()} class="inline-flex items-center gap-1 text-text-base" title={sourceUrl()}>
+                {language.t("config.claws.source.github")}
               </Link>
             </div>
           )}
@@ -2351,28 +2356,48 @@ function ClawEditor(props: {
           <div class="flex w-full flex-col gap-6">
             <ExtraAgentInfoCard info={props.info} loading={props.infoLoading} error={props.infoError} t={language.t} />
 
-            <div class="grid gap-4 lg:grid-cols-2">
-              <TextField
-                type="text"
-                label={language.t("config.claws.field.url")}
-                description={language.t("config.claws.field.urlDescription")}
-                placeholder="ws://127.0.0.1:18789"
-                value={props.form.url}
-                validationState={props.form.err.url ? "invalid" : undefined}
-                error={props.form.err.url}
-                disabled={props.busy || props.form.saving || props.form.testing}
-                onChange={(value) => props.onChange("url", value)}
-              />
-              <TextField
-                type="password"
-                label={language.t("config.claws.field.token")}
-                description={language.t("config.claws.field.tokenDescription")}
-                placeholder={language.t("config.claws.field.tokenPlaceholder")}
-                value={props.form.token}
-                disabled={props.busy || props.form.saving || props.form.testing}
-                onChange={(value) => props.onChange("token", value)}
-              />
-            </div>
+            <AgentSettingsGrid>
+              <AgentSettingsCard
+                title={language.t("agentSettings.connection")}
+                badge={language.t("agentSettings.required")}
+                priority="primary"
+                size="wide"
+              >
+                <AgentSettingsField wide>
+                  <TextField
+                    type="text"
+                    label={language.t("config.claws.field.url")}
+                    placeholder="ws://127.0.0.1:18789"
+                    value={props.form.url}
+                    validationState={props.form.err.url ? "invalid" : undefined}
+                    error={props.form.err.url}
+                    disabled={props.busy || props.form.saving || props.form.testing}
+                    onChange={(value) => props.onChange("url", value)}
+                  />
+                </AgentSettingsField>
+              </AgentSettingsCard>
+              <AgentSettingsCard
+                title={language.t("agentSettings.credentials")}
+                badge={language.t("agentSettings.optional")}
+                priority="secondary"
+                size="standard"
+              >
+                <AgentSettingsField wide>
+                  <TextField
+                    type="password"
+                    label={language.t("config.claws.field.token")}
+                    placeholder={language.t("config.claws.field.tokenPlaceholder")}
+                    value={props.form.token}
+                    disabled={props.busy || props.form.saving || props.form.testing}
+                    onChange={(value) => props.onChange("token", value)}
+                  />
+                </AgentSettingsField>
+              </AgentSettingsCard>
+            </AgentSettingsGrid>
+            <AgentSettingsDetails title={language.t("agentSettings.help")}>
+              <p>{language.t("config.claws.field.urlDescription")}</p>
+              <p>{language.t("config.claws.field.tokenDescription")}</p>
+            </AgentSettingsDetails>
 
             <ClawFormActions
               dirty={props.dirty}
@@ -2391,12 +2416,9 @@ function ClawEditor(props: {
             <Show when={props.form.testing || !!props.form.test}>
               <div class="rounded-2xl border border-border-weak-base bg-surface-base p-5">
                 <div class="text-13-medium text-text-strong">{language.t("config.claws.debug.title")}</div>
-                <div class="mt-1 text-12-regular text-text-weak">{language.t("config.claws.debug.description")}</div>
                 <ConnectionTestStatus testing={props.form.testing} result={props.form.test} />
-                <div class="mt-4 rounded-xl border border-border-weak-base bg-background-base px-4 py-3">
-                  <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
-                    {language.t("config.claws.debug.logs")}
-                  </div>
+                <AgentSettingsDetails title={language.t("config.claws.debug.logs")}>
+                  <p>{language.t("config.claws.debug.description")}</p>
                   <pre
                     class="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-12-regular text-text-weak"
                     style={{ "font-family": monoFontFamily(settings.appearance.font()) }}
@@ -2405,7 +2427,7 @@ function ClawEditor(props: {
                       ? language.t("config.claws.logs.testing", { url: props.form.url.trim() || "-" })
                       : props.form.test?.logs.join("\n") || ""}
                   </pre>
-                </div>
+                </AgentSettingsDetails>
               </div>
             </Show>
           </div>
@@ -2452,27 +2474,46 @@ function GenericAgentEditor(props: {
           <div class="flex w-full flex-col gap-6">
             <ExtraAgentInfoCard info={props.info} loading={props.infoLoading} error={props.infoError} t={language.t} />
 
-            <div class="grid gap-4 lg:grid-cols-2">
-              <DirectoryInput
-                label={language.t("config.claws.field.genericAgentDir")}
-                description={language.t("config.claws.field.genericAgentDirDescription")}
-                placeholder={language.t("config.claws.field.genericAgentDirPlaceholder")}
-                value={props.form.genericAgentDir}
-                error={props.form.err.genericAgentDir}
-                disabled={props.busy || props.form.saving || props.form.testing}
-                onBrowse={props.onChooseDir}
-                onChange={(value) => props.onChange("genericAgentDir", value)}
-              />
-              <TextField
-                type="text"
-                label={language.t("config.claws.field.pythonExecutable")}
-                description={language.t("config.claws.field.pythonExecutableDescription")}
-                placeholder={language.t("config.claws.field.pythonExecutablePlaceholder")}
-                value={props.form.pythonExecutable}
-                disabled={props.busy || props.form.saving || props.form.testing}
-                onChange={(value) => props.onChange("pythonExecutable", value)}
-              />
-            </div>
+            <AgentSettingsGrid>
+              <AgentSettingsCard
+                title={language.t("agentSettings.agentDirectory")}
+                badge={language.t("agentSettings.required")}
+                priority="primary"
+                size="wide"
+              >
+                <AgentSettingsField wide>
+                  <DirectoryInput
+                    label={language.t("config.claws.field.genericAgentDir")}
+                    placeholder={language.t("config.claws.field.genericAgentDirPlaceholder")}
+                    value={props.form.genericAgentDir}
+                    error={props.form.err.genericAgentDir}
+                    disabled={props.busy || props.form.saving || props.form.testing}
+                    onBrowse={props.onChooseDir}
+                    onChange={(value) => props.onChange("genericAgentDir", value)}
+                  />
+                </AgentSettingsField>
+              </AgentSettingsCard>
+              <AgentSettingsCard
+                title={language.t("agentSettings.runtimeOverrides")}
+                priority="secondary"
+                size="standard"
+              >
+                <AgentSettingsField wide>
+                  <TextField
+                    type="text"
+                    label={language.t("config.claws.field.pythonExecutable")}
+                    placeholder={language.t("config.claws.field.pythonExecutablePlaceholder")}
+                    value={props.form.pythonExecutable}
+                    disabled={props.busy || props.form.saving || props.form.testing}
+                    onChange={(value) => props.onChange("pythonExecutable", value)}
+                  />
+                </AgentSettingsField>
+              </AgentSettingsCard>
+            </AgentSettingsGrid>
+            <AgentSettingsDetails title={language.t("agentSettings.help")}>
+              <p>{language.t("config.claws.field.genericAgentDirDescription")}</p>
+              <p>{language.t("config.claws.field.pythonExecutableDescription")}</p>
+            </AgentSettingsDetails>
 
             <ClawFormActions
               dirty={props.dirty}
@@ -2488,12 +2529,9 @@ function GenericAgentEditor(props: {
             <Show when={props.form.testing || !!props.form.test}>
               <div class="rounded-2xl border border-border-weak-base bg-surface-base p-5">
                 <div class="text-13-medium text-text-strong">{language.t("config.claws.debug.title")}</div>
-                <div class="mt-1 text-12-regular text-text-weak">{language.t("config.claws.debug.description")}</div>
                 <ConnectionTestStatus testing={props.form.testing} result={props.form.test} />
-                <div class="mt-4 rounded-xl border border-border-weak-base bg-background-base px-4 py-3">
-                  <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
-                    {language.t("config.claws.debug.logs")}
-                  </div>
+                <AgentSettingsDetails title={language.t("config.claws.debug.logs")}>
+                  <p>{language.t("config.claws.debug.description")}</p>
                   <pre
                     class="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-12-regular text-text-weak"
                     style={{ "font-family": monoFontFamily(settings.appearance.font()) }}
@@ -2504,7 +2542,7 @@ function GenericAgentEditor(props: {
                         })
                       : props.form.test?.logs.join("\n") || ""}
                   </pre>
-                </div>
+                </AgentSettingsDetails>
               </div>
             </Show>
           </div>
@@ -2587,41 +2625,45 @@ function CliAgentInfoCard(props: { descriptor: CliAgentDescriptor; info?: CliAge
           label={language.t("config.claws.info.version")}
           value={value(props.info?.version)}
         />
-        <InfoCell
-          kind="binary-path"
-          icon="terminal"
-          label={language.t("config.claws.info.binaryPath")}
-          value={value(props.info?.binaryPath)}
-          onCopy={props.info?.binaryPath ? () => copy(props.info?.binaryPath) : undefined}
-          copied={copied() === props.info?.binaryPath}
-        />
-        <InfoCell
-          kind="config-home"
-          icon="folder"
-          label={props.descriptor.configHomeLabel}
-          value={value(props.info?.configHome)}
-          onCopy={props.info?.configHome ? () => copy(props.info?.configHome) : undefined}
-          copied={copied() === props.info?.configHome}
-        />
-        <InfoCell
-          kind="config-path"
-          icon="file"
-          label={language.t("config.claws.info.configPath")}
-          value={value(props.info?.configPath)}
-          onCopy={props.info?.configPath ? () => copy(props.info?.configPath) : undefined}
-          copied={copied() === props.info?.configPath}
-        />
-        <For each={props.info?.details ?? []}>
-          {(detail) => (
-            <InfoCell
-              label={detail.label}
-              value={detail.value}
-              onCopy={pathLike(detail.value) ? () => copy(detail.value) : undefined}
-              copied={copied() === detail.value}
-            />
-          )}
-        </For>
       </AgentStatusGrid>
+      <AgentSettingsDetails title={language.t("agentSettings.runtimeDetails")}>
+        <AgentStatusGrid>
+          <InfoCell
+            kind="binary-path"
+            icon="terminal"
+            label={language.t("config.claws.info.binaryPath")}
+            value={value(props.info?.binaryPath)}
+            onCopy={props.info?.binaryPath ? () => copy(props.info?.binaryPath) : undefined}
+            copied={copied() === props.info?.binaryPath}
+          />
+          <InfoCell
+            kind="config-home"
+            icon="folder"
+            label={props.descriptor.configHomeLabel}
+            value={value(props.info?.configHome)}
+            onCopy={props.info?.configHome ? () => copy(props.info?.configHome) : undefined}
+            copied={copied() === props.info?.configHome}
+          />
+          <InfoCell
+            kind="config-path"
+            icon="file"
+            label={language.t("config.claws.info.configPath")}
+            value={value(props.info?.configPath)}
+            onCopy={props.info?.configPath ? () => copy(props.info?.configPath) : undefined}
+            copied={copied() === props.info?.configPath}
+          />
+          <For each={props.info?.details ?? []}>
+            {(detail) => (
+              <InfoCell
+                label={detail.label}
+                value={detail.value}
+                onCopy={pathLike(detail.value) ? () => copy(detail.value) : undefined}
+                copied={copied() === detail.value}
+              />
+            )}
+          </For>
+        </AgentStatusGrid>
+      </AgentSettingsDetails>
       <Show when={props.info?.error}>
         {(error) => <div class="mt-3 text-12-regular text-text-danger-base">{error()}</div>}
       </Show>
@@ -2919,31 +2961,46 @@ function CliAgentEditor(props: {
         <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
           <div class="flex w-full flex-col gap-6">
             {props.backendSettings}
-            <Show when={props.infoLoading || props.info}>
-              <CliAgentInfoCard descriptor={props.descriptor} info={props.info} loading={props.infoLoading} />
-            </Show>
+            <CliAgentInfoCard descriptor={props.descriptor} info={props.info} loading={props.infoLoading} />
 
-            <div class="grid gap-4 lg:grid-cols-2">
-              <TextField
-                type="text"
-                label={language.t("config.claws.cliAgent.binary", { label: props.descriptor.label })}
-                description={language.t("config.claws.cliAgent.binaryDescription", {
-                  command: props.descriptor.command,
-                })}
-                placeholder={props.descriptor.command}
-                value={props.form.binaryPath}
-                disabled={props.busy || props.form.saving || props.form.testing}
-                onChange={(value) => props.onChange("binaryPath", value)}
-              />
-              <DirectoryInput
-                label={props.descriptor.configHomeLabel}
-                description={language.t("config.claws.cliAgent.configHomeDescription")}
-                placeholder={props.descriptor.configHomePlaceholder}
-                value={props.form.configHome}
-                disabled={props.busy || props.form.saving || props.form.testing}
-                onChange={(value) => props.onChange("configHome", value)}
-              />
-            </div>
+            <AgentSettingsGrid>
+              <AgentSettingsCard
+                title={language.t("agentSettings.cliRuntime")}
+                badge={language.t("agentSettings.optional")}
+                priority="secondary"
+                size="wide"
+              >
+                <AgentSettingsGrid>
+                  <AgentSettingsField>
+                    <TextField
+                      type="text"
+                      label={language.t("config.claws.cliAgent.binary", { label: props.descriptor.label })}
+                      placeholder={props.descriptor.command}
+                      value={props.form.binaryPath}
+                      disabled={props.busy || props.form.saving || props.form.testing}
+                      onChange={(value) => props.onChange("binaryPath", value)}
+                    />
+                  </AgentSettingsField>
+                  <AgentSettingsField>
+                    <DirectoryInput
+                      label={props.descriptor.configHomeLabel}
+                      placeholder={props.descriptor.configHomePlaceholder}
+                      value={props.form.configHome}
+                      disabled={props.busy || props.form.saving || props.form.testing}
+                      onChange={(value) => props.onChange("configHome", value)}
+                    />
+                  </AgentSettingsField>
+                </AgentSettingsGrid>
+                <AgentSettingsDetails title={language.t("agentSettings.help")}>
+                  <p>
+                    {language.t("config.claws.cliAgent.binaryDescription", {
+                      command: props.descriptor.command,
+                    })}
+                  </p>
+                  <p>{language.t("config.claws.cliAgent.configHomeDescription")}</p>
+                </AgentSettingsDetails>
+              </AgentSettingsCard>
+            </AgentSettingsGrid>
 
             <Show when={isDsh()}>
               <DshDefaultsEditor
@@ -2952,92 +3009,121 @@ function CliAgentEditor(props: {
                 disabled={props.busy || props.form.saving || props.form.testing}
                 onChange={props.onDefaultsChange}
               />
-              <div class="rounded-2xl border border-border-weak-base bg-surface-base p-4">
+              <section class="flex min-w-0 flex-col gap-3">
                 <div class="text-13-medium text-text-strong">{language.t("config.claws.dsh.title")}</div>
-                <div class="mt-1 text-12-regular text-text-weak">{language.t("config.claws.dsh.description")}</div>
-                <div class="mt-4 grid gap-4 lg:grid-cols-2">
-                  <TextField
-                    type="text"
-                    label={language.t("config.claws.dsh.field.provider")}
-                    description={language.t("config.claws.dsh.field.providerDescription")}
-                    placeholder="deepseek-official"
-                    value={props.form.provider}
-                    disabled={props.busy || props.form.saving || props.form.testing}
-                    onChange={(value) => props.onChange("provider", value)}
-                  />
-                  <TextField
-                    type="text"
-                    label={language.t("config.claws.dsh.field.model")}
-                    description={language.t("config.claws.dsh.field.modelDescription")}
-                    placeholder="deepseek-v4-flash"
-                    value={props.form.model}
-                    disabled={props.busy || props.form.saving || props.form.testing}
-                    onChange={(value) => props.onChange("model", value)}
-                  />
-                </div>
-                <div class="mt-4 grid gap-4">
-                  <TextField
-                    type="text"
-                    label={language.t("config.claws.dsh.field.baseURL")}
-                    description={
-                      props.form.baseUrlEnvSet
-                        ? language.t("config.claws.dsh.field.baseURLDescriptionEnv")
-                        : language.t("config.claws.dsh.field.baseURLDescription")
-                    }
-                    placeholder={language.t("config.claws.dsh.field.baseURLPlaceholder")}
-                    value={props.form.baseURL}
-                    disabled={props.busy || props.form.saving || props.form.testing}
-                    onChange={(value) => props.onChange("baseURL", value)}
-                  />
-                  <div class="space-y-2">
-                    <div class="text-12-medium text-text-weak">{language.t("config.claws.dsh.field.apiKey")}</div>
-                    <div class="rounded-xl border border-border-weak-base bg-background-base px-3 py-2.5">
-                      <div class="flex items-center gap-2">
-                        <input
-                          type={props.form.secret ? "password" : "text"}
-                          placeholder={
-                            props.form.hasFileApiKey || props.form.apiKeyEnvSet
-                              ? language.t("config.claws.dsh.field.apiKeyPlaceholderKeep")
-                              : language.t("config.claws.dsh.field.apiKeyPlaceholder")
-                          }
-                          value={props.form.apiKey}
-                          disabled={props.busy || props.form.saving || props.form.testing || props.form.clearApiKey}
-                          class="min-w-0 flex-1 bg-transparent text-13-regular text-text-base outline-none placeholder:text-text-weak disabled:opacity-50"
-                          onInput={(event) => props.onChange("apiKey", event.currentTarget.value)}
-                        />
-                        <IconButton
-                          type="button"
-                          icon={props.form.secret ? "eye" : "close-small"}
-                          variant="ghost"
-                          disabled={props.busy || props.form.saving || props.form.testing || props.form.clearApiKey}
-                          onClick={() => props.onToggleSecret?.()}
-                          aria-label={
-                            props.form.secret
-                              ? language.t("config.claws.dsh.field.apiKeyShow")
-                              : language.t("config.claws.dsh.field.apiKeyHide")
-                          }
-                        />
-                        <IconButton
-                          type="button"
-                          icon={props.apiKeyCopied ? "check" : "copy"}
-                          variant="ghost"
-                          disabled={
-                            props.busy ||
-                            props.form.saving ||
-                            props.form.testing ||
-                            props.form.clearApiKey ||
-                            !props.form.apiKey.trim()
-                          }
-                          onClick={() => props.onCopyApiKey?.()}
-                          aria-label={language.t("config.claws.dsh.field.apiKeyCopy")}
-                        />
+                <AgentSettingsGrid>
+                  <AgentSettingsCard
+                    title={language.t("config.claws.dsh.field.provider")}
+                    priority="primary"
+                    size="standard"
+                  >
+                    <AgentSettingsField wide>
+                      <TextField
+                        type="text"
+                        label={language.t("config.claws.dsh.field.provider")}
+                        placeholder="deepseek-official"
+                        value={props.form.provider}
+                        disabled={props.busy || props.form.saving || props.form.testing}
+                        onChange={(value) => props.onChange("provider", value)}
+                      />
+                    </AgentSettingsField>
+                    <AgentSettingsField wide>
+                      <TextField
+                        type="text"
+                        label={language.t("config.claws.dsh.field.baseURL")}
+                        placeholder={language.t("config.claws.dsh.field.baseURLPlaceholder")}
+                        value={props.form.baseURL}
+                        disabled={props.busy || props.form.saving || props.form.testing}
+                        onChange={(value) => props.onChange("baseURL", value)}
+                      />
+                    </AgentSettingsField>
+                    <Show when={props.form.baseUrlEnvSet}>
+                      <p class="text-12-regular text-text-weak">
+                        {language.t("config.claws.dsh.field.baseURLDescriptionEnv")}
+                      </p>
+                    </Show>
+                  </AgentSettingsCard>
+                  <AgentSettingsCard
+                    title={language.t("config.claws.dsh.field.model")}
+                    priority="primary"
+                    size="compact"
+                  >
+                    <AgentSettingsField wide>
+                      <TextField
+                        type="text"
+                        label={language.t("config.claws.dsh.field.model")}
+                        placeholder="deepseek-v4-flash"
+                        value={props.form.model}
+                        disabled={props.busy || props.form.saving || props.form.testing}
+                        onChange={(value) => props.onChange("model", value)}
+                      />
+                    </AgentSettingsField>
+                  </AgentSettingsCard>
+                  <AgentSettingsCard title={language.t("agentSettings.credentials")} priority="primary" size="wide">
+                    <AgentSettingsField wide>
+                      <div class="space-y-2">
+                        <div class="text-12-medium text-text-weak">{language.t("config.claws.dsh.field.apiKey")}</div>
+                        <div
+                          data-config-surface="control"
+                          class="rounded-xl border border-border-weak-base bg-background-base px-3 py-2.5"
+                        >
+                          <div class="flex items-center gap-2">
+                            <input
+                              type={props.form.secret ? "password" : "text"}
+                              placeholder={
+                                props.form.hasFileApiKey || props.form.apiKeyEnvSet
+                                  ? language.t("config.claws.dsh.field.apiKeyPlaceholderKeep")
+                                  : language.t("config.claws.dsh.field.apiKeyPlaceholder")
+                              }
+                              value={props.form.apiKey}
+                              disabled={props.busy || props.form.saving || props.form.testing || props.form.clearApiKey}
+                              class="min-w-0 flex-1 bg-transparent text-13-regular text-text-base outline-none placeholder:text-text-weak disabled:opacity-50"
+                              onInput={(event) => props.onChange("apiKey", event.currentTarget.value)}
+                            />
+                            <IconButton
+                              type="button"
+                              icon={props.form.secret ? "eye" : "close-small"}
+                              variant="ghost"
+                              disabled={props.busy || props.form.saving || props.form.testing || props.form.clearApiKey}
+                              onClick={() => props.onToggleSecret?.()}
+                              aria-label={
+                                props.form.secret
+                                  ? language.t("config.claws.dsh.field.apiKeyShow")
+                                  : language.t("config.claws.dsh.field.apiKeyHide")
+                              }
+                            />
+                            <IconButton
+                              type="button"
+                              icon={props.apiKeyCopied ? "check" : "copy"}
+                              variant="ghost"
+                              disabled={
+                                props.busy ||
+                                props.form.saving ||
+                                props.form.testing ||
+                                props.form.clearApiKey ||
+                                !props.form.apiKey.trim()
+                              }
+                              onClick={() => props.onCopyApiKey?.()}
+                              aria-label={language.t("config.claws.dsh.field.apiKeyCopy")}
+                            />
+                          </div>
+                        </div>
+                        <div class="text-12-regular text-text-weak">
+                          {language.t("config.claws.dsh.field.apiKeyDescription", { status: apiKeyStatus() })}
+                        </div>
                       </div>
-                    </div>
-                    <div class="text-12-regular text-text-weak">
-                      {language.t("config.claws.dsh.field.apiKeyDescription", { status: apiKeyStatus() })}
-                    </div>
-                  </div>
-                  <label class="inline-flex items-center gap-2 text-13-regular text-text-base">
+                    </AgentSettingsField>
+                  </AgentSettingsCard>
+                </AgentSettingsGrid>
+                <AgentSettingsDetails title={language.t("agentSettings.help")}>
+                  <p>{language.t("config.claws.dsh.description")}</p>
+                  <p>{language.t("config.claws.dsh.field.providerDescription")}</p>
+                  <p>{language.t("config.claws.dsh.field.modelDescription")}</p>
+                  <p>{language.t("config.claws.dsh.field.baseURLDescription")}</p>
+                </AgentSettingsDetails>
+                <div class="rounded-lg border border-border-weak-base p-3">
+                  <div class="mb-2 text-12-medium text-text-danger-base">{language.t("agentSettings.dangerZone")}</div>
+                  <label class="inline-flex items-center gap-2 text-13-regular text-text-danger-base">
                     <input
                       type="checkbox"
                       checked={props.form.clearApiKey}
@@ -3047,7 +3133,7 @@ function CliAgentEditor(props: {
                     {language.t("config.claws.dsh.field.clearApiKey")}
                   </label>
                 </div>
-              </div>
+              </section>
 
               <DshPluginInventoryCard
                 inventory={props.plugins}
@@ -3090,12 +3176,9 @@ function CliAgentEditor(props: {
             <Show when={props.form.testing || !!props.form.test}>
               <div class="rounded-2xl border border-border-weak-base bg-surface-base p-5">
                 <div class="text-13-medium text-text-strong">{language.t("config.claws.debug.title")}</div>
-                <div class="mt-1 text-12-regular text-text-weak">{language.t("config.claws.debug.description")}</div>
                 <ConnectionTestStatus testing={props.form.testing} result={props.form.test} />
-                <div class="mt-4 rounded-xl border border-border-weak-base bg-background-base px-4 py-3">
-                  <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
-                    {language.t("config.claws.debug.logs")}
-                  </div>
+                <AgentSettingsDetails title={language.t("config.claws.debug.logs")}>
+                  <p>{language.t("config.claws.debug.description")}</p>
                   <pre
                     class="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-12-regular text-text-weak"
                     style={{ "font-family": monoFontFamily(settings.appearance.font()) }}
@@ -3104,7 +3187,7 @@ function CliAgentEditor(props: {
                       ? language.t("config.claws.status.testing")
                       : props.form.test?.logs.join("\n") || ""}
                   </pre>
-                </div>
+                </AgentSettingsDetails>
               </div>
             </Show>
           </div>
@@ -3151,36 +3234,54 @@ function HermesEditor(props: {
           <div class="flex w-full flex-col gap-6">
             <ExtraAgentInfoCard info={props.info} loading={props.infoLoading} error={props.infoError} t={language.t} />
 
-            <div class="grid gap-4 lg:grid-cols-2">
-              <DirectoryInput
-                label={language.t("config.claws.field.hermesDir")}
-                description={language.t("config.claws.field.hermesDirDescription")}
-                placeholder={language.t("config.claws.field.hermesDirPlaceholder")}
-                value={props.form.hermesDir}
-                error={props.form.err.hermesDir}
-                disabled={props.busy || props.form.saving || props.form.testing}
-                onBrowse={props.onChooseDir}
-                onChange={(value) => props.onChange("hermesDir", value)}
-              />
-              <TextField
-                type="text"
-                label={language.t("config.claws.field.pythonExecutable")}
-                description={language.t("config.claws.field.pythonExecutableDescription")}
-                placeholder={language.t("config.claws.field.pythonExecutablePlaceholder")}
-                value={props.form.pythonExecutable}
-                disabled={props.busy || props.form.saving || props.form.testing}
-                onChange={(value) => props.onChange("pythonExecutable", value)}
-              />
-            </div>
-
-            <DirectoryInput
-              label={language.t("config.claws.field.hermesHome")}
-              description={language.t("config.claws.field.hermesHomeDescription")}
-              placeholder={language.t("config.claws.field.hermesHomePlaceholder")}
-              value={props.form.hermesHome}
-              disabled={props.busy || props.form.saving || props.form.testing}
-              onChange={(value) => props.onChange("hermesHome", value)}
-            />
+            <AgentSettingsGrid>
+              <AgentSettingsCard
+                title={language.t("agentSettings.agentDirectory")}
+                badge={language.t("agentSettings.required")}
+                priority="primary"
+                size="wide"
+              >
+                <AgentSettingsField wide>
+                  <DirectoryInput
+                    label={language.t("config.claws.field.hermesDir")}
+                    placeholder={language.t("config.claws.field.hermesDirPlaceholder")}
+                    value={props.form.hermesDir}
+                    error={props.form.err.hermesDir}
+                    disabled={props.busy || props.form.saving || props.form.testing}
+                    onBrowse={props.onChooseDir}
+                    onChange={(value) => props.onChange("hermesDir", value)}
+                  />
+                </AgentSettingsField>
+              </AgentSettingsCard>
+              <AgentSettingsCard title={language.t("agentSettings.runtimeOverrides")} priority="secondary" size="wide">
+                <AgentSettingsGrid>
+                  <AgentSettingsField>
+                    <TextField
+                      type="text"
+                      label={language.t("config.claws.field.pythonExecutable")}
+                      placeholder={language.t("config.claws.field.pythonExecutablePlaceholder")}
+                      value={props.form.pythonExecutable}
+                      disabled={props.busy || props.form.saving || props.form.testing}
+                      onChange={(value) => props.onChange("pythonExecutable", value)}
+                    />
+                  </AgentSettingsField>
+                  <AgentSettingsField>
+                    <DirectoryInput
+                      label={language.t("config.claws.field.hermesHome")}
+                      placeholder={language.t("config.claws.field.hermesHomePlaceholder")}
+                      value={props.form.hermesHome}
+                      disabled={props.busy || props.form.saving || props.form.testing}
+                      onChange={(value) => props.onChange("hermesHome", value)}
+                    />
+                  </AgentSettingsField>
+                </AgentSettingsGrid>
+              </AgentSettingsCard>
+            </AgentSettingsGrid>
+            <AgentSettingsDetails title={language.t("agentSettings.help")}>
+              <p>{language.t("config.claws.field.hermesDirDescription")}</p>
+              <p>{language.t("config.claws.field.pythonExecutableDescription")}</p>
+              <p>{language.t("config.claws.field.hermesHomeDescription")}</p>
+            </AgentSettingsDetails>
 
             <ClawFormActions
               dirty={props.dirty}
@@ -3196,12 +3297,9 @@ function HermesEditor(props: {
             <Show when={props.form.testing || !!props.form.test}>
               <div class="rounded-2xl border border-border-weak-base bg-surface-base p-5">
                 <div class="text-13-medium text-text-strong">{language.t("config.claws.debug.title")}</div>
-                <div class="mt-1 text-12-regular text-text-weak">{language.t("config.claws.debug.description")}</div>
                 <ConnectionTestStatus testing={props.form.testing} result={props.form.test} />
-                <div class="mt-4 rounded-xl border border-border-weak-base bg-background-base px-4 py-3">
-                  <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
-                    {language.t("config.claws.debug.logs")}
-                  </div>
+                <AgentSettingsDetails title={language.t("config.claws.debug.logs")}>
+                  <p>{language.t("config.claws.debug.description")}</p>
                   <pre
                     class="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-12-regular text-text-weak"
                     style={{ "font-family": monoFontFamily(settings.appearance.font()) }}
@@ -3213,7 +3311,7 @@ function HermesEditor(props: {
                         })
                       : props.form.test?.logs.join("\n") || ""}
                   </pre>
-                </div>
+                </AgentSettingsDetails>
               </div>
             </Show>
           </div>
@@ -4299,7 +4397,6 @@ export default function ConfigPage() {
         const cliAgents = platform.cliAgents
         if (section !== "claws" || !cliAgents) {
           cliAgentsRun++
-          setCliAgentDescriptors([])
           for (const agent of cliAgentDescriptors()) setCliAgentLoading(agent.id, { config: false, info: false })
           return
         }
@@ -4323,14 +4420,36 @@ export default function ConfigPage() {
                   ...(id === "pi" ? cfg().pi : cfg().external_agents?.[id]),
                 }
                 if (run !== cliAgentsRun) return
+                if (cliAgentDirty(id)) {
+                  console.debug(`[config-cli-agents] config skipped run=${run} id=${id} reason=dirty`)
+                  setCliAgentLoading(id, { config: false, info: false })
+                  return
+                }
                 setCliAgentConfigs(id, config)
-                setState("cliAgents", id, cliAgentCfg(config))
+                // Keep the DSH dirty baseline aligned until the refreshed info arrives.
+                const dsh = id === "dsh" ? cliAgentInfo[id]?.dsh : undefined
+                setState(
+                  "cliAgents",
+                  id,
+                  cliAgentCfg({
+                    ...config,
+                    ...dsh,
+                    provider: dsh?.provider || "deepseek-official",
+                    model: dsh?.model || "deepseek-v4-flash",
+                    baseURL: dsh?.baseURL || "",
+                  }),
+                )
                 setCliAgentLoading(id, "config", false)
 
                 const infoRun = (cliAgentInfoRuns[id] ?? 0) + 1
                 cliAgentInfoRuns[id] = infoRun
                 const info = await cliAgents.info(id, config)
                 if (run !== cliAgentsRun || infoRun !== cliAgentInfoRuns[id]) return
+                if (cliAgentDirty(id)) {
+                  console.debug(`[config-cli-agents] info skipped run=${run} id=${id} reason=dirty`)
+                  setCliAgentLoading(id, "info", false)
+                  return
+                }
                 setCliAgentInfo(id, info)
                 if (id === "dsh" && info.dsh) {
                   setState("cliAgents", id, "provider", info.dsh.provider || "deepseek-official")
@@ -4344,6 +4463,11 @@ export default function ConfigPage() {
                   if (cliAgents.getDshApiKey) {
                     const key = await cliAgents.getDshApiKey(config).catch(() => undefined)
                     if (run !== cliAgentsRun || infoRun !== cliAgentInfoRuns[id]) return
+                    if (cliAgentDirty(id)) {
+                      console.debug(`[config-cli-agents] api key skipped run=${run} id=${id} reason=dirty`)
+                      setCliAgentLoading(id, "info", false)
+                      return
+                    }
                     setState("cliAgents", id, "apiKey", key ?? "")
                   } else {
                     setState("cliAgents", id, "apiKey", "")
@@ -4355,7 +4479,6 @@ export default function ConfigPage() {
           })
           .catch((error) => {
             console.warn(`[config-cli-agents] list failed run=${run} error=${String(error)}`)
-            if (run === cliAgentsRun) setCliAgentDescriptors([])
           })
           .finally(() => {
             if (run !== cliAgentsRun) return

@@ -13,6 +13,12 @@ import type { GptProIssueCode } from "@opencode-ai/util/gpt-pro-error"
 import { getDirectory } from "@opencode-ai/core/util/path"
 import { usePlatform } from "@/context/platform"
 import { useLanguage } from "@/context/language"
+import {
+  AgentSettingsCard,
+  AgentSettingsDetails,
+  AgentSettingsField,
+  AgentSettingsGrid,
+} from "@/components/agent-settings-layout"
 import { createGptProRefreshFence, createGptProRuntimeFence } from "./gpt-pro-refresh-fence"
 import { GptProRuntimeCards } from "./gpt-pro-runtime-cards"
 import { gptProStateStore } from "@opencode-ai/ui/gpt-pro-state"
@@ -213,9 +219,15 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
     })
     const runtimeUnsubscribe = api?.subscribeRuntime?.((runtime) => {
       if (disposed || !runtimeFence.accept(runtime)) return
-      set({ runtime, config: runtime.config, login: runtime.login.phase,
-        loginError: runtime.login.error ?? "", loginErrorCode: runtime.login.errorCode,
-        extensionDirectory: runtime.login.extensionDirectory ?? "", refreshError: "" })
+      set({
+        runtime,
+        config: runtime.config,
+        login: runtime.login.phase,
+        loginError: runtime.login.error ?? "",
+        loginErrorCode: runtime.login.errorCode,
+        extensionDirectory: runtime.login.extensionDirectory ?? "",
+        refreshError: "",
+      })
       props.onConfig?.(runtime.config)
     })
     void refresh()
@@ -241,7 +253,7 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
               {state.config.enabled ? t("config.claws.badge.enabled") : t("config.claws.badge.disabled")}
             </span>
           </div>
-          <p class="mt-2 text-13-regular text-text-weak">{t("gptPro.description")}</p>
+          <p class="mt-2 text-13-regular text-text-weak">{t("agentSettings.gptPro.summary")}</p>
         </div>
         <Switch
           checked={state.config.enabled}
@@ -253,279 +265,306 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
         </Switch>
       </div>
       <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
-        <div class="flex w-full flex-col gap-6">
-          <section class="rounded-2xl border border-border-weak-base bg-surface-base p-4" data-section="gpt-pro-login">
-            <h3 class="text-14-medium text-text-strong">{t("gptPro.loginSection")}</h3>
-            <div class="mt-4 flex flex-wrap items-center justify-start gap-2">
-              <Button
-                size="small"
-                variant="secondary"
-                disabled={!api || state.busy}
-                onClick={() => void run(() => api!.loginInBrowser())}
-              >
-                {t("gptPro.login")}
-              </Button>
-              <Show when={api?.verifyLogin && state.runtime?.session?.import.candidateProfileID}>
-                <Button size="small" variant="secondary" disabled={state.busy}
-                  onClick={() => void run(() => api!.verifyLogin!())}>
-                  {t("gptPro.verifyLogin")}
-                </Button>
-              </Show>
-              <Show when={api?.recoverStorage && state.runtime?.executionStorage?.phase === "fault"}>
-                <Button size="small" variant="secondary" disabled={state.busy}
-                  onClick={() => void run(() => api!.recoverStorage!())}>
-                  {t("gptPro.recoverStorage")}
-                </Button>
-              </Show>
-              <div class="inline-flex max-w-full flex-wrap items-center gap-1 rounded-full border border-border-weak-base bg-background-base py-0.5 pl-3 pr-1">
-                <span class="text-12-regular text-text-weak">{t("gptPro.importStatus.label")}:</span>
-                <span
-                  class="text-12-regular"
-                  classList={{
-                    "text-text-success-base": state.login === "imported",
-                    "text-text-danger-base": state.login === "failed",
-                    "text-text-weak": state.login !== "imported" && state.login !== "failed",
-                  }}
-                >
-                  {importStatus()}
-                </span>
+        <div class="flex w-full flex-col gap-4">
+          <section data-section="gpt-pro-login">
+            <AgentSettingsCard title={t("gptPro.loginSection")} priority="primary" size="wide">
+              <div class="flex flex-wrap items-center justify-start gap-2">
                 <Button
                   size="small"
-                  variant="ghost"
-                  class="shrink-0 rounded-full"
+                  variant="secondary"
                   disabled={!api || state.busy}
-                  onClick={() => void refresh()}
+                  onClick={() => void run(() => api!.loginInBrowser())}
                 >
-                  {t("gptPro.refresh")}
+                  {t("gptPro.login")}
                 </Button>
+                <Show when={api?.verifyLogin && state.runtime?.session?.import.candidateProfileID}>
+                  <Button
+                    size="small"
+                    variant="secondary"
+                    disabled={state.busy}
+                    onClick={() => void run(() => api!.verifyLogin!())}
+                  >
+                    {t("gptPro.verifyLogin")}
+                  </Button>
+                </Show>
+                <Show when={api?.recoverStorage && state.runtime?.executionStorage?.phase === "fault"}>
+                  <Button
+                    size="small"
+                    variant="secondary"
+                    disabled={state.busy}
+                    onClick={() => void run(() => api!.recoverStorage!())}
+                  >
+                    {t("gptPro.recoverStorage")}
+                  </Button>
+                </Show>
+                <div class="inline-flex max-w-full flex-wrap items-center gap-1 rounded-full border border-border-weak-base bg-background-base py-0.5 pl-3 pr-1">
+                  <span class="text-12-regular text-text-weak">{t("gptPro.importStatus.label")}:</span>
+                  <span
+                    class="text-12-regular"
+                    classList={{
+                      "text-text-success-base": state.login === "imported",
+                      "text-text-danger-base": state.login === "failed",
+                      "text-text-weak": state.login !== "imported" && state.login !== "failed",
+                    }}
+                  >
+                    {importStatus()}
+                  </span>
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    class="shrink-0 rounded-full"
+                    disabled={!api || state.busy}
+                    onClick={() => void refresh()}
+                  >
+                    {t("gptPro.refresh")}
+                  </Button>
+                </div>
+                <Show when={api}>
+                  <Button
+                    size="small"
+                    class="ml-auto"
+                    disabled={!api || state.busy}
+                    onClick={() => void run(() => api!.open())}
+                  >
+                    {t("gptPro.open")}
+                  </Button>
+                </Show>
               </div>
-              <Show when={api}>
-                <Button
-                  size="small"
-                  class="ml-auto"
-                  disabled={!api || state.busy}
-                  onClick={() => void run(() => api!.open())}
-                >
-                  {t("gptPro.open")}
-                </Button>
-              </Show>
-            </div>
-            <GptProRuntimeCards runtime={state.runtime} t={t} />
-            <Show
-              when={
-                state.error ||
-                state.refreshError ||
-                state.loginError ||
-                state.runtime?.credentials.error ||
-                state.runtime?.session.authentication.detail || state.runtime?.executionStorage?.phase === "fault"
-              }
-            >
-              <GptProErrorNotice
-                error={
+              <GptProRuntimeCards runtime={state.runtime} t={t} />
+              <Show
+                when={
                   state.error ||
                   state.refreshError ||
                   state.loginError ||
                   state.runtime?.credentials.error ||
-                  state.runtime?.session.authentication.detail
-                }
-                code={
+                  state.runtime?.session.authentication.detail ||
                   state.runtime?.executionStorage?.phase === "fault"
-                    ? "result_storage"
-                    : state.error
-                    ? undefined
-                    : state.refreshError
-                      ? "connection"
-                      : (state.loginErrorCode ??
-                        (state.runtime?.credentials.error
-                          ? "credential_storage"
-                          : state.runtime?.session.authentication.phase === "verification"
-                            ? "verification"
-                            : undefined))
                 }
-                busy={state.busy}
-              />
-            </Show>
-            <div class="mt-4 border-t border-border-weak-base pt-4">
-              <h4 class="text-13-medium text-text-strong">{t("gptPro.guide.title")}</h4>
-              <ol
-                class="mt-4 mb-5 grid grid-cols-1 gap-8 @[48rem]:grid-cols-4"
-                aria-label={t("gptPro.guide.flow")}
-                data-section="gpt-pro-login-flow"
               >
-                <For
-                  each={
-                    [
-                      "gptPro.guide.flow.install",
-                      "gptPro.guide.flow.open",
-                      "gptPro.guide.flow.login",
-                      "gptPro.guide.flow.approve",
-                    ] as const
+                <GptProErrorNotice
+                  error={
+                    state.error ||
+                    state.refreshError ||
+                    state.loginError ||
+                    state.runtime?.credentials.error ||
+                    state.runtime?.session.authentication.detail
                   }
-                >
-                  {(step, index) => (
-                    <li class="relative flex min-w-0 items-center gap-3 rounded-lg border border-border-weak-base bg-background-base p-3">
-                      <Show when={index() > 0}>
-                        <span
-                          aria-hidden="true"
-                          class="absolute -top-6 left-1/2 -translate-x-1/2 rotate-90 text-icon-weak @[48rem]:top-1/2 @[48rem]:-left-6 @[48rem]:translate-x-0 @[48rem]:-translate-y-1/2 @[48rem]:rotate-0"
-                        >
-                          <Icon name="arrow-right" size="small" />
-                        </span>
-                      </Show>
-                      <span
-                        aria-hidden="true"
-                        class="flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-inset-base text-[18px] font-medium leading-none text-text-strong"
-                      >
-                        {index() + 1}
-                      </span>
-                      <span class="min-w-0 text-12-medium leading-5 text-text-strong">{t(step)}</span>
-                    </li>
-                  )}
-                </For>
-              </ol>
-              <ol
-                class="mt-3 list-decimal space-y-3 pl-5 text-12-regular leading-relaxed text-text-weak"
-                data-section="gpt-pro-login-steps"
-              >
-                <li>
-                  {installGuide[0]}
-                  <a
-                    href="chrome://extensions"
-                    class="text-text-base underline underline-offset-2 hover:text-text-strong"
-                    aria-label={t("common.copy")}
-                    title={t("common.copy")}
-                    onClick={async (event) => {
-                      event.preventDefault()
-                      set("error", "")
-                      console.debug("[gpt-pro-settings] copying Chrome extensions address")
-                      try {
-                        await navigator.clipboard.writeText("chrome://extensions")
-                        console.debug("[gpt-pro-settings] Chrome extensions address copied")
-                        showToast({ title: t("session.share.copy.copied") })
-                      } catch (error) {
-                        const message = error instanceof Error ? error.message : String(error)
-                        console.debug(`[gpt-pro-settings] copying Chrome extensions address failed: ${message}`)
-                        set("error", message)
-                      }
-                    }}
+                  code={
+                    state.runtime?.executionStorage?.phase === "fault"
+                      ? "result_storage"
+                      : state.error
+                        ? undefined
+                        : state.refreshError
+                          ? "connection"
+                          : (state.loginErrorCode ??
+                            (state.runtime?.credentials.error
+                              ? "credential_storage"
+                              : state.runtime?.session.authentication.phase === "verification"
+                                ? "verification"
+                                : undefined))
+                  }
+                  busy={state.busy}
+                />
+              </Show>
+              <div class="mt-4">
+                <AgentSettingsDetails title={t("gptPro.guide.title")}>
+                  <p class="text-12-regular text-text-weak">{t("gptPro.description")}</p>
+                  <ol
+                    class="mt-4 mb-5 grid grid-cols-1 gap-8 @[48rem]:grid-cols-4"
+                    aria-label={t("gptPro.guide.flow")}
+                    data-section="gpt-pro-login-flow"
                   >
-                    chrome://extensions
-                  </a>
-                  {installGuide[1]}
-                </li>
-                <li>
-                  {t("gptPro.guide.load")}
-                  <Show when={state.extensionDirectory}>
-                    <div class="mt-2 flex flex-wrap items-center gap-3 rounded-lg border border-border-weak-base bg-background-base p-3">
-                      <code class="min-w-0 flex-1 basis-64 break-all select-text text-text-base">
-                        {state.extensionDirectory}
-                      </code>
-                      <Show when={platform.openPath}>
-                        <Button
-                          variant="ghost"
-                          size="small"
-                          icon="folder"
-                          class="ml-auto shrink-0"
-                          disabled={state.busy}
-                          onClick={() =>
-                            void run(async () => {
-                              const parent = getDirectory(state.extensionDirectory)
-                              console.debug(`[gpt-pro-settings] opening extension parent directory=${parent}`)
-                              await platform.openPath!(parent)
-                              console.debug("[gpt-pro-settings] extension parent directory opened")
-                            })
+                    <For
+                      each={
+                        [
+                          "gptPro.guide.flow.install",
+                          "gptPro.guide.flow.open",
+                          "gptPro.guide.flow.login",
+                          "gptPro.guide.flow.approve",
+                        ] as const
+                      }
+                    >
+                      {(step, index) => (
+                        <li class="relative flex min-w-0 items-center gap-3 rounded-lg border border-border-weak-base bg-background-base p-3">
+                          <Show when={index() > 0}>
+                            <span
+                              aria-hidden="true"
+                              class="absolute -top-6 left-1/2 -translate-x-1/2 rotate-90 text-icon-weak @[48rem]:top-1/2 @[48rem]:-left-6 @[48rem]:translate-x-0 @[48rem]:-translate-y-1/2 @[48rem]:rotate-0"
+                            >
+                              <Icon name="arrow-right" size="small" />
+                            </span>
+                          </Show>
+                          <span
+                            aria-hidden="true"
+                            class="flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-inset-base text-[18px] font-medium leading-none text-text-strong"
+                          >
+                            {index() + 1}
+                          </span>
+                          <span class="min-w-0 text-12-medium leading-5 text-text-strong">{t(step)}</span>
+                        </li>
+                      )}
+                    </For>
+                  </ol>
+                  <ol
+                    class="mt-3 list-decimal space-y-3 pl-5 text-12-regular leading-relaxed text-text-weak"
+                    data-section="gpt-pro-login-steps"
+                  >
+                    <li>
+                      {installGuide[0]}
+                      <a
+                        href="chrome://extensions"
+                        class="text-text-base underline underline-offset-2 hover:text-text-strong"
+                        aria-label={t("common.copy")}
+                        title={t("common.copy")}
+                        onClick={async (event) => {
+                          event.preventDefault()
+                          set("error", "")
+                          console.debug("[gpt-pro-settings] copying Chrome extensions address")
+                          try {
+                            await navigator.clipboard.writeText("chrome://extensions")
+                            console.debug("[gpt-pro-settings] Chrome extensions address copied")
+                            showToast({ title: t("session.share.copy.copied") })
+                          } catch (error) {
+                            const message = error instanceof Error ? error.message : String(error)
+                            console.debug(`[gpt-pro-settings] copying Chrome extensions address failed: ${message}`)
+                            set("error", message)
                           }
-                        >
-                          {t("gptPro.guide.openDirectory")}
-                        </Button>
+                        }}
+                      >
+                        chrome://extensions
+                      </a>
+                      {installGuide[1]}
+                    </li>
+                    <li>
+                      {t("gptPro.guide.load")}
+                      <Show when={state.extensionDirectory}>
+                        <div class="mt-2 flex flex-wrap items-center gap-3 rounded-lg border border-border-weak-base bg-background-base p-3">
+                          <code class="min-w-0 flex-1 basis-64 break-all select-text text-text-base">
+                            {state.extensionDirectory}
+                          </code>
+                          <Show when={platform.openPath}>
+                            <Button
+                              variant="ghost"
+                              size="small"
+                              icon="folder"
+                              class="ml-auto shrink-0"
+                              disabled={state.busy}
+                              onClick={() =>
+                                void run(async () => {
+                                  const parent = getDirectory(state.extensionDirectory)
+                                  console.debug(`[gpt-pro-settings] opening extension parent directory=${parent}`)
+                                  await platform.openPath!(parent)
+                                  console.debug("[gpt-pro-settings] extension parent directory opened")
+                                })
+                              }
+                            >
+                              {t("gptPro.guide.openDirectory")}
+                            </Button>
+                          </Show>
+                        </div>
                       </Show>
-                    </div>
-                  </Show>
-                </li>
-                <li>{t("gptPro.guide.login")}</li>
-                <li>{t("gptPro.guide.signIn")}</li>
-                <li>{t("gptPro.guide.openExtension")}</li>
-                <li>{t("gptPro.guide.approve")}</li>
-                <li>{t("gptPro.guide.finish")}</li>
-                <li>{t("gptPro.guide.selectModel")}</li>
-              </ol>
-              <p class="mt-3 text-11-regular leading-relaxed text-text-weak">{t("gptPro.guide.note")}</p>
-            </div>
-          </section>
-          <section
-            class="rounded-2xl border border-border-weak-base bg-surface-base p-4"
-            data-section="gpt-pro-settings"
-          >
-            <h3 class="text-14-medium text-text-strong">{t("gptPro.configSection")}</h3>
-            <div class="mt-4 grid gap-4 md:grid-cols-2">
-              <div class="space-y-2">
-                <label class="flex items-center justify-between gap-4 text-13-regular">
-                  {t("gptPro.timeout")}
-                  <input
-                    aria-label={t("gptPro.timeout")}
-                    type="number"
-                    disabled={state.busy}
-                    min="1"
-                    max="60"
-                    class="h-8 w-20 rounded-lg border border-border-weak-base bg-background-base px-2.5 text-13-regular text-text-base"
-                    value={state.config.timeoutMinutes}
-                    onChange={(event) =>
-                      void save({ ...state.config, timeoutMinutes: Number(event.currentTarget.value) })
-                    }
-                  />
-                </label>
-                <p class="text-12-regular text-text-weak">{t("gptPro.persistence")}</p>
+                    </li>
+                    <li>{t("gptPro.guide.login")}</li>
+                    <li>{t("gptPro.guide.signIn")}</li>
+                    <li>{t("gptPro.guide.openExtension")}</li>
+                    <li>{t("gptPro.guide.approve")}</li>
+                    <li>{t("gptPro.guide.finish")}</li>
+                    <li>{t("gptPro.guide.selectModel")}</li>
+                  </ol>
+                  <p class="mt-3 text-11-regular leading-relaxed text-text-weak">{t("gptPro.guide.note")}</p>
+                </AgentSettingsDetails>
               </div>
-              <label class="flex items-center justify-between gap-4 text-13-regular">
-                {t("gptPro.progressInterval")}
-                <input
-                  aria-label={t("gptPro.progressInterval")}
-                  type="number"
-                  disabled={state.busy}
-                  min="10"
-                  max="600"
-                  class="h-8 w-20 rounded-lg border border-border-weak-base bg-background-base px-2.5 text-13-regular text-text-base"
-                  value={state.config.progressIntervalSeconds ?? 60}
-                  onChange={(event) =>
-                    void save({ ...state.config, progressIntervalSeconds: Number(event.currentTarget.value) })
-                  }
-                />
-              </label>
-              <label class="flex items-center justify-between gap-4 text-13-regular">
-                {t("gptPro.maxConcurrent")}
-                <input
-                  aria-label={t("gptPro.maxConcurrent")}
-                  type="number"
-                  disabled={state.busy}
-                  min="1"
-                  max="8"
-                  class="h-8 w-20 rounded-lg border border-border-weak-base bg-background-base px-2.5 text-13-regular text-text-base"
-                  value={state.config.maxConcurrent ?? 4}
-                  onChange={(event) => void save({ ...state.config, maxConcurrent: Number(event.currentTarget.value) })}
-                />
-              </label>
-              <label class="flex items-center justify-between gap-4 text-13-regular">
-                {t("gptPro.maxResidentPages")}
-                <input
-                  aria-label={t("gptPro.maxResidentPages")}
-                  type="number"
-                  disabled={state.busy}
-                  min={state.config.maxConcurrent ?? 4}
-                  max="32"
-                  class="h-8 w-20 rounded-lg border border-border-weak-base bg-background-base px-2.5 text-13-regular text-text-base"
-                  value={state.config.maxResidentPages ?? 8}
-                  onChange={(event) =>
-                    void save({ ...state.config, maxResidentPages: Number(event.currentTarget.value) })
-                  }
-                />
-              </label>
-            </div>
+            </AgentSettingsCard>
+          </section>
+          <section class="space-y-3" data-section="gpt-pro-settings">
+            <h3 class="text-14-medium text-text-strong">{t("gptPro.configSection")}</h3>
+            <AgentSettingsGrid>
+              <AgentSettingsCard title={t("agentSettings.gptPro.timing")} priority="secondary" size="compact">
+                <div class="flex min-w-0 flex-wrap gap-4">
+                  <AgentSettingsField>
+                    <label class="flex flex-wrap items-center justify-between gap-2 text-13-regular">
+                      {t("gptPro.timeout")}
+                      <input
+                        aria-label={t("gptPro.timeout")}
+                        type="number"
+                        disabled={state.busy}
+                        min="1"
+                        max="60"
+                        class="h-8 w-20 shrink-0 rounded-lg border border-border-weak-base bg-background-base px-2.5 text-13-regular text-text-base"
+                        value={state.config.timeoutMinutes}
+                        onChange={(event) =>
+                          void save({ ...state.config, timeoutMinutes: Number(event.currentTarget.value) })
+                        }
+                      />
+                    </label>
+                  </AgentSettingsField>
+                  <AgentSettingsField>
+                    <label class="flex flex-wrap items-center justify-between gap-2 text-13-regular">
+                      {t("gptPro.progressInterval")}
+                      <input
+                        aria-label={t("gptPro.progressInterval")}
+                        type="number"
+                        disabled={state.busy}
+                        min="10"
+                        max="600"
+                        class="h-8 w-20 shrink-0 rounded-lg border border-border-weak-base bg-background-base px-2.5 text-13-regular text-text-base"
+                        value={state.config.progressIntervalSeconds ?? 60}
+                        onChange={(event) =>
+                          void save({ ...state.config, progressIntervalSeconds: Number(event.currentTarget.value) })
+                        }
+                      />
+                    </label>
+                  </AgentSettingsField>
+                </div>
+                <AgentSettingsDetails title={t("agentSettings.help")}>
+                  <p>{t("gptPro.persistence")}</p>
+                </AgentSettingsDetails>
+              </AgentSettingsCard>
+              <AgentSettingsCard title={t("agentSettings.gptPro.capacity")} priority="secondary" size="compact">
+                <div class="flex min-w-0 flex-wrap gap-4">
+                  <AgentSettingsField>
+                    <label class="flex flex-wrap items-center justify-between gap-2 text-13-regular">
+                      {t("gptPro.maxConcurrent")}
+                      <input
+                        aria-label={t("gptPro.maxConcurrent")}
+                        type="number"
+                        disabled={state.busy}
+                        min="1"
+                        max="8"
+                        class="h-8 w-20 shrink-0 rounded-lg border border-border-weak-base bg-background-base px-2.5 text-13-regular text-text-base"
+                        value={state.config.maxConcurrent ?? 4}
+                        onChange={(event) =>
+                          void save({ ...state.config, maxConcurrent: Number(event.currentTarget.value) })
+                        }
+                      />
+                    </label>
+                  </AgentSettingsField>
+                  <AgentSettingsField>
+                    <label class="flex flex-wrap items-center justify-between gap-2 text-13-regular">
+                      {t("gptPro.maxResidentPages")}
+                      <input
+                        aria-label={t("gptPro.maxResidentPages")}
+                        type="number"
+                        disabled={state.busy}
+                        min={state.config.maxConcurrent ?? 4}
+                        max="32"
+                        class="h-8 w-20 shrink-0 rounded-lg border border-border-weak-base bg-background-base px-2.5 text-13-regular text-text-base"
+                        value={state.config.maxResidentPages ?? 8}
+                        onChange={(event) =>
+                          void save({ ...state.config, maxResidentPages: Number(event.currentTarget.value) })
+                        }
+                      />
+                    </label>
+                  </AgentSettingsField>
+                </div>
+              </AgentSettingsCard>
+            </AgentSettingsGrid>
           </section>
         </div>
       </div>
       <Collapsible
         variant="ghost"
-        class="mx-4 mb-4"
+        class="mx-4 mb-4 w-auto self-stretch"
         defaultOpen={false}
         forceMount={false}
         data-section="gpt-pro-history"

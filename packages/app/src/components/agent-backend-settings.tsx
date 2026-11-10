@@ -5,7 +5,6 @@ import { TextField } from "@opencode-ai/ui/text-field"
 import type {
   Config,
   OpencodeClient,
-  AgentBackendStatusResponse,
   AgentBackendPrepareResponse,
   AgentBackendProbeResponse,
 } from "@opencode-ai/sdk/v2/client"
@@ -14,9 +13,25 @@ import { useGlobalSDK } from "@/context/global-sdk"
 import { useServer } from "@/context/server"
 import { mainDomain } from "@/pages/layout/extra-agents"
 import { parseAcpCommand, parseAcpEnvironment } from "./agent-backend-config"
+import { createAgentBackendStatus } from "./agent-backend-status"
+import { AgentSettingsCard, AgentSettingsDetails, AgentSettingsField, AgentSettingsGrid } from "./agent-settings-layout"
 
 export type AdvisorID = "claude" | "codex" | "pi" | "grok" | "dsh"
 type AcpConfig = Extract<NonNullable<NonNullable<Config["agent_backends"]>["claude"]>, { type: "acp" }>
+
+function backendSignature(backend: NonNullable<Config["agent_backends"]>[AdvisorID], advisor: AdvisorID) {
+  if (backend?.type !== "acp")
+    return JSON.stringify({ type: backend?.type ?? (advisor === "pi" ? "native-rpc" : "cli-json") })
+  return JSON.stringify({
+    type: backend.type,
+    command: backend.command,
+    managed: backend.managed,
+    env: Object.fromEntries(Object.entries(backend.env ?? {}).sort(([a], [b]) => a.localeCompare(b))),
+    model: backend.model?.trim() || undefined,
+    mode: backend.mode?.trim() || undefined,
+    permission: backend.permission ?? "deny",
+  })
+}
 
 export function AgentBackendSettings(props: {
   advisor: AdvisorID
@@ -35,7 +50,6 @@ export function AgentBackendSettings(props: {
     model: "",
     mode: "",
     permission: "deny",
-    status: undefined as AgentBackendStatusResponse | undefined,
     confirmation: undefined as AgentBackendPrepareResponse | undefined,
     result: undefined as AgentBackendProbeResponse | undefined,
     tested: "",
@@ -50,9 +64,14 @@ export function AgentBackendSettings(props: {
     generation++
     controller?.abort()
   })
-  const recipe = createMemo(() => state.status?.adapters.find((item) => item.advisor === props.advisor))
+  const status = createAgentBackendStatus(() => props.client)
+  const recipe = createMemo(() => status.latest?.adapters.find((item) => item.advisor === props.advisor))
   const installed = createMemo(() => recipe()?.installed.find((item) => item.version === state.version))
   const active = () => props.config.agent_backends?.[props.advisor]
+  const managedMode = () =>
+    state.source === "managed" &&
+    (!!recipe() || !status.latest || (active()?.type === "acp" && !!(active() as AcpConfig).managed))
+  const customMode = () => state.source === "custom" || (!!status.latest && !recipe() && !managedMode())
   const invalidate = () => {
     setState({ tested: "", result: undefined, saved: false, confirmation: undefined, messageConsent: false })
   }
@@ -64,8 +83,9 @@ export function AgentBackendSettings(props: {
     invalidate()
   }
   const draft = (): AcpConfig => {
-    const managed = state.source === "managed" && recipe() ? installed() : undefined
-    if (state.source === "managed" && recipe() && !managed) throw new Error(t("agentBackend.notInstalled"))
+    if (managedMode() && !recipe()) throw new Error(status.latest ? t("agentBackend.customOnly") : t("common.loading"))
+    const managed = managedMode() ? installed() : undefined
+    if (managedMode() && !managed) throw new Error(t("agentBackend.notInstalled"))
     return {
       type: "acp",
       command: managed?.command ?? parseAcpCommand(state.command),
@@ -85,32 +105,51 @@ export function AgentBackendSettings(props: {
       return false
     }
   }
-  const refresh = async (signal?: AbortSignal) => {
-    const result = await props.client.agentBackend.status(undefined, { signal, throwOnError: true })
-    if (signal?.aborted) return
-    setState("status", result.data)
-    if (!state.version)
-      setState("version", result.data.adapters.find((item) => item.advisor === props.advisor)?.recommended ?? "")
-  }
-  const perform = async (name: string, fn: (signal: AbortSignal) => Promise<void>) => {
+  createEffect(() => {
+    const recommended = recipe()?.recommended
+    if (!state.version && recommended) setState("version", recommended)
+  })
+  const backendKey = createMemo(() => backendSignature(props.config.agent_backends?.[props.advisor], props.advisor))
+  let submitted: { advisor: AdvisorID; client: OpencodeClient; signature: string } | undefined
+  const perform = async (name: string, fn: (signal: AbortSignal, current: () => boolean) => Promise<void>) => {
     if (state.busy) return
     const run = ++generation
-    controller = new AbortController()
+    const operation = new AbortController()
+    const advisor = props.advisor
+    const current = () => run === generation && !operation.signal.aborted
+    controller = operation
     setState({ busy: name, error: "", saved: false })
-    console.info(`[agent-backend.settings] start advisor=${props.advisor} action=${name}`)
+    console.info(`[agent-backend.settings] start advisor=${advisor} action=${name} run=${run}`)
     try {
-      await fn(controller.signal)
+      await fn(operation.signal, current)
+      if (run === generation && operation.signal.aborted) setState("error", t("agentBackend.cancelled"))
+      console.info(
+        `[agent-backend.settings] finished advisor=${advisor} action=${name} run=${run} current=${current()}`,
+      )
     } catch (error) {
-      if (run === generation) setState("error", controller.signal.aborted ? t("agentBackend.cancelled") : String(error))
-      console.warn(`[agent-backend.settings] failed advisor=${props.advisor} action=${name}`)
+      if (run === generation) setState("error", operation.signal.aborted ? t("agentBackend.cancelled") : String(error))
+      console.warn(
+        `[agent-backend.settings] failed advisor=${advisor} action=${name} run=${run} cancelled=${operation.signal.aborted}`,
+      )
     } finally {
       if (run === generation) setState("busy", "")
     }
   }
+  let initialized: { advisor: AdvisorID; client: OpencodeClient; signature: string } | undefined
   createEffect(
     on(
-      () => [props.advisor, props.config.agent_backends?.[props.advisor], props.client] as const,
-      ([advisor, backend]) => {
+      () => [props.advisor, backendKey(), props.client] as const,
+      ([advisor, signature, client]) => {
+        if (initialized?.advisor === advisor && initialized.client === client && initialized.signature === signature)
+          return
+        initialized = { advisor, client, signature }
+        if (submitted?.advisor === advisor && submitted.client === client && submitted.signature === signature) {
+          submitted = undefined
+          console.info(`[agent-backend.settings] saved baseline accepted advisor=${advisor}`)
+          return
+        }
+        submitted = undefined
+        const backend = props.config.agent_backends?.[advisor]
         generation++
         controller?.abort()
         setState({
@@ -123,7 +162,6 @@ export function AgentBackendSettings(props: {
           mode: backend?.type === "acp" ? (backend.mode ?? "") : "",
           permission: backend?.type === "acp" ? (backend.permission ?? "deny") : "deny",
           busy: "",
-          status: undefined,
           error: "",
           confirmation: undefined,
           result: undefined,
@@ -131,211 +169,275 @@ export function AgentBackendSettings(props: {
           saved: false,
           messageConsent: false,
         })
-        void perform("inspect", (signal) => refresh(signal))
+        console.info(`[agent-backend.settings] draft initialized advisor=${advisor}`)
       },
     ),
   )
   const prepare = (action: "install" | "remove") =>
-    perform("prepare", async (signal) => {
+    perform("prepare", async (signal, current) => {
       const adapter = recipe()
       if (!adapter) throw new Error(t("agentBackend.customOnly"))
       const result = await props.client.agentBackend.prepare(
         { advisor: adapter.advisor, version: state.version, action },
         { signal, throwOnError: true },
       )
-      setState("confirmation", result.data)
+      if (current()) setState("confirmation", result.data)
     })
+  const testConnection = async (
+    config: AcpConfig,
+    signal: AbortSignal,
+    current: () => boolean,
+    message = false,
+    authMethod?: string,
+  ) => {
+    const advisor = props.advisor
+    setState("messageConsent", false)
+    console.info(`[agent-backend.settings] probe advisor=${advisor} message=${message} login=${!!authMethod}`)
+    const result = await props.client.agentBackend.probe(
+      { advisor, config, message, authMethod },
+      { signal, throwOnError: true },
+    )
+    if (!current()) {
+      console.info(`[agent-backend.settings] probe discarded advisor=${advisor}`)
+      return false
+    }
+    setState({ result: result.data, tested: result.data.status === "ready" ? JSON.stringify(config) : "" })
+    console.info(`[agent-backend.settings] probe result advisor=${advisor} status=${result.data.status}`)
+    return result.data.status === "ready"
+  }
   const probe = (message = false, authMethod?: string) =>
-    perform(authMethod ? "login" : "probe", async (signal) => {
-      setState("messageConsent", false)
-      const config = draft()
-      const result = await props.client.agentBackend.probe(
-        { advisor: props.advisor, config, message, authMethod },
-        { signal, throwOnError: true },
-      )
-      setState({ result: result.data, tested: result.data.status === "ready" ? JSON.stringify(config) : "" })
+    perform(authMethod ? "login" : "probe", async (signal, current) => {
+      await testConnection(draft(), signal, current, message, authMethod)
     })
   const save = () =>
-    perform("save", async () => {
+    perform("save", async (signal, current) => {
+      const advisor = props.advisor
       const backend =
-        state.type === "acp"
-          ? draft()
-          : { type: props.advisor === "pi" ? ("native-rpc" as const) : ("cli-json" as const) }
-      if (backend.type === "acp" && !tested()) throw new Error(t("agentBackend.testFirst"))
+        state.type === "acp" ? draft() : { type: advisor === "pi" ? ("native-rpc" as const) : ("cli-json" as const) }
+      if (backend.type === "acp") {
+        const verified = tested()
+        console.info(`[agent-backend.settings] save validation advisor=${advisor} cached=${verified}`)
+        if (!verified && !(await testConnection(backend, signal, current))) {
+          console.info(`[agent-backend.settings] save blocked advisor=${advisor}`)
+          return
+        }
+      }
+      if (!current()) return
+      console.info(`[agent-backend.settings] save submit advisor=${advisor} type=${backend.type}`)
+      submitted = { advisor, client: props.client, signature: backendSignature(backend, advisor) }
       await props.onSave({
-        agent_backends: { ...props.config.agent_backends, [props.advisor]: backend },
-        ...(props.advisor === "pi"
+        agent_backends: { ...props.config.agent_backends, [advisor]: backend },
+        ...(advisor === "pi"
           ? { pi: { ...props.config.pi, enabled: true } }
           : {
               external_agents: {
                 ...props.config.external_agents,
-                [props.advisor]: { ...props.config.external_agents?.[props.advisor], enabled: true },
+                [advisor]: { ...props.config.external_agents?.[advisor], enabled: true },
               },
             }),
       })
-      setState("saved", true)
+      console.info(`[agent-backend.settings] save completed advisor=${advisor} current=${current()}`)
+      if (current()) setState("saved", true)
     })
   const selectClass =
-    "w-full rounded-lg border border-border-weak-base bg-surface-base px-3 py-2 text-13-regular text-text-strong"
+    "w-auto max-w-full rounded-lg border border-border-weak-base bg-surface-base px-3 py-2 text-13-regular text-text-strong"
   return (
-    <section
-      data-agent-backend={props.advisor}
-      class="rounded-2xl border border-border-weak-base bg-surface-base p-4 flex flex-col gap-4"
-    >
-      <div class="flex items-start justify-between gap-3">
-        <div>
-          <h3 class="text-14-medium text-text-strong">{t("agentBackend.title")}</h3>
-          <p class="mt-1 text-12-regular text-text-weak">{t("agentBackend.description")}</p>
-        </div>
-        <Button
-          size="small"
-          variant="ghost"
-          disabled={!!state.busy}
-          onClick={() => void perform("inspect", (signal) => refresh(signal))}
+    <section data-agent-backend={props.advisor} class="flex min-w-0 flex-col gap-3">
+      <AgentSettingsGrid>
+        <AgentSettingsCard
+          title={t("agentSettings.connection")}
+          badge={t("agentSettings.important")}
+          priority="primary"
+          size="compact"
         >
-          {t("agentBackend.refresh")}
-        </Button>
-      </div>
-      <div class="rounded-lg bg-surface-raised-base p-3 text-12-regular break-all" data-agent-backend-target>
-        <strong>{t("agentBackend.target")}: </strong>
-        {state.status?.target ?? "..."} ({state.status?.platform}/{state.status?.arch})
-        <div class="mt-1 text-text-weak">{state.status?.directory}</div>
-        <Show when={props.remote}>
-          <p class="mt-2 text-text-weak">{t("agentBackend.remote")}</p>
-        </Show>
-      </div>
-      <label class="text-12-medium text-text-strong">
-        {t("agentBackend.transport")}
-        <select
-          aria-label={t("agentBackend.transport")}
-          class={selectClass}
-          value={state.type}
-          disabled={!!state.busy}
-          onChange={(event) => change("type", event.currentTarget.value)}
-        >
-          <option value={props.advisor === "pi" ? "native-rpc" : "cli-json"}>
-            {props.advisor === "pi" ? "Native RPC" : "CLI JSON"}
-          </option>
-          <option value="acp">ACP</option>
-        </select>
-      </label>
-      <Show when={state.type === "acp"}>
-        <label class="text-12-medium text-text-strong">
-          {t("agentBackend.source")}
-          <select
-            aria-label={t("agentBackend.source")}
-            class={selectClass}
-            value={recipe() ? state.source : "custom"}
-            disabled={!!state.busy}
-            onChange={(event) => change("source", event.currentTarget.value)}
+          <div
+            class="flex min-w-0 flex-wrap items-center justify-between gap-2 text-12-regular text-text-weak"
+            data-agent-backend-target
           >
-            <Show when={recipe()}>
-              <option value="managed">{t("agentBackend.managed")}</option>
-            </Show>
-            <option value="custom">{t("agentBackend.custom")}</option>
-          </select>
-        </label>
-        <Show
-          when={recipe() && state.source === "managed"}
-          fallback={
-            <Show when={!recipe()}>
-              <p class="text-12-regular text-text-weak">{t("agentBackend.customOnly")}</p>
-            </Show>
-          }
-        >
-          <p class="text-12-regular break-all">
-            {recipe()?.package}
-            <br />
-            <a href={recipe()?.source} target="_blank" rel="noreferrer" class="text-text-interactive-base underline">
-              {recipe()?.source}
-            </a>
-          </p>
-          <div class="text-12-regular text-text-weak">
-            {t("agentBackend.dependencies")}: {recipe()?.requires.join(", ")}
-            <br />
-            Node: {state.status?.node || t("agentBackend.missing")}
-            <br />
-            npm: {state.status?.npm || t("agentBackend.missing")}
-          </div>
-          <label class="text-12-medium">
-            {t("agentBackend.version")}
-            <select
-              aria-label={t("agentBackend.version")}
-              class={selectClass}
-              value={state.version}
-              disabled={!!state.busy}
-              onChange={(event) => change("version", event.currentTarget.value)}
-            >
-              <For each={recipe()?.releases}>
-                {(version) => (
-                  <option value={version}>
-                    {version}
-                    {version === recipe()?.recommended ? ` (${t("agentBackend.recommended")})` : ""}
-                    {recipe()?.installed.some((item) => item.version === version)
-                      ? ` · ${t("agentBackend.installed")}`
-                      : ""}
-                  </option>
-                )}
-              </For>
-            </select>
-          </label>
-          <div class="flex flex-wrap gap-2">
-            <Show
-              when={
-                recipe()?.installed.length &&
-                !recipe()?.installed.some((item) => item.version === recipe()?.recommended)
-              }
-            >
-              <Button
-                size="small"
-                variant="secondary"
-                disabled={!!state.busy}
-                onClick={() => {
-                  change("version", recipe()!.recommended)
-                  void prepare("install")
-                }}
-              >
-                {t("agentBackend.update")}
-              </Button>
-            </Show>
-            <Button
-              size="small"
-              variant="secondary"
-              disabled={!!state.busy || !!installed()}
-              onClick={() => void prepare("install")}
-            >
-              {t("agentBackend.install")}
-            </Button>
+            <span class="min-w-0 break-words">
+              {t("agentBackend.target")}: {status.latest?.target ?? "..."}
+            </span>
             <Button
               size="small"
               variant="ghost"
-              disabled={
-                !!state.busy ||
-                !installed() ||
-                (active()?.type === "acp" && (active() as AcpConfig).managed?.version === state.version)
-              }
-              onClick={() => void prepare("remove")}
+              disabled={!!state.busy || status.loading}
+              onClick={() => void status.refresh()}
             >
-              {t("agentBackend.remove")}
+              {t("agentBackend.refresh")}
             </Button>
           </div>
-          <Show when={installed()}>
-            <code class="text-11-regular break-all">{JSON.stringify(installed()?.command)}</code>
+          <Show when={props.remote}>
+            <p class="text-12-regular text-text-base">{t("agentBackend.remote")}</p>
+          </Show>
+          <AgentSettingsGrid>
+            <label class="flex min-w-0 max-w-full flex-col items-start gap-2 text-12-medium text-text-strong">
+              {t("agentBackend.transport")}
+              <select
+                aria-label={t("agentBackend.transport")}
+                class={selectClass}
+                value={state.type}
+                disabled={!!state.busy}
+                onChange={(event) => change("type", event.currentTarget.value)}
+              >
+                <option value={props.advisor === "pi" ? "native-rpc" : "cli-json"}>
+                  {props.advisor === "pi" ? "Native RPC" : "CLI JSON"}
+                </option>
+                <option value="acp">ACP</option>
+              </select>
+            </label>
+            <Show when={state.type === "acp"}>
+              <label class="flex min-w-0 max-w-full flex-col items-start gap-2 text-12-medium text-text-strong">
+                {t("agentBackend.source")}
+                <select
+                  aria-label={t("agentBackend.source")}
+                  class={selectClass}
+                  value={customMode() ? "custom" : state.source}
+                  disabled={!!state.busy}
+                  onChange={(event) => change("source", event.currentTarget.value)}
+                >
+                  <Show when={recipe() || managedMode()}>
+                    <option value="managed">{t("agentBackend.managed")}</option>
+                  </Show>
+                  <option value="custom">{t("agentBackend.custom")}</option>
+                </select>
+              </label>
+            </Show>
+          </AgentSettingsGrid>
+        </AgentSettingsCard>
+        <Show when={state.type === "acp"}>
+          <Show when={managedMode()}>
+            <AgentSettingsCard title={t("agentSettings.adapter")} size="compact">
+              <div class="flex min-w-0 flex-wrap items-end gap-3">
+                <label class="flex min-w-0 max-w-full flex-col items-start gap-2 text-12-medium text-text-base">
+                  {t("agentBackend.version")}
+                  <select
+                    aria-label={t("agentBackend.version")}
+                    class={selectClass}
+                    value={state.version}
+                    disabled={!!state.busy || !recipe()}
+                    onChange={(event) => change("version", event.currentTarget.value)}
+                  >
+                    <Show when={!recipe()}>
+                      <option value={state.version}>{state.version || t("common.loading")}</option>
+                    </Show>
+                    <For each={recipe()?.releases}>
+                      {(version) => (
+                        <option value={version}>
+                          {version}
+                          {version === recipe()?.recommended ? ` (${t("agentBackend.recommended")})` : ""}
+                          {recipe()?.installed.some((item) => item.version === version)
+                            ? ` · ${t("agentBackend.installed")}`
+                            : ""}
+                        </option>
+                      )}
+                    </For>
+                  </select>
+                </label>
+                <div class="flex flex-wrap items-center gap-2">
+                  <Show
+                    when={
+                      recipe()?.installed.length &&
+                      !recipe()?.installed.some((item) => item.version === recipe()?.recommended)
+                    }
+                  >
+                    <Button
+                      size="small"
+                      variant="secondary"
+                      disabled={!!state.busy}
+                      onClick={() => {
+                        change("version", recipe()!.recommended)
+                        void prepare("install")
+                      }}
+                    >
+                      {t("agentBackend.update")}
+                    </Button>
+                  </Show>
+                  <Button
+                    size="small"
+                    variant="secondary"
+                    disabled={!!state.busy || !recipe() || !!installed()}
+                    onClick={() => void prepare("install")}
+                  >
+                    {t("agentBackend.install")}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    disabled={
+                      !!state.busy ||
+                      !installed() ||
+                      (active()?.type === "acp" && (active() as AcpConfig).managed?.version === state.version)
+                    }
+                    onClick={() => void prepare("remove")}
+                  >
+                    {t("agentBackend.remove")}
+                  </Button>
+                </div>
+              </div>
+              <Show when={status.latest && (!status.latest.node || !status.latest.npm)}>
+                <p class="text-12-regular text-text-danger-base" role="alert">
+                  {t("agentBackend.dependencies")}: {!status.latest?.node ? "Node.js " : ""}
+                  {!status.latest?.npm ? "npm " : ""}· {t("agentBackend.missing")}
+                </p>
+              </Show>
+            </AgentSettingsCard>
+          </Show>
+          <Show when={customMode()}>
+            <AgentSettingsCard
+              title={t("agentBackend.command")}
+              badge={t("agentSettings.required")}
+              priority="primary"
+              size="wide"
+            >
+              <Show when={status.latest && !recipe()}>
+                <p class="text-12-regular text-text-weak">{t("agentBackend.customOnly")}</p>
+              </Show>
+              <TextField
+                multiline
+                label={t("agentBackend.command")}
+                value={state.command}
+                disabled={!!state.busy}
+                onChange={(value) => change("command", value)}
+                placeholder={'["/path/to/adapter", "--acp"]'}
+              />
+            </AgentSettingsCard>
           </Show>
         </Show>
-        <Show when={state.source === "custom" || !recipe()}>
-          <TextField
-            multiline
-            label={t("agentBackend.command")}
-            value={state.command}
-            disabled={!!state.busy}
-            onChange={(value) => change("command", value)}
-            placeholder={'["/path/to/adapter", "--acp"]'}
-          />
-        </Show>
-        <details class="text-12-regular">
-          <summary class="cursor-pointer text-text-weak">{t("agentBackend.advanced")}</summary>
-          <div class="mt-3 flex flex-col gap-3">
+      </AgentSettingsGrid>
+      <Show when={state.type === "acp"}>
+        <AgentSettingsCard size="wide">
+          <AgentSettingsDetails title={t("agentBackend.advanced")}>
+            <AgentSettingsGrid>
+              <AgentSettingsField wide>
+                <TextField
+                  label={t("agentBackend.model")}
+                  value={state.model}
+                  disabled={!!state.busy}
+                  onChange={(value) => change("model", value)}
+                />
+              </AgentSettingsField>
+              <AgentSettingsField wide>
+                <TextField
+                  label={t("agentBackend.mode")}
+                  value={state.mode}
+                  disabled={!!state.busy}
+                  onChange={(value) => change("mode", value)}
+                />
+              </AgentSettingsField>
+              <label class="flex min-w-0 max-w-full flex-col items-start gap-2 text-12-medium text-text-base">
+                {t("agentBackend.permission")}
+                <select
+                  aria-label={t("agentBackend.permission")}
+                  class={selectClass}
+                  value={state.permission}
+                  disabled={!!state.busy}
+                  onChange={(event) => change("permission", event.currentTarget.value)}
+                >
+                  <option value="deny">{t("agentBackend.deny")}</option>
+                  <option value="ask">{t("agentBackend.ask")}</option>
+                </select>
+              </label>
+            </AgentSettingsGrid>
             <TextField
               multiline
               label={t("agentBackend.environment")}
@@ -343,51 +445,41 @@ export function AgentBackendSettings(props: {
               disabled={!!state.busy}
               onChange={(value) => change("env", value)}
             />
-            <TextField
-              label={t("agentBackend.model")}
-              value={state.model}
-              disabled={!!state.busy}
-              onChange={(value) => change("model", value)}
-            />
-            <TextField
-              label={t("agentBackend.mode")}
-              value={state.mode}
-              disabled={!!state.busy}
-              onChange={(value) => change("mode", value)}
-            />
-            <label>
-              {t("agentBackend.permission")}
-              <select
-                class={selectClass}
-                value={state.permission}
-                disabled={!!state.busy}
-                onChange={(event) => change("permission", event.currentTarget.value)}
-              >
-                <option value="deny">{t("agentBackend.deny")}</option>
-                <option value="ask">{t("agentBackend.ask")}</option>
-              </select>
-            </label>
-          </div>
-        </details>
-        <p class="text-12-regular text-text-weak">{t("agentBackend.safety")}</p>
-        <div class="flex flex-wrap gap-2">
-          <Button
-            size="small"
-            variant="secondary"
-            disabled={!!state.busy || (state.source === "managed" && !!recipe() && !installed())}
-            onClick={() => void probe()}
-          >
-            {t("agentBackend.test")}
-          </Button>
-          <Button
-            size="small"
-            variant="ghost"
-            disabled={!!state.busy || !tested()}
-            onClick={() => setState("messageConsent", true)}
-          >
-            {t("agentBackend.messageTest")}
-          </Button>
-        </div>
+            <p class="text-12-regular text-text-weak">{t("agentBackend.safety")}</p>
+          </AgentSettingsDetails>
+          <AgentSettingsDetails title={t("agentSettings.runtimeDetails")}>
+            <div class="text-12-regular break-all">
+              {status.latest?.platform}/{status.latest?.arch}
+              <br />
+              {status.latest?.directory}
+            </div>
+            <Show when={recipe() && state.source === "managed"}>
+              <div class="text-12-regular break-all">
+                {recipe()?.package}
+                <br />
+                <a
+                  href={recipe()?.source}
+                  target="_blank"
+                  rel="noreferrer"
+                  class="text-text-interactive-base underline"
+                >
+                  {t("agentSettings.source")}
+                </a>
+              </div>
+              <div class="text-12-regular break-all">
+                {t("agentBackend.dependencies")}: {recipe()?.requires.join(", ")}
+                <br />
+                Node: {status.latest?.node || t("agentBackend.missing")}
+                <br />
+                npm: {status.latest?.npm || t("agentBackend.missing")}
+              </div>
+              <Show when={installed()}>
+                <code class="text-11-regular break-all">{JSON.stringify(installed()?.command)}</code>
+              </Show>
+            </Show>
+            <p>{t("agentBackend.legacyHint")}</p>
+          </AgentSettingsDetails>
+        </AgentSettingsCard>
         <Show when={state.messageConsent}>
           <p class="text-12-regular">{t("agentBackend.messageConsent")}</p>
           <Button size="small" variant="secondary" disabled={!!state.busy} onClick={() => void probe(true)}>
@@ -462,11 +554,13 @@ export function AgentBackendSettings(props: {
                 variant="primary"
                 disabled={!!state.busy}
                 onClick={() =>
-                  void perform("commit", async (signal) => {
+                  void perform("commit", async (signal, current) => {
                     const token = confirmation().token
                     setState("confirmation", undefined)
                     const result = await props.client.agentBackend.commit({ token }, { signal, throwOnError: true })
-                    setState({ status: result.data, confirmation: undefined, tested: "", result: undefined })
+                    if (!current()) return
+                    status.replace(result.data)
+                    setState({ confirmation: undefined, tested: "", result: undefined })
                   })
                 }
               >
@@ -484,6 +578,11 @@ export function AgentBackendSettings(props: {
           </div>
         )}
       </Show>
+      <Show when={status.error}>
+        <p role="alert" class="text-12-regular text-text-danger-base">
+          {status.error}
+        </p>
+      </Show>
       <Show when={state.error}>
         <p role="alert" class="text-12-regular text-text-danger-base whitespace-pre-wrap break-words">
           {state.error}
@@ -494,15 +593,28 @@ export function AgentBackendSettings(props: {
           {t("agentBackend.saved")}
         </p>
       </Show>
-      <div class="flex flex-wrap items-center gap-2">
-        <Button
-          size="small"
-          variant="primary"
-          disabled={!!state.busy || (state.type === "acp" && !tested())}
-          onClick={() => void save()}
-        >
+      <div class="flex flex-wrap items-center gap-2 border-t border-border-weak-base pt-3">
+        <Button size="small" variant="primary" disabled={!!state.busy || !status.latest} onClick={() => void save()}>
           {t("agentBackend.activate")}
         </Button>
+        <Show when={state.type === "acp"}>
+          <Button
+            size="small"
+            variant="secondary"
+            disabled={!!state.busy || !status.latest || (managedMode() && !installed())}
+            onClick={() => void probe()}
+          >
+            {t("agentBackend.test")}
+          </Button>
+          <Button
+            size="small"
+            variant="ghost"
+            disabled={!!state.busy || !tested()}
+            onClick={() => setState("messageConsent", true)}
+          >
+            {t("agentBackend.messageTest")}
+          </Button>
+        </Show>
         <Show when={state.busy}>
           <span role="status" class="text-12-regular text-text-weak">
             {t("agentBackend.working")}: {state.busy}
@@ -512,7 +624,9 @@ export function AgentBackendSettings(props: {
           </Button>
         </Show>
       </div>
-      <p class="text-11-regular text-text-weak">{t("agentBackend.legacyHint")}</p>
+      <Show when={state.type === "acp"}>
+        <p class="text-11-regular text-text-weak">{t("agentSettings.saveHint")}</p>
+      </Show>
     </section>
   )
 }
