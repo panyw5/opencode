@@ -203,7 +203,7 @@ export function SessionStatusFloat(props: {
           type: "button",
           "aria-label": shown() ? language.t("session.status.collapse") : language.t("session.status.expand"),
           class:
-            "inline-flex items-center gap-1.5 rounded-full border border-border-weak-base bg-surface-raised-base px-3 py-2 shadow-sm text-13-medium text-text-strong hover:bg-surface-raised-base-hover transition-colors",
+            "inline-flex items-center gap-1.5 rounded-full border border-border-weak-base bg-surface-raised-base px-4 py-2 shadow-sm text-13-medium text-text-strong hover:bg-surface-raised-base-hover transition-colors",
         }}
         trigger={
           <>

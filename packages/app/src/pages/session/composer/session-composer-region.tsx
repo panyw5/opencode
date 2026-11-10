@@ -186,7 +186,7 @@ function SessionBackgroundShellMenu(props: {
         variant="ghost"
         size="small"
         icon="console"
-        class="h-7 rounded-md px-2 text-text-weak hover:text-text-strong data-[expanded]:bg-surface-base-active"
+        class="h-auto! rounded-md px-4! py-2! text-text-weak hover:text-text-strong data-[expanded]:bg-surface-base-active"
         aria-label="查看背景shell"
         data-testid="session-background-shell-menu-trigger"
       >
@@ -499,7 +499,7 @@ function SessionChildAgentMenu(props: {
           variant="ghost"
           size="small"
           icon="branch"
-          class="h-7 rounded-md px-2 text-text-weak hover:text-text-strong data-[expanded]:bg-surface-base-active [&>[data-component=icon]:first-child>svg]:[transform:scaleY(-1)]"
+          class="h-auto! rounded-md px-4! py-2! text-text-weak hover:text-text-strong data-[expanded]:bg-surface-base-active [&>[data-component=icon]:first-child>svg]:[transform:scaleY(-1)]"
           aria-label={language.t("session.childAgents.open")}
           data-testid="session-child-agent-menu-trigger"
         >
@@ -1039,7 +1039,7 @@ export function SessionComposerRegion(props: {
                     {(title) => (
                       <span
                         data-testid="subagent-session-prompt-badge"
-                        class="inline-flex min-w-0 max-w-full shrink items-center gap-1.5 overflow-hidden rounded-full border border-border-weak-base bg-surface-base px-3 py-1 text-11-medium font-medium text-text-interactive-base shadow-sm"
+                        class="inline-flex min-w-0 max-w-full shrink items-center gap-1.5 overflow-hidden rounded-full border border-border-weak-base bg-surface-base px-4 py-2 text-11-medium font-medium text-text-interactive-base shadow-sm"
                         title={title}
                       >
                         <Show when={props.externalSession?.external}>
@@ -1132,7 +1132,7 @@ export function SessionComposerRegion(props: {
                       <Button
                         variant="ghost"
                         size="small"
-                        class="h-7 shrink-0 rounded-md px-2 text-text-weak hover:text-text-strong"
+                        class="h-auto! shrink-0 rounded-md px-4! py-2! text-text-weak hover:text-text-strong"
                         onClick={openSkippedQuestions}
                       >
                         {language.t(
@@ -1204,7 +1204,7 @@ export function SessionComposerRegion(props: {
                   data-testid="math-mode-badge"
                   class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2"
                 >
-                  <span class="inline-flex items-center gap-1.5 rounded-full border border-text-interactive-base/40 bg-surface-base px-3 py-1 text-11-medium font-medium text-text-interactive-base shadow-sm">
+                  <span class="inline-flex items-center gap-1.5 rounded-full border border-text-interactive-base/40 bg-surface-base px-4 py-2 text-11-medium font-medium text-text-interactive-base shadow-sm">
                     <Markdown
                       text="$\sum$"
                       math="full"

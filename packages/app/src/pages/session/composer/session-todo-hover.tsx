@@ -124,7 +124,7 @@ export function SessionTodoHover(props: { sessionID?: string; todos: Todo[] }) {
             "data-action": "session-todo-hover-button",
             "aria-label": language.t("session.todo.title"),
             class:
-              "inline-flex items-center gap-1.5 rounded-full border border-border-weak-base bg-surface-raised-base px-2.5 py-0.5 text-12-medium text-text-weak shadow-sm transition-colors hover:bg-surface-raised-base-hover hover:text-text-strong data-[expanded]:bg-surface-raised-base-active data-[expanded]:text-text-strong",
+              "inline-flex items-center gap-1.5 rounded-full border border-border-weak-base bg-surface-raised-base px-4 py-2 text-12-medium text-text-weak shadow-sm transition-colors hover:bg-surface-raised-base-hover hover:text-text-strong data-[expanded]:bg-surface-raised-base-active data-[expanded]:text-text-strong",
           } as ComponentProps<"button">
         }
         trigger={

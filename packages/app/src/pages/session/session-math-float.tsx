@@ -57,7 +57,7 @@ export function SessionMathFloat(props: SessionMathFloatProps) {
           type="button"
           data-action="session-math-toggle-button"
           aria-busy={props.initializing ? "true" : undefined}
-          class="inline-flex items-center gap-1.5 rounded-full border border-border-weak-base bg-surface-raised-base px-3 py-2 shadow-sm text-13-medium text-text-strong hover:bg-surface-raised-base-hover transition-colors"
+          class="inline-flex items-center gap-1.5 rounded-full border border-border-weak-base bg-surface-raised-base px-4 py-2 shadow-sm text-13-medium text-text-strong hover:bg-surface-raised-base-hover transition-colors"
           onClick={(event) => {
             event.currentTarget.blur()
             openMathMode()
