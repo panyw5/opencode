@@ -186,7 +186,7 @@ function SessionBackgroundShellMenu(props: {
         variant="ghost"
         size="small"
         icon="console"
-        class="h-auto! rounded-md px-4! py-2! text-text-weak hover:text-text-strong data-[expanded]:bg-surface-base-active"
+        class="h-auto! rounded-full! px-4! py-2! text-text-weak hover:text-text-strong data-[expanded]:bg-surface-base-active"
         aria-label="查看背景shell"
         data-testid="session-background-shell-menu-trigger"
       >
@@ -499,7 +499,7 @@ function SessionChildAgentMenu(props: {
           variant="ghost"
           size="small"
           icon="branch"
-          class="h-auto! rounded-md px-4! py-2! text-text-weak hover:text-text-strong data-[expanded]:bg-surface-base-active [&>[data-component=icon]:first-child>svg]:[transform:scaleY(-1)]"
+          class="h-auto! rounded-full! px-4! py-2! text-text-weak hover:text-text-strong data-[expanded]:bg-surface-base-active [&>[data-component=icon]:first-child>svg]:[transform:scaleY(-1)]"
           aria-label={language.t("session.childAgents.open")}
           data-testid="session-child-agent-menu-trigger"
         >
@@ -1132,7 +1132,7 @@ export function SessionComposerRegion(props: {
                       <Button
                         variant="ghost"
                         size="small"
-                        class="h-auto! shrink-0 rounded-md px-4! py-2! text-text-weak hover:text-text-strong"
+                        class="h-auto! shrink-0 rounded-full! px-4! py-2! text-text-weak hover:text-text-strong"
                         onClick={openSkippedQuestions}
                       >
                         {language.t(
