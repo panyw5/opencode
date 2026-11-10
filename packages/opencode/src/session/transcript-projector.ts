@@ -21,6 +21,8 @@ export function makeTranscriptProjector(input: {
   model: { providerID: ProviderID; modelID: ModelID }
   initialText: string
   initialMessageID?: MessageID
+  /** Set false when the caller already wrote the user message for this turn. */
+  writeInitialUser?: boolean
   /** `turns` starts a new user turn for transcript user items (consult); `ignore` keeps the caller's user turns. */
   userItems?: "turns" | "ignore"
   finalIdle?: boolean
@@ -38,28 +40,30 @@ export function makeTranscriptProjector(input: {
   let initialized = false
   let finalized = false
 
-  const turn = (text: string, messageID?: MessageID) =>
+  const turn = (text: string, messageID?: MessageID, writeUser = true) =>
     Effect.gen(function* () {
       if (assistant) {
         assistant.time.completed = Date.now()
         yield* sessions.updateMessage(assistant)
       }
       userID = messageID ?? MessageID.ascending()
-      yield* sessions.updateMessage({
-        id: userID,
-        sessionID: session.id,
-        role: "user",
-        agent,
-        model,
-        time: { created: Date.now() },
-      })
-      yield* sessions.updatePart({
-        id: PartID.ascending(),
-        sessionID: session.id,
-        messageID: userID,
-        type: "text",
-        text,
-      })
+      if (writeUser) {
+        yield* sessions.updateMessage({
+          id: userID,
+          sessionID: session.id,
+          role: "user",
+          agent,
+          model,
+          time: { created: Date.now() },
+        })
+        yield* sessions.updatePart({
+          id: PartID.ascending(),
+          sessionID: session.id,
+          messageID: userID,
+          type: "text",
+          text,
+        })
+      }
       assistant = {
         id: MessageID.ascending(),
         sessionID: session.id,
@@ -82,7 +86,7 @@ export function makeTranscriptProjector(input: {
       Effect.gen(function* () {
         if (finalized && !final) return
         if (!initialized) {
-          yield* turn(input.initialText, input.initialMessageID)
+          yield* turn(input.initialText, input.initialMessageID, input.writeInitialUser !== false)
           initialized = true
         }
         for (const item of items) pending.set(item.id, { ...pending.get(item.id), ...item })

@@ -18,7 +18,7 @@ import type { Session } from "./session"
 
 const log = Log.create({ service: "session.consult-mentions" })
 
-export type Outcome = { name: string; returned: boolean; error?: string }
+export type Outcome = { name: string; returned: boolean; error?: string; output?: string }
 
 export type Result = {
   names: string[]
@@ -76,7 +76,7 @@ export function runConsultMentions(
 
     const allTools = yield* deps.registry.all()
     const toolByID = new Map(allTools.map((tool) => [tool.id, tool] as const))
-    const consultOutcomes = new Map<string, { returned: boolean; error?: string }>()
+    const consultOutcomes = new Map<string, { returned: boolean; error?: string; output?: string }>()
 
     const assistantMessage: MessageV2.Assistant = yield* sessions.updateMessage({
       id: MessageID.ascending(),
@@ -248,7 +248,7 @@ export function runConsultMentions(
           },
         } satisfies MessageV2.ToolPart)
       } else {
-        consultOutcomes.set(name, { returned: true })
+        consultOutcomes.set(name, { returned: true, output: result.output })
       }
     }
 
