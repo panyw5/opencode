@@ -20,9 +20,10 @@ import { MessageID, PartID, SessionID } from "./schema"
 import type { Advisor, ExternalSessionState } from "./external-schema"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { externalConversationOutput } from "./external-handoff"
-import type { AgentEvent } from "@/agent-backend/backend"
+import { makeTranscriptProjector, type TranscriptItem } from "./transcript-projector"
 
 export { externalConversationOutput } from "./external-handoff"
+export type { TranscriptItem } from "./transcript-projector"
 
 const log = Log.create({ service: "session.external" })
 const creationLock = Semaphore.makeUnsafe(1)
@@ -35,8 +36,6 @@ const advisors: Record<string, Advisor> = {
   dsh_consult: "dsh",
   pi_consult: "pi",
 }
-
-export type TranscriptItem = AgentEvent
 
 export function externalSessionID(parentID: string, partID: string) {
   return SessionID.make(
@@ -100,146 +99,26 @@ export function makeExternalSessions(
       providerID: ProviderID.make(`external-${child.external!.advisor}`),
       modelID: ModelID.make(modelName),
     }
-    const lock = Semaphore.makeUnsafe(1)
-    const pending = new Map<string, TranscriptItem>()
-    const written = new Map<string, string>()
-    const parts = new Map<string, { id: PartID; messageID: MessageID; start: number }>()
-    const assistants: MessageV2.Assistant[] = []
-    let userID: MessageID
-    let assistant: MessageV2.Assistant
-    let initialized = false
-    let finalized = false
-
-    const turn = (text: string) =>
-      Effect.gen(function* () {
-        if (assistant) {
-          assistant.time.completed = Date.now()
-          yield* sessions.updateMessage(assistant)
-        }
-        userID = MessageID.ascending()
-        yield* sessions.updateMessage({
-          id: userID,
-          sessionID: child.id,
-          role: "user",
-          agent: child.agent!,
-          model,
-          time: { created: Date.now() },
-        })
-        yield* sessions.updatePart({
-          id: PartID.ascending(),
-          sessionID: child.id,
-          messageID: userID,
-          type: "text",
-          text,
-        })
-        assistant = {
-          id: MessageID.ascending(),
-          sessionID: child.id,
-          role: "assistant",
-          parentID: userID,
-          agent: child.agent!,
-          mode: child.agent!,
-          ...model,
-          path: { cwd: child.directory, root: child.directory },
-          cost: 0,
-          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-          time: { created: Date.now() },
-        }
-        assistants.push(assistant)
-        yield* sessions.updateMessage(assistant)
-      })
-
-    const flush = (items: readonly TranscriptItem[], final = false, error?: string) =>
-      lock.withPermit(
-        Effect.gen(function* () {
-          if (finalized && !final) return
-          if (!initialized) {
-            yield* turn(prompt)
-            initialized = true
-          }
-          for (const item of items) pending.set(item.id, { ...pending.get(item.id), ...item })
-          for (const [key, item] of pending) {
-            const signature = JSON.stringify([item, final])
-            if (written.get(key) === signature) continue
-            if (item.kind === "user") {
-              if (!written.has(key) && key !== "user:initial") yield* turn(item.text ?? "")
-              written.set(key, signature)
-              continue
-            }
-            const ref = parts.get(key) ?? { id: PartID.ascending(), messageID: assistant.id, start: Date.now() }
-            parts.set(key, ref)
-            const base = { id: ref.id, sessionID: child.id, messageID: ref.messageID }
-            const time = {
-              start: ref.start,
-              ...(final || item.status === "completed" || item.status === "error" ? { end: Date.now() } : {}),
-            }
-            const completedText =
-              item.kind === "status" &&
-              item.title === "Turn completed" &&
-              item.text?.trim() &&
-              !/^in=\d+\s+out=\d+/.test(item.text.trim())
-            const duplicateText =
-              completedText &&
-              [...pending.values()].some(
-                (other) => other.kind === "message" && other.text?.trim() === item.text?.trim(),
-              )
-            if (duplicateText) {
-              written.set(key, signature)
-              continue
-            }
-            if (item.kind === "message" || completedText) {
-              yield* sessions.updatePart({
-                ...base,
-                type: "text",
-                text: item.text ?? "",
-                time,
-                metadata: { externalEvent: key },
-              })
-            } else if (item.kind === "reasoning" || item.kind === "thinking") {
-              yield* sessions.updatePart({ ...base, type: "reasoning", text: item.text ?? "", time })
-            } else {
-              // These are observed external events, never locally executable tools.
-              const running = !final && (item.status === "running" || item.status === "pending")
-              const metadata = { external: true, title: item.title ?? item.kind, status: item.status }
-              yield* sessions.updatePart({
-                ...base,
-                type: "tool",
-                callID: `external:${key}`,
-                tool: `external_${item.kind}`,
-                state: running
-                  ? {
-                      status: "running",
-                      input: {},
-                      title: item.title ?? item.kind,
-                      metadata: { ...metadata, output: item.text ?? "" },
-                      time: { start: ref.start },
-                    }
-                  : {
-                      status: "completed",
-                      input: {},
-                      title: item.title ?? item.kind,
-                      output: item.text ?? "",
-                      metadata,
-                      time: { start: ref.start, end: Date.now() },
-                    },
-              })
-            }
-            written.set(key, signature)
-          }
-          if (final) {
-            finalized = true
-            for (const msg of assistants) {
-              msg.time.completed ??= Date.now()
-              msg.finish = "stop"
-              if (msg === assistant && error) msg.error = { name: "UnknownError", data: { message: error } }
-              yield* sessions.updateMessage(msg)
-            }
-            yield* statuses.set(child.id, { type: "idle" })
-          }
-          log.debug(`projected child=${child.id} items=${pending.size} final=${final} error=${!!error}`)
-        }),
-      )
-    return { flush }
+    const projector = makeTranscriptProjector({
+      sessions,
+      statuses,
+      session: child,
+      agent: child.agent!,
+      model,
+      initialText: prompt,
+      userItems: "turns",
+      finalIdle: true,
+    })
+    return {
+      flush: (items: readonly TranscriptItem[], final = false, error?: string) =>
+        projector.apply(items, final, error).pipe(
+          Effect.tap(() =>
+            Effect.sync(() =>
+              log.debug(`projected child=${child.id} items=${items.length} final=${final} error=${!!error}`),
+            ),
+          ),
+        ),
+    }
   }
 
   const wrap = (tool: Tool.Def): Tool.Def => {
