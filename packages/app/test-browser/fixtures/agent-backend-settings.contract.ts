@@ -120,6 +120,7 @@ function mount(options: {
   config?: Config
   remote?: boolean
   onSave?: (patch: Partial<Config>) => Promise<unknown>
+  cliSettings?: () => HTMLElement
 }) {
   const [props, setProps] = createSignal({
     advisor: options.advisor ?? ("claude" as AdvisorID),
@@ -142,6 +143,7 @@ function mount(options: {
           return props().client
         },
         remote: options.remote,
+        cliSettings: options.cliSettings,
         onSave: async (patch) => {
           saves.push(patch)
           return options.onSave?.(patch)
@@ -211,6 +213,33 @@ async function manuallyTest(container: HTMLElement) {
 }
 
 describe("AgentBackendSettings save and probe contracts", () => {
+  test("CLI content is only mounted for the selected CLI transport without saving", async () => {
+    const mock = clientMock()
+    let mounts = 0
+    const view = mount({
+      client: mock.client,
+      cliSettings: () => {
+        mounts++
+        const section = document.createElement("section")
+        section.textContent = "CLI parameters and actions"
+        return section
+      },
+    })
+    try {
+      await settle()
+      expect(mounts).toBe(0)
+      expect(view.container.textContent).not.toContain("CLI parameters and actions")
+      choose(select(view.container, "transport"), "cli-json")
+      expect(mounts).toBe(1)
+      expect(view.container.textContent).toContain("CLI parameters and actions")
+      choose(select(view.container, "transport"), "acp")
+      expect(view.container.textContent).not.toContain("CLI parameters and actions")
+      expect(view.saves).toHaveLength(0)
+      expect(mock.calls).toHaveLength(0)
+    } finally {
+      view.dispose()
+    }
+  })
   test("runtime and advanced details start collapsed without hiding the connection or changing the draft", async () => {
     const mock = clientMock()
     const view = mount({ client: mock.client })

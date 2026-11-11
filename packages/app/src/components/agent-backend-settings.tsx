@@ -1,4 +1,4 @@
-import { createEffect, createMemo, For, on, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createUniqueId, For, on, onCleanup, Show, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { TextField } from "@opencode-ai/ui/text-field"
@@ -39,10 +39,13 @@ export function AgentBackendSettings(props: {
   client: OpencodeClient
   remote?: boolean
   onSave: (patch: Partial<Config>) => Promise<unknown>
+  cliSettings?: () => JSX.Element
 }) {
   const { t } = useLanguage()
+  const versionID = createUniqueId()
   const [state, setState] = createStore({
-    type: "cli-json",
+    type: (props.config.agent_backends?.[props.advisor]?.type ??
+      (props.advisor === "pi" ? "native-rpc" : "cli-json")) as string,
     source: "managed",
     version: "",
     command: "[]",
@@ -307,32 +310,34 @@ export function AgentBackendSettings(props: {
         <Show when={state.type === "acp"}>
           <Show when={managedMode()}>
             <AgentSettingsCard title={t("agentSettings.adapter")} size="compact">
-              <div class="flex min-w-0 flex-wrap items-end gap-3">
-                <label class="flex min-w-0 max-w-full flex-col items-start gap-2 text-12-medium text-text-base">
-                  {t("agentBackend.version")}
-                  <select
-                    aria-label={t("agentBackend.version")}
-                    class={selectClass}
-                    value={state.version}
-                    disabled={!!state.busy || !recipe()}
-                    onChange={(event) => change("version", event.currentTarget.value)}
-                  >
-                    <Show when={!recipe()}>
-                      <option value={state.version}>{state.version || t("common.loading")}</option>
-                    </Show>
-                    <For each={recipe()?.releases}>
-                      {(version) => (
-                        <option value={version}>
-                          {version}
-                          {version === recipe()?.recommended ? ` (${t("agentBackend.recommended")})` : ""}
-                          {recipe()?.installed.some((item) => item.version === version)
-                            ? ` · ${t("agentBackend.installed")}`
-                            : ""}
-                        </option>
-                      )}
-                    </For>
-                  </select>
-                </label>
+              <label for={versionID} class="block text-12-medium text-text-base">
+                {t("agentBackend.version")}
+              </label>
+              <div class="flex min-w-0 flex-wrap items-center gap-3">
+                <select
+                  id={versionID}
+                  aria-label={t("agentBackend.version")}
+                  class={selectClass}
+                  style={{ height: "2.25rem" }}
+                  value={state.version}
+                  disabled={!!state.busy || !recipe()}
+                  onChange={(event) => change("version", event.currentTarget.value)}
+                >
+                  <Show when={!recipe()}>
+                    <option value={state.version}>{state.version || t("common.loading")}</option>
+                  </Show>
+                  <For each={recipe()?.releases}>
+                    {(version) => (
+                      <option value={version}>
+                        {version}
+                        {version === recipe()?.recommended ? ` (${t("agentBackend.recommended")})` : ""}
+                        {recipe()?.installed.some((item) => item.version === version)
+                          ? ` · ${t("agentBackend.installed")}`
+                          : ""}
+                      </option>
+                    )}
+                  </For>
+                </select>
                 <div class="flex flex-wrap items-center gap-2">
                   <Show
                     when={
@@ -342,6 +347,7 @@ export function AgentBackendSettings(props: {
                   >
                     <Button
                       size="small"
+                      style={{ height: "2.25rem" }}
                       variant="secondary"
                       disabled={!!state.busy}
                       onClick={() => {
@@ -354,6 +360,7 @@ export function AgentBackendSettings(props: {
                   </Show>
                   <Button
                     size="small"
+                    style={{ height: "2.25rem" }}
                     variant="secondary"
                     disabled={!!state.busy || !recipe() || !!installed()}
                     onClick={() => void prepare("install")}
@@ -362,6 +369,7 @@ export function AgentBackendSettings(props: {
                   </Button>
                   <Button
                     size="small"
+                    style={{ height: "2.25rem" }}
                     variant="ghost"
                     disabled={
                       !!state.busy ||
@@ -477,7 +485,6 @@ export function AgentBackendSettings(props: {
                 <code class="text-11-regular break-all">{JSON.stringify(installed()?.command)}</code>
               </Show>
             </Show>
-            <p>{t("agentBackend.legacyHint")}</p>
           </AgentSettingsDetails>
         </AgentSettingsCard>
         <Show when={state.messageConsent}>
@@ -624,6 +631,7 @@ export function AgentBackendSettings(props: {
           </Button>
         </Show>
       </div>
+      <Show when={state.type !== "acp"}>{props.cliSettings?.()}</Show>
       <Show when={state.type === "acp"}>
         <p class="text-11-regular text-text-weak">{t("agentSettings.saveHint")}</p>
       </Show>

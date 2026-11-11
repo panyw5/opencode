@@ -25,7 +25,7 @@ test("agent backend settings contracts pass in an isolated Solid JSX process", a
     if (code !== 0) console.error(`[agent-backend-settings-test] child failed code=${code}\n${stdout}\n${stderr}`)
     expect(code).toBe(0)
     // A green exit without collecting the contract must not pass the wrapper.
-    expect(`${stdout}\n${stderr}`).toContain("30 pass")
+    expect(`${stdout}\n${stderr}`).toContain("31 pass")
     expect(`${stdout}\n${stderr}`).toContain("0 fail")
   } finally {
     clearTimeout(timer)
