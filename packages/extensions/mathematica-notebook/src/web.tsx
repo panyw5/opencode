@@ -20,6 +20,9 @@ import {
   type ViewerDocument,
 } from "./viewer"
 import "./web.css"
+import { RichCell } from "./box-view"
+import { createPreviewScheduler } from "./preview-scheduler"
+import type { CellsResponse } from "./preview-protocol"
 
 const ID = "local.mathematica-notebook"
 
@@ -28,11 +31,13 @@ function CodeTokens(props: { value: string }) {
   return <For each={tokens()}>{(token) => <span data-token={token.kind}>{token.text}</span>}</For>
 }
 
-function TextPreview(props: { value: string; onLoad(): void }) {
+function TextPreview(props: { value: string; characters?: number; onLoad(): void }) {
   const preview = createMemo(() => textPreview(props.value))
   return (
     <div class="oc-nb-preview">
-      <p class="oc-nb-muted">Large content ({props.value.length.toLocaleString()} characters). Preview only.</p>
+      <p class="oc-nb-muted">
+        Large content ({(props.characters ?? props.value.length).toLocaleString()} characters). Preview only.
+      </p>
       <pre>{preview()}</pre>
       <button onClick={props.onLoad}>Load full content</button>
     </div>
@@ -140,30 +145,87 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
   const [notice, setNotice] = createSignal("")
   const [dirty, setDirty] = createSignal(false)
   const [startMargin, setStartMargin] = createSignal(0)
+  const [previewEpoch, setPreviewEpoch] = createSignal(0)
   let scroller!: HTMLElement
   let toolbar!: HTMLElement
   let messages!: HTMLDivElement
   let paper!: HTMLDivElement
   let listAnchor!: HTMLDivElement
   let alive = true
+  const textLoads = new Map<number, AbortController>()
   let runController: AbortController | undefined
   let runBatch = false
   const reloadGate = createReloadGate()
   const resize = createEditorResizeQueue((message) => props.context.log.debug(message))
   const keepMounted = createMemo(() => pinnedCellPositions(document()?.cells ?? [], focused(), composing()))
-  const loadFull = (key: string) => setFull((prev) => ({ ...prev, [key]: true }))
+  const loadFull = async (key: string) => {
+    const index = key.startsWith("cell:") ? Number(key.slice(5)) : -1
+    const current = document()
+    const cell = current?.cells[index]
+    if (cell?.deferred && current) {
+      if (textLoads.has(index)) return
+      if ((cell.characters ?? 0) > 1024 * 1024) {
+        setNotice("This cell exceeds the 1 MiB inline editor limit. Use Source to edit the complete notebook.")
+        return
+      }
+      const controller = new AbortController()
+      textLoads.set(index, controller)
+      try {
+        let text = ""
+        while (text.length < (cell.characters ?? 0)) {
+          const response = await call<CellsResponse>(
+            "notebook.cells",
+            {
+              revision: current.revision,
+              indexes: [index],
+              kind: "text",
+              offset: text.length,
+            },
+            controller.signal,
+          )
+          const chunk = response.cells[0]?.text
+          if (!chunk) throw Error("Incomplete notebook text response")
+          text += chunk
+          if (!alive || document()?.revision !== current.revision || document()?.path !== current.path) return
+        }
+        setDocument(
+          (value) =>
+            value && {
+              ...value,
+              cells: value.cells.map((item) => (item.index === index ? { ...item, text, deferred: false } : item)),
+            },
+        )
+      } catch (error) {
+        if (alive && !controller.signal.aborted) setError(String(error))
+        return
+      } finally {
+        if (textLoads.get(index) === controller) textLoads.delete(index)
+      }
+    }
+    setFull((prev) => ({ ...prev, [key]: true }))
+  }
   const toggleDetails = (key: string, open: boolean) =>
     setDetails((prev) => (prev[key] === open ? prev : { ...prev, [key]: open }))
   const call = <T,>(method: string, data: object = {}, signal?: AbortSignal) =>
     props.context.rpc.call<T>(
       method,
       { path: props.file.absolutePath, ...data },
-      { directory: props.file.directory, signal, timeoutMs: 3_660_000 },
+      {
+        directory: props.file.directory,
+        signal,
+        timeoutMs: method === "notebook.open" || method === "notebook.cells" ? 20_000 : 3_660_000,
+      },
     )
+  const previews = createPreviewScheduler(
+    (revision, indexes, signal) =>
+      call<CellsResponse>("notebook.cells", { revision, indexes, kind: "preview" }, signal),
+    (message) => props.context.log.debug(message),
+  )
   const adopt = (next: ViewerDocument) => {
     reloadGate.invalidate()
     props.context.log.info(`notebook loaded path=${next.path} cells=${next.cells.length}`)
     const changed = document()?.revision !== next.revision || document()?.path !== next.path
+    if (changed) previews.reset(next.revision)
     batch(() => {
       // Do not retain next.outputs inside document as well as in the live outputs signal.
       setDocument(viewerContent(next))
@@ -185,13 +247,15 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
     const started = performance.now()
     props.context.log.debug(`notebook reload path=${props.file.absolutePath}`)
     try {
-      const next = await call<ViewerDocument>("notebook.read", { view: true }, request.signal)
+      const next = await call<ViewerDocument>("notebook.open", {}, request.signal)
       props.context.log.debug(
         `notebook rpc completed cells=${next.cells.length} rpcMs=${Math.round(performance.now() - started)}`,
       )
       if (!alive || !request.current()) return
       const current = untrack(document)
       if (!discard && current?.revision === next.revision && current.path === next.path) {
+        previews.reset(next.revision)
+        setPreviewEpoch((value) => value + 1)
         setOutputs(next.outputs)
         setError("")
         props.context.log.debug(`notebook reload unchanged cells=${next.cells.length}`)
@@ -239,6 +303,7 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
     if (!current) throw new Error("Notebook has not loaded")
     const next = await call<ViewerDocument>("notebook.save", {
       view: true,
+      preview: true,
       revision: current.revision,
       edits: draftEdits(drafts()),
       append,
@@ -254,7 +319,11 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
     try {
       const output = await call<Output>(
         "notebook.run",
-        { index: cell.index, revision: current.revision, code: cellText(cell, drafts()) },
+        {
+          index: cell.index,
+          revision: current.revision,
+          code: drafts()[cell.index] ?? (cell.deferred ? undefined : cell.text),
+        },
         controller.signal,
       )
       if (alive && document()?.revision === current.revision) setOutputs((prev) => ({ ...prev, [cell.index]: output }))
@@ -343,6 +412,9 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
     runBatch = false
     runController?.abort()
     resize.dispose()
+    previews.dispose()
+    for (const controller of textLoads.values()) controller.abort()
+    textLoads.clear()
     offSave?.()
     events.dispose()
     props.setDirty?.(false)
@@ -456,25 +528,31 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
                     <Show
                       when={cell.editable}
                       fallback={
-                        <details
-                          class="oc-nb-opaque"
-                          open={!!details()[`opaque:${cell.index}`]}
-                          onToggle={(event) => toggleDetails(`opaque:${cell.index}`, event.currentTarget.open)}
-                        >
-                          <summary>{cell.style}: unsupported rich boxes (preserved)</summary>
-                          <Show when={details()[`opaque:${cell.index}`]}>
-                            <DeferredText
-                              value={cell.text}
-                              full={!!full()[`cell:${cell.index}`]}
-                              onLoad={() => loadFull(`cell:${cell.index}`)}
-                            />
-                          </Show>
-                        </details>
+                        <RichCell
+                          index={cell.index}
+                          revision={`${document()?.revision ?? ""}:${previewEpoch()}`}
+                          scheduler={previews}
+                          source={async (signal) => {
+                            const response = await call<CellsResponse>(
+                              "notebook.cells",
+                              { revision: document()?.revision, indexes: [cell.index], kind: "source" },
+                              signal,
+                            )
+                            const item = response.cells[0]
+                            return { text: item?.text ?? "", total: item?.total ?? 0 }
+                          }}
+                        />
                       }
                     >
                       <Show
-                        when={!isLargeText(cell.text) || full()[`cell:${cell.index}`]}
-                        fallback={<TextPreview value={cell.text} onLoad={() => loadFull(`cell:${cell.index}`)} />}
+                        when={!cell.deferred && (!isLargeText(cell.text) || full()[`cell:${cell.index}`])}
+                        fallback={
+                          <TextPreview
+                            value={cell.text}
+                            characters={cell.characters}
+                            onLoad={() => void loadFull(`cell:${cell.index}`)}
+                          />
+                        }
                       >
                         <CellEditor
                           label={`Cell ${cell.index + 1} (${cell.style})`}

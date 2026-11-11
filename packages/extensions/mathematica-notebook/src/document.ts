@@ -1,7 +1,10 @@
 import type { Cell } from "./notebook"
 import type { Output } from "./kernel"
 
-export type ViewerCell = Pick<Cell, "index" | "style" | "text" | "editable" | "runnable">
+export type ViewerCell = Pick<Cell, "index" | "style" | "text" | "editable" | "runnable"> & {
+  characters?: number
+  deferred?: boolean
+}
 export type ViewerDocument = {
   path: string
   revision: string

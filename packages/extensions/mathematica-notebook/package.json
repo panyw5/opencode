@@ -69,7 +69,7 @@
   "scripts": {
     "dev": "vite build --watch",
     "build": "vite build && bun run build:server",
-    "build:server": "bun build src/server.ts --outfile dist/server.js --target=node --format=esm && cp src/bridge.wls dist/bridge.wls",
+    "build:server": "bun build src/server.ts --outfile dist/server.js --target=node --format=esm && bun build src/preview-worker.ts --outfile dist/preview-worker.js --target=node --format=esm && cp src/bridge.wls dist/bridge.wls",
     "typecheck": "tsgo --noEmit",
     "test": "bun test test"
   },

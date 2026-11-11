@@ -10,6 +10,41 @@
   background: var(--background-base, #f5f4f0);
   font-family: var(--font-family-sans, sans-serif);
 }
+.oc-nb-rich {
+  min-height: 48px;
+  padding: 6px 8px;
+}
+.oc-nb-math-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 4px 0 10px;
+}
+.oc-nb-rich math {
+  font-family: "STIX Two Math", "STIXGeneral", "Cambria Math", "Latin Modern Math", serif;
+  font-size: 17px;
+  width: max-content;
+  min-width: 0;
+  margin: 0;
+  text-align: left;
+  color: inherit;
+}
+.oc-nb-rich mtext {
+  white-space: pre-wrap;
+}
+.oc-nb-rich mtd {
+  text-align: left;
+}
+.oc-nb-box-unknown {
+  color: var(--text-weak, #8a6745);
+  font-size: 12px;
+}
+.oc-nb-rich .oc-nb-opaque {
+  font-size: 11px;
+  opacity: 0.8;
+}
+.oc-nb-rich .oc-nb-opaque[open] {
+  opacity: 1;
+}
 .oc-nb-toolbar {
   position: sticky;
   top: 0;

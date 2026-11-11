@@ -8,6 +8,8 @@ export type ViewerCell = {
   text: string
   editable: boolean
   runnable: boolean
+  characters?: number
+  deferred?: boolean
 }
 export type ViewerDocument = {
   path: string
@@ -35,12 +37,14 @@ export function viewerContent(next: ViewerDocument): ViewerContent {
     path: next.path,
     revision: next.revision,
     // Project fields explicitly, even if an older server ignores view: true.
-    cells: next.cells.map(({ index, style, text, editable, runnable }) => ({
+    cells: next.cells.map(({ index, style, text, editable, runnable, characters, deferred }) => ({
       index,
       style,
       text,
       editable,
       runnable,
+      ...(characters === undefined ? {} : { characters }),
+      ...(deferred === undefined ? {} : { deferred }),
     })),
   }
 }

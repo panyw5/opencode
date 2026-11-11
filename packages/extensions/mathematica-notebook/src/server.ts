@@ -12,6 +12,7 @@ import { editNotebook, parseNotebook, removeNotebookCacheId, NotebookParseError,
 import { NotebookKernels, type Output } from "./kernel"
 import { NotebookCache, cachedViewerCells, notebookBytes, type CachedNotebook } from "./cache"
 import type { ViewerDocument } from "./document"
+import { NotebookPreviews } from "./preview-service"
 export type { ViewerDocument } from "./document"
 
 export const ID = "local.mathematica-notebook"
@@ -40,7 +41,8 @@ type Snapshot = { source: string; revision: string; entry: CachedNotebook }
 export function createNotebookService(host: ExtensionHost, kernels = new NotebookKernels(host)): ExtensionService {
   const outputs = new Map<string, { revision: string; values: Record<number, Output> }>()
   const locks = new Set<string>()
-  const cache = new NotebookCache()
+  const cache = new NotebookCache(8, 16 * 1024 * 1024)
+  const previews = new NotebookPreviews(host.log)
   let disposed = false
   const check = (signal: AbortSignal) => {
     signal.throwIfAborted()
@@ -192,6 +194,18 @@ export function createNotebookService(host: ExtensionHost, kernels = new Noteboo
     }
   }
   const rpc: Record<string, RpcHandler> = {
+    "notebook.open": async (input, ctx) => {
+      check(ctx.signal)
+      const path = await pathOf(input, ctx.directory)
+      const result = await previews.call<ViewerDocument>("open", path, {}, ctx.signal)
+      const previous = outputs.get(path)
+      return { ...result, outputs: previous?.revision === result.revision ? previous.values : {} }
+    },
+    "notebook.cells": async (input, ctx) => {
+      check(ctx.signal)
+      const path = await pathOf(input, ctx.directory)
+      return previews.call("cells", path, input, ctx.signal)
+    },
     "notebook.read": async (input, ctx) =>
       request("read", input, ctx, async (path, timings, pending) => {
         const snapshot = await load(path, ctx.signal, timings, pending)
@@ -207,6 +221,7 @@ export function createNotebookService(host: ExtensionHost, kernels = new Noteboo
             edits?: unknown
             append?: { style?: unknown; text?: unknown }
             view?: unknown
+            preview?: unknown
           }
           if (
             !Array.isArray(data.edits) ||
@@ -257,6 +272,10 @@ export function createNotebookService(host: ExtensionHost, kernels = new Noteboo
           }
           outputs.delete(path)
           host.emit(EVENT, { path, type: "saved", revision: version })
+          if (data.preview === true) {
+            const result = await previews.call<ViewerDocument>("open", path, {}, ctx.signal)
+            return { ...result, outputs: {} }
+          }
           return document(path, { revision: version, entry }, data.view === true, ctx.signal, timings)
         } finally {
           locks.delete(path)
@@ -297,7 +316,7 @@ export function createNotebookService(host: ExtensionHost, kernels = new Noteboo
       cache.clear()
       outputs.clear()
       locks.clear()
-      return kernels.dispose()
+      return Promise.all([previews.dispose(), kernels.dispose()]).then(() => {})
     },
   }
 }

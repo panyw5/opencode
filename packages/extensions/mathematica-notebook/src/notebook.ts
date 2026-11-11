@@ -206,6 +206,30 @@ function stringValue(source: string, value: Node | undefined): string | undefine
   if (value?.string) return decode(source.slice(value.start + 1, value.end - 1))
 }
 
+// A bounded, structural reader for the preview worker. Interpretation payloads
+// and callbacks remain opaque; callers choose exactly which arguments to visit.
+export function boxReader(source: string) {
+  const spans: Spans = new Map()
+  return {
+    root: () => node(source, 0, source.length, spans),
+    args: (value: Node, limit = 128) => args(source, value, spans, limit),
+    string: (value: Node) => stringValue(source, value),
+    raw: (value: Node) => source.slice(value.start, value.end),
+    option: (value: Node, name: string) => {
+      if (source.slice(value.start, value.start + 2) !== "<|") return
+      for (const [start, end] of parts(source, value.start + 2, value.end - 2, spans, 64)) {
+        const from = trivia(source, start, end, spans)
+        if (source[from] !== '"') continue
+        const close = stringEnd(source, from, end, spans)
+        if (decode(source.slice(from + 1, close - 1)) !== name) continue
+        const arrow = trivia(source, close, end, spans)
+        if (source.slice(arrow, arrow + 2) === "->") return node(source, arrow + 2, end, spans)
+      }
+    },
+  }
+}
+export type BoxNode = Node
+
 function content(source: string, value: Node | undefined, spans: Spans): { text: string; safe: boolean } {
   if (!value) return { text: "", safe: false }
   const text = stringValue(source, value)
@@ -234,7 +258,7 @@ function content(source: string, value: Node | undefined, spans: Spans): { text:
   return { text: "", safe: false }
 }
 
-export function parseNotebook(source: string): Notebook {
+export function parseNotebook(source: string, options?: { preview?: boolean }): Notebook {
   // Index each string/comment/delimited group once. Descendants skip cached
   // spans instead of rescanning large outputs at every nesting level.
   const spans: Spans = new Map()
@@ -261,7 +285,16 @@ export function parseNotebook(source: string): Notebook {
     }
     if (!first) return
     const style = stringValue(source, styleNode) ?? "Text"
-    const rendered = content(source, first, spans)
+    let rendered: { text: string; safe: boolean }
+    try {
+      rendered = content(source, first, spans)
+    } catch (error) {
+      // The structural scan already validated delimiters. Excessively deep
+      // display content can be preserved locally without rejecting other cells.
+      if (!options?.preview || !(error instanceof Error) || error.message !== "Notebook nesting is too deep")
+        throw error
+      rendered = { text: "", safe: false }
+    }
     const runnable = style === "Input" || style === "Code"
     cells.push({
       index: cells.length,

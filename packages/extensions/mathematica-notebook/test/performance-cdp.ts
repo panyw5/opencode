@@ -171,12 +171,16 @@ try {
     assert.equal(await cdp.evaluate("!!window.__nbRoot.querySelector('[data-cell-index=\"0\"] textarea')"), false)
     assert.equal(await cdp.evaluate("!!window.__nbRoot.querySelector('[data-cell-index=\"1\"] details pre')"), false)
     await cdp.evaluate("window.__nbRoot.querySelector('[data-cell-index=\"1\"] summary').click();true")
-    await wait("!!window.__nbRoot.querySelector('[data-cell-index=\"1\"] .oc-nb-preview')")
+    await wait("!!window.__nbRoot.querySelector('[data-cell-index=\"1\"] details pre')")
     assert.ok(
-      await cdp.evaluate("window.__nbRoot.querySelector('[data-cell-index=\"1\"] pre').textContent.length<1000"),
+      await cdp.evaluate(
+        "window.__nbRoot.querySelector('[data-cell-index=\"1\"] details pre').textContent.length<=16000",
+      ),
     )
     await cdp.evaluate("window.__nbRoot.querySelector('[data-cell-index=\"1\"] summary').click();true")
     await wait("!window.__nbRoot.querySelector('[data-cell-index=\"1\"] details pre')")
+    await cdp.evaluate("window.__nbRoot.scrollTop=window.__nbRoot.scrollHeight;true")
+    await wait("!!window.__nbRoot.querySelector('[data-cell-index=\"2\"] textarea')")
     await cdp.evaluate(
       "(()=>{const f=window.__nbRoot.querySelector('[data-cell-index=\"2\"] textarea');f.value='changed tail';f.dispatchEvent(new Event('input',{bubbles:true}));[...window.__nbRoot.closest('[data-extension]').querySelectorAll('.oc-nb-toolbar button')].find(x=>x.textContent.trim()==='Save *').click();return true})()",
     )
