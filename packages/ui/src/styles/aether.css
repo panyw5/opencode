@@ -195,8 +195,6 @@ html[data-theme="aether"][data-color-scheme="dark"] [data-component="dock-prompt
     backdrop-filter: blur(48px) saturate(140%);
     -webkit-backdrop-filter: blur(48px) saturate(140%);
     box-shadow:
-      0 0 0 1px color-mix(in oklch, var(--border-weak-base) 40%, transparent) inset,
-      0 1px 0 color-mix(in srgb, white 10%, transparent) inset,
       0 24px 56px rgba(193, 95, 60, 0.1),
       0 10px 24px rgba(193, 95, 60, 0.06),
       0 4px 10px rgba(193, 95, 60, 0.04);
@@ -207,8 +205,6 @@ html[data-theme="aether"][data-color-scheme="dark"] [data-component="dock-prompt
     backdrop-filter: blur(56px) saturate(140%);
     -webkit-backdrop-filter: blur(56px) saturate(140%);
     box-shadow:
-      0 0 0 1px color-mix(in oklch, var(--border-weak-base) 36%, transparent) inset,
-      0 1px 0 color-mix(in srgb, white 12%, transparent) inset,
       0 32px 80px rgba(193, 95, 60, 0.12),
       0 14px 32px rgba(193, 95, 60, 0.08),
       0 6px 14px rgba(193, 95, 60, 0.05);

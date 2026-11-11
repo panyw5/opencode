@@ -5,7 +5,7 @@
      near-identical to the raised panel desktop menus render on. */
   --context-menu-item-hover-bg: color-mix(in srgb, var(--text-strong) 10%, transparent);
   --context-menu-item-active-bg: color-mix(in srgb, var(--text-strong) 16%, transparent);
-  --context-menu-item-inset: inset 0 0 0 1px color-mix(in srgb, var(--text-strong) 14%, transparent);
+  --context-menu-item-inset: none;
   --context-menu-frosted-bg: light-dark(
     color-mix(in srgb, var(--background-stronger) 82%, transparent),
     rgb(12 12 14 / 0.34)
@@ -21,8 +21,6 @@
   -webkit-backdrop-filter: blur(40px) saturate(150%);
   padding: 8px;
   box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--border-weak-base) 58%, transparent) inset,
-    0 1px 0 color-mix(in srgb, white 12%, transparent) inset,
     0 24px 56px rgba(0, 0, 0, 0.16),
     0 10px 24px rgba(0, 0, 0, 0.12),
     0 4px 10px rgba(0, 0, 0, 0.08);

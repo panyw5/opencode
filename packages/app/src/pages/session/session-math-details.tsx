@@ -120,7 +120,7 @@ function MathDetailCard(props: {
       aria-pressed={props.selected}
       class="relative inline-flex shrink-0 items-center justify-between gap-2 overflow-hidden rounded-full border border-border-weak-base bg-background-base px-3 py-1.5 text-left transition-[background-color,border-color,box-shadow] duration-150 hover:border-border-strong-base hover:bg-surface-interactive-weak focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-base"
       classList={{
-        "border-[color-mix(in_srgb,var(--surface-brand-base)_58%,var(--border-base))] bg-[linear-gradient(110deg,color-mix(in_srgb,var(--surface-brand-base)_20%,var(--background-base)),color-mix(in_srgb,var(--surface-brand-base)_7%,var(--background-base)))] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--surface-brand-base)_22%,transparent)]":
+        "border-[color-mix(in_srgb,var(--surface-brand-base)_58%,var(--border-base))] bg-[linear-gradient(110deg,color-mix(in_srgb,var(--surface-brand-base)_20%,var(--background-base)),color-mix(in_srgb,var(--surface-brand-base)_7%,var(--background-base)))]":
           props.selected,
       }}
       onClick={props.onSelect}

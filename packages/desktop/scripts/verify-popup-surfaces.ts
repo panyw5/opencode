@@ -21,10 +21,13 @@ await withCdp(async (cdp, target) => {
     // Include a utility background to catch cascade regressions in custom dialogs.
     const dialog = document.createElement("div")
     dialog.dataset.component = "dialog"
+    const container = document.createElement("div")
+    container.dataset.slot = "dialog-container"
     const content = document.createElement("div")
     content.dataset.slot = "dialog-content"
     content.className = "bg-background-base"
-    dialog.append(content)
+    container.append(content)
+    dialog.append(container)
     host.append(dialog)
     panels.push(content)
     const arrows = ["popover-arrow", "dropdown-menu-arrow", "context-menu-arrow"].map(slot => {

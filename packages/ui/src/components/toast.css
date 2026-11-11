@@ -72,7 +72,7 @@
   backdrop-filter: blur(40px) saturate(150%);
   -webkit-backdrop-filter: blur(40px) saturate(150%);
   color: var(--text-invert-base);
-  box-shadow: var(--shadow-lg-border-base);
+  box-shadow: var(--shadow-lg);
 
   &[data-variant="default"],
   &[data-variant="loading"] {
@@ -352,8 +352,6 @@
     /* Popover-style shadow: the shared --shadow-lg-border-base carries a huge
        36px/80px blur layer that reads as a dirty smudge under a small toast. */
     box-shadow:
-      0 0 0 1px color-mix(in oklch, var(--border-weak-base) 58%, transparent) inset,
-      0 1px 0 color-mix(in srgb, white 12%, transparent) inset,
       0 8px 24px rgb(0 0 0 / 0.12),
       0 2px 8px rgb(0 0 0 / 0.08);
 

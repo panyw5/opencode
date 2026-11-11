@@ -48,7 +48,7 @@ html[data-theme="arc"] [data-component="presented-task-card"] {
 [data-component="presented-task-card"]:has(.presented-task-card__open:hover) {
   border-color: var(--border-interactive-hover);
   background: var(--surface-base-hover);
-  box-shadow: var(--shadow-xs-border-hover);
+  box-shadow: var(--shadow-xs);
 }
 
 .presented-task-card__open {
