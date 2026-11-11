@@ -1,6 +1,15 @@
 import type { SessionNotification } from "@agentclientprotocol/sdk"
 import type { AgentEvent } from "./backend"
 
+/** Session updates that only carry adapter metadata; they have no transcript content. */
+const metadataUpdate = new Set([
+  "available_commands_update",
+  "config_option_update",
+  "current_mode_update",
+  "session_info_update",
+  "usage_update",
+])
+
 /** Adapts ACP updates to the same append/patch stream consumed by external child sessions. */
 export class AcpTranscript {
   readonly transcript: AgentEvent[] = []
@@ -69,6 +78,8 @@ export class AcpTranscript {
         title: "Plan",
         text: update.entries.map((item) => `[${item.status}] ${item.content}`).join("\n"),
       })
+    } else if (metadataUpdate.has(type)) {
+      // Titles, usage, modes and command catalogs are not conversation content.
     } else if (type !== "user_message_chunk") {
       this.put({ id: `${this.turn}:${type}`, kind: "status", title: type, text: JSON.stringify(update) })
     }

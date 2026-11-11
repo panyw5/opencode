@@ -47,6 +47,7 @@ import { Question } from "@/question"
 import { Session } from "@/session/session"
 import { SessionCompaction } from "@/session/compaction"
 import { SessionPrompt } from "@/session/prompt"
+import { SessionChannel } from "@/agent-backend/channel"
 import { ScheduledTask } from "@/scheduled-task/service"
 import { ProjectTask } from "@/project-task/service"
 import { SessionRevert } from "@/session/revert"
@@ -271,6 +272,7 @@ export function createRoutes(
       Session.defaultLayer,
       SessionCompaction.defaultLayer,
       SessionPrompt.defaultLayer,
+      SessionChannel.defaultLayer,
       SessionRevert.defaultLayer,
       SessionShare.defaultLayer,
       SessionRunState.defaultLayer,

@@ -20,11 +20,7 @@ const config = {
 
 const allowAll = [{ permission: "*", pattern: "*", action: "allow" as const }]
 
-function call(
-  instance: { directory: string },
-  route: string,
-  init?: { method?: string; body?: unknown },
-) {
+function call(instance: { directory: string }, route: string, init?: { method?: string; body?: unknown }) {
   return Effect.promise(async () => {
     const response = await Server.Default().app.request(route, {
       method: init?.method ?? "GET",
@@ -80,9 +76,7 @@ describe("session-level external channel", () => {
         expect(first.status).toBe(200)
         expect(first.body.info.role).toBe("assistant")
         expect(textOf(first.body)).toContain("ACP_REPLY_1: complete")
-        expect(
-          first.body.parts.some((part: any) => part.type === "tool" && part.tool === "external_tool"),
-        ).toBe(true)
+        expect(first.body.parts.some((part: any) => part.type === "tool" && part.tool === "external_tool")).toBe(true)
 
         const second = yield* prompt(instance, sessionID, [textPart("second")])
         expect(textOf(second.body)).toContain("ACP_REPLY_2: complete")
@@ -137,6 +131,39 @@ describe("session-level external channel", () => {
 
         const after = yield* prompt(instance, sessionID, [textPart("after")])
         expect(textOf(after.body)).toContain("ACP_REPLY_2: complete")
+      }),
+    { config },
+  )
+
+  it.instance(
+    "exposes and updates the external agent model",
+    () =>
+      Effect.gen(function* () {
+        const instance = yield* TestInstance
+        const created = yield* create(instance)
+        const sessionID = created.body.id as string
+
+        const first = yield* prompt(instance, sessionID, [textPart("hello")])
+        expect(first.status).toBe(200)
+
+        const options = yield* call(instance, `/session/${sessionID}/channel`)
+        expect(options.status).toBe(200)
+        expect(options.body.advisor).toBe("codex")
+        expect(options.body.models.map((item: any) => item.id)).toEqual(["fixture/default", "fixture/other"])
+        expect(options.body.model).toBe("fixture/default")
+
+        const updated = yield* call(instance, `/session/${sessionID}/channel`, {
+          method: "PATCH",
+          body: { model: "fixture/other" },
+        })
+        expect(updated.status).toBe(200)
+        expect(updated.body).toBe(true)
+
+        const after = yield* call(instance, `/session/${sessionID}/channel`)
+        expect(after.body.model).toBe("fixture/other")
+
+        const reply = yield* prompt(instance, sessionID, [textPart("after model switch")])
+        expect(textOf(reply.body)).toContain("ACP_REPLY_2: complete")
       }),
     { config },
   )

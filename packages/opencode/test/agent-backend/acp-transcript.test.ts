@@ -38,4 +38,21 @@ describe("ACP normalized transcript", () => {
     expect(live.transcript).toHaveLength(80)
     expect(captured.size).toBe(101)
   })
+
+  test("drops adapter metadata updates from the transcript", () => {
+    const live = new AcpTranscript()
+    live.beginTurn("initial")
+    for (const update of [
+      { sessionUpdate: "usage_update", used: 10, size: 100 },
+      { sessionUpdate: "session_info_update", title: "External title" },
+      { sessionUpdate: "current_mode_update", currentModeId: "agent" },
+    ] as const)
+      live.apply({ sessionId: "fixture", update: update as never })
+    live.apply({
+      sessionId: "fixture",
+      update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "hello" } },
+    })
+    expect(live.transcript).toHaveLength(1)
+    expect(live.transcript[0]).toMatchObject({ kind: "message", text: "hello" })
+  })
 })

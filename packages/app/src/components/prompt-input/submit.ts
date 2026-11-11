@@ -859,15 +859,29 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           diagnose("session-create-start", { directory: sessionDirectory })
           const createSession = client.session.create.bind(client.session) as (
             parameters?: undefined,
-            options?: { body?: { cwd?: string } },
+            options?: {
+              body?: {
+                cwd?: string
+                channel?: { kind: "acp"; advisor: string; model?: string; mode?: string }
+              }
+            },
           ) => Promise<{ data?: Session }>
+          const channel = local.channel.current()
+          const createBody = {
+            ...(genericagent && sessionCwd ? { cwd: sessionCwd } : {}),
+            ...(channel
+              ? {
+                  channel: {
+                    kind: "acp" as const,
+                    advisor: channel.advisor,
+                    ...(channel.model ? { model: channel.model } : {}),
+                  },
+                }
+              : {}),
+          }
           const created = await createSession(
             undefined,
-            genericagent && sessionCwd
-              ? ({
-                  body: { cwd: sessionCwd },
-                } as Parameters<typeof createSession>[1])
-              : undefined,
+            Object.keys(createBody).length ? ({ body: createBody } as Parameters<typeof createSession>[1]) : undefined,
           )
             .then((x) => x.data ?? undefined)
             .catch((err) => {

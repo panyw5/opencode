@@ -17,10 +17,13 @@ import { workspacePathContext } from "@/pages/layout/helpers"
 
 export type ModelKey = { providerID: string; modelID: string }
 
+export type ChannelChoice = { advisor: string; model?: string }
+
 type State = {
   agent?: string
   model?: ModelKey
   variant?: string | null
+  channel?: ChannelChoice
 }
 
 type Saved = {
@@ -53,6 +56,7 @@ const clone = (value: State | undefined) => {
   return {
     ...value,
     model: value.model ? { ...value.model } : undefined,
+    channel: value.channel ? { ...value.channel } : undefined,
   } satisfies State
 }
 
@@ -280,10 +284,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
     const snapshot = () => {
       const model = current()
+      const state = scope()
       return {
         agent: agent.current()?.name,
         model: model ? { providerID: model.provider.id, modelID: model.id } : undefined,
         variant: selected(),
+        channel: state?.channel ? { ...state.channel } : undefined,
       } satisfies State
     }
 
@@ -390,6 +396,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       slug: createMemo(() => base64Encode(sdk.directory)),
       model,
       agent,
+      channel: {
+        current: () => scope()?.channel,
+        set(value: ChannelChoice | undefined) {
+          write({ channel: value })
+        },
+      },
       session: {
         reset() {
           setStore({ draft: undefined, promoting: undefined })

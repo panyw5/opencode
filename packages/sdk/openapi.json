@@ -3007,6 +3007,113 @@
         ]
       }
     },
+    "/agent-backend/channel-options": {
+      "post": {
+        "tags": ["agentBackend"],
+        "operationId": "agentBackend.channelOptions",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ChannelOptions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelOptions"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "ForbiddenError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "UpstreamError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpstreamError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List a channel's ACP models and modes before its session exists",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "advisor": {
+                    "type": "string",
+                    "enum": ["codex", "claude", "grok", "dsh", "pi"]
+                  }
+                },
+                "required": ["advisor"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.agentBackend.channelOptions({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/background-shell": {
       "get": {
         "tags": ["background-shell"],
@@ -10568,102 +10675,6 @@
         ]
       }
     },
-    "/question/{requestID}/focus": {
-      "post": {
-        "tags": ["question"],
-        "operationId": "question.focus",
-        "parameters": [
-          {
-            "name": "requestID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^que"
-            },
-            "required": true
-          },
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Updated question timeout",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/QuestionRequest"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "BadRequest | InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
-                    },
-                    {
-                      "$ref": "#/components/schemas/InvalidRequestError"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "QuestionNotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/QuestionNotFoundError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Pause the timeout while focused. Renew every few seconds; blur resumes the remaining budget.",
-        "summary": "Update question focus",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.question.focus({\n  ...\n})"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "focused": {
-                    "type": "boolean"
-                  }
-                },
-                "required": ["focused"],
-                "additionalProperties": false
-              }
-            }
-          }
-        }
-      }
-    },
     "/question/{requestID}/pause": {
       "post": {
         "tags": ["question"],
@@ -10837,6 +10848,102 @@
           {
             "lang": "js",
             "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.question.reject({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/question/{requestID}/focus": {
+      "post": {
+        "tags": ["question"],
+        "operationId": "question.focus",
+        "parameters": [
+          {
+            "name": "requestID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^que"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated question timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "QuestionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionNotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Pause the timeout while focused. Renew every few seconds; blur resumes the remaining budget.",
+        "summary": "Update question focus",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "focused": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["focused"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.question.focus({\n  ...\n})"
           }
         ]
       }
@@ -11618,6 +11725,9 @@
                     },
                     "required": ["id", "providerID"],
                     "additionalProperties": false
+                  },
+                  "channel": {
+                    "$ref": "#/components/schemas/SessionChannel"
                   },
                   "permission": {
                     "$ref": "#/components/schemas/PermissionRuleset"
@@ -15579,6 +15689,174 @@
           {
             "lang": "js",
             "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.session.abort({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/session/{sessionID}/channel": {
+      "get": {
+        "tags": ["session"],
+        "operationId": "session.channel",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Channel models and modes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelOptions"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Return the external ACP agent models and modes available to a channel session.",
+        "summary": "Get session channel options",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.session.channel({\n  ...\n})"
+          }
+        ]
+      },
+      "patch": {
+        "tags": ["session"],
+        "operationId": "session.channelUpdate",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Channel selection updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "Channel selection updated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Apply a model or mode selection to the session's external ACP agent.",
+        "summary": "Update session channel selection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelUpdateInput"
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.session.channelUpdate({\n  ...\n})"
           }
         ]
       }
@@ -21779,7 +22057,7 @@
                         "type": "string"
                       }
                     },
-                    "required": ["type", "url", "sha256"],
+                    "required": ["type", "url"],
                     "additionalProperties": false
                   },
                   {
@@ -21849,7 +22127,7 @@
                         "type": "string"
                       }
                     },
-                    "required": ["type", "url", "sha256"],
+                    "required": ["type", "url"],
                     "additionalProperties": false
                   },
                   {
@@ -24733,6 +25011,30 @@
         "required": ["advisor", "sourceMessageID", "sourcePartID", "callID", "historical"],
         "additionalProperties": false
       },
+      "SessionChannel": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["acp"]
+          },
+          "advisor": {
+            "type": "string",
+            "enum": ["codex", "claude", "grok", "dsh", "pi"]
+          },
+          "model": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "acpSessionID": {
+            "type": "string"
+          }
+        },
+        "required": ["kind", "advisor"],
+        "additionalProperties": false
+      },
       "PermissionAction": {
         "type": "string",
         "enum": ["allow", "deny", "ask"]
@@ -24791,6 +25093,9 @@
           },
           "external": {
             "$ref": "#/components/schemas/ExternalSession"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/SessionChannel"
           },
           "summary": {
             "type": "object",
@@ -24967,6 +25272,43 @@
           }
         },
         "required": ["text"],
+        "additionalProperties": false
+      },
+      "AgentChannels": {
+        "type": "object",
+        "properties": {
+          "mcp": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": ["all"]
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              {
+                "type": "boolean",
+                "enum": [false]
+              }
+            ]
+          },
+          "idle_timeout_ms": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "max_processes": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          }
+        },
         "additionalProperties": false
       },
       "LogLevel": {
@@ -26211,6 +26553,9 @@
             },
             "additionalProperties": false
           },
+          "agent_channels": {
+            "$ref": "#/components/schemas/AgentChannels"
+          },
           "$schema": {
             "type": "string"
           },
@@ -27285,6 +27630,55 @@
         "required": ["directory", "payload"],
         "additionalProperties": false
       },
+      "ChannelOptions": {
+        "type": "object",
+        "properties": {
+          "advisor": {
+            "type": "string",
+            "enum": ["codex", "claude", "grok", "dsh", "pi"]
+          },
+          "model": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": ["id", "name"],
+              "additionalProperties": false
+            }
+          },
+          "modes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": ["id", "name"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["advisor", "models", "modes"],
+        "additionalProperties": false
+      },
       "BrowserForbiddenError": {
         "type": "object",
         "properties": {
@@ -27865,6 +28259,9 @@
           },
           "external": {
             "$ref": "#/components/schemas/ExternalSession"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/SessionChannel"
           },
           "summary": {
             "type": "object",
@@ -28938,6 +29335,18 @@
           }
         },
         "required": ["id", "sessionID", "time", "preview"],
+        "additionalProperties": false
+      },
+      "ChannelUpdateInput": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          }
+        },
         "additionalProperties": false
       },
       "PluginHookControl": {
@@ -30174,6 +30583,9 @@
             },
             "additionalProperties": false
           },
+          "agent_channels": {
+            "$ref": "#/components/schemas/AgentChannels"
+          },
           "$schema": {
             "type": "string"
           },
@@ -31205,6 +31617,16 @@
                         },
                         "required": ["id", "providerID"],
                         "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "channel": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/SessionChannel"
                       },
                       {
                         "type": "null"

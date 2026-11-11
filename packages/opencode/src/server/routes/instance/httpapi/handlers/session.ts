@@ -10,6 +10,8 @@ import { Session } from "@/session/session"
 import { SessionCompaction } from "@/session/compaction"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
+import { SessionChannel } from "@/agent-backend/channel"
+import { ChannelUpdateInput } from "@/session/channel-schema"
 import { setContextLocale } from "@/session/context-locale"
 import { parseUILocale, UI_LOCALE_HEADER } from "@opencode-ai/core/locale"
 import { SessionInput } from "@/session/input"
@@ -167,6 +169,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const session = yield* Session.Service
     const shareSvc = yield* SessionShare.Service
     const promptSvc = yield* SessionPrompt.Service
+    const channelSvc = yield* SessionChannel.Service
     const inboxSvc = yield* SessionInput.Service
     const revertSvc = yield* SessionRevert.Service
     const compactSvc = yield* SessionCompaction.Service
@@ -1262,6 +1265,30 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return HttpApiSchema.NoContent.make()
     })
 
+    const channelOptions = Effect.fn("SessionHttpApi.channelOptions")(function* (ctx: {
+      params: { sessionID: SessionID }
+    }) {
+      const current = yield* requireSession(ctx.params.sessionID)
+      if (!current.channel)
+        return yield* new InvalidRequestError({ message: "Session is not bound to an external channel" })
+      return yield* channelSvc
+        .options(ctx.params.sessionID)
+        .pipe(Effect.catchCause((cause) => Effect.fail(new InvalidRequestError({ message: Cause.pretty(cause) }))))
+    })
+
+    const channelUpdate = Effect.fn("SessionHttpApi.channelUpdate")(function* (ctx: {
+      params: { sessionID: SessionID }
+      payload: typeof ChannelUpdateInput.Type
+    }) {
+      const current = yield* requireSession(ctx.params.sessionID)
+      if (!current.channel)
+        return yield* new InvalidRequestError({ message: "Session is not bound to an external channel" })
+      yield* channelSvc
+        .update({ sessionID: ctx.params.sessionID, ...ctx.payload })
+        .pipe(Effect.catchCause((cause) => Effect.fail(new InvalidRequestError({ message: Cause.pretty(cause) }))))
+      return true
+    })
+
     const flush = Effect.fn("SessionHttpApi.flush")(function* (ctx: { params: { sessionID: SessionID } }) {
       yield* requireSession(ctx.params.sessionID)
       // Jump the queue: gracefully interrupt the in-flight step and restart the
@@ -1290,7 +1317,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof ExternalSessionPayload.Type
     }) {
       const parent = yield* requireSession(ctx.params.sessionID)
-      if (!directoryEquals(parent.directory, yield* InstanceState.directory)) return yield* new HttpApiError.BadRequest({})
+      if (!directoryEquals(parent.directory, yield* InstanceState.directory))
+        return yield* new HttpApiError.BadRequest({})
       return yield* external
         .importHistory(parent, ctx.payload.messageID, ctx.payload.partID)
         .pipe(Effect.catchCause(() => Effect.fail(new HttpApiError.BadRequest({}))))
@@ -1463,6 +1491,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("update", update)
       .handleRaw("fork", forkRaw)
       .handle("abort", abort)
+      .handle("channel", channelOptions)
+      .handle("channelUpdate", channelUpdate)
       .handle("flush", flush)
       .handle("stopAfterStep", stopAfterStep)
       .handle("clearStopAfterStep", clearStopAfterStep)

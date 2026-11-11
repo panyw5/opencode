@@ -48,6 +48,7 @@ import { Select } from "@opencode-ai/ui/select"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ModelSelectorPopover } from "@/components/dialog-select-model"
+import { ChannelBadge, ChannelModelSelect, ChannelToggles, readyChannels } from "@/components/session-channel-picker"
 import { DialogSelectModelUnpaid } from "@/components/dialog-select-model-unpaid"
 import { useProviders } from "@/hooks/use-providers"
 import { useCommand } from "@/context/command"
@@ -483,6 +484,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const hasAgentChoose = createMemo(() => !!extraAgentCaps()?.agentChoose)
   const hideAgentSelector = createMemo(() => !!extraAgentCaps()?.hideAgent)
   const hideVariantSelector = createMemo(() => !!extraAgentCaps()?.hideVariant)
+  const hideChannelSelector = createMemo(() => !!extraAgentCaps()?.hideAgent)
+  const [backendConfig, setBackendConfig] = createSignal<{
+    agent_backends?: Record<string, { type?: string; command?: readonly string[] } | undefined>
+  }>()
+  const channelChoices = createMemo(() => readyChannels(backendConfig()))
   let editorRef!: HTMLDivElement
   let fileInputRef: HTMLInputElement | undefined
   let scrollRef!: HTMLDivElement
@@ -607,6 +613,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return paths
   })
   const info = createMemo(() => (params.id ? sync.session.get(params.id) : undefined))
+  const sessionChannel = createMemo(() => info()?.channel?.advisor)
+  const draftChannel = createMemo(() => local.channel.current()?.advisor)
+  const draftChannelModel = createMemo(() => local.channel.current()?.model)
+  const currentChannel = createMemo(() => sessionChannel() ?? draftChannel())
+  const isChannel = createMemo(() => !!currentChannel())
+  const setChannel = (advisor: string | undefined) => local.channel.set(advisor ? { advisor } : undefined)
+  const setChannelModel = (model: string) => {
+    const advisor = draftChannel()
+    if (advisor) local.channel.set({ advisor, model })
+  }
   const status = createMemo(
     () =>
       sync.session.status.get(params.id ?? "") ?? {
@@ -1117,6 +1133,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         .get()
         .then((result) => result.data)
         .catch(() => undefined)
+      setBackendConfig(config)
       console.debug(
         `[agent-backend] loading consult mentions directory=${sdk.directory} acp=${Object.values(config?.agent_backends ?? {}).filter((item) => item?.type === "acp").length}`,
       )
@@ -2628,7 +2645,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     dialog.showForOwner(() => (
       <Dialog title={language.t("prompt.mobile.options")} fit class="mobile-composer-options">
         <div class="flex flex-col gap-4 p-4 pt-0">
-          <Show when={!hideAgentSelector() && !hasAgentChoose()}>
+          <Show when={!hideAgentSelector() && !hasAgentChoose() && !isChannel()}>
             <label class="flex flex-col gap-2 text-13-medium text-text-weak">
               {language.t("command.agent.cycle")}
               <Select
@@ -2641,7 +2658,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               />
             </label>
           </Show>
-          <Show when={!hideVariantSelector() && !hasAgentChoose()}>
+          <Show when={!hideVariantSelector() && !hasAgentChoose() && !isChannel()}>
             <label class="flex flex-col gap-2 text-13-medium text-text-weak">
               {language.t("command.model.variant.cycle")}
               <Select
@@ -2707,6 +2724,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         t={(key) => language.t(key as Parameters<typeof language.t>[0])}
       />
       <Show when={!read()}>
+        <Show when={!hideChannelSelector() && channelChoices().length > 0 && !params.id}>
+          <div data-slot="prompt-channels-row" class="flex justify-center px-3 pb-1.5">
+            <ChannelToggles options={channelChoices()} current={currentChannel()} onSelect={setChannel} />
+          </div>
+        </Show>
         <DockShellForm
           id={formID}
           onSubmit={handleSubmit}
@@ -2865,23 +2887,40 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     event.currentTarget.value = ""
                   }}
                 />
-                <ModelSelectorPopover
-                  triggerAs={Button}
-                  triggerProps={{
-                    variant: "ghost",
-                    class: "mobile-model-trigger min-w-0 flex-1 h-11 justify-start gap-1 px-2",
-                    "data-action": "prompt-mobile-model",
-                    "aria-label": language.t("command.model.choose"),
-                  }}
+                <Show
+                  when={currentChannel()}
+                  keyed
+                  fallback={
+                    <ModelSelectorPopover
+                      triggerAs={Button}
+                      triggerProps={{
+                        variant: "ghost",
+                        class: "mobile-model-trigger min-w-0 flex-1 h-11 justify-start gap-1 px-2",
+                        "data-action": "prompt-mobile-model",
+                        "aria-label": language.t("command.model.choose"),
+                      }}
+                    >
+                      <span
+                        data-slot="prompt-mobile-model-name"
+                        class="min-w-0 flex-1 truncate text-13-medium text-text-strong"
+                      >
+                        {local.model.current()?.name ?? language.t("dialog.model.select.title")}
+                      </span>
+                      <Icon name="chevron-down" size="small" class="shrink-0" />
+                    </ModelSelectorPopover>
+                  }
                 >
-                  <span
-                    data-slot="prompt-mobile-model-name"
-                    class="min-w-0 flex-1 truncate text-13-medium text-text-strong"
-                  >
-                    {local.model.current()?.name ?? language.t("dialog.model.select.title")}
-                  </span>
-                  <Icon name="chevron-down" size="small" class="shrink-0" />
-                </ModelSelectorPopover>
+                  {(advisor) => (
+                    <ChannelModelSelect
+                      sessionID={params.id}
+                      advisor={advisor}
+                      draftModel={draftChannelModel()}
+                      onSelectModel={setChannelModel}
+                      compact
+                      class="mobile-model-trigger min-w-0 flex-1 h-11 justify-start gap-1 px-2"
+                    />
+                  )}
+                </Show>
                 <IconButton
                   data-action="prompt-mobile-options"
                   type="button"
@@ -3028,7 +3067,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     when={hasAgentChoose()}
                     fallback={
                       <>
-                        <Show when={!hideAgentSelector()}>
+                        <Show when={!hideAgentSelector() && !isChannel()}>
                           <TooltipKeybind
                             {...hover}
                             placement="top"
@@ -3092,9 +3131,65 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                             />
                           </TooltipKeybind>
                         </Show>
-                        <Show
-                          when={providers.paid().length > 0}
-                          fallback={
+                        <Show when={!isChannel()}>
+                          <Show
+                            when={providers.paid().length > 0}
+                            fallback={
+                              <TooltipKeybind
+                                {...hover}
+                                placement="top"
+                                gutter={4}
+                                openDelay={promptTooltipDelay}
+                                lazyExpand={true}
+                                onOpenChange={
+                                  trace
+                                    ? (open) => {
+                                        logPromptHover("model-selector-unpaid", open ? "tooltip-open" : "tooltip-close")
+                                      }
+                                    : undefined
+                                }
+                                title={language.t("command.model.choose")}
+                                keybind={command.keybind("model.choose")}
+                              >
+                                <Button
+                                  as="div"
+                                  variant="ghost"
+                                  size="normal"
+                                  class="prompt-pick min-w-0 max-w-[320px] group"
+                                  style={control()}
+                                  onPointerEnter={
+                                    trace
+                                      ? (e: PointerEvent) => logPromptHover("model-selector-unpaid", "pointer-enter", e)
+                                      : undefined
+                                  }
+                                  onPointerLeave={
+                                    trace
+                                      ? (e: PointerEvent) => logPromptHover("model-selector-unpaid", "pointer-leave", e)
+                                      : undefined
+                                  }
+                                  onFocus={trace ? () => logPromptHover("model-selector-unpaid", "focus") : undefined}
+                                  onBlur={trace ? () => logPromptHover("model-selector-unpaid", "blur") : undefined}
+                                  onClick={(e: MouseEvent) => {
+                                    logPromptHover("model-selector-unpaid", "click", e)
+                                    dialog.showForOwner(() => <DialogSelectModelUnpaid />)
+                                  }}
+                                >
+                                  <Show when={local.model.current()?.provider?.id}>
+                                    <ProviderIcon
+                                      id={local.model.current()!.provider.id}
+                                      class="size-4 shrink-0 opacity-100"
+                                    />
+                                  </Show>
+                                  <span class="truncate">
+                                    {local.model.current()
+                                      ? `${local.model.current()!.provider?.id} / ${local.model.current()!.name}`
+                                      : language.t("dialog.model.select.title")}
+                                  </span>
+                                  <Icon name="chevron-down" size="small" class="shrink-0" />
+                                </Button>
+                              </TooltipKeybind>
+                            }
+                          >
                             <TooltipKeybind
                               {...hover}
                               placement="top"
@@ -3104,35 +3199,54 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                               onOpenChange={
                                 trace
                                   ? (open) => {
-                                      logPromptHover("model-selector-unpaid", open ? "tooltip-open" : "tooltip-close")
+                                      logPromptHover("model-selector", open ? "tooltip-open" : "tooltip-close")
                                     }
                                   : undefined
                               }
                               title={language.t("command.model.choose")}
                               keybind={command.keybind("model.choose")}
                             >
-                              <Button
-                                as="div"
-                                variant="ghost"
-                                size="normal"
-                                class="prompt-pick min-w-0 max-w-[320px] group"
-                                style={control()}
-                                onPointerEnter={
-                                  trace
-                                    ? (e: PointerEvent) => logPromptHover("model-selector-unpaid", "pointer-enter", e)
-                                    : undefined
-                                }
-                                onPointerLeave={
-                                  trace
-                                    ? (e: PointerEvent) => logPromptHover("model-selector-unpaid", "pointer-leave", e)
-                                    : undefined
-                                }
-                                onFocus={trace ? () => logPromptHover("model-selector-unpaid", "focus") : undefined}
-                                onBlur={trace ? () => logPromptHover("model-selector-unpaid", "blur") : undefined}
-                                onClick={(e: MouseEvent) => {
-                                  logPromptHover("model-selector-unpaid", "click", e)
-                                  dialog.showForOwner(() => <DialogSelectModelUnpaid />)
+                              <ModelSelectorPopover
+                                debugName={trace ? "model-selector" : undefined}
+                                triggerAs={Button}
+                                triggerProps={{
+                                  variant: "ghost",
+                                  size: "normal",
+                                  style: control(),
+                                  class: "prompt-pick min-w-0 max-w-[320px] group",
+                                  ...(trace
+                                    ? {
+                                        onPointerEnter: (e: PointerEvent) =>
+                                          logPromptHover("model-selector", "pointer-enter", e),
+                                        onPointerLeave: (e: PointerEvent) =>
+                                          logPromptHover("model-selector", "pointer-leave", e),
+                                        onFocus: () => logPromptHover("model-selector", "focus"),
+                                        onBlur: () => logPromptHover("model-selector", "blur"),
+                                        onPointerDown: (e: PointerEvent) => uiPerfTriggerDown("model-selector", e),
+                                      }
+                                    : {}),
                                 }}
+                                onOpenChange={
+                                  trace
+                                    ? (open) => {
+                                        logPromptHover("model-selector", open ? "popover-open" : "popover-close")
+                                        const list = local.model.list()
+                                        const visible = list.filter((item) =>
+                                          local.model.visible({ modelID: item.id, providerID: item.provider.id }),
+                                        )
+                                        const providers = new Set(visible.map((item) => item.provider.id))
+                                        logPromptOpen("model-selector", {
+                                          open,
+                                          total: list.length,
+                                          visible: visible.length,
+                                          providers: providers.size,
+                                          current: local.model.current()?.id ?? "none",
+                                          current_provider: local.model.current()?.provider?.id ?? "none",
+                                        })
+                                        uiPerfOpen("model-selector", open)
+                                      }
+                                    : undefined
+                                }
                               >
                                 <Show when={local.model.current()?.provider?.id}>
                                   <ProviderIcon
@@ -3146,84 +3260,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                                     : language.t("dialog.model.select.title")}
                                 </span>
                                 <Icon name="chevron-down" size="small" class="shrink-0" />
-                              </Button>
+                              </ModelSelectorPopover>
                             </TooltipKeybind>
-                          }
-                        >
-                          <TooltipKeybind
-                            {...hover}
-                            placement="top"
-                            gutter={4}
-                            openDelay={promptTooltipDelay}
-                            lazyExpand={true}
-                            onOpenChange={
-                              trace
-                                ? (open) => {
-                                    logPromptHover("model-selector", open ? "tooltip-open" : "tooltip-close")
-                                  }
-                                : undefined
-                            }
-                            title={language.t("command.model.choose")}
-                            keybind={command.keybind("model.choose")}
-                          >
-                            <ModelSelectorPopover
-                              debugName={trace ? "model-selector" : undefined}
-                              triggerAs={Button}
-                              triggerProps={{
-                                variant: "ghost",
-                                size: "normal",
-                                style: control(),
-                                class: "prompt-pick min-w-0 max-w-[320px] group",
-                                ...(trace
-                                  ? {
-                                      onPointerEnter: (e: PointerEvent) =>
-                                        logPromptHover("model-selector", "pointer-enter", e),
-                                      onPointerLeave: (e: PointerEvent) =>
-                                        logPromptHover("model-selector", "pointer-leave", e),
-                                      onFocus: () => logPromptHover("model-selector", "focus"),
-                                      onBlur: () => logPromptHover("model-selector", "blur"),
-                                      onPointerDown: (e: PointerEvent) => uiPerfTriggerDown("model-selector", e),
-                                    }
-                                  : {}),
-                              }}
-                              onOpenChange={
-                                trace
-                                  ? (open) => {
-                                      logPromptHover("model-selector", open ? "popover-open" : "popover-close")
-                                      const list = local.model.list()
-                                      const visible = list.filter((item) =>
-                                        local.model.visible({ modelID: item.id, providerID: item.provider.id }),
-                                      )
-                                      const providers = new Set(visible.map((item) => item.provider.id))
-                                      logPromptOpen("model-selector", {
-                                        open,
-                                        total: list.length,
-                                        visible: visible.length,
-                                        providers: providers.size,
-                                        current: local.model.current()?.id ?? "none",
-                                        current_provider: local.model.current()?.provider?.id ?? "none",
-                                      })
-                                      uiPerfOpen("model-selector", open)
-                                    }
-                                  : undefined
-                              }
-                            >
-                              <Show when={local.model.current()?.provider?.id}>
-                                <ProviderIcon
-                                  id={local.model.current()!.provider.id}
-                                  class="size-4 shrink-0 opacity-100"
-                                />
-                              </Show>
-                              <span class="truncate">
-                                {local.model.current()
-                                  ? `${local.model.current()!.provider?.id} / ${local.model.current()!.name}`
-                                  : language.t("dialog.model.select.title")}
-                              </span>
-                              <Icon name="chevron-down" size="small" class="shrink-0" />
-                            </ModelSelectorPopover>
-                          </TooltipKeybind>
+                          </Show>
                         </Show>
-                        <Show when={!hideVariantSelector()}>
+                        <Show when={!hideVariantSelector() && !isChannel()}>
                           <TooltipKeybind
                             {...hover}
                             placement="top"
@@ -3271,6 +3312,17 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                               }
                             />
                           </TooltipKeybind>
+                        </Show>
+                        <Show when={currentChannel()} keyed>
+                          {(advisor) => (
+                            <ChannelModelSelect
+                              sessionID={params.id}
+                              advisor={advisor}
+                              draftModel={draftChannelModel()}
+                              onSelectModel={setChannelModel}
+                              triggerStyle={control()}
+                            />
+                          )}
                         </Show>
                       </>
                     }
@@ -3330,6 +3382,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               </div>
             </Show>
             <div data-slot="prompt-send-actions" class="flex items-center gap-2.5 shrink-0">
+              <Show when={params.id && currentChannel()}>{(channel) => <ChannelBadge id={channel()} />}</Show>
               <Show when={working() && prompt.dirty() && (props.canIntervene?.() ?? true)}>
                 <Tooltip {...hover} placement="top" value={language.t("prompt.action.intervene")}>
                   <IconButton

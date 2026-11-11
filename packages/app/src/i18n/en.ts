@@ -234,6 +234,12 @@ export const dict = {
   "config.extensions.install.diagDescriptorNetwork":
     "The release manifest download failed. Check the network or proxy.",
   "prompt.mobile.options": "Message options",
+  "prompt.channel.label": "Session channel",
+  "prompt.channel.native": "OpenCode",
+  "prompt.channel.locked": "The channel is fixed after the session starts",
+  "prompt.channel.model": "Model",
+  "prompt.channel.loading": "Loading models",
+  "prompt.channel.empty": "No models available",
   "gptPro.card.login": "ChatGPT identity",
   "gptPro.card.model": "Current model",
   "gptPro.card.userSelected": "Uses your selection in ChatGPT",

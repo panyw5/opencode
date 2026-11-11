@@ -9,6 +9,7 @@ import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
 import { SessionStatus } from "@/session/status"
 import { ExternalSessionState } from "@/session/external-schema"
+import { ChannelOptions, ChannelUpdateInput } from "@/session/channel-schema"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
@@ -251,6 +252,7 @@ export const SessionPaths = {
   update: `${root}/:sessionID`,
   fork: `${root}/:sessionID/fork`,
   abort: `${root}/:sessionID/abort`,
+  channel: `${root}/:sessionID/channel`,
   flush: `${root}/:sessionID/flush`,
   stopAfterStep: `${root}/:sessionID/stop-after-step`,
   hooks: `${root}/:sessionID/hooks`,
@@ -544,6 +546,31 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.abort",
             summary: "Abort session",
             description: "Abort an active session and stop any ongoing AI processing or command execution.",
+          }),
+        ),
+        HttpApiEndpoint.get("channel", SessionPaths.channel, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(ChannelOptions, "Channel models and modes"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.channel",
+            summary: "Get session channel options",
+            description: "Return the external ACP agent models and modes available to a channel session.",
+          }),
+        ),
+        HttpApiEndpoint.patch("channelUpdate", SessionPaths.channel, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: ChannelUpdateInput,
+          success: described(Schema.Boolean, "Channel selection updated"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.channelUpdate",
+            summary: "Update session channel selection",
+            description: "Apply a model or mode selection to the session's external ACP agent.",
           }),
         ),
         HttpApiEndpoint.post("flush", SessionPaths.flush, {

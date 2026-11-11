@@ -1,8 +1,5 @@
 import { Cause, Context, Effect, Exit, Fiber, Layer, Option, Semaphore } from "effect"
-import type {
-  RequestPermissionRequest,
-  RequestPermissionResponse,
-} from "@agentclientprotocol/sdk"
+import type { RequestPermissionRequest, RequestPermissionResponse } from "@agentclientprotocol/sdk"
 import * as Log from "@opencode-ai/core/util/log"
 import { Config } from "@/config/config"
 import { EffectBridge } from "@/effect/bridge"
@@ -10,7 +7,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { Permission } from "@/permission"
 import { Plugin } from "@/plugin"
 import { ModelID, ProviderID } from "@/provider/schema"
-import type { SessionChannel as SessionChannelInfo } from "@/session/channel-schema"
+import type { ChannelOptions, SessionChannel as SessionChannelInfo } from "@/session/channel-schema"
 import { ConsultMentions } from "@/session/consult-mentions"
 import type { Advisor } from "@/session/external-schema"
 import { MessageV2 } from "@/session/message-v2"
@@ -25,6 +22,7 @@ import { AcpAgentClient, AcpAuthenticationRequired } from "./acp-client"
 import { AcpTranscript } from "./acp-transcript"
 import { managedAgents } from "./install"
 import { acpMcpServers, type McpConfig } from "./mcp-servers"
+import { modeOptions, modelOptions } from "./options"
 import type { AcpConfig } from "./schema"
 
 const log = Log.create({ service: "agent-backend.channel" })
@@ -49,6 +47,8 @@ type Entry = {
   timer?: ReturnType<typeof setTimeout>
   abort?: AbortController
   release?: () => Promise<void>
+  /** In-flight ACP startup; concurrent callers wait instead of reading a half-initialized client. */
+  ready?: Promise<void>
   busy: boolean
   lastUsed: number
 }
@@ -58,6 +58,7 @@ type State = { entries: Map<string, Entry> }
 export interface Interface {
   readonly prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts>
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
+  readonly options: (sessionID: SessionID) => Effect.Effect<ChannelOptions>
   readonly update: (input: { sessionID: SessionID; model?: string; mode?: string }) => Effect.Effect<void>
   readonly dispose: (sessionID: SessionID) => Effect.Effect<void>
 }
@@ -175,8 +176,13 @@ export const layer = Layer.effect(
       info: Config.Info,
     ) {
       const existing = current.entries.get(session.id)
-      if (existing?.client.alive) return existing
       if (existing) {
+        if (existing.ready) {
+          const outcome = yield* Effect.exit(Effect.promise(() => existing.ready!))
+          if (Exit.isSuccess(outcome)) return existing
+        } else if (existing.client.alive) {
+          return existing
+        }
         log.warn(`replacing dead channel session=${session.id} advisor=${existing.advisor}`)
         current.entries.delete(session.id)
         yield* stopEntry(existing)
@@ -184,7 +190,9 @@ export const layer = Layer.effect(
 
       const selection = info.agent_backends?.[channel.advisor]
       if (!selection || selection.type !== "acp")
-        throw new Error(`${channel.advisor} is not configured for ACP; select a different channel or configure agent_backends`)
+        throw new Error(
+          `${channel.advisor} is not configured for ACP; select a different channel or configure agent_backends`,
+        )
       const managed = selection.managed
       if (managed && managed.advisor !== channel.advisor)
         throw new Error("Managed adapter does not match the selected channel advisor")
@@ -252,9 +260,10 @@ export const layer = Layer.effect(
       )
 
       const started = Date.now()
-      const result = yield* Effect.exit(
-        Effect.promise(() => client.start(new AbortController().signal, { resumeSessionID: channel.acpSessionID })),
-      )
+      const starting = client.start(new AbortController().signal, { resumeSessionID: channel.acpSessionID })
+      entry.ready = starting
+      const result = yield* Effect.exit(Effect.promise(() => starting))
+      entry.ready = undefined
       if (Exit.isFailure(result)) {
         current.entries.delete(session.id)
         yield* stopEntry(entry)
@@ -324,9 +333,7 @@ export const layer = Layer.effect(
 
       const names = [
         ...new Set(
-          input.parts.flatMap((part) =>
-            part.type === "agent" && isConsultMention(part.name) ? [part.name] : [],
-          ),
+          input.parts.flatMap((part) => (part.type === "agent" && isConsultMention(part.name) ? [part.name] : [])),
         ),
       ]
       const others = names.filter((name) => name !== channel.advisor)
@@ -378,9 +385,7 @@ export const layer = Layer.effect(
       log.info(
         `prompt session=${session.id} advisor=${channel.advisor} chars=${prompt.length} consults=${others.length} model=${modelID}`,
       )
-      const outcome = yield* Effect.exit(
-        Effect.promise(() => entry.client.prompt(prompt, abort.signal, timeout)),
-      )
+      const outcome = yield* Effect.exit(Effect.promise(() => entry.client.prompt(prompt, abort.signal, timeout)))
 
       if (entry.timer) {
         clearTimeout(entry.timer)
@@ -396,7 +401,9 @@ export const layer = Layer.effect(
       } else if (Exit.isSuccess(outcome)) {
         const reason = outcome.value.stopReason
         if (reason !== "end_turn" && reason !== "cancelled") failure = `ACP turn stopped: ${reason}`
-        log.info(`turn finished session=${session.id} advisor=${channel.advisor} reason=${reason} ms=${Date.now() - started}`)
+        log.info(
+          `turn finished session=${session.id} advisor=${channel.advisor} reason=${reason} ms=${Date.now() - started}`,
+        )
       } else {
         log.info(`turn cancelled session=${session.id} advisor=${channel.advisor} ms=${Date.now() - started}`)
       }
@@ -450,6 +457,23 @@ export const layer = Layer.effect(
       yield* Effect.promise(() => entry.client.cancel().catch(() => {}))
     })
 
+    const options = Effect.fn("SessionChannel.options")(function* (sessionID: SessionID) {
+      const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+      const channel = session.channel
+      if (!channel) throw new Error("Session is not bound to an external channel")
+      const info = yield* config.get()
+      const current = yield* InstanceState.get(state)
+      yield* reap(current, info)
+      const entry = yield* ensure(current, session, channel, info)
+      return {
+        advisor: channel.advisor,
+        model: entry.client.model ?? channel.model,
+        mode: entry.client.mode ?? channel.mode,
+        models: modelOptions(entry.client),
+        modes: modeOptions(entry.client),
+      } satisfies ChannelOptions
+    })
+
     const update = Effect.fn("SessionChannel.update")(function* (input: {
       sessionID: SessionID
       model?: string
@@ -479,7 +503,7 @@ export const layer = Layer.effect(
       yield* stopEntry(entry)
     })
 
-    return Service.of({ prompt, cancel, update, dispose })
+    return Service.of({ prompt, cancel, options, update, dispose })
   }),
 )
 

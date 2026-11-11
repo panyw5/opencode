@@ -16,3 +16,23 @@ export const SessionChannel = Schema.Struct({
   acpSessionID: Schema.optional(Schema.String),
 }).annotate({ identifier: "SessionChannel" })
 export type SessionChannel = Schema.Schema.Type<typeof SessionChannel>
+
+export const ChannelOption = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+})
+
+export const ChannelOptions = Schema.Struct({
+  advisor: Advisor,
+  model: Schema.optional(Schema.String),
+  mode: Schema.optional(Schema.String),
+  models: Schema.Array(ChannelOption),
+  modes: Schema.Array(ChannelOption),
+}).annotate({ identifier: "ChannelOptions" })
+export type ChannelOptions = Schema.Schema.Type<typeof ChannelOptions>
+
+export const ChannelUpdateInput = Schema.Struct({
+  model: Schema.optional(Schema.String),
+  mode: Schema.optional(Schema.String),
+}).annotate({ identifier: "ChannelUpdateInput" })
+export type ChannelUpdateInput = Schema.Schema.Type<typeof ChannelUpdateInput>

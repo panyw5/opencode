@@ -3,6 +3,8 @@
 import { client } from "./client.gen.js"
 import { buildClientParams, type Client, type Options as Options2, type TDataShape } from "./client/index.js"
 import type {
+  AgentBackendChannelOptionsErrors,
+  AgentBackendChannelOptionsResponses,
   AgentBackendCommitErrors,
   AgentBackendCommitResponses,
   AgentBackendPrepareErrors,
@@ -35,6 +37,7 @@ import type {
   BrowserConnectResponses,
   BrowserConnectTokenErrors,
   BrowserConnectTokenResponses,
+  ChannelUpdateInput,
   CommandListErrors,
   CommandListResponses,
   Config as Config3,
@@ -301,6 +304,11 @@ import type {
   SessionAdvisorInterventionMessageResponses,
   SessionAdvisorInterventionStartErrors,
   SessionAdvisorInterventionStartResponses,
+  SessionChannel,
+  SessionChannelErrors,
+  SessionChannelResponses,
+  SessionChannelUpdateErrors,
+  SessionChannelUpdateResponses,
   SessionChildrenErrors,
   SessionChildrenResponses,
   SessionClearStopAfterStepErrors,
@@ -1423,6 +1431,45 @@ export class AgentBackend extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<AgentBackendProbeResponses, AgentBackendProbeErrors, ThrowOnError>({
       url: "/agent-backend/probe",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * List a channel's ACP models and modes before its session exists
+   */
+  public channelOptions<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      advisor?: "codex" | "claude" | "grok" | "dsh" | "pi"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "advisor" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      AgentBackendChannelOptionsResponses,
+      AgentBackendChannelOptionsErrors,
+      ThrowOnError
+    >({
+      url: "/agent-backend/channel-options",
       ...options,
       ...params,
       headers: {
@@ -4979,6 +5026,7 @@ export class Session2 extends HeyApiClient {
         providerID: string
         variant?: string
       }
+      channel?: SessionChannel
       permission?: PermissionRuleset
       workspaceID?: string
     },
@@ -4995,6 +5043,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "title" },
             { in: "body", key: "agent" },
             { in: "body", key: "model" },
+            { in: "body", key: "channel" },
             { in: "body", key: "permission" },
             { in: "body", key: "workspaceID" },
           ],
@@ -5883,6 +5932,81 @@ export class Session2 extends HeyApiClient {
       url: "/session/{sessionID}/abort",
       ...options,
       ...params,
+    })
+  }
+
+  /**
+   * Get session channel options
+   *
+   * Return the external ACP agent models and modes available to a channel session.
+   */
+  public channel<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionChannelResponses, SessionChannelErrors, ThrowOnError>({
+      url: "/session/{sessionID}/channel",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Update session channel selection
+   *
+   * Apply a model or mode selection to the session's external ACP agent.
+   */
+  public channelUpdate<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      channelUpdateInput?: ChannelUpdateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "channelUpdateInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<
+      SessionChannelUpdateResponses,
+      SessionChannelUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/channel",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 

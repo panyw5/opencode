@@ -3,9 +3,41 @@ import { AcpAgentClient, AcpAuthenticationRequired } from "./acp-client"
 import { AcpTranscript } from "./acp-transcript"
 import { managedAgents, type AgentInstallManager } from "./install"
 import type { ProbeResult } from "./install-schema"
+import { channelOptions } from "./options"
+import type { Advisor } from "@/session/external-schema"
+import type { ChannelOptions } from "@/session/channel-schema"
 import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "agent-backend.probe" })
+
+/** Read a channel's models and modes without a session: spawns the ACP agent, negotiates, then stops it. */
+export async function probeChannelOptions(
+  input: { advisor: Advisor; config: AcpConfig; cwd: string; signal: AbortSignal },
+  manager: AgentInstallManager = managedAgents(),
+): Promise<ChannelOptions> {
+  const ref = input.config.managed
+  if (ref && ref.advisor !== input.advisor) throw new Error("Managed adapter does not match the selected advisor")
+  const lease = ref ? await manager.acquire(ref.advisor, ref.version) : undefined
+  const client = new AcpAgentClient({
+    config: { ...input.config, command: lease ? (lease.command as [string, ...string[]]) : input.config.command },
+    cwd: input.cwd,
+    onEvent: () => {},
+    requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),
+  })
+  try {
+    log.info(`options start advisor=${input.advisor} managed=${!!ref} cwd=${input.cwd}`)
+    await client.start(input.signal, {})
+    const options = channelOptions(client, input.advisor)
+    log.info(
+      `options ready advisor=${input.advisor} models=${options.models.length} modes=${options.modes.length} model=${options.model ?? "none"}`,
+    )
+    return options
+  } finally {
+    await client.stop()
+    await lease?.release()
+  }
+}
+
 export async function probeAdapter(
   input: {
     advisor: string

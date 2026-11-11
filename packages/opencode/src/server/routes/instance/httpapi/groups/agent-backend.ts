@@ -1,6 +1,8 @@
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { InstallStatus, PrepareInput, PreparedInstall, ProbeInput, ProbeResult } from "@/agent-backend/install-schema"
+import { Advisor } from "@/session/external-schema"
+import { ChannelOptions } from "@/session/channel-schema"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware/workspace-routing"
@@ -51,6 +53,17 @@ export const AgentBackendApi = HttpApi.make("agent-backend").add(
         OpenApi.annotations({
           identifier: "agentBackend.probe",
           summary: "Explicitly connect, authenticate or send an ACP test message",
+        }),
+      ),
+      HttpApiEndpoint.post("channelOptions", "/agent-backend/channel-options", {
+        query: WorkspaceRoutingQuery,
+        payload: Schema.Struct({ advisor: Advisor }),
+        success: ChannelOptions,
+        error: errors,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "agentBackend.channelOptions",
+          summary: "List a channel's ACP models and modes before its session exists",
         }),
       ),
     )

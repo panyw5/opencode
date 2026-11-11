@@ -1144,6 +1144,14 @@ export type ExternalSession = {
   ownerPID?: number
 }
 
+export type SessionChannel = {
+  kind: "acp"
+  advisor: "codex" | "claude" | "grok" | "dsh" | "pi"
+  model?: string
+  mode?: string
+  acpSessionID?: string
+}
+
 export type PermissionAction = "allow" | "deny" | "ask"
 
 export type PermissionRule = {
@@ -1164,6 +1172,7 @@ export type Session = {
   path?: string
   parentID?: string
   external?: ExternalSession
+  channel?: SessionChannel
   summary?: {
     additions: number
     deletions: number
@@ -1214,6 +1223,13 @@ export type Prompt = {
   files?: Array<PromptFileAttachment>
   agents?: Array<PromptAgentAttachment>
   references?: Array<PromptReferenceAttachment>
+}
+
+export type AgentChannels = {
+  mcp?: "all" | Array<string> | false
+  idle_timeout_ms?: number
+  max_processes?: number
+  timeout_ms?: number
 }
 
 /**
@@ -1684,6 +1700,7 @@ export type Config = {
           permission?: "deny" | "ask"
         }
   }
+  agent_channels?: AgentChannels
   $schema?: string
   shell?: string
   logLevel?: LogLevel
@@ -2005,6 +2022,20 @@ export type GlobalEvent = {
     | SyncEventSessionNextCompactionEnded
 }
 
+export type ChannelOptions = {
+  advisor: "codex" | "claude" | "grok" | "dsh" | "pi"
+  model?: string
+  mode?: string
+  models: Array<{
+    id: string
+    name: string
+  }>
+  modes: Array<{
+    id: string
+    name: string
+  }>
+}
+
 export type BrowserForbiddenError = {
   _tag: "BrowserForbiddenError"
   message: string
@@ -2201,6 +2232,7 @@ export type GlobalSession = {
   path?: string
   parentID?: string
   external?: ExternalSession
+  channel?: SessionChannel
   summary?: {
     additions: number
     deletions: number
@@ -2547,6 +2579,11 @@ export type UserMessageIndexItem = {
     modelID: string
     variant?: string
   }
+}
+
+export type ChannelUpdateInput = {
+  model?: string
+  mode?: string
 }
 
 export type PluginHookControl = {
@@ -2903,6 +2940,7 @@ export type Config7 = {
           permission?: "deny" | "ask"
         }
   }
+  agent_channels?: AgentChannels
   $schema?: string
   shell?: string
   logLevel?: LogLevel
@@ -3195,6 +3233,7 @@ export type SyncEventSessionUpdated = {
         providerID: string
         variant?: string
       } | null
+      channel?: SessionChannel | null
       version?: string | null
       time?: {
         created?: number | null
@@ -6487,6 +6526,49 @@ export type AgentBackendProbeResponses = {
 
 export type AgentBackendProbeResponse = AgentBackendProbeResponses[keyof AgentBackendProbeResponses]
 
+export type AgentBackendChannelOptionsData = {
+  body?: {
+    advisor: "codex" | "claude" | "grok" | "dsh" | "pi"
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/agent-backend/channel-options"
+}
+
+export type AgentBackendChannelOptionsErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * UpstreamError
+   */
+  502: UpstreamError
+}
+
+export type AgentBackendChannelOptionsError = AgentBackendChannelOptionsErrors[keyof AgentBackendChannelOptionsErrors]
+
+export type AgentBackendChannelOptionsResponses = {
+  /**
+   * ChannelOptions
+   */
+  200: ChannelOptions
+}
+
+export type AgentBackendChannelOptionsResponse =
+  AgentBackendChannelOptionsResponses[keyof AgentBackendChannelOptionsResponses]
+
 export type BackgroundShellListData = {
   body?: never
   path?: never
@@ -9681,6 +9763,7 @@ export type SessionCreateData = {
       providerID: string
       variant?: string
     }
+    channel?: SessionChannel
     permission?: PermissionRuleset
     workspaceID?: string
   }
@@ -10706,6 +10789,74 @@ export type SessionAbortResponses = {
 }
 
 export type SessionAbortResponse = SessionAbortResponses[keyof SessionAbortResponses]
+
+export type SessionChannelData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/channel"
+}
+
+export type SessionChannelErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionChannelError = SessionChannelErrors[keyof SessionChannelErrors]
+
+export type SessionChannelResponses = {
+  /**
+   * Channel models and modes
+   */
+  200: ChannelOptions
+}
+
+export type SessionChannelResponse = SessionChannelResponses[keyof SessionChannelResponses]
+
+export type SessionChannelUpdateData = {
+  body?: ChannelUpdateInput
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/channel"
+}
+
+export type SessionChannelUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionChannelUpdateError = SessionChannelUpdateErrors[keyof SessionChannelUpdateErrors]
+
+export type SessionChannelUpdateResponses = {
+  /**
+   * Channel selection updated
+   */
+  200: boolean
+}
+
+export type SessionChannelUpdateResponse = SessionChannelUpdateResponses[keyof SessionChannelUpdateResponses]
 
 export type SessionFlushData = {
   body?: never
