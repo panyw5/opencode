@@ -129,6 +129,7 @@ function ComposerDockExit(props: {
         }}
       >
         <div
+          class="relative"
           ref={(el) => {
             setStore("body", el)
             measure(el)
@@ -496,10 +497,10 @@ function SessionChildAgentMenu(props: {
       >
         <DropdownMenu.Trigger
           as={Button}
-          variant="ghost"
+          variant="secondary"
           size="small"
           icon="branch"
-          class="h-auto! rounded-full! px-4! py-2! text-text-weak hover:text-text-strong data-[expanded]:bg-surface-base-active [&>[data-component=icon]:first-child>svg]:[transform:scaleY(-1)]"
+          class="h-auto! rounded-full! px-4! py-2! text-text-weak hover:text-text-strong data-[expanded]:bg-button-secondary-active [&>[data-component=icon]:first-child>svg]:[transform:scaleY(-1)]"
           aria-label={language.t("session.childAgents.open")}
           data-testid="session-child-agent-menu-trigger"
         >
@@ -1022,8 +1023,9 @@ export function SessionComposerRegion(props: {
           >
             <Show when={showPromptToolbar()}>
               <div
+                data-component="session-prompt-toolbar"
                 classList={{
-                  "relative mb-2 min-h-7 items-center gap-2": true,
+                  "absolute inset-x-0 bottom-full z-20 mb-2 min-h-7 items-center gap-2": true,
                   "grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]": !!visibleSubagentNavigation(),
                   flex: !visibleSubagentNavigation(),
                 }}
