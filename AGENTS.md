@@ -1,7 +1,13 @@
 # Repo
-push ONLY to my fork `panyw5/opencode`
+push ONLY to my fork `panyw5/opencode`, except for WLS extension releases as permitted below.
 
-run github action only with my fork `panyw5/opencode`
+run github action only with my fork `panyw5/opencode`, except for WLS extension releases as permitted below.
+
+## WLS extension release exception
+- Publishing the WolframScript extension to `panyw5/opencode-wls` is explicitly allowed.
+- For WLS extension releases only, you may push extension source and release metadata (including `stable.json`), create tags and GitHub Releases, and upload extension packages to `panyw5/opencode-wls`.
+- You may run GitHub Actions in `panyw5/opencode-wls` to build, test, or publish the WLS extension.
+- This exception does not permit pushing the main OpenCode project to any repository other than `panyw5/opencode`, or publishing to any other extension repository.
 
 # MANDATORY RULES
 
