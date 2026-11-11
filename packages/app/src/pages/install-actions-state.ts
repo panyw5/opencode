@@ -4,7 +4,7 @@ type WireNumber = number | "NaN" | "Infinity" | "-Infinity"
 
 export type InstallationSource =
   | { type: "npm"; spec: string }
-  | { type: "archive"; url: string; sha256: string }
+  | { type: "archive"; url: string; sha256?: string }
   | { type: "release"; url: string }
   /** Desktop-only: a local .tgz path, installed through the desktop IPC channel. */
   | { type: "local"; path: string; sha256: string }
@@ -93,6 +93,34 @@ export type InstallationInput = {
   purgeData: boolean
   localPath: string
 }
+/**
+ * Rewrites a GitHub web "blob" page URL into the raw content URL for the same
+ * file, so `https://github.com/{owner}/{repo}/blob/{ref}/{path}` becomes
+ * `https://raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}`. Only exact
+ * blob paths are rewritten — never gists, never other hosts — and the result
+ * carries no credentials, query, or fragment.
+ */
+export function installationGitHubBlobUrl(url: string): string | undefined {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return
+  }
+  if (parsed.protocol !== "https:" || parsed.hostname !== "github.com") return
+  if (parsed.search || parsed.hash || parsed.username || parsed.password) return
+  // Dot segments must be explicit in the input; the parser would silently
+  // resolve them away, so scan the raw path before trusting the rewrite.
+  if (/\/\.{1,2}(?:\/|$)/.test(url.slice(parsed.origin.length))) return
+  // Path form: /{owner}/{repo}/blob/{ref}/{...path}
+  const segments = parsed.pathname.split("/").filter(Boolean)
+  if (segments.length < 5 || segments[2] !== "blob") return
+  const [owner, repo, , ref, ...path] = segments
+  // Release sources are always .json manifests; other blob pages stay untouched.
+  if (!path[path.length - 1]?.endsWith(".json")) return
+  for (const segment of [owner, repo, ref, ...path]) if (!segment || segment === "." || segment === "..") return
+  return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${path.join("/")}`
+}
 export function installationRequest(
   intent: InstallationIntent,
   input: InstallationInput,
@@ -124,18 +152,23 @@ export function installationRequest(
       return
     source = { type: "npm", spec }
   } else if (input.sourceType === "archive" || input.sourceType === "release") {
-    const url = input.url.trim()
+    const raw = input.url.trim()
     const sha256 = input.sha256.trim()
-    if (/[\s\\\x00-\x1f\x7f]/.test(url) || url.length > 16384) return
+    if (/[\s\\\x00-\x1f\x7f]/.test(raw) || raw.length > 16384) return
     try {
+      // A GitHub "blob" page URL is accepted for release descriptors and
+      // rewritten to its raw.githubusercontent.com counterpart so pasting the
+      // address from a browser works. Anything with credentials, query or
+      // fragment is still rejected outright.
+      const url = input.sourceType === "release" ? (installationGitHubBlobUrl(raw) ?? raw) : raw
       const parsed = new URL(url)
       if (!/^https:\/\//i.test(url) || parsed.protocol !== "https:" || parsed.username || parsed.password) return
       if (input.sourceType === "release" && (parsed.search || parsed.hash || /[?#]/.test(url))) return
-      if (input.sourceType === "archive" && !/^[a-f0-9]{64}$/i.test(sha256)) return
+      if (input.sourceType === "archive" && sha256 && !/^[a-f0-9]{64}$/i.test(sha256)) return
       source =
         input.sourceType === "release"
           ? { type: "release", url: parsed.href }
-          : { type: "archive", url, sha256: sha256.toLowerCase() }
+          : { type: "archive", url, ...(sha256 ? { sha256: sha256.toLowerCase() } : {}) }
     } catch {
       return
     }
@@ -263,11 +296,27 @@ export const installationTranslationKeys = [
   "config.extensions.install.statusFailed",
   "config.extensions.install.local",
   "config.extensions.install.localArchive",
+  "config.extensions.install.archiveTrust",
   "config.extensions.install.localDigestComputed",
   "config.extensions.install.localDigestMatch",
   "config.extensions.install.localDigestMismatch",
   "config.extensions.install.localDigestPending",
   "config.extensions.install.localDropHint",
+  "config.extensions.install.diagAlreadyInstalled",
+  "config.extensions.install.diagNotInstalled",
+  "config.extensions.install.diagDevLink",
+  "config.extensions.install.diagRestart",
+  "config.extensions.install.diagArchiveDns",
+  "config.extensions.install.diagArchiveSha",
+  "config.extensions.install.diagArchiveNetwork",
+  "config.extensions.install.diagArchiveDigest",
+  "config.extensions.install.diagArchiveSize",
+  "config.extensions.install.diagServerChanged",
+  "config.extensions.install.diagDescriptorJson",
+  "config.extensions.install.diagDescriptorSchema",
+  "config.extensions.install.diagDescriptorSize",
+  "config.extensions.install.diagDescriptorNetwork",
+  "config.extensions.install.releaseHint",
 ] as const
 export type InstallationTranslationKey = (typeof installationTranslationKeys)[number]
 export type InstallationLanguage = { t: (key: InstallationTranslationKey) => string }

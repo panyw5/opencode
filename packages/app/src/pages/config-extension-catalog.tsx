@@ -1,10 +1,11 @@
 import { Icon } from "@opencode-ai/ui/icon"
-import { Spinner } from "@opencode-ai/ui/spinner"
-import { Show, createSignal } from "solid-js"
+import { Button } from "@opencode-ai/ui/button"
+import { ExtensionCard } from "../components/extension-card"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { Show, createSignal, onCleanup, onMount } from "solid-js"
+import { DialogInstallExtension } from "../components/dialog-install-extension"
 import { useLanguage } from "../context/language"
-import { runCatalogInstall, type CatalogFlowState } from "../extensions/catalog-install"
 import type { CatalogEntry } from "../extensions/catalog"
-import { usePlatform } from "../context/platform"
 import type { InstallationOperations } from "./install-actions-state"
 
 export interface ExtensionCardRowProps {
@@ -18,10 +19,7 @@ export interface ExtensionCardRowProps {
   onSelect: () => void
 }
 
-/**
- * Middle-column card row shared by installed extensions and catalog entries,
- * matching the AGENTS.md card style.
- */
+/** Middle-column card shared by installed extensions and catalog entries. */
 export function ExtensionCardRow(props: ExtensionCardRowProps) {
   const press = (event: KeyboardEvent) => {
     if (event.key !== "Enter" && event.key !== " ") return
@@ -33,7 +31,7 @@ export function ExtensionCardRow(props: ExtensionCardRowProps) {
       role="button"
       tabIndex={0}
       data-extension-row={props.rowId}
-      class="relative cursor-pointer overflow-hidden rounded-[14px] border bg-background-base/65 shadow-[inset_0_1px_0_color-mix(in_srgb,white_5%,transparent)] transition-colors"
+      class="relative cursor-pointer overflow-hidden rounded-[14px] border bg-background-base/65 transition-colors"
       classList={{
         "border-border-base bg-surface-base/40": props.active,
         "border-border-weak-base/80 hover:border-border-base": !props.active,
@@ -41,7 +39,6 @@ export function ExtensionCardRow(props: ExtensionCardRowProps) {
       onClick={props.onSelect}
       onKeyDown={press}
     >
-      <div class="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,color-mix(in_srgb,var(--text-strong)_16%,transparent),transparent)]" />
       <div class="group flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left">
         <div class="flex min-w-0 items-center gap-3">
           <div
@@ -81,104 +78,97 @@ export interface ConfigExtensionCatalogDetailProps {
   entry: CatalogEntry
   operations: InstallationOperations
   connection: () => unknown
+  refresh: () => Promise<void>
+  installed: () => boolean
+  enabled?: boolean
+  busy?: boolean
 }
 
-/**
- * Right-hand detail pane for a catalog entry. On desktop, Install downloads
- * the descriptor and archive through the renderer (system proxy applies),
- * verifies the digest and installs through the managed local-archive channel.
- * Without the desktop channel, the entry can still be installed by dragging a
- * manually downloaded .tgz archive onto this section.
- */
+/** Catalog installs use the same release preview and explicit confirmation as manual installs. */
 export function ConfigExtensionCatalogDetail(props: ConfigExtensionCatalogDetailProps) {
   const language = useLanguage()
-  const platform = usePlatform()
-  const [flow, setFlow] = createSignal<CatalogFlowState>({ stage: "descriptor" })
-
-  const assisted = () =>
-    typeof platform.extensionArchiveOp === "function" && typeof platform.extensionArchiveStage === "function"
-
+  const dialog = useDialog()
+  const [error, setError] = createSignal(false)
+  const [busy, setBusy] = createSignal(false)
+  let alive = true
+  onCleanup(() => {
+    alive = false
+  })
+  onMount(() => {
+    void props.refresh().catch(() => {
+      if (alive) setError(true)
+    })
+  })
   const start = async () => {
-    if (flow().stage !== "descriptor" && flow().stage !== "error" && flow().stage !== "done") return
-    setFlow({ stage: "descriptor" })
+    if (busy() || props.busy || props.enabled === false) return
+    const connection = props.connection()
+    setBusy(true)
+    setError(false)
     try {
-      await runCatalogInstall(
-        props.entry,
-        {
-          stage: (bytes) => platform.extensionArchiveStage!(bytes),
-          op: (op, payload) => platform.extensionArchiveOp!(op, payload),
-          cleanup: (path) => Promise.resolve(platform.extensionArchiveCleanup?.(path)),
-        },
-        (stage, message) => setFlow({ stage, message }),
+      await props.refresh()
+      if (!alive || props.connection() !== connection || props.installed()) return
+      console.info(`[extension-catalog] release dialog open id=${props.entry.id}`)
+      let closed: (() => void) | undefined
+      dialog.show(
+        () => (
+          <DialogInstallExtension
+            intent={{ kind: "install", releaseUrl: props.entry.releaseUrl }}
+            operations={{
+              ...props.operations,
+              prepareInstallation: async (request) => {
+                const prepared = await props.operations.prepareInstallation(request)
+                if (prepared.id === props.entry.id) return prepared
+                await props.operations.cancelInstallation(prepared).catch(() => {})
+                throw new Error("Release candidate identity mismatch")
+              },
+            }}
+            connection={props.connection}
+            language={language}
+            enabled={props.enabled}
+            busy={props.busy}
+            registerClose={(callback) => {
+              closed = callback
+            }}
+          />
+        ),
+        () => closed?.(),
       )
-    } catch (error) {
-      const code = (error as { code?: string }).code
-      setFlow({
-        stage: "error",
-        message:
-          code === "conflict"
-            ? language.t("config.extensions.catalog.conflictCleanup")
-            : error instanceof Error
-              ? error.message
-              : String(error),
-      })
+    } catch {
+      if (alive) setError(true)
+      console.warn(`[extension-catalog] refresh failed id=${props.entry.id}`)
+    } finally {
+      if (alive) setBusy(false)
     }
   }
-
-  const stageLabel = () => {
-    switch (flow().stage) {
-      case "descriptor":
-        return language.t("config.extensions.catalog.flowDescriptor")
-      case "artifact":
-        return language.t("config.extensions.catalog.flowArtifact")
-      case "ready":
-        return language.t("config.extensions.catalog.flowReady")
-      case "preparing":
-        return language.t("config.extensions.catalog.flowPreparing")
-      case "committing":
-        return language.t("config.extensions.catalog.flowCommitting")
-      case "done":
-        return language.t("config.extensions.catalog.flowDone")
-      case "error":
-        return flow().message ?? language.t("config.extensions.catalog.flowFailed")
-    }
-  }
-
   return (
-    <div class="flex flex-col gap-4" data-extension-catalog-detail={props.entry.id}>
-      <div class="flex flex-col gap-1">
-        <h2 class="text-15-medium text-text-strong">{props.entry.name}</h2>
-        <p class="text-12-regular text-text-weak">{props.entry.author}</p>
-      </div>
-      <p class="text-13-regular text-text-base">{language.t("config.extensions.catalog.description")}</p>
-      <div class="flex flex-col gap-1 text-12-regular text-text-weak">
-        <span>{language.t("config.extensions.catalog.source")}</span>
-        <code class="break-all font-mono text-text-base">{props.entry.releaseUrl}</code>
-      </div>
-      <Show
-        when={assisted()}
-        fallback={<p class="text-12-regular text-text-weak">{language.t("config.extensions.catalog.dragHint")}</p>}
-      >
-        <div class="flex items-center gap-3">
-          <button
-            type="button"
+    <div class="mx-auto flex w-full max-w-5xl flex-col gap-4" data-extension-catalog-detail={props.entry.id}>
+      <ExtensionCard>
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="min-w-0 flex-1">
+            <h2 class="break-words text-20-medium text-text-strong">{props.entry.name}</h2>
+            <p class="mt-1 text-12-regular text-text-weak">{props.entry.author}</p>
+          </div>
+          <Button
+            variant="primary"
             data-action="catalog-install"
-            class="h-8 rounded-lg border border-border-weak-base bg-surface-base px-3 text-12-medium text-text-base transition-colors hover:border-border-strong hover:bg-surface-base-hover disabled:opacity-50"
-            disabled={["artifact", "preparing", "committing", "done"].includes(flow().stage)}
+            disabled={busy() || props.busy || props.enabled === false || props.installed()}
             onClick={() => void start()}
           >
             {language.t("config.extensions.catalog.install")}
-          </button>
-          <Show when={flow().stage !== "descriptor" || flow().message}>
-            <span class="flex items-center gap-2 text-12-regular text-text-weak" data-flow-stage={flow().stage}>
-              <Show when={["artifact", "preparing", "committing"].includes(flow().stage)}>
-                <Spinner class="size-3.5" />
-              </Show>
-              {stageLabel()}
-            </span>
-          </Show>
+          </Button>
         </div>
-      </Show>
+        <p class="text-13-regular leading-relaxed text-text-base">
+          {language.t("config.extensions.catalog.description")}
+        </p>
+        <Show when={error()}>
+          <span role="alert" class="text-12-regular text-text-danger-base">
+            {language.t("config.extensions.install.failed")}
+          </span>
+        </Show>
+      </ExtensionCard>
+      <ExtensionCard title={language.t("config.extensions.catalog.source")}>
+        <code class="break-all font-mono text-12-regular text-text-base">{props.entry.releaseUrl}</code>
+      </ExtensionCard>
     </div>
   )
 }

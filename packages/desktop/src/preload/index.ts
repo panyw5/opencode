@@ -51,15 +51,21 @@ const api: ElectronAPI = {
       const subscriptionID = crypto.randomUUID()
       let active = true
       let received = false
-      const handler = (_: unknown, payload: { subscriptionID: string; status: import("@opencode-ai/util/gpt-pro").GptProRuntimeStatus }) => {
+      const handler = (
+        _: unknown,
+        payload: { subscriptionID: string; status: import("@opencode-ai/util/gpt-pro").GptProRuntimeStatus },
+      ) => {
         if (!active || payload.subscriptionID !== subscriptionID) return
         received = true
         listener(payload.status)
       }
       ipcRenderer.on("gpt-pro-runtime-changed", handler)
-      void ipcRenderer.invoke("gpt-pro-runtime-subscribe", subscriptionID).then((status) => {
-        if (active && !received) listener(status)
-      }, () => {})
+      void ipcRenderer.invoke("gpt-pro-runtime-subscribe", subscriptionID).then(
+        (status) => {
+          if (active && !received) listener(status)
+        },
+        () => {},
+      )
       return () => {
         active = false
         ipcRenderer.removeListener("gpt-pro-runtime-changed", handler)
@@ -322,6 +328,7 @@ const api: ElectronAPI = {
   fetchExternal: (url, options) => ipcRenderer.invoke("fetch-external", url, options),
   extensionArchiveDigest: (path) => ipcRenderer.invoke("extension-archive-digest", path),
   extensionArchiveOp: (op, payload) => ipcRenderer.invoke("extension-archive-op", op, payload),
+  extensionArchiveDownload: (url) => ipcRenderer.invoke("extension-archive-download", url),
   extensionArchiveStage: (bytes) => ipcRenderer.invoke("extension-archive-stage", bytes),
   extensionArchiveCleanup: (path) => ipcRenderer.invoke("extension-archive-cleanup", path),
 }

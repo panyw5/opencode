@@ -764,7 +764,7 @@ async function ensureEntry(
           return
       }
       if (!available()) return
-      await provisionData({ id, name: row.name, source: row.source })
+      await provisionData({ id, name: row.name, source: row.source, dataSource: row.dataSource })
       if (!available()) return
       const entry = await importEntry(manifest, source)
       // Re-read so a settings update landing during the import is not lost.

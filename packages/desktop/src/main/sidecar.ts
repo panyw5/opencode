@@ -104,12 +104,19 @@ async function extensionArchive(command: Extract<SidecarCommand, { type: "extens
     const { installation } = await import("virtual:opencode-server")
     const installer = installation() as {
       prepare(request: InstallRequestLike): Promise<Record<string, unknown>>
+      prepareRelease(
+        request: InstallRequestLike,
+        release: { url: string; descriptor: string; path: string },
+      ): Promise<Record<string, unknown>>
+      prepareArchive(request: InstallRequestLike, archive: { path: string }): Promise<Record<string, unknown>>
       commit(operationId: string, token: string, input?: Record<string, unknown>): Promise<unknown>
       status(operationId: string, token: string): Promise<unknown>
       cancel(operationId: string, token?: string): Promise<unknown>
     }
     const payload = command.payload as {
       request?: InstallRequestLike
+      release?: { url: string; descriptor: string; path: string }
+      archive?: { path: string; sha256: string }
       operationId?: string
       token?: string
       input?: Record<string, unknown>
@@ -118,7 +125,11 @@ async function extensionArchive(command: Extract<SidecarCommand, { type: "extens
     }
     if (command.op === "prepare") {
       if (!payload.request) return reply(false, undefined, { code: "invalid", message: "missing request" })
-      const prepared = await installer.prepare(payload.request)
+      const prepared = payload.release
+        ? await installer.prepareRelease(payload.request, payload.release)
+        : payload.archive
+          ? await installer.prepareArchive(payload.request, payload.archive)
+          : await installer.prepare(payload.request)
       reply(true, prepared)
       return
     }

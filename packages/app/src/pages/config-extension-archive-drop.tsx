@@ -2,6 +2,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { onCleanup, onMount } from "solid-js"
 import { DialogInstallExtension } from "../components/dialog-install-extension"
 import { usePlatform } from "../context/platform"
+import { useServer } from "../context/server"
 import { useLanguage } from "../context/language"
 import { useGlobalSDK } from "../context/global-sdk"
 import { useExtensionHost } from "../extensions/host"
@@ -17,26 +18,34 @@ const ARCHIVE_PATTERN = /\.tgz$/i
  */
 export function ExtensionArchiveDropTarget() {
   const platform = usePlatform()
+  const server = useServer()
   const language = useLanguage()
   const globalSDK = useGlobalSDK()
   const extensionHost = useExtensionHost()
   const dialog = useDialog()
 
   const supported = () =>
-    typeof platform.extensionArchiveOp === "function" && typeof platform.extensionArchiveDigest === "function"
+    server.current?.type === "sidecar" &&
+    server.current.variant === "base" &&
+    typeof platform.extensionArchiveOp === "function" &&
+    typeof platform.extensionArchiveDigest === "function"
 
   onMount(() => {
-    if (!supported()) return
+    // The connection may become local while this section stays mounted.
+    console.info("[extension-archive-drop] registered; support checked per drop")
     let closed: (() => void) | undefined
     const unregister = registerArchiveDropHandler((paths) => {
-      if (paths.length === 0 || !paths.every((path) => ARCHIVE_PATTERN.test(path))) return false
+      if (!supported() || paths.length === 0 || !paths.every((path) => ARCHIVE_PATTERN.test(path))) return false
       const path = paths[0]!
       let registered = false
       dialog.show(
         () => (
           <DialogInstallExtension
             intent={{ kind: "install", localArchive: { path } }}
-            operations={createLocalInstallationOperations((op, payload) => platform.extensionArchiveOp!(op, payload))}
+            operations={createLocalInstallationOperations(
+              (op, payload) => platform.extensionArchiveOp!(op, payload),
+              () => extensionHost.refresh({ strict: true }),
+            )}
             language={language}
             connection={() => globalSDK.client}
             localArchiveBridge={{

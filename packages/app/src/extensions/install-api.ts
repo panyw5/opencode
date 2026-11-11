@@ -1,4 +1,5 @@
 import type { useGlobalSDK } from "@/context/global-sdk"
+import { ExtensionInstallationError, installationDiagnostic, installationDiagnosticCategory } from "./install-error"
 import type {
   InstallationCommitInput,
   InstallationRequest,
@@ -33,10 +34,23 @@ export async function synchronizeInstallation<T extends InstallationStatus>(
 async function result<T>(request: () => Promise<{ data?: T; error?: unknown }>) {
   try {
     const response = await request()
+    if (response.error) {
+      const message = installationDiagnostic(response.error)
+      if (message) throw new ExtensionInstallationError(message)
+    }
     if (!response.data || response.error) throw new Error()
     return response.data
-  } catch {
-    // SDK errors may contain the confirmation header; never forward them to a toast or logger.
+  } catch (error) {
+    if (error instanceof ExtensionInstallationError) throw error
+    // With `{ throwOnError: true }` the SDK re-throws the decoded error body as
+    // an Error (raw body under `cause`). Curated backend diagnostics inside that
+    // body are whitelisted and rethrown; everything else — transport noise,
+    // HTML error pages, anything echoing the confirmation header or capabilities
+    // — collapses to a generic message. Only the fixed ASCII category may reach
+    // the log line; the raw error object is never stringified or logged.
+    const message = installationDiagnostic(error)
+    if (message) throw new ExtensionInstallationError(message)
+    console.warn(`[extension-install] operation failed category=${installationDiagnosticCategory(error)}`)
     throw new Error("Extension operation could not be completed")
   }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { ExtensionInfo } from "@/extensions/types"
-import { extensionPick, extensionSelection, extensionSelectionKey, parseExtensionPick } from "./config-extensions"
+import { catalogPick, extensionPick, extensionSelection, extensionSelectionKey, parseExtensionPick } from "./config-extensions"
 
 const item = (id: string, settings = false): ExtensionInfo => ({
   id,
@@ -42,5 +42,30 @@ describe("extension configuration selection", () => {
   test("detects a same-length replacement in the extension id collection", () => {
     expect(extensionSelectionKey([item("first")])).not.toBe(extensionSelectionKey([item("second")]))
     expect(extensionSelectionKey([item("first")])).toBe(extensionSelectionKey([item("first", true)]))
+  })
+
+  test("keeps a visible catalog pick across host refreshes", () => {
+    expect(extensionSelection([item("test.viewer")], "catalog:local.wls-repl", ["local.wls-repl"])).toBe(
+      "catalog:local.wls-repl",
+    )
+    expect(extensionSelection([], "catalog:local.wls-repl")).toBe("catalog:local.wls-repl")
+  })
+
+  test("normalizes a stale catalog pick once the entry disappears from the visible catalog", () => {
+    expect(extensionSelection([item("test.viewer")], "catalog:local.wls-repl", [])).toBe("extension:test.viewer")
+  })
+
+  test("migrates a catalog pick to the installed extension after install", () => {
+    expect(extensionSelection([item("local.wls-repl")], "catalog:local.wls-repl", [])).toBe(
+      "extension:local.wls-repl",
+    )
+    expect(extensionSelection([item("local.wls-repl")], "catalog:local.wls-repl", ["local.wls-repl"])).toBe(
+      "extension:local.wls-repl",
+    )
+  })
+
+  test("catalog namespace round-trips through its own parser", () => {
+    expect(catalogPick("local.wls-repl")).toBe("catalog:local.wls-repl")
+    expect(extensionSelection([], "catalog:local.wls-repl")).toBe("catalog:local.wls-repl")
   })
 })

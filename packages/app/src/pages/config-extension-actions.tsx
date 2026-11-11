@@ -1,4 +1,5 @@
-import { Show, createEffect, createSignal, on, onCleanup } from "solid-js"
+import { Show, createEffect, createSignal, on, onCleanup, type JSX } from "solid-js"
+import { ExtensionCard } from "../components/extension-card"
 import { Button } from "@opencode-ai/ui/button"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useLanguage } from "@/context/language"
@@ -27,6 +28,7 @@ type ActionLabel =
 
 export function ConfigExtensionActions(props: {
   item: ExtensionInfo
+  children?: JSX.Element
   dirty?: boolean
   saving?: boolean
   enabled?: boolean
@@ -105,80 +107,87 @@ export function ConfigExtensionActions(props: {
   }
 
   return (
-    <div class="mb-6 flex flex-col gap-3 border-b border-border-weak-base pb-5" data-extension-actions={props.item.id}>
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex flex-col gap-1">
-          <h2 class="text-20-medium text-text-strong">{props.item.displayName}</h2>
-          <p class="text-12-regular text-text-weak">
-            {props.item.id} · v{props.item.version} · {language.t(`config.extensions.state.${props.item.state}`)}
-          </p>
-        </div>
-        <Show when={enabled()}>
-          <Button
-            data-action="extension-toggle"
-            disabled={!!blocked()}
-            onClick={() => {
-              if (blocked()) return
-              if (props.item.enabled) setConfirming(true)
-              else void toggle()
-            }}
-          >
-            {language.t(
-              busy()
-                ? "config.extensions.toggle.busy"
-                : props.item.enabled
-                  ? "config.extensions.toggle.disable"
-                  : "config.extensions.toggle.enable",
-            )}
-          </Button>
-        </Show>
-      </div>
-      <Show when={props.dirty || props.saving}>
-        <p class="text-12-regular text-text-weak">{language.t("config.extensions.toggle.saveFirst")}</p>
-      </Show>
-      <Show when={props.item.state === "incompatible"}>
-        <p class="text-12-regular text-text-weak">{language.t("config.extensions.toggle.incompatible")}</p>
-      </Show>
-      <Show when={props.item.error}>
-        <p class="text-12-regular text-text-danger-base">{props.item.error}</p>
-      </Show>
-      <Show when={confirming()}>
-        <div class="rounded-lg border border-border-weak-base bg-surface-base p-4">
-          <p class="mb-3 text-13-regular text-text-weak">{language.t("config.extensions.toggle.confirmDescription")}</p>
-          <div class="flex justify-end gap-2">
-            <Button data-action="extension-toggle-cancel" onClick={() => setConfirming(false)}>
-              {language.t("common.cancel")}
-            </Button>
-            <Button data-action="extension-toggle-confirm" disabled={!!blocked()} onClick={() => void toggle()}>
-              {language.t("config.extensions.toggle.confirmDisable")}
-            </Button>
+    <div data-extension-actions={props.item.id}>
+      <ExtensionCard>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex min-w-0 flex-col gap-1">
+            <h2 class="break-words text-20-medium text-text-strong">{props.item.displayName}</h2>
+            <p class="break-all text-12-regular text-text-weak">
+              {props.item.id} · v{props.item.version} · {language.t(`config.extensions.state.${props.item.state}`)}
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <Show when={enabled()}>
+              <Button
+                data-action="extension-toggle"
+                disabled={!!blocked()}
+                onClick={() => {
+                  if (blocked()) return
+                  if (props.item.enabled) setConfirming(true)
+                  else void toggle()
+                }}
+              >
+                {language.t(
+                  busy()
+                    ? "config.extensions.toggle.busy"
+                    : props.item.enabled
+                      ? "config.extensions.toggle.disable"
+                      : "config.extensions.toggle.enable",
+                )}
+              </Button>
+            </Show>
+            {props.children}
           </div>
         </div>
-      </Show>
-      <Show when={syncFailed() && host}>
-        <Button
-          data-action="extension-toggle-refresh"
-          disabled={busy()}
-          onClick={() => {
-            const source = connection()
-            setPending(true)
-            void host!
-              .refresh({ strict: true })
-              .then(() => {
-                if (alive && connection() === source) setSyncFailed(false)
-              })
-              .catch((error) => {
-                if (!alive || connection() !== source || error instanceof ExtensionMutationStaleError) return
-                notify({ title: language.t("config.extensions.toggle.syncFailed"), description: String(error) })
-              })
-              .finally(() => {
-                if (alive) setPending(false)
-              })
-          }}
-        >
-          {language.t("config.extensions.toggle.refresh")}
-        </Button>
-      </Show>
+        <Show when={props.dirty || props.saving}>
+          <p class="text-12-regular text-text-weak">{language.t("config.extensions.toggle.saveFirst")}</p>
+        </Show>
+        <Show when={props.item.state === "incompatible"}>
+          <p class="text-12-regular text-text-weak">{language.t("config.extensions.toggle.incompatible")}</p>
+        </Show>
+        <Show when={props.item.error}>
+          <p class="text-12-regular text-text-danger-base">{props.item.error}</p>
+        </Show>
+        <Show when={confirming()}>
+          <div class="rounded-lg border border-border-weak-base bg-surface-base p-4">
+            <p class="mb-3 text-13-regular text-text-weak">
+              {language.t("config.extensions.toggle.confirmDescription")}
+            </p>
+            <div class="flex justify-end gap-2">
+              <Button data-action="extension-toggle-cancel" onClick={() => setConfirming(false)}>
+                {language.t("common.cancel")}
+              </Button>
+              <Button data-action="extension-toggle-confirm" disabled={!!blocked()} onClick={() => void toggle()}>
+                {language.t("config.extensions.toggle.confirmDisable")}
+              </Button>
+            </div>
+          </div>
+        </Show>
+        <Show when={syncFailed() && host}>
+          <Button
+            data-action="extension-toggle-refresh"
+            disabled={busy()}
+            onClick={() => {
+              const source = connection()
+              setPending(true)
+              void host!
+                .refresh({ strict: true })
+                .then(() => {
+                  if (alive && connection() === source) setSyncFailed(false)
+                })
+                .catch((error) => {
+                  if (!alive || connection() !== source || error instanceof ExtensionMutationStaleError) return
+                  notify({ title: language.t("config.extensions.toggle.syncFailed"), description: String(error) })
+                })
+                .finally(() => {
+                  if (alive) setPending(false)
+                })
+            }}
+          >
+            {language.t("config.extensions.toggle.refresh")}
+          </Button>
+        </Show>
+      </ExtensionCard>
     </div>
   )
 }

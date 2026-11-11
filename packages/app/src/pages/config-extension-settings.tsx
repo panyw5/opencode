@@ -38,6 +38,7 @@ export type SaveExtensionSettings = (id: string, patch: Record<string, unknown>)
 export interface ConfigExtensionSettingsProps {
   item: ExtensionInfo
   disabled?: boolean
+  hideHeading?: boolean
   onStateChange?: (state: { dirty: boolean; saving: boolean }) => void
   // Test seams: production callers omit both and the language context plus
   // the ExtensionHost bridge are used instead. Optional so the real production
@@ -139,10 +140,12 @@ export const ConfigExtensionSettings: Component<ConfigExtensionSettingsProps> = 
 
   return (
     <div class="flex flex-col gap-1 pb-2" data-extension-id={props.item.id}>
-      <div class="flex items-baseline gap-2 pt-2">
-        <span class="text-14-medium text-text-strong">{props.item.displayName}</span>
-        <span class="text-12-regular text-text-weak">v{props.item.version}</span>
-      </div>
+      <Show when={!props.hideHeading}>
+        <div class="flex items-baseline gap-2 pt-2">
+          <span class="text-14-medium text-text-strong">{props.item.displayName}</span>
+          <span class="text-12-regular text-text-weak">v{props.item.version}</span>
+        </div>
+      </Show>
       <fieldset class="min-w-0" disabled={props.disabled || saving()}>
         <SettingsList>
           <Index each={keys()}>
@@ -158,7 +161,7 @@ export const ConfigExtensionSettings: Component<ConfigExtensionSettingsProps> = 
               />
             )}
           </Index>
-          <div class="flex justify-end py-3">
+          <div class="flex justify-end gap-2 pt-4">
             <Button
               data-action="extension-settings-discard"
               size="small"

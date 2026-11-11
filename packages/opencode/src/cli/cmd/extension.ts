@@ -103,14 +103,18 @@ export function extensionInstallSource(
   if (url?.protocol === "https:") {
     if (!/^https:\/\//i.test(value) || url.username || url.password || !/\.tgz$/i.test(url.pathname))
       throw new Error("A credential-free HTTPS .tgz URL is required")
-    if (!sha256 || !/^[a-f0-9]{64}$/i.test(sha256))
-      throw new Error("Archive sources require --sha256 with 64 hexadecimal digits")
-    return { type: "archive", url: value, sha256: sha256.toLowerCase() }
+    if (sha256 !== undefined && !/^[a-f0-9]{64}$/i.test(sha256))
+      throw new Error("--sha256 must contain 64 hexadecimal digits")
+    return { type: "archive", url: value, ...(sha256 === undefined ? {} : { sha256: sha256.toLowerCase() }) }
   }
   if (/\.tgz$/i.test(value) && !/^\w+:/.test(value)) {
-    if (!sha256 || !/^[a-f0-9]{64}$/i.test(sha256))
-      throw new Error("Archive sources require --sha256 with 64 hexadecimal digits")
-    return { type: "local", path: path.resolve(value), sha256: sha256.toLowerCase() }
+    if (sha256 !== undefined && !/^[a-f0-9]{64}$/i.test(sha256))
+      throw new Error("--sha256 must contain 64 hexadecimal digits")
+    return {
+      type: "local",
+      path: path.resolve(value),
+      ...(sha256 === undefined ? {} : { sha256: sha256.toLowerCase() }),
+    }
   }
   if (archiveOnly) throw new Error("Updates require --version for npm or --source with an HTTPS/local .tgz archive")
   if (sha256 !== undefined) throw new Error("--sha256 is only supported for .tgz archives")
@@ -137,6 +141,11 @@ export function formatInstallPreview(preview: InstallPreview, enable = false, pu
     `ID: ${text(preview.id)}`,
     `Name: ${text(preview.name)}`,
     `Version: ${preview.oldVersion ? `${text(preview.oldVersion)} -> ` : ""}${text(preview.version)}`,
+    ...(preview.source.type === "archive"
+      ? [
+          "Archive digest is pinned automatically. A computed digest does not authenticate the publisher; trust the source before confirming.",
+        ]
+      : []),
     `Source: ${sourceLabel(preview.source)}`,
     `Permissions: ${preview.permissions.map(text).join(", ") || "none"}`,
     `Permissions added: ${preview.permissionsAdded.map(text).join(", ") || "none"}`,
@@ -276,7 +285,10 @@ const InstallCommand = effectCmd({
         describe: "npm spec, HTTPS/local .tgz archive, or descriptor URL with --release",
       })
       .option("release", { type: "boolean", default: false, describe: "interpret source as a release descriptor URL" })
-      .option("sha256", { type: "string", describe: "required SHA-256 for archives (incompatible with --release)" })
+      .option("sha256", {
+        type: "string",
+        describe: "optional publisher SHA-256 for archives (incompatible with --release)",
+      })
       .option("allow-registry-upgrade", {
         type: "boolean",
         default: false,
@@ -314,7 +326,7 @@ const UpdateCommand = effectCmd({
       .positional("id", { type: "string", demandOption: true, describe: "extension id" })
       .option("version", { type: "string", describe: "exact npm version" })
       .option("source", { type: "string", describe: "replacement HTTPS/local .tgz archive" })
-      .option("sha256", { type: "string", describe: "required SHA-256 for replacement archives" })
+      .option("sha256", { type: "string", describe: "optional publisher SHA-256 for replacement archives" })
       .option("release-current", {
         type: "boolean",
         default: false,

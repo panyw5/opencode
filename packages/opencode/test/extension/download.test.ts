@@ -266,8 +266,10 @@ describe("extension archive download", () => {
     }
   })
 
-  test("requires a strict SHA-256 before network work and detects hash mismatch", async () => {
-    for (const sha256 of [undefined, "", "a".repeat(63), "g".repeat(64), ` ${hash()}`, `${hash()}\n`]) {
+  test("allows omitted checksums but strictly validates any supplied SHA-256 and detects mismatch", async () => {
+    const bare = fixture()
+    expect(Buffer.from(await downloadArchive({ url, transport: bare.transport }))).toEqual(bytes)
+    for (const sha256 of ["", "a".repeat(63), "g".repeat(64), ` ${hash()}`, `${hash()}\n`]) {
       const f = fixture()
       await expect(downloadArchive({ url, sha256: sha256 as string, transport: f.transport })).rejects.toThrow(
         "SHA-256",

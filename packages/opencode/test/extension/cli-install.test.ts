@@ -181,16 +181,16 @@ describe("extension installation CLI (isolated offline processes)", () => {
     expect(await readdir(path.join(context.directory, "staging"))).toEqual([])
   }, 30_000)
 
-  test("confirmed archive install/update/uninstall preserves enabled state and completes safe unused cleanup", async () => {
+  test("archive install/update needs no user checksum, preserves enabled state and completes safe unused cleanup", async () => {
     const context = await setup()
     const first = await archive(context)
-    let result = await cli(context, ["install", first.file, "--sha256", first.sha256, "--yes"])
+    let result = await cli(context, ["install", first.file, "--yes"])
     expect(result.code, result.output).toBe(0)
     expect(result.output).toContain("committed=true")
     expect(result.output).toContain("cleanupPending=false")
     expect((await store(context)).extensions["test.cli"].enabled).toBe(false)
     const second = await archive(context, "2.0.0", ["write-files"])
-    result = await cli(context, ["update", "test.cli", "--source", second.file, "--sha256", second.sha256, "--yes"])
+    result = await cli(context, ["update", "test.cli", "--source", second.file, "--yes"])
     expect(result.code, result.output).toBe(0)
     expect(result.output).toContain("1.0.0 -> 2.0.0")
     expect(result.output).toContain("Permissions added: write-files")

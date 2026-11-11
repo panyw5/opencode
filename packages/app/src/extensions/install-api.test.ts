@@ -89,6 +89,19 @@ async function expectSanitized(operation: () => Promise<unknown>) {
 }
 
 describe("extension installation API", () => {
+  test("curated backend conflicts and proxy diagnostics survive without exposing SDK headers", async () => {
+    for (const message of [
+      "Extension is already installed",
+      "Archive download blocked by non-public DNS (proxy/fake-IP). Use desktop archive download or a local .tgz file.",
+    ]) {
+      const { api } = setup(() => ({
+        error: { _tag: "ConflictError", message, request: { headers: { "x-opencode-extension-token": token } } },
+      }))
+      await expect(api.prepare({ kind: "install", source: { type: "npm", spec: "test" } })).rejects.toThrow(message)
+    }
+    const { api } = setup(() => ({ error: { message: `transport failed with ${token}` } }))
+    await expectSanitized(() => api.prepare({ kind: "install", source: { type: "npm", spec: "test" } }))
+  })
   test("recovered committed status refreshes the production host view before returning", async () => {
     const { api } = setup(() => ({ data: completed() }))
     let refreshed = false
@@ -345,5 +358,99 @@ describe("extension installation API", () => {
     })
 
     for (const operation of operations(api)) await expectSanitized(operation)
+  })
+
+  test("SDK throwOnError rejections keep whitelisted body diagnostics and drop everything else", async () => {
+    // Shape produced by the SDK error interceptor: the decoded NamedError body
+    // is re-thrown as an Error whose message comes from data.message and whose
+    // raw body is retained under `cause`.
+    const descriptorError = () => {
+      const thrown = new Error("Release descriptor is not valid JSON; use a raw stable.json URL, not a web page")
+      thrown.cause = {
+        body: {
+          name: "ExtensionError",
+          data: {
+            message: "Release descriptor is not valid JSON; use a raw stable.json URL, not a web page",
+          },
+        },
+        status: 422,
+        url: "https://127.0.0.1:4096/global/extension/prepare",
+      }
+      return thrown
+    }
+    const { api } = setup(() => Promise.reject(descriptorError()))
+    await expect(api.prepare({ kind: "install", source: { type: "npm", spec: "test" } })).rejects.toThrow(
+      "Release descriptor is not valid JSON; use a raw stable.json URL, not a web page",
+    )
+
+    // A whitelisted body kept only under `cause` (interceptor message replaced)
+    // still survives.
+    const bodyOnly = new Error("opencode server POST /global/extension/prepare → 422")
+    bodyOnly.cause = {
+      body: { data: { message: "Release descriptor download failed; check the network/proxy" } },
+      status: 422,
+    }
+    const { api: bodyOnlyApi } = setup(() => Promise.reject(bodyOnly))
+    await expect(bodyOnlyApi.prepare({ kind: "install", source: { type: "npm", spec: "test" } })).rejects.toThrow(
+      "Release descriptor download failed; check the network/proxy",
+    )
+
+    // Non-whitelisted bodies — including ones echoing the confirmation token —
+    // collapse to the generic message with nothing retained on the error.
+    const hostile = new Error(`download failed: x-opencode-extension-token ${token}`)
+    hostile.cause = {
+      body: { name: "BadRequest", message: `bad request ${token}` },
+      status: 400,
+    }
+    const { api: hostileApi } = setup(() => Promise.reject(hostile))
+    await expectSanitized(() => hostileApi.prepare({ kind: "install", source: { type: "npm", spec: "test" } }))
+
+    // A whitelisted message arriving through `cause` never leaks its body wrapper.
+    const { api: genericBodyApi } = setup(() =>
+      Promise.reject(
+        Object.assign(new Error("wrapped"), {
+          cause: { body: { data: { message: "Extension is already installed" } }, status: 409 },
+        }),
+      ),
+    )
+    await expect(genericBodyApi.prepare({ kind: "install", source: { type: "npm", spec: "test" } })).rejects.toThrow(
+      "Extension is already installed",
+    )
+  })
+
+  test("every whitelisted diagnostic passes through the throwOnError-shaped rejection", async () => {
+    for (const message of [
+      "Extension is already installed",
+      "Extension is not installed",
+      "Development links cannot be updated by the installer",
+      "Extension requires a server restart before replacement",
+      "Archive download blocked by non-public DNS (proxy/fake-IP). Use desktop archive download or a local .tgz file.",
+      "Archive SHA-256 verification failed; no extension was installed",
+      "Archive download failed; check the network/proxy or use a local .tgz file",
+      "Archive digest does not match the release descriptor",
+      "Archive exceeds the 100 MiB download limit",
+      "Extension server changed during archive download",
+      "Extension server changed during archive staging",
+      "Release descriptor is not valid JSON; use a raw stable.json URL, not a web page",
+      "Release descriptor does not match schema version 1",
+      "Release descriptor exceeds the 64 KiB download limit",
+      "Release descriptor download failed; check the network/proxy",
+    ]) {
+      const thrown = new Error(message)
+      thrown.cause = { body: { data: { message } }, status: 422 }
+      const { api } = setup(() => Promise.reject(thrown))
+      await expect(api.prepare({ kind: "install", source: { type: "npm", spec: "test" } })).rejects.toThrow(message)
+    }
+  })
+
+  test("error envelope bodies under cause.body follow the same whitelist as thrown errors", async () => {
+    const { api } = setup(() => ({
+      error: {
+        cause: { body: { data: { message: "Release descriptor does not match schema version 1" } }, status: 422 },
+      },
+    }))
+    await expect(api.prepare({ kind: "install", source: { type: "npm", spec: "test" } })).rejects.toThrow(
+      "Release descriptor does not match schema version 1",
+    )
   })
 })

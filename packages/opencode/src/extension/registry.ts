@@ -513,7 +513,12 @@ export async function finishPurge(id: ExtensionID, expectedPurgeRevision: number
 export async function withPurge<T>(
   id: ExtensionID,
   expectedRetainedRevision: number,
-  run: (identity: { name: string; source: Source; revision: number }) => Promise<T>,
+  run: (identity: {
+    name: string
+    source: Source
+    dataSource?: RegistryRow["dataSource"]
+    revision: number
+  }) => Promise<T>,
   target = file(),
 ) {
   return Flock.withLock(lock(target), async () => {
@@ -532,7 +537,12 @@ export async function withPurge<T>(
     retained.purging = true
     retained.purgeRevision ??= expectedRetainedRevision
     await writeStore(target, store)
-    const value = await run({ name: retained.name, source: retained.source, revision: retained.purgeRevision })
+    const value = await run({
+      name: retained.name,
+      source: retained.source,
+      dataSource: retained.dataSource,
+      revision: retained.purgeRevision,
+    })
     delete retained.settings
     retained.secretKeys = []
     retained.purgedAt = Date.now()
@@ -672,11 +682,17 @@ export async function commitInstallation(
     // installation: it is consumed independently by the cleanup state machine
     // (recovery purges or finishes it), so a reinstall after a deferred
     // uninstall cannot be permanently blocked by its own retained record.
+    // Archive releases necessarily change both digest and download/staging path.
+    // A confirmed update capability (bound to this id, candidate tree and current
+    // row revision) explicitly authorizes that replacement. Do not grant the same
+    // exception to installs, retained-data inheritance or other source families.
+    const archiveUpdate =
+      input.receipt.kind === "update" && current?.source.type === "archive" && input.row.source.type === "archive"
     if (
       current &&
       (current.name !== input.row.name ||
         current.source.type === "path" ||
-        sourceIdentity(current.source) !== sourceIdentity(input.row.source))
+        (!archiveUpdate && sourceIdentity(current.source) !== sourceIdentity(input.row.source)))
     ) {
       throw new ConflictError("Extension id belongs to a different installation")
     }
@@ -722,8 +738,14 @@ export async function commitInstallation(
         previous,
       )
     }
+    const dataOwner = current ?? (retained?.purgedAt === undefined ? retained : undefined)
     const next: RegistryRow = {
       ...input.row,
+      // Never accept a candidate-supplied data lineage. Only a validated current
+      // row or same-archive retained tombstone can authorize data inheritance.
+      dataSource:
+        dataOwner?.dataSource ??
+        (dataOwner?.source.type === "archive" && input.row.source.type === "archive" ? dataOwner.source : undefined),
       enabled: current?.enabled ?? input.row.enabled,
       installedAt: current?.installedAt ?? input.row.installedAt,
       settings: inherited?.settings,
@@ -781,6 +803,7 @@ export async function commitRemoval(
     store.retained[input.id] = {
       name: current.name,
       source: current.source,
+      dataSource: current.dataSource,
       settings: input.purgeData ? undefined : current.settings,
       secretKeys: [
         ...new Set([

@@ -8,7 +8,7 @@ import { canonicalRegistryFile, privateDirectory } from "./paths"
 import { sourceIdentity } from "./registry"
 
 const OWNER = "opencode.extension-data"
-type DataIdentity = { id: string; name: string; source: Source }
+type DataIdentity = { id: string; name: string; source: Source; dataSource?: Extract<Source, { type: "archive" }> }
 const digest = (value: string) => createHash("sha256").update(value).digest("hex")
 
 function locations(id: string) {
@@ -32,7 +32,7 @@ function record(identity: DataIdentity) {
     owner: OWNER,
     id: identity.id,
     name: identity.name,
-    sourceHash: digest(sourceIdentity(identity.source)),
+    sourceHash: digest(sourceIdentity(identity.dataSource ?? identity.source)),
     dataHash: digest(paths.data),
     cacheHash: digest(paths.cache),
   }

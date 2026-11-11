@@ -153,6 +153,8 @@ const registryRow = {
   name: Schema.String,
   version: Schema.String,
   source: Source,
+  // Stable data-ownership lineage across explicitly confirmed archive updates.
+  dataSource: Schema.optional(ArchiveSource),
   dir: Schema.String,
   enabled: Schema.Boolean,
   installedAt: Schema.Number,
@@ -183,6 +185,7 @@ export type OperationReceipt = Types.DeepMutable<Schema.Schema.Type<typeof Opera
 const retainedData = {
   name: Schema.String,
   source: Source,
+  dataSource: Schema.optional(ArchiveSource),
   settings: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
   secretKeys: Schema.Array(Schema.String),
   revision: Schema.Number,

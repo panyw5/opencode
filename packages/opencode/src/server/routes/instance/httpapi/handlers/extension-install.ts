@@ -30,6 +30,8 @@ function mapped(error: unknown) {
         return new ConflictError({ message: error.message })
       case "expired":
         return new HttpApiError.Gone({})
+      case "failed":
+        return new UpstreamError({ message: error.message, service: "extensions" })
     }
   }
   return new UpstreamError({ message: "Extension operation failed", service: "extensions" })
@@ -92,6 +94,14 @@ export const extensionInstallHandlers = HttpApiBuilder.group(RootHttpApi, "exten
         Effect.gen(function* () {
           yield* allowed()
           const value = yield* rawPayload
+          const source =
+            value.source && typeof value.source === "object" ? (value.source as Record<string, unknown>) : undefined
+          if (
+            ["release", "archive", "staged", "stagedRelease", "path"].some(
+              (key) => key in value || (source && key in source),
+            )
+          )
+            return yield* new InvalidRequestError({ message: "Staged releases are desktop-only" })
           if (value.kind === "update" && ["source", "version", "target"].filter((key) => key in value).length !== 1) {
             return yield* new InvalidRequestError({ message: "Choose exactly one of source, version or target" })
           }

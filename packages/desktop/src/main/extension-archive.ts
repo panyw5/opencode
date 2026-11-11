@@ -1,8 +1,8 @@
-import { randomUUID } from "node:crypto"
-import { rm } from "node:fs/promises"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
-import { ipcMain } from "electron"
+import { dirname, join } from "node:path"
+import { ipcMain, net } from "electron"
+import { downloadExtensionArchive } from "./extension-download"
 import { extensionArchiveDigest } from "./archive-digest"
 import type { LocalSidecarServer } from "./server"
 
@@ -13,7 +13,7 @@ export type ExtensionArchiveDeps = {
   server: () => ExtensionArchiveServer
 }
 
-const STAGED_MAX_BYTES = 200 * 1024 * 1024
+const STAGED_MAX_BYTES = 100 * 1024 * 1024
 const stagedFiles = new Set<string>()
 
 /**
@@ -29,27 +29,113 @@ export async function stageArchiveBytes(bytes: Uint8Array): Promise<{ path: stri
   if (bytes.byteLength > STAGED_MAX_BYTES) {
     throw new Error("Archive is too large")
   }
-  const path = join(tmpdir(), `opencode-ext-${randomUUID()}.tgz`)
-  const { writeFile } = await import("node:fs/promises")
-  await writeFile(path, bytes)
-  stagedFiles.add(path)
-  return { path }
+  const directory = await mkdtemp(join(tmpdir(), "opencode-ext-"))
+  const path = join(directory, "package.tgz")
+  try {
+    await writeFile(path, bytes, { flag: "wx", mode: 0o600 })
+    stagedFiles.add(path)
+    return { path }
+  } catch (error) {
+    await rm(directory, { recursive: true, force: true })
+    throw error
+  }
 }
 
 export async function cleanupStagedArchive(path: string): Promise<void> {
-  if (typeof path !== "string" || !path.startsWith(tmpdir()) || !path.endsWith(".tgz")) return
-  stagedFiles.delete(path)
-  await rm(path, { force: true }).catch(() => undefined)
+  if (typeof path !== "string" || !stagedFiles.delete(path)) return
+  await rm(dirname(path), { recursive: true, force: true }).catch(() => undefined)
 }
 
 type ArchiveOpPayload = {
   request?: unknown
+  release?: { url?: unknown; descriptor?: unknown; path?: unknown }
+  archive?: { path?: unknown; sha256?: unknown }
   operationId?: unknown
   token?: unknown
   input?: unknown
 }
 
 export function registerExtensionArchiveIpcHandlers(deps: ExtensionArchiveDeps) {
+  ipcMain.handle("extension-archive-download", async (_event, url: unknown) => {
+    try {
+      if (typeof url !== "string" || url.length > 16_384) throw new Error()
+      const bytes = await downloadExtensionArchive(
+        url,
+        (url, init) =>
+          new Promise<Response>((resolve, reject) => {
+            const request = net.request({ url, redirect: "manual", useSessionCookies: false })
+            const abort = () => request.abort()
+            init.signal?.addEventListener("abort", abort, { once: true })
+            request.on("error", () => {
+              init.signal?.removeEventListener("abort", abort)
+              reject(new Error("Archive download failed"))
+            })
+            request.on("redirect", (status, _method, redirectURL) => {
+              init.signal?.removeEventListener("abort", abort)
+              resolve(new Response(null, { status, headers: { location: redirectURL } }))
+              request.abort()
+            })
+            request.on("response", (response) => {
+              response.on("end", () => init.signal?.removeEventListener("abort", abort))
+              const headers = new Headers()
+              for (const [key, value] of Object.entries(response.headers)) {
+                if (value !== undefined) headers.set(key, Array.isArray(value) ? value.join(", ") : value)
+              }
+              resolve(
+                new Response(
+                  new ReadableStream<Uint8Array>({
+                    start(controller) {
+                      let ended = false
+                      let bytes = 0
+                      const fail = () => {
+                        if (ended) return
+                        ended = true
+                        controller.error(new Error("Archive download failed"))
+                      }
+                      response.on("end", () => {
+                        if (!ended) {
+                          ended = true
+                          controller.close()
+                        }
+                      })
+                      response.on("error", fail)
+                      response.on("aborted", fail)
+                      response.on("data", (chunk) => {
+                        if (ended) return
+                        bytes += chunk.byteLength
+                        if (bytes > STAGED_MAX_BYTES) {
+                          fail()
+                          request.abort()
+                          return
+                        }
+                        controller.enqueue(new Uint8Array(chunk))
+                      })
+                    },
+                    cancel() {
+                      request.abort()
+                    },
+                  }),
+                  { status: response.statusCode, headers },
+                ),
+              )
+            })
+            if (init.signal?.aborted) {
+              request.abort()
+              reject(new Error("Archive download failed"))
+              return
+            }
+            request.end()
+          }),
+      )
+      console.info(`[extension-install] main HTTPS archive downloaded bytes=${bytes.byteLength}`)
+      return { ok: true, value: { bytes } }
+    } catch {
+      return {
+        ok: false,
+        error: { message: "Archive download failed; check the network/proxy or use a local .tgz file" },
+      }
+    }
+  })
   ipcMain.handle("extension-archive-digest", async (_event, path: unknown) => {
     try {
       return { ok: true, value: await extensionArchiveDigest(path as string) }
@@ -81,21 +167,66 @@ export function registerExtensionArchiveIpcHandlers(deps: ExtensionArchiveDeps) 
     // Re-verify the digest against the actual file bytes: the renderer's
     // comparison is UX only; this is the trusted check.
     if (op === "prepare") {
-      const envelope = payload.request as { source?: { type?: string; path?: unknown; sha256?: unknown } } | undefined
-      const local = envelope?.source
-      if (local?.type !== "local" || typeof local.path !== "string" || typeof local.sha256 !== "string") {
-        return { ok: false, error: { message: "Local archive request requires a path and sha256" } }
-      }
-      try {
-        const digest = await extensionArchiveDigest(local.path)
-        if (digest.sha256 !== local.sha256.toLowerCase()) {
+      const release = payload.release
+      if (release !== undefined) {
+        try {
+          if (
+            !release ||
+            typeof release.url !== "string" ||
+            typeof release.descriptor !== "string" ||
+            Buffer.byteLength(release.descriptor, "utf8") > 64 * 1024 ||
+            typeof release.path !== "string" ||
+            !stagedFiles.has(release.path)
+          ) {
+            throw new Error("Invalid staged release request")
+          }
+          const descriptor = JSON.parse(release.descriptor) as { artifact?: { sha256?: unknown } }
+          const expected = descriptor?.artifact?.sha256
+          if (typeof expected !== "string" || !/^[a-f0-9]{64}$/i.test(expected))
+            throw new Error("Invalid release artifact SHA-256")
+          const digest = await extensionArchiveDigest(release.path)
+          if (digest.sha256 !== expected.toLowerCase())
+            throw new Error("Archive digest does not match the release descriptor")
+          console.info("[extension-install] main staged release digest verified")
+        } catch {
+          return { ok: false, error: { code: "invalid", message: "Staged release validation failed" } }
+        }
+      } else if (payload.archive !== undefined) {
+        const archive = payload.archive
+        try {
+          if (
+            !archive ||
+            typeof archive.path !== "string" ||
+            !stagedFiles.has(archive.path) ||
+            typeof archive.sha256 !== "string" ||
+            !/^[a-f0-9]{64}$/i.test(archive.sha256)
+          )
+            throw new Error()
+          const digest = await extensionArchiveDigest(archive.path)
+          if (digest.sha256 !== archive.sha256.toLowerCase()) throw new Error()
+        } catch {
           return {
             ok: false,
             error: { code: "integrity", message: "Archive digest does not match the requested sha256" },
           }
         }
-      } catch (error) {
-        return { ok: false, error: { message: error instanceof Error ? error.message : String(error) } }
+      } else {
+        const envelope = payload.request as { source?: { type?: string; path?: unknown; sha256?: unknown } } | undefined
+        const local = envelope?.source
+        if (local?.type !== "local" || typeof local.path !== "string" || typeof local.sha256 !== "string") {
+          return { ok: false, error: { message: "Local archive request requires a path and sha256" } }
+        }
+        try {
+          const digest = await extensionArchiveDigest(local.path)
+          if (digest.sha256 !== local.sha256.toLowerCase()) {
+            return {
+              ok: false,
+              error: { code: "integrity", message: "Archive digest does not match the requested sha256" },
+            }
+          }
+        } catch (error) {
+          return { ok: false, error: { message: error instanceof Error ? error.message : String(error) } }
+        }
       }
     }
     try {

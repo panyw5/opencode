@@ -12,10 +12,39 @@ export function parseExtensionPick(pick: string) {
   return id || undefined
 }
 
-export function extensionSelection(items: readonly ExtensionInfo[], pick: string) {
-  if (items.length === 0) return parseExtensionPick(pick) ? pick : ""
+/**
+ * Normalize the extensions-section selection.
+ *
+ * `pick` may point at an installed extension ("extension:id"), a pending
+ * catalog entry ("catalog:id") or something stale. Catalog picks survive host
+ * refreshes while their entry stays visible; once the entry shows up in
+ * `items` the pick migrates to the installed extension so the detail pane
+ * follows the install. `catalog` lists the currently visible (pending)
+ * catalog ids. An empty `items` list is a transient refresh state, so
+ * parseable picks are preserved there (same contract as deep links).
+ */
+export function extensionSelection(items: readonly ExtensionInfo[], pick: string, catalog?: readonly string[]) {
   const id = parseExtensionPick(pick)
-  return extensionPick(items.find((item) => item.id === id)?.id ?? items[0].id)
+  if (id) {
+    if (items.length === 0 || items.some((item) => item.id === id)) return pick
+    return fallbackSelection(items, pick)
+  }
+  const catalogID = parseCatalogPick(pick)
+  if (catalogID) {
+    if (items.some((item) => item.id === catalogID)) {
+      console.info(`[config-extensions] catalog pick migrated id=${catalogID} installed=${items.length}`)
+      return extensionPick(catalogID)
+    }
+    if (items.length === 0 || catalog === undefined || catalog.includes(catalogID)) return pick
+  }
+  return fallbackSelection(items, pick)
+}
+
+function fallbackSelection(items: readonly ExtensionInfo[], pick: string) {
+  if (items.length === 0) return ""
+  const next = extensionPick(items[0].id)
+  console.info(`[config-extensions] selection normalized from=${pick || "(empty)"} to=${next} installed=${items.length}`)
+  return next
 }
 
 export function extensionSelectionKey(items: readonly ExtensionInfo[]) {

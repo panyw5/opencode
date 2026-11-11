@@ -1,132 +1,139 @@
 import { createHash } from "node:crypto"
 import { describe, expect, test } from "bun:test"
-import { fetchReleaseDescriptor, parseReleaseDescriptor, runCatalogInstall } from "./catalog-install"
+import {
+  fetchArtifact,
+  fetchArtifactVerified,
+  fetchReleaseDescriptor,
+  fetchReleaseDocument,
+  parseReleaseDescriptor,
+} from "./catalog-install"
 
-const artifactSha256 = createHash("sha256")
-  .update(new Uint8Array([7, 8, 9]))
-  .digest("hex")
-
+const bytes = new Uint8Array([7, 8, 9])
+const digest = createHash("sha256").update(bytes).digest("hex")
 const descriptor = {
   schemaVersion: 1,
   id: "local.wls-repl",
-  version: "1.18.58",
-  artifact: {
-    url: "https://downloads.example.com/wls-1.18.58.tgz",
-    sha256: artifactSha256,
-  },
+  version: "1.18.64",
+  artifact: { url: "https://downloads.example.com/wls.tgz", sha256: digest },
 }
+const fetchText = (text: string) => (async () => new Response(text)) as unknown as typeof fetch
 
-describe("parseReleaseDescriptor", () => {
-  test("accepts a valid descriptor", () => {
-    const parsed = parseReleaseDescriptor(descriptor)
-    expect(parsed.id).toBe("local.wls-repl")
-    expect(parsed.artifactSha256).toBe(artifactSha256)
-  })
-
-  test("rejects non-https, credentialed or malformed artifacts", () => {
-    expect(() =>
-      parseReleaseDescriptor({ ...descriptor, artifact: { url: "http://x/y.tgz", sha256: "a".repeat(64) } }),
-    ).toThrow(/https/)
-    expect(() =>
-      parseReleaseDescriptor({ ...descriptor, artifact: { url: "https://u:p@x/y.tgz", sha256: "a".repeat(64) } }),
-    ).toThrow(/https/)
-    expect(() =>
-      parseReleaseDescriptor({ ...descriptor, artifact: { url: "https://x/y.tgz", sha256: "short" } }),
-    ).toThrow(/digest/)
-    expect(() => parseReleaseDescriptor({ id: "x" })).toThrow()
-  })
-})
-
-describe("fetchReleaseDescriptor", () => {
-  test("rejects non-https release urls before fetching", async () => {
-    await expect(fetchReleaseDescriptor("http://example.com/stable.json")).rejects.toThrow(/https/)
-  })
-})
-
-const ARTIFACT_BYTES = new Uint8Array([7, 8, 9])
-
-function fakeFetch(descriptorBody: string) {
-  return (async (input: RequestInfo | URL) => {
-    const url = String(input)
-    if (url.endsWith("stable.json")) {
-      return new Response(descriptorBody, { status: 200 })
-    }
-    return new Response(ARTIFACT_BYTES, { status: 200 })
-  }) as typeof fetch
-}
-
-describe("runCatalogInstall", () => {
-  test("stages verified bytes, prepares and commits with enable=true", async () => {
-    const calls: Array<{ op: string; payload: Record<string, unknown> }> = []
-    const cleanups: string[] = []
-    const result = await runCatalogInstall(
-      { id: "local.wls-repl", name: "wls", author: "p", releaseUrl: "https://x.invalid/stable.json" },
-      {
-        stage: async (staged) => {
-          expect([...staged]).toEqual([...ARTIFACT_BYTES])
-          return { ok: true, value: { path: "/tmp/staged.tgz" } }
-        },
-        op: async (op, payload) => {
-          calls.push({ op, payload })
-          if (op === "prepare") {
-            return {
-              ok: true,
-              value: { operationId: "op-1", token: "tok", kind: "install" },
-            }
-          }
-          return { ok: true, value: { state: "committed" } }
-        },
-        cleanup: async (path) => {
-          cleanups.push(path)
-        },
-      },
-      () => {},
-      fakeFetch(JSON.stringify(descriptor)),
-    )
-    expect(calls.map((call) => call.op)).toEqual(["cleanup-retained", "prepare", "commit"])
-    expect(calls[0]!.payload).toMatchObject({ extensionID: "local.wls-repl", sha256: artifactSha256 })
-    expect(calls[1]!.payload.request).toMatchObject({
-      kind: "install",
-      source: { type: "local", path: "/tmp/staged.tgz", sha256: artifactSha256 },
+describe("release descriptor validation", () => {
+  test("validates schema and preserves original JSON text for the trusted installer", async () => {
+    const text = JSON.stringify(descriptor, null, 2) + "\n"
+    const result = await fetchReleaseDocument("https://example.com/stable.json", fetchText(text))
+    expect(result.document).toBe(text)
+    expect(result.url).toBe("https://example.com/stable.json")
+    expect(result.descriptor).toEqual({
+      id: descriptor.id,
+      version: descriptor.version,
+      artifactUrl: descriptor.artifact.url,
+      artifactSha256: digest,
     })
-    expect(calls[2]!.payload).toMatchObject({ operationId: "op-1", token: "tok", input: { enable: true } })
-    expect(cleanups).toEqual(["/tmp/staged.tgz"])
-    void result
+    expect(await fetchReleaseDescriptor(result.url, fetchText(text))).toEqual(result.descriptor)
   })
-
-  test("mismatched digest aborts before staging", async () => {
-    const badDescriptor = { ...descriptor, artifact: { url: "https://x.invalid/y.tgz", sha256: "b".repeat(64) } }
-    let staged = false
+  test("requires schema version 1 with exact fields", () => {
+    for (const value of [
+      { ...descriptor, schemaVersion: 2 },
+      { ...descriptor, extra: true },
+      { ...descriptor, id: "bad" },
+      { ...descriptor, artifact: { ...descriptor.artifact, extra: true } },
+    ]) {
+      expect(() => parseReleaseDescriptor(value)).toThrow(/schema version 1/)
+    }
+  })
+  test("rejects unsafe descriptor URLs before fetching", async () => {
+    for (const url of [
+      "http://example.com/stable.json",
+      "https://u:p@example.com/stable.json",
+      "https://example.com/stable.json?token=secret",
+      "https://example.com/stable.json#hash",
+    ]) {
+      await expect(
+        fetchReleaseDocument(url, (() => {
+          throw new Error("must not fetch")
+        }) as unknown as typeof fetch),
+      ).rejects.toThrow(/https/)
+    }
+  })
+  test("reports HTML as a raw JSON URL diagnostic", async () => {
     await expect(
-      runCatalogInstall(
-        { id: "local.wls-repl", name: "wls", author: "p", releaseUrl: "https://x.invalid/stable.json" },
-        {
-          stage: async () => {
-            staged = true
-            return { ok: true, value: { path: "/tmp/staged.tgz" } }
-          },
-          op: async () => ({ ok: true, value: {} }),
-          cleanup: async () => undefined,
-        },
-        () => {},
-        fakeFetch(JSON.stringify(badDescriptor)),
+      fetchReleaseDocument("https://example.com/stable.json", fetchText("<html>GitHub</html>")),
+    ).rejects.toThrow(/raw stable.json/)
+  })
+  test("bounds descriptor bytes both declared and streamed", async () => {
+    await expect(fetchReleaseDocument("https://example.com/stable.json", fetchText(" ".repeat(65537)))).rejects.toThrow(
+      /64 KiB/,
+    )
+    await expect(
+      fetchReleaseDocument(
+        "https://example.com/stable.json",
+        (async () => new Response("x", { headers: { "content-length": "65537" } })) as unknown as typeof fetch,
+      ),
+    ).rejects.toThrow(/64 KiB/)
+  })
+  test("does not expose raw fetch errors or URLs", async () => {
+    await expect(
+      fetchReleaseDocument("https://example.com/stable.json", (async () => {
+        throw new Error("secret capability")
+      }) as unknown as typeof fetch),
+    ).rejects.toThrow("Release descriptor download failed; check the network/proxy")
+  })
+})
+
+describe("artifact downloads", () => {
+  test("fallback transport refuses redirects and a downgraded final response", async () => {
+    const response = new Response(bytes)
+    Object.defineProperty(response, "url", { value: "http://downloads.example.com/wls.tgz" })
+    await expect(
+      fetchArtifact({ id: "", version: "", artifactUrl: descriptor.artifact.url }, (async (
+        _input: unknown,
+        init: RequestInit,
+      ) => {
+        expect(init.redirect).toBe("error")
+        return response
+      }) as unknown as typeof fetch),
+    ).rejects.toThrow(/download failed/)
+  })
+  test("checks publisher digest and returns verified bytes", async () => {
+    const result = await fetchArtifactVerified(
+      parseReleaseDescriptor(descriptor),
+      (async () => new Response(bytes)) as unknown as typeof fetch,
+    )
+    expect(result.digest).toBe(digest)
+    expect([...result.bytes]).toEqual([...bytes])
+  })
+  test("archive mode computes digest when the user supplied none", async () => {
+    const result = await fetchArtifact(
+      { id: "", version: "", artifactUrl: descriptor.artifact.url },
+      (async () => new Response(bytes)) as unknown as typeof fetch,
+    )
+    expect(result.digest).toBe(digest)
+  })
+  test("rejects mismatched digest and unsafe artifact URLs", async () => {
+    await expect(
+      fetchArtifactVerified(
+        { ...parseReleaseDescriptor(descriptor), artifactSha256: "b".repeat(64) },
+        (async () => new Response(bytes)) as unknown as typeof fetch,
       ),
     ).rejects.toThrow(/digest/)
-    expect(staged).toBe(false)
+    for (const url of [
+      "http://example.com/a.tgz",
+      "https://u:p@example.com/a.tgz",
+      "https://example.com/a.tgz#fragment",
+    ]) {
+      await expect(fetchArtifactVerified({ ...parseReleaseDescriptor(descriptor), artifactUrl: url })).rejects.toThrow(
+        /https/,
+      )
+    }
   })
-
-  test("descriptor id mismatch aborts", async () => {
+  test("rejects oversize artifacts before buffering", async () => {
     await expect(
-      runCatalogInstall(
-        { id: "other.extension", name: "x", author: "p", releaseUrl: "https://x.invalid/stable.json" },
-        {
-          stage: async () => ({ ok: true, value: { path: "/tmp/x" } }),
-          op: async () => ({ ok: true, value: {} }),
-          cleanup: async () => undefined,
-        },
-        () => {},
-        fakeFetch(JSON.stringify(descriptor)),
+      fetchArtifactVerified(
+        parseReleaseDescriptor(descriptor),
+        (async () =>
+          new Response(bytes, { headers: { "content-length": String(101 * 1024 * 1024) } })) as unknown as typeof fetch,
       ),
-    ).rejects.toThrow(/does not match/)
+    ).rejects.toThrow(/100 MiB/)
   })
 })

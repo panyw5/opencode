@@ -1,4 +1,10 @@
-import type { InstallationOperations, InstallationRequest } from "../pages/install-actions-state"
+import type {
+  InstallationOperations,
+  InstallationRequest,
+  InstallationResult,
+  InstallationStatus,
+} from "../pages/install-actions-state"
+import { synchronizeInstallation } from "./install-api"
 
 /**
  * Desktop-only installation operations backed by the desktop IPC channel.
@@ -11,6 +17,7 @@ export function createLocalInstallationOperations(
     op: "prepare" | "commit" | "status" | "cancel",
     payload: Record<string, unknown>,
   ) => Promise<{ ok: true; value: unknown } | { ok: false; error: { code?: string; message: string } }>,
+  refresh?: () => Promise<void>,
 ): InstallationOperations {
   async function call<T>(op: "prepare" | "commit" | "status" | "cancel", payload: Record<string, unknown>): Promise<T> {
     const response = await invoke(op, payload)
@@ -21,20 +28,26 @@ export function createLocalInstallationOperations(
     }
     return response.value as T
   }
+  const sync = <T extends InstallationResult | InstallationStatus>(value: T) =>
+    refresh ? synchronizeInstallation(value, refresh) : value
   return {
     prepareInstallation: async (request: InstallationRequest) =>
       call("prepare", { request: request as unknown as Record<string, unknown> }),
     commitInstallation: async (prepared, input) =>
-      call("commit", {
-        operationId: prepared.operationId,
-        token: prepared.token,
-        input: {
-          enable: input?.enable ?? false,
-          ...(input?.acceptRegistryUpgrade === undefined ? {} : { acceptRegistryUpgrade: input.acceptRegistryUpgrade }),
-        },
-      }),
+      sync(
+        await call<InstallationResult>("commit", {
+          operationId: prepared.operationId,
+          token: prepared.token,
+          input: {
+            enable: input?.enable ?? false,
+            ...(input?.acceptRegistryUpgrade === undefined
+              ? {}
+              : { acceptRegistryUpgrade: input.acceptRegistryUpgrade }),
+          },
+        }),
+      ),
     installationStatus: async (prepared) =>
-      call("status", { operationId: prepared.operationId, token: prepared.token }),
+      sync(await call<InstallationStatus>("status", { operationId: prepared.operationId, token: prepared.token })),
     cancelInstallation: async (prepared) =>
       call("cancel", { operationId: prepared.operationId, token: prepared.token }),
   }

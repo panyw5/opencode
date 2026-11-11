@@ -315,7 +315,9 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
     },
 
     openNotificationSettings:
-      typeof desktopApi.openNotificationSettings === "function" ? () => desktopApi.openNotificationSettings() : undefined,
+      typeof desktopApi.openNotificationSettings === "function"
+        ? () => desktopApi.openNotificationSettings()
+        : undefined,
 
     notify: async (title, description, href, options) => {
       console.debug(`[notification] sending native notification linked=${!!href} attention=${!!options?.attention}`)
@@ -325,9 +327,13 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
         console.error(`[notification] native IPC failed error=${String(error)}`)
       }
     },
-    claimNotification: typeof desktopApi.claimNotification === "function" ? (key) => desktopApi.claimNotification(key) : undefined,
+    claimNotification:
+      typeof desktopApi.claimNotification === "function" ? (key) => desktopApi.claimNotification(key) : undefined,
 
-    fetch: createRequestFetch((request) => fetch(request), (line) => console.debug(line)),
+    fetch: createRequestFetch(
+      (request) => fetch(request),
+      (line) => console.debug(line),
+    ),
 
     fetchExternal: async (input, init) => {
       const url = input instanceof Request ? input.url : typeof input === "string" ? input : input.toString()
@@ -438,6 +444,10 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
       typeof desktopApi.extensionArchiveOp === "function"
         ? (op: "prepare" | "commit" | "status" | "cancel" | "cleanup-retained", payload: Record<string, unknown>) =>
             desktopApi.extensionArchiveOp(op, payload)
+        : undefined,
+    extensionArchiveDownload:
+      typeof desktopApi.extensionArchiveDownload === "function"
+        ? (url: string) => desktopApi.extensionArchiveDownload(url)
         : undefined,
     extensionArchiveStage:
       typeof desktopApi.extensionArchiveStage === "function"

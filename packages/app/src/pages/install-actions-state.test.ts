@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   installationDownloadHost,
+  installationGitHubBlobUrl,
   installationRequest,
   installationSourceLabel,
   type InstallationInput,
@@ -34,16 +35,75 @@ const npm: PreparedInstallation["source"] = {
 }
 
 describe("extension installation requests", () => {
-  test("release needs only a normalized HTTPS descriptor URL, never a user checksum", () => {
+  test("the blob helper rewrites exact GitHub blob paths only and keeps the URL credential-free", () => {
+    expect(installationGitHubBlobUrl("https://github.com/example/viewer/blob/main/stable.json")).toBe(
+      "https://raw.githubusercontent.com/example/viewer/main/stable.json",
+    )
+    expect(installationGitHubBlobUrl("https://github.com/example/viewer/blob/feature/x/dist/stable.json")).toBe(
+      "https://raw.githubusercontent.com/example/viewer/feature/x/dist/stable.json",
+    )
+    // Do not silently reinterpret paths containing dot segments.
+    expect(installationGitHubBlobUrl("https://github.com/example/viewer/blob/main/../main/stable.json")).toBeUndefined()
+    for (const url of [
+      "https://github.com/example/viewer/tree/main/stable.json",
+      "https://github.com/example/viewer/blob/main/viewer.tgz",
+      "https://github.com/example/blob/main/stable.json",
+      "https://github.com/example/viewer/~/blob/main/stable.json",
+      "https://github.com/example/viewer/blob/main/stable.json?token=secret",
+      "https://github.com/example/viewer/blob/main/stable.json#fragment",
+      "https://user:secret@github.com/example/viewer/blob/main/stable.json",
+      "http://github.com/example/viewer/blob/main/stable.json",
+      "https://raw.githubusercontent.com/example/viewer/main/stable.json",
+      "not a url",
+    ])
+      expect(installationGitHubBlobUrl(url)).toBeUndefined()
+  })
+
+  test("github blob descriptor URLs are rewritten to raw.githubusercontent.com without credentials or query", () => {
     expect(
-      installationRequest({ kind: "install" }, { ...input, url: " HTTPS://Publisher.Example:443/viewer/stable.json " }),
+      installationRequest(
+        { kind: "install" },
+        { ...input, url: " https://github.com/example/viewer/blob/main/stable.json " },
+      ),
     ).toEqual({
       kind: "install",
-      source: { type: "release", url: input.url },
+      source: { type: "release", url: "https://raw.githubusercontent.com/example/viewer/main/stable.json" },
     })
-    expect(installationRequest({ kind: "install" }, { ...input, sha256: "not-a-checksum" })).toEqual({
+    expect(
+      installationRequest(
+        { kind: "install" },
+        { ...input, url: "https://github.com/example/viewer/blob/v1.0.0/a/b.json" },
+      ),
+    ).toEqual({
       kind: "install",
-      source: { type: "release", url: input.url },
+      source: { type: "release", url: "https://raw.githubusercontent.com/example/viewer/v1.0.0/a/b.json" },
+    })
+    // Non-blob GitHub shapes are ordinary URLs and are preserved verbatim.
+    for (const url of [
+      "https://github.com/example/viewer/tree/main/stable.json",
+      "https://github.com/example/blob/main/stable.json",
+      "https://raw.githubusercontent.com/example/viewer/main/stable.json",
+    ])
+      expect(installationRequest({ kind: "install" }, { ...input, url })).toEqual({
+        kind: "install",
+        source: { type: "release", url },
+      })
+    // Blob URLs that carry credentials, query, or fragment are rejected, not rewritten.
+    for (const url of [
+      "https://github.com/example/viewer/blob/main/stable.json?token=secret",
+      "https://github.com/example/viewer/blob/main/stable.json#fragment",
+      "https://user:secret@github.com/example/viewer/blob/main/stable.json",
+    ])
+      expect(installationRequest({ kind: "install" }, { ...input, url })).toBeUndefined()
+    // The archive source keeps its original URL; the rewrite is descriptor-only.
+    expect(
+      installationRequest(
+        { kind: "install" },
+        { ...input, sourceType: "archive", url: "https://github.com/example/viewer/blob/main/viewer.tgz" },
+      ),
+    ).toEqual({
+      kind: "install",
+      source: { type: "archive", url: "https://github.com/example/viewer/blob/main/viewer.tgz" },
     })
   })
 
@@ -92,8 +152,14 @@ describe("extension installation requests", () => {
     expect(installationRequest({ kind: "install" }, versionInput)).toBeUndefined()
   })
 
-  test("archive retains its explicit checksum requirement and npm rejects paths and URLs", () => {
-    expect(installationRequest({ kind: "install" }, { ...input, sourceType: "archive" })).toBeUndefined()
+  test("archive needs no user checksum, validates optional publisher digests, and npm rejects paths and URLs", () => {
+    expect(installationRequest({ kind: "install" }, { ...input, sourceType: "archive" })).toEqual({
+      kind: "install",
+      source: { type: "archive", url: input.url },
+    })
+    expect(
+      installationRequest({ kind: "install" }, { ...input, sourceType: "archive", sha256: "invalid" }),
+    ).toBeUndefined()
     expect(
       installationRequest({ kind: "install" }, { ...input, sourceType: "archive", sha256: "A".repeat(64) }),
     ).toEqual({

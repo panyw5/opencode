@@ -72,6 +72,23 @@ async function install(context: Awaited<ReturnType<typeof setup>>, version = "1.
 }
 
 describe("extension installation transactions", () => {
+  test.each(["archive", "local"] as const)(
+    "%s installs without a user checksum, pinning the actual bytes before confirmation",
+    async (type) => {
+      const { bytes } = await fixture()
+      const context = await setup({ download: async () => bytes })
+      const file = path.join(context.root, "no-checksum.tgz")
+      await writeFile(file, bytes)
+      const source = type === "local" ? { type, path: file } : { type, url: "https://example.com/extension.tgz" }
+      const prepared = await context.installer.prepare({ kind: "install", source })
+      expect(prepared.source).toMatchObject({ type: "archive", sha256: sha(bytes) })
+      // The approved private candidate, not a later download/file change, is committed.
+      await writeFile(file, "changed after preview")
+      expect((await context.installer.commit(prepared.operationId, prepared.token)).committed).toBe(true)
+      expect((await Registry.snapshot(id, context.registry)).row?.source).toMatchObject({ sha256: sha(bytes) })
+    },
+  )
+
   test("release freezes the approved artifact, hides query data and requires a separate v3 confirmation", async () => {
     const first = await fixture()
     const second = await fixture("2.0.0")

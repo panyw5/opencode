@@ -148,6 +148,8 @@ export const dict = {
   "config.extensions.install.spec": "Package name or version",
   "config.extensions.install.url": "Archive URL",
   "config.extensions.install.sha256": "SHA-256 checksum",
+  "config.extensions.install.archiveTrust":
+    "The app computes the archive checksum automatically. A computed checksum does not verify the publisher; install only from a source you trust.",
   "config.extensions.install.preview": "Review installation",
   "config.extensions.install.previewUpdate": "Review update",
   "config.extensions.install.previewUninstall": "Review uninstallation",
@@ -212,6 +214,25 @@ export const dict = {
   "config.extensions.install.localDigestMismatch": "Checksum does not match the dropped archive yet.",
   "config.extensions.install.localDigestPending": "Reading the archive…",
   "config.extensions.install.localDropHint": "Drop a .tgz extension archive here to install it",
+  "config.extensions.install.releaseHint": "Enter the stable.json URL.",
+  "config.extensions.install.diagAlreadyInstalled": "This extension is already installed.",
+  "config.extensions.install.diagNotInstalled": "This extension is not installed.",
+  "config.extensions.install.diagDevLink": "Development links cannot be updated here; reinstall from its source.",
+  "config.extensions.install.diagRestart": "Restart the server, then retry the replacement.",
+  "config.extensions.install.diagArchiveDns":
+    "The archive download was blocked by proxy or fake-IP DNS. Download the archive in the desktop app or install a local .tgz file.",
+  "config.extensions.install.diagArchiveSha": "The archive checksum did not match; nothing was installed.",
+  "config.extensions.install.diagArchiveNetwork":
+    "The archive download failed. Check the network or proxy, or install a local .tgz file.",
+  "config.extensions.install.diagArchiveDigest": "The archive does not match its release descriptor.",
+  "config.extensions.install.diagArchiveSize": "The archive exceeds the 100 MiB download limit.",
+  "config.extensions.install.diagServerChanged": "The server connection changed during the download; prepare again.",
+  "config.extensions.install.diagDescriptorJson":
+    "This address is not a valid release manifest. Paste the raw stable.json URL, not a web page.",
+  "config.extensions.install.diagDescriptorSchema": "This release manifest is not supported by this app version.",
+  "config.extensions.install.diagDescriptorSize": "The release manifest exceeds the 64 KiB download limit.",
+  "config.extensions.install.diagDescriptorNetwork":
+    "The release manifest download failed. Check the network or proxy.",
   "prompt.mobile.options": "Message options",
   "gptPro.card.login": "ChatGPT identity",
   "gptPro.card.model": "Current model",
@@ -2214,6 +2235,8 @@ export const dict = {
   "config.nav.extensionsDescription": "Configure installed extensions",
   "config.extensions.header": "Global extensions on the connected server",
   "config.extensions.empty": "No extensions are linked to this server.",
+  "config.extensions.listFailed": "Could not load the extension list. Installation status is unknown.",
+  "config.extensions.listRetry": "Retry",
   "config.extensions.select": "Select an extension to view its settings.",
   "config.extensions.noSettings": "This extension does not provide configurable settings.",
   "config.extensions.state.ready": "Enabled",

@@ -482,6 +482,11 @@ export type Platform = {
     payload: Record<string, unknown>,
   ): Promise<{ ok: true; value: unknown } | { ok: false; error: { code?: string; message: string } }>
 
+  /** Fetch an archive with HTTPS-only redirects through Chromium's proxy transport. */
+  extensionArchiveDownload?(
+    url: string,
+  ): Promise<{ ok: true; value: { bytes: Uint8Array } } | { ok: false; error: { message: string } }>
+
   /** Persist renderer-downloaded archive bytes to a staging file (desktop only) */
   extensionArchiveStage?(
     bytes: Uint8Array,

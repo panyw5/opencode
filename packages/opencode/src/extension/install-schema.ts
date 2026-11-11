@@ -7,7 +7,7 @@ export const ExtensionOperationHeaders = Schema.Struct({
 })
 export const ExtensionInstallSource = Schema.Union([
   Schema.Struct({ type: Schema.Literal("npm"), spec: Schema.String }),
-  Schema.Struct({ type: Schema.Literal("archive"), url: Schema.String, sha256: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("archive"), url: Schema.String, sha256: Schema.optional(Schema.String) }),
   Schema.Struct({ type: Schema.Literal("release"), url: Schema.String }),
 ])
 export const ExtensionPrepareInput = Schema.Union([

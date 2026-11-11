@@ -363,8 +363,11 @@ async function download(input: DownloadOptions, digest?: Digest): Promise<Uint8A
   }
 }
 
-export async function downloadArchive(input: DownloadOptions & { sha256: string }): Promise<Uint8Array> {
-  return download(input, sha256(input.sha256))
+/** Without a publisher digest, download bounded bytes for the installer to hash
+ * and bind to its preview. A supplied digest is always checked.
+ */
+export async function downloadArchive(input: DownloadOptions & { sha256?: string }): Promise<Uint8Array> {
+  return download(input, input.sha256 === undefined ? undefined : sha256(input.sha256))
 }
 
 export async function downloadPackage(input: DownloadOptions & { integrity: string }): Promise<Uint8Array> {
@@ -408,11 +411,11 @@ export async function requestJsonDocument(
 
 export async function readLocalArchive(input: {
   file: string
-  sha256: string
+  sha256?: string
   signal?: AbortSignal
   maxBytes?: number
 }): Promise<Uint8Array> {
-  const digest = sha256(input.sha256)
+  const digest = input.sha256 === undefined ? undefined : sha256(input.sha256)
   const maxBytes = limit(input.maxBytes, MAX_BYTES, 0)
   const op = operation(input.signal, TIMEOUT_MS)
   let file: Awaited<ReturnType<typeof open>> | undefined
@@ -434,7 +437,8 @@ export async function readLocalArchive(input: {
     if (!stat.isFile()) fail("file", "Extension archive must be a regular local file")
     if (stat.size > maxBytes) fail("size", "Extension archive exceeds the compressed byte limit")
     stream = handle.createReadStream({ autoClose: false, highWaterMark: 64 * 1024 })
-    return verify(await readBytes(stream, op.signal, maxBytes), digest)
+    const bytes = await readBytes(stream, op.signal, maxBytes)
+    return digest ? verify(bytes, digest) : bytes
   } catch (error) {
     if (op.signal.aborted) throw op.signal.reason
     if (error instanceof ArchiveDownloadError) throw error

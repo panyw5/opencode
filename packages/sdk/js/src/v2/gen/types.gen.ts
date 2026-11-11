@@ -261,7 +261,7 @@ export type ExtensionPrepareInput =
         | {
             type: "archive"
             url: string
-            sha256: string
+            sha256?: string
           }
         | {
             type: "release"
@@ -281,7 +281,7 @@ export type ExtensionPrepareInput =
         | {
             type: "archive"
             url: string
-            sha256: string
+            sha256?: string
           }
         | {
             type: "release"

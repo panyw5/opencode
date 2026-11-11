@@ -61,6 +61,21 @@ describe("createLocalInstallationOperations", () => {
     })
   })
 
+  test("committed local installs refresh the manifest list and preserve unsynced durable success", async () => {
+    let refreshes = 0
+    const operations = createLocalInstallationOperations(
+      async () => ({ ok: true, value: { state: "committed", committed: true, synced: true } }),
+      async () => {
+        refreshes++
+        throw new Error("offline")
+      },
+    )
+    const prepared = { operationId: "op", token: "secret" } as never
+    expect(await operations.commitInstallation(prepared)).toMatchObject({ committed: true, synced: false })
+    expect(await operations.installationStatus(prepared)).toMatchObject({ committed: true, synced: false })
+    expect(refreshes).toBe(2)
+  })
+
   test("error responses reject with code-carrying errors", async () => {
     const operations = createLocalInstallationOperations(async () => ({
       ok: false,

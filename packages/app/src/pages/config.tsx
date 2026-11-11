@@ -3829,11 +3829,13 @@ export default function ConfigPage() {
     copied: "" as "dsh-api-key" | "custom-api-key" | "config-path" | "",
   })
   const selectedExtensionID = createMemo(() => parseExtensionPick(state.pick))
+  const catalogEntries = createMemo(() =>
+    extensionHost.listError?.() ? [] : pendingCatalogEntries(extensionHost.extensions().map((item) => item.id)),
+  )
   const catalogDetailEntry = createMemo(() => {
     const id = parseCatalogPick(state.pick)
-    return pendingCatalogEntries(extensionHost.extensions().map((item) => item.id)).find((entry) => entry.id === id)
+    return catalogEntries().find((entry) => entry.id === id)
   })
-  const catalogEntries = createMemo(() => pendingCatalogEntries(extensionHost.extensions().map((item) => item.id)))
   const selectedExtension = createMemo(() =>
     extensionHost.extensions().find((item) => item.id === selectedExtensionID()),
   )
@@ -6287,7 +6289,11 @@ export default function ConfigPage() {
     if (section === "channels") {
       return CHANNEL_PLATFORMS.map((p) => channelPick(p))
     }
-    if (section === "extensions") return extensionHost.extensions().map((item) => extensionPick(item.id))
+    if (section === "extensions")
+      return [
+        ...extensionHost.extensions().map((item) => extensionPick(item.id)),
+        ...catalogEntries().map((entry) => catalogPick(entry.id)),
+      ]
     if (section === "im") return []
     return (plugins() ?? []).map((item) => item.id)
   }
@@ -6305,7 +6311,14 @@ export default function ConfigPage() {
     if (section === "extensions") {
       batch(() => {
         setState("section", section)
-        setState("pick", extensionSelection(extensionHost.extensions(), state.pick))
+        setState(
+          "pick",
+          extensionSelection(
+            extensionHost.extensions(),
+            state.pick,
+            catalogEntries().map((entry) => entry.id),
+          ),
+        )
         setState({ doc: "", text: "", saved: "", busy: false })
       })
       return
@@ -6530,7 +6543,14 @@ export default function ConfigPage() {
       () => {
         if (!state.section) return
         if (state.section === "extensions") {
-          setState("pick", extensionSelection(extensionHost.extensions(), state.pick))
+          setState(
+            "pick",
+            extensionSelection(
+              extensionHost.extensions(),
+              state.pick,
+              catalogEntries().map((entry) => entry.id),
+            ),
+          )
           setState({ doc: "", text: "", saved: "", busy: false })
           return
         }
@@ -8733,6 +8753,7 @@ export default function ConfigPage() {
                         connection={() => globalSDK.client}
                         enabled={extensionHost.enabled()}
                         busy={extensionHost.mutating("@installation")}
+                        blocked={extensionHost.listError?.()}
                       />
                     </div>
                   </Match>
@@ -9462,10 +9483,25 @@ export default function ConfigPage() {
                         }
                       >
                         <div class="flex flex-col gap-2">
+                          <Show when={extensionHost.listError?.()}>
+                            <div role="alert" class="px-3 py-4 text-12-regular text-text-danger-base">
+                              {t("config.extensions.listFailed")}
+                              <button
+                                type="button"
+                                class="ml-2 underline"
+                                onClick={() => void extensionHost.refresh({ strict: true }).catch(() => {})}
+                              >
+                                {t("config.extensions.listRetry")}
+                              </button>
+                            </div>
+                          </Show>
                           <For
                             each={extensionHost.extensions()}
                             fallback={
-                              <Show when={catalogEntries().length === 0} fallback={<div class="h-1" />}>
+                              <Show
+                                when={!extensionHost.listError?.() && catalogEntries().length === 0}
+                                fallback={<div class="h-1" />}
+                              >
                                 <div class="px-3 py-4 text-12-regular text-text-weak">
                                   {t("config.extensions.empty")}
                                 </div>
@@ -10034,6 +10070,10 @@ export default function ConfigPage() {
                           entry={entry}
                           operations={extensionHost}
                           connection={() => globalSDK.client}
+                          enabled={extensionHost.enabled()}
+                          busy={extensionHost.mutating("@installation")}
+                          refresh={() => extensionHost.refresh({ strict: true })}
+                          installed={() => extensionHost.extensions().some((item) => item.id === entry.id)}
                         />
                       )}
                     </Show>

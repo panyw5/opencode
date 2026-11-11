@@ -745,7 +745,7 @@ describe("managed extension registry", () => {
     expect((await ExtensionRegistry.snapshot(id, f.registry)).row?.settings?.token).toBe("private")
   })
 
-  test("rejects a different source and an absent-row ABA replacement", async () => {
+  test("confirmed archive updates preserve stable data ownership but new installs cannot choose it", async () => {
     const f = await fixture()
     const candidate = await managed(f)
     const first = await ExtensionRegistry.commitInstallation(
@@ -754,7 +754,52 @@ describe("managed extension registry", () => {
       f.registry,
     )
     const changed = await managed(f)
-    changed.source = { type: "archive", location: "https://other.example/extension.tgz", sha256: "a".repeat(64) }
+    changed.source = { type: "archive", location: "https://other.example/new-version.tgz", sha256: "a".repeat(64) }
+    changed.dataSource = { type: "archive", location: "/forged", sha256: "forged" }
+    const updated = await ExtensionRegistry.commitInstallation(
+      { id, row: changed, expectedRevision: first.revision, receipt: receipt(changed.installId!, "update") },
+      undefined,
+      f.registry,
+    )
+    expect(updated.source).toEqual(changed.source)
+    expect((await ExtensionRegistry.snapshot(id, f.registry)).row?.dataSource).toEqual(candidate.source)
+    await ExtensionRegistry.commitRemoval(
+      { id, expectedRevision: updated.revision!, receipt: receipt(changed.installId!, "uninstall"), purgeData: false },
+      f.registry,
+    )
+    const retained = (await ExtensionRegistry.snapshot(id, f.registry)).retained!
+    expect(retained.dataSource).toEqual(candidate.source)
+    const reinstall = await managed(f)
+    reinstall.source = { ...changed.source, location: "/another/staged/path.tgz" }
+    await ExtensionRegistry.commitInstallation(
+      {
+        id,
+        row: reinstall,
+        expectedRevision: undefined,
+        expectedRetainedRevision: retained.revision,
+        receipt: receipt(reinstall.installId!),
+      },
+      undefined,
+      f.registry,
+    )
+    expect((await ExtensionRegistry.snapshot(id, f.registry)).row?.dataSource).toEqual(candidate.source)
+  })
+
+  test("rejects a different source family and an absent-row ABA replacement", async () => {
+    const f = await fixture()
+    const candidate = await managed(f)
+    const first = await ExtensionRegistry.commitInstallation(
+      { id, row: candidate, expectedRevision: undefined, receipt: receipt(candidate.installId!) },
+      undefined,
+      f.registry,
+    )
+    const changed = await managed(f)
+    changed.source = {
+      type: "npm",
+      spec: "test-extension@2.0.0",
+      registry: "https://other.example",
+      integrity: "sha512-other",
+    }
     await expect(
       ExtensionRegistry.commitInstallation(
         { id, row: changed, expectedRevision: first.revision, receipt: receipt(changed.installId!, "update") },

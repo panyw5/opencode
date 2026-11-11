@@ -10,19 +10,29 @@ import { extensionPaths, generationPath, privateDirectory, canonicalRegistryFile
 import { ExtensionLeases } from "./leases"
 import { generationOwnership, operationOwnership } from "./cleanup"
 import { archiveLimits, extractArchive } from "./archive"
-import { downloadArchive, downloadPackage, readLocalArchive, requestJson, type DownloadOptions } from "./download"
+import {
+  ArchiveDownloadError,
+  downloadArchive,
+  downloadPackage,
+  readLocalArchive,
+  requestJson,
+  type DownloadOptions,
+} from "./download"
+import { Log } from "@opencode-ai/core/util/log"
 import { resolveNpm, materializeNpm, validateNpmRoot, type PreparedNpm } from "./npm"
-import { normalizeReleaseUrl, resolveRelease } from "./release"
+import { normalizeReleaseUrl, parseReleaseDescriptor, resolveRelease } from "./release"
 
+const log = Log.create({ service: "extension-install" })
 const TTL = 10 * 60 * 1000
 const MAX_OPERATIONS = 4
 const TIMEOUT = 120_000
 
 export type InstallSource =
   | { type: "npm"; spec: string }
-  | { type: "archive"; url: string; sha256: string }
-  | { type: "local"; path: string; sha256: string }
+  | { type: "archive"; url: string; sha256?: string }
+  | { type: "local"; path: string; sha256?: string }
   | { type: "release"; url: string }
+export type StagedRelease = { url: string; descriptor: string; path: string }
 export type InstallRequest =
   | { kind: "install"; source: InstallSource }
   | { kind: "update"; id: string; source: InstallSource; version?: never; target?: never }
@@ -77,7 +87,7 @@ export type CoordinationInput = {
 export type InstallerOptions = {
   /** All managed paths are derived from this registry file, never a request-controlled root. */
   registry?: string
-  download?: (input: DownloadOptions & ({ sha256: string } | { integrity: string })) => Promise<Uint8Array>
+  download?: (input: DownloadOptions & ({ sha256?: string } | { integrity: string })) => Promise<Uint8Array>
   readLocal?: typeof readLocalArchive
   resolveNpm?: typeof resolveNpm
   resolveRelease?: typeof resolveRelease
@@ -173,6 +183,7 @@ function publicSource(
     if (!npm) invalid()
     return { type: "npm", spec: `${npm.name}@${npm.version}`, registry: npm.registry, integrity: npm.integrity }
   }
+  if (!source.sha256) invalid("Archive digest was not computed")
   if (source.type === "local") return { type: "archive", location: path.resolve(source.path), sha256: source.sha256 }
   const url = new URL(source.url)
   url.search = ""
@@ -195,18 +206,20 @@ function requestSource(value: unknown): InstallSource {
     }
   }
   if (source.type !== "archive" && source.type !== "local") invalid("Unsupported extension source")
-  if (typeof source.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(source.sha256)) invalid("SHA-256 is required")
+  if (source.sha256 !== undefined && (typeof source.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(source.sha256)))
+    invalid("Invalid archive SHA-256")
+  const digest = typeof source.sha256 === "string" ? source.sha256.toLowerCase() : undefined
   if (source.type === "local") {
     if (typeof source.path !== "string" || !path.isAbsolute(source.path) || source.path.includes("\0"))
       invalid("Invalid local archive path")
-    return { type: "local", path: source.path, sha256: source.sha256.toLowerCase() }
+    return { type: "local", path: source.path, ...(digest === undefined ? {} : { sha256: digest }) }
   }
   if (typeof source.url !== "string" || source.url.length > 16384 || /[\s\\\x00-\x1f\x7f]/.test(source.url))
     invalid("Invalid archive URL")
   const url = URL.parse(source.url)
   if (!url || !/^https:\/\//i.test(source.url) || url.protocol !== "https:" || url.username || url.password)
     invalid("HTTPS archive URL without credentials required")
-  return { type: "archive", url: source.url, sha256: source.sha256.toLowerCase() }
+  return { type: "archive", url: source.url, ...(digest === undefined ? {} : { sha256: digest }) }
 }
 
 async function owned(directory: string): Promise<Owned> {
@@ -399,9 +412,41 @@ export function createInstaller(options: InstallerOptions = {}) {
     return op
   }
 
-  async function prepare(request: InstallRequest): Promise<InstallPreview & { token: string }> {
-    if (closed) throw new InstallError("conflict", "Extension installer is closed")
+  async function prepare(
+    request: InstallRequest,
+    stagedRelease?: StagedRelease,
+    stagedArchive?: { path: string },
+  ): Promise<InstallPreview & { token: string }> {
     if (!request || typeof request !== "object" || !["install", "update", "uninstall"].includes(request.kind)) invalid()
+    if (
+      stagedArchive &&
+      (request.kind === "uninstall" ||
+        !("source" in request) ||
+        request.source?.type !== "archive" ||
+        typeof stagedArchive.path !== "string" ||
+        !path.isAbsolute(stagedArchive.path))
+    )
+      invalid("Invalid staged archive request")
+    if (stagedRelease) {
+      if (
+        request.kind === "uninstall" ||
+        (request.kind === "install" && request.source?.type !== "release") ||
+        (request.kind === "update" && request.target !== "release-current")
+      )
+        invalid("Invalid staged release request")
+      if (
+        typeof stagedRelease.descriptor === "string" &&
+        Buffer.byteLength(stagedRelease.descriptor, "utf8") > 64 * 1024
+      )
+        invalid("Release descriptor exceeds the 64 KiB download limit")
+      if (
+        typeof stagedRelease.descriptor !== "string" ||
+        typeof stagedRelease.path !== "string" ||
+        !path.isAbsolute(stagedRelease.path)
+      )
+        invalid("Invalid staged release request")
+    }
+    if (closed) throw new InstallError("conflict", "Extension installer is closed")
     if (request.kind === "update" && ["source", "version", "target"].filter((key) => key in request).length !== 1)
       invalid("Choose one update target")
     await sweep()
@@ -410,7 +455,14 @@ export function createInstaller(options: InstallerOptions = {}) {
     }
     preparing++
     const id = randomUUID()
-    const binding = hash(JSON.stringify(request))
+    const binding = hash(
+      JSON.stringify({
+        request,
+        ...(stagedRelease
+          ? { release: { url: stagedRelease.url, descriptorSha256: hash(stagedRelease.descriptor) } }
+          : {}),
+      }),
+    )
     const nonce = randomBytes(32).toString("hex")
     let token = `${nonce}.${createHmac("sha256", epoch).update(`${id}\0${binding}\0${nonce}`).digest("hex")}`
     const op: Operation = {
@@ -441,6 +493,10 @@ export function createInstaller(options: InstallerOptions = {}) {
           { flag: "wx", mode: 0o600 },
         )
         const signal = AbortSignal.timeout(TIMEOUT)
+        log.info("prepare started", {
+          kind: request.kind,
+          sourceType: "source" in request ? request.source?.type : undefined,
+        })
         let source: InstallSource | undefined
         let previous: RegistryRow | undefined
         let old: Loaded | undefined
@@ -497,12 +553,33 @@ export function createInstaller(options: InstallerOptions = {}) {
           let input: Uint8Array
           let release: Awaited<ReturnType<typeof resolveRelease>> | undefined
           if (source.type === "release") {
-            release = await (options.resolveRelease ?? resolveRelease)(source.url, { signal })
-            input = await (options.download ?? downloadArchive)({
-              url: release.artifact.url,
-              sha256: release.artifact.sha256,
-              signal,
-            })
+            if (stagedRelease) {
+              if (normalizeReleaseUrl(stagedRelease.url) !== source.url) invalid("Release descriptor source mismatch")
+              let descriptor: ReturnType<typeof parseReleaseDescriptor>
+              try {
+                descriptor = parseReleaseDescriptor(JSON.parse(stagedRelease.descriptor))
+              } catch {
+                invalid("Release descriptor does not match schema version 1")
+              }
+              release = { ...descriptor, descriptor: source.url, descriptorSha256: hash(stagedRelease.descriptor) }
+              input = await (options.readLocal ?? readLocalArchive)({
+                file: stagedRelease.path,
+                sha256: descriptor.artifact.sha256,
+                signal,
+              })
+              log.info("staged release verified", {
+                kind: request.kind,
+                extensionID: release.id,
+                version: release.version,
+              })
+            } else {
+              release = await (options.resolveRelease ?? resolveRelease)(source.url, { signal })
+              input = await (options.download ?? downloadArchive)({
+                url: release.artifact.url,
+                sha256: release.artifact.sha256,
+                signal,
+              })
+            }
           } else if (source.type === "npm") {
             op.npm = await (options.resolveNpm ?? resolveNpm)(source.spec, {
               transport: requestJson,
@@ -516,13 +593,25 @@ export function createInstaller(options: InstallerOptions = {}) {
             })
           } else if (source.type === "local") {
             input = await (options.readLocal ?? readLocalArchive)({ file: source.path, sha256: source.sha256, signal })
+          } else if (stagedArchive) {
+            input = await (options.readLocal ?? readLocalArchive)({
+              file: stagedArchive.path,
+              sha256: source.sha256,
+              signal,
+            })
           } else input = await (options.download ?? downloadArchive)({ url: source.url, sha256: source.sha256, signal })
           signal.throwIfAborted()
+          log.info("archive received", { kind: request.kind, sourceType: source.type, bytes: input.byteLength })
           if (!(input instanceof Uint8Array) || input.byteLength > archiveLimits.compressedBytes)
             invalid("Archive compressed size limit exceeded")
           const expectedDigest =
             source.type === "release" ? release!.artifact.sha256 : source.type === "npm" ? undefined : source.sha256
-          if (expectedDigest && hash(input) !== expectedDigest) invalid("Archive integrity mismatch")
+          const actualDigest = hash(input)
+          if (expectedDigest && actualDigest !== expectedDigest) invalid("Archive integrity mismatch")
+          if (source.type === "archive" || source.type === "local") {
+            log.info("archive digest pinned", { sourceType: source.type, expectedDigestProvided: !!expectedDigest })
+            source = { ...source, sha256: actualDigest }
+          }
           const candidate = path.join(stage, "package")
           await extract({ input, directory: candidate, signal, policy: source.type === "npm" ? "npm" : "archive" })
           if (op.npm) await validateNpmRoot(op.npm, candidate, signal)
@@ -599,12 +688,33 @@ export function createInstaller(options: InstallerOptions = {}) {
           .digest("hex")}`
         op.tokenHash = tokenDigest(id, token)
         await record(op, "prepared")
+        log.info("preview prepared", { kind: op.kind, extensionID: op.preview!.id, version: op.preview!.version })
         return { ...clone(op.preview!), token }
       })
     } catch (error) {
+      // Never log raw transport errors, request URLs, paths or capabilities.
+      log.warn("prepare failed", {
+        kind: request.kind,
+        category:
+          error instanceof ArchiveDownloadError
+            ? "download"
+            : error instanceof InstallError
+              ? "installation"
+              : "internal",
+        code: error instanceof ArchiveDownloadError || error instanceof InstallError ? error.code : "unknown",
+      })
       operations.delete(id)
       await finishOperation(op)
       if (error instanceof InstallError) throw error
+      if (error instanceof ArchiveDownloadError) {
+        const message =
+          error.code === "address"
+            ? "Archive download blocked by non-public DNS (proxy/fake-IP). Use desktop archive download or a local .tgz file."
+            : error.code === "integrity"
+              ? "Archive SHA-256 verification failed; no extension was installed"
+              : "Archive download failed; check the network/proxy or use a local .tgz file"
+        throw new InstallError("failed", message)
+      }
       throw new InstallError("failed", "Extension preparation failed; no extension was installed")
     } finally {
       preparing--
@@ -626,6 +736,7 @@ export function createInstaller(options: InstallerOptions = {}) {
       if (input.acceptRegistryUpgrade !== undefined && typeof input.acceptRegistryUpgrade !== "boolean")
         invalid("Invalid registry upgrade confirmation")
       const preview = op.preview
+      log.info("commit started", { kind: op.kind, extensionID: preview.id, version: preview.version })
       if (preview.registryUpgrade && input.acceptRegistryUpgrade !== true)
         throw new InstallError("conflict", "Registry format upgrade requires explicit confirmation")
       const receipt: OperationReceipt = {
@@ -754,6 +865,7 @@ export function createInstaller(options: InstallerOptions = {}) {
             )
           }
           committed = true
+          log.info("registry commit durable", { kind: op.kind, extensionID: preview.id, version: preview.version })
         } catch (error) {
           // A failed response is not proof that the atomic registry write did not persist.
           let durable: OperationReceipt | undefined
@@ -820,6 +932,12 @@ export function createInstaller(options: InstallerOptions = {}) {
           op.result.warnings.push(
             "Data purge is deferred until safe lifecycle coordination; settings and data were retained",
           )
+        log.info("runtime coordination finished", {
+          kind: op.kind,
+          extensionID: preview.id,
+          synced: op.result.synced,
+          cleanupPending: op.result.cleanupPending,
+        })
         await record(op, "committed").catch(() => {
           op.result!.warnings.push("Commit persisted; operation journal update failed")
         })
@@ -903,7 +1021,16 @@ export function createInstaller(options: InstallerOptions = {}) {
       ),
     )
   }
-  return { prepare, commit, status, cancel, close }
+  return {
+    prepare: (request: InstallRequest) => prepare(request),
+    // Only the desktop's private IPC bridge can supply staged release bytes.
+    prepareRelease: (request: InstallRequest, release: StagedRelease) => prepare(request, release),
+    prepareArchive: (request: InstallRequest, archive: { path: string }) => prepare(request, undefined, archive),
+    commit,
+    status,
+    cancel,
+    close,
+  }
 }
 
 export * as ExtensionInstall from "./install"

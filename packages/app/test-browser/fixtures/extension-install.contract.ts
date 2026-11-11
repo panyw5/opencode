@@ -82,6 +82,8 @@ function mount(
     result?: InstallationResult
     status?: InstallationStatus
     failCommit?: boolean
+    prepareError?: Error
+    localDigest?: string
     enabled?: boolean
     busy?: boolean
     dirty?: boolean
@@ -100,6 +102,7 @@ function mount(
   const operations: InstallationOperations = {
     prepareInstallation: async (request) => {
       calls.prepare.push(request)
+      if (options.prepareError) throw options.prepareError
       return options.prepared ?? preview(request.kind)
     },
     commitInstallation: async (prepared, input) => {
@@ -124,6 +127,14 @@ function mount(
         intent: options.intent ?? { kind: "install" },
         operations,
         language,
+        localArchiveBridge: options.localDigest
+          ? {
+              digest: async (path: string) => ({
+                ok: true as const,
+                value: { path, size: 100, sha256: options.localDigest! },
+              }),
+            }
+          : undefined,
         connection,
         enabled: options.enabled,
         get busy() {
@@ -184,6 +195,28 @@ const prepare = async (app: App) => {
 }
 
 describe("extension installation UI contracts", () => {
+  test("preview failures show curated diagnostics but never raw transport credentials", async () => {
+    for (const [error, expected] of [
+      [new Error("Extension is already installed"), "config.extensions.install.diagAlreadyInstalled"],
+      [
+        new Error("Release descriptor is not valid JSON; use a raw stable.json URL, not a web page"),
+        "config.extensions.install.diagDescriptorJson",
+      ],
+      [new Error("transport failed private-capability Authorization: secret"), undefined],
+    ] as const) {
+      const app = mount({ prepareError: error })
+      try {
+        await prepare(app)
+        expect(app.container.querySelector('[role="alert"]')?.textContent).toContain("config.extensions.install.failed")
+        expect(app.container.querySelector("[data-install-diagnostic]")?.textContent).toBe(expected)
+        expect(app.container.textContent).not.toContain("private-capability")
+        expect(app.container.textContent).not.toContain("Authorization")
+      } finally {
+        app.dispose()
+      }
+    }
+  })
+
   test("prepare sits beside the source input at matching height and remains available for uninstall", () => {
     const app = mount({ intent: { kind: "update", id: "test.viewer", source: npmSource } })
     const uninstall = mount({ intent: { kind: "uninstall", id: "test.viewer" } })
@@ -202,6 +235,12 @@ describe("extension installation UI contracts", () => {
         expect(row.classList.contains("items-end")).toBe(true)
         expect(row.lastElementChild).toBe(action)
         expect(action.style.height).toBe("34px")
+        const hint = app.container.querySelector('[data-field="release-hint"]')
+        if (source === "release") {
+          expect(hint).not.toBeNull()
+          expect(row.contains(hint)).toBe(false)
+          expect(row.nextElementSibling).toBe(hint)
+        }
         expect(app.container.querySelectorAll('[data-action="extension-install-prepare"]')).toHaveLength(1)
       }
       expect(uninstall.container.querySelector('[data-field="installation-source"]')).toBeNull()
@@ -217,12 +256,16 @@ describe("extension installation UI contracts", () => {
       await prepare(app)
       expect(app.calls.prepare).toEqual([{ kind: "install", source: { type: "npm", spec: "@test/viewer@2.0.0" } }])
       expect(app.calls.commit).toHaveLength(0)
-      expect(app.container.textContent).toContain("permissionsAdded")
-      expect(app.container.textContent).toContain("permissionsRemoved")
+      expect(app.container.textContent).not.toContain("permissionsAdded")
+      expect(app.container.textContent).not.toContain("permissionsRemoved")
       expect(app.container.textContent).toContain("fs:read")
-      expect(app.container.textContent).toContain("net:fetch")
+      expect(app.container.textContent).not.toContain("net:fetch")
       expect(app.container.textContent).toContain("unverified")
-      expect(app.container.querySelector('[data-preview="contributes"]')?.textContent).toContain("commands: 1")
+      const contributions = app.container.querySelector('[data-preview="contributes"]')!
+      expect(contributions.querySelectorAll("dt")).toHaveLength(5)
+      expect(contributions.querySelectorAll("dd")[2]?.textContent).toBe("1")
+      expect(button(app, "confirm").closest("[data-install-footer]")).not.toBeNull()
+      expect(app.container.querySelector("[data-install-scroll]")?.contains(button(app, "confirm"))).toBe(false)
       expect(app.container.querySelector<HTMLInputElement>('[data-field="enable"] input')?.checked).toBe(false)
       expect(app.container.innerHTML).not.toContain("private-capability")
       button(app, "confirm").click()
@@ -261,7 +304,12 @@ describe("extension installation UI contracts", () => {
       const review = app.container.querySelector('[data-preview="release-integrity"]')!
       expect(review.textContent).toContain("cdn.example")
       expect(review.textContent).toContain("integrityMatched")
-      expect(review.textContent).toContain("publisherUnsigned")
+      expect(app.container.querySelector('[data-preview="source"] [data-component="extension-card"]')).not.toBeNull()
+      expect(
+        app.container.querySelector('[data-preview="contributes"] [data-component="extension-card"]'),
+      ).not.toBeNull()
+      expect(app.container.textContent).not.toContain("permissionsAdded")
+      expect(app.container.textContent).not.toContain("permissionsRemoved")
       expect(app.container.querySelector('[data-field="accept-registry-upgrade"]')).toBeNull()
       expect(button(app, "confirm").disabled).toBe(false)
       expect(app.container.innerHTML).not.toContain("private-capability")
@@ -269,7 +317,7 @@ describe("extension installation UI contracts", () => {
       app.dispose()
     }
   })
-  test("registry upgrade requires a separate initially unchecked consent, resets on every prepare, and submits true", async () => {
+  test("registry upgrade is handled internally on install and update without a technical consent checkbox", async () => {
     for (const kind of ["install", "update"] as const) {
       const prepared = releasePreview(kind)
       const app = mount({
@@ -280,20 +328,13 @@ describe("extension installation UI contracts", () => {
         if (kind === "install") type(app, "releaseUrl", "https://publisher.example/viewer/stable.json")
         button(app, "prepare").click()
         await tick()
-        const checkbox = () =>
-          app.container.querySelector<HTMLInputElement>('[data-field="accept-registry-upgrade"] input')!
-        expect(checkbox().checked).toBe(false)
-        expect(button(app, "confirm").disabled).toBe(true)
-        button(app, "confirm").click()
-        expect(app.calls.commit).toHaveLength(0)
-        checkbox().click()
+        expect(app.container.querySelector('[data-field="accept-registry-upgrade"]')).toBeNull()
+        expect(app.container.querySelector('[data-preview="registry-upgrade"]')).toBeNull()
         expect(button(app, "confirm").disabled).toBe(false)
         button(app, "back").click()
         button(app, "prepare").click()
         await tick()
-        expect(checkbox().checked).toBe(false)
-        expect(button(app, "confirm").disabled).toBe(true)
-        checkbox().click()
+        expect(button(app, "confirm").disabled).toBe(false)
         button(app, "confirm").click()
         await tick()
         expect(app.calls.commit).toHaveLength(1)
@@ -366,7 +407,7 @@ describe("extension installation UI contracts", () => {
       container.remove()
     }
   })
-  test("release late prepare and consent cannot survive close, server switch, dirty, or saving", async () => {
+  test("release late prepare cannot survive close, server switch, dirty, or saving", async () => {
     for (const invalidate of ["close", "server", "dirty", "saving"] as const) {
       const gate = deferred<PreparedInstallation>()
       const app = mount({ prepared: gate.promise })
@@ -391,7 +432,7 @@ describe("extension installation UI contracts", () => {
       }
     }
   })
-  test("release lost commit uses status and preserves the original consent-bound capability", async () => {
+  test("release lost commit uses status and preserves the original capability", async () => {
     const prepared = releasePreview()
     const { token: _token, ...fields } = prepared
     const app = mount({
@@ -403,7 +444,6 @@ describe("extension installation UI contracts", () => {
       type(app, "releaseUrl", "https://publisher.example/viewer/stable.json")
       button(app, "prepare").click()
       await tick()
-      app.container.querySelector<HTMLInputElement>('[data-field="accept-registry-upgrade"] input')!.click()
       button(app, "confirm").click()
       await tick()
       expect(app.container.querySelector('[data-result="unknown"]')).not.toBeNull()
@@ -423,32 +463,57 @@ describe("extension installation UI contracts", () => {
       app.dispose()
     }
   })
-  test("archive accepts HTTPS plus SHA-256 only and never accepts local/upload input", async () => {
+  test("archive needs only an HTTPS URL, never a user checksum or local/upload input", async () => {
     const app = mount()
     try {
       select(app, "archive")
       type(app, "url", "http://localhost/test.tgz")
-      type(app, "sha256", "a".repeat(64))
+      expect(app.container.querySelector('input[aria-label="config.extensions.install.sha256"]')).toBeNull()
       button(app, "prepare").click()
       await tick()
       expect(app.calls.prepare).toHaveLength(0)
       type(app, "url", "https://example.com/test.tgz")
-      type(app, "sha256", "bad")
-      button(app, "prepare").click()
-      await tick()
-      expect(app.calls.prepare).toHaveLength(0)
-      type(app, "sha256", "A".repeat(64))
       button(app, "prepare").click()
       await tick()
       expect(app.calls.prepare[0]).toEqual({
         kind: "install",
-        source: { type: "archive", url: "https://example.com/test.tgz", sha256: "a".repeat(64) },
+        source: { type: "archive", url: "https://example.com/test.tgz" },
       })
       expect(app.container.querySelector('input[type="file"]')).toBeNull()
     } finally {
       app.dispose()
     }
   })
+  test("local file digests are automatic and never leak into a later URL source", async () => {
+    const app = mount({
+      intent: { kind: "install", localArchive: { path: "/tmp/fixture.tgz" } },
+      localDigest: "a".repeat(64),
+    })
+    try {
+      expect(button(app, "prepare").disabled).toBe(true)
+      expect(app.container.querySelector('input[aria-label="config.extensions.install.sha256"]')).toBeNull()
+      await tick()
+      expect(button(app, "prepare").disabled).toBe(false)
+      button(app, "prepare").click()
+      await tick()
+      expect(app.calls.prepare[0]).toEqual({
+        kind: "install",
+        source: { type: "local", path: "/tmp/fixture.tgz", sha256: "a".repeat(64) },
+      })
+      button(app, "back").click()
+      select(app, "archive")
+      type(app, "url", "https://example.com/different.tgz")
+      button(app, "prepare").click()
+      await tick()
+      expect(app.calls.prepare[1]).toEqual({
+        kind: "install",
+        source: { type: "archive", url: "https://example.com/different.tgz" },
+      })
+    } finally {
+      app.dispose()
+    }
+  })
+
   test("update version preview explicitly shows downgrade and previous version", async () => {
     const app = mount({ intent: { kind: "update", id: "test.viewer", source: npmSource } })
     try {
@@ -459,6 +524,12 @@ describe("extension installation UI contracts", () => {
       expect(app.calls.prepare).toEqual([{ kind: "update", id: "test.viewer", version: "2.0.0" }])
       expect(app.container.querySelector('[data-preview="versions"]')?.textContent).toBe("3.0.0 → 2.0.0")
       expect(app.container.querySelector('[data-preview="version-change"]')?.textContent).toContain("downgrade")
+      const permissions = app.container.querySelector('[data-preview="permissions"]')!
+      expect(permissions.textContent).toContain("permissionsAdded")
+      expect(permissions.textContent).toContain("permissionsRemoved")
+      expect(permissions.textContent).toContain("net:fetch")
+      expect(permissions.querySelectorAll('[data-component="extension-card"]')).toHaveLength(3)
+      expect(button(app, "confirm").closest("[data-install-footer]")).not.toBeNull()
     } finally {
       app.dispose()
     }
@@ -616,6 +687,9 @@ describe("extension installation UI contracts", () => {
     const submitted = mount({ committed: commitGate.promise })
     await prepare(submitted)
     button(submitted, "confirm").click()
+    submitted.setBusy(true)
+    expect(submitted.container.textContent).not.toContain("config.extensions.install.blocked")
+    expect(button(submitted, "confirm").textContent).toBe("config.extensions.install.busy")
     submitted.closed()
     commitGate.resolve(result())
     await tick()

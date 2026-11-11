@@ -59,6 +59,7 @@ import { reconcileExtensions } from "./reconcile"
 import { createExtensionReadiness } from "./readiness"
 import { registerExtensionPanel, type ExtensionPanelProps } from "./panel-registry"
 import { safeModeFromURL } from "./safe-mode"
+import { createDesktopArchiveOperations } from "./install-desktop"
 import type { CommandDeclaration, ExtensionInfo, ExtensionStatusEvent, PanelDeclaration } from "./types"
 
 // Re-exported so UI callers can catch stale toggle/settings responses from the
@@ -74,6 +75,8 @@ export type ExtensionHost = {
   ready(): boolean
   whenReady(): Promise<void>
   extensions(): ExtensionInfo[]
+  /** A failed list is not an empty registry; suppress not-installed claims. */
+  listError?(): boolean
   updateSettings(id: string, patch: Record<string, unknown>): Promise<ExtensionInfo>
   // Toggles the persisted enabled flag and reconciles the host with the
   // response. `synced` is false when the follow-up strict re-read failed: the
@@ -124,7 +127,41 @@ export function ExtensionHostProvider(props: ParentProps) {
   const server = useServer()
   const location = useLocation()
   const api = createExtensionApi({ globalSDK })
+  const [listError, setListError] = createSignal(false)
   const installationApi = createInstallationApi(globalSDK)
+  const desktopArchiveAvailable = () =>
+    server.current?.type === "sidecar" &&
+    server.current.variant === "base" &&
+    !!platform.extensionArchiveOp &&
+    !!platform.extensionArchiveStage &&
+    !!platform.extensionArchiveCleanup
+  const installationOperations = createDesktopArchiveOperations({
+    fallback: {
+      prepareInstallation: installationApi.prepare,
+      commitInstallation: installationApi.commit,
+      installationStatus: installationApi.status,
+      cancelInstallation: installationApi.cancel,
+    },
+    bridge: {
+      invoke: (op, payload) => platform.extensionArchiveOp!(op, payload),
+      stage: (bytes) => platform.extensionArchiveStage!(bytes),
+      cleanup: (path) => Promise.resolve(platform.extensionArchiveCleanup!(path)),
+    },
+    local: desktopArchiveAvailable,
+    connection: () => globalSDK.client,
+    releaseURL: (id) => {
+      const source = manifests().find((item) => item.id === id)?.source
+      return source?.type === "release" ? source.descriptor : undefined
+    },
+    download: async (url) => {
+      if (!platform.extensionArchiveDownload)
+        throw new Error("Archive download failed; check the network/proxy or use a local .tgz file")
+      const result = await platform.extensionArchiveDownload(url)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.value.bytes
+    },
+    fetch: platform.fetch,
+  })
   // Authenticated transport for the extension server bridge (P2). Credentials
   // come from the current server connection, matching how the SDK client and
   // the raw file fetch authorize; platform.fetch keeps Desktop proxying intact.
@@ -509,6 +546,8 @@ export function ExtensionHostProvider(props: ParentProps) {
   let activeServerURL = globalSDK.url
   let activeClient = globalSDK.client
   let connectionCleanup = Promise.resolve()
+  let refreshRetry: ReturnType<typeof setTimeout> | undefined
+  let refreshFailures = 0
   const refresh = async (options?: { strict?: boolean }) => {
     const stale = () => {
       if (options?.strict) throw new ExtensionMutationStaleError("Extension refresh was superseded")
@@ -525,6 +564,11 @@ export function ExtensionHostProvider(props: ParentProps) {
         syncMutating()
         activeServerURL = scope.url
         activeClient = scope.client
+        clearTimeout(refreshRetry)
+        refreshRetry = undefined
+        refreshFailures = 0
+        setListError(false)
+        console.info("[extension-host] connection changed; manifest retry reset")
         const previousCleanup = connectionCleanup
         connectionCleanup = (async () => {
           await previousCleanup
@@ -547,6 +591,17 @@ export function ExtensionHostProvider(props: ParentProps) {
         (error) => {
           const message = error instanceof Error ? error.message : String(error)
           console.warn(`[extension-host] manifest refresh failed error=${message}`)
+          if (!isStale()) setListError(true)
+          // A transient startup/reconnect failure must not permanently turn all
+          // installed extensions into catalog entries. Retry with bounded backoff.
+          if (!isStale() && !refreshRetry && refreshFailures < 5) {
+            const delay = Math.min(1000 * 2 ** refreshFailures++, 30_000)
+            console.info(`[extension-host] manifest retry scheduled delay=${delay}`)
+            refreshRetry = setTimeout(() => {
+              refreshRetry = undefined
+              if (!disposed && readiness.isCurrent(scope)) void refresh().catch(() => {})
+            }, delay)
+          }
           // Strict callers (post-toggle sync) need the failure to propagate so
           // a swallowed list error cannot turn into a false-green result.
           if (options?.strict) throw error
@@ -555,6 +610,10 @@ export function ExtensionHostProvider(props: ParentProps) {
       )
       if (isStale()) return stale()
       if (!list) return
+      clearTimeout(refreshRetry)
+      refreshRetry = undefined
+      refreshFailures = 0
+      setListError(false)
       const applied = await reconcile(list, epoch, scope)
       if (!applied || isStale()) return stale()
     } finally {
@@ -645,6 +704,7 @@ export function ExtensionHostProvider(props: ParentProps) {
 
   onCleanup(() => {
     disposed = true
+    clearTimeout(refreshRetry)
     readiness.dispose()
     stop()
     // Invalidate any in-flight refresh/reconcile so a pass parked on a slow
@@ -736,7 +796,10 @@ export function ExtensionHostProvider(props: ParentProps) {
     }
   }
 
-  const preparedConnections = new WeakMap<PreparedInstallation, { url: string; client: typeof globalSDK.client }>()
+  const preparedConnections = new WeakMap<
+    PreparedInstallation,
+    { url: string; client: typeof globalSDK.client; desktop: boolean }
+  >()
   const requireInstallationConnection = (prepared: PreparedInstallation) => {
     const connection = preparedConnections.get(prepared)
     if (disposed || !connection || globalSDK.url !== connection.url || globalSDK.client !== connection.client) {
@@ -746,14 +809,23 @@ export function ExtensionHostProvider(props: ParentProps) {
   }
   const prepareInstallation = async (request: InstallationRequest) => {
     if (mode().disabled) throw new Error("Extension installation is unavailable in safe mode")
-    const connection = { url: globalSDK.url, client: globalSDK.client }
+    const connection = {
+      url: globalSDK.url,
+      client: globalSDK.client,
+      desktop:
+        desktopArchiveAvailable() &&
+        (("source" in request && (request.source?.type === "archive" || request.source?.type === "release")) ||
+          (request.kind === "update" && "target" in request && request.target === "release-current")),
+    }
     const release = beginMutation("id" in request ? request.id : "@installation", connection.url)
     try {
-      const prepared = await installationApi.prepare(request)
+      const prepared = await installationOperations.prepareInstallation(request)
       if (disposed || globalSDK.url !== connection.url || globalSDK.client !== connection.client) {
-        await createInstallationApi({ client: connection.client })
-          .cancel(prepared)
-          .catch(() => {})
+        await (
+          connection.desktop
+            ? installationOperations.cancelInstallation(prepared)
+            : createInstallationApi({ client: connection.client }).cancel(prepared)
+        ).catch(() => {})
         throw new ExtensionMutationStaleError("Extension server changed during installation preparation")
       }
       preparedConnections.set(prepared, connection)
@@ -767,7 +839,7 @@ export function ExtensionHostProvider(props: ParentProps) {
     const connection = requireInstallationConnection(prepared)
     const release = beginMutation(prepared.id, connection.url)
     try {
-      const result = await installationApi.commit(prepared, input)
+      const result = await installationOperations.commitInstallation(prepared, input)
       requireInstallationConnection(prepared)
       await synchronizeInstallation(result, () => refresh({ strict: true }))
       requireInstallationConnection(prepared)
@@ -778,7 +850,7 @@ export function ExtensionHostProvider(props: ParentProps) {
   }
   const installationStatus = async (prepared: PreparedInstallation) => {
     requireInstallationConnection(prepared)
-    const status = await installationApi.status(prepared)
+    const status = await installationOperations.installationStatus(prepared)
     requireInstallationConnection(prepared)
     await synchronizeInstallation(status, () => refresh({ strict: true }))
     requireInstallationConnection(prepared)
@@ -789,7 +861,9 @@ export function ExtensionHostProvider(props: ParentProps) {
     if (!connection) throw new ExtensionMutationStaleError("Unknown extension preparation")
     // Closing a preview after switching servers must cancel on its original
     // client, never redirect the capability to the newly connected server.
-    return createInstallationApi({ client: connection.client }).cancel(prepared)
+    return connection.desktop
+      ? installationOperations.cancelInstallation(prepared)
+      : createInstallationApi({ client: connection.client }).cancel(prepared)
   }
 
   const value: ExtensionHost = {
@@ -799,6 +873,7 @@ export function ExtensionHostProvider(props: ParentProps) {
     ready,
     whenReady: readiness.whenReady,
     extensions: manifests,
+    listError,
     updateSettings: updateSettingsByID,
     setEnabled: setEnabledByID,
     mutating: (id) => mutatingIDs().has(id),
