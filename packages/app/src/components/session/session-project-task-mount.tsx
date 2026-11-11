@@ -53,13 +53,6 @@ export function SessionProjectTaskMount(props: {
   // Existing session: server state. New session: local pending selection.
   const pending = createMemo(() => pendingProjectTaskMount(directory()))
   const mountedID = createMemo(() => session()?.mountedTaskID ?? pending().taskID)
-  // Product default: inject ON. Missing/undefined → true (legacy events / new session).
-  const injectContext = createMemo(() => {
-    if (!sessionID()) return pending().inject
-    const value = session()?.injectTaskContext
-    if (value === undefined || value === null) return true
-    return !!value
-  })
   const mountedTitle = createMemo(() => {
     const id = mountedID()
     if (!id) return undefined
@@ -76,7 +69,7 @@ export function SessionProjectTaskMount(props: {
     openPresentedTask({ sessionID: id, kind: "project_task", taskID })
   }
 
-  /** Optimistic local patch so the checkbox reflects mount/inject without waiting for SSE. */
+  /** Optimistic local patch so the mounted task updates without waiting for SSE. */
   const patchSession = (sessionID: string, patch: Partial<Session>) => {
     sync.set(
       produce((draft) => {
@@ -141,10 +134,8 @@ export function SessionProjectTaskMount(props: {
   async function mount(taskID: string) {
     const id = sessionID()
     if (!id) {
-      // New session: stash selection; inject defaults ON unless user already toggled it off.
-      const inject = pending().inject
-      setPendingProjectTaskMount(directory(), { taskID, inject })
-      console.log(`[project-task-mount] pending select task=${taskID} inject=${inject} directory=${directory()}`)
+      setPendingProjectTaskMount(directory(), { taskID, inject: true })
+      console.log(`[project-task-mount] pending select task=${taskID} inject=true directory=${directory()}`)
       setState("open", false)
       return
     }
@@ -154,7 +145,7 @@ export function SessionProjectTaskMount(props: {
         sessionID: id,
         projectTaskMountInput: { taskID },
       })
-      // Mount enables inject server-side; patch local store so the checkbox is checked immediately.
+      // Mount enables context injection server-side.
       patchSession(id, { mountedTaskID: taskID, injectTaskContext: true })
       console.log(`[project-task-mount] mounted task=${taskID} session=${id} inject=true`)
       setState("open", false)
@@ -182,31 +173,6 @@ export function SessionProjectTaskMount(props: {
       await sdk.client.projectTask.unmount({ sessionID: id })
       patchSession(id, { mountedTaskID: undefined })
       setState("open", false)
-    } catch (error) {
-      showToast({
-        variant: "error",
-        title: language.t("common.requestFailed"),
-        description: error instanceof Error ? error.message : String(error),
-      })
-    } finally {
-      setState("pending", false)
-    }
-  }
-
-  async function setInject(enabled: boolean) {
-    const id = sessionID()
-    if (!id) {
-      setPendingProjectTaskMount(directory(), { inject: enabled })
-      console.log(`[project-task-mount] pending inject=${enabled} directory=${directory()}`)
-      return
-    }
-    setState({ pending: true, error: "" })
-    try {
-      await sdk.client.session.update({
-        sessionID: id,
-        injectTaskContext: enabled,
-      })
-      patchSession(id, { injectTaskContext: enabled })
     } catch (error) {
       showToast({
         variant: "error",
@@ -291,12 +257,7 @@ export function SessionProjectTaskMount(props: {
                     size="small"
                     class={mountedID() === task.id ? "text-icon-brand-base" : "text-icon-weak"}
                   />
-                  <div class="min-w-0 flex-1">
-                    <DropdownMenu.ItemLabel class="truncate">{task.title}</DropdownMenu.ItemLabel>
-                    <div class="truncate text-11-regular text-text-weaker">
-                      {task.progress.total > 0 ? `${task.progress.completed}/${task.progress.total}` : task.status}
-                    </div>
-                  </div>
+                  <DropdownMenu.ItemLabel class="min-w-0 flex-1 truncate">{task.title}</DropdownMenu.ItemLabel>
                 </DropdownMenu.Item>
               )}
             </For>
@@ -333,19 +294,6 @@ export function SessionProjectTaskMount(props: {
             />
           </Show>
         </div>
-        <label class="mt-1 flex cursor-pointer items-start gap-2 rounded-lg border border-border-weak-base bg-background-base px-3 py-2">
-          <input
-            type="checkbox"
-            class="mt-0.5"
-            checked={injectContext()}
-            disabled={state.pending || !mountedID()}
-            onChange={(event) => void setInject(event.currentTarget.checked)}
-          />
-          <span class="min-w-0">
-            <span class="block text-12-medium text-text-strong">{language.t("projectTask.inject.title")}</span>
-            <span class="block text-11-regular text-text-weak">{language.t("projectTask.inject.hint")}</span>
-          </span>
-        </label>
       </div>
     </Show>
   )

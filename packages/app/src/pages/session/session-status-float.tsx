@@ -8,6 +8,7 @@ import type { SnapshotFileDiff } from "@opencode-ai/sdk/v2"
 import type { Part } from "@opencode-ai/sdk/v2/client"
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import { SessionContextUsage } from "@/components/session-context-usage"
+import { SessionProjectTaskMount } from "@/components/session/session-project-task-mount"
 import { useFile } from "@/context/file"
 import { useLanguage } from "@/context/language"
 import { useGlobalSync } from "@/context/global-sync"
@@ -209,11 +210,13 @@ export function SessionStatusFloat(props: {
           <>
             <Icon name="status" size="small" class="text-icon-weak" />
             <span>{language.t("session.status.button")}</span>
-            <span class="mx-0.5 inline-block size-0.5 rounded-full bg-border-weak-base" />
-            <SessionContextUsage variant="capsule" />
+            <Show when={props.sessionID}>
+              <span class="mx-0.5 inline-block size-0.5 rounded-full bg-border-weak-base" />
+              <SessionContextUsage variant="capsule" />
+            </Show>
           </>
         }
-        class="w-[500px] max-w-[calc(100vw-24px)] overflow-hidden rounded-xl border border-border-base bg-surface-raised-stronger p-0 shadow-xl"
+        class="w-[500px] max-w-[calc(100vw-24px)] overflow-hidden rounded-xl border border-border-base bg-surface-raised-stronger p-0"
         style={{
           "max-height": "min(960px, calc(100dvh - 24px))",
         }}
@@ -252,6 +255,12 @@ export function SessionStatusFloat(props: {
             />
           </div>
           <div class="min-h-0 overflow-y-auto no-scrollbar">
+            <div class="border-b border-border-weaker-base">
+              <SessionContextUsage variant="panel" />
+            </div>
+            <div class="border-b border-border-weaker-base">
+              <SessionProjectTaskMount variant="panel" onOpenTask={() => setShown(false)} />
+            </div>
             <div class="border-b border-border-weaker-base py-2">
               <h3 class="px-3 py-1 text-13-medium text-text-strong">{language.t("session.status.skills")}</h3>
               <Show
@@ -269,7 +278,6 @@ export function SessionStatusFloat(props: {
                 </ul>
               </Show>
             </div>
-            <SessionContextUsage variant="panel" />
             <Show when={hasFileChanges()}>
               <div data-slot="session-status-file-changes" class="border-b border-border-weaker-base px-3 py-3">
                 <div class="flex flex-col gap-3">

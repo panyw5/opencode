@@ -1,8 +1,10 @@
-import { For, Match, Show, Switch, createEffect, createMemo, createSignal } from "solid-js"
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal, on } from "solid-js"
+import { createStore } from "solid-js/store"
 import { Tooltip, type TooltipProps } from "@opencode-ai/ui/tooltip"
 import { type ProgressCircleProps, ProgressCircle } from "@opencode-ai/ui/progress-circle"
 import { Button } from "@opencode-ai/ui/button"
 import { Popover } from "@opencode-ai/ui/popover"
+import { Collapsible } from "@opencode-ai/ui/collapsible"
 
 import { useSync } from "@/context/sync"
 import { useLanguage } from "@/context/language"
@@ -50,6 +52,13 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
 
   const variant = createMemo(() => props.variant ?? "button")
   const [shown, setShown] = createSignal(false)
+  const [panel, setPanel] = createStore({ expanded: false })
+  createEffect(
+    on(
+      () => params.id,
+      () => setPanel("expanded", false),
+    ),
+  )
 
   const messages = createMemo(
     () => {
@@ -284,12 +293,32 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
       <Switch>
         <Match when={variant() === "panel"}>
           <div data-component="session-context-usage-panel" class="px-3 py-3">
-            <div class="flex items-center gap-2 pb-3">
-              <span class="text-13-medium text-text-strong">{language.t("session.status.contextUsage")}</span>
-              {circle()}
-              <span class="ml-auto text-13-medium text-text-weak tabular-nums">{contextUsageLabel()}</span>
-            </div>
-            {details()}
+            <Collapsible
+              variant="ghost"
+              open={panel.expanded}
+              onOpenChange={(expanded) => {
+                console.debug(`[session-context] details session=${params.id ?? "none"} expanded=${expanded}`)
+                setPanel("expanded", expanded)
+              }}
+            >
+              <Collapsible.Trigger data-action="session-context-details-toggle">
+                <div class="flex w-full items-center gap-2">
+                  <span class="text-13-medium text-text-strong">{language.t("session.status.contextUsage")}</span>
+                  <div class="flex min-w-0 items-center gap-1.5">
+                    {circle()}
+                    <span data-slot="session-context-token-summary" class="text-12-medium text-text-weak tabular-nums">
+                      ({formatter().number(context()?.total)} / {formatter().number(context()?.limit)})
+                    </span>
+                  </div>
+                  <Collapsible.Arrow class="ml-auto" style={{ opacity: 1 }} />
+                </div>
+              </Collapsible.Trigger>
+              <Collapsible.Content>
+                <div data-slot="session-context-details" class="pt-3">
+                  {details()}
+                </div>
+              </Collapsible.Content>
+            </Collapsible>
           </div>
         </Match>
         <Match when={variant() === "indicator"}>
@@ -325,7 +354,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
             placement={props.placement === "bottom" ? "bottom-end" : "top-end"}
           >
             <div
-              class="w-[min(380px,calc(100vw-40px))] rounded-xl overflow-hidden border border-border-weak-base shadow-[var(--shadow-lg-border-base)]"
+              class="w-[min(380px,calc(100vw-40px))] rounded-xl overflow-hidden border border-border-weak-base shadow-[var(--shadow-lg)]"
               style={{
                 "background-color":
                   platform.platform === "desktop" && platform.os === "windows"

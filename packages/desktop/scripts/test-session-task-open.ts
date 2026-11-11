@@ -43,12 +43,22 @@ await withCdp(async (cdp, target) => {
     await wait(`click ${selector}`, () => exists(selector))
     await cdp.evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`)
   }
+  const pointerClick = async (selector: string) => {
+    const point = await cdp.evaluate<{ x: number; y: number }>(`(() => {
+      const element = document.querySelector(${JSON.stringify(selector)});
+      if (!element) throw Error('Missing pointer target');
+      const rect = element.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    })()`)
+    await cdp.call("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 })
+    await cdp.call("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 })
+  }
   const navigate = (dir: string, sessionID?: string) =>
     cdp.evaluate(`window.__sessionTaskOpenNavigation = (async () => {
       const { handleNotificationClick } = await import(${JSON.stringify(`${source}/utils/notification-click.ts`)});
       handleNotificationClick(${JSON.stringify(`/${Buffer.from(dir).toString("base64url")}/session/${sessionID ?? ""}`)});
     })()`)
-  const float = '[data-component="session-todo-float"]'
+  const float = '[data-component="session-status-float"]'
   const panel = '[data-component="session-project-task-mount"]'
   const openButton = '[data-action="session-project-task-open"]'
   const rail = `[data-action="project-switch"][aria-label=${JSON.stringify(basename(directory))}]`
@@ -131,10 +141,74 @@ await withCdp(async (cdp, target) => {
     if (!(await exists(menu))) await click(rail)
     await click(`${float} > button`)
     await wait("unmounted panel", () => exists(panel))
+    const surface = await cdp.evaluate<{ border: string; shadow: string; outline: string }>(`(() => {
+      const content = document.querySelector('[data-slot="session-status-float-panel"]').closest('[data-component="popover-content"]');
+      const style = getComputedStyle(content);
+      return { border: style.borderTopWidth, shadow: style.boxShadow, outline: style.outlineStyle };
+    })()`)
+    log(`status surface border=${surface.border} shadow=${surface.shadow} outline=${surface.outline}`)
+    assert.equal(surface.border, "1px")
+    assert.equal(surface.outline, "none")
+    assert.equal(surface.shadow.includes("inset"), false, "status surface must not double its border with inset rings")
+    assert.notEqual(surface.shadow, "none", "status surface retains its outer shadow")
+    assert.ok(await cdp.evaluate(`(() => {
+      const context = document.querySelector('[data-component="session-context-usage-panel"]');
+      const task = document.querySelector('${panel}');
+      return !!context && !!task && context.getBoundingClientRect().bottom <= task.getBoundingClientRect().top;
+    })()`), "context usage appears above project task association")
+    log("PASS context usage appears before project task association")
     assert.equal(await exists(openButton), false)
+    assert.equal(await exists(`${panel} input[type="checkbox"]`), false, "context injection option removed")
+    assert.equal(await exists('[data-component="session-todo-float"]'), false, "standalone task capsule removed")
+    const contextToggle = '[data-action="session-context-details-toggle"]'
+    assert.equal(
+      await cdp.evaluate(`document.querySelector('${contextToggle}').getAttribute('aria-expanded')`),
+      "false",
+    )
+    assert.ok(await exists('[data-slot="session-context-token-summary"]'))
+    assert.ok(await cdp.evaluate(`(() => {
+      const trigger = document.querySelector('${contextToggle}');
+      const label = trigger.querySelector('span').getBoundingClientRect();
+      const usage = trigger.querySelector('[data-slot="session-context-token-summary"]').parentElement.getBoundingClientRect();
+      const arrow = trigger.querySelector('[data-slot="collapsible-arrow"]').getBoundingClientRect();
+      return usage.left >= label.right && usage.left - label.right <= 12 && arrow.left >= usage.right;
+    })()`), "usage summary follows its label without a large gap")
+    log("PASS context usage summary sits immediately after label")
+    assert.equal(await exists('[data-slot="session-context-details"]'), false)
+    await click(contextToggle)
+    await wait("context details expanded", () => exists('[data-slot="session-context-details"]'))
+    await click(contextToggle)
+    await wait("context details collapsed", async () => !(await exists('[data-slot="session-context-details"]')))
+    log("PASS context starts collapsed with token summary; details expand and collapse")
     log("PASS no linked task hides detail button")
-    await request(`/session/${sessionID}/project-task`, "PUT", { taskID })
+    await pointerClick(`${panel} [data-slot="dropdown-menu-trigger"]`)
+    await wait("task picker menu", () => exists('[data-slot="dropdown-menu-item"]'))
+    const menuSurface = await cdp.evaluate<{ border: string; shadow: string }>(`(() => {
+      const item = [...document.querySelectorAll('[data-slot="dropdown-menu-item"]')]
+        .find(el => el.textContent.includes('QA mounted task detail'));
+      const style = getComputedStyle(item.closest('[data-component="dropdown-menu-content"]'));
+      return { border: style.borderTopWidth, shadow: style.boxShadow };
+    })()`)
+    log(`task menu surface border=${menuSurface.border} shadow=${menuSurface.shadow}`)
+    assert.equal(menuSurface.border, "1px")
+    assert.equal(menuSurface.shadow.includes("inset"), false, "task dropdown retains a single border")
+    assert.equal(await cdp.evaluate(`(() => {
+      const task = [...document.querySelectorAll('[data-slot="dropdown-menu-item"]')]
+        .find(el => el.textContent.includes('QA mounted task detail'));
+      return task?.textContent.trim();
+    })()`), "QA mounted task detail", "task menu shows title without progress or status subtitle")
+    log("PASS task dropdown shows task names only")
+    await cdp.evaluate(`(() => {
+      const task = [...document.querySelectorAll('[data-slot="dropdown-menu-item"]')]
+        .find(el => el.textContent.includes('QA mounted task detail'));
+      if (!task) throw Error('test task missing from picker');
+      task.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'mouse', button: 0 }));
+    })()`)
     await wait("linked task button", () => exists(openButton))
+    assert.equal((await request(`/session/${sessionID}`)).mountedTaskID, taskID)
+    assert.equal((await request(`/session/${sessionID}`)).injectTaskContext, true, "task context injection defaults on")
+    assert.equal(await exists(`${panel} input[type="checkbox"]`), false)
+    log("PASS task selection defaults to context injection without an option")
     await wait("linked task title loaded", () =>
       cdp.evaluate(
         `document.querySelector('${panel} [data-slot="dropdown-menu-trigger"]')?.textContent.includes('QA mounted task detail') === true`,
@@ -160,6 +234,23 @@ await withCdp(async (cdp, target) => {
     await cdp.call("Page.captureScreenshot").then(async (shot: any) => {
       await Bun.write("/tmp/opencode-session-task-open.png", Buffer.from(shot.data, "base64"))
     })
+    try {
+      await cdp.call("Emulation.setDeviceMetricsOverride", {
+        width: 390, height: 844, deviceScaleFactor: 1, mobile: false,
+      })
+      await wait("narrow status panel fits", () => cdp.evaluate(`(() => {
+        const panel = document.querySelector('[data-slot="session-status-float-panel"]');
+        if (!panel) return false;
+        const rect = panel.getBoundingClientRect();
+        return rect.left >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight;
+      })()`))
+      await cdp.call("Page.captureScreenshot").then(async (shot: any) => {
+        await Bun.write("/tmp/opencode-session-status-narrow.png", Buffer.from(shot.data, "base64"))
+      })
+      log("PASS merged status panel fits narrow window")
+    } finally {
+      await cdp.call("Emulation.clearDeviceMetricsOverride")
+    }
     await peekOtherProject()
     await toggleSidebar()
     await wait("sidebar shortcut restores current session project", () =>
@@ -196,9 +287,9 @@ await withCdp(async (cdp, target) => {
       await wait("correct task detail", () => exists(`[data-project-task-dialog="${taskID}"]`))
       assert.ok(await exists(`${rail}[data-sidebar-expanded="true"]`), "task details restore the session project")
       assert.equal(
-        await cdp.evaluate(`document.querySelector('${float}')?.getAttribute('data-collapsed')`),
-        "true",
-        "task float closes before details open",
+        await cdp.evaluate(`document.querySelector('${float}')?.getAttribute('data-expanded')`),
+        "false",
+        "status float closes before details open",
       )
       await closeDialog()
       log(`PASS linked task opens correct details attempt=${index + 1}`)
@@ -207,7 +298,7 @@ await withCdp(async (cdp, target) => {
     await request(`/session/${sessionID}/project-task`, "DELETE")
     await wait("button hidden after unlink", async () => !(await exists(openButton)))
     log("PASS unlink hides button reactively")
-    await click('[data-action="session-todo-float-close"]')
+    await click('[data-action="session-status-float-close"]')
     await click('[data-action="session-new-button"]')
     await wait("new session route", () =>
       cdp.evaluate(
@@ -248,8 +339,8 @@ await withCdp(async (cdp, target) => {
       const { setPendingProjectTaskMount } = await import(${JSON.stringify(`${source}/components/session/pending-project-task-mount.ts`)});
       setPendingProjectTaskMount(${JSON.stringify(directory)}, { taskID: undefined });
     })()`)
-    if (await exists('[data-action="session-todo-float-close"]'))
-      await click('[data-action="session-todo-float-close"]')
+    if (await exists('[data-action="session-status-float-close"]'))
+      await click('[data-action="session-status-float-close"]')
     if (!(await exists(menu)) && (await exists(rail))) await click(rail)
     if (await exists(menu)) {
       await cdp.evaluate(

@@ -78,12 +78,7 @@ import {
   type SubmitOptions,
   sendFollowupDraft,
 } from "@/components/prompt-input/submit"
-import {
-  createSessionComposerState,
-  SessionComposerRegion,
-  SessionStatusFloat,
-  SessionProjectTaskFloat,
-} from "@/pages/session/composer"
+import { createSessionComposerState, SessionComposerRegion, SessionStatusFloat } from "@/pages/session/composer"
 import { SessionMathFloat, type SessionMathWorkerEntry } from "@/pages/session/session-math-float"
 import { SessionMathInitializeDialog } from "@/pages/session/composer/session-math-initialize-dialog"
 import { buildMathInitializationPrompt, type MathInitializationConfig } from "@/pages/session/math-initialize"
@@ -3748,22 +3743,14 @@ export default function Page() {
                 {(entry) => <PendingSessionView submission={entry()} centered={centered()} />}
               </Show>
             </div>
-            <Show when={platform.platform === "desktop" && params.id}>
+            {/* New sessions also need the task picker before their first message. */}
+            <Show when={platform.platform === "desktop"}>
               <SessionStatusFloat
                 sessionID={params.id}
                 skills={activeSkills()}
                 diffs={diffs()}
                 childSessionIDs={currentApiChildSessions().map((session) => session.id)}
                 onViewAllChanges={openSessionChangesReview}
-              />
-            </Show>
-            {/* Always show on desktop session routes (including new session) so users can
-                mount a project task before the first message creates the session. */}
-            <Show when={platform.platform === "desktop"}>
-              <SessionProjectTaskFloat
-                sessionID={params.id}
-                collapseLabel={language.t("session.todo.collapse")}
-                expandLabel={language.t("session.todo.expand")}
               />
             </Show>
             <Show when={platform.platform === "desktop"}>

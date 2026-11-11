@@ -52,7 +52,7 @@ export function SessionMathFloat(props: SessionMathFloatProps) {
 
   return (
     <Show when={props.available}>
-      <div data-component="session-math-float" class="absolute top-[100px] right-3 z-20 pointer-events-auto">
+      <div data-component="session-math-float" class="absolute top-14 right-3 z-20 pointer-events-auto">
         <button
           type="button"
           data-action="session-math-toggle-button"

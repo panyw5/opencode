@@ -1,5 +1,4 @@
 export { SessionComposerRegion } from "./session-composer-region"
 export { createSessionComposerState } from "./session-composer-state"
-export { SessionProjectTaskFloat } from "./session-project-task-float"
 export { SessionTodoHover } from "./session-todo-hover"
 export { SessionStatusFloat } from "../session-status-float"
