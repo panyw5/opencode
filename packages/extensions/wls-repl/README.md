@@ -9,6 +9,22 @@ OpenCode 扩展（`local.wls-repl`）：为 `.wls` 文件提供 Python REPL/pdb 
 - 空闲时同一输入框即 REPL：kernel 常驻，变量状态跨求值保持
 - Print 输出、内核消息、语句结果流式进入控制台
 
+## 大文件显示
+
+超过 1000 行时，查看器自动使用固定行高虚拟列表，仅挂载可视区域及前后各 12 行。
+此模式不自动折行，长行通过横向滚动查看；1000 行及以下保留原来的自动换行。
+断点按源文件行号保存，滚出屏幕后仍有效；调试暂停会直接跳转到对应行，无需先渲染中间行。
+文件内容只在读取/刷新时建立行缓存，普通滚动不会重复拆分整个文件。
+
+开发版 Electron 的大文件回归测试（先启动 `bun run dev:desktop`，CDP 9222）：
+
+```bash
+# 从仓库根目录运行；使用真实查看器和模拟宿主桥，不启动/关闭应用
+bun packages/extensions/wls-repl/scripts/viewport-cdp.ts
+```
+
+真实 Wolfram 内核的端到端行为由 `test/bridge-integration.test.ts` 单独验证。
+
 ## Agent 工具：`wolfram_eval`
 
 扩展同时注册一个 LLM 工具 `wolfram_eval`（实例级 hooks）：
@@ -45,8 +61,7 @@ OpenCode 扩展（`local.wls-repl`）：为 `.wls` 文件提供 Python REPL/pdb 
 - `Read[s, HoldComplete[Expression]]` 是官方支持的"不求值逐条读取"原语，天然处理多行表
   达式/字符串/注释；配合 `StreamPosition` 差值映射语句起始行号。注释独立 span 会得到
   `HoldComplete[Null]`，直接跳过。
-- bridge 全部代码包在 `Begin["WLSBridge`"]...End[]` 中：Module/Table 局部名在解析时会在
-  `Global`` 创建同名符号，与用户变量撞名会产生 `shdw` 告警；隔离 context + `Off[General::shdw]`
+- bridge 全部代码包在 `Begin["WLSBridge`"]...End[]`中：Module/Table 局部名在解析时会在`Global``创建同名符号，与用户变量撞名会产生`shdw`告警；隔离 context +`Off[General::shdw]`
   根治。
 - `Definition[Symbol[name]]` 会触发 `Definition::ssym`（HoldAll 不接受非字面量）；用
   `ToExpression[name, InputForm, HoldComplete]` + RuleDelayed 模式替换把符号传入
@@ -100,11 +115,11 @@ opencode extension link "$(pwd)"   # 路径链接，watcher 会热重载
 
 设置（Settings → Extensions → WolframScript REPL）：
 
-| 键 | 默认 | 说明 |
-| --- | --- | --- |
-| `wolframscriptPath` | `wolframscript` | wolframscript 可执行文件路径 |
-| `statementTimeoutSeconds` | 60 | 单条语句 TimeConstrained 超时 |
-| `maxKernels` | 2 | 并发 kernel 上限，超出按 LRU 逐出 |
+| 键                        | 默认            | 说明                              |
+| ------------------------- | --------------- | --------------------------------- |
+| `wolframscriptPath`       | `wolframscript` | wolframscript 可执行文件路径      |
+| `statementTimeoutSeconds` | 60              | 单条语句 TimeConstrained 超时     |
+| `maxKernels`              | 2               | 并发 kernel 上限，超出按 LRU 逐出 |
 
 ## 边界
 

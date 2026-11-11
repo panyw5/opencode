@@ -886,7 +886,10 @@ export function FileTabContent(props: { tab: string; forceMount?: boolean }) {
     createFileViewerContent({
       activeViewer,
       loaded: () => !!state()?.loaded,
-      wrapViewer: (surface) => (pdf() ? surface : renderScroll(() => surface)),
+      // WLS owns its code/output scrollports; an outer ScrollView would
+      // scroll the REPL input away along with the entire viewer.
+      wrapViewer: (surface) =>
+        pdf() || activeViewer()?.owner === "local.wls-repl" ? surface : renderScroll(() => surface),
       defaultContent: () => (
         <Show
           when={pdf() && state()?.loaded}

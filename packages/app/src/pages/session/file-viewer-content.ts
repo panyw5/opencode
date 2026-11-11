@@ -106,6 +106,16 @@ function createExtensionSurface(input: FileViewerContentInput, entry: Accessor<F
   const row = document.createElement("div")
   row.dataset.slot = "file-viewer-toolbar"
   row.className = "flex justify-end gap-2 border-b border-border-weak-base px-3 py-2"
+  createRenderEffect(() => {
+    // This is a host-owned row. Do not rely on extension CSS to hide it:
+    // installed archive generations can lag behind the workspace viewer.
+    const wls = entry().owner === "local.wls-repl"
+    row.style.display = wls ? "none" : ""
+    root.style.height = wls ? "100%" : ""
+    root.style.minHeight = wls ? "0" : ""
+    root.style.overflow = wls ? "hidden" : ""
+    if (wls) console.info(`[file-viewer] WLS host layout pinned toolbar=hidden viewer=${entry().id}`)
+  })
   const defaultToolbar = document.createElement("div")
   defaultToolbar.dataset.slot = "file-viewer-default-toolbar"
   const defaultControls = document.createElement("div")
@@ -155,6 +165,8 @@ function createExtensionSurface(input: FileViewerContentInput, entry: Accessor<F
         // A failing onMount can register after the boundary's initial child
         // cleanup, so owner cleanup alone cannot restore the host controls.
         clearToolbar()
+        // Keep the source/viewer switch available if the WLS viewer fails.
+        row.style.display = ""
         const message = error instanceof Error ? error.message : String(error)
         input.onRenderError({ id: entry().id, path: input.path(), message })
         return input.errorFallback(message)

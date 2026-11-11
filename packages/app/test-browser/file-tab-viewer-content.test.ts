@@ -76,7 +76,12 @@ function makeViewerComponent(log: ViewerLog) {
   }
 }
 
-function setup(component?: (props: FileViewerProps) => HTMLElement, initiallyLoaded = true, content?: "text" | "self") {
+function setup(
+  component?: (props: FileViewerProps) => HTMLElement,
+  initiallyLoaded = true,
+  content?: "text" | "self",
+  owner = "test",
+) {
   const [loaded, setLoaded] = createSignal(initiallyLoaded)
   const [text, setText] = createSignal("v1")
   const [revision, setRevision] = createSignal(1)
@@ -93,7 +98,7 @@ function setup(component?: (props: FileViewerProps) => HTMLElement, initiallyLoa
 
   const disposeViewer = registerFileViewer({
     id: "test.viewer",
-    owner: "test",
+    owner,
     title: "Test viewer",
     mode: "replace",
     content,
@@ -218,6 +223,38 @@ function toolbarSlots(host: HTMLElement) {
 }
 
 describe("file tab viewer render boundary", () => {
+  test("WLS hides the host toolbar even with an old viewer that supplies no layout CSS", async () => {
+    const app = setup(undefined, true, undefined, "local.wls-repl")
+    try {
+      await tick()
+      expect(toolbarSlots(app.host).row.style.display).toBe("none")
+      const surface = app.host.querySelector<HTMLElement>(".oc-extension-root")!
+      expect(surface.style.height).toBe("100%")
+      expect(Number.parseFloat(surface.style.minHeight)).toBe(0)
+      expect(surface.style.overflow).toBe("hidden")
+    } finally {
+      app.dispose()
+    }
+  })
+
+  test("a failing WLS viewer restores the host controls for switching back to source", async () => {
+    const app = setup(
+      () => {
+        throw new Error("old WLS failed")
+      },
+      true,
+      undefined,
+      "local.wls-repl",
+    )
+    try {
+      await tick()
+      expect(toolbarSlots(app.host).row.style.display).toBe("")
+      expect(app.host.querySelector('[data-testid="error-fallback"]')?.textContent).toBe("old WLS failed")
+    } finally {
+      app.dispose()
+    }
+  })
+
   test("a viewer without a custom toolbar keeps the default menu and Open With", async () => {
     const app = setup()
     try {
