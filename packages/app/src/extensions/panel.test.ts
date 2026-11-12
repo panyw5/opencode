@@ -3,7 +3,15 @@ import { createMemo, createRoot } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { extensionPanelTab, isExtensionPanelTab, parseExtensionPanelTab } from "./panel-tab"
-import { extensionPanelTitle, getExtensionPanel, registerExtensionPanel } from "./panel-registry"
+import {
+  evictExtensionPanelState,
+  evictExtensionPanelTab,
+  extensionPanelTitle,
+  getExtensionPanel,
+  getExtensionPanelState,
+  registerExtensionPanel,
+  setExtensionPanelState,
+} from "./panel-registry"
 
 describe("extension panel tabs", () => {
   test("parses extension, panel, key and state", () => {
@@ -72,6 +80,50 @@ describe("extension panel registry", () => {
     expect(extensionPanelTitle(getExtensionPanel("acme.demo", "main")!)).toBe("B")
     second()
     expect(getExtensionPanel("acme.demo", "main")).toBeUndefined()
+  })
+})
+
+describe("extension panel state", () => {
+  test("clears stored state when the extension is torn down", () => {
+    const dispose = registerExtensionPanel({
+      extensionID: "acme.demo",
+      id: "main",
+      title: "Demo",
+      component: () => null,
+    })
+    const tab = extensionPanelTab({ extensionID: "acme.demo", panelID: "main" })
+    const keyed = extensionPanelTab({ extensionID: "acme.demo", panelID: "main", key: "a" })
+    const foreign = extensionPanelTab({ extensionID: "acme.other", panelID: "main" })
+
+    setExtensionPanelState(tab, { view: "list" })
+    setExtensionPanelState(keyed, { view: "grid" })
+    setExtensionPanelState(foreign, { view: "rows" })
+    expect(getExtensionPanelState(tab)).toEqual({ view: "list" })
+
+    // Uninstall/disable funnels through the host's clearPlaceholders, which
+    // evicts every tab state the extension owns — keyed instances included.
+    expect(evictExtensionPanelState("acme.demo")).toBe(2)
+    expect(getExtensionPanelState(tab)).toBeUndefined()
+    expect(getExtensionPanelState(keyed)).toBeUndefined()
+    expect(getExtensionPanelState(foreign)).toEqual({ view: "rows" })
+
+    dispose()
+    evictExtensionPanelState("acme.other")
+  })
+
+  test("closing a tab drops only that tab's state", () => {
+    const first = extensionPanelTab({ extensionID: "acme.demo", panelID: "a" })
+    const second = extensionPanelTab({ extensionID: "acme.demo", panelID: "b" })
+    setExtensionPanelState(first, { n: "1" })
+    setExtensionPanelState(second, { n: "2" })
+
+    expect(evictExtensionPanelTab(first)).toBe(1)
+    expect(getExtensionPanelState(first)).toBeUndefined()
+    expect(getExtensionPanelState(second)).toEqual({ n: "2" })
+    // Closing the same tab again is a no-op.
+    expect(evictExtensionPanelTab(first)).toBe(0)
+
+    evictExtensionPanelState("acme.demo")
   })
 })
 

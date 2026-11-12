@@ -59,7 +59,7 @@ import { extensionScopedMount } from "./mount"
 import { createExtensionMutationTracker, ExtensionMutationStaleError } from "./mutation"
 import { reconcileExtensions } from "./reconcile"
 import { createExtensionReadiness } from "./readiness"
-import { registerExtensionPanel, type ExtensionPanelProps } from "./panel-registry"
+import { evictExtensionPanelState, registerExtensionPanel, type ExtensionPanelProps } from "./panel-registry"
 import { safeModeFromURL } from "./safe-mode"
 import { createDesktopArchiveOperations } from "./install-desktop"
 import type { CommandDeclaration, ExtensionInfo, ExtensionStatusEvent, PanelDeclaration } from "./types"
@@ -414,6 +414,12 @@ export function ExtensionHostProvider(props: ParentProps) {
     for (const dispose of placeholders.get(id) ?? []) dispose()
     placeholders.delete(id)
     registered.delete(id)
+    // Every extension teardown funnels through here (reconcile on
+    // uninstall/disable or definition change, connection switch, provider
+    // cleanup). Tabs left open render the unavailable fallback; dropping
+    // their stored panel state keeps a reactivated or reinstalled extension
+    // from inheriting data from a previous lifecycle.
+    evictExtensionPanelState(id)
   }
 
   // Manifest-declared contributions are registered eagerly as placeholders so

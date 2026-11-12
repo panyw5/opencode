@@ -1,5 +1,4 @@
 import { ErrorBoundary, Show, createMemo, type JSX } from "solid-js"
-import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { Icon, type IconName } from "@opencode-ai/ui/icon"
@@ -8,13 +7,13 @@ import { Mark } from "@opencode-ai/ui/logo"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import { extensionPanelTitle, getExtensionPanel } from "./panel-registry"
+import {
+  extensionPanelTitle,
+  getExtensionPanel,
+  getExtensionPanelState,
+  setExtensionPanelState,
+} from "./panel-registry"
 import { parseExtensionPanelTab } from "./panel-tab"
-
-// Panel state is kept in memory, keyed by tab value and seeded from the tab's
-// query params. Rewriting the tab value would change the tab identity (and
-// remount the keyed panel), so persisting state is left to the extension host.
-const [panelState, setPanelState] = createStore<Record<string, Record<string, string>>>({})
 
 function errorText(error: unknown) {
   if (error instanceof Error) return error.message
@@ -64,11 +63,11 @@ export function ExtensionPanelContent(props: { tab: string }): JSX.Element {
     return getExtensionPanel(value.extensionID, value.panelID)
   })
 
-  const state = () => panelState[props.tab] ?? parsed()?.state ?? {}
+  const state = () => getExtensionPanelState(props.tab) ?? parsed()?.state ?? {}
   const panelProps = {
     state,
     setState(patch: Record<string, string>) {
-      setPanelState(props.tab, { ...state(), ...patch })
+      setExtensionPanelState(props.tab, { ...state(), ...patch })
     },
     close() {
       console.debug(`[extension-panel] close tab=${props.tab}`)

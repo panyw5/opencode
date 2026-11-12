@@ -1,4 +1,6 @@
 import { createSignal, type Accessor, type Component } from "solid-js"
+import { createStore, produce } from "solid-js/store"
+import { parseExtensionPanelTab } from "./panel-tab"
 
 export interface ExtensionPanelProps {
   state: Accessor<Record<string, string>>
@@ -44,4 +46,50 @@ export function getExtensionPanel(extensionID: string, panelID: string): Extensi
 
 export function extensionPanelTitle(entry: ExtensionPanelEntry) {
   return typeof entry.title === "function" ? entry.title() : entry.title
+}
+
+// Panel state is kept in memory, keyed by the full tab value and seeded from
+// the tab's query params. Rewriting the tab value would change the tab
+// identity (and remount the keyed panel), so persisting state is left to the
+// extension host. Like the registry above it is module-level so it survives
+// session page remounts; entries leave only through evictExtensionPanelTab
+// (tab close) and evictExtensionPanelState (extension teardown), so closed
+// tabs and removed extensions cannot leak state.
+const [panelState, setPanelState] = createStore<Record<string, Record<string, string>>>({})
+
+export function getExtensionPanelState(tab: string): Record<string, string> | undefined {
+  return panelState[tab]
+}
+
+export function setExtensionPanelState(tab: string, next: Record<string, string>) {
+  setPanelState(tab, next)
+}
+
+function dropExtensionPanelState(keys: string[]) {
+  if (keys.length === 0) return
+  setPanelState(
+    produce((state) => {
+      for (const key of keys) delete state[key]
+    }),
+  )
+}
+
+// Drops every stored entry whose tab belongs to the extension. Called when the
+// extension is deactivated, disabled or uninstalled so its panels reopen with
+// fresh, query-seeded state instead of data from a previous lifecycle.
+export function evictExtensionPanelState(extensionID: string) {
+  const keys = Object.keys(panelState).filter((tab) => parseExtensionPanelTab(tab)?.extensionID === extensionID)
+  dropExtensionPanelState(keys)
+  console.debug(`[extension-panel] panel state evicted id=${extensionID} count=${keys.length}`)
+  return keys.length
+}
+
+// Drops the stored state of a single closed tab. Multi-instance panels use
+// distinct tab values (`?key=`), so only the closed instance is evicted.
+export function evictExtensionPanelTab(tab: string) {
+  const hit = panelState[tab] !== undefined
+  dropExtensionPanelState(hit ? [tab] : [])
+  const id = parseExtensionPanelTab(tab)?.extensionID ?? "unknown"
+  console.debug(`[extension-panel] panel state evicted id=${id} count=${hit ? 1 : 0}`)
+  return hit ? 1 : 0
 }

@@ -25,6 +25,8 @@ import { removeSessionTabSubtree } from "@/components/session/session-bar-parent
 import { restoreRightPanel, toggleRightPanel, rightPanelGeometry, type RightPanel } from "./right-panel"
 import { browserApi } from "@/browser/types"
 import { createBrowserTabs, OPEN_TAB_EVENT } from "@/browser/tabs"
+import { isExtensionPanelTab } from "@/extensions/panel-tab"
+import { evictExtensionPanelTab } from "@/extensions/panel-registry"
 
 const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] as const
 const DEFAULT_PANEL_WIDTH = 344
@@ -1434,11 +1436,17 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           setAll(all: string[]) {
             const session = key()
             const next = normalizeAll(all).filter((tab) => tab !== "review")
-            if (!store.sessionTabs[session]) {
+            const current = store.sessionTabs[session]
+            if (!current) {
               setStore("sessionTabs", session, { all: next, active: undefined })
-            } else {
-              setStore("sessionTabs", session, "all", next)
+              return
             }
+            // Replacing the list is a close for entries that disappear;
+            // extension panel state is keyed by tab value and goes with them.
+            for (const tab of current.all) {
+              if (!next.includes(tab) && isExtensionPanelTab(tab)) evictExtensionPanelTab(tab)
+            }
+            setStore("sessionTabs", session, "all", next)
           },
           async open(tab: string) {
             const session = key()
@@ -1494,6 +1502,10 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
                 setStore("sessionTabs", session, "active", next)
               })
             }
+
+            // Extension panel state is module-level and keyed by the tab
+            // value; a closed tab must not leak it into a later reopen.
+            if (current.all.includes(tab) && isExtensionPanelTab(tab)) evictExtensionPanelTab(tab)
 
             if (!closingFile) {
               console.debug(`[file-preview] close skip collapse session=${session} tab=${tab} reason=not-file-tab`)
