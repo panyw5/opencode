@@ -11,20 +11,23 @@ import { load } from "../packages/opencode/src/extension/manifest"
 import { parseReleaseDescriptor } from "../packages/opencode/src/extension/release"
 import { signDescriptor } from "../packages/opencode/src/extension/trust"
 import { readPluginPackage } from "../packages/opencode/src/plugin/shared"
+import { isCommitHex } from "../packages/util/src/extension-release"
 
 const usage = `Generate a release descriptor from a local, prebuilt extension archive.
 
 Usage:
-  bun run script/extension-release.ts --archive <local.tgz> --artifact-url <https://...> --output <release.json> [--manifest <package.json>] [--sequence <n>] [--signature <release.json.sig>]
+  bun run script/extension-release.ts --archive <local.tgz> --artifact-url <https://...> --output <release.json> [--manifest <package.json>] [--sequence <n>] [--source-commit <sha>] [--signature <release.json.sig>]
 
 Paths may be absolute or relative to the current directory. The output parent must
 already exist. Existing outputs are never overwritten; --force is not supported.
 This command does not fetch, upload, build, install, or execute extension code.
 
 --sequence writes the monotonically increasing publisher counter into the
-descriptor. --signature signs the exact emitted descriptor bytes with the Ed25519
-key in OPENCODE_EXTENSION_SIGNING_KEY (PKCS8 PEM or base64 DER; never logged) and
-writes the detached JSON signature envelope to the given path.
+descriptor. --source-commit records the monorepo commit the release was built
+from as source.commit for provenance. --signature signs the exact emitted
+descriptor bytes with the Ed25519 key in OPENCODE_EXTENSION_SIGNING_KEY (PKCS8
+PEM or base64 DER; never logged) and writes the detached JSON signature
+envelope to the given path, so both fields are covered by the signature.
 `
 
 async function ordinaryParents(directory: string): Promise<void> {
@@ -125,6 +128,7 @@ async function main() {
       output: { type: "string" },
       manifest: { type: "string" },
       sequence: { type: "string" },
+      "source-commit": { type: "string" },
       signature: { type: "string" },
       help: { type: "boolean" },
     },
@@ -148,6 +152,14 @@ async function main() {
             throw new Error("--sequence must be a non-negative integer")
           return parsed
         })()
+  const commit =
+    values["source-commit"] === undefined
+      ? undefined
+      : (() => {
+          if (!isCommitHex(values["source-commit"]))
+            throw new Error("--source-commit must be a full hexadecimal git commit hash")
+          return values["source-commit"] as string
+        })()
   const bytes = await readOrdinary(archive, archiveLimits.compressedBytes, "Archive")
   if (bytes[0] !== 0x1f || bytes[1] !== 0x8b || bytes[2] !== 8)
     throw new Error("Archive must contain a gzip-compressed .tgz; ZIP is not supported")
@@ -168,6 +180,8 @@ async function main() {
       ...(engines === undefined ? {} : { engines }),
       ...(sequence === undefined ? {} : { sequence }),
       artifact: { url, sha256: createHash("sha256").update(bytes).digest("hex") },
+      // Injected before serialization so the detached signature covers it.
+      ...(commit === undefined ? {} : { source: { commit } }),
     })
     const text = `${JSON.stringify(descriptor, null, 2)}\n`
     const output = path.resolve(values.output)

@@ -260,4 +260,23 @@ describe("release descriptor parsing", () => {
     (engines) =>
       expect(reason(() => parseReleaseDescriptor({ ...descriptor(), engines }))).toMatch(/engines|fields|structure/),
   )
+
+  test("keeps a declared source.commit provenance hash and normalizes it", () => {
+    const commit = "AB".repeat(20)
+    expect(parseReleaseDescriptor({ ...descriptor(), source: { commit } }).source).toEqual({
+      commit: commit.toLowerCase(),
+    })
+    expect(
+      parseReleaseDescriptor({ ...descriptor(), source: { commit: "cd".repeat(32) } }).source?.commit,
+    ).toBe("cd".repeat(32))
+    expect(parseReleaseDescriptor(descriptor()).source).toBeUndefined()
+  })
+
+  test.each(
+    [{}, { commit: "abc" }, { commit: "g".repeat(40) }, { commit: 42 }, { commit: "ab".repeat(20), tag: "v1" }, "abc", []].map(
+      (v) => [v] as const,
+    ),
+  )("rejects malformed source declarations (%#)", (source) =>
+    expect(reason(() => parseReleaseDescriptor({ ...descriptor(), source }))).toMatch(/source|fields|structure/),
+  )
 })

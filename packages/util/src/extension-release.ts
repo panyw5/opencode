@@ -21,10 +21,17 @@ export const EXTENSION_ID_PATTERN = /^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$
 export const EXTENSION_ID_MAX = 64
 
 const SHA256_PATTERN = /^[\da-f]{64}$/i
+// Full git object names: 40 hex (SHA-1 repositories) or 64 hex (SHA-256 repositories).
+const COMMIT_PATTERN = /^[\da-f]{40}$|^[\da-f]{64}$/i
 
 /** True when the value is a 64-character hexadecimal SHA-256. */
 export function isSha256Hex(value: unknown): value is string {
   return typeof value === "string" && SHA256_PATTERN.test(value)
+}
+
+/** True when the value is a full hexadecimal git commit hash (SHA-1 or SHA-256). */
+export function isCommitHex(value: unknown): value is string {
+  return typeof value === "string" && COMMIT_PATTERN.test(value)
 }
 
 /** Lowercased digest, or undefined when the value is not a 64-character hex SHA-256. */
@@ -44,6 +51,7 @@ export type ReleaseFailure =
   | "artifactUrlType"
   | "artifactUrl"
   | "artifactSha256"
+  | "source"
   | "url"
 
 /** Validation failure. Messages are stable, generic and never echo input. */
@@ -120,6 +128,11 @@ export type ReleaseDescriptorShape = {
   /** Monotonically increasing publisher counter, covered by the detached signature. */
   sequence?: number
   artifact: { url: string; sha256: string }
+  /**
+   * Provenance recorded by the publisher: the monorepo commit the release was
+   * built from. Informational for hosts; covered by the detached signature.
+   */
+  source?: { commit: string }
 }
 
 export type ReleaseDescriptorOptions = {
@@ -149,7 +162,7 @@ export function parseReleaseDescriptor(
   value: unknown,
   options: ReleaseDescriptorOptions = {},
 ): ReleaseDescriptorShape {
-  const descriptor = record(value, ["schemaVersion", "id", "version", "artifact"], ["engines", "sequence"])
+  const descriptor = record(value, ["schemaVersion", "id", "version", "artifact"], ["engines", "sequence", "source"])
   if (descriptor.schemaVersion !== 1) fail("schemaVersion", "unsupported descriptor schema version")
   if (
     typeof descriptor.id !== "string" ||
@@ -190,6 +203,12 @@ export function parseReleaseDescriptor(
   }
   const sha256 = artifact.sha256
   if (!isSha256Hex(sha256)) fail("artifactSha256", "a 64-character hexadecimal SHA-256 is required")
+  let commit: string | undefined
+  if (descriptor.source !== undefined) {
+    const source = record(descriptor.source, ["commit"])
+    if (!isCommitHex(source.commit)) fail("source", "a full hexadecimal git commit hash is required")
+    commit = source.commit.toLowerCase()
+  }
   return {
     schemaVersion: 1,
     id: descriptor.id,
@@ -197,5 +216,6 @@ export function parseReleaseDescriptor(
     ...(opencode === undefined ? {} : { engines: { opencode } }),
     ...(sequence === undefined ? {} : { sequence }),
     artifact: { url, sha256: sha256.toLowerCase() },
+    ...(commit === undefined ? {} : { source: { commit } }),
   }
 }

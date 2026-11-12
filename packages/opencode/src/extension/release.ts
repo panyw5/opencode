@@ -122,6 +122,7 @@ export async function resolveRelease(
     engines: parsed.engines,
     ...(parsed.sequence === undefined ? {} : { sequence: parsed.sequence }),
     artifact: parsed.artifact,
+    ...(parsed.source === undefined ? {} : { source: parsed.source }),
     descriptorSha256: sha256(document.sha256),
     ...(signature === undefined ? {} : { signature }),
   }
