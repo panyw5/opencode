@@ -127,7 +127,7 @@ export function createEditorResizeQueue(
     const entries = [...pending.values()].filter(({ field }) => field.isConnected)
     pending.clear()
     for (const { field } of entries) field.style.height = "auto"
-    const sizes = entries.map(({ field }) => Math.min(600, field.scrollHeight + 2))
+    const sizes = entries.map(({ field }) => field.scrollHeight + 2)
     let changed = 0
     for (let index = 0; index < entries.length; index++) {
       const { field, syncScroll } = entries[index]

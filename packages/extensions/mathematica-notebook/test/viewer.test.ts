@@ -146,7 +146,7 @@ test("editor resize batches writes/reads/writes and coalesces requests and strin
     "read a",
     "read b",
     "write a 52px",
-    "write b 600px",
+    "write b 902px",
   ])
   expect(fixture.logs).toEqual(["notebook editor layout cells=2 changed=2"])
 })
