@@ -12,7 +12,18 @@ import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { getFilename } from "@opencode-ai/core/util/path"
 import { A, useNavigate, useParams } from "@solidjs/router"
-import { type Accessor, createEffect, createMemo, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js"
+import {
+  type Accessor,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  type JSX,
+  Match,
+  onCleanup,
+  Show,
+  Switch,
+} from "solid-js"
 import { createStore } from "solid-js/store"
 import { useCommand } from "@/context/command"
 import { useGlobalSDK } from "@/context/global-sdk"
@@ -23,6 +34,7 @@ import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
 import { sessionTabsTargetHref, useSessionTabs } from "@/context/session-tabs"
 import { useNewSessionWithReference } from "@/components/session/use-new-session-with-reference"
+import { CHANNEL_LABELS, ChannelIcon } from "@/components/session-channel-picker"
 import { messageAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
 import { ensureSessionProfile, startSessionProfile } from "@/utils/session-profile"
@@ -42,14 +54,16 @@ const projectActivityPulseInterval = 6_000
 function SessionShareMenuItem(props: { directory: string; sessionID: string; title: string }) {
   const dialog = useDialog()
   const language = useLanguage()
-  return <ContextMenu.Item onSelect={() => dialog.show(() => <SessionShareDialog {...props} />)}>
-    <ContextMenu.Icon>
-      <span class="flex shrink-0 text-icon-base">
-        <Icon name="share" size="small" />
-      </span>
-    </ContextMenu.Icon>
-    <ContextMenu.ItemLabel>{language.t("share.open")}</ContextMenu.ItemLabel>
-  </ContextMenu.Item>
+  return (
+    <ContextMenu.Item onSelect={() => dialog.show(() => <SessionShareDialog {...props} />)}>
+      <ContextMenu.Icon>
+        <span class="flex shrink-0 text-icon-base">
+          <Icon name="share" size="small" />
+        </span>
+      </ContextMenu.Icon>
+      <ContextMenu.ItemLabel>{language.t("share.open")}</ContextMenu.ItemLabel>
+    </ContextMenu.Item>
+  )
 }
 const projectActivityPulseDuration = 1_000
 
@@ -110,7 +124,6 @@ const pulseTitleShimmer = (sessionID: string, ms = 3600) => {
   )
 }
 
-
 export const ProjectIcon = (props: { project: LocalProject; class?: string; notify?: boolean }): JSX.Element | null => {
   if (!props.project?.worktree) return null
   const globalSync = useGlobalSync()
@@ -157,14 +170,15 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
   const count = createMemo(() =>
     dirs().reduce((total, directory) => total + notification.project.unseenCount(directory), 0),
   )
-  const unseenSummary = createMemo(() =>
-    dirs()
-      .flatMap((directory) =>
-        notification.project.unseen(directory).map((item) => {
-          return `${directory}:${item.type}:${item.session ?? "none"}:viewed=${item.viewed ? 1 : 0}`
-        }),
-      )
-      .join("|") || "none",
+  const unseenSummary = createMemo(
+    () =>
+      dirs()
+        .flatMap((directory) =>
+          notification.project.unseen(directory).map((item) => {
+            return `${directory}:${item.type}:${item.session ?? "none"}:viewed=${item.viewed ? 1 : 0}`
+          }),
+        )
+        .join("|") || "none",
   )
   const error = createMemo(() => dirs().some((directory) => notification.project.unseenHasError(directory)))
   const perms = createMemo(() =>
@@ -314,6 +328,11 @@ const SessionRow = (props: {
   const scheduled = createMemo(() => isScheduledSessionTitle(props.session.title))
   const displayTitle = createMemo(() => stripScheduledSessionTitle(props.session.title))
   const shimmering = createMemo(() => props.shimmer())
+  const language = useLanguage()
+  const channelID = createMemo(() => props.session.channel?.advisor ?? "opencode")
+  const channelLabel = createMemo(() =>
+    channelID() === "opencode" ? language.t("prompt.channel.native") : (CHANNEL_LABELS[channelID()] ?? channelID()),
+  )
   let titleEl: HTMLSpanElement | undefined
 
   const applyTitleShimmerStyle = (el: HTMLSpanElement | undefined, active: boolean, selected: boolean) => {
@@ -417,6 +436,14 @@ const SessionRow = (props: {
             style={props.active ? { color: "var(--sidebar-session-accent)" } : undefined}
           />
         </Show>
+        <span
+          data-slot="session-channel"
+          title={channelLabel()}
+          class="shrink-0 flex items-center text-icon-weak"
+          style={props.active ? { color: "var(--sidebar-session-accent)" } : undefined}
+        >
+          <ChannelIcon id={channelID()} class="size-4" />
+        </span>
         <Show
           when={props.editingTitle()}
           fallback={
@@ -452,7 +479,6 @@ const SessionRow = (props: {
     </A>
   )
 }
-
 
 export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const params = useParams()
@@ -503,7 +529,9 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       .then((response) => {
         const count = (response.data ?? []).length
         setUserMessageCountByKey((current) => ({ ...current, [key]: count }))
-        console.debug(`[sidebar-session] user-message-count load-end directory=${directory} sid=${sessionID} count=${count}`)
+        console.debug(
+          `[sidebar-session] user-message-count load-end directory=${directory} sid=${sessionID} count=${count}`,
+        )
       })
       .catch((error: unknown) => {
         console.debug(
@@ -659,7 +687,9 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
         copiedTimer = setTimeout(() => setMenu("copied", false), 1_200)
       },
       (err: unknown) => {
-        console.debug(`[sidebar-session] copy failed id=${props.session.id} err=${err instanceof Error ? err.message : String(err)}`)
+        console.debug(
+          `[sidebar-session] copy failed id=${props.session.id} err=${err instanceof Error ? err.message : String(err)}`,
+        )
         showToast({
           variant: "error",
           title: language.t("common.requestFailed"),
@@ -834,8 +864,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
         data-component="sidebar-session"
         data-active={isSelected() ? "true" : "false"}
         classList={{
-          "group/session relative flex items-center w-full min-w-0 rounded-[22px] cursor-default pl-4 pr-3 border border-transparent":
-            true,
+          "group/session relative flex items-center w-full min-w-0 rounded-[22px] cursor-default pl-4 pr-3 border border-transparent": true,
           "transition-[background-color,border-color,box-shadow]": !props.reduced,
         }}
       >
@@ -1002,7 +1031,11 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
             </ContextMenu.Icon>
             <ContextMenu.ItemLabel>{language.t("session.copyInfo")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
-          <SessionShareMenuItem directory={props.session.directory} sessionID={props.session.id} title={props.session.title} />
+          <SessionShareMenuItem
+            directory={props.session.directory}
+            sessionID={props.session.id}
+            title={props.session.title}
+          />
           <ContextMenu.Item
             data-action="session-generate-title"
             data-session={base64Encode(props.session.id)}
@@ -1117,7 +1150,6 @@ export const NewSessionItem = (props: {
     </div>
   )
 }
-
 
 export const SessionGroupHeader = (props: { label: string }): JSX.Element => (
   <div data-slot="sidebar-session-group" class="px-4 pt-3 pb-1 first:pt-1 flex justify-end">

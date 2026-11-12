@@ -12,7 +12,8 @@ const history = {
 
 const createdClients: string[] = []
 const createdSessions: string[] = []
-const sessionCreateOptions: Array<{ directory: string; body?: { cwd?: string } }> = []
+type SessionCreateBody = { cwd?: string; channel?: { kind: "acp"; advisor: string; model?: string } }
+const sessionCreateOptions: Array<{ directory: string; body?: SessionCreateBody }> = []
 const enabledAutoAccept: Array<{ sessionID: string; directory: string }> = []
 const optimistic: Array<{
   directory?: string
@@ -44,6 +45,7 @@ let root = "/repo/main"
 let selected = "/repo/worktree-a"
 let variant: string | undefined
 let integration: string | undefined
+let channel: { advisor: string; model?: string } | undefined
 let sessionCreateGate: { promise: Promise<void>; resolve: () => void } | undefined
 let sessionCreateError: Error | undefined
 let sessionCreateCalls = 0
@@ -60,7 +62,7 @@ const clientFor = (directory: string, track = true) => {
   if (track) createdClients.push(directory)
   return {
     session: {
-      create: async (_parameters?: unknown, options?: { body?: { cwd?: string } }) => {
+      create: async (_parameters?: unknown, options?: { body?: SessionCreateBody }) => {
         sessionCreateCalls++
         await sessionCreateGate?.promise
         if (sessionCreateError) throw sessionCreateError
@@ -136,6 +138,7 @@ beforeAll(async () => {
       agent: {
         current: () => ({ name: "agent" }),
       },
+      channel: { current: () => channel },
       session: {
         promote(directory: string, sessionID: string) {
           promoted.push({ directory, sessionID })
@@ -332,6 +335,7 @@ beforeEach(() => {
   selected = "/repo/worktree-a"
   variant = undefined
   integration = undefined
+  channel = undefined
   sessionCreateGate = undefined
   sessionCreateError = undefined
   sessionCreateCalls = 0
@@ -392,6 +396,16 @@ describe("prompt submit worktree selection", () => {
     expect(optimistic[0]).toMatchObject({ message: { id: entry.message.id }, sessionID: "session-1" })
     expect(pendingSessionSubmissions.entries[key]?.sessionID).toBe("session-1")
     expect(promptResetScopes).toHaveLength(1)
+  })
+
+  test("passes the selected external channel into the first session without changing its directory", async () => {
+    channel = { advisor: "claude", model: "test-channel-model" }
+    await newPromptSubmit().handleSubmit({ preventDefault() {} } as Event)
+    await Bun.sleep(0)
+    expect(sessionCreateOptions).toEqual([
+      { directory: current, body: { channel: { kind: "acp", advisor: "claude", model: "test-channel-model" } } },
+    ])
+    expect(sentPrompts).toEqual([{ directory: current, sessionID: "session-1" }])
   })
 
   test("keeps a failed first message and retries once with the original message ID", async () => {
