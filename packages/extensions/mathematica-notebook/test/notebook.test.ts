@@ -7,7 +7,7 @@ describe("non-evaluating notebook model", () => {
     const result = parseNotebook(fixture)
     expect(result.cells.map((cell) => cell.style)).toEqual(["Title", "Input", "Output", "Input", "Input", "Text"])
     expect(result.cells[1]).toMatchObject({ text: "a=6", editable: true, runnable: true })
-    expect(result.cells[4]).toMatchObject({ editable: false, runnable: false })
+    expect(result.cells[4]).toMatchObject({ editable: false, runnable: true })
     expect(result.cells[5]).toMatchObject({ text: "rich text", editable: false })
   })
   test("edits content only, preserving options, groups and opaque boxes", () => {
@@ -45,7 +45,8 @@ describe("non-evaluating notebook model", () => {
       "x = Notebook[{}]",
     ])
       expect(() => parseNotebook(source)).toThrow()
-    expect(() => editNotebook(fixture, [{ index: 4, text: "1/2" }])).toThrow()
+    expect(() => editNotebook(fixture, [{ index: 5, text: "1/2" }])).toThrow()
+    expect(() => editNotebook(fixture, [{ index: 2, text: "1/2" }])).toThrow()
     expect(() =>
       editNotebook(fixture, [
         { index: 0, text: "a" },
@@ -54,7 +55,7 @@ describe("non-evaluating notebook model", () => {
     ).toThrow()
     expect(() => editNotebook(fixture, [{ index: 99, text: "x" }])).toThrow()
   })
-  test("rich and mixed boxes retain partial text without becoming editable or runnable", () => {
+  test("rich and mixed boxes retain partial text, stay runnable and patch verbatim", () => {
     const cases = [
       ['TextData[{"hello ", StyleBox["styled", Bold], UnknownBox["hidden"], "!"}]', "hello styled!"],
       ['StyleBox[RowBox[{"x", "+", UnknownBox["hidden"], "1"}], Bold]', "x+1"],
@@ -66,9 +67,11 @@ describe("non-evaluating notebook model", () => {
     for (const [box, text] of cases) {
       const source = `Notebook[{Cell[BoxData[${box}], "Input"]}]`
       const notebook = parseNotebook(source)
-      expect(notebook.cells[0]).toMatchObject({ text, editable: box === "RowBox[{}]", runnable: box === "RowBox[{}]" })
+      expect(notebook.cells[0]).toMatchObject({ text, editable: box === "RowBox[{}]", runnable: true })
       expect(editNotebook(source, [], undefined, notebook)).toBe(source)
-      if (box !== "RowBox[{}]") expect(() => editNotebook(source, [{ index: 0, text: "replacement" }])).toThrow()
+      // Non-editable input patches the content expression verbatim.
+      if (box !== "RowBox[{}]")
+        expect(editNotebook(source, [{ index: 0, text: 'BoxData["z"]' }])).toContain('Cell[BoxData["z"], "Input"]')
     }
     const unknown = 'UnknownBox[TextData[{"not visible"}]]'
     expect(parseNotebook(`Notebook[{Cell[${unknown}, "Text"]}]`).cells[0]).toMatchObject({
@@ -92,7 +95,7 @@ describe("non-evaluating notebook model", () => {
       { text: "title", style: "Section", editable: true, runnable: false },
       { text: "code", style: "Code", editable: true, runnable: true },
       { text: "default", style: "Text", editable: true, runnable: false },
-      { text: "last", style: "Output", editable: true, runnable: false },
+      { text: "last", style: "Output", editable: false, runnable: false },
     ])
     expect(editNotebook(source, [])).toBe(source)
   })
@@ -110,7 +113,8 @@ describe("non-evaluating notebook model", () => {
     }
     const notebook = parseNotebook(fixture)
     for (const edits of [
-      [{ index: 4, text: "unsafe" }],
+      [{ index: 5, text: "unsafe" }],
+      [{ index: 2, text: "unsafe" }],
       [{ index: 99, text: "missing" }],
       [
         { index: 0, text: "first" },

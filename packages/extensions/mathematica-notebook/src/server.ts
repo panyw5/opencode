@@ -293,7 +293,17 @@ export function createNotebookService(host: ExtensionHost, kernels = new Noteboo
           throw new Error("This cell is not a supported Input/Code cell. Use Source for complex boxes.")
         if (data.code !== undefined && typeof data.code !== "string") throw new Error("code must be a string")
         check(ctx.signal)
-        const output = await kernels.evaluate(path, typeof data.code === "string" ? data.code : cell.text, ctx.signal)
+        // Cells without safe plain text carry box markup (SuperscriptBox and
+        // friends): let the kernel interpret the boxes exactly like a
+        // front-end evaluation instead of guessing the source locally.
+        const code = cell.editable
+          ? typeof data.code === "string"
+            ? data.code
+            : cell.text
+          : `ToExpression[${
+              typeof data.code === "string" ? data.code : snapshot.source.slice(cell.start, cell.end)
+            }, StandardForm]`
+        const output = await kernels.evaluate(path, code, ctx.signal)
         check(ctx.signal)
         const previous = outputs.get(path)
         const current = previous?.revision === snapshot.revision ? previous.values : {}

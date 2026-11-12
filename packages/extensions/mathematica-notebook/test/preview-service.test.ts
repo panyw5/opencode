@@ -80,7 +80,7 @@ test("invalid requests, cross-file snapshots and disposed services reject", asyn
   await expect(
     call("notebook.cells", { path: other, revision: doc.revision, indexes: [0], kind: "preview" }),
   ).rejects.toThrow("snapshot_expired")
-  await expect(call("notebook.run", { revision: doc.revision, index: 0 })).rejects.toThrow("not a supported")
+  await expect(call("notebook.run", { revision: doc.revision, index: 9 })).rejects.toThrow("not a supported")
 })
 
 test("save can return a compact preview snapshot without changing legacy read", async () => {

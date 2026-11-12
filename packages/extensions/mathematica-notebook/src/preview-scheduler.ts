@@ -106,6 +106,15 @@ export function createPreviewScheduler(
   }
   return {
     reset,
+    // Synchronous cache read used to seed a remounted cell before the first
+    // paint, so virtualization never flashes a loading frame on a cache hit.
+    peek(index: number) {
+      const hit = cache.get(index)
+      if (!hit) return
+      cache.delete(index)
+      cache.set(index, hit)
+      return hit.result
+    },
     request(index: number, listener: Listener) {
       const hit = cache.get(index)
       if (hit) {

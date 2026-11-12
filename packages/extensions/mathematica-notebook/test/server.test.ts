@@ -39,7 +39,7 @@ test("read/save/append revisions and conflict protection without Wolfram", async
     ctx,
   )) as Document
   expect(added.cells.at(-1)?.text).toBe("Added")
-  await expect(service.rpc!["notebook.run"]({ path, revision: added.revision, index: 4 }, ctx)).rejects.toThrow(
+  await expect(service.rpc!["notebook.run"]({ path, revision: added.revision, index: 5 }, ctx)).rejects.toThrow(
     "not a supported",
   )
   await expect(service.rpc!["notebook.run"]({ path, revision: first.revision, index: 1 }, ctx)).rejects.toThrow(

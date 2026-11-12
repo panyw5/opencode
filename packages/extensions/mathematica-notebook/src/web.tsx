@@ -218,7 +218,8 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
   const [dirty, setDirty] = createSignal(false)
   const [fontScale, setFontScale] = createSignal(1)
   const [startMargin, setStartMargin] = createSignal(0)
-  const [previewEpoch, setPreviewEpoch] = createSignal(0)
+  // Raw box source loaded for editing cells whose content is not safe text.
+  const [rawSources, setRawSources] = createSignal<Record<number, string>>({})
   let scroller!: HTMLElement
   let toolbar!: HTMLElement
   let messages!: HTMLDivElement
@@ -317,6 +318,7 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
       setDocument(viewerContent(next))
       setOutputs(next.outputs)
       setDrafts({})
+      setRawSources({})
       setDirty(false)
       setNotice("")
       setFocused(undefined)
@@ -340,8 +342,7 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
       if (!alive || !request.current()) return
       const current = untrack(document)
       if (!discard && current?.revision === next.revision && current.path === next.path) {
-        previews.reset(next.revision)
-        setPreviewEpoch((value) => value + 1)
+        // Same revision: previews are still valid — only outputs can differ.
         setOutputs(next.outputs)
         setError("")
         props.context.log.debug(`notebook reload unchanged cells=${next.cells.length}`)
@@ -391,7 +392,10 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
       view: true,
       preview: true,
       revision: current.revision,
-      edits: draftEdits(drafts()),
+      edits: draftEdits(drafts()).filter(({ index, text }) => {
+        const cell = current.cells[index]
+        return cell && text !== (cell.editable ? cell.text : (rawSources()[index] ?? cell.text))
+      }),
       append,
     })
     if (alive) adopt(next)
@@ -408,7 +412,9 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
         {
           index: cell.index,
           revision: current.revision,
-          code: drafts()[cell.index] ?? (cell.deferred ? undefined : cell.text),
+          code: cell.editable
+            ? (drafts()[cell.index] ?? (cell.deferred ? undefined : cell.text))
+            : drafts()[cell.index],
         },
         controller.signal,
       )
@@ -430,15 +436,52 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
     }
   }
   const edit = (cell: ViewerCell, value: string) => {
+    const baseline = cell.editable ? cell.text : rawSources()[cell.index]
     setDrafts((prev) => {
       const next = { ...prev }
-      if (value === cell.text) delete next[cell.index]
+      if (baseline !== undefined && value === baseline) delete next[cell.index]
       else next[cell.index] = value
       return next
     })
-    const changed = Object.keys(drafts()).length > 0
+    if (!cell.editable && drafts()[cell.index] === undefined)
+      setRawSources((prev) => {
+        const next = { ...prev }
+        delete next[cell.index]
+        return next
+      })
+    const changed = (document()?.cells ?? []).some((item) => {
+      const draft = drafts()[item.index]
+      return draft !== undefined && draft !== (item.editable ? item.text : (rawSources()[item.index] ?? item.text))
+    })
     setDirty(changed)
     props.setDirty?.(changed)
+  }
+  // Box-marked cells have no safe plain text; editing loads the raw cell
+  // content (e.g. BoxData[RowBox[...]]) which the server patches verbatim.
+  const beginRawEdit = async (cell: ViewerCell) => {
+    const current = document()
+    if (!current || rawSources()[cell.index] !== undefined) return
+    let text = ""
+    let total = Infinity
+    while (text.length < total) {
+      const response = await call<CellsResponse>("notebook.cells", {
+        revision: current.revision,
+        indexes: [cell.index],
+        kind: "source",
+        offset: text.length,
+      })
+      const item = response.cells[0]
+      if (!item?.text) return
+      text += item.text
+      total = item.total ?? text.length
+    }
+    if (!alive || document()?.revision !== current.revision) return
+    // Seed the draft so the editor shows the raw source; dirty only once the
+    // user actually changes it (edit() diffs against rawSources as baseline).
+    batch(() => {
+      setRawSources((prev) => ({ ...prev, [cell.index]: text }))
+      setDrafts((prev) => ({ ...prev, [cell.index]: text }))
+    })
   }
   createEffect(() => {
     props.revision?.()
@@ -634,11 +677,11 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
                   </aside>
                   <div class="oc-nb-content">
                     <Show
-                      when={cell.editable}
+                      when={cell.editable || rawSources()[cell.index] !== undefined}
                       fallback={
                         <RichCell
                           index={cell.index}
-                          revision={`${document()?.revision ?? ""}:${previewEpoch()}`}
+                          revision={document()?.revision ?? ""}
                           scheduler={previews}
                           source={async (signal) => {
                             const response = await call<CellsResponse>(
@@ -649,6 +692,11 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
                             const item = response.cells[0]
                             return { text: item?.text ?? "", total: item?.total ?? 0 }
                           }}
+                          onEdit={
+                            cell.style === "Input" || cell.style === "Code"
+                              ? () => void beginRawEdit(cell)
+                              : undefined
+                          }
                         />
                       }
                     >
@@ -665,7 +713,7 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
                         <CellEditor
                           label={`Cell ${cell.index + 1} (${cell.style})`}
                           disabled={busy()}
-                          pretty={cell.style === "Input" || cell.style === "Code"}
+                          pretty={cell.editable && (cell.style === "Input" || cell.style === "Code")}
                           highlight={cell.style === "Input" || cell.style === "Code" || cell.style === "Output"}
                           value={cellText(cell, drafts())}
                           resize={resize}

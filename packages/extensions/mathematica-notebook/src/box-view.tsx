@@ -128,8 +128,11 @@ export function RichCell(props: {
   revision: string
   scheduler: PreviewScheduler
   source(signal: AbortSignal): Promise<{ text: string; total: number }>
+  onEdit?(): void
 }) {
-  const [preview, setPreview] = createSignal<Preview>()
+  // Seed from the scheduler cache so a virtualizer remount repaints the
+  // formula immediately instead of flashing the loading line.
+  const [preview, setPreview] = createSignal<Preview | undefined>(props.scheduler.peek(props.index))
   const [error, setError] = createSignal("")
   const [source, setSource] = createSignal<{ text: string; total: number }>()
   const [open, setOpen] = createSignal(false)
@@ -142,7 +145,7 @@ export function RichCell(props: {
     epoch++
     sourceController?.abort()
     setLoading(false)
-    setPreview(undefined)
+    setPreview(props.scheduler.peek(props.index))
     setError("")
     setSource(undefined)
     setOpen(false)
@@ -190,6 +193,11 @@ export function RichCell(props: {
             </Show>
           </>
         )}
+      </Show>
+      <Show when={props.onEdit}>
+        <button type="button" class="oc-nb-edit" onClick={() => props.onEdit?.()}>
+          Edit box source
+        </button>
       </Show>
       <details
         class="oc-nb-opaque"

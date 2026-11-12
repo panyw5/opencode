@@ -14,6 +14,10 @@ export type Cell = {
 export type Notebook = { cells: Cell[]; insertAt: number; empty: boolean }
 export type Edit = { index: number; text: string }
 
+// Kernel-generated styles stay read-only even when their content is plain
+// text; editing them would silently rewrite saved output.
+const READONLY_STYLES = new Set(["Output", "Print", "Message", "Echo"])
+
 export class NotebookParseError extends Error {
   readonly line: number
   readonly column: number
@@ -295,13 +299,12 @@ export function parseNotebook(source: string, options?: { preview?: boolean }): 
         throw error
       rendered = { text: "", safe: false }
     }
-    const runnable = style === "Input" || style === "Code"
     cells.push({
       index: cells.length,
       style,
       text: rendered.text || (rendered.safe ? "" : source.slice(first.start, first.end)),
-      editable: rendered.safe,
-      runnable: runnable && rendered.safe,
+      editable: rendered.safe && !READONLY_STYLES.has(style),
+      runnable: style === "Input" || style === "Code",
       raw: source.slice(entry.start, entry.end),
       start: first.start,
       end: first.end,
@@ -338,13 +341,18 @@ export function editNotebook(
   const seen = new Set<number>()
   const patches = edits.map((edit) => {
     const cell = notebook.cells[edit.index]
-    if (!cell || !cell.editable || seen.has(edit.index) || typeof edit.text !== "string")
+    if (!cell || seen.has(edit.index) || typeof edit.text !== "string")
       throw new Error("Invalid, duplicate or unsupported cell edit")
+    const input = cell.style === "Input" || cell.style === "Code"
+    // Non-editable Input/Code content (box markup) patches verbatim — the
+    // caller edits the raw BoxData expression, and the whole-file re-parse
+    // after patching rejects malformed results.
+    if (!cell.editable && !input) throw new Error("Invalid, duplicate or unsupported cell edit")
     seen.add(edit.index)
     return {
       start: cell.start,
       end: cell.end,
-      text: cell.style === "Input" || cell.style === "Code" ? `BoxData[${quote(edit.text)}]` : quote(edit.text),
+      text: !cell.editable ? edit.text : input ? `BoxData[${quote(edit.text)}]` : quote(edit.text),
     }
   })
   if (append)
