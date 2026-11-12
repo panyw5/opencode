@@ -63,6 +63,18 @@
             "never"
           ],
           "default": "always"
+        },
+        "wordWrap": {
+          "type": "boolean",
+          "title": "word wrap",
+          "description": "Wrap long lines in the file preview.",
+          "default": true
+        },
+        "fontSize": {
+          "type": "number",
+          "title": "font size",
+          "description": "File preview font size in pixels.",
+          "default": 12.5
         }
       }
     },

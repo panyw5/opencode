@@ -30,6 +30,10 @@ export type ExtensionHost = {
     get(): Record<string, unknown>
     onDidChange(listener: (next: Record<string, unknown>) => void): () => void
   }
+  /** Generation-owned timers; returned promises are drained during quiesce. */
+  setTimeout(callback: () => void | Promise<void>, delayMs: number): { dispose(): void }
+  /** Repeats until disposed or the callback fails; async invocations may overlap. */
+  setInterval(callback: () => void | Promise<void>, delayMs: number): { dispose(): void }
   emit(name: string, data: unknown, options?: { directory?: string }): void
   readonly log: Record<
     "debug" | "info" | "warn" | "error",

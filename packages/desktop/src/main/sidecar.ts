@@ -2,6 +2,7 @@ import * as http from "node:http"
 import * as tls from "node:tls"
 import { Effect, Layer } from "effect"
 import type { SqliteMigrationProgress } from "../preload/types"
+import { extensionFromStack } from "./sidecar-error"
 
 type NodeTlsWithSystemCertificates = typeof tls & {
   getCACertificates: (type: "default" | "system") => string[]
@@ -348,8 +349,10 @@ function reportFatal(type: "uncaughtException" | "unhandledRejection", error: un
   if (fatalReported) return
   fatalReported = true
   const serialized = serializeError(error)
-  const message = `sidecar ${type}: ${serialized.stack ?? serialized.message}`
-  recordIssue?.({ message: serialized.message, details: serialized.stack, fatal: true })
+  const extension = extensionFromStack(serialized.stack)
+  const attribution = extension ? ` [extension=${extension}]` : ""
+  const message = `sidecar ${type}${attribution}: ${serialized.stack ?? serialized.message}`
+  recordIssue?.({ message: `${serialized.message}${attribution}`, details: serialized.stack, fatal: true })
   const fatalError = serialized.stack ? { message, stack: serialized.stack } : { message }
   try {
     parentPort.postMessage({ type: "error", error: fatalError })
@@ -362,6 +365,8 @@ function reportFatal(type: "uncaughtException" | "unhandledRejection", error: un
 
 function reportNonFatal(type: "unhandledRejection", error: unknown) {
   const serialized = serializeError(error)
-  recordIssue?.({ message: serialized.message, details: serialized.stack, fatal: false })
-  console.error(`sidecar ${type} (non-fatal, logged): ${serialized.stack ?? serialized.message}`)
+  const extension = extensionFromStack(serialized.stack)
+  const attribution = extension ? ` [extension=${extension}]` : ""
+  recordIssue?.({ message: `${serialized.message}${attribution}`, details: serialized.stack, fatal: false })
+  console.error(`sidecar ${type}${attribution} (non-fatal, logged): ${serialized.stack ?? serialized.message}`)
 }

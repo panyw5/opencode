@@ -2,8 +2,9 @@ import { Button } from "@opencode-ai/ui/button"
 import { Checkbox } from "@opencode-ai/ui/checkbox"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
+import { Select } from "@opencode-ai/ui/select"
 import { TextField } from "@opencode-ai/ui/text-field"
-import { For, Show, createRenderEffect, onCleanup } from "solid-js"
+import { For, Show, createMemo, createRenderEffect, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { ExtensionCard, ExtensionContributions } from "./extension-card"
 import {
@@ -50,6 +51,7 @@ export interface ExtensionInstallationProps extends InstallationBlockedState {
 
 /** Exported separately so the real Solid form can be exercised without mocking the dialog provider. */
 export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
+  const removal = () => props.intent.kind === "uninstall"
   const releaseUpdate = () => props.intent.kind === "update" && props.intent.source?.type === "release"
   const npmUpdate = () => props.intent.kind === "update" && props.intent.source?.type === "npm"
   const localInstall = () => props.intent.kind === "install" && "localArchive" in props.intent
@@ -90,6 +92,13 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
   const intentIdentity = () => JSON.stringify(props.intent)
   const initialIntent = intentIdentity()
   const t = (key: InstallationTranslationKey) => props.language.t(key)
+  const sourceOptions = createMemo(() => [
+    { value: "release", label: t("config.extensions.install.release") },
+    { value: "npm", label: t("config.extensions.install.npm") },
+    { value: "archive", label: t("config.extensions.install.archive") },
+    ...(localInstall() ? [{ value: "local", label: t("config.extensions.install.local") }] : []),
+    ...(npmUpdate() ? [{ value: "version", label: t("config.extensions.install.version") }] : []),
+  ])
   const blocked = () => state.stale || installationBlocked(props)
   const previewLabel = () =>
     props.intent.kind === "uninstall"
@@ -101,6 +110,10 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
   // but must not invalidate that operation; safe mode or unsaved settings still do.
   const invalidated = () => installationBlocked({ ...props, busy: false })
   const pending = () => ["preparing", "committing", "status"].includes(state.phase)
+  const removalComplete = () =>
+    state.result?.state === "committed" && state.result.committed === true && state.result.synced === true
+  const removalFailed = () => !pending() && !!(state.result || state.error) && !removalComplete()
+  const removalRetryable = () => removalFailed() && !state.stale && state.result?.committed !== true
   const cancelOwned = () => {
     const operation = owned
     owned = undefined
@@ -204,6 +217,7 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
       }
       owned = { prepared, operations, submitted: false }
       setState({ phase: "preview", prepared, enable: false })
+      if (removal()) await commit()
     } catch (error) {
       // Only the fixed ASCII category reaches the log; the raw error object is
       // never stringified so tokens and capabilities stay out of the console.
@@ -222,6 +236,10 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
   const finish = (result: InstallationResult, prepared: PreparedInstallation) => {
     const safe = installationPublicResult(result, prepared.token)
     setState({ result: safe, phase: "result", error: undefined })
+    if (removal())
+      console.info(
+        `[extension-remove] outcome=${removalComplete() ? "removed" : "failed"} state=${safe.state} committed=${safe.committed} synced=${safe.synced} cleanupPending=${safe.cleanupPending} warnings=${safe.warnings.length}`,
+      )
     props.onResult?.(safe)
   }
   const commit = async () => {
@@ -254,10 +272,13 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
         `[extension-install] commit response failed code=${(error as { code?: string })?.code ?? "transport"} current=${current(ticket)}`,
       )
       // A lost response is not proof that the registry write failed. Keep the capability for status, never retry install.
-      if (current(ticket)) finish(installationUnknown(operation.prepared), operation.prepared)
+      if (!current(ticket)) return
+      if (!removal()) return finish(installationUnknown(operation.prepared), operation.prepared)
+      setState({ result: installationUnknown(operation.prepared), phase: "result" })
+      await status()
     }
   }
-  const status = async () => {
+  const status = async (retryRemoval = false) => {
     const operation = owned
     if (!alive || blocked() || pending() || !operation) return
     const ticket = ++serial
@@ -269,10 +290,34 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
         operation.submitted = false
         // Status deliberately has no token. Keep the original identity-bound object/capability.
         setState({ result: undefined, phase: "preview" })
-      } else finish(result, operation.prepared)
+        if (removal()) {
+          if (retryRemoval) await commit()
+          else setState({ result: undefined, phase: "result", error: "config.extensions.install.failed" })
+        }
+      } else {
+        finish(result, operation.prepared)
+        if (removal() && retryRemoval && result.committed === false) await restartRemoval()
+      }
     } catch {
       if (current(ticket)) setState({ phase: "result", error: "config.extensions.install.statusFailed" })
     }
+  }
+  const restartRemoval = async () => {
+    if (!alive || blocked()) return
+    cancelOwned()
+    setState({ phase: "edit", prepared: undefined, result: undefined, error: undefined })
+    await prepare()
+  }
+  const retryRemoval = async () => {
+    if (!alive || blocked() || !removalRetryable()) return
+    if (state.result?.committed === false) return restartRemoval()
+    // Resolve an uncertain commit with its original capability before another write.
+    if (owned?.submitted) return status(true)
+    if (owned) {
+      setState({ phase: "preview", result: undefined, error: undefined })
+      return commit()
+    }
+    await restartRemoval()
   }
   const back = () => {
     if (pending() || state.result) return
@@ -298,19 +343,25 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
         <Show when={blocked() && !pending() && !state.stale}>
           <p role="status">{t("config.extensions.install.blocked")}</p>
         </Show>
-        <Show when={state.error}>
+        <Show when={!removal() && state.error}>
           {(error) => (
             <p role="alert" class="text-text-danger-base">
               {t(error())}
             </p>
           )}
         </Show>
-        <Show when={state.error && state.diagnostic}>
+        <Show when={!removal() && state.error && state.diagnostic}>
           <p role="alert" data-install-diagnostic class="break-words text-text-danger-base">
             {state.diagnosticKey ? t(state.diagnosticKey) : state.diagnostic}
           </p>
         </Show>
-        <Show when={(state.phase === "edit" || state.phase === "preparing") && !state.result}>
+        <Show
+          when={
+            (state.phase === "edit" || state.phase === "preparing") &&
+            !state.result &&
+            (!removal() || (!pending() && !state.error))
+          }
+        >
           <Show
             when={props.intent.kind !== "uninstall"}
             fallback={
@@ -324,34 +375,25 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
                 >
                   {t("config.extensions.install.purgeData")}
                 </Checkbox>
-                <Show when={state.input.purgeData}>
-                  <p role="alert" class="text-text-danger-base">
-                    {t("config.extensions.install.purgeWarning")}
-                  </p>
-                </Show>
               </>
             }
           >
             <ExtensionCard>
               <label class="flex flex-col gap-2 text-12-medium text-text-weak">
                 {t("config.extensions.install.source")}
-                <select
-                  data-field="source-type"
-                  class="h-[34px] w-full rounded-md border border-border-weak-base bg-surface-base px-3 text-13-regular text-text-strong"
-                  value={state.input.sourceType}
+                <Select
+                  triggerProps={{ "aria-label": t("config.extensions.install.source"), "data-field": "source-type" }}
+                  options={sourceOptions()}
+                  current={sourceOptions().find((o) => o.value === state.input.sourceType)}
+                  value={(o) => o.value}
+                  label={(o) => o.label}
+                  onSelect={(o) => o && edit("sourceType", o.value as InstallationInput["sourceType"])}
                   disabled={blocked() || releaseUpdate()}
-                  onChange={(event) => edit("sourceType", event.currentTarget.value as InstallationInput["sourceType"])}
-                >
-                  <option value="release">{t("config.extensions.install.release")}</option>
-                  <option value="npm">{t("config.extensions.install.npm")}</option>
-                  <option value="archive">{t("config.extensions.install.archive")}</option>
-                  <Show when={localInstall()}>
-                    <option value="local">{t("config.extensions.install.local")}</option>
-                  </Show>
-                  <Show when={npmUpdate()}>
-                    <option value="version">{t("config.extensions.install.version")}</option>
-                  </Show>
-                </select>
+                  variant="secondary"
+                  size="small"
+                  triggerVariant="settings"
+                  triggerStyle={{ width: "100%" }}
+                />
               </label>
               <Show when={releaseUpdate()}>
                 <p data-field="release-current">{t("config.extensions.install.releaseCurrent")}</p>
@@ -445,7 +487,7 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
             </ExtensionCard>
           </Show>
         </Show>
-        <Show when={!state.result ? state.prepared : undefined}>
+        <Show when={!removal() && !state.result ? state.prepared : undefined}>
           {(prepared) => (
             <>
               <Show when={prepared().source.type === "archive"}>
@@ -527,19 +569,41 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
                   {t("config.extensions.install.enable")}
                 </Checkbox>
               </Show>
-              <Show when={prepared().kind === "uninstall"}>
-                <p role={state.input.purgeData ? "alert" : "status"}>
-                  {t(
-                    state.input.purgeData
-                      ? "config.extensions.install.purgeWarning"
-                      : "config.extensions.install.keepData",
-                  )}
-                </p>
-              </Show>
             </>
           )}
         </Show>
-        <Show when={state.result}>
+        <Show when={removal() && (pending() || state.result || state.error)}>
+          <div
+            role={removalFailed() ? "alert" : "status"}
+            aria-live="polite"
+            class="flex flex-col gap-2"
+            data-removal-state={pending() ? "removing" : removalComplete() ? "removed" : "failed"}
+          >
+            <p class={removalFailed() ? "text-text-danger-base" : "text-text-strong"}>
+              {t(
+                pending()
+                  ? "config.extensions.install.removePending"
+                  : removalComplete()
+                    ? "config.extensions.install.removeSuccess"
+                    : "config.extensions.install.removeFailed",
+              )}
+            </p>
+            <Show when={removalFailed()}>
+              <p>
+                {t(
+                  state.stale
+                    ? "config.extensions.install.removeConnectionChanged"
+                    : state.result?.committed === true
+                      ? "config.extensions.install.removeIncomplete"
+                      : state.result?.state === "unknown" || state.error === "config.extensions.install.statusFailed"
+                        ? "config.extensions.install.removeUnknown"
+                        : "config.extensions.install.failed",
+                )}
+              </p>
+            </Show>
+          </div>
+        </Show>
+        <Show when={!removal() ? state.result : undefined}>
           {(result) => (
             <div role="status" class="flex flex-col gap-2" data-result={result().state}>
               <p>
@@ -577,31 +641,34 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
         data-install-footer
         class="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border-weak-base px-5 py-4"
       >
-        <Show when={state.prepared && !state.result}>
+        <Show when={!removal() && state.prepared && !state.result}>
           <Button data-action="extension-install-back" disabled={pending()} onClick={back}>
             {t("config.extensions.install.back")}
           </Button>
         </Show>
-        <Show
-          when={
-            props.intent.kind === "uninstall" &&
-            (state.phase === "edit" || state.phase === "preparing") &&
-            !state.result
-          }
-        >
+        <Show when={props.intent.kind === "uninstall" && state.phase === "edit" && !state.error && !state.result}>
           <Button
             size="small"
             data-action="extension-install-prepare"
             disabled={blocked() || pending()}
             onClick={() => void prepare()}
           >
-            {t(pending() ? "config.extensions.install.busy" : previewLabel())}
+            {t("config.extensions.install.uninstall")}
+          </Button>
+        </Show>
+        <Show when={removal() && removalRetryable()}>
+          <Button data-action="extension-remove-retry" disabled={blocked()} onClick={() => void retryRemoval()}>
+            {t("config.extensions.install.retry")}
           </Button>
         </Show>
         <Button data-action="extension-install-close" onClick={close}>
-          {t(state.result ? "config.extensions.install.close" : "config.extensions.install.cancel")}
+          {t(
+            state.result || (removal() && (pending() || state.error))
+              ? "config.extensions.install.close"
+              : "config.extensions.install.cancel",
+          )}
         </Button>
-        <Show when={state.prepared && !state.result}>
+        <Show when={!removal() && state.prepared && !state.result}>
           <Button
             data-action="extension-install-confirm"
             variant="primary"

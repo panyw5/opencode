@@ -1,5 +1,6 @@
-import { describe, expect } from "bun:test"
-import { Effect, Fiber, Layer } from "effect"
+import { describe, expect, spyOn } from "bun:test"
+import { Cause, Effect, Exit, Fiber, Layer } from "effect"
+import * as Log from "@opencode-ai/core/util/log"
 import { FetchHttpClient } from "effect/unstable/http"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -10,7 +11,8 @@ import { Bus } from "../../src/bus"
 import { Config } from "../../src/config/config"
 import { Env } from "../../src/env"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
-import { Plugin } from "../../src/plugin/index"
+import { ExtensionMutationError } from "../../src/extension/runtime"
+import { Plugin, type HookEntry } from "../../src/plugin/index"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { SessionID } from "../../src/session/schema"
 import { Todo } from "../../src/session/todo"
@@ -87,6 +89,26 @@ function withProject<A, E, R>(source: string, self: Effect.Effect<A, E, R>) {
   )
 }
 
+function withEntries<A, E, R>(entries: HookEntry[], self: Effect.Effect<A, E, R>) {
+  return withProject(
+    entries.map((_, index) => `export const plugin${index} = async () => ({})`).join("\n"),
+    Effect.gen(function* () {
+      const loaded = yield* (yield* Plugin.Service).entries()
+      expect(loaded).toHaveLength(entries.length)
+      for (const [index, entry] of entries.entries()) Object.assign(loaded[index]!, entry)
+      return yield* self
+    }),
+  )
+}
+
+function signal() {
+  let resolve = () => {}
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
 const triggerSystemTransform = Effect.fn("PluginTriggerTest.triggerSystemTransform")(function* () {
   const plugin = yield* Plugin.Service
   const out = { system: [] as string[] }
@@ -111,6 +133,190 @@ const triggerChatMessage = Effect.fn("PluginTriggerTest.triggerChatMessage")(fun
 })
 
 describe("plugin.trigger", () => {
+  for (const boundary of ["sync", "promise"] as const) {
+    const fail = (error: Error) => {
+      if (boundary === "sync") throw error
+      return Promise.reject(error)
+    }
+
+    it.live(`skips extension mutation ${boundary} errors and continues subsequent trigger entries`, () =>
+      withEntries(
+        [
+          {
+            id: "extension:test.mutating",
+            hooks: { [systemHook]: () => fail(new ExtensionMutationError("test.mutating")) },
+          },
+          {
+            id: "test.healthy",
+            hooks: {
+              [systemHook]: async (_input, output) => {
+                output.system.push("healthy")
+              },
+            },
+          },
+        ],
+        Effect.gen(function* () {
+          expect(yield* triggerSystemTransform()).toEqual(["healthy"])
+        }),
+      ),
+    )
+
+    for (const [id, error] of [
+      ["test.plugin", new Error("ordinary plugin failure")],
+      ["extension:test.extension", new Error("ordinary extension failure")],
+      ["test.plugin", new ExtensionMutationError("test.plugin")],
+      ["extension:test.extension", Object.assign(new Error("lookalike mutation"), { name: "ExtensionMutationError" })],
+    ] as const) {
+      it.live(`rejects ${boundary} ${error.message} from ${id}`, () => {
+        let continued = false
+        return withEntries(
+          [
+            { id, hooks: { [systemHook]: () => fail(error) } },
+            {
+              id: "test.healthy",
+              hooks: {
+                [systemHook]: async () => {
+                  continued = true
+                },
+              },
+            },
+          ],
+          Effect.gen(function* () {
+            const exit = yield* triggerSystemTransform().pipe(Effect.exit)
+            expect(Exit.isFailure(exit)).toBe(true)
+            if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBe(error)
+            expect(continued).toBe(false)
+          }),
+        )
+      })
+    }
+
+    it.live(`does not attribute chat.message parts when skipping a ${boundary} mutation`, () => {
+      const parts = [{ id: "part_original", type: "text", text: "original" }]
+      const output = { message: {}, parts }
+      return withEntries(
+        [
+          {
+            id: "extension:test.mutating",
+            hooks: { [chatHook]: () => fail(new ExtensionMutationError("test.mutating")) },
+          },
+        ],
+        Effect.gen(function* () {
+          const result = yield* (yield* Plugin.Service).trigger(
+            chatHook,
+            { sessionID: SessionID.make("ses_skip") },
+            output as any,
+          )
+          expect(result).toBe(output)
+          expect(output.parts).toBe(parts)
+          expect(output.parts).toEqual([{ id: "part_original", type: "text", text: "original" }])
+        }),
+      )
+    })
+
+    for (const id of ["test.plugin", "extension:test.extension"]) {
+      for (const error of [new Error("event failure"), new ExtensionMutationError("test.extension")]) {
+        it.live(`isolates ${boundary} event ${error.name} from ${id} without stopping the subscriber`, () => {
+          const first = signal()
+          const second = signal()
+          const logged = signal()
+          let calls = 0
+          const matches = (event: { type: string }) => event.type === Todo.Event.Updated.type
+          return withEntries(
+            [
+              {
+                id,
+                hooks: {
+                  event: ({ event }) => {
+                    if (matches(event)) return fail(error)
+                    return Promise.resolve()
+                  },
+                },
+              },
+              {
+                id: "test.healthy",
+                hooks: {
+                  event: async ({ event }) => {
+                    if (!matches(event)) return
+                    calls++
+                    if (calls === 1) first.resolve()
+                    if (calls === 2) second.resolve()
+                  },
+                },
+              },
+            ],
+            Effect.gen(function* () {
+              const logger = Log.create({ service: "plugin" })
+              const original = logger.error.bind(logger)
+              const errors = spyOn(logger, "error").mockImplementation((message, data) => {
+                original(message, data)
+                if (data?.plugin === id && data?.error === error) logged.resolve()
+              })
+              const bus = yield* Bus.Service
+              yield* Effect.gen(function* () {
+                yield* bus.publish(Todo.Event.Updated, { sessionID: SessionID.make("ses_event"), todos: [] })
+                yield* Effect.promise(() => first.promise).pipe(Effect.timeout("500 millis"))
+                yield* bus.publish(Todo.Event.Updated, { sessionID: SessionID.make("ses_event"), todos: [] })
+                yield* Effect.promise(() => second.promise).pipe(Effect.timeout("500 millis"))
+                yield* Effect.promise(() => logged.promise).pipe(Effect.timeout("500 millis"))
+                expect(calls).toBe(2)
+                expect(errors).toHaveBeenCalledWith(
+                  "plugin event hook failed",
+                  expect.objectContaining({ plugin: id, error }),
+                )
+              }).pipe(Effect.ensuring(Effect.sync(() => errors.mockRestore())))
+            }),
+          )
+        })
+      }
+    }
+  }
+
+  it.live("does not await a slow event hook before invoking other entries or later events", () => {
+    const release = signal()
+    const first = signal()
+    const second = signal()
+    let slowStarted = 0
+    let slowFinished = 0
+    let fastCalls = 0
+    return withEntries(
+      [
+        {
+          id: "test.slow",
+          hooks: {
+            event: async ({ event }) => {
+              if (event.type !== Todo.Event.Updated.type) return
+              slowStarted++
+              await release.promise
+              slowFinished++
+            },
+          },
+        },
+        {
+          id: "test.fast",
+          hooks: {
+            event: async ({ event }) => {
+              if (event.type !== Todo.Event.Updated.type) return
+              fastCalls++
+              if (fastCalls === 1) first.resolve()
+              if (fastCalls === 2) second.resolve()
+            },
+          },
+        },
+      ],
+      Effect.gen(function* () {
+        const bus = yield* Bus.Service
+        yield* bus.publish(Todo.Event.Updated, { sessionID: SessionID.make("ses_slow"), todos: [] })
+        yield* Effect.promise(() => first.promise).pipe(Effect.timeout("500 millis"))
+        yield* bus.publish(Todo.Event.Updated, { sessionID: SessionID.make("ses_slow"), todos: [] })
+        yield* Effect.promise(() => second.promise).pipe(Effect.timeout("500 millis"))
+        expect(slowStarted).toBe(2)
+        expect(slowFinished).toBe(0)
+        expect(fastCalls).toBe(2)
+      }),
+    ).pipe(Effect.ensuring(Effect.sync(release.resolve)))
+  })
+
   it.live("runs dispose hooks exactly once when the instance closes", () =>
     Effect.gen(function* () {
       const key = "__opencode_plugin_dispose_contract__"

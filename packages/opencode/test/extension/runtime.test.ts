@@ -8,7 +8,7 @@ import { Global } from "@opencode-ai/core/global"
 import { GlobalBus } from "../../src/bus/global"
 import { ExtensionRegistry, registryFile } from "../../src/extension/registry"
 import { ExtensionLeases } from "../../src/extension/leases"
-import { Effect, Exit } from "effect"
+import { Effect } from "effect"
 import { InstanceState } from "../../src/effect/instance-state"
 import { InstanceRef } from "../../src/effect/instance-ref"
 import type { InstanceContext } from "../../src/project/instance-context"
@@ -272,7 +272,7 @@ describe("extension mutation gate", () => {
     const release = ExtensionRuntime.beginMutation("test.srv")
     expect(() => ExtensionRuntime.beginMutation("test.srv")).toThrow(ExtensionMutationError)
     await expect(ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })).rejects.toThrow(ExtensionMutationError)
-    await expect(ExtensionRuntime.instanceHooks(pluginInput())).rejects.toThrow(ExtensionMutationError)
+    expect(await ExtensionRuntime.instanceHooks(pluginInput())).toEqual([])
     expect(imports).toBe(0)
     expect(await ExtensionRuntime.quiesce("test.srv", { timeoutMs: 50 })).toEqual({
       stopped: true,
@@ -284,7 +284,7 @@ describe("extension mutation gate", () => {
     expect(imports).toBe(1)
   })
 
-  test("mutation failures are not cached by the production InstanceState helper", async () => {
+  test("a skipped mutation expires the production InstanceState cache after release", async () => {
     ExtensionRuntime.testing.setImporter(async () => ({
       activate: async () => ({}),
       server: async () => ({ tool: { example: { description: "example", args: {}, execute: async () => "new" } } }),
@@ -311,17 +311,25 @@ describe("extension mutation gate", () => {
             ),
           )
           const get = InstanceState.get(state).pipe(Effect.provideService(InstanceRef, context))
+          const invalidated = deferred()
+          const unregister = ExtensionRuntime.registerCacheInvalidator("plugin", async () => {
+            await Effect.runPromise(InstanceState.invalidateAll(state))
+            invalidated.resolve()
+          })
           const release = ExtensionRuntime.beginMutation("test.srv")
           try {
-            expect(Exit.isFailure(yield* Effect.exit(get))).toBe(true)
+            expect(yield* get).toEqual([])
+            release()
+            yield* Effect.promise(() => invalidated.promise)
+            const entries = yield* get
+            expect(entries).toHaveLength(1)
+            expect(entries[0]!.hooks.tool?.example).toBeDefined()
+            expect(yield* get).toBe(entries)
+            expect(attempts).toBe(2)
           } finally {
             release()
+            unregister()
           }
-          const entries = yield* get
-          expect(entries).toHaveLength(1)
-          expect(entries[0]!.hooks.tool?.example).toBeDefined()
-          expect(yield* get).toBe(entries)
-          expect(attempts).toBe(2)
         }),
       ),
     )
@@ -484,7 +492,12 @@ describe("extension mutation gate", () => {
     release()
     expect(await pending).toBeInstanceOf(ExtensionMutationError)
     expect(calls).toBe(0)
-    expect(ExtensionRuntime.describe("test.srv")).toBeUndefined()
+    expect(ExtensionRuntime.describe("test.srv")).toEqual({
+      hasService: false,
+      hasInstanceHooks: false,
+      runtime: "idle",
+      needsRestart: false,
+    })
   })
 
   test("disposes a late activation exactly once before allowing a new generation", async () => {
@@ -661,7 +674,7 @@ describe("extension mutation gate", () => {
     const stopped = ExtensionRuntime.quiesce("test.srv", { timeoutMs: 100 })
     gate.resolve()
     expect(await stopped).toEqual({ stopped: true, needsRestart: false })
-    expect(await pending).toBeInstanceOf(ExtensionMutationError)
+    expect(await pending).toEqual([])
     expect(disposed).toBe(1)
     release()
     const [instance] = await ExtensionRuntime.instanceHooks(pluginInput())
@@ -696,7 +709,11 @@ describe("extension runtime process pins", () => {
     expect(record.owner).toBe("opencode.extension-data")
     expect(record.id).toBe("test.srv")
     expect(record.name).toBe("test-srv")
-    expect(record.sourceHash).toBe(createHash("sha256").update("archive:fixture.zip").digest("hex"))
+    expect(record.sourceHash).toBe(
+      createHash("sha256")
+        .update(`archive:${"0".repeat(64)}`)
+        .digest("hex"),
+    )
     await rm(owner)
   })
 
@@ -865,7 +882,7 @@ describe("extension runtime process pins", () => {
       },
     })
     await expect(ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })).rejects.toThrow("lease busy")
-    await expect(ExtensionRuntime.instanceHooks(pluginInput())).rejects.toThrow("lease busy")
+    expect(await ExtensionRuntime.instanceHooks(pluginInput())).toEqual([])
     expect(events).not.toContain("import")
     busy = false
     expect(await ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })).toBe("ok")
@@ -909,7 +926,12 @@ describe("extension runtime", () => {
       pong: "hi",
       from: "process",
     })
-    expect(ExtensionRuntime.describe("test.srv")).toEqual({ hasService: true, hasInstanceHooks: true })
+    expect(ExtensionRuntime.describe("test.srv")).toEqual({
+      hasService: true,
+      hasInstanceHooks: true,
+      runtime: "ready",
+      needsRestart: false,
+    })
   })
 
   test("passes host environment and settings to the extension", async () => {
@@ -1148,7 +1170,12 @@ describe("extension runtime", () => {
     await ExtensionRuntime.disable("test.srv", { timeoutMs: 20 })
     expect(Date.now() - started).toBeLessThan(5_000)
     expect(counters().dispose).toBe(1)
-    expect(ExtensionRuntime.describe("test.srv")).toBeUndefined()
+    expect(ExtensionRuntime.describe("test.srv")).toEqual({
+      hasService: false,
+      hasInstanceHooks: false,
+      runtime: "idle",
+      needsRestart: false,
+    })
 
     // Stop hanging so the afterEach reset can dispose the re-activated service.
     counters().disposeHang = undefined
@@ -1180,7 +1207,12 @@ describe("extension runtime", () => {
     release()
     // The abandoned import must not surface hooks or an entry.
     expect(await pending).toEqual([])
-    expect(ExtensionRuntime.describe("test.srv")).toBeUndefined()
+    expect(ExtensionRuntime.describe("test.srv")).toEqual({
+      hasService: false,
+      hasInstanceHooks: false,
+      runtime: "idle",
+      needsRestart: false,
+    })
 
     ExtensionRuntime.testing.setImporter(undefined)
     const hooks = await ExtensionRuntime.instanceHooks(pluginInput())
@@ -1245,8 +1277,14 @@ describe("extension runtime", () => {
       // fresh loading entry.
       releaseStale()
       expect(await withTimeout(stale, 2500)).toBeInstanceOf(ExtensionRpcNotFoundError)
-      // The abandoned import must not have revived its entry.
-      expect(ExtensionRuntime.describe("test.srv")).toBeUndefined()
+      // The abandoned import must not have revived its entry; the independent
+      // fresh generation is still importing and is now visible as loading.
+      expect(ExtensionRuntime.describe("test.srv")).toEqual({
+        hasService: false,
+        hasInstanceHooks: false,
+        runtime: "loading",
+        needsRestart: false,
+      })
       // A third caller while the fresh load is still in flight joins it:
       // exactly two imports total, one shared activation.
       const third = ExtensionRuntime.rpc({ id: "test.srv", method: "ping", input: "third" })
@@ -1319,7 +1357,12 @@ describe("extension runtime", () => {
       // resurrecting its entry or disturbing the fresh one.
       releaseStale()
       expect(await withTimeout(stale, 2500)).toBeInstanceOf(ExtensionRpcNotFoundError)
-      expect(ExtensionRuntime.describe("test.srv")).toEqual({ hasService: true, hasInstanceHooks: true })
+      expect(ExtensionRuntime.describe("test.srv")).toEqual({
+        hasService: true,
+        hasInstanceHooks: true,
+        runtime: "ready",
+        needsRestart: false,
+      })
       expect(counters().activate).toBe(1)
     } finally {
       releaseStale()
@@ -1339,7 +1382,12 @@ describe("extension runtime", () => {
     expect(await pending).toEqual([])
     // The runtime disposes the service it can no longer cache.
     expect(counters().dispose).toBe(1)
-    expect(ExtensionRuntime.describe("test.srv")).toBeUndefined()
+    expect(ExtensionRuntime.describe("test.srv")).toEqual({
+      hasService: false,
+      hasInstanceHooks: false,
+      runtime: "idle",
+      needsRestart: false,
+    })
     expect(counters().activate).toBe(1)
   })
 
@@ -1528,7 +1576,12 @@ export default {
     await ExtensionRuntime.instanceHooks(pluginInput())
     await ExtensionRuntime.disposeAll({ timeoutMs: 50 })
     expect(counters().dispose).toBe(1)
-    expect(ExtensionRuntime.describe("test.srv")).toBeUndefined()
+    expect(ExtensionRuntime.describe("test.srv")).toEqual({
+      hasService: false,
+      hasInstanceHooks: false,
+      runtime: "idle",
+      needsRestart: false,
+    })
     expect((await ExtensionRegistry.list(() => "")).map((item) => item.id)).toEqual(["test.srv"])
   })
 
@@ -1544,7 +1597,12 @@ export default {
     expect(await pending).toEqual([])
     // The late hooks were disposed, not registered on the dead entry.
     expect(counters().instanceDispose).toBe(1)
-    expect(ExtensionRuntime.describe("test.srv")).toBeUndefined()
+    expect(ExtensionRuntime.describe("test.srv")).toEqual({
+      hasService: false,
+      hasInstanceHooks: false,
+      runtime: "idle",
+      needsRestart: false,
+    })
   })
 
   test("reload while server() runs disposes the late hooks instead of registering them", async () => {
@@ -1557,7 +1615,12 @@ export default {
     counters().serverGateRelease?.()
     expect(await pending).toEqual([])
     expect(counters().instanceDispose).toBe(1)
-    expect(ExtensionRuntime.describe("test.srv")).toBeUndefined()
+    expect(ExtensionRuntime.describe("test.srv")).toEqual({
+      hasService: false,
+      hasInstanceHooks: false,
+      runtime: "idle",
+      needsRestart: false,
+    })
   })
 
   test("resolves manifest setting defaults for the host", async () => {

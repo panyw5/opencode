@@ -230,6 +230,9 @@ export type WebInfo = Types.DeepMutable<Schema.Schema.Type<typeof WebInfo>>
 export const ServerInfo = Schema.Struct({
   hasService: Schema.Boolean,
   hasInstanceHooks: Schema.Boolean,
+  runtime: Schema.Literals(["idle", "loading", "ready", "error", "blocked"]),
+  error: Schema.optional(Schema.String),
+  needsRestart: Schema.Boolean,
 }).annotate({ identifier: "ExtensionServerInfo" })
 export type ServerInfo = Types.DeepMutable<Schema.Schema.Type<typeof ServerInfo>>
 
@@ -255,7 +258,15 @@ export const Info = Schema.Struct({
 }).annotate({ identifier: "ExtensionInfo" })
 export type Info = Types.DeepMutable<Schema.Schema.Type<typeof Info>>
 
-export const StatusState = Schema.Literals(["installed", "enabled", "disabled", "error", "changed", "removed"])
+export const StatusState = Schema.Literals([
+  "installed",
+  "enabled",
+  "disabled",
+  "error",
+  "blocked",
+  "changed",
+  "removed",
+])
 export const StatusProperties = Schema.Struct({
   id: ExtensionID,
   version: Schema.String,

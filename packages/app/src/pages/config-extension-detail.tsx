@@ -1,6 +1,7 @@
 import { For, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { ExtensionCard, ExtensionContributions } from "../components/extension-card"
+import { ExtensionRuntimeStatus } from "../components/extension-runtime-status"
 import { installationSourceLabel } from "./install-actions-state"
 import { useLanguage } from "@/context/language"
 import { useExtensionHost } from "@/extensions/host"
@@ -30,6 +31,12 @@ export function ConfigExtensionDetail(props: { item: ExtensionInfo }) {
           saving={form.saving}
         />
       </ConfigExtensionActions>
+      <ExtensionRuntimeStatus
+        item={props.item}
+        retry={host.retry}
+        connection={() => globalSDK.client}
+        disabled={!host.enabled() || host.mutating(props.item.id) || form.dirty || form.saving}
+      />
       <Show when={props.item.source}>
         {(source) => (
           <ExtensionCard title={language.t("config.extensions.install.source")}>

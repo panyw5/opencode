@@ -5,7 +5,8 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import type { Loaded } from "./manifest"
 import { ExtensionRegistry } from "./registry"
 import { ExtensionID, type Info, type Source } from "./schema"
-import { ExtensionRuntime } from "./runtime"
+import { ExtensionRuntime, ExtensionMutationError } from "./runtime"
+import { publish } from "./event"
 import type { ExtensionWatcher as Watcher } from "./watch"
 
 const token = randomBytes(18).toString("base64url")
@@ -34,6 +35,7 @@ export interface Interface {
   readonly get: (id: ExtensionID) => Effect.Effect<Info, Error>
   readonly link: (directory: string) => Effect.Effect<Info, Error>
   readonly setEnabled: (id: ExtensionID, enabled: boolean) => Effect.Effect<Info, Error>
+  readonly retry: (id: ExtensionID) => Effect.Effect<Info, Error>
   readonly asset: (id: ExtensionID, version: string) => Effect.Effect<Asset | undefined, Error>
 }
 
@@ -108,7 +110,7 @@ export const layer = Layer.effect(
             const items = await ExtensionRegistry.list(base)
             return items.map((item) => ({
               ...item,
-              server: item.state === "ready" ? ExtensionRuntime.describe(item.id) : undefined,
+              server: ExtensionRuntime.describe(item.id),
             }))
           })
     const get = (id: ExtensionID) =>
@@ -116,7 +118,7 @@ export const layer = Layer.effect(
         ? Effect.fail(new Error(`Extensions are disabled: ${id}`))
         : attempt(async () => {
             const item = await ExtensionRegistry.get(id, base)
-            return { ...item, server: item.state === "ready" ? ExtensionRuntime.describe(id) : undefined }
+            return { ...item, server: ExtensionRuntime.describe(id) }
           })
     const link = (directory: string) =>
       disabled()
@@ -136,6 +138,16 @@ export const layer = Layer.effect(
             await refreshWatcher()
             return info
           })
+    const retry = (id: ExtensionID) =>
+      disabled()
+        ? Effect.fail(new Error(`Extensions are disabled: ${id}`))
+        : attempt(async () => {
+            const item = await ExtensionRegistry.get(id, base)
+            if (!item.enabled) throw new ExtensionMutationError(id)
+            await ExtensionRuntime.retry(id)
+            publish({ id, version: item.version, state: "changed" })
+            return { ...(await ExtensionRegistry.get(id, base)), server: ExtensionRuntime.describe(id) }
+          })
     const asset = (id: ExtensionID, version: string) =>
       disabled()
         ? Effect.succeed(undefined)
@@ -151,7 +163,7 @@ export const layer = Layer.effect(
             }
           })
 
-    return Service.of({ token, list, get, link, setEnabled, asset })
+    return Service.of({ token, list, get, link, setEnabled, retry, asset })
   }),
 )
 

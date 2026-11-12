@@ -19,6 +19,9 @@ const en = {
   empty: "No variables defined yet",
   input: "Evaluate an expression in the kernel",
   inspect: "Evaluate an expression in the paused state",
+  wordWrap: "Word wrap",
+  fontDecrease: "Decrease font size",
+  fontIncrease: "Increase font size",
 }
 type Messages = Record<keyof typeof en, string>
 const zh: Messages = {
@@ -42,6 +45,9 @@ const zh: Messages = {
   empty: "尚未定义变量",
   input: "在内核中计算表达式",
   inspect: "在暂停状态下计算表达式",
+  wordWrap: "自动换行",
+  fontDecrease: "减小字号",
+  fontIncrease: "增大字号",
 }
 const zht: Messages = {
   run: "執行",
@@ -64,6 +70,9 @@ const zht: Messages = {
   empty: "尚未定義變數",
   input: "在核心中計算運算式",
   inspect: "在暫停狀態下計算運算式",
+  wordWrap: "自動換行",
+  fontDecrease: "縮小字級",
+  fontIncrease: "放大字級",
 }
 const ja: Messages = {
   run: "実行",
@@ -86,6 +95,9 @@ const ja: Messages = {
   empty: "変数はまだ定義されていません",
   input: "カーネルで式を評価",
   inspect: "一時停止状態で式を評価",
+  wordWrap: "折り返し",
+  fontDecrease: "フォントサイズを縮小",
+  fontIncrease: "フォントサイズを拡大",
 }
 
 const ko: Messages = {
@@ -109,6 +121,9 @@ const ko: Messages = {
   empty: "아직 정의된 변수가 없습니다",
   input: "커널에서 표현식 평가",
   inspect: "일시 중지 상태에서 표현식 평가",
+  wordWrap: "자동 줄 바꿈",
+  fontDecrease: "글꼴 크기 줄이기",
+  fontIncrease: "글꼴 크기 늘리기",
 }
 const de: Messages = {
   run: "Ausführen",
@@ -131,6 +146,9 @@ const de: Messages = {
   empty: "Noch keine Variablen definiert",
   input: "Einen Ausdruck im Kernel auswerten",
   inspect: "Einen Ausdruck im pausierten Zustand auswerten",
+  wordWrap: "Zeilenumbruch",
+  fontDecrease: "Schrift verkleinern",
+  fontIncrease: "Schrift vergrößern",
 }
 const es: Messages = {
   run: "Ejecutar",
@@ -153,6 +171,9 @@ const es: Messages = {
   empty: "Aún no hay variables definidas",
   input: "Evaluar una expresión en el núcleo",
   inspect: "Evaluar una expresión en estado de pausa",
+  wordWrap: "Ajuste de línea",
+  fontDecrease: "Reducir tamaño de fuente",
+  fontIncrease: "Aumentar tamaño de fuente",
 }
 const fr: Messages = {
   run: "Exécuter",
@@ -175,6 +196,9 @@ const fr: Messages = {
   empty: "Aucune variable définie pour le moment",
   input: "Évaluer une expression dans le noyau",
   inspect: "Évaluer une expression en pause",
+  wordWrap: "Retour à la ligne",
+  fontDecrease: "Réduire la taille de police",
+  fontIncrease: "Augmenter la taille de police",
 }
 const da: Messages = {
   run: "Kør",
@@ -197,6 +221,9 @@ const da: Messages = {
   empty: "Ingen variabler er defineret endnu",
   input: "Evaluer et udtryk i kernen",
   inspect: "Evaluer et udtryk i pauset tilstand",
+  wordWrap: "Tekstombrydning",
+  fontDecrease: "Formindsk skriftstørrelse",
+  fontIncrease: "Forøg skriftstørrelse",
 }
 const pl: Messages = {
   run: "Uruchom",
@@ -219,6 +246,9 @@ const pl: Messages = {
   empty: "Nie zdefiniowano jeszcze żadnych zmiennych",
   input: "Oblicz wyrażenie w jądrze",
   inspect: "Oblicz wyrażenie we wstrzymanym stanie",
+  wordWrap: "Zawijanie wierszy",
+  fontDecrease: "Zmniejsz rozmiar czcionki",
+  fontIncrease: "Zwiększ rozmiar czcionki",
 }
 const ru: Messages = {
   run: "Выполнить",
@@ -241,6 +271,9 @@ const ru: Messages = {
   empty: "Переменные пока не определены",
   input: "Вычислить выражение в ядре",
   inspect: "Вычислить выражение в приостановленном состоянии",
+  wordWrap: "Перенос строк",
+  fontDecrease: "Уменьшить размер шрифта",
+  fontIncrease: "Увеличить размер шрифта",
 }
 const ar: Messages = {
   run: "تشغيل",
@@ -263,6 +296,9 @@ const ar: Messages = {
   empty: "لم يتم تعريف أي متغيرات بعد",
   input: "تقييم تعبير في النواة",
   inspect: "تقييم تعبير في حالة التوقف المؤقت",
+  wordWrap: "التفاف النص",
+  fontDecrease: "تصغير حجم الخط",
+  fontIncrease: "تكبير حجم الخط",
 }
 const no: Messages = {
   run: "Kjør",
@@ -285,6 +321,9 @@ const no: Messages = {
   empty: "Ingen variabler er definert ennå",
   input: "Evaluer et uttrykk i kjernen",
   inspect: "Evaluer et uttrykk mens kjøringen er satt på pause",
+  wordWrap: "Tekstbryting",
+  fontDecrease: "Reduser skriftstørrelse",
+  fontIncrease: "Øk skriftstørrelse",
 }
 const br: Messages = {
   run: "Executar",
@@ -307,6 +346,9 @@ const br: Messages = {
   empty: "Nenhuma variável definida ainda",
   input: "Avaliar uma expressão no kernel",
   inspect: "Avaliar uma expressão no estado pausado",
+  wordWrap: "Quebra de linha",
+  fontDecrease: "Diminuir fonte",
+  fontIncrease: "Aumentar fonte",
 }
 const th: Messages = {
   run: "เรียกใช้",
@@ -329,6 +371,9 @@ const th: Messages = {
   empty: "ยังไม่มีการกำหนดตัวแปร",
   input: "ประเมินนิพจน์ในเคอร์เนล",
   inspect: "ประเมินนิพจน์ในสถานะหยุดชั่วคราว",
+  wordWrap: "ตัดบรรทัด",
+  fontDecrease: "ลดขนาดตัวอักษร",
+  fontIncrease: "เพิ่มขนาดตัวอักษร",
 }
 const bs: Messages = {
   run: "Pokreni",
@@ -351,6 +396,9 @@ const bs: Messages = {
   empty: "Još nema definisanih varijabli",
   input: "Izračunaj izraz u jezgri",
   inspect: "Izračunaj izraz u pauziranom stanju",
+  wordWrap: "Prelamanje teksta",
+  fontDecrease: "Smanji veličinu fonta",
+  fontIncrease: "Povećaj veličinu fonta",
 }
 const tr: Messages = {
   run: "Çalıştır",
@@ -373,6 +421,9 @@ const tr: Messages = {
   empty: "Henüz değişken tanımlanmadı",
   input: "Çekirdekte bir ifadeyi değerlendir",
   inspect: "Duraklatılmış durumda bir ifadeyi değerlendir",
+  wordWrap: "Satır kaydırma",
+  fontDecrease: "Yazı boyutunu küçült",
+  fontIncrease: "Yazı boyutunu büyüt",
 }
 
 const dict: Record<string, Messages> = { en, zh, zht, ko, de, es, fr, da, ja, pl, ru, ar, no, br, th, bs, tr }

@@ -2,6 +2,7 @@ import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { ExtensionID, Info } from "@/extension/schema"
 import { Authorization } from "../middleware/authorization"
+import { ConflictError } from "../errors"
 import { described } from "./metadata"
 
 export const ExtensionPaths = {
@@ -9,6 +10,7 @@ export const ExtensionPaths = {
   get: "/global/extension/:id",
   enable: "/global/extension/:id/enable",
   disable: "/global/extension/:id/disable",
+  retry: "/global/extension/:id/retry",
   settings: "/global/extension/:id/settings",
 } as const
 
@@ -50,6 +52,18 @@ export const ExtensionApi = HttpApi.make("extension").add(
         success: described(Info, "Disabled extension"),
         error: HttpApiError.NotFound,
       }).annotateMerge(OpenApi.annotations({ identifier: "extension.disable", summary: "Disable extension" })),
+      HttpApiEndpoint.post("retry", ExtensionPaths.retry, {
+        params: { id: ExtensionID },
+        success: described(Info, "Extension scheduled for retry"),
+        error: [HttpApiError.NotFound, ConflictError],
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "extension.retry",
+          summary: "Retry extension runtime",
+          description:
+            "Clear a retryable runtime error and rebuild hooks. Disabled, mutating, or restart-blocked extensions cannot be retried.",
+        }),
+      ),
       HttpApiEndpoint.patch("updateSettings", ExtensionPaths.settings, {
         params: { id: ExtensionID },
         payload: ExtensionSettingsPatch,

@@ -5,7 +5,8 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import type { Loaded } from "@/extension/manifest"
 import { ExtensionRegistry, NotFoundError, SettingsError } from "@/extension/registry"
 import type { ExtensionID } from "@/extension/schema"
-import { ExtensionRuntime } from "@/extension/runtime"
+import { ExtensionRuntime, ExtensionMutationError } from "@/extension/runtime"
+import { ConflictError } from "../errors"
 import { RootHttpApi } from "../api"
 
 function notFound(error: Error) {
@@ -55,6 +56,18 @@ export const extensionHandlers = HttpApiBuilder.group(RootHttpApi, "extension", 
         return yield* extension.setEnabled(ctx.params.id, enabled).pipe(Effect.catch(notFound))
       })
 
+    const retry = Effect.fn("ExtensionHttpApi.retry")(function* (ctx: { params: { id: ExtensionID } }) {
+      return yield* extension.retry(ctx.params.id).pipe(
+        Effect.catch((error): Effect.Effect<never, HttpApiError.NotFound | ConflictError> => {
+          if (error instanceof NotFoundError) return Effect.fail(new HttpApiError.NotFound({}))
+          if (error instanceof ExtensionMutationError) {
+            return Effect.fail(new ConflictError({ message: error.message, resource: ctx.params.id }))
+          }
+          return Effect.die(error)
+        }),
+      )
+    })
+
     const updateSettings = Effect.fn("ExtensionHttpApi.updateSettings")(function* (ctx: {
       params: { id: ExtensionID }
       payload: Record<string, unknown>
@@ -88,9 +101,7 @@ export const extensionHandlers = HttpApiBuilder.group(RootHttpApi, "extension", 
       yield* Effect.ignore(
         Effect.tryPromise({
           try: () =>
-            resolveSettings(ctx.params.id).then((settings) =>
-              ExtensionRuntime.notifySettings(ctx.params.id, settings),
-            ),
+            resolveSettings(ctx.params.id).then((settings) => ExtensionRuntime.notifySettings(ctx.params.id, settings)),
           catch: (error) => (error instanceof Error ? error : new Error(String(error))),
         }),
       )
@@ -102,6 +113,7 @@ export const extensionHandlers = HttpApiBuilder.group(RootHttpApi, "extension", 
       .handle("get", get)
       .handle("enable", setEnabled(true))
       .handle("disable", setEnabled(false))
+      .handle("retry", retry)
       .handle("updateSettings", updateSettings)
   }),
 )

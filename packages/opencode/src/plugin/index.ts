@@ -33,7 +33,7 @@ import { parsePluginSpecifier, readPluginId, readV1Plugin, resolvePluginId } fro
 import { registerAdapter } from "@/control-plane/adapters"
 import type { WorkspaceAdapter } from "@/control-plane/types"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { ExtensionRuntime } from "@/extension/runtime"
+import { ExtensionMutationError, ExtensionRuntime } from "@/extension/runtime"
 import { Hash } from "@/util/hash"
 import { SessionID } from "@/session/schema"
 
@@ -222,15 +222,16 @@ function attributeChatMessageHookParts(before: Record<string, unknown>[] | undef
 
     const id = typeof part.id === "string" ? part.id : undefined
     const indexed = before[index]
-    const original =
-      id ? originalText.get(id) : indexed?.type === "text" && !indexed.id && typeof indexed.text === "string" ? indexed.text : undefined
+    const original = id
+      ? originalText.get(id)
+      : indexed?.type === "text" && !indexed.id && typeof indexed.text === "string"
+        ? indexed.text
+        : undefined
     if (original !== undefined && part.text !== original) {
       const segments = injectedTextSegments(original, part.text)
       const { id: _id, ...injectedPart } = part
       if (segments.before) {
-        next.push(
-          markHookInjectedText({ ...injectedPart, text: segments.before }, hook, { overrideHook: true }),
-        )
+        next.push(markHookInjectedText({ ...injectedPart, text: segments.before }, hook, { overrideHook: true }))
       }
       next.push({ ...part, text: original, ...(segments.replacement ? { ignored: true } : {}) })
       if (segments.after) {
@@ -348,7 +349,16 @@ export const layer = Layer.effect(
         )
 
         function publishPluginError(message: string) {
-          bridge.fork(Issue.report({ source: "plugin", scope: "project", code: "plugin.load_failed", state: "recorded", key: message, message }))
+          bridge.fork(
+            Issue.report({
+              source: "plugin",
+              scope: "project",
+              code: "plugin.load_failed",
+              state: "recorded",
+              key: message,
+              message,
+            }),
+          )
         }
 
         const { Server } = yield* Effect.promise(() => import("../server/server"))
@@ -491,7 +501,13 @@ export const layer = Layer.effect(
               const event = eventTypeFrom(input)
               for (const entry of hooks) {
                 if (disabledHookControl(data, { sessionID, plugin: entry.id, hook: "event", event })) continue
-                void entry.hooks["event"]?.({ event: input as any })
+                try {
+                  void Promise.resolve(entry.hooks["event"]?.({ event: input as any })).catch((error) => {
+                    log.error("plugin event hook failed", { plugin: entry.id, event, error })
+                  })
+                } catch (error) {
+                  log.error("plugin event hook failed", { plugin: entry.id, event, error })
+                }
               }
             }),
           ),
@@ -519,7 +535,17 @@ export const layer = Layer.effect(
         const fn = entry.hooks[name] as any
         if (!fn) continue
         const beforeParts = name === "chat.message" ? cloneChatMessageParts(output) : undefined
-        yield* Effect.promise(async () => fn(input, output))
+        const completed = yield* Effect.promise(async () => {
+          try {
+            await fn(input, output)
+            return true
+          } catch (error) {
+            if (!entry.id.startsWith("extension:") || !(error instanceof ExtensionMutationError)) throw error
+            log.debug("extension hook skipped during mutation", { plugin: entry.id, hook: name, error })
+            return false
+          }
+        })
+        if (!completed) continue
         if (name === "chat.message") attributeChatMessageHookParts(beforeParts, output, pluginHookDisplayName(entry.id))
       }
       return output

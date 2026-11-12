@@ -10,6 +10,7 @@ export type ExtensionApi = {
   // mismatched response fields, cross-origin assets) reject the promise; the
   // caller decides whether a follow-up sync is required.
   setEnabled(input: { id: string; enabled: boolean }): Promise<ExtensionInfo>
+  retry(id: string): Promise<ExtensionInfo>
 }
 
 // Placeholder the server returns for configured secret values (see
@@ -85,6 +86,19 @@ export function createExtensionApi(input: { globalSDK: ReturnType<typeof useGlob
         }
       }
       return manifests
+    },
+    async retry(id) {
+      const serverURL = input.globalSDK.url
+      const client = input.globalSDK.client
+      const result = await client.extension.retry({ id })
+      if (result.error) throw new Error(`Extension retry failed: ${sdkErrorMessage(result.error)}`)
+      const data = result.data
+      if (!data || typeof data !== "object") throw new Error(`Extension retry response is unavailable: ${id}`)
+      if (data.id !== id) throw new Error(`Extension retry response id mismatch: expected ${id} got ${String(data.id)}`)
+      if (!data.enabled || data.server?.needsRestart || data.server?.runtime === "blocked") {
+        throw new Error(`Extension retry is unavailable; enable the extension or restart OpenCode: ${id}`)
+      }
+      return normalize(data, serverURL)
     },
     async setEnabled({ id, enabled }) {
       // Capture the connection up front so the request and the response

@@ -1008,6 +1008,73 @@
         ]
       }
     },
+    "/global/extension/{id}/retry": {
+      "post": {
+        "tags": ["extension"],
+        "operationId": "extension.retry",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]*(\\.[a-z0-9][a-z0-9-]*)+$"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Extension scheduled for retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtensionInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Clear a retryable runtime error and rebuild hooks. Disabled, mutating, or restart-blocked extensions cannot be retried.",
+        "summary": "Retry extension runtime",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.extension.retry({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/global/extension/{id}/settings": {
       "patch": {
         "tags": ["extension"],
@@ -21874,9 +21941,19 @@
           },
           "hasInstanceHooks": {
             "type": "boolean"
+          },
+          "runtime": {
+            "type": "string",
+            "enum": ["idle", "loading", "ready", "error", "blocked"]
+          },
+          "error": {
+            "type": "string"
+          },
+          "needsRestart": {
+            "type": "boolean"
           }
         },
-        "required": ["hasService", "hasInstanceHooks"],
+        "required": ["hasService", "hasInstanceHooks", "runtime", "needsRestart"],
         "additionalProperties": false
       },
       "ExtensionWebInfo": {
@@ -22013,6 +22090,23 @@
           "contributes",
           "permissions"
         ],
+        "additionalProperties": false
+      },
+      "ConflictError": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["ConflictError"]
+          },
+          "message": {
+            "type": "string"
+          },
+          "resource": {
+            "type": "string"
+          }
+        },
+        "required": ["_tag", "message"],
         "additionalProperties": false
       },
       "ExtensionSettingsPatch": {
@@ -22434,23 +22528,6 @@
         "required": ["_tag", "message"],
         "additionalProperties": false
       },
-      "ConflictError": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": ["ConflictError"]
-          },
-          "message": {
-            "type": "string"
-          },
-          "resource": {
-            "type": "string"
-          }
-        },
-        "required": ["_tag", "message"],
-        "additionalProperties": false
-      },
       "effect_HttpApiError_Gone": {
         "type": "object",
         "properties": {
@@ -22830,7 +22907,7 @@
           },
           "state": {
             "type": "string",
-            "enum": ["installed", "enabled", "disabled", "error", "changed", "removed"]
+            "enum": ["installed", "enabled", "disabled", "error", "blocked", "changed", "removed"]
           },
           "error": {
             "type": "string"

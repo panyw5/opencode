@@ -3,11 +3,29 @@ import type { Hooks, Plugin } from "@opencode-ai/plugin"
 import {
   defineServerExtension,
   type ExtensionHooks,
+  type ExtensionHost,
   type ExtensionService,
   type ServerExtension,
 } from "../src/server"
 
 describe("extension-kit server", () => {
+  test("host timers expose explicit sync/async callback and disposable signatures", () => {
+    type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
+    const timeoutCallback: Equal<Parameters<ExtensionHost["setTimeout"]>[0], () => void | Promise<void>> = true
+    const intervalCallback: Equal<Parameters<ExtensionHost["setInterval"]>[0], () => void | Promise<void>> = true
+    const timeoutDelay: Equal<Parameters<ExtensionHost["setTimeout"]>[1], number> = true
+    const intervalDelay: Equal<Parameters<ExtensionHost["setInterval"]>[1], number> = true
+    const timeoutHandle: Equal<ReturnType<ExtensionHost["setTimeout"]>, { dispose(): void }> = true
+    const intervalHandle: Equal<ReturnType<ExtensionHost["setInterval"]>, { dispose(): void }> = true
+    expect([timeoutCallback, intervalCallback, timeoutDelay, intervalDelay, timeoutHandle, intervalHandle]).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ])
+  })
   test("defineServerExtension returns the extension unchanged", () => {
     const extension: ServerExtension = { id: "acme.example" }
     expect(defineServerExtension(extension)).toBe(extension)
@@ -46,6 +64,8 @@ describe("extension-kit server", () => {
       cacheDir: "/cache",
       serverUrl: new URL("http://127.0.0.1:4096"),
       settings: { get: () => ({}), onDidChange: () => () => {} },
+      setTimeout: () => ({ dispose() {} }),
+      setInterval: () => ({ dispose() {} }),
       emit: () => {},
       log: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
     })) as ExtensionService

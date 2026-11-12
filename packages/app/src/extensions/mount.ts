@@ -1,4 +1,4 @@
-import type { Component } from "solid-js"
+import { createComponent, ErrorBoundary, type Component } from "solid-js"
 import { insert } from "solid-js/web"
 
 // DOM mount contract for extension CSS scoping. The extension-kit vite build
@@ -34,12 +34,50 @@ import { insert } from "solid-js/web"
  * `bun test --conditions=browser`), not by hacking this file or the default
  * server-condition suite.
  */
-export function extensionScopedMount<P extends Record<string, any>>(extensionID: string, component: Component<P>): Component<P> {
+export function extensionScopedMount<P extends Record<string, any>>(
+  extensionID: string,
+  component: Component<P>,
+  tool = extensionID,
+): Component<P> {
   return (props: P) => {
     const root = document.createElement("div")
     root.className = "oc-extension-root"
     root.dataset.extension = extensionID
-    insert(root, component(props))
+    insert(
+      root,
+      createComponent(ErrorBoundary, {
+        fallback(error, reset) {
+          const message = error instanceof Error ? error.message : String(error)
+          console.error(`[extension-tool] render failed id=${extensionID} tool=${tool} error=${message}`)
+          const fallback = document.createElement("div")
+          fallback.className = "flex flex-col gap-2 p-3 text-text-weak"
+          const title = document.createElement("div")
+          title.textContent = `Tool renderer failed: ${tool}`
+          const detail = document.createElement("div")
+          detail.className = "break-words"
+          detail.textContent = message
+          const retry = document.createElement("button")
+          retry.type = "button"
+          retry.className = "self-start text-text-strong underline"
+          retry.textContent = "Retry"
+          retry.onclick = () => {
+            console.info(`[extension-tool] render retry id=${extensionID} tool=${tool}`)
+            reset()
+          }
+          fallback.append(title, detail, retry)
+          return fallback
+        },
+        get children() {
+          // Both setup and insert must run under the boundary owner: insert can
+          // evaluate accessors now or create computations that fail on updates.
+          // A fresh mount also prevents failed/retried inserts sharing DOM state.
+          const content = document.createElement("div")
+          content.className = "contents"
+          insert(content, component(props))
+          return content
+        },
+      }),
+    )
     return root
   }
 }

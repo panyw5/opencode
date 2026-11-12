@@ -4,12 +4,21 @@ import { defineWebExtension, type ExtensionContext, type FileViewerProps } from 
 import "./web.css"
 import { messages } from "./i18n"
 import { createWlsHighlight } from "./highlight"
-import { LINE_HEIGHT, VIRTUAL_THRESHOLD, centeredScrollTop, maxColumns, visibleRange } from "./viewport"
+import { VIRTUAL_THRESHOLD, centeredScrollTop, maxColumns, visibleRange } from "./viewport"
 
 const EXTENSION_ID = "local.wls-repl"
 const MESSAGE_EVENT = `${EXTENSION_ID}/message`
+const DEFAULT_FONT_SIZE = 12.5
+const MIN_FONT_SIZE = 9
+const MAX_FONT_SIZE = 24
+const LINE_HEIGHT_RATIO = 1.6
 
-type Bridge = { rpc?: ExtensionContext["rpc"]; events?: ExtensionContext["events"]; log?: ExtensionContext["log"] }
+type Bridge = {
+  rpc?: ExtensionContext["rpc"]
+  events?: ExtensionContext["events"]
+  log?: ExtensionContext["log"]
+  settings?: ExtensionContext["settings"]
+}
 const [bridge, setBridge] = createSignal<Bridge>({})
 
 type KernelStatus = "unknown" | "starting" | "ready" | "running" | "paused" | "error" | "stopped"
@@ -81,11 +90,20 @@ export function WlsViewer(props: FileViewerProps) {
   let codeRef: HTMLDivElement | undefined
   const [scrollTop, setScrollTop] = createSignal(0)
   const [viewportHeight, setViewportHeight] = createSignal(600)
+  const wordWrap = createMemo(() => bridge().settings?.get<boolean>("wordWrap")() ?? true)
+  const fontSize = createMemo(() => {
+    const value = bridge().settings?.get<number>("fontSize")()
+    return typeof value === "number" && value >= MIN_FONT_SIZE && value <= MAX_FONT_SIZE ? value : DEFAULT_FONT_SIZE
+  })
+  const lineHeight = createMemo(() => Math.max(10, Math.round(fontSize() * LINE_HEIGHT_RATIO)))
   const lines = createMemo(() => codeText().split("\n"))
   const virtual = createMemo(() => lines().length > VIRTUAL_THRESHOLD)
   const columns = createMemo(() => (virtual() ? maxColumns(lines()) : 0))
   const range = createMemo(
-    () => (virtual() ? visibleRange(lines().length, scrollTop(), viewportHeight()) : { start: 0, end: lines().length }),
+    () =>
+      virtual()
+        ? visibleRange(lines().length, scrollTop(), viewportHeight(), lineHeight())
+        : { start: 0, end: lines().length },
     undefined,
     { equals: (a, b) => a.start === b.start && a.end === b.end },
   )
@@ -165,7 +183,7 @@ export function WlsViewer(props: FileViewerProps) {
     const line = pausedLine()
     if (line === undefined || !codeRef) return
     if (virtual()) {
-      codeRef.scrollTop = centeredScrollTop(line, viewportHeight())
+      codeRef.scrollTop = centeredScrollTop(line, viewportHeight(), lineHeight())
       setScrollTop(codeRef.scrollTop)
     } else {
       const target = codeRef.querySelector(`[data-line="${line}"]`)
@@ -340,6 +358,14 @@ export function WlsViewer(props: FileViewerProps) {
     onCleanup(() => off.dispose())
   })
 
+  const setSetting = (patch: Record<string, unknown>) => {
+    void bridge()
+      .settings?.update(patch)
+      .catch((error: unknown) =>
+        bridge().log?.warn(`wls viewer settings update failed: ${error instanceof Error ? error.message : String(error)}`),
+      )
+  }
+
   const statusLabel = () => {
     switch (status()) {
       case "unknown":
@@ -400,6 +426,36 @@ export function WlsViewer(props: FileViewerProps) {
           <Button size="small" variant="ghost" onClick={props.showSource}>
             {t().source}
           </Button>
+          <Button
+            size="small"
+            variant={wordWrap() ? "secondary" : "ghost"}
+            title={t().wordWrap}
+            data-action="toggle-wrap"
+            onClick={() => setSetting({ wordWrap: !wordWrap() })}
+          >
+            {t().wordWrap}
+          </Button>
+          <span class="oc-wls-font-controls">
+            <Button
+              size="small"
+              variant="ghost"
+              title={t().fontDecrease}
+              disabled={fontSize() <= MIN_FONT_SIZE}
+              onClick={() => setSetting({ fontSize: Math.max(MIN_FONT_SIZE, fontSize() - 1) })}
+            >
+              A−
+            </Button>
+            <span class="oc-wls-font-size">{fontSize()}</span>
+            <Button
+              size="small"
+              variant="ghost"
+              title={t().fontIncrease}
+              disabled={fontSize() >= MAX_FONT_SIZE}
+              onClick={() => setSetting({ fontSize: Math.min(MAX_FONT_SIZE, fontSize() + 1) })}
+            >
+              A+
+            </Button>
+          </span>
         </div>
       </header>
 
@@ -408,6 +464,8 @@ export function WlsViewer(props: FileViewerProps) {
           class="oc-wls-code"
           ref={codeRef}
           data-virtual={virtual()}
+          data-wrap={wordWrap() ? "on" : "off"}
+          style={{ "--wls-font-size": `${fontSize()}px`, "--wls-line-height": `${lineHeight()}px` }}
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         >
           <div
@@ -415,10 +473,9 @@ export function WlsViewer(props: FileViewerProps) {
             style={
               virtual()
                 ? {
-                    "padding-top": `${range().start * LINE_HEIGHT}px`,
-                    "padding-bottom": `${(lines().length - range().end) * LINE_HEIGHT}px`,
+                    "padding-top": `${range().start * lineHeight()}px`,
+                    "padding-bottom": `${(lines().length - range().end) * lineHeight()}px`,
                     "min-width": `calc(${columns()}ch + 64px)`,
-                    "--wls-line-height": `${LINE_HEIGHT}px`,
                   }
                 : undefined
             }
@@ -502,7 +559,7 @@ export default defineWebExtension({
   apiVersion: 1,
   activate(context: ExtensionContext) {
     context.log.info("activating wls-repl viewer")
-    setBridge({ rpc: context.rpc, events: context.events, log: context.log })
+    setBridge({ rpc: context.rpc, events: context.events, log: context.log, settings: context.settings })
     const registration = context.fileViewers.register({ id: "wls-repl", component: WlsViewer })
     return () => {
       registration.dispose()

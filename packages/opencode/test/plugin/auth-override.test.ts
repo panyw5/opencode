@@ -98,7 +98,7 @@ describe("plugin.config-hook-error-isolation", () => {
     expect(src).toContain("plugin config hook failed")
 
     const pattern =
-      /for\s*\(const hook of hooks\)\s*\{[\s\S]*?Effect\.tryPromise[\s\S]*?\.config\?\.\([\s\S]*?plugin config hook failed[\s\S]*?Effect\.ignore/
+      /for\s*\(const entry of hooks\)\s*\{[\s\S]*?Effect\.tryPromise[\s\S]*?\.config\?\.\([\s\S]*?plugin config hook failed[\s\S]*?Effect\.ignore/
     expect(pattern.test(src)).toBe(true)
   })
 })

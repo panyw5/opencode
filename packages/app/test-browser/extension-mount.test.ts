@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test"
-import { createRoot, createSignal, type Component } from "solid-js"
+import { describe, expect, spyOn, test } from "bun:test"
+import { createEffect, createRoot, createSignal, onCleanup, type Component } from "solid-js"
 import { extensionScopedMount } from "../src/extensions/mount"
 
 function textComponent(): Component<{ label: string }> {
@@ -65,6 +65,168 @@ describe("extension scoped mount", () => {
       root.remove()
       dispose()
     })
+  })
+
+  test("contains setup errors, reports the tool, and retries with the same props", async () => {
+    const log = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      await createRoot(async (dispose) => {
+        let fail = true
+        let attempts = 0
+        const seen: object[] = []
+        const props = { label: "recovered" }
+        const Wrapped = extensionScopedMount(
+          "acme.demo",
+          (input: typeof props) => {
+            attempts++
+            seen.push(input)
+            if (fail) throw new Error("setup failed")
+            return textComponent()(input)
+          },
+          "demo_tool",
+        )
+        let root: HTMLElement | undefined
+        try {
+          root = Wrapped(props) as HTMLElement
+          document.body.append(root)
+          await Promise.resolve()
+          expect(root.dataset.extension).toBe("acme.demo")
+          expect(root.textContent).toContain("demo_tool")
+          expect(root.textContent).toContain("setup failed")
+          expect(root.querySelector("button")?.textContent).toBe("Retry")
+          expect(log.mock.calls).toHaveLength(1)
+          expect(log.mock.calls[0]).toHaveLength(1)
+          expect(typeof log.mock.calls[0][0]).toBe("string")
+          expect(log.mock.calls[0][0]).toContain("acme.demo")
+          expect(log.mock.calls[0][0]).toContain("demo_tool")
+          fail = false
+          root.querySelector("button")!.click()
+          expect(root.querySelector(".tool-body")?.textContent).toBe("recovered")
+          expect(root.querySelector("button")).toBeNull()
+          expect(attempts).toBe(2)
+          expect(seen).toEqual([props, props])
+          expect(seen.every((value) => value === props)).toBe(true)
+        } finally {
+          root?.remove()
+          dispose()
+        }
+      })
+    } finally {
+      log.mockRestore()
+    }
+  })
+
+  test("contains an accessor error during the initial insert", async () => {
+    const log = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      await createRoot(async (dispose) => {
+        const Wrapped = extensionScopedMount(
+          "acme.demo",
+          () => () => {
+            throw new Error("initial accessor failed")
+          },
+          "demo_tool",
+        )
+        let root: HTMLElement | undefined
+        try {
+          root = Wrapped({}) as HTMLElement
+          await Promise.resolve()
+          expect(root.textContent).toContain("initial accessor failed")
+          expect(root.textContent).toContain("demo_tool")
+          expect(root.querySelector("button")?.textContent).toBe("Retry")
+        } finally {
+          root?.remove()
+          dispose()
+        }
+      })
+    } finally {
+      log.mockRestore()
+    }
+  })
+
+  test("contains reactive insert errors without affecting siblings and cleans up on retry", async () => {
+    const log = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      await createRoot(async (dispose) => {
+        const [fail, setFail] = createSignal(false)
+        const [label, setLabel] = createSignal("first")
+        let cleanups = 0
+        const Wrapped = extensionScopedMount(
+          "acme.demo",
+          () => {
+            onCleanup(() => cleanups++)
+            return () => {
+              if (fail()) throw new Error("reactive accessor failed")
+              return document.createTextNode(label())
+            }
+          },
+          "demo_tool",
+        )
+        const Sibling = extensionScopedMount("acme.sibling", () => () => document.createTextNode(label()))
+        let root: HTMLElement | undefined
+        let sibling: HTMLElement | undefined
+        try {
+          root = Wrapped({}) as HTMLElement
+          sibling = Sibling({}) as HTMLElement
+          document.body.append(root, sibling)
+          expect(root.textContent).toBe("first")
+          setFail(true)
+          await Promise.resolve()
+          expect(root.textContent).toContain("reactive accessor failed")
+          expect(root.textContent).toContain("demo_tool")
+          expect(cleanups).toBe(1)
+          setLabel("second")
+          expect(sibling.textContent).toBe("second")
+          setFail(false)
+          root.querySelector("button")!.click()
+          expect(root.textContent).toBe("second")
+          setLabel("third")
+          expect(root.textContent).toBe("third")
+          expect(sibling.textContent).toBe("third")
+        } finally {
+          root?.remove()
+          sibling?.remove()
+          dispose()
+        }
+        expect(cleanups).toBe(2)
+      })
+    } finally {
+      log.mockRestore()
+    }
+  })
+
+  test("contains errors in effects owned by the contributed component", async () => {
+    const log = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      await createRoot(async (dispose) => {
+        const [fail, setFail] = createSignal(false)
+        const Wrapped = extensionScopedMount(
+          "acme.demo",
+          () => {
+            createEffect(() => {
+              if (fail()) throw new Error("effect failed")
+            })
+            return document.createTextNode("healthy")
+          },
+          "demo_tool",
+        )
+        let root: HTMLElement | undefined
+        try {
+          root = Wrapped({}) as HTMLElement
+          document.body.append(root)
+          await Promise.resolve()
+          setFail(true)
+          await Promise.resolve()
+          expect(root.textContent).toContain("effect failed")
+          expect(root.textContent).toContain("demo_tool")
+        } finally {
+          root?.remove()
+          dispose()
+        }
+      })
+    } finally {
+      log.mockRestore()
+    }
   })
 
   // Regression: a manual `append` snapshots accessor children (props.children

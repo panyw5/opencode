@@ -214,6 +214,9 @@ export type ExtensionContributes = {
 export type ExtensionServerInfo = {
   hasService: boolean
   hasInstanceHooks: boolean
+  runtime: "idle" | "loading" | "ready" | "error" | "blocked"
+  error?: string
+  needsRestart: boolean
 }
 
 export type ExtensionWebInfo = {
@@ -244,6 +247,12 @@ export type ExtensionInfo = {
   }
   server?: ExtensionServerInfo
   web?: ExtensionWebInfo
+}
+
+export type ConflictError = {
+  _tag: "ConflictError"
+  message: string
+  resource?: string
 }
 
 export type ExtensionSettingsPatch = {
@@ -346,12 +355,6 @@ export type ForbiddenError = {
   message: string
 }
 
-export type ConflictError = {
-  _tag: "ConflictError"
-  message: string
-  resource?: string
-}
-
 export type EffectHttpApiErrorGone = {
   _tag: "Gone"
 }
@@ -437,7 +440,7 @@ export type ServiceUnavailableError = {
 export type ExtensionStatusProperties = {
   id: string
   version: string
-  state: "installed" | "enabled" | "disabled" | "error" | "changed" | "removed"
+  state: "installed" | "enabled" | "disabled" | "error" | "blocked" | "changed" | "removed"
   error?: string
 }
 
@@ -5715,6 +5718,41 @@ export type ExtensionDisableResponses = {
 }
 
 export type ExtensionDisableResponse = ExtensionDisableResponses[keyof ExtensionDisableResponses]
+
+export type ExtensionRetryData = {
+  body?: never
+  path: {
+    id: string
+  }
+  query?: never
+  url: "/global/extension/{id}/retry"
+}
+
+export type ExtensionRetryErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type ExtensionRetryError = ExtensionRetryErrors[keyof ExtensionRetryErrors]
+
+export type ExtensionRetryResponses = {
+  /**
+   * Extension scheduled for retry
+   */
+  200: ExtensionInfo
+}
+
+export type ExtensionRetryResponse = ExtensionRetryResponses[keyof ExtensionRetryResponses]
 
 export type ExtensionSettingsUpdateData = {
   body?: ExtensionSettingsPatch

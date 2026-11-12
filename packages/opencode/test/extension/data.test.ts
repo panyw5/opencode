@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test"
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import path from "node:path"
 import { Global } from "@opencode-ai/core/global"
 import { provisionData, quarantineData } from "../../src/extension/data"
@@ -47,10 +47,37 @@ test("a different source cannot provision or purge existing managed data", async
   const data = path.join(Global.Path.data, "extensions", "data", value.id)
   await mkdir(data, { recursive: true })
   await writeFile(path.join(data, "keep"), "private")
-  const different = { ...value, source: { ...value.source, location: "https://other.example/fixture.tgz" } }
+  const different = { ...value, source: { ...value.source, sha256: "b".repeat(64) } }
   await expect(provisionData(different)).rejects.toThrow("another source")
   await expect(quarantineData(different)).rejects.toThrow("ownership")
   expect(await readFile(path.join(data, "keep"), "utf8")).toBe("private")
+})
+
+test("archive data ownership follows the content digest across acquisition locations", async () => {
+  const value = identity()
+  await provisionData(value)
+  // The same archive bytes acquired from a different staging location remain
+  // the same installation: lineage is anchored to the digest, not the path.
+  const restaged = { ...value, source: { ...value.source, location: "https://other.example/fixture.tgz" } }
+  await provisionData(restaged)
+})
+
+test("a location-anchored ownership record is re-anchored to the content digest", async () => {
+  const value = identity()
+  await provisionData(value)
+  const owner = path.join(Global.Path.data, "extensions", "data-ownership", `${value.id}.json`)
+  const current = JSON.parse(await readFile(owner, "utf8")) as Record<string, unknown>
+  const legacy = {
+    ...current,
+    sourceHash: createHash("sha256").update(`archive:${value.source.location}`).digest("hex"),
+  }
+  expect(legacy.sourceHash).not.toBe(current.sourceHash)
+  await rm(owner)
+  await writeFile(owner, JSON.stringify(legacy), { flag: "wx", mode: 0o600 })
+  await provisionData(value)
+  expect(JSON.parse(await readFile(owner, "utf8"))).toEqual(current)
+  const different = { ...value, source: { ...value.source, sha256: "b".repeat(64) } }
+  await expect(provisionData(different)).rejects.toThrow("another source")
 })
 
 test("an empty namespace still preserves ownership from another registry's source", async () => {
@@ -58,7 +85,7 @@ test("an empty namespace still preserves ownership from another registry's sourc
   await provisionData(value)
   const owner = path.join(Global.Path.data, "extensions", "data-ownership", `${value.id}.json`)
   const before = await readFile(owner, "utf8")
-  const different = { ...value, source: { ...value.source, location: "https://other.example/fixture.tgz" } }
+  const different = { ...value, source: { ...value.source, sha256: "b".repeat(64) } }
   await expect(quarantineData(different)).rejects.toThrow("ownership")
   expect(await readFile(owner, "utf8")).toBe(before)
   await expect(provisionData(different)).rejects.toThrow("another source")

@@ -80,7 +80,8 @@ function mount(
     prepared?: Promise<PreparedInstallation>
     committed?: Promise<InstallationResult>
     result?: InstallationResult
-    status?: InstallationStatus
+    status?: InstallationStatus | Promise<InstallationStatus>
+    statusError?: Error
     failCommit?: boolean
     prepareError?: Error
     localDigest?: string
@@ -116,6 +117,7 @@ function mount(
     },
     installationStatus: async (prepared) => {
       calls.status.push(prepared)
+      if (options.statusError) throw options.statusError
       return options.status ?? result()
     },
   }
@@ -182,13 +184,44 @@ const type = (app: App, label: string, value: string) => {
   input.value = value
   input.dispatchEvent(new Event("input", { bubbles: true }))
 }
-const select = (app: App, value: string) => {
-  const el = app.container.querySelector<HTMLSelectElement>("select")!
-  el.value = value
-  el.dispatchEvent(new Event("change", { bubbles: true }))
+const sourceTrigger = (app: App) => {
+  const trigger = app.container.querySelector<HTMLButtonElement>(
+    'button[aria-label="config.extensions.install.source"]',
+  )
+  expect(trigger).not.toBeNull()
+  return trigger!
+}
+const sourceValue = (app: App) =>
+  sourceTrigger(app).querySelector('[data-slot="select-select-trigger-value"]')?.textContent?.trim()
+const settleSelect = async () => {
+  await tick()
+  await tick()
+}
+const openSource = async (app: App) => {
+  const trigger = sourceTrigger(app)
+  expect(trigger.disabled).toBe(false)
+  trigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }))
+  trigger.click()
+  await settleSelect()
+  expect(trigger.getAttribute("aria-expanded")).toBe("true")
+  // Kobalte portals the options outside the form; follow this trigger's listbox.
+  const listbox = document.getElementById(trigger.getAttribute("aria-controls")!)!
+  expect(listbox?.getAttribute("role")).toBe("listbox")
+  return listbox
+}
+const select = async (app: App, value: string) => {
+  const listbox = await openSource(app)
+  const option = [...listbox.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (item) => item.textContent?.trim() === `config.extensions.install.${value}`,
+  )
+  expect(option).toBeDefined()
+  option!.click()
+  await settleSelect()
+  expect(sourceTrigger(app).getAttribute("aria-expanded")).toBe("false")
+  expect(sourceValue(app)).toBe(`config.extensions.install.${value}`)
 }
 const prepare = async (app: App) => {
-  select(app, "npm")
+  await select(app, "npm")
   type(app, "spec", "@test/viewer@2.0.0")
   button(app, "prepare").click()
   await tick()
@@ -217,7 +250,7 @@ describe("extension installation UI contracts", () => {
     }
   })
 
-  test("prepare sits beside the source input at matching height and remains available for uninstall", () => {
+  test("prepare sits beside the source input at matching height and remains available for uninstall", async () => {
     const app = mount({ intent: { kind: "update", id: "test.viewer", source: npmSource } })
     const uninstall = mount({ intent: { kind: "uninstall", id: "test.viewer" } })
     try {
@@ -227,7 +260,7 @@ describe("extension installation UI contracts", () => {
         ["version", "version"],
         ["archive", "url"],
       ] as const) {
-        select(app, source)
+        await select(app, source)
         const input = app.container.querySelector(`input[aria-label="config.extensions.install.${field}"]`)!
         const row = input.closest('[data-field="installation-source"]')!
         const action = button(app, "prepare")
@@ -281,7 +314,7 @@ describe("extension installation UI contracts", () => {
   test("release accepts one URL without a checksum and reviews descriptor/download trust separately", async () => {
     const app = mount({ prepared: Promise.resolve(releasePreview("install", false)) })
     try {
-      expect(app.container.querySelector<HTMLSelectElement>("select")?.value).toBe("release")
+      expect(sourceValue(app)).toBe("config.extensions.install.release")
       expect(app.container.querySelector('input[aria-label="config.extensions.install.sha256"]')).toBeNull()
       for (const url of [
         "http://publisher.example/stable.json",
@@ -351,14 +384,18 @@ describe("extension installation UI contracts", () => {
       prepared: Promise.resolve(prepared),
     })
     try {
-      const source = app.container.querySelector<HTMLSelectElement>("select")!
+      const source = sourceTrigger(app)
       const input = app.container.querySelector<HTMLInputElement>(
         'input[aria-label="config.extensions.install.releaseUrl"]',
       )!
       expect(source.disabled).toBe(true)
       expect(input.readOnly).toBe(true)
       expect(input.value).toBe("https://publisher.example/viewer/stable.json")
-      expect(source.querySelector('option[value="version"]')).toBeNull()
+      source.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }))
+      source.click()
+      await settleSelect()
+      expect(source.getAttribute("aria-expanded")).not.toBe("true")
+      expect(sourceValue(app)).toBe("config.extensions.install.release")
       type(app, "releaseUrl", "https://attacker.example/stable.json")
       button(app, "prepare").click()
       await tick()
@@ -373,9 +410,14 @@ describe("extension installation UI contracts", () => {
     ]) {
       const other = mount({ intent: { kind: "update", id: "test.viewer", source } })
       try {
-        expect(other.container.querySelector('option[value="version"]')).toBeNull()
-        if (source?.type === "archive")
-          expect(other.container.querySelector<HTMLSelectElement>("select")?.value).toBe("archive")
+        if (source?.type === "archive") expect(sourceValue(other)).toBe("config.extensions.install.archive")
+        const listbox = await openSource(other)
+        const labels = [...listbox.querySelectorAll('[role="option"]')].map((item) => item.textContent?.trim())
+        expect(labels).toEqual([
+          "config.extensions.install.release",
+          "config.extensions.install.npm",
+          "config.extensions.install.archive",
+        ])
       } finally {
         other.dispose()
       }
@@ -466,7 +508,7 @@ describe("extension installation UI contracts", () => {
   test("archive needs only an HTTPS URL, never a user checksum or local/upload input", async () => {
     const app = mount()
     try {
-      select(app, "archive")
+      await select(app, "archive")
       type(app, "url", "http://localhost/test.tgz")
       expect(app.container.querySelector('input[aria-label="config.extensions.install.sha256"]')).toBeNull()
       button(app, "prepare").click()
@@ -501,7 +543,7 @@ describe("extension installation UI contracts", () => {
         source: { type: "local", path: "/tmp/fixture.tgz", sha256: "a".repeat(64) },
       })
       button(app, "back").click()
-      select(app, "archive")
+      await select(app, "archive")
       type(app, "url", "https://example.com/different.tgz")
       button(app, "prepare").click()
       await tick()
@@ -517,7 +559,7 @@ describe("extension installation UI contracts", () => {
   test("update version preview explicitly shows downgrade and previous version", async () => {
     const app = mount({ intent: { kind: "update", id: "test.viewer", source: npmSource } })
     try {
-      select(app, "version")
+      await select(app, "version")
       type(app, "version", "2.0.0")
       button(app, "prepare").click()
       await tick()
@@ -545,14 +587,289 @@ describe("extension installation UI contracts", () => {
         button(app, "prepare").click()
         await tick()
         expect(app.calls.prepare).toEqual([{ kind: "uninstall", id: "test.viewer", purgeData: purge }])
-        expect(app.container.textContent).toContain(purge ? "purgeWarning" : "keepData")
-        button(app, "confirm").click()
-        await tick()
-        expect(app.container.querySelector('[data-result="failed"]')?.textContent).toContain("failed")
-        expect(app.container.querySelector('[data-result="committed"]')).toBeNull()
+        expect(app.calls.commit).toHaveLength(1)
+        expect(app.container.querySelector('[data-removal-state="failed"]')?.textContent).toContain("removeFailed")
+        expect(app.container.querySelector('[data-removal-state="removed"]')).toBeNull()
+        expect(button(app, "confirm")).toBeNull()
+        expect(button(app, "status")).toBeNull()
       } finally {
         app.dispose()
       }
+    }
+  })
+  test("removal shows only progress while preparation and commit are pending", async () => {
+    const prepared = deferred<PreparedInstallation>()
+    const committed = deferred<InstallationResult>()
+    const app = mount({
+      intent: { kind: "uninstall", id: "test.viewer" },
+      prepared: prepared.promise,
+      committed: committed.promise,
+    })
+    try {
+      button(app, "prepare").click()
+      expect(app.container.querySelector('[data-removal-state="removing"]')?.textContent).toBe(
+        "config.extensions.install.removePending",
+      )
+      expect(app.container.querySelector('input[type="checkbox"]')).toBeNull()
+      prepared.resolve(preview("uninstall"))
+      await tick()
+      expect(app.calls.commit).toHaveLength(1)
+      expect(app.container.querySelector('[data-removal-state="removing"]')).not.toBeNull()
+      expect(app.container.querySelector("[data-preview]")).toBeNull()
+      expect(button(app, "confirm")).toBeNull()
+      committed.resolve(result({ kind: "uninstall" }))
+      await tick()
+      expect(app.container.querySelector('[data-removal-state="removed"]')?.textContent).toBe(
+        "config.extensions.install.removeSuccess",
+      )
+      expect(button(app, "status")).toBeNull()
+      expect(app.container.querySelector('[data-action="extension-remove-retry"]')).toBeNull()
+    } finally {
+      app.dispose()
+    }
+  })
+  test("saved changes without synchronization are removal failures, not successes", async () => {
+    for (const flags of [
+      { synced: false, cleanupPending: false },
+      { synced: false, cleanupPending: true },
+    ]) {
+      const app = mount({
+        intent: { kind: "uninstall", id: "test.viewer" },
+        result: result({
+          kind: "uninstall",
+          ...flags,
+          warnings: ["Runtime coordinator reported warnings", "private-capability"],
+        }),
+      })
+      try {
+        button(app, "prepare").click()
+        await tick()
+        expect(app.container.querySelector('[data-removal-state="failed"]')?.textContent).toContain("removeIncomplete")
+        for (const hidden of [
+          "coordinator",
+          "private-capability",
+          "syncPending",
+          "cleanupPending",
+          "committed",
+          "purgeWarning",
+        ])
+          expect(app.container.textContent).not.toContain(hidden)
+        expect(button(app, "status")).toBeNull()
+        expect(app.container.querySelector('[data-action="extension-remove-retry"]')).toBeNull()
+      } finally {
+        app.dispose()
+      }
+    }
+  })
+  test("a committed and synchronized removal succeeds even when old-package cleanup is pending", async () => {
+    const app = mount({
+      intent: { kind: "uninstall", id: "test.viewer" },
+      result: result({
+        kind: "uninstall",
+        cleanupPending: true,
+        warnings: ["Runtime coordinator reported warnings", "Cleanup receipt update failed; reconciliation is pending"],
+      }),
+    })
+    try {
+      button(app, "prepare").click()
+      await tick()
+      expect(app.container.querySelector('[data-removal-state="removed"]')?.textContent).toBe(
+        "config.extensions.install.removeSuccess",
+      )
+      expect(app.container.querySelector('[data-removal-state="failed"]')).toBeNull()
+      expect(button(app, "status")).toBeNull()
+      expect(app.container.querySelector('[data-action="extension-remove-retry"]')).toBeNull()
+      for (const hidden of ["coordinator", "cleanupPending", "reconciliation", "removeIncomplete"])
+        expect(app.container.textContent).not.toContain(hidden)
+      expect(app.calls.commit).toHaveLength(1)
+      expect(app.notices[0]?.cleanupPending).toBe(true)
+    } finally {
+      app.dispose()
+    }
+  })
+  test("a lost removal response is reconciled automatically without another commit", async () => {
+    const app = mount({
+      intent: { kind: "uninstall", id: "test.viewer" },
+      failCommit: true,
+      status: result({ kind: "uninstall" }),
+    })
+    try {
+      button(app, "prepare").click()
+      await tick()
+      expect(app.calls.prepare).toHaveLength(1)
+      expect(app.calls.commit).toHaveLength(1)
+      expect(app.calls.status).toHaveLength(1)
+      expect(app.container.querySelector('[data-removal-state="removed"]')).not.toBeNull()
+      expect(button(app, "status")).toBeNull()
+    } finally {
+      app.dispose()
+    }
+  })
+  test("retry never resubmits an unresolved removal", async () => {
+    const app = mount({
+      intent: { kind: "uninstall", id: "test.viewer" },
+      failCommit: true,
+      status: result({ kind: "uninstall", state: "unknown", committed: undefined }),
+    })
+    try {
+      button(app, "prepare").click()
+      await tick()
+      expect(app.container.querySelector('[data-removal-state="failed"]')?.textContent).toContain("removeUnknown")
+      app.container.querySelector<HTMLButtonElement>('[data-action="extension-remove-retry"]')!.click()
+      await tick()
+      expect(app.calls.status).toHaveLength(2)
+      expect(app.calls.prepare).toHaveLength(1)
+      expect(app.calls.commit).toHaveLength(1)
+      expect(app.calls.status[0]).toBe(app.calls.status[1])
+    } finally {
+      app.dispose()
+    }
+  })
+  test("retry commits a confirmed unsubmitted removal with its original capability", async () => {
+    const { token, ...prepared } = preview("uninstall")
+    const options = {
+      intent: { kind: "uninstall" as const, id: "test.viewer" },
+      failCommit: true,
+      status: { ...prepared, state: "prepared" as const, committed: false as const },
+    }
+    const app = mount(options)
+    try {
+      button(app, "prepare").click()
+      await tick()
+      expect(app.calls.commit).toHaveLength(1)
+      options.failCommit = false
+      app.container.querySelector<HTMLButtonElement>('[data-action="extension-remove-retry"]')!.click()
+      await tick()
+      expect(app.calls.prepare).toHaveLength(1)
+      expect(app.calls.commit).toHaveLength(2)
+      expect(app.calls.commit[1]).toEqual(app.calls.commit[0])
+      expect(JSON.stringify(app.calls.commit[1])).toContain(token)
+      expect(app.container.querySelector('[data-removal-state="removed"]')).not.toBeNull()
+    } finally {
+      app.dispose()
+    }
+  })
+  test("a failed removal preparation can be retried without showing raw errors", async () => {
+    const options = {
+      intent: { kind: "uninstall" as const, id: "test.viewer" },
+      prepareError: new Error("private-capability coordinator failure") as Error | undefined,
+    }
+    const app = mount(options)
+    try {
+      button(app, "prepare").click()
+      await tick()
+      expect(app.container.querySelector('[data-removal-state="failed"]')).not.toBeNull()
+      expect(app.container.textContent).not.toContain("private-capability")
+      expect(app.container.textContent).not.toContain("coordinator")
+      options.prepareError = undefined
+      app.container.querySelector<HTMLButtonElement>('[data-action="extension-remove-retry"]')!.click()
+      await tick()
+      expect(app.calls.prepare).toHaveLength(2)
+      expect(app.calls.commit).toHaveLength(1)
+      expect(app.container.querySelector('[data-removal-state="removed"]')).not.toBeNull()
+    } finally {
+      app.dispose()
+    }
+  })
+  test("retry starts a new removal only after a negative commit receipt", async () => {
+    const options = {
+      intent: { kind: "uninstall" as const, id: "test.viewer" },
+      result: result({ kind: "uninstall", state: "failed", committed: false }),
+    }
+    const app = mount(options)
+    try {
+      button(app, "prepare").click()
+      await tick()
+      options.result = result({ kind: "uninstall" })
+      app.container.querySelector<HTMLButtonElement>('[data-action="extension-remove-retry"]')!.click()
+      await tick()
+      expect(app.calls.status).toHaveLength(0)
+      expect(app.calls.prepare).toHaveLength(2)
+      expect(app.calls.commit).toHaveLength(2)
+      expect(app.container.querySelector('[data-removal-state="removed"]')).not.toBeNull()
+    } finally {
+      app.dispose()
+    }
+  })
+  test("failed automatic reconciliation stays retryable without exposing transport errors", async () => {
+    const app = mount({
+      intent: { kind: "uninstall", id: "test.viewer" },
+      failCommit: true,
+      statusError: new Error("private-capability coordinator failure"),
+    })
+    try {
+      button(app, "prepare").click()
+      await tick()
+      expect(app.container.querySelector('[data-removal-state="failed"]')?.textContent).toContain("removeUnknown")
+      expect(app.container.textContent).not.toContain("private-capability")
+      expect(app.container.textContent).not.toContain("coordinator")
+      app.container.querySelector<HTMLButtonElement>('[data-action="extension-remove-retry"]')!.click()
+      await tick()
+      expect(app.calls.status).toHaveLength(2)
+      expect(app.calls.prepare).toHaveLength(1)
+      expect(app.calls.commit).toHaveLength(1)
+    } finally {
+      app.dispose()
+    }
+  })
+  test("retry of an unknown removal commits only after reconciliation confirms it is prepared", async () => {
+    const options = {
+      intent: { kind: "uninstall" as const, id: "test.viewer" },
+      failCommit: true,
+      status: result({ kind: "uninstall", state: "unknown", committed: undefined }) as InstallationStatus,
+    }
+    const app = mount(options)
+    try {
+      button(app, "prepare").click()
+      await tick()
+      const { token, ...prepared } = preview("uninstall")
+      options.status = { ...prepared, state: "prepared", committed: false }
+      options.failCommit = false
+      app.container.querySelector<HTMLButtonElement>('[data-action="extension-remove-retry"]')!.click()
+      await tick()
+      expect(app.calls.status).toHaveLength(2)
+      expect(app.calls.prepare).toHaveLength(1)
+      expect(app.calls.commit).toHaveLength(2)
+      expect(JSON.stringify(app.calls.commit[1])).toContain(token)
+      expect(app.container.querySelector('[data-removal-state="removed"]')).not.toBeNull()
+    } finally {
+      app.dispose()
+    }
+  })
+  test("closing while removal reconciliation is pending discards late results without cancelling a submitted operation", async () => {
+    const status = deferred<InstallationStatus>()
+    const app = mount({ intent: { kind: "uninstall", id: "test.viewer" }, failCommit: true, status: status.promise })
+    try {
+      button(app, "prepare").click()
+      await tick()
+      expect(app.container.querySelector('[data-removal-state="removing"]')).not.toBeNull()
+      app.closed()
+      status.resolve(result({ kind: "uninstall" }))
+      await tick()
+      expect(app.notices).toHaveLength(0)
+      expect(app.calls.cancel).toHaveLength(0)
+    } finally {
+      app.dispose()
+    }
+  })
+  test("connection changes during removal prevent retries and discard late results", async () => {
+    const committed = deferred<InstallationResult>()
+    const app = mount({ intent: { kind: "uninstall", id: "test.viewer" }, committed: committed.promise })
+    try {
+      button(app, "prepare").click()
+      await tick()
+      app.setConnection("B")
+      expect(app.container.querySelector('[data-removal-state="failed"]')?.textContent).toContain(
+        "removeConnectionChanged",
+      )
+      expect(app.container.querySelector('[data-action="extension-remove-retry"]')).toBeNull()
+      committed.resolve(result({ kind: "uninstall" }))
+      await tick()
+      expect(app.container.querySelector('[data-removal-state="removed"]')).toBeNull()
+      expect(app.notices).toHaveLength(0)
+      expect(app.calls.cancel).toHaveLength(0)
+    } finally {
+      app.dispose()
     }
   })
   test("safe mode, busy, dirty, saving, and parent blocked prevent prepare and entry actions", () => {
@@ -619,7 +936,7 @@ describe("extension installation UI contracts", () => {
     const gate = deferred<PreparedInstallation>()
     const app = mount({ prepared: gate.promise })
     try {
-      select(app, "npm")
+      await select(app, "npm")
       type(app, "spec", "test-one")
       button(app, "prepare").click()
       type(app, "spec", "test-two")
@@ -634,7 +951,7 @@ describe("extension installation UI contracts", () => {
     const ownGate = deferred<PreparedInstallation>()
     const own = mount({ prepared: ownGate.promise })
     try {
-      select(own, "npm")
+      await select(own, "npm")
       type(own, "spec", "test")
       button(own, "prepare").click()
       own.setBusy(true)
@@ -652,7 +969,7 @@ describe("extension installation UI contracts", () => {
     const gate = deferred<PreparedInstallation>()
     const app = mount({ prepared: gate.promise })
     try {
-      select(app, "npm")
+      await select(app, "npm")
       type(app, "spec", "test")
       button(app, "prepare").click()
       app.setConnection("B")
@@ -670,7 +987,7 @@ describe("extension installation UI contracts", () => {
   test("close/dispose cancels uncommitted previews including pending prepare but not submitted commits", async () => {
     const gate = deferred<PreparedInstallation>()
     const app = mount({ prepared: gate.promise })
-    select(app, "npm")
+    await select(app, "npm")
     type(app, "spec", "test")
     button(app, "prepare").click()
     app.closed()

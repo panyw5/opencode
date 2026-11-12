@@ -71,6 +71,13 @@ export type ExtensionInfo = {
     panels?: PanelDeclaration[]
     settings?: Record<string, SettingDefinition>
   }
+  server?: {
+    hasService: boolean
+    hasInstanceHooks: boolean
+    runtime: "idle" | "loading" | "ready" | "error" | "blocked"
+    error?: string
+    needsRestart: boolean
+  }
   web?: { base: string; entry?: string; styles: string[]; apiVersion: 1 }
 }
 
@@ -79,7 +86,7 @@ export type ExtensionStatusEvent = {
   properties: {
     id: string
     version: string
-    state: "installed" | "enabled" | "disabled" | "error" | "changed" | "removed"
+    state: "installed" | "enabled" | "disabled" | "error" | "blocked" | "changed" | "removed"
     error?: string
   }
 }

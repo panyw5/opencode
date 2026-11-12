@@ -79,7 +79,7 @@ if (process.env.OPENCODE_EXTENSION_SERVICE_CHILD !== "1") {
    */
   async function activateFixture() {
     await ExtensionRuntime.rpc({ id: "test.svc", method: "warmup" }).catch(() => undefined)
-    expect(ExtensionRuntime.describe("test.svc")).toBeDefined()
+    expect(ExtensionRuntime.describe("test.svc")).toMatchObject({ runtime: "ready", hasService: true })
   }
 
   function token(layer: Layer.Layer<Extension.Service>) {
@@ -169,12 +169,12 @@ if (process.env.OPENCODE_EXTENSION_SERVICE_CHILD !== "1") {
             Effect.provide(inner),
             Effect.scoped,
           )
-          expect(ExtensionRuntime.describe("test.svc")).toBeDefined()
+          expect(ExtensionRuntime.describe("test.svc")).toMatchObject({ runtime: "ready", hasService: true })
         }).pipe(Effect.provide(outer)),
       )
 
       // The last scope out performs the shutdown cleanup.
-      expect(ExtensionRuntime.describe("test.svc")).toBeUndefined()
+      expect(ExtensionRuntime.describe("test.svc")).toMatchObject({ runtime: "idle", hasService: false })
     })
 
     test("a pure-mode layer does not dispose runtime state owned by another scope", async () => {
@@ -192,10 +192,10 @@ if (process.env.OPENCODE_EXTENSION_SERVICE_CHILD !== "1") {
           )
           // The pure layer never owned the runtime, so leaving it must not
           // dispose the enabled scope's state.
-          expect(ExtensionRuntime.describe("test.svc")).toBeDefined()
+          expect(ExtensionRuntime.describe("test.svc")).toMatchObject({ runtime: "ready", hasService: true })
         }).pipe(Effect.provide(owner)),
       )
-      expect(ExtensionRuntime.describe("test.svc")).toBeUndefined()
+      expect(ExtensionRuntime.describe("test.svc")).toMatchObject({ runtime: "idle", hasService: false })
     })
   })
 }

@@ -1,0 +1,24 @@
+{
+  "name": "@opencode-internal/extension-lifecycle-prototypes",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.9",
+  "scripts": {
+    "reuse-installed": "node ./scripts/reuse-installed.mjs",
+    "test": "bun test --timeout 30000 ./test/extension",
+    "test:unit": "bun test --timeout 30000 ./test/extension/lifecycle-state.test.ts ./test/extension/execution-control.test.ts ./test/extension/execution-worker.test.ts",
+    "test:process": "bun test --timeout 30000 ./test/extension/lifecycle-process.test.ts ./test/extension/ownership.test.ts ./test/extension/execution-supervisor.test.ts",
+    "test:electron": "OPENCODE_EXTENSION_ELECTRON_PROBE=1 bun test --timeout 30000 ./test/extension/ownership-electron.test.ts ./test/extension/execution-electron.test.ts",
+    "typecheck": "node ./node_modules/typescript/bin/tsc --project ./tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.13",
+    "@types/node": "24.12.2",
+    "effect": "4.0.0-beta.66",
+    "electron": "41.2.1",
+    "fs-native-extensions": "1.5.3",
+    "typescript": "5.8.2",
+    "zod": "4.1.8"
+  }
+}

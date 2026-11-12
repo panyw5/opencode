@@ -64,13 +64,13 @@
 
 ### 2.1 概念与术语
 
-| 术语 | 含义 |
-| --- | --- |
-| 扩展（Extension） | 一个 npm 包形态的目录：`package.json` 中带 `opencode` manifest，含可选的 web 入口、server 入口和静态资源 |
-| web 部分 | 在 UI 中运行的 ESM 模块，默认导出 `defineWebExtension(...)` |
-| server 部分 | 在 opencode server 进程中运行的 ESM 模块，默认导出 `defineServerExtension(...)` |
-| 贡献点（Contribution） | 扩展向宿主注册的能力：文件预览器、工具渲染器、面板、命令、设置 |
-| 激活（Activation） | 加载扩展代码并调用其 `activate` 的过程 |
+| 术语                   | 含义                                                                                                     |
+| ---------------------- | -------------------------------------------------------------------------------------------------------- |
+| 扩展（Extension）      | 一个 npm 包形态的目录：`package.json` 中带 `opencode` manifest，含可选的 web 入口、server 入口和静态资源 |
+| web 部分               | 在 UI 中运行的 ESM 模块，默认导出 `defineWebExtension(...)`                                              |
+| server 部分            | 在 opencode server 进程中运行的 ESM 模块，默认导出 `defineServerExtension(...)`                          |
+| 贡献点（Contribution） | 扩展向宿主注册的能力：文件预览器、工具渲染器、面板、命令、设置                                           |
+| 激活（Activation）     | 加载扩展代码并调用其 `activate` 的过程                                                                   |
 
 与现有 plugin 的关系：扩展的 server 部分沿用 plugin 的 `Hooks` 形态，所以扩展可以看作“带前端、带管理界面的 plugin”。但扩展由独立的全局注册表管理，不写进 `opencode.json` 的 `plugin` 数组（理由见 §2.3 D2）。
 
@@ -109,16 +109,16 @@
 
 ### 2.3 关键设计决策
 
-| 编号 | 决策 | 理由 |
-| --- | --- | --- |
-| D1 | server 是唯一事实来源 | 连接远程 server、打开多个窗口时看到同一套扩展；web 与 server 部分版本一致 |
-| D2 | 独立的全局注册表，不写入 `opencode.json` 的 `plugin` | `plugin_origins` 在实例内计算，拿不到全局清单；web 部分是全局的；安装、启停、卸载不改动用户的配置文件 |
-| D3 | server 入口沿用 plugin `Hooks` | 工具、事件、chat 钩子直接复用现有执行路径和按会话关闭钩子的 HookControl |
-| D4 | 前端同进程，共享宿主的 Solid 实例 | 可以直接使用宿主组件、主题和上下文；notebook 这类交互密集的界面体验最好 |
-| D5 | web 资源走能力令牌路径 | `import()` 带不上鉴权头；入口里相对导入的 chunk 和 CSS `url()` 会丢失查询参数 |
-| D6 | manifest 静态声明贡献点，代码懒加载 | 未使用的扩展没有启动成本 |
-| D7 | 固定的 RPC 与事件通道 | 不破坏 HttpApi、OpenAPI、SDK 的类型化路由体系 |
-| D8 | 扩展 server 模块在进程内只导入一次 | 进程级服务（如 kernel）需要跨实例共享；实例级状态放在 `server()` 的闭包里 |
+| 编号 | 决策                                                 | 理由                                                                                                  |
+| ---- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| D1   | server 是唯一事实来源                                | 连接远程 server、打开多个窗口时看到同一套扩展；web 与 server 部分版本一致                             |
+| D2   | 独立的全局注册表，不写入 `opencode.json` 的 `plugin` | `plugin_origins` 在实例内计算，拿不到全局清单；web 部分是全局的；安装、启停、卸载不改动用户的配置文件 |
+| D3   | server 入口沿用 plugin `Hooks`                       | 工具、事件、chat 钩子直接复用现有执行路径和按会话关闭钩子的 HookControl                               |
+| D4   | 前端同进程，共享宿主的 Solid 实例                    | 可以直接使用宿主组件、主题和上下文；notebook 这类交互密集的界面体验最好                               |
+| D5   | web 资源走能力令牌路径                               | `import()` 带不上鉴权头；入口里相对导入的 chunk 和 CSS `url()` 会丢失查询参数                         |
+| D6   | manifest 静态声明贡献点，代码懒加载                  | 未使用的扩展没有启动成本                                                                              |
+| D7   | 固定的 RPC 与事件通道                                | 不破坏 HttpApi、OpenAPI、SDK 的类型化路由体系                                                         |
+| D8   | 扩展 server 模块在进程内只导入一次                   | 进程级服务（如 kernel）需要跨实例共享；实例级状态放在 `server()` 的闭包里                             |
 
 ### 2.4 生命周期总览
 
@@ -192,18 +192,18 @@ web 部分和 server 部分都是可选的，但至少要有一个。
 
 ### 3.3 字段规则
 
-| 字段 | 规则 |
-| --- | --- |
-| `opencode.manifestVersion` | 必填，当前为 `1` |
-| `opencode.id` | 必填；小写，`publisher.name` 形式，正则 `^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$`，长度不超过 64；`opencode.` 前缀保留给官方扩展 |
-| `version` | 取 `package.json` 的 `version`，必须是合法 semver |
-| `engines.opencode` | 可选；沿用 `checkPluginCompatibility` 的语义，不满足时标记为 `incompatible`，不加载 |
-| `opencode.web.apiVersion` | 有 web 部分时必填；宿主不支持该版本时跳过 web 部分并报告 |
-| `exports["./server"]`、`exports["./web"]` | 入口解析沿用 plugin 的规则，路径必须位于包目录内 |
-| web 资源根目录 | `./web` 入口所在的目录；资源路由只提供该目录内的文件；`styles`、`icon` 必须在其中 |
-| `opencode.activation` | 省略时等价于 `["onStartup"]` |
-| `opencode.contributes.*[].id` | 在扩展内唯一；全局 ID 为 `<extensionID>:<id>`；命令的全局 ID 为 `ext.<extensionID>.<id>` |
-| `opencode.permissions` | 只用于展示：`process:spawn`、`fs:read`、`fs:write`、`network`、`tools`（向 LLM 暴露工具） |
+| 字段                                      | 规则                                                                                                                                 |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `opencode.manifestVersion`                | 必填，当前为 `1`                                                                                                                     |
+| `opencode.id`                             | 必填；小写，`publisher.name` 形式，正则 `^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$`，长度不超过 64；`opencode.` 前缀保留给官方扩展 |
+| `version`                                 | 取 `package.json` 的 `version`，必须是合法 semver                                                                                    |
+| `engines.opencode`                        | 可选；沿用 `checkPluginCompatibility` 的语义，不满足时标记为 `incompatible`，不加载                                                  |
+| `opencode.web.apiVersion`                 | 有 web 部分时必填；宿主不支持该版本时跳过 web 部分并报告                                                                             |
+| `exports["./server"]`、`exports["./web"]` | 入口解析沿用 plugin 的规则，路径必须位于包目录内                                                                                     |
+| web 资源根目录                            | `./web` 入口所在的目录；资源路由只提供该目录内的文件；`styles`、`icon` 必须在其中                                                    |
+| `opencode.activation`                     | 省略时等价于 `["onStartup"]`                                                                                                         |
+| `opencode.contributes.*[].id`             | 在扩展内唯一；全局 ID 为 `<extensionID>:<id>`；命令的全局 ID 为 `ext.<extensionID>.<id>`                                             |
+| `opencode.permissions`                    | 只用于展示：`process:spawn`、`fs:read`、`fs:write`、`network`、`tools`（向 LLM 暴露工具）                                            |
 
 manifest 中的静态文本（`displayName`、`title` 等）首个版本只支持单一语言，本地化放到后续版本。
 
@@ -257,12 +257,12 @@ server 启动时读取注册表，并监听 `registry.json` 的变化，这样 C
 
 ### 4.3 安装来源
 
-| 来源 | 流程 | 用途 |
-| --- | --- | --- |
-| npm | 调用 `Npm.install(stagingDir, { add: [{ name, version }] })`，从 `node_modules/<name>` 取出包目录；`ignoreScripts: true` | 公开分发 |
-| 归档 | 下载 `.tgz` 或 `.zip`，**必须**提供 `sha256`，校验通过后解压；拒绝绝对路径和含 `..` 的条目 | 私有分发、离线安装、GitHub Release |
-| 本地路径 | 不复制，注册表直接指向该目录；server 监听其变化（见 §7.8） | 扩展开发 |
-| 市场索引 | 静态 JSON 列出 `{ id, displayName, description, source, versions }`，最终落到上面三种之一 | 浏览与发现 |
+| 来源     | 流程                                                                                                                     | 用途                               |
+| -------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------- |
+| npm      | 调用 `Npm.install(stagingDir, { add: [{ name, version }] })`，从 `node_modules/<name>` 取出包目录；`ignoreScripts: true` | 公开分发                           |
+| 归档     | 下载 `.tgz` 或 `.zip`，**必须**提供 `sha256`，校验通过后解压；拒绝绝对路径和含 `..` 的条目                               | 私有分发、离线安装、GitHub Release |
+| 本地路径 | 不复制，注册表直接指向该目录；server 监听其变化（见 §7.8）                                                               | 扩展开发                           |
+| 市场索引 | 静态 JSON 列出 `{ id, displayName, description, source, versions }`，最终落到上面三种之一                                | 浏览与发现                         |
 
 ### 4.4 安装流程
 
@@ -275,12 +275,12 @@ server 启动时读取注册表，并监听 `registry.json` 的变化，这样 C
 
 ### 4.5 启用、停用、卸载、升级
 
-| 操作 | server 部分 | web 部分 |
-| --- | --- | --- |
-| 启用 | 导入 server 入口，按需调用 `activate()`；若有实例级 `server()`，重建所有实例 | UI 收到 `extension.status` 后注册静态贡献，按激活事件加载 |
-| 停用 | 调用进程级 `dispose()`；若有实例级 `server()`，重建所有实例 | 销毁扩展 owner，移除样式和贡献；已打开的扩展标签页显示“扩展不可用” |
-| 卸载 | 先停用，再删除 `packages/<id>`；`data/<id>` 是否保留由用户选择 | 同停用 |
-| 升级 | 安装新版本 → 停用旧版本 → 启用新版本 → 删除旧目录 | 用新的资源 URL（版本段不同）重新导入 |
+| 操作 | server 部分                                                                  | web 部分                                                           |
+| ---- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| 启用 | 导入 server 入口，按需调用 `activate()`；若有实例级 `server()`，重建所有实例 | UI 收到 `extension.status` 后注册静态贡献，按激活事件加载          |
+| 停用 | 调用进程级 `dispose()`；若有实例级 `server()`，重建所有实例                  | 销毁扩展 owner，移除样式和贡献；已打开的扩展标签页显示“扩展不可用” |
+| 卸载 | 先停用，再删除 `packages/<id>`；`data/<id>` 是否保留由用户选择               | 同停用                                                             |
+| 升级 | 安装新版本 → 停用旧版本 → 启用新版本 → 删除旧目录                            | 用新的资源 URL（版本段不同）重新导入                               |
 
 实例重建复用 `disposeAllInstancesAndEmitGlobalDisposed()`（`server/global-lifecycle.ts`，也就是 `POST /global/dispose` 走的路径）。它可能中断正在运行的会话，所以有会话忙碌时 UI 要先确认。只有 web 部分的扩展启停时不需要重建实例。
 
@@ -436,7 +436,7 @@ export type RpcHandler = (input: unknown, ctx: { directory?: string; signal: Abo
 在 `Plugin.state` 中，加载完外部插件之后、调用 `config` 钩子之前，追加扩展的 hooks：
 
 ```ts
-const extensionHooks = yield* extensions.instanceHooks(input) // 已跳过停用、出错、不兼容的扩展
+const extensionHooks = yield * extensions.instanceHooks(input) // 已跳过停用、出错、不兼容的扩展
 for (const item of extensionHooks) hooks.push({ id: `extension:${item.id}`, hooks: item.hooks })
 ```
 
@@ -496,30 +496,32 @@ export const Event = {
 
 ### 5.7 故障隔离
 
-- 所有扩展代码调用（`activate`、`server`、hooks、RPC、`dispose`）都用 `Effect.tryPromise` 包裹，异常不会外泄。
-- `activate()` 失败时状态置为 `error` 并发布 `extension.status`；在扩展文件或设置变化之前不重试。
-- `dispose()` 设 10 秒超时，超时只记录日志。
-- server 进程内的未捕获异常无法完全隔离。约定把 CPU 密集或不稳定的工作放到子进程中；首个版本不做 worker 隔离。
-- 日志统一带上 `service: "extension"` 和 `extension: <id>` 字段，写入现有的日志目录。
+- `activate()` / `server()` 分别设置 10 秒调用截止；激活错误保持到显式重试、文件或设置变化，目录级 server 失败不污染其他实例。超时不等于取消：原任务继续跟踪，迟到 service/hooks 必须回收。
+- 实例 hooks 逐扩展收集；blocked、租约失败和瞬态变更只跳过对应扩展。瞬态跳过在 fence 释放后失效缓存，不能永久缓存缺席。
+- event 钩子逐条目捕获同步异常及异步拒绝，保护后续条目和事件。trigger **仅**跳过扩展的 `ExtensionMutationError`；普通错误继续向上传播，保留 `tool.execute.before` 等钩子的拒绝语义。
+- `dispose()` 最多等待 10 秒；严格 quiesce 无法确认停止或清理失败时进入 blocked/needsRestart，不因重试解除安全阻塞。
+- `server.runtime/error/needsRestart` 与清单 `state` 分开展示；`POST /global/extension/:id/retry` 清可重试错误并重建 hooks，未知扩展 404，禁用/变更中/需要重启的扩展 409。
+- server 同进程的原生未捕获异常仍可能使 sidecar fatal exit(1)，独立进程执行尚未接入生产。后台任务优先使用宿主托管 timers（见[隔离加固作者说明](./isolation-authoring.md)），不能将其称为沙箱。
+- 日志统一带 `service: "extension"`、extension、phase、gen、epoch、elapsedMs，不记录 secret。
 
 ## 6. HTTP API
 
 ### 6.1 端点
 
-| 方法 | 路径 | 作用域 | 说明 |
-| --- | --- | --- | --- |
-| GET | `/global/extension` | 全局 | 已安装扩展列表 `ExtensionInfo[]`，含状态、manifest、web 资源 URL |
-| GET | `/global/extension/:id` | 全局 | 单个扩展 |
-| POST | `/global/extension/install` | 全局 | 请求体 `{ source, enable? }`；进度通过 `extension.status` 推送 |
-| POST | `/global/extension/:id/enable` | 全局 | 启用 |
-| POST | `/global/extension/:id/disable` | 全局 | 停用 |
-| POST | `/global/extension/:id/update` | 全局 | 请求体 `{ version? }` |
-| DELETE | `/global/extension/:id` | 全局 | 查询参数 `purgeData` |
-| PATCH | `/global/extension/:id/settings` | 全局 | 请求体为部分设置 |
-| GET | `/global/extension/market` | 全局 | 读取市场索引（P3） |
-| POST | `/extension/:id/rpc/:method` | 实例 | 见 §5.4 |
-| GET | `/file/raw` | 实例 | 查询参数 `path`，返回精确字节，见 §6.3 |
-| GET | `/extension-asset/:token/:id/:version/*` | 原始路由 | web 资源，见 §6.2 |
+| 方法   | 路径                                     | 作用域   | 说明                                                             |
+| ------ | ---------------------------------------- | -------- | ---------------------------------------------------------------- |
+| GET    | `/global/extension`                      | 全局     | 已安装扩展列表 `ExtensionInfo[]`，含状态、manifest、web 资源 URL |
+| GET    | `/global/extension/:id`                  | 全局     | 单个扩展                                                         |
+| POST   | `/global/extension/install`              | 全局     | 请求体 `{ source, enable? }`；进度通过 `extension.status` 推送   |
+| POST   | `/global/extension/:id/enable`           | 全局     | 启用                                                             |
+| POST   | `/global/extension/:id/disable`          | 全局     | 停用                                                             |
+| POST   | `/global/extension/:id/update`           | 全局     | 请求体 `{ version? }`                                            |
+| DELETE | `/global/extension/:id`                  | 全局     | 查询参数 `purgeData`                                             |
+| PATCH  | `/global/extension/:id/settings`         | 全局     | 请求体为部分设置                                                 |
+| GET    | `/global/extension/market`               | 全局     | 读取市场索引（P3）                                               |
+| POST   | `/extension/:id/rpc/:method`             | 实例     | 见 §5.4                                                          |
+| GET    | `/file/raw`                              | 实例     | 查询参数 `path`，返回精确字节，见 §6.3                           |
+| GET    | `/extension-asset/:token/:id/:version/*` | 原始路由 | web 资源，见 §6.2                                                |
 
 HttpApi 组放在 `groups/extension.ts` 和 `handlers/extension.ts`。全局端点参照 `groups/global.ts` 加入 `RootHttpApi`；RPC 端点挂 `InstanceContextMiddleware`、`WorkspaceRoutingMiddleware` 和 `Authorization`，参照 `groups/presentation.ts`。
 
@@ -579,13 +581,13 @@ type ExtensionInfo = {
 
 ### 6.4 CSP 与 CORS 核对
 
-| 形态 | web 入口如何加载 | 结论 |
-| --- | --- | --- |
-| 内嵌 Web UI（与 server 同源） | `/extension-asset/...` 同源，符合 `script-src 'self'` | 可行 |
-| 代理上游 UI（`UI_UPSTREAM`） | UI 经本地 server 转发，仍是同源 | 可行 |
-| Desktop 连接本地 server | 从 `oc://renderer` 跨源访问 `http://127.0.0.1:<port>`；renderer 没有 CSP；module script 需要 CORS，`isAllowedCorsOrigin` 已放行 `oc://renderer`；127.0.0.1 属于可信来源，不受 mixed content 限制 | 可行 |
-| Desktop 连接远程纯 http server | `oc://renderer` 注册为 `secure`，module script 与 fetch 一样受 mixed content 规则约束 | 需实测 |
-| app 开发服务器（Vite，localhost） | 跨源，CORS 已放行 localhost | 可行 |
+| 形态                              | web 入口如何加载                                                                                                                                                                                 | 结论   |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| 内嵌 Web UI（与 server 同源）     | `/extension-asset/...` 同源，符合 `script-src 'self'`                                                                                                                                            | 可行   |
+| 代理上游 UI（`UI_UPSTREAM`）      | UI 经本地 server 转发，仍是同源                                                                                                                                                                  | 可行   |
+| Desktop 连接本地 server           | 从 `oc://renderer` 跨源访问 `http://127.0.0.1:<port>`；renderer 没有 CSP；module script 需要 CORS，`isAllowedCorsOrigin` 已放行 `oc://renderer`；127.0.0.1 属于可信来源，不受 mixed content 限制 | 可行   |
+| Desktop 连接远程纯 http server    | `oc://renderer` 注册为 `secure`，module script 与 fetch 一样受 mixed content 规则约束                                                                                                            | 需实测 |
+| app 开发服务器（Vite，localhost） | 跨源，CORS 已放行 localhost                                                                                                                                                                      | 可行   |
 
 需要调整的地方：
 
@@ -651,13 +653,13 @@ type ExtensionInfo = {
 
 ### 7.4 懒激活
 
-| 激活事件 | 触发时机 | 激活前宿主的表现 |
-| --- | --- | --- |
-| `onStartup` | 宿主加载清单后立即激活 | 无 |
-| `onFileViewer:<id>` | 某个文件被解析到该预览器 | 标签页显示加载占位 |
-| `onTool:<tool>` | 时间线中出现该工具的调用 | 先用 `GenericTool` 渲染，激活后替换 |
-| `onCommand:<id>` | 执行该命令 | 命令面板中用 manifest 里的标题显示 |
-| `onPanel:<id>` | 打开该面板 | 标签页显示加载占位 |
+| 激活事件            | 触发时机                 | 激活前宿主的表现                    |
+| ------------------- | ------------------------ | ----------------------------------- |
+| `onStartup`         | 宿主加载清单后立即激活   | 无                                  |
+| `onFileViewer:<id>` | 某个文件被解析到该预览器 | 标签页显示加载占位                  |
+| `onTool:<tool>`     | 时间线中出现该工具的调用 | 先用 `GenericTool` 渲染，激活后替换 |
+| `onCommand:<id>`    | 执行该命令               | 命令面板中用 manifest 里的标题显示  |
+| `onPanel:<id>`      | 打开该面板               | 标签页显示加载占位                  |
 
 manifest 静态声明“匹配”信息（文件扩展名、工具名、命令标题），代码只提供实现。不在 manifest 中声明的贡献也可以在激活后动态注册，但不参与懒激活。
 
@@ -1091,7 +1093,7 @@ server 部分为每个 notebook 启动一个常驻进程 `wolframscript -file br
 stdin 每行一个 JSON 请求：
 
 ```json
-{"id":"e1","op":"eval","code":"Plot[Sin[x],{x,0,2Pi}]","formats":["text","tex","png"],"timeoutSeconds":120}
+{ "id": "e1", "op": "eval", "code": "Plot[Sin[x],{x,0,2Pi}]", "formats": ["text", "tex", "png"], "timeoutSeconds": 120 }
 ```
 
 stdout 中以 `\u001e`（RS 控制字符）开头的行是协议消息，其他行视为当前单元的 `Print` 输出：
@@ -1144,14 +1146,14 @@ bridge 的实现要点（都需要实测）：
 
 ### 11.6 风险
 
-| 风险 | 应对 |
-| --- | --- |
-| wolframscript 未安装或未激活 | 启动前检测，错误信息给出安装和激活指引 |
-| 冷启动慢（数秒） | kernel 常驻；打开 notebook 时预热 |
-| 死循环或长时间计算 | `TimeConstrained`，必要时重启 kernel |
-| 许可证并发限制 | 默认最多 2 个 kernel，其余请求排队并显示状态 |
+| 风险                           | 应对                                                          |
+| ------------------------------ | ------------------------------------------------------------- |
+| wolframscript 未安装或未激活   | 启动前检测，错误信息给出安装和激活指引                        |
+| 冷启动慢（数秒）               | kernel 常驻；打开 notebook 时预热                             |
+| 死循环或长时间计算             | `TimeConstrained`，必要时重启 kernel                          |
+| 许可证并发限制                 | 默认最多 2 个 kernel，其余请求排队并显示状态                  |
 | 用户与 Agent 同时修改 notebook | notebook 打开时由视图负责写入；server 写入时做 mtime 冲突检查 |
-| 输出的图片过大 | 事件中只放缩略信息，完整图片由 UI 通过 RPC 获取 |
+| 输出的图片过大                 | 事件中只放缩略信息，完整图片由 UI 通过 RPC 获取               |
 
 ## 12. 安全模型
 
@@ -1167,13 +1169,13 @@ bridge 的实现要点（都需要实测）：
 
 ## 13. 分阶段实施与验收
 
-| 阶段 | 内容 | 验收 |
-| --- | --- | --- |
-| P0 宿主改造 | FileViewerRegistry 与“打开方式”菜单；CSV/TSV 迁移为内置条目；`registerTool` 和 `registerPartComponent` 返回注销函数；工具高度估算注册表；侧栏 `ext://` 标签的分发骨架 | 现有测试和 typecheck 通过；md、pdf、图片、csv 的预览行为不变 |
-| P1 web 扩展链路 | **仅支持本地 path link**：注册表与 `opencode extension link/list/enable/disable`；只含 web/file-viewer 部分的 `Extension.Service`；`/global/extension`、能力令牌资源路由、`extension.status`；`/file/raw`；CSP 调整；ExtensionHost、共享 Solid 模块桥、懒激活、显式安全模式；`extension-kit` 的 web 类型与 Vite 插件；hello-viewer 示例。P1 不做 npm/归档安装、watcher/HMR、server hooks、RPC、设置或市场；这些留给 P2/P3 | Desktop（鉴权开启）、内嵌 Web、Vite 开发三种形态下，`link` hello-viewer 后都能用它打开 `.hello` 文件；停用后预览器消失且不需要刷新；`?extensions=off`、`OPENCODE_DISABLE_EXTENSIONS=1`、路径穿越/HTML/错误令牌测试通过 |
-| P2 server 与 Web 桥 | `defineServerExtension`（进程级 `activate` + 实例级 `server`）；接入 `Plugin.state`；固定 RPC/`extension.event`；设置 schema、掩码与 PATCH；本地 path-link watcher、Web/Server 独立指纹；开放 tool renderer、panel、command 的声明与懒激活，Web 上下文提供 RPC/事件/设置桥。P2 不包括 npm/归档分发、市场、自定义设置页、运行时 i18n 或项目级安装 | 示例扩展能 RPC 回显、推送事件、提供一个 LLM 工具；Web/Server 变更各自热重载；停用与停机回收实例 Hooks、UI 注册和子进程，且纯模式关闭扩展；三种形态完成验证后才标记通过 |
-| P3 分发与管理 | npm 与归档安装、卸载、升级；扩展管理页与设置表单；市场索引；安装确认 | 从 npm 和带 sha256 的归档都能安装成功；校验失败、版本不兼容、ID 冲突各有明确的错误信息 |
-| P4 首批扩展 | WolframScript Notebook；新的文件预览扩展 | 按 §11.1 逐条验证体验；Agent 与用户共享 kernel 状态 |
+| 阶段                | 内容                                                                                                                                                                                                                                                                                                                                                                                                                      | 验收                                                                                                                                                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0 宿主改造         | FileViewerRegistry 与“打开方式”菜单；CSV/TSV 迁移为内置条目；`registerTool` 和 `registerPartComponent` 返回注销函数；工具高度估算注册表；侧栏 `ext://` 标签的分发骨架                                                                                                                                                                                                                                                     | 现有测试和 typecheck 通过；md、pdf、图片、csv 的预览行为不变                                                                                                                                                           |
+| P1 web 扩展链路     | **仅支持本地 path link**：注册表与 `opencode extension link/list/enable/disable`；只含 web/file-viewer 部分的 `Extension.Service`；`/global/extension`、能力令牌资源路由、`extension.status`；`/file/raw`；CSP 调整；ExtensionHost、共享 Solid 模块桥、懒激活、显式安全模式；`extension-kit` 的 web 类型与 Vite 插件；hello-viewer 示例。P1 不做 npm/归档安装、watcher/HMR、server hooks、RPC、设置或市场；这些留给 P2/P3 | Desktop（鉴权开启）、内嵌 Web、Vite 开发三种形态下，`link` hello-viewer 后都能用它打开 `.hello` 文件；停用后预览器消失且不需要刷新；`?extensions=off`、`OPENCODE_DISABLE_EXTENSIONS=1`、路径穿越/HTML/错误令牌测试通过 |
+| P2 server 与 Web 桥 | `defineServerExtension`（进程级 `activate` + 实例级 `server`）；接入 `Plugin.state`；固定 RPC/`extension.event`；设置 schema、掩码与 PATCH；本地 path-link watcher、Web/Server 独立指纹；开放 tool renderer、panel、command 的声明与懒激活，Web 上下文提供 RPC/事件/设置桥。P2 不包括 npm/归档分发、市场、自定义设置页、运行时 i18n 或项目级安装                                                                          | 示例扩展能 RPC 回显、推送事件、提供一个 LLM 工具；Web/Server 变更各自热重载；停用与停机回收实例 Hooks、UI 注册和子进程，且纯模式关闭扩展；三种形态完成验证后才标记通过                                                 |
+| P3 分发与管理       | npm 与归档安装、卸载、升级；扩展管理页与设置表单；市场索引；安装确认                                                                                                                                                                                                                                                                                                                                                      | 从 npm 和带 sha256 的归档都能安装成功；校验失败、版本不兼容、ID 冲突各有明确的错误信息                                                                                                                                 |
+| P4 首批扩展         | WolframScript Notebook；新的文件预览扩展                                                                                                                                                                                                                                                                                                                                                                                  | 按 §11.1 逐条验证体验；Agent 与用户共享 kernel 状态                                                                                                                                                                    |
 
 测试要点：
 
@@ -1189,7 +1191,6 @@ bridge 的实现要点（都需要实测）：
 - P1 ExtensionContext 只开放 file viewer、assets 和字符串日志。P0 的 panel/tool/command 注册表保留，待相应懒激活链路完整后再纳入稳定 API。
 - P1 不做 CSS selector 自动 scope、运行时 i18n、viewer 偏好持久化或 crash-strike 自动安全模式；扩展应自行使用带 extension ID 前缀的类名，并可通过 `?extensions=off` 或环境变量逃生。
 - `/file/raw` 只提供整文件 GET，限制 50 MB；不支持 range/HEAD，HTML/XHTML 强制按 `application/octet-stream` 返回。
-
 
 1. 是否需要项目级启用，即只在部分项目中加载 server 部分或暴露工具？首个版本是全局启用，再加上扩展自己的工具暴露策略。
 2. `secret` 类型的设置是否接入现有的认证存储，避免明文写进注册表？

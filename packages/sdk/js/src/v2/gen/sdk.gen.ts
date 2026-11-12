@@ -104,6 +104,8 @@ import type {
   ExtensionListErrors,
   ExtensionListResponses,
   ExtensionPrepareInput,
+  ExtensionRetryErrors,
+  ExtensionRetryResponses,
   ExtensionRpcErrors,
   ExtensionRpcResponses,
   ExtensionSettingsPatch,
@@ -839,6 +841,25 @@ export class Extension extends HeyApiClient {
     const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "id" }] }])
     return (options?.client ?? this.client).post<ExtensionDisableResponses, ExtensionDisableErrors, ThrowOnError>({
       url: "/global/extension/{id}/disable",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Retry extension runtime
+   *
+   * Clear a retryable runtime error and rebuild hooks. Disabled, mutating, or restart-blocked extensions cannot be retried.
+   */
+  public retry<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "id" }] }])
+    return (options?.client ?? this.client).post<ExtensionRetryResponses, ExtensionRetryErrors, ThrowOnError>({
+      url: "/global/extension/{id}/retry",
       ...options,
       ...params,
     })

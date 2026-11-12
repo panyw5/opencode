@@ -43,6 +43,7 @@ import {
   importExtensionModule,
 } from "./activation"
 import { extensionDefinition } from "./definition"
+import { createExtensionCommandHandler } from "./command"
 import {
   declaredCommand,
   declaredPanel,
@@ -82,6 +83,7 @@ export type ExtensionHost = {
   // response. `synced` is false when the follow-up strict re-read failed: the
   // toggle itself still happened (and stays applied), but host state may not
   // fully reflect the server yet.
+  retry(id: string): Promise<{ info: ExtensionInfo; synced: boolean }>
   setEnabled(id: string, enabled: boolean): Promise<{ info: ExtensionInfo; synced: boolean }>
   // Reactive busy flag for state-changing operations (enable/disable and
   // settings updates) on the extension, so the UI can block re-entry.
@@ -279,7 +281,7 @@ export function ExtensionHostProvider(props: ParentProps) {
       }
       const disposeRenderer = registerTool({
         name: contribution.tool,
-        render: extensionScopedMount(manifest.id, contribution.component),
+        render: extensionScopedMount(manifest.id, contribution.component, contribution.tool),
       })
       const disposeEstimator = contribution.estimateHeight
         ? registerToolHeightEstimator(contribution.tool, contribution.estimateHeight)
@@ -304,7 +306,13 @@ export function ExtensionHostProvider(props: ParentProps) {
         category: declared.category,
         keybind: declared.keybind,
         slash: declared.slash,
-        onSelect: (source) => contribution.run(source),
+        onSelect: createExtensionCommandHandler({
+          extensionID: manifest.id,
+          commandID: contribution.id,
+          title: declared.title,
+          run: (source) => contribution.run(source),
+          toast: showToast,
+        }),
       })
     },
     callRpc(manifest, input) {
@@ -465,7 +473,7 @@ export function ExtensionHostProvider(props: ParentProps) {
         onSelect: async (source) => {
           await activate(item.id)
           const live = commandOptions().get(id)
-          if (live && live !== option) live.onSelect?.(source)
+          if (live && live !== option) await live.onSelect?.(source)
           else console.warn(`[extension-host] command unavailable id=${id}`)
         },
       }
@@ -675,7 +683,7 @@ export function ExtensionHostProvider(props: ParentProps) {
         })
       return
     }
-    if (state === "error") {
+    if (state === "error" || state === "blocked") {
       void refresh()
       return
     }
@@ -764,6 +772,45 @@ export function ExtensionHostProvider(props: ParentProps) {
       if (disposed || globalSDK.url !== serverURL || globalSDK.client !== connection) {
         throw new ExtensionMutationStaleError(`Extension server changed during synchronization: ${id}`)
       }
+      return { info: manifest(id) ?? info, synced }
+    } finally {
+      release()
+    }
+  }
+
+  const retryByID = async (id: string): Promise<{ info: ExtensionInfo; synced: boolean }> => {
+    const item = manifest(id)
+    if (mode().disabled || !item?.enabled) throw new Error(`Extension retry is unavailable: ${id}`)
+    if (item.server?.needsRestart || item.server?.runtime === "blocked") {
+      throw new Error(`Extension requires restart: ${id}`)
+    }
+    const serverURL = globalSDK.url
+    const connection = globalSDK.client
+    const release = beginMutation(id, serverURL)
+    const assertCurrent = () => {
+      if (disposed || globalSDK.url !== serverURL || globalSDK.client !== connection) {
+        throw new ExtensionMutationStaleError(`Extension server changed during retry: ${id}`)
+      }
+    }
+    try {
+      console.info(`[extension-host] retry start id=${id}`)
+      const info = await api.retry(id)
+      assertCurrent()
+      const epoch = ++refreshEpoch
+      await reconcile(
+        manifests().map((entry) => (entry.id === id ? info : entry)),
+        epoch,
+      )
+      assertCurrent()
+      let synced = true
+      try {
+        await refresh({ strict: true })
+      } catch (error) {
+        synced = false
+        console.warn(`[extension-host] post-retry sync failed id=${id} error=${String(error)}`)
+      }
+      assertCurrent()
+      console.info(`[extension-host] retry complete id=${id} synced=${synced}`)
       return { info: manifest(id) ?? info, synced }
     } finally {
       release()
@@ -876,6 +923,7 @@ export function ExtensionHostProvider(props: ParentProps) {
     listError,
     updateSettings: updateSettingsByID,
     setEnabled: setEnabledByID,
+    retry: retryByID,
     mutating: (id) => mutatingIDs().has(id),
     prepareInstallation,
     commitInstallation,

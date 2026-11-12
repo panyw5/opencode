@@ -25,17 +25,32 @@ function locations(id: string) {
   }
 }
 
-function record(identity: DataIdentity) {
+function record(identity: DataIdentity, legacyLocation = false) {
   const paths = locations(identity.id)
+  const source = identity.dataSource ?? identity.source
+  // Archive acquisitions are staged under temporary paths that change on every
+  // download, so ownership lineage anchors to the content digest instead. The
+  // legacy form only recognises records written while lineage hashed the
+  // acquisition location.
+  const lineage =
+    source.type === "archive"
+      ? `archive:${legacyLocation ? source.location : source.sha256}`
+      : sourceIdentity(source)
   return {
     version: 1,
     owner: OWNER,
     id: identity.id,
     name: identity.name,
-    sourceHash: digest(sourceIdentity(identity.dataSource ?? identity.source)),
+    sourceHash: digest(lineage),
     dataHash: digest(paths.data),
     cacheHash: digest(paths.cache),
   }
+}
+
+/** Records written by either lineage scheme prove the same acquisition. */
+function matchesRecord(existing: unknown, identity: DataIdentity) {
+  const json = JSON.stringify(existing)
+  return json === JSON.stringify(record(identity)) || json === JSON.stringify(record(identity, true))
 }
 
 async function readOwner(file: string) {
@@ -117,7 +132,20 @@ export async function provisionData(identity: DataIdentity) {
     throw error
   })
   if (existing) {
-    if (JSON.stringify(existing) !== JSON.stringify(wanted)) throw new Error("Extension data belongs to another source")
+    if (JSON.stringify(existing) !== JSON.stringify(wanted)) {
+      // A record written while archive lineage was location-based still proves
+      // the same acquisition; re-anchor it to the content digest in place.
+      if (!matchesRecord(existing, identity)) throw new Error("Extension data belongs to another source")
+      await unlink(paths.owner).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error
+      })
+      await writeFile(paths.owner, JSON.stringify(wanted), { flag: "wx", mode: 0o600 }).catch(
+        async (error: NodeJS.ErrnoException) => {
+          if (error.code !== "EEXIST" || JSON.stringify(await readOwner(paths.owner)) !== JSON.stringify(wanted))
+            throw error
+        },
+      )
+    }
     return
   }
   if (identity.source.type === "path") return // Do not adopt unowned legacy development data.
@@ -137,7 +165,7 @@ export async function provisionData(identity: DataIdentity) {
 export async function quarantineData(identity: DataIdentity) {
   const paths = locations(identity.id)
   const previous = await purgeJournal(paths.pending)
-  if (previous && JSON.stringify(previous.identity) !== JSON.stringify(record(identity))) {
+  if (previous && !matchesRecord(previous.identity, identity)) {
     throw new Error("Data purge journal belongs to another source")
   }
   const candidates: Array<{ target: string; dev: number; ino: number }> = []
@@ -164,7 +192,7 @@ export async function quarantineData(identity: DataIdentity) {
   })
   // Global ownership exists independently of lazy data/cache directory creation.
   // Another registry's source must not erase an empty namespace's provenance.
-  if ((owner !== undefined || candidates.length > 0) && JSON.stringify(owner) !== JSON.stringify(record(identity))) {
+  if ((owner !== undefined || candidates.length > 0) && !matchesRecord(owner, identity)) {
     throw new Error("Extension data ownership is unknown")
   }
   const journal: PurgeJournal = previous ?? {
