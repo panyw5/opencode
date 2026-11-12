@@ -1,12 +1,15 @@
 import { For, Show, createEffect, createMemo, on, onCleanup, untrack, type Component } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
+import { Select } from "@opencode-ai/ui/select"
 import { useLanguage } from "@/context/language"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLayout } from "@/context/layout"
 import { mainDomain } from "@/pages/layout/extra-agents"
 import { Persist, persisted } from "@/utils/persist"
+import { imLoadBatch, imPreferenceInitPending, imSelectedProject } from "./config-im-state"
+export { imLoadBatch, imPreferenceInitPending, imSelectedProject } from "./config-im-state"
 
 type Channel = {
   channelName: string
@@ -25,23 +28,6 @@ type Subscription = {
   failureReason?: string
 }
 type Session = { id: string; title: string; directory: string }
-
-export function imSelectedProject(saved: string, current: string, directories: string[]) {
-  if (directories.includes(saved)) return saved
-  return directories.includes(current) ? current : ""
-}
-
-export async function imLoadBatch<C, W, S>(requests: {
-  channels: () => Promise<C>
-  subscriptions: () => Promise<W>
-  sessions: () => Promise<S>
-}) {
-  return Promise.all([requests.channels(), requests.subscriptions(), requests.sessions()] as const)
-}
-
-export function imPreferenceInitPending(init: unknown): init is Promise<unknown> {
-  return init instanceof Promise
-}
 
 const inputClass =
   "h-9 min-w-0 rounded-md border border-border-weak-base bg-background-base px-2.5 text-13-regular text-text-strong outline-none focus:border-border-strong-base"
@@ -73,7 +59,7 @@ export const ConfigIM: Component = () => {
     console.info("[im-service-ui] preference load started")
     void preferencesInit
       .catch((error) => {
-        console.error("[im-service-ui] preference load failed", { error: String(error) })
+        console.error(`[im-service-ui] preference load failed error=${String(error)}`)
       })
       .finally(() => {
         if (!alive) return
@@ -93,6 +79,15 @@ export const ConfigIM: Component = () => {
   const readyChannels = createMemo(() =>
     state.channels.filter((c) => c.enabled && c.running && c.recipientStatus === "ready"),
   )
+  const projectOptions = createMemo(() => [
+    { value: "", label: t("config.im.project.empty") },
+    ...directories().map((value) => ({
+      value,
+      label: projects().find((p) => p.worktree === value)?.name || value.split(/[\\/]/).filter(Boolean).at(-1) || value,
+    })),
+  ])
+  const sessionOptions = createMemo(() => state.sessions.map((s) => ({ value: s.id, label: s.title || s.id })))
+  const channelOptions = createMemo(() => readyChannels().map((c) => ({ value: c.channelName, label: c.channelName })))
   let version = 0
 
   async function load(value: string) {
@@ -239,25 +234,22 @@ export const ConfigIM: Component = () => {
       </section>
       <label class="flex max-w-xl flex-col gap-1.5 text-13-medium text-text-strong">
         {t("config.im.project")}
-        <select
-          aria-label={t("config.im.project")}
-          class={inputClass}
-          value={directory()}
-          onChange={(event) => {
-            const value = event.currentTarget.value
-            console.info("[im-service-ui] project selected", { directory: value })
-            setPreferences("selectedDirectory", value)
+        <Select
+          triggerProps={{ "aria-label": t("config.im.project") }}
+          options={projectOptions()}
+          current={projectOptions().find((o) => o.value === directory())}
+          value={(o) => o.value}
+          label={(o) => o.label}
+          onSelect={(o) => {
+            if (!o) return
+            console.info("[im-service-ui] project selected", { directory: o.value })
+            setPreferences("selectedDirectory", o.value)
           }}
-        >
-          <option value="">{t("config.im.project.empty")}</option>
-          <For each={directories()}>
-            {(value) => (
-              <option value={value}>
-                {projects().find((p) => p.worktree === value)?.name || value.split(/[\\/]/).filter(Boolean).at(-1)}
-              </option>
-            )}
-          </For>
-        </select>
+          variant="secondary"
+          size="small"
+          triggerVariant="settings"
+          triggerStyle={{ width: "100%" }}
+        />
         <span class="text-12-regular text-text-weak">{t("config.im.projectHelp")}</span>
       </label>
       <Show when={directory()}>
@@ -268,22 +260,32 @@ export const ConfigIM: Component = () => {
             fallback={<p class="text-13-regular text-text-weak">{t("config.im.subscription.emptyCreate")}</p>}
           >
             <div class="grid gap-2 rounded-xl border border-border-weak-base p-4 sm:grid-cols-2">
-              <select
-                aria-label={t("config.im.subscription.session")}
-                class={inputClass}
-                value={state.form.sessionID}
-                onChange={(e) => setState("form", "sessionID", e.currentTarget.value)}
-              >
-                <For each={state.sessions}>{(s) => <option value={s.id}>{s.title || s.id}</option>}</For>
-              </select>
-              <select
-                aria-label={t("config.im.channels")}
-                class={inputClass}
-                value={state.form.channelName}
-                onChange={(e) => setState("form", "channelName", e.currentTarget.value)}
-              >
-                <For each={readyChannels()}>{(c) => <option value={c.channelName}>{c.channelName}</option>}</For>
-              </select>
+              <Select
+                triggerProps={{ "aria-label": t("config.im.subscription.session") }}
+                options={sessionOptions()}
+                current={sessionOptions().find((o) => o.value === state.form.sessionID)}
+                value={(o) => o.value}
+                label={(o) => o.label}
+                onSelect={(o) => o && setState("form", "sessionID", o.value)}
+                placeholder={t("config.im.subscription.session")}
+                variant="secondary"
+                size="small"
+                triggerVariant="settings"
+                triggerStyle={{ width: "100%" }}
+              />
+              <Select
+                triggerProps={{ "aria-label": t("config.im.channels") }}
+                options={channelOptions()}
+                current={channelOptions().find((o) => o.value === state.form.channelName)}
+                value={(o) => o.value}
+                label={(o) => o.label}
+                onSelect={(o) => o && setState("form", "channelName", o.value)}
+                placeholder={t("config.im.channels")}
+                variant="secondary"
+                size="small"
+                triggerVariant="settings"
+                triggerStyle={{ width: "100%" }}
+              />
               <input
                 class={inputClass}
                 placeholder={t("config.im.subscription.keyword")}

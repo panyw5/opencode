@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { imLoadBatch, imPreferenceInitPending, imSelectedProject } from "./config-im"
+import { imLoadBatch, imPreferenceInitPending, imSelectedProject } from "./config-im-state"
 import { parseRetentionDays, rebaseChannelMap } from "./config-channel-helpers"
 
 describe("channel IM service configuration", () => {
@@ -52,7 +52,11 @@ describe("channel IM service configuration", () => {
     const afterRetention = rebaseChannelMap(base, retentionEdit, base)
     const afterToggle = rebaseChannelMap(base, toggleEdit, afterRetention)
     expect(afterToggle).toEqual({ bot: { autoReply: false, retentionDays: 14, enabled: true } })
-    const independentToggle = rebaseChannelMap(base, { bot: { autoReply: false, retentionDays: 7, enabled: true } }, afterRetention)
+    const independentToggle = rebaseChannelMap(
+      base,
+      { bot: { autoReply: false, retentionDays: 7, enabled: true } },
+      afterRetention,
+    )
     expect(independentToggle.bot).toEqual({ autoReply: false, retentionDays: 14, enabled: true })
   })
 })
