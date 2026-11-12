@@ -3,11 +3,14 @@ import { lstat, readFile, realpath } from "fs/promises"
 import semver from "semver"
 import { Schema } from "effect"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import { Log } from "@opencode-ai/core/util/log"
 import { Hash } from "@/util/hash"
 import { Filesystem } from "@/util/filesystem"
 import { ConfigParse } from "@/config/parse"
 import { checkPluginCompatibility, extractExportValue, readPluginPackage, resolvePackageFile } from "@/plugin/shared"
 import { Manifest, type Contributes, type ExtensionID } from "./schema"
+
+const log = Log.create({ service: "extension" })
 
 export class CompatibilityError extends Error {
   override readonly name = "ExtensionCompatibilityError"
@@ -109,6 +112,26 @@ function validateContributions(manifest: Manifest) {
       throw new Error(`Extension activation references unknown panel: ${reference}`)
     if (kind === "onTool" && !tools.has(reference))
       throw new Error(`Extension activation references unknown tool: ${reference}`)
+  }
+  // Activation events other than onStartup are declarative hints, not gates:
+  // every declared contribution activates implicitly on use, so a missing
+  // event only earns an informational note (design.md §7.4, D2).
+  const declared = new Set(manifest.activation ?? ["onStartup"])
+  if (!declared.has("onStartup")) {
+    for (const [kind, references] of [
+      ["onFileViewer", viewers],
+      ["onTool", tools],
+      ["onCommand", commands],
+      ["onPanel", panels],
+    ] as const) {
+      for (const reference of references) {
+        if (declared.has(`${kind}:${reference}`)) continue
+        log.info("extension contribution has no matching activation event", {
+          extension: manifest.id,
+          event: `${kind}:${reference}`,
+        })
+      }
+    }
   }
   for (const [key, setting] of Object.entries(contributes.settings ?? {})) {
     if (setting.enum) {

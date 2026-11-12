@@ -201,7 +201,7 @@ web 部分和 server 部分都是可选的，但至少要有一个。
 | `opencode.web.apiVersion`                 | 有 web 部分时必填；宿主不支持该版本时跳过 web 部分并报告                                                                             |
 | `exports["./server"]`、`exports["./web"]` | 入口解析沿用 plugin 的规则，路径必须位于包目录内                                                                                     |
 | web 资源根目录                            | `./web` 入口所在的目录；资源路由只提供该目录内的文件；`styles`、`icon` 必须在其中                                                    |
-| `opencode.activation`                     | 省略时等价于 `["onStartup"]`                                                                                                         |
+| `opencode.activation`                     | 省略时等价于 `["onStartup"]`；语义见 §7.4：仅 `onStartup` 有运行时含义，其余事件是声明性提示                                          |
 | `opencode.contributes.*[].id`             | 在扩展内唯一；全局 ID 为 `<extensionID>:<id>`；命令的全局 ID 为 `ext.<extensionID>.<id>`                                             |
 | `opencode.permissions`                    | 只用于展示：`process:spawn`、`fs:read`、`fs:write`、`network`、`tools`（向 LLM 暴露工具）                                            |
 
@@ -662,6 +662,8 @@ type ExtensionInfo = {
 | `onPanel:<id>`      | 打开该面板               | 标签页显示加载占位                  |
 
 manifest 静态声明“匹配”信息（文件扩展名、工具名、命令标题），代码只提供实现。不在 manifest 中声明的贡献也可以在激活后动态注册，但不参与懒激活。
+语义（D2，2026-11 整改确认）：激活事件**不构成门控**。`onStartup` 是唯一有运行时含义的事件——声明它的扩展在清单加载后立即激活。其余事件只作声明与展示，说明“哪些贡献点可以触发激活”；无论是否声明对应事件，manifest 中的每个贡献点都注册占位，被用到时（解析文件、渲染工具、执行命令、打开面板）即隐式激活，与 VS Code 的隐式激活一致。因此 manifest 校验时，贡献点缺少对应激活事件只记 info 日志，不报错、不阻止；反向的悬空引用（激活事件指向未声明的贡献点）仍然是错误。
+
 
 ### 7.5 共享模块桥
 

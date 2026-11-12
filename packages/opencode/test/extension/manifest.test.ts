@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import path from "node:path"
 import { mkdir } from "node:fs/promises"
+import * as Log from "@opencode-ai/core/util/log"
 import { tmpdir } from "../fixture/fixture"
 import { extensionPackage } from "./fixture"
 import { CompatibilityError, load } from "../../src/extension/manifest"
@@ -273,5 +274,48 @@ describe("extension manifest", () => {
       toolRenderers: [{ tool: "wolfram_eval" }, { tool: "wolfram_eval" }],
     })
     await expect(load(duplicateRenderer)).rejects.toThrow("duplicate tool renderer")
+  })
+  test("logs info (not an error) for contributions without activation events", async () => {
+    await using tmp = await tmpdir()
+    const info = spyOn(Log.create({ service: "extension" }), "info")
+    const hints = () =>
+      info.mock.calls.filter(([message]) => message === "extension contribution has no matching activation event")
+    try {
+      // No onStartup and no matching event: the viewer still activates
+      // implicitly on use, so validation logs an informational hint only.
+      const hinted = await extensionPackage(tmp.path, {
+        id: "test.no-activation",
+        activation: [],
+      })
+      const manifest = await load(hinted)
+      expect(manifest.contributes.fileViewers?.[0].id).toBe("hello")
+      expect(hints()).toEqual([
+        [
+          "extension contribution has no matching activation event",
+          { extension: "test.no-activation", event: "onFileViewer:hello" },
+        ],
+      ])
+
+      // onStartup covers every contribution: no hint.
+      info.mockClear()
+      const startup = await extensionPackage(tmp.path, {
+        id: "test.startup-covers",
+        activation: ["onStartup"],
+      })
+      await load(startup)
+      expect(hints()).toEqual([])
+
+      // A declared matching event suppresses the hint for that contribution.
+      info.mockClear()
+      const matched = await extensionPackage(tmp.path, {
+        id: "test.matched-event",
+        activation: ["onFileViewer:hello", "onTool:wolfram_eval"],
+        toolRenderers: [{ tool: "wolfram_eval" }],
+      })
+      await load(matched)
+      expect(hints()).toEqual([])
+    } finally {
+      info.mockRestore()
+    }
   })
 })
