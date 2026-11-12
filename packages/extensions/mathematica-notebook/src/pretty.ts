@@ -242,7 +242,7 @@ class Parser {
           acc = [...acc, this.tok(t)]
           continue
         }
-        acc = [{ kind: "frac", num: acc, den }]
+        acc = [{ kind: "frac", num: trim(acc), den: trim(den) }]
         continue
       }
       if (isFiller(t)) {
@@ -263,9 +263,13 @@ class Parser {
   additive(): Pretty[] {
     const items = this.times()
     while (true) {
-      const t = this.peek()
+      // Look past filler so a spaced `x - y` still binds as subtraction;
+      // otherwise factor() would swallow the sign as unary into the next term.
+      const after = this.filler()
+      const t = this.toks[after]
       if (!t || (t.text !== "+" && t.text !== "-")) break
-      this.next()
+      items.push(...this.toks.slice(this.i, after).map((f) => this.tok(f)))
+      this.i = after + 1
       items.push(this.tok(t), ...this.times())
     }
     return items
