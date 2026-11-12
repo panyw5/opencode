@@ -334,3 +334,11 @@
 
 - P3：npm/归档安装、升级、卸载、管理界面和市场索引。
 - P4：WolframScript Notebook 与首批文件预览扩展。
+
+## T4.2 extension-kit 可构建、可发布（2026-11-13）
+
+- `packages/extension-kit` 新增 `bun run build`（`tsgo -p tsconfig.build.json`）产出 `dist/{web,server,rpc}.{js,d.ts}`+sourcemap；仓库内 exports 为 `{types, development, default}` 全指 `./src`，monorepo 消费方零配置变更继续直用源码。
+- `script/pack.ts`（prepack/postpack 钩子 + 独立 CLI）在打包时把 exports 重写为 `{types→dist.d.ts, development→src(随包发布), import/default→dist.js}`；裸 `npm pack` 同样产出正确 tgz。未采用 exports 数组回退——实测 bun 不支持（Node 支持）。
+- `files` 收拢为 dist+src+vite/shims/scope 的 js/d.ts；peerDependencies 补全 `@opencode-ai/plugin` 等四项并全部 optional；`publishConfig.access: public`、`sideEffects: false`。
+- `script/verify-pack.ts` 仓库外验证 PASS：tmp 目录 `npm pack` → 脚手架工程 `npm install file:tgz` + npm 版 plugin → `vite build`（host shim + CSS scope 断言）→ `bun build` server → `tsc --noEmit` 全过；三扩展与 packages/opencode typecheck/build 不受影响。
+- 未提交、未发布（D6 仅授权渠道形态）。遗留：`dist/*.d.ts` 相对引用无扩展名，仅 bundler 解析可用；`npm pack` 失败需 `pack.ts --restore` 恢复 package.json；模板为无依赖纯 JS starter，验证工程按 hello-viewer 模式另搭。

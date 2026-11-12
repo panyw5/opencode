@@ -4,20 +4,68 @@
   "version": "1.18.64",
   "type": "module",
   "license": "MIT",
+  "sideEffects": false,
   "exports": {
-    "./web": "./src/web.ts",
-    "./rpc": "./src/rpc.ts",
-    "./server": "./src/server.ts",
-    "./vite": "./vite.js"
+    "./web": {
+      "types": "./src/web.ts",
+      "development": "./src/web.ts",
+      "default": "./src/web.ts"
+    },
+    "./rpc": {
+      "types": "./src/rpc.ts",
+      "development": "./src/rpc.ts",
+      "default": "./src/rpc.ts"
+    },
+    "./server": {
+      "types": "./src/server.ts",
+      "development": "./src/server.ts",
+      "default": "./src/server.ts"
+    },
+    "./vite": {
+      "types": "./vite.d.ts",
+      "development": "./vite.js",
+      "default": "./vite.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "vite.js",
+    "vite.d.ts",
+    "shims.js",
+    "shims.d.ts",
+    "scope.js",
+    "scope.d.ts"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
+    "build": "tsgo -p tsconfig.build.json",
+    "prepack": "bun ./script/pack.ts --apply",
+    "postpack": "bun ./script/pack.ts --restore",
     "typecheck": "tsgo --noEmit",
     "test": "bun --conditions=browser test test"
   },
   "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.18.0",
     "solid-js": "~1.9.0",
     "vite": "^7.0.0",
     "vite-plugin-solid": "^2.11.0"
+  },
+  "peerDependenciesMeta": {
+    "@opencode-ai/plugin": {
+      "optional": true
+    },
+    "solid-js": {
+      "optional": true
+    },
+    "vite": {
+      "optional": true
+    },
+    "vite-plugin-solid": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@opencode-ai/plugin": "workspace:*",
