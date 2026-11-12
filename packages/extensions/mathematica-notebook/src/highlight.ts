@@ -4,4 +4,4 @@ export {
   MAX_HIGHLIGHT_TOKENS,
   tokenizeWolfram,
   type WolframToken,
-} from "@opencode-ai/extension-kit/wolfram"
+} from "@opencode-ai/wolfram-lang"

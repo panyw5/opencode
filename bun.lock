@@ -398,11 +398,9 @@
     "packages/extensions/hello-viewer": {
       "name": "@opencode-ai/hello-viewer-extension",
       "version": "1.18.64",
-      "dependencies": {
+      "devDependencies": {
         "@opencode-ai/extension-kit": "workspace:*",
         "@opencode-ai/plugin": "workspace:*",
-      },
-      "devDependencies": {
         "@opencode-ai/ui": "workspace:*",
         "@tsconfig/node22": "catalog:",
         "@typescript/native-preview": "catalog:",
@@ -418,6 +416,7 @@
       "devDependencies": {
         "@opencode-ai/extension-kit": "workspace:*",
         "@opencode-ai/plugin": "workspace:*",
+        "@opencode-ai/wolfram-lang": "workspace:*",
         "@tsconfig/node22": "catalog:",
         "@typescript/native-preview": "catalog:",
         "solid-js": "catalog:",
@@ -434,6 +433,7 @@
         "@opencode-ai/extension-kit": "workspace:*",
         "@opencode-ai/plugin": "workspace:*",
         "@opencode-ai/ui": "workspace:*",
+        "@opencode-ai/wolfram-lang": "workspace:*",
         "@tsconfig/node22": "catalog:",
         "@typescript/native-preview": "catalog:",
         "solid-js": "catalog:",
@@ -809,6 +809,16 @@
         "@astrojs/check": "0.9.6",
         "@types/node": "catalog:",
         "opencode": "workspace:*",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/wolfram-lang": {
+      "name": "@opencode-ai/wolfram-lang",
+      "version": "1.18.64",
+      "devDependencies": {
+        "@tsconfig/node22": "catalog:",
+        "@types/bun": "catalog:",
+        "@typescript/native-preview": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -1712,6 +1722,8 @@
     "@opencode-ai/web": ["@opencode-ai/web@workspace:packages/web"],
 
     "@opencode-ai/wls-repl-extension": ["@opencode-ai/wls-repl-extension@workspace:packages/extensions/wls-repl"],
+
+    "@opencode-ai/wolfram-lang": ["@opencode-ai/wolfram-lang@workspace:packages/wolfram-lang"],
 
     "@opencode/codemode": ["@opencode/codemode@workspace:packages/codemode"],
 

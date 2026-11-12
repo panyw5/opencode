@@ -6,7 +6,6 @@
   "license": "MIT",
   "exports": {
     "./web": "./src/web.ts",
-    "./wolfram": "./src/wolfram.ts",
     "./server": "./src/server.ts",
     "./vite": "./vite.js"
   },

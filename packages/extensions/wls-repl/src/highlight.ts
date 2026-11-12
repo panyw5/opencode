@@ -4,7 +4,7 @@ import {
   scanWolfram,
   wolframCursor,
   type WolframToken,
-} from "@opencode-ai/extension-kit/wolfram"
+} from "@opencode-ai/wolfram-lang"
 
 export const HIGHLIGHT_CACHE_LINES = 256
 const SCAN_CHUNK = 16 * 1024

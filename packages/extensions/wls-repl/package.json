@@ -97,6 +97,7 @@
     "@opencode-ai/ui": "workspace:*",
     "@opencode-ai/extension-kit": "workspace:*",
     "@opencode-ai/plugin": "workspace:*",
+    "@opencode-ai/wolfram-lang": "workspace:*",
     "@tsconfig/node22": "catalog:",
     "@typescript/native-preview": "catalog:",
     "solid-js": "catalog:",
