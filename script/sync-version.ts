@@ -40,7 +40,7 @@ for (const item of files) {
   console.log(`updated: ${path.relative(root, item)}`)
 }
 
-const toml = path.join(root, "packages/extensions/zed/extension.toml")
+const toml = path.join(root, "packages/zed-extension/extension.toml")
 const zed = await Bun.file(toml).text()
 const fixed = zed
   .replace(/^version = "[^"]+"/m, `version = "${version}"`)

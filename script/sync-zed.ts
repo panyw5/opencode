@@ -25,7 +25,7 @@ async function main() {
   const sha = commitSha.trim()
   console.log(`🔍 Found commit SHA: ${sha}`)
 
-  const extensionToml = await $`git show ${version}:packages/extensions/zed/extension.toml`.text()
+  const extensionToml = await $`git show ${version}:packages/zed-extension/extension.toml`.text()
   const parsed = Bun.TOML.parse(extensionToml) as { version: string }
   const extensionVersion = parsed.version
 

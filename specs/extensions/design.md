@@ -1000,7 +1000,7 @@ packages/extension-kit/
 - 包名为 `@opencode-ai/extension-kit`，导出 `./web`、`./server`、`./vite`。
 - manifest 校验逻辑只写一份，server 安装器和 kit 的构建检查共用。
 - 类型的版本随 opencode 发布；`apiVersion` 是运行时契约的版本。
-- 注意与已有的 `packages/extensions/zed`（Zed 编辑器扩展）区分命名。
+- 注意与已有的 `packages/zed-extension`（Zed 编辑器扩展）区分命名。
 
 ### 10.2 vite 插件
 
