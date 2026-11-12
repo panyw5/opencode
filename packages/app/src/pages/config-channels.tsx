@@ -14,6 +14,7 @@ import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
+import { Select } from "@opencode-ai/ui/select"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { Switch as Toggle } from "@opencode-ai/ui/switch"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -168,7 +169,7 @@ const ChannelModelSelector: Component<{
         type: "button",
         variant: "ghost",
         class:
-          "h-10 w-full min-w-0 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong transition-colors hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-focus",
+          "inset-control h-10 w-full min-w-0 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong transition-colors hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-focus",
       }}
     >
       <div class="flex min-w-0 items-center gap-2">
@@ -302,6 +303,11 @@ export const ConfigChannelsDetail: Component<{
     abort = null
   }
   onCleanup(() => stopQr())
+
+  const feishuModeOptions = createMemo(() => [
+    { value: "qr", label: language.t("config.channels.feishu.mode.qr") },
+    { value: "manual", label: language.t("config.channels.feishu.mode.manual") },
+  ])
 
   // Only reset form when platform actually changes (not on every config refresh).
   createEffect(
@@ -598,7 +604,7 @@ export const ConfigChannelsDetail: Component<{
   }
 
   const setChannelModel = async (name: string, modelId: string) => {
-    // Update draft immediately so the native <select> cannot snap back.
+    // Update draft immediately so the Select cannot snap back.
     setDraftModels(name, modelId)
     const model = modelConfigFromId(modelId)
     try {
@@ -1013,22 +1019,26 @@ export const ConfigChannelsDetail: Component<{
               <Match when={props.platform === "feishu"}>
                 <div class="flex flex-col gap-1">
                   <span class="text-12-medium text-text-base">{language.t("config.channels.feishu.setup")}</span>
-                  <select
-                    class="h-10 w-full cursor-pointer rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong outline-none transition-colors hover:bg-surface-base-hover focus:bg-surface-base-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-focus active:bg-surface-base-active disabled:cursor-not-allowed disabled:opacity-50"
-                    value={form.mode}
-                    onChange={(event) => {
-                      const mode = event.currentTarget.value as "qr" | "manual"
+                  <Select
+                    triggerProps={{ "aria-label": language.t("config.channels.feishu.setup") }}
+                    options={feishuModeOptions()}
+                    current={feishuModeOptions().find((o) => o.value === form.mode)}
+                    value={(o) => o.value}
+                    label={(o) => o.label}
+                    onSelect={(o) => {
+                      if (!o) return
                       stopQr()
-                      setForm("mode", mode)
+                      setForm("mode", o.value as "qr" | "manual")
                       setQrStatus("idle")
                       setQrError("")
                       setQrSession(null)
                       setQrImage("")
                     }}
-                  >
-                    <option value="qr">{language.t("config.channels.feishu.mode.qr")}</option>
-                    <option value="manual">{language.t("config.channels.feishu.mode.manual")}</option>
-                  </select>
+                    variant="secondary"
+                    size="small"
+                    triggerVariant="settings"
+                    triggerStyle={{ width: "100%" }}
+                  />
                 </div>
 
                 <Show when={form.mode === "qr"}>

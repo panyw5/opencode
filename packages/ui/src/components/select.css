@@ -9,6 +9,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      min-width: 0;
     }
     [data-slot="select-select-trigger-icon"] {
       width: 16px;
@@ -56,22 +57,11 @@
 
   &[data-trigger-style="settings"] {
     [data-slot="select-select-trigger"] {
-      padding: 6px 6px 6px 12px;
       box-shadow: none;
-      border-radius: 6px;
       min-width: 160px;
-      height: 32px;
       justify-content: flex-end;
-      gap: 12px;
       background-color: transparent;
 
-      [data-slot="select-select-trigger-value"] {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        font-size: var(--font-size-base);
-        font-weight: var(--font-weight-regular);
-      }
       [data-slot="select-select-trigger-icon"] {
         width: 16px;
         height: 20px;
@@ -101,7 +91,10 @@
 }
 
 [data-component="select-content"] {
-  --select-item-hover-bg: var(--surface-base-hover);
+  /* Ink overlay, same as dropdown menus: themed --surface-base-hover can be
+     near-identical to the raised panel desktop menus render on. */
+  --select-item-hover-bg: color-mix(in srgb, var(--text-strong) 10%, transparent);
+  --select-item-active-bg: color-mix(in srgb, var(--text-strong) 16%, transparent);
   --select-frosted-bg: light-dark(
     color-mix(in srgb, var(--background-stronger) 82%, transparent),
     color-mix(in srgb, var(--background-stronger) 70%, transparent)
@@ -116,7 +109,7 @@
   background-clip: padding-box;
   backdrop-filter: blur(40px) saturate(150%);
   -webkit-backdrop-filter: blur(40px) saturate(150%);
-  padding: 4px;
+  padding: 6px;
   box-shadow:
     0 24px 56px rgba(0, 0, 0, 0.16),
     0 10px 24px rgba(0, 0, 0, 0.12),
@@ -138,10 +131,6 @@
     &:focus {
       outline: none;
     }
-
-    > *:not([role="presentation"]) + *:not([role="presentation"]) {
-      margin-top: 2px;
-    }
   }
 
   [data-slot="select-select-item"] {
@@ -149,7 +138,7 @@
     display: flex;
     align-items: center;
     padding: 6px 10px;
-    gap: 12px;
+    gap: 8px;
     border-radius: var(--radius-md);
     cursor: pointer;
 
@@ -169,8 +158,11 @@
     &[data-highlighted] {
       background: var(--select-item-hover-bg);
     }
+    &:active:not([data-disabled]) {
+      background: var(--select-item-active-bg);
+    }
     &[data-disabled] {
-      background-color: var(--surface-raised-base);
+      color: var(--text-weak);
       pointer-events: none;
     }
     [data-slot="select-select-item-indicator"] {
@@ -198,18 +190,12 @@ html[data-platform="desktop"][data-os="windows"] [data-component="select-content
 
 [data-component="select-content"][data-trigger-style="settings"] {
   min-width: 160px;
-  border-radius: var(--radius-xl);
-  padding: 0;
-
-  [data-slot="select-select-content-list"] {
-    padding: 4px;
-  }
 }
 
 @keyframes select-open {
   from {
     opacity: 0;
-    transform: scale(0.95);
+    transform: scale(0.96);
   }
   to {
     opacity: 1;

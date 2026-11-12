@@ -3,6 +3,7 @@ import { createStore, reconcile } from "solid-js/store"
 import QRCode from "qrcode"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
+import { Select } from "@opencode-ai/ui/select"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
@@ -22,6 +23,10 @@ export const SettingsRemote: Component = () => {
   const language = useLanguage()
   const platform = usePlatform()
   const api = platform.remoteAccess!
+  const sortOptions = createMemo(() => [
+    { value: "activity", label: language.t("settings.remote.sort.activity") },
+    { value: "paired", label: language.t("settings.remote.sort.paired") },
+  ])
   const [store, setStore] = createStore({
     status: { enabled: false, phase: "disabled" } as RemoteAccessStatus,
     devices: [] as RemoteDevice[],
@@ -309,16 +314,18 @@ export const SettingsRemote: Component = () => {
       <section class="flex flex-col gap-3">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <h3 class="text-14-medium">{language.t("settings.remote.devices")}</h3>
-          <select
-            data-slot="remote-device-sort"
-            aria-label={language.t("settings.remote.sort")}
-            class="ml-auto rounded-md border border-border-base bg-background-base px-2 py-1 text-12-regular"
-            value={store.deviceSort}
-            onChange={(event) => setStore("deviceSort", event.currentTarget.value === "paired" ? "paired" : "activity")}
-          >
-            <option value="activity">{language.t("settings.remote.sort.activity")}</option>
-            <option value="paired">{language.t("settings.remote.sort.paired")}</option>
-          </select>
+          <Select
+            class="ml-auto"
+            triggerProps={{ "aria-label": language.t("settings.remote.sort"), "data-slot": "remote-device-sort" }}
+            options={sortOptions()}
+            current={sortOptions().find((o) => o.value === store.deviceSort)}
+            value={(o) => o.value}
+            label={(o) => o.label}
+            onSelect={(o) => o && setStore("deviceSort", o.value === "paired" ? "paired" : "activity")}
+            variant="secondary"
+            size="small"
+            triggerVariant="settings"
+          />
           <Button size="small" variant="ghost" disabled={store.busy} onClick={reset}>
             {language.t("settings.remote.reset")}
           </Button>

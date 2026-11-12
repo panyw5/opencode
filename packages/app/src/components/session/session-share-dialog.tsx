@@ -3,6 +3,7 @@ import { createStore } from "solid-js/store"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Button } from "@opencode-ai/ui/button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
+import { Select } from "@opencode-ai/ui/select"
 import { Icon } from "@opencode-ai/ui/icon"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { Markdown } from "@opencode-ai/ui/markdown"
@@ -33,6 +34,15 @@ export function SessionShareDialog(props: { directory: string; sessionID: string
   const language = useLanguage()
   const t = language.t
   const theme = useTheme()
+  const roleOptions = createMemo(() => [
+    { value: "all", label: t("share.roles") },
+    { value: "user", label: t("share.user") },
+    { value: "assistant", label: t("share.assistant") },
+  ])
+  const themeOptions = createMemo(() => [
+    { value: "light", label: t("share.light") },
+    { value: "dark", label: t("share.dark") },
+  ])
   const [state, setState] = createStore({
     title: props.title,
     messages: [] as ShareMessage[],
@@ -218,15 +228,17 @@ export function SessionShareDialog(props: { directory: string; sessionID: string
                 <Button disabled={!!state.busy} onClick={() => setState("selected", [])}>
                   {t("share.clear")}
                 </Button>
-                <select
-                  aria-label={t("share.filter")}
-                  value={state.role}
-                  onChange={(event) => setState("role", event.currentTarget.value)}
-                >
-                  <option value="all">{t("share.roles")}</option>
-                  <option value="user">{t("share.user")}</option>
-                  <option value="assistant">{t("share.assistant")}</option>
-                </select>
+                <Select
+                  triggerProps={{ "aria-label": t("share.filter") }}
+                  options={roleOptions()}
+                  current={roleOptions().find((o) => o.value === state.role)}
+                  value={(o) => o.value}
+                  label={(o) => o.label}
+                  onSelect={(o) => o && setState("role", o.value)}
+                  variant="secondary"
+                  size="small"
+                  triggerVariant="settings"
+                />
               </div>
             </div>
             <div class="session-share-message-list">
@@ -255,15 +267,18 @@ export function SessionShareDialog(props: { directory: string; sessionID: string
               <h3 class="text-14-medium">{t("share.preview")}</h3>
               <label class="session-share-theme">
                 {t("share.theme")}
-                <select
-                  aria-label={t("share.theme")}
-                  value={state.theme}
+                <Select
+                  triggerProps={{ "aria-label": t("share.theme") }}
+                  options={themeOptions()}
+                  current={themeOptions().find((o) => o.value === state.theme)}
+                  value={(o) => o.value}
+                  label={(o) => o.label}
+                  onSelect={(o) => o && setState("theme", o.value as "light" | "dark")}
                   disabled={!!state.busy}
-                  onChange={(event) => setState("theme", event.currentTarget.value as "light" | "dark")}
-                >
-                  <option value="light">{t("share.light")}</option>
-                  <option value="dark">{t("share.dark")}</option>
-                </select>
+                  variant="secondary"
+                  size="small"
+                  triggerVariant="settings"
+                />
               </label>
             </div>
             <div ref={previewScroll} class="session-share-paper-scroll" data-theme={state.theme} style={paperTheme()}>
