@@ -3,8 +3,7 @@
 // installed through the real installer, so it must stay dependency-free: the
 // installed package has no node_modules to resolve imports from. Modelled on
 // packages/extensions/hello-viewer (echo RPC, one tool, host.emit events,
-// lazily spawned child process cleaned up by dispose).
-import { spawn } from "node:child_process"
+// lazily spawned host-managed child process cleaned up by dispose).
 import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 
@@ -14,29 +13,32 @@ const PING_EVENT = `${EXTENSION_ID}/ping`
 const CHILD_SCRIPT = "setInterval(() => {}, 60 * 1000)"
 
 function isRunning(child) {
-  return child !== undefined && child.exitCode === null && !child.killed
+  return child !== undefined && !child.exited && !child.killed
 }
 
-function startChild(state) {
+/** Managed via host.spawn: the runtime reaps the group on generation teardown. */
+function startChild(state, host) {
   if (isRunning(state.child)) return state.child
-  const child = spawn(process.execPath, ["-e", CHILD_SCRIPT], { stdio: "ignore" })
-  child.on("error", () => {
+  const child = host.spawn(process.execPath, ["-e", CHILD_SCRIPT], {
+    stdio: ["ignore", "ignore", "ignore"],
+  })
+  child.onError(() => {
     if (state.child === child) state.child = undefined
   })
-  child.on("exit", () => {
+  child.onExit(() => {
     if (state.child === child) state.child = undefined
   })
   state.child = child
   return child
 }
 
-/** SIGTERM with a SIGKILL fallback; resolves only after the exit was observed. */
+/** TERM with a KILL fallback; resolves only after the exit was observed. */
 async function stopChild(state) {
   const child = state.child
   if (!child) return false
   state.child = undefined
-  if (child.exitCode !== null) return true
-  child.kill("SIGTERM")
+  if (child.exited) return true
+  child.kill("TERM")
   await new Promise((resolve) => {
     let done = false
     const finish = () => {
@@ -46,11 +48,11 @@ async function stopChild(state) {
       resolve()
     }
     const timer = setTimeout(() => {
-      child.kill("SIGKILL")
+      child.kill("KILL")
       setTimeout(finish, 250).unref?.()
     }, 1_000)
     timer.unref?.()
-    child.once("exit", finish)
+    child.onExit(finish)
   })
   return true
 }
@@ -87,7 +89,7 @@ export default {
           return payload
         },
         "child.start": async () => {
-          const child = startChild(state)
+          const child = startChild(state, host)
           return { running: true, pid: child.pid ?? -1 }
         },
         "child.pid": async () => ({ pid: state.child?.pid ?? null }),

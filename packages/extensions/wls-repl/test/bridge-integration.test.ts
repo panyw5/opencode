@@ -5,7 +5,12 @@ import { readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import extensionDefault, { createWlsService } from "../src/server"
-import type { ExtensionHost, ExtensionPluginInput } from "@opencode-ai/extension-kit/server"
+import type {
+  ExtensionHost,
+  ExtensionPluginInput,
+  ExtensionSpawnOptions,
+  ManagedProcess,
+} from "@opencode-ai/extension-kit/server"
 
 const wolframscript = (() => {
   const probe = spawnSync("which", ["wolframscript"], { encoding: "utf8" })
@@ -15,6 +20,82 @@ const wolframscript = (() => {
 const wolframAvailable = wolframscript !== ""
 
 type Emitted = { name: string; payload: Record<string, unknown> }
+
+/**
+ * Unmanaged host.spawn stand-in for integration tests: same ManagedProcess
+ * surface over a detached node:child_process spawn with group-scoped kill —
+ * the semantics the real runtime guarantees — but no generation teardown.
+ */
+function spawnUnmanaged(command: string, args: string[] = [], options: ExtensionSpawnOptions = {}): ManagedProcess {
+  const stdio = options.stdio ?? ["ignore", "pipe", "pipe"]
+  const child = spawn(command, args, {
+    env: { ...process.env, ...options.env },
+    cwd: options.cwd,
+    stdio: [stdio[0] ?? "ignore", stdio[1] ?? "pipe", stdio[2] ?? "pipe"],
+    detached: process.platform !== "win32",
+  })
+  const exits = new Set<(code: number | null, signal: string | null) => void>()
+  const errors = new Set<(error: Error) => void>()
+  const state = { exitCode: null as number | null, exitSignal: null as string | null, exited: false, killed: false }
+  const managed: ManagedProcess = {
+    get pid() {
+      return child.pid
+    },
+    get stdin() {
+      return child.stdin
+    },
+    get stdout() {
+      return child.stdout
+    },
+    get stderr() {
+      return child.stderr
+    },
+    get exitCode() {
+      return state.exitCode
+    },
+    get exitSignal() {
+      return state.exitSignal
+    },
+    get exited() {
+      return state.exited
+    },
+    get killed() {
+      return state.killed
+    },
+    onExit(listener) {
+      exits.add(listener)
+      return () => exits.delete(listener)
+    },
+    onError(listener) {
+      errors.add(listener)
+      return () => errors.delete(listener)
+    },
+    kill(signal = "TERM") {
+      state.killed = true
+      const unix = signal === "KILL" ? "SIGKILL" : "SIGTERM"
+      try {
+        if (child.pid) process.kill(-child.pid, unix)
+        else child.kill(unix)
+      } catch {
+        child.kill(unix)
+      }
+    },
+  }
+  child.once("exit", (code, signal) => {
+    state.exited = true
+    state.exitCode = code
+    state.exitSignal = signal
+    for (const listener of exits) listener(code, signal)
+  })
+  child.once("error", (error) => {
+    for (const listener of errors) listener(error)
+    if (child.pid === undefined && !state.exited) {
+      state.exited = true
+      for (const listener of exits) listener(null, null)
+    }
+  })
+  return managed
+}
 
 function makeHost(dataDir = "/tmp/wls-repl-test-data"): { host: ExtensionHost; emitted: Emitted[] } {
   const emitted: Emitted[] = []
@@ -31,6 +112,7 @@ function makeHost(dataDir = "/tmp/wls-repl-test-data"): { host: ExtensionHost; e
     emit: (name, payload) => {
       emitted.push({ name, payload: payload as Record<string, unknown> })
     },
+    spawn: spawnUnmanaged,
     log: {
       debug: () => {},
       info: () => {},

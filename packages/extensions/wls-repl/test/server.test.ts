@@ -22,6 +22,10 @@ function makeHost(settings: Record<string, unknown> = {}) {
     emit: (name, payload) => {
       emitted.push({ name, payload })
     },
+    // Every test injects a fake spawnKernel; the host path must stay unused.
+    spawn: () => {
+      throw new Error("host.spawn is not implemented by the test host")
+    },
     log: {
       debug: () => {},
       info: (message) => logs.push(message),

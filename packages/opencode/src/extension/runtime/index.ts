@@ -21,6 +21,7 @@ import { defaultImporter, type Importer } from "./module-cache"
 import { SlotStore, emptyEntry, type Entry } from "./slot"
 import { createHookOwner } from "./hooks"
 import { makeTimerScope } from "./timers"
+import { makeProcessScope } from "./process"
 
 const log = Log.create({ service: "extension" })
 
@@ -161,6 +162,11 @@ let emitRatePerSecond = EMIT_RATE_PER_SECOND
 let emitBurst = EMIT_BURST
 let emitWindowMs = EMIT_WINDOW_MS
 
+// Grace between SIGTERM and SIGKILL when managed extension child processes
+// are torn down (remediation T2.5); testing.setLimits adjusts it.
+const PROCESS_KILL_GRACE_MS = 3_000
+let processKillGraceMs = PROCESS_KILL_GRACE_MS
+
 class ExtensionPhaseTimeoutError extends Error {
   constructor(phase: "activation" | "server", timeoutMs: number) {
     super(`${phase} timed out after ${timeoutMs}ms`)
@@ -292,6 +298,16 @@ function disposeResources(entry: Entry | undefined) {
   for (const dispose of [...entry.resources]) dispose()
 }
 
+/**
+ * Resolves once every managed child process killed by host disposal has been
+ * observed exited. Kills registered later (e.g. by a late hooks finalizer)
+ * join the drain while it is still running.
+ */
+async function drainProcessKills(entry: Entry | undefined) {
+  if (!entry) return
+  while (entry.processKills.size) await Promise.allSettled([...entry.processKills])
+}
+
 function createHost(entry: Entry, manifest: Loaded, serverUrl: URL | undefined) {
   if (serverUrl) entry.serverUrl = serverUrl
   const id = manifest.id
@@ -320,10 +336,27 @@ function createHost(entry: Entry, manifest: Loaded, serverUrl: URL | undefined) 
       publishError(manifest.id, manifest.version, error)
     },
   })
+  const processes = makeProcessScope({
+    extension: id,
+    gen,
+    epoch,
+    started,
+    available: () => !closed && !gated(id) && generationOf(id) === gen && slots.get(id).entry === entry,
+    killGraceMs: () => processKillGraceMs,
+  })
   const dispose = () => {
     if (closed) return
     closed = true
     timers.dispose()
+    // Kills are tracked twice: slot.pending so strict quiesce drains them,
+    // entry.processKills so disable/reload can await observed exits.
+    const draining = processes.dispose()
+    if (draining) {
+      entry.processKills.add(draining)
+      const settled = () => entry.processKills.delete(draining)
+      void draining.then(settled, settled)
+      track(id, draining)
+    }
     entry.resources.delete(dispose)
   }
   entry.resources.add(dispose)
@@ -344,6 +377,12 @@ function createHost(entry: Entry, manifest: Loaded, serverUrl: URL | undefined) 
     },
     setTimeout: timers.setTimeout,
     setInterval: timers.setInterval,
+    spawn(command, args, options) {
+      // Permission checkpoint (remediation T5.6): the manifest's
+      // "process:spawn" permission is enforced here once permissions are
+      // executed at runtime; declarations are informational only for now.
+      return processes.spawn(command, args, options)
+    },
     emit(name, data, options) {
       const limiter = emitLimiter(id)
       const now = Date.now()
@@ -1064,6 +1103,8 @@ async function disable(id: string, options: { timeoutMs?: number } = {}) {
   entry.settingsListeners.clear()
   entry.instances.clear()
   await disposeService(id, entry.service, options.timeoutMs)
+  // Wait for spawned processes' observed exits, not just signal delivery.
+  await withTimeout(drainProcessKills(entry), options.timeoutMs)
 }
 
 /**
@@ -1083,6 +1124,7 @@ async function reload(id: string, options: { timeoutMs?: number } = {}) {
   entry?.settingsListeners.clear()
   entry?.instances.clear()
   await disposeService(id, entry?.service, options.timeoutMs)
+  await withTimeout(drainProcessKills(entry), options.timeoutMs)
 }
 
 /**
@@ -1190,11 +1232,18 @@ export const ExtensionRuntime = {
       activateTimeoutMs = next?.activateMs ?? ACTIVATE_TIMEOUT_MS
       serverTimeoutMs = next?.serverMs ?? SERVER_TIMEOUT_MS
     },
-    setLimits(next?: { rpcConcurrency?: number; emitRatePerSecond?: number; emitBurst?: number; emitWindowMs?: number }) {
+    setLimits(next?: {
+      rpcConcurrency?: number
+      emitRatePerSecond?: number
+      emitBurst?: number
+      emitWindowMs?: number
+      killGraceMs?: number
+    }) {
       rpcConcurrencyLimit = next?.rpcConcurrency ?? RPC_CONCURRENCY_LIMIT
       emitRatePerSecond = next?.emitRatePerSecond ?? EMIT_RATE_PER_SECOND
       emitBurst = next?.emitBurst ?? EMIT_BURST
       emitWindowMs = next?.emitWindowMs ?? EMIT_WINDOW_MS
+      processKillGraceMs = next?.killGraceMs ?? PROCESS_KILL_GRACE_MS
     },
     async reset() {
       clearTimeout(staleHooksTimer)
@@ -1206,6 +1255,7 @@ export const ExtensionRuntime = {
       emitRatePerSecond = EMIT_RATE_PER_SECOND
       emitBurst = EMIT_BURST
       emitWindowMs = EMIT_WINDOW_MS
+      processKillGraceMs = PROCESS_KILL_GRACE_MS
       for (const limiter of emitLimiters.values()) if (limiter.flush) clearTimeout(limiter.flush)
       emitLimiters.clear()
       await disposeAll({ timeoutMs: 100 })

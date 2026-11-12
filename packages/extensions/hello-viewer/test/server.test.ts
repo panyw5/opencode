@@ -1,5 +1,75 @@
 import { describe, expect, test } from "bun:test"
+import { spawn as spawnChild } from "node:child_process"
+import type { ExtensionSpawnOptions, ManagedProcess } from "@opencode-ai/extension-kit/server"
 import extension from "../src/server"
+
+/**
+ * Unmanaged host.spawn stand-in for tests: same ManagedProcess surface over a
+ * plain node:child_process spawn, without generation teardown semantics.
+ */
+function spawnUnmanaged(command: string, args: string[] = [], options: ExtensionSpawnOptions = {}): ManagedProcess {
+  const stdio = options.stdio ?? ["ignore", "pipe", "pipe"]
+  const child = spawnChild(command, args, {
+    env: { ...process.env, ...options.env },
+    cwd: options.cwd,
+    stdio: [stdio[0] ?? "ignore", stdio[1] ?? "pipe", stdio[2] ?? "pipe"],
+  })
+  const exits = new Set<(code: number | null, signal: string | null) => void>()
+  const errors = new Set<(error: Error) => void>()
+  const state = { exitCode: null as number | null, exitSignal: null as string | null, exited: false, killed: false }
+  const managed: ManagedProcess = {
+    get pid() {
+      return child.pid
+    },
+    get stdin() {
+      return child.stdin
+    },
+    get stdout() {
+      return child.stdout
+    },
+    get stderr() {
+      return child.stderr
+    },
+    get exitCode() {
+      return state.exitCode
+    },
+    get exitSignal() {
+      return state.exitSignal
+    },
+    get exited() {
+      return state.exited
+    },
+    get killed() {
+      return state.killed
+    },
+    onExit(listener) {
+      exits.add(listener)
+      return () => exits.delete(listener)
+    },
+    onError(listener) {
+      errors.add(listener)
+      return () => errors.delete(listener)
+    },
+    kill(signal = "TERM") {
+      state.killed = true
+      child.kill(signal === "KILL" ? "SIGKILL" : "SIGTERM")
+    },
+  }
+  child.once("exit", (code, signal) => {
+    state.exited = true
+    state.exitCode = code
+    state.exitSignal = signal
+    for (const listener of exits) listener(code, signal)
+  })
+  child.once("error", (error) => {
+    for (const listener of errors) listener(error)
+    if (child.pid === undefined && !state.exited) {
+      state.exited = true
+      for (const listener of exits) listener(null, null)
+    }
+  })
+  return managed
+}
 
 function makeHost() {
   const emitted: Array<{ name: string; data: unknown; options?: { directory?: string } }> = []
@@ -16,6 +86,7 @@ function makeHost() {
     emit: (name: string, data: unknown, options?: { directory?: string }) => {
       emitted.push({ name, data, options })
     },
+    spawn: spawnUnmanaged,
     log: {
       debug: () => {},
       info: () => {},

@@ -3,9 +3,9 @@ import {
   type ExtensionHooks,
   type ExtensionHost,
   type ExtensionService,
+  type ManagedProcess,
 } from "@opencode-ai/extension-kit/server"
 import { messageInput, rpc, textInput } from "./contract"
-import { spawn, type ChildProcess } from "node:child_process"
 import { tool } from "@opencode-ai/plugin/tool"
 import { resolveChildRuntime } from "./child-runtime"
 
@@ -16,8 +16,9 @@ const CHILD_PING_TIMEOUT_MS = 5_000
 
 /**
  * Tiny line-echo child. Spawning is deliberately lazy: the process only
- * exists while the example's child RPC methods are being exercised, and it is
- * killed by `dispose()` (or `child.stop`) so nothing outlives the extension.
+ * exists while the example's child RPC methods are being exercised. It is a
+ * host-managed process — killed by `dispose()`/`child.stop`, and reaped by
+ * the host's generation teardown even if both are skipped.
  */
 const CHILD_SCRIPT = `
 process.stdin.setEncoding("utf8");
@@ -34,24 +35,24 @@ process.stdin.resume();
 `
 
 type ChildState = {
-  child?: ChildProcess
+  child?: ManagedProcess
 }
 
-function isRunning(child: ChildProcess | undefined): child is ChildProcess {
-  return child !== undefined && child.exitCode === null && !child.killed
+function isRunning(child: ManagedProcess | undefined): child is ManagedProcess {
+  return child !== undefined && !child.exited && !child.killed
 }
 
-function startChild(state: ChildState, host: ExtensionHost): ChildProcess {
+function startChild(state: ChildState, host: ExtensionHost): ManagedProcess {
   if (isRunning(state.child)) return state.child
   const runtime = resolveChildRuntime({ execPath: process.execPath, env: process.env })
-  const child = spawn(runtime, ["-e", CHILD_SCRIPT], {
+  const child = host.spawn(runtime, ["-e", CHILD_SCRIPT], {
     stdio: ["pipe", "pipe", "pipe"],
   })
-  child.on("error", (error) => {
+  child.onError((error) => {
     if (state.child === child) state.child = undefined
     host.log.error("hello-viewer child failed", { error: String(error) })
   })
-  child.on("exit", () => {
+  child.onExit(() => {
     if (state.child === child) state.child = undefined
   })
   state.child = child
@@ -63,19 +64,19 @@ async function stopChild(state: ChildState): Promise<boolean> {
   const child = state.child
   if (!child) return false
   state.child = undefined
-  if (child.exitCode !== null) return true
-  child.kill("SIGTERM")
+  if (child.exited) return true
+  child.kill("TERM")
   await new Promise<void>((resolve) => {
-    if (child.exitCode !== null) return resolve()
-    child.once("exit", () => resolve())
+    if (child.exited) return resolve()
+    child.onExit(() => resolve())
     setTimeout(resolve, 1_000).unref?.()
   })
   return true
 }
 
-const childPings = new WeakMap<ChildProcess, Promise<void>>()
+const childPings = new WeakMap<ManagedProcess, Promise<void>>()
 
-function pingChild(child: ChildProcess, text: string): Promise<string> {
+function pingChild(child: ManagedProcess, text: string): Promise<string> {
   const pending = childPings.get(child) ?? Promise.resolve()
   const reply = pending.then(() => pingChildOnce(child, text))
   const settled = reply.then(
@@ -90,11 +91,11 @@ function pingChild(child: ChildProcess, text: string): Promise<string> {
 }
 
 /** Writes one line to the child and waits for the echoed line back. */
-function pingChildOnce(child: ChildProcess, text: string): Promise<string> {
+function pingChildOnce(child: ManagedProcess, text: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const stdout = child.stdout
     const stdin = child.stdin
-    if (!stdout || !stdin || child.exitCode !== null) {
+    if (!stdout || !stdin || child.exited) {
       reject(new Error("hello-viewer child is not running"))
       return
     }

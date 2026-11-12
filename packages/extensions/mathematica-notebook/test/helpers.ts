@@ -23,6 +23,10 @@ export function host(settings: Record<string, unknown> = {}): ExtensionHost {
     serverUrl: new URL("http://localhost"),
     settings: { get: () => settings, onDidChange: () => () => {} },
     emit: (name, data) => console.info(`[notebook-test] ${name} ${JSON.stringify(data).slice(0, 250)}`),
+    // Tests inject a fake SpawnKernel; the host.spawn path must stay unused.
+    spawn: () => {
+      throw new Error("host.spawn is not implemented by the test host")
+    },
     log: Object.fromEntries(
       ["debug", "info", "warn", "error"].map((level) => [
         level,

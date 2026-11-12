@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { randomUUID } from "node:crypto"
 import type { ExtensionHost } from "@opencode-ai/extension-kit/server"
-import { defaultSpawnKernel, type KernelHandle, type SpawnKernel } from "../../wls-repl/src/server"
+import { hostSpawnKernel, type KernelHandle, type SpawnKernel } from "../../wls-repl/src/server"
 
 export type Output = { ok: boolean; text: string; printed: string; image?: string }
 type Kernel = {
@@ -23,7 +23,7 @@ export class NotebookKernels {
 
   constructor(
     private host: ExtensionHost,
-    private spawn: SpawnKernel = defaultSpawnKernel,
+    private spawn: SpawnKernel = hostSpawnKernel(host),
   ) {}
 
   private async start(path: string): Promise<Kernel> {

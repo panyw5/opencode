@@ -22,6 +22,8 @@ export type Entry = {
   instances: Map<string, ExtensionHooks>
   requests: Set<AbortController>
   resources: Set<() => void>
+  /** Host dispose kickoffs that resolve once spawned processes are reaped. */
+  processKills: Set<Promise<unknown>>
 }
 
 export function emptyEntry(id: string, settings: Record<string, unknown>): Entry {
@@ -33,6 +35,7 @@ export function emptyEntry(id: string, settings: Record<string, unknown>): Entry
     instances: new Map(),
     requests: new Set(),
     resources: new Set(),
+    processKills: new Set(),
   }
 }
 

@@ -5,6 +5,7 @@ import {
   type ExtensionHooks,
   type ExtensionHost,
   type ExtensionService,
+  type ManagedProcess,
   type ServerExtension,
 } from "../src/server"
 
@@ -25,6 +26,13 @@ describe("extension-kit server", () => {
       true,
       true,
     ])
+  })
+  test("host spawn exposes the managed-process contract", () => {
+    type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
+    const spawnArgs: Equal<Parameters<ExtensionHost["spawn"]>[1], string[] | undefined> = true
+    const spawnResult: Equal<ReturnType<ExtensionHost["spawn"]>, ManagedProcess> = true
+    const killSignal: Equal<Parameters<ManagedProcess["kill"]>[0], "TERM" | "KILL" | undefined> = true
+    expect([spawnArgs, spawnResult, killSignal]).toEqual([true, true, true])
   })
   test("defineServerExtension returns the extension unchanged", () => {
     const extension: ServerExtension = { id: "acme.example" }
@@ -66,6 +74,9 @@ describe("extension-kit server", () => {
       settings: { get: () => ({}), onDidChange: () => () => {} },
       setTimeout: () => ({ dispose() {} }),
       setInterval: () => ({ dispose() {} }),
+      spawn: () => {
+        throw new Error("host.spawn is not exercised by the contract test")
+      },
       emit: () => {},
       log: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
     })) as ExtensionService

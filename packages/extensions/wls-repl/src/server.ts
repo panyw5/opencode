@@ -6,7 +6,7 @@ import {
   type ExtensionService,
 } from "@opencode-ai/extension-kit/server"
 import { tool } from "@opencode-ai/plugin/tool"
-import { spawn, spawnSync } from "node:child_process"
+import { spawnSync } from "node:child_process"
 import { createInterface } from "node:readline"
 import { appendFile, mkdtemp, rm } from "node:fs/promises"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
@@ -50,73 +50,58 @@ export type SpawnKernelOptions = {
 export type SpawnKernel = (options: SpawnKernelOptions) => KernelHandle
 
 /**
- * Real spawn. The child runs detached as its own process group so killing
- * the group also takes down the `tail -f` helper the kernel spawns for its
- * control channel.
+ * Spawns a `wolframscript -file bridge.wls` child through `host.spawn`: the
+ * child runs in its own process group, so group signals also take down the
+ * `tail -f` helper the kernel spawns for its control channel, and the host
+ * reaps the whole tree when the owning generation is disposed. Returned
+ * behind the SpawnKernel seam so tests can drive the protocol without a
+ * real Wolfram installation.
  */
-export const defaultSpawnKernel: SpawnKernel = ({ ctlPath, bridgePath, wolframscriptPath }) => {
-  const child = spawn(wolframscriptPath, ["-file", bridgePath], {
-    env: { ...process.env, WLS_REPL_CTL: ctlPath },
-    stdio: ["ignore", "pipe", "pipe"],
-    detached: true,
-  })
-  const stdout = createInterface({ input: child.stdout! })
-  const stderr = createInterface({ input: child.stderr! })
-  const listeners = { out: new Set<(line: string) => void>(), err: new Set<(line: string) => void>() }
-  const exits = new Set<(code: number | null) => void>()
-  const errors = new Set<(error: Error) => void>()
-  stdout.on("line", (line) => {
-    for (const listener of listeners.out) listener(line)
-  })
-  stderr.on("line", (line) => {
-    for (const listener of listeners.err) listener(line)
-  })
-  child.once("exit", (code) => {
-    for (const listener of exits) listener(code)
-  })
-  child.once("error", (error) => {
-    for (const listener of errors) listener(error)
-  })
-  return {
-    pid: child.pid,
-    onStdoutLine: (listener) => {
-      listeners.out.add(listener)
-      return () => listeners.out.delete(listener)
-    },
-    onStderrLine: (listener) => {
-      listeners.err.add(listener)
-      return () => listeners.err.delete(listener)
-    },
-    onExit: (listener) => {
-      exits.add(listener)
-      return () => exits.delete(listener)
-    },
-    onError: (listener) => {
-      errors.add(listener)
-      return () => errors.delete(listener)
-    },
-    kill: (signal = "TERM") => {
-      const group = child.pid ?? 0
-      const unix = signal === "KILL" ? "SIGKILL" : "SIGTERM"
-      const send = () => {
-        try {
-          if (group) process.kill(-group, unix)
-        } catch {
-          child.kill(unix)
-        }
-      }
-      send()
-      if (signal === "TERM") {
-        // Backstop for fire-and-forget kills; stopKernel escalates eagerly.
-        setTimeout(() => {
-          try {
-            if (group) process.kill(-group, "SIGKILL")
-          } catch {
-            /* already gone */
-          }
-        }, 2_000).unref?.()
-      }
-    },
+export function hostSpawnKernel(host: ExtensionHost): SpawnKernel {
+  return ({ ctlPath, bridgePath, wolframscriptPath }) => {
+    const child = host.spawn(wolframscriptPath, ["-file", bridgePath], {
+      env: { WLS_REPL_CTL: ctlPath },
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+    const stdout = createInterface({ input: child.stdout! })
+    const stderr = createInterface({ input: child.stderr! })
+    const listeners = { out: new Set<(line: string) => void>(), err: new Set<(line: string) => void>() }
+    const exits = new Set<(code: number | null) => void>()
+    const errors = new Set<(error: Error) => void>()
+    stdout.on("line", (line) => {
+      for (const listener of listeners.out) listener(line)
+    })
+    stderr.on("line", (line) => {
+      for (const listener of listeners.err) listener(line)
+    })
+    child.onExit((code) => {
+      for (const listener of exits) listener(code)
+    })
+    child.onError((error) => {
+      for (const listener of errors) listener(error)
+    })
+    return {
+      pid: child.pid,
+      onStdoutLine: (listener) => {
+        listeners.out.add(listener)
+        return () => listeners.out.delete(listener)
+      },
+      onStderrLine: (listener) => {
+        listeners.err.add(listener)
+        return () => listeners.err.delete(listener)
+      },
+      onExit: (listener) => {
+        exits.add(listener)
+        return () => exits.delete(listener)
+      },
+      onError: (listener) => {
+        errors.add(listener)
+        return () => errors.delete(listener)
+      },
+      // Group-scoped through host.spawn; stopKernel escalates TERM to KILL
+      // itself, and host teardown escalates independently on dispose.
+      kill: (signal = "TERM") => child.kill(signal),
+    }
   }
 }
 
@@ -262,7 +247,7 @@ function sweepStaleKernels(host: ExtensionHost): void {
  * fake kernel handle.
  */
 export function createWlsService(host: ExtensionHost, deps: WlsServiceDeps = {}): ExtensionService {
-  const spawnKernel = deps.spawnKernel ?? defaultSpawnKernel
+  const spawnKernel = deps.spawnKernel ?? hostSpawnKernel(host)
   const now = deps.now ?? Date.now
   const kernels = new Map<string, Kernel>()
   sweepStaleKernels(host)

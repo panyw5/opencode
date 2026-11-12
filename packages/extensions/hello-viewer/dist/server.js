@@ -1,15 +1,11 @@
 var __defProp = Object.defineProperty
-var __returnValue = (v) => v
-function __exportSetter(name, newValue) {
-  this[name] = __returnValue.bind(null, newValue)
-}
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, {
       get: all[name],
       enumerable: true,
       configurable: true,
-      set: __exportSetter.bind(all, name),
+      set: (newValue) => (all[name] = () => newValue),
     })
 }
 
@@ -18,8 +14,86 @@ function defineServerExtension(extension) {
   return extension
 }
 
-// src/server.ts
-import { spawn } from "node:child_process"
+// ../../extension-kit/src/rpc.ts
+class ExtensionRpcError extends Error {
+  code
+  name = "ExtensionRpcError"
+  constructor(code, message) {
+    super(message ?? code)
+    this.code = code
+  }
+}
+function formatIssues(issues) {
+  return issues
+    .map((issue) => {
+      const path = issue.path
+        ?.map((segment) => (typeof segment === "object" ? segment.key : segment))
+        .filter((key) => key !== undefined)
+        .join(".")
+      return path ? `${path}: ${issue.message}` : issue.message
+    })
+    .join("; ")
+}
+function wrapMethod(method, definition) {
+  if (typeof definition === "function") {
+    return async (input, ctx) => definition(input, ctx)
+  }
+  const schema = definition.input
+  return async (input, ctx) => {
+    let value = input
+    if (schema) {
+      const result = await schema["~standard"].validate(input)
+      if (result.issues) {
+        const detail = formatIssues(result.issues)
+        throw new ExtensionRpcError("invalid_input", `invalid input for "${method}"${detail ? `: ${detail}` : ""}`)
+      }
+      value = result.value
+    }
+    return definition.handle(value, ctx)
+  }
+}
+function defineRpc() {
+  return {
+    handlers(map) {
+      const record = {}
+      for (const [method, definition] of Object.entries(map)) {
+        record[method] = wrapMethod(method, definition)
+      }
+      return record
+    },
+    bind(rpc) {
+      return (method, input, options) => rpc.call(method, input, options)
+    },
+  }
+}
+
+// src/contract.ts
+var rpc = defineRpc()
+function optionalStrings(...keys) {
+  return {
+    "~standard": {
+      version: 1,
+      vendor: "example.hello-viewer",
+      validate(value) {
+        if (typeof value !== "object" || value === null || Array.isArray(value)) {
+          return { issues: [{ message: "expected an object" }] }
+        }
+        const out = {}
+        for (const key of keys) {
+          const field = value[key]
+          if (field === undefined) continue
+          if (typeof field !== "string") {
+            return { issues: [{ message: "must be a string", path: [key] }] }
+          }
+          out[key] = field
+        }
+        return { value: out }
+      },
+    },
+  }
+}
+var messageInput = optionalStrings("message")
+var textInput = optionalStrings("text")
 
 // ../../../node_modules/.bun/zod@4.1.8/node_modules/zod/v4/classic/external.js
 var exports_external = {}
@@ -12175,19 +12249,19 @@ process.stdin.on("data", (chunk) => {
 process.stdin.resume();
 `
 function isRunning(child) {
-  return child !== undefined && child.exitCode === null && !child.killed
+  return child !== undefined && !child.exited && !child.killed
 }
 function startChild(state, host) {
   if (isRunning(state.child)) return state.child
   const runtime = resolveChildRuntime({ execPath: process.execPath, env: process.env })
-  const child = spawn(runtime, ["-e", CHILD_SCRIPT], {
+  const child = host.spawn(runtime, ["-e", CHILD_SCRIPT], {
     stdio: ["pipe", "pipe", "pipe"],
   })
-  child.on("error", (error45) => {
+  child.onError((error45) => {
     if (state.child === child) state.child = undefined
     host.log.error("hello-viewer child failed", { error: String(error45) })
   })
-  child.on("exit", () => {
+  child.onExit(() => {
     if (state.child === child) state.child = undefined
   })
   state.child = child
@@ -12198,11 +12272,11 @@ async function stopChild(state) {
   const child = state.child
   if (!child) return false
   state.child = undefined
-  if (child.exitCode !== null) return true
-  child.kill("SIGTERM")
+  if (child.exited) return true
+  child.kill("TERM")
   await new Promise((resolve) => {
-    if (child.exitCode !== null) return resolve()
-    child.once("exit", () => resolve())
+    if (child.exited) return resolve()
+    child.onExit(() => resolve())
     setTimeout(resolve, 1000).unref?.()
   })
   return true
@@ -12225,7 +12299,7 @@ function pingChildOnce(child, text) {
   return new Promise((resolve, reject) => {
     const stdout = child.stdout
     const stdin = child.stdin
-    if (!stdout || !stdin || child.exitCode !== null) {
+    if (!stdout || !stdin || child.exited) {
       reject(new Error("hello-viewer child is not running"))
       return
     }
@@ -12273,38 +12347,43 @@ var extension = defineServerExtension({
     host.log.info("activating hello-viewer server part")
     const state = {}
     const service = {
-      rpc: {
-        echo: async (input) => {
-          const message = typeof input?.message === "string" ? input.message : ""
-          return {
-            echo: message,
+      rpc: rpc.handlers({
+        echo: {
+          input: messageInput,
+          handle: async (input) => ({
+            echo: input.message ?? "",
             extension: EXTENSION_ID,
             at: new Date().toISOString(),
-          }
+          }),
         },
-        greet: async (input, ctx) => {
-          const message = typeof input?.message === "string" ? input.message : "hello from the server part"
-          const payload = { message, from: EXTENSION_ID, at: new Date().toISOString() }
-          host.emit(GREETING_EVENT, payload, { directory: ctx.directory })
-          return payload
+        greet: {
+          input: messageInput,
+          handle: async (input, ctx) => {
+            const payload = {
+              message: input.message ?? "hello from the server part",
+              from: EXTENSION_ID,
+              at: new Date().toISOString(),
+            }
+            host.emit(GREETING_EVENT, payload, { directory: ctx.directory })
+            return payload
+          },
         },
         "child.start": async () => {
           const child = startChild(state, host)
           return { running: true, pid: child.pid ?? -1 }
         },
-        "child.ping": async (input) => {
-          if (!isRunning(state.child)) {
-            throw new Error("child is not running; call child.start first")
-          }
-          const text = typeof input?.text === "string" ? input.text : "ping"
-          const echoed = await pingChild(state.child, text)
-          return { echoed }
+        "child.ping": {
+          input: textInput,
+          handle: async (input) => {
+            if (!isRunning(state.child)) {
+              throw new Error("child is not running; call child.start first")
+            }
+            const echoed = await pingChild(state.child, input.text ?? "ping")
+            return { echoed }
+          },
         },
-        "child.stop": async () => {
-          const stopped = await stopChild(state)
-          return { stopped }
-        },
-      },
+        "child.stop": async () => ({ stopped: await stopChild(state) }),
+      }),
       dispose: async () => {
         await stopChild(state)
         host.log.info("hello-viewer server part disposed")
@@ -12315,7 +12394,7 @@ var extension = defineServerExtension({
   async server(input) {
     const hooks = {
       tool: {
-        hello_greet: tool({
+        greet: tool({
           description:
             "Greet someone through the hello-viewer example extension. Use it to demonstrate extension-provided tools.",
           args: {
