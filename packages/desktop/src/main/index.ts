@@ -7,7 +7,7 @@ import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app, BrowserWindow, powerMonitor } from "electron"
+import { app, BrowserWindow, ipcMain, net, powerMonitor } from "electron"
 
 import contextMenu from "electron-context-menu"
 
@@ -386,6 +386,8 @@ const main = Effect.gen(function* () {
   registerExtensionArchiveIpcHandlers({
     server: (): ExtensionArchiveServer =>
       server && extensionArchiveChannel ? { extensionArchive: extensionArchiveChannel } : null,
+    ipcMain,
+    net,
   })
   powerMonitor.on("resume", () => {
     if (isQuitting || getStore().get("remote-access.enabled") !== true || !remoteUpstream) return

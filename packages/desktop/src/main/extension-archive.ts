@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { ipcMain, net } from "electron"
+import type { IpcMain, Net } from "electron"
 import {
   MAX_ARCHIVE_BYTES,
   MAX_DESCRIPTOR_BYTES,
@@ -17,6 +17,9 @@ export type ExtensionArchiveServer = Pick<LocalSidecarServer, "extensionArchive"
 export type ExtensionArchiveDeps = {
   /** Resolved per call so a sidecar reload is always picked up. */
   server: () => ExtensionArchiveServer
+  /** Electron main-process transports, injected so this module loads in tests. */
+  ipcMain: Pick<IpcMain, "handle">
+  net: Pick<Net, "request">
 }
 
 const STAGED_MAX_BYTES = MAX_ARCHIVE_BYTES
@@ -62,6 +65,7 @@ type ArchiveOpPayload = {
 }
 
 export function registerExtensionArchiveIpcHandlers(deps: ExtensionArchiveDeps) {
+  const { ipcMain, net } = deps
   ipcMain.handle("extension-archive-download", async (_event, url: unknown) => {
     try {
       if (typeof url !== "string" || url.length > 16_384) throw new Error()
