@@ -17,7 +17,13 @@ export const builtinCatalog: CatalogEntry[] = [
     id: "local.wls-repl",
     name: "WolframScript REPL",
     author: "panyw5",
-    releaseUrl: "https://raw.githubusercontent.com/panyw5/opencode-wls/main/stable.json",
+    releaseUrl: "https://raw.githubusercontent.com/panyw5/open-extensions/main/wls-repl/stable.json",
+  },
+  {
+    id: "local.mathematica-notebook",
+    name: "Mathematica Notebook",
+    author: "panyw5",
+    releaseUrl: "https://raw.githubusercontent.com/panyw5/open-extensions/main/mathematica-notebook/stable.json",
   },
 ]
 

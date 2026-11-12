@@ -1,22 +1,27 @@
 # Repo
-push ONLY to my fork `panyw5/opencode`, except for WLS extension releases as permitted below.
 
-run github action only with my fork `panyw5/opencode`, except for WLS extension releases as permitted below.
+push ONLY to my fork `panyw5/opencode`, except for extension releases to `panyw5/open-extensions` as permitted below.
 
-## WLS extension release exception
-- Publishing the WolframScript extension to `panyw5/opencode-wls` is explicitly allowed.
-- For WLS extension releases only, you may push extension source and release metadata (including `stable.json`), create tags and GitHub Releases, and upload extension packages to `panyw5/opencode-wls`.
-- You may run GitHub Actions in `panyw5/opencode-wls` to build, test, or publish the WLS extension.
+run github action only with my fork `panyw5/opencode`, except for extension releases to `panyw5/open-extensions` as permitted below.
+
+## Extension release exception (panyw5/open-extensions)
+
+- Publishing extensions from `packages/extensions/` to `panyw5/open-extensions` is explicitly allowed.
+- For extension releases to `panyw5/open-extensions`, you may push extension source and release metadata (including `stable.json`), create tags and GitHub Releases, and upload extension packages (`.tgz`).
+- `script/extension-publish.ts <name>` automates this flow (build → sync source → pack → Release asset → `stable.json` → push).
+- You may run GitHub Actions in `panyw5/open-extensions` to build, test, or publish extensions.
 - This exception does not permit pushing the main OpenCode project to any repository other than `panyw5/opencode`, or publishing to any other extension repository.
 
 # MANDATORY RULES
 
 There are several opencode instances:
+
 - installed desktop app (`/applications/opencode.app`)
 - installed official cli (`/opt/homebrew/bin/opencode`)
 - development electron app for testing (`bun run dev:desktop`)
 
 ## Using the development electron app
+
 - Run **frontend** tests using CDP 9222: you can control **electron** app, spawn one if not running
   **VERIFY** if there is electron app running **before** launching
 - DO NOT shut down the installed opencode app (`/applications/opencode.app`).
@@ -45,6 +50,7 @@ The user can remap any command in Settings, and this machine has (e.g. `session.
 - A remapped- or unbound-command keypress dispatches nothing and logs nothing; `mod+x` defaults may legitimately do nothing.
 
 Obey the following rules at all times:
+
 - Read backend logs YOURSELF!!!! You are forbidden to ask user to read backend log for you!!!!
 - When fixing bug: ADD LOGS AT EVERY STEP!!!! ASSUME YOU ARE MORON, AND NEED LOGS TO DO ANY DEBUGGING
 - YOU yourself must perform SIDECAR functionality testing. YOU ARE FORBIDDEN to ask user to perform sidecar functionality testing for you!!!!
