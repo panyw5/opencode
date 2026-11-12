@@ -1,0 +1,16 @@
+{
+  "name": "opencode-e2e-ext-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./server": "./server.js"
+  },
+  "opencode": {
+    "manifestVersion": 1,
+    "id": "test.e2e-ext",
+    "displayName": "E2E Lifecycle Fixture",
+    "description": "Minimal server-only fixture extension for test/extension/e2e-lifecycle.test.ts.",
+    "permissions": ["tools", "process:spawn"]
+  }
+}
