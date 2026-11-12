@@ -9,6 +9,7 @@ import {
   type WebExtensionContext,
 } from "./context"
 import type { Disposable, ExtensionInfo } from "./types"
+import type { ExtensionHostModules } from "./modules"
 
 export type WebExtensionModule = {
   default?: {
@@ -16,6 +17,38 @@ export type WebExtensionModule = {
     apiVersion?: unknown
     activate?: unknown
   }
+  // Build metadata emitted by extension-kit (T4.6):
+  // `export const __opencodeBuild = { solid: "x.y.z" }`.
+  __opencodeBuild?: unknown
+}
+
+export type SolidVersionDrift = "match" | "minor" | "major" | "unknown"
+
+function majorMinor(version: string) {
+  const match = /^\s*(\d+)\.(\d+)/.exec(version)
+  if (!match) return undefined
+  return { major: Number(match[1]), minor: Number(match[2]) }
+}
+
+// Compares the host's shared solid-js version against the version an extension
+// was built against. "unknown" covers unparseable input and is skipped like a
+// missing field so older artifacts stay compatible.
+export function compareSolidVersions(host: string, built: string): SolidVersionDrift {
+  const a = majorMinor(host)
+  const b = majorMinor(built)
+  if (!a || !b) return "unknown"
+  if (a.major !== b.major) return "major"
+  if (a.minor !== b.minor) return "minor"
+  return "match"
+}
+
+// Reads the declared build-time solid-js version from an extension artifact.
+// Missing or malformed metadata returns undefined and the check is skipped.
+function declaredSolidVersion(module: WebExtensionModule) {
+  const build = module.__opencodeBuild
+  if (!build || typeof build !== "object") return undefined
+  const solid = (build as { solid?: unknown }).solid
+  return typeof solid === "string" ? solid : undefined
 }
 
 export type ActivationDeps = {
@@ -130,6 +163,28 @@ export class ExtensionActivationManager {
       typeof extension.activate !== "function"
     ) {
       throw new Error(`Extension module has an invalid default export: ${runtime.manifest.id}`)
+    }
+
+    // Version guard: extensions are compiled against the host's shared
+    // solid-js. A major drift is incompatible and rejects activation; a minor
+    // drift is tolerated with a warning. Artifacts without build metadata skip
+    // the check entirely.
+    const built = declaredSolidVersion(module)
+    const installed = (globalThis as typeof globalThis & { __OPENCODE_EXTENSION_HOST__?: ExtensionHostModules })
+      .__OPENCODE_EXTENSION_HOST__
+    const hostSolid = installed?.versions?.["solid-js"]
+    if (built && typeof hostSolid === "string") {
+      const drift = compareSolidVersions(hostSolid, built)
+      if (drift === "major") {
+        throw new Error(
+          `Extension built against incompatible solid-js: ${runtime.manifest.id} (built=${built} host=${hostSolid})`,
+        )
+      }
+      if (drift === "minor") {
+        console.warn(
+          `[extension-host] solid-js minor mismatch id=${runtime.manifest.id} built=${built} host=${hostSolid}`,
+        )
+      }
     }
 
     await new Promise<void>((resolve, reject) => {
