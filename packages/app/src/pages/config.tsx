@@ -22,6 +22,7 @@ import { DshDefaultsEditor } from "@/components/dsh-defaults-editor"
 import { AgentBackendSettings, RemoteAgentBackendSettings } from "@/components/agent-backend-settings"
 import { DirectoryInput } from "@/components/directory-input"
 import { ExtraAgentInfoCard } from "@/components/extra-agent-info-card"
+import { ExtraAgentBrandIcon } from "@/components/extra-agent-brand-icon"
 import { AgentStatusCard, AgentStatusGrid, type AgentStatusTone } from "@/components/agent-status-card"
 import {
   AgentSettingsCard,
@@ -162,6 +163,7 @@ import { pendingCatalogEntries } from "@/extensions/catalog"
 import { ExtensionArchiveDropTarget } from "./config-extension-archive-drop"
 import { ConfigExtensionCatalogDetail, ExtensionCardRow } from "./config-extension-catalog"
 import { ConfigExtensionDetail } from "./config-extension-detail"
+import { extensionRuntimeState } from "@/extensions/runtime-state"
 import { ConfigExtensionInstallActions } from "./config-extension-install-actions"
 import {
   catalogPick,
@@ -982,7 +984,7 @@ function JsoncAgentEditor(props: {
                     type: "button",
                     variant: "ghost",
                     class:
-                      "h-10 min-w-0 flex-1 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong hover:border-border-strong hover:bg-surface-base-hover",
+                      "inset-control h-10 min-w-0 flex-1 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong hover:border-border-strong hover:bg-surface-base-hover",
                   }}
                 >
                   <div class="flex min-w-0 items-center gap-2">
@@ -2224,6 +2226,7 @@ function ClawHeader(props: {
   busy: boolean
   saving: boolean
   testing: boolean
+  hideSource?: boolean
   onEnabled: (value: boolean) => void
 }) {
   const language = useLanguage()
@@ -2233,11 +2236,8 @@ function ClawHeader(props: {
       <div class="min-w-0">
         <div class="flex items-center gap-2">
           <div class="text-20-medium text-text-strong">{props.item?.label}</div>
-          <span class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
-            {props.enabled ? language.t("config.claws.badge.enabled") : language.t("config.claws.badge.disabled")}
-          </span>
         </div>
-        <Show when={props.item?.sourceUrl}>
+        <Show when={!props.hideSource && props.item?.sourceUrl}>
           {(sourceUrl) => (
             <div class="mt-2 text-12-regular text-text-weak">
               <Link href={sourceUrl()} class="inline-flex items-center gap-1 text-text-base" title={sourceUrl()}>
@@ -2361,7 +2361,6 @@ function ClawEditor(props: {
               <AgentSettingsCard
                 title={language.t("agentSettings.connection")}
                 badge={language.t("agentSettings.required")}
-                priority="primary"
                 size="wide"
               >
                 <AgentSettingsField wide>
@@ -2380,7 +2379,6 @@ function ClawEditor(props: {
               <AgentSettingsCard
                 title={language.t("agentSettings.credentials")}
                 badge={language.t("agentSettings.optional")}
-                priority="secondary"
                 size="standard"
               >
                 <AgentSettingsField wide>
@@ -2479,7 +2477,6 @@ function GenericAgentEditor(props: {
               <AgentSettingsCard
                 title={language.t("agentSettings.agentDirectory")}
                 badge={language.t("agentSettings.required")}
-                priority="primary"
                 size="wide"
               >
                 <AgentSettingsField wide>
@@ -2496,7 +2493,6 @@ function GenericAgentEditor(props: {
               </AgentSettingsCard>
               <AgentSettingsCard
                 title={language.t("agentSettings.runtimeOverrides")}
-                priority="secondary"
                 size="standard"
               >
                 <AgentSettingsField wide>
@@ -2952,7 +2948,6 @@ function CliAgentEditor(props: {
         <AgentSettingsCard
           title={language.t("agentSettings.cliRuntime")}
           badge={language.t("agentSettings.optional")}
-          priority="secondary"
           size="wide"
         >
           <AgentSettingsGrid>
@@ -2997,7 +2992,7 @@ function CliAgentEditor(props: {
         <section class="flex min-w-0 flex-col gap-3">
           <div class="text-13-medium text-text-strong">{language.t("config.claws.dsh.title")}</div>
           <AgentSettingsGrid>
-            <AgentSettingsCard title={language.t("config.claws.dsh.field.provider")} priority="primary" size="standard">
+            <AgentSettingsCard title={language.t("config.claws.dsh.field.provider")} size="standard">
               <AgentSettingsField wide>
                 <TextField
                   type="text"
@@ -3024,7 +3019,7 @@ function CliAgentEditor(props: {
                 </p>
               </Show>
             </AgentSettingsCard>
-            <AgentSettingsCard title={language.t("config.claws.dsh.field.model")} priority="primary" size="compact">
+            <AgentSettingsCard title={language.t("config.claws.dsh.field.model")} size="compact">
               <AgentSettingsField wide>
                 <TextField
                   type="text"
@@ -3036,7 +3031,7 @@ function CliAgentEditor(props: {
                 />
               </AgentSettingsField>
             </AgentSettingsCard>
-            <AgentSettingsCard title={language.t("agentSettings.credentials")} priority="primary" size="wide">
+            <AgentSettingsCard title={language.t("agentSettings.credentials")} size="wide">
               <AgentSettingsField wide>
                 <div class="space-y-2">
                   <div class="text-12-medium text-text-weak">{language.t("config.claws.dsh.field.apiKey")}</div>
@@ -3129,10 +3124,10 @@ function CliAgentEditor(props: {
         />
       </Show>
 
-      <div class="flex w-full flex-wrap items-center justify-end gap-2">
+      <div class="flex w-full flex-wrap items-center justify-end gap-2 border-t border-border-weak-base pt-3">
         <Button
           size="small"
-          variant="secondary"
+          variant="ghost"
           icon="refresh"
           disabled={props.busy || props.form.saving || props.form.testing || props.infoLoading}
           onClick={props.onRefresh}
@@ -3180,6 +3175,7 @@ function CliAgentEditor(props: {
           busy={props.busy}
           saving={props.form.saving}
           testing={props.form.testing}
+          hideSource
           onEnabled={(value) => props.onChange("enabled", value)}
         />
 
@@ -3234,7 +3230,6 @@ function HermesEditor(props: {
               <AgentSettingsCard
                 title={language.t("agentSettings.agentDirectory")}
                 badge={language.t("agentSettings.required")}
-                priority="primary"
                 size="wide"
               >
                 <AgentSettingsField wide>
@@ -3249,7 +3244,7 @@ function HermesEditor(props: {
                   />
                 </AgentSettingsField>
               </AgentSettingsCard>
-              <AgentSettingsCard title={language.t("agentSettings.runtimeOverrides")} priority="secondary" size="wide">
+              <AgentSettingsCard title={language.t("agentSettings.runtimeOverrides")} size="wide">
                 <AgentSettingsGrid>
                   <AgentSettingsField>
                     <TextField
@@ -7403,6 +7398,12 @@ export default function ConfigPage() {
           },
         })
       }
+      await patchConfig({
+        agent_backends: {
+          ...cfg().agent_backends,
+          [id]: { type: id === "pi" ? "native-rpc" : "cli-json" },
+        },
+      })
       await platform.cliAgents.set(id, config)
       setCliAgentConfigs(id, config)
       if (id === "dsh") setState("cliAgents", id, "dshDefaults", dshDefaultsForm(config.defaults))
@@ -8496,7 +8497,7 @@ export default function ConfigPage() {
             <div class="relative flex items-center gap-3 border-b border-border-weak-base px-4 py-5">
               <button
                 type="button"
-                class="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border-weak-base bg-background-base text-text-weak transition-colors hover:border-border-strong hover:bg-surface-base-hover hover:text-text-strong active:bg-surface-base-active"
+                class="inset-control flex size-10 shrink-0 items-center justify-center rounded-lg border border-border-weak-base bg-background-base text-text-weak transition-colors hover:border-border-strong hover:bg-surface-base-hover hover:text-text-strong active:bg-surface-base-active"
                 onClick={back}
                 aria-label={language.t("common.goBack")}
               >
@@ -8637,7 +8638,7 @@ export default function ConfigPage() {
                         size="large"
                         variant="ghost"
                         icon="plus-small"
-                        class="border border-border-weak-base bg-background-base shadow-none hover:border-border-base hover:bg-surface-base-hover"
+                        class="inset-control border border-border-weak-base bg-background-base shadow-none hover:border-border-base hover:bg-surface-base-hover"
                         onClick={createCustomProvider}
                       >
                         {t("config.custom.new")}
@@ -8646,7 +8647,7 @@ export default function ConfigPage() {
                         size="large"
                         variant="ghost"
                         icon="arrow-sync"
-                        class="border border-border-weak-base bg-background-base shadow-none hover:border-border-base hover:bg-surface-base-hover"
+                        class="inset-control border border-border-weak-base bg-background-base shadow-none hover:border-border-base hover:bg-surface-base-hover"
                         disabled={refreshing()}
                         aria-label={t("settings.providers.refresh")}
                         onClick={() => void refreshProviders()}
@@ -8673,7 +8674,7 @@ export default function ConfigPage() {
                         size="small"
                         variant="ghost"
                         icon="folder-add-left"
-                        class="h-8 rounded-lg border border-border-weak-base bg-background-base px-2.5 pr-3 text-12-medium text-text-base shadow-none transition-colors hover:border-border-strong hover:bg-surface-base-hover active:border-border-base active:bg-surface-base-active focus-visible:border-border-strong focus-visible:bg-surface-base-hover disabled:border-border-weak-base disabled:bg-background-base disabled:text-text-weaker"
+                        class="inset-control h-8 rounded-lg border border-border-weak-base bg-background-base px-2.5 pr-3 text-12-medium text-text-base shadow-none transition-colors hover:border-border-strong hover:bg-surface-base-hover active:border-border-base active:bg-surface-base-active focus-visible:border-border-strong focus-visible:bg-surface-base-hover disabled:border-border-weak-base disabled:bg-background-base disabled:text-text-weaker"
                         onClick={() => createAgent()}
                         disabled={!space()?.agentsRoot || !platform.createLocalFile}
                       >
@@ -9113,6 +9114,7 @@ export default function ConfigPage() {
                               title={item.label}
                               note={item.note}
                               meta={item.meta}
+                              icon={<ExtraAgentBrandIcon id={item.id.slice(5)} />}
                               onClick={() => selectClaw(item.id)}
                               extra={
                                 <span
@@ -9528,8 +9530,8 @@ export default function ConfigPage() {
                                 active={state.pick === extensionPick(item.id)}
                                 title={item.displayName}
                                 subtitle={`${item.id} · v${item.version}`}
-                                note={t(`config.extensions.state.${item.state}`)}
-                                warn={item.state === "error" || item.state === "incompatible"}
+                                note={t(`config.extensions.state.${extensionRuntimeState(item)}`)}
+                                warn={extensionRuntimeState(item) !== "ready" && extensionRuntimeState(item) !== "disabled"}
                                 onSelect={() => selectMiddlePick(extensionPick(item.id))}
                               />
                             )}
@@ -9755,10 +9757,12 @@ export default function ConfigPage() {
                           backendSettings={(cliSettings) => (
                             <AgentBackendSettings
                               cliSettings={cliSettings}
+                              cliInstalled={cliAgentInfo[descriptor().id]?.installed}
                               advisor={descriptor().id}
                               config={cfg()}
                               client={globalSDK.forDomain(mainDomain).client}
                               remote={server.current?.type !== "sidecar"}
+                              sourceUrl={selectedClaw()?.sourceUrl}
                               onSave={async (patch) => {
                                 await patchConfig(patch)
                                 setState("cliAgents", descriptor().id, "enabled", true)
@@ -9770,7 +9774,9 @@ export default function ConfigPage() {
                           info={cliAgentInfo[descriptor().id]}
                           infoLoading={cliAgentLoading[descriptor().id]?.info ?? false}
                           form={state.cliAgents[descriptor().id] ?? cliAgentCfg()}
-                          dirty={cliAgentDirty(descriptor().id)}
+                          dirty={
+                            cliAgentDirty(descriptor().id) || cfg().agent_backends?.[descriptor().id]?.type === "acp"
+                          }
                           busy={cliAgentLoading[descriptor().id]?.config ?? false}
                           canTest={!!platform.cliAgents}
                           plugins={descriptor().id === "dsh" ? dshPlugins.inventory : undefined}
@@ -10862,7 +10868,7 @@ function SkillMarket(props: {
             size="small"
             variant="ghost"
             icon="refresh"
-            class="h-8 rounded-lg border border-border-weak-base bg-background-base px-2.5 pr-3 text-12-medium text-text-base shadow-none transition-colors hover:border-border-strong hover:bg-surface-base-hover active:border-border-base active:bg-surface-base-active focus-visible:border-border-strong focus-visible:bg-surface-base-hover disabled:border-border-weak-base disabled:bg-background-base disabled:text-text-weaker"
+            class="inset-control h-8 rounded-lg border border-border-weak-base bg-background-base px-2.5 pr-3 text-12-medium text-text-base shadow-none transition-colors hover:border-border-strong hover:bg-surface-base-hover active:border-border-base active:bg-surface-base-active focus-visible:border-border-strong focus-visible:bg-surface-base-hover disabled:border-border-weak-base disabled:bg-background-base disabled:text-text-weaker"
             disabled={props.loading}
             onClick={props.onReload}
           >
@@ -10915,7 +10921,7 @@ function SkillMarket(props: {
                     class="rounded-xl border px-3 py-3 text-left transition-colors"
                     classList={{
                       "border-border-base bg-surface-base-active": props.selected === repo.id,
-                      "border-border-weak-base bg-background-base hover:border-border-strong hover:bg-surface-base-hover":
+                      "inset-control border-border-weak-base bg-background-base hover:border-border-strong hover:bg-surface-base-hover":
                         props.selected !== repo.id,
                     }}
                   >
@@ -11018,7 +11024,7 @@ function SkillMarket(props: {
                         const isInstalled = () => installed(item, "global") || installed(item, "project")
                         return (
                           <div
-                            class="group relative flex min-h-[180px] flex-col overflow-hidden rounded-xl border border-border-weak-base bg-background-base p-4 text-left transition-colors duration-150 hover:border-border-strong hover:bg-surface-base-hover focus:outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-focus"
+                            class="inset-control group relative flex min-h-[180px] flex-col overflow-hidden rounded-xl border border-border-weak-base bg-background-base p-4 text-left transition-colors duration-150 hover:border-border-strong hover:bg-surface-base-hover focus:outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-focus"
                             role="button"
                             tabindex="0"
                             onClick={() => openDetail(item)}

@@ -267,7 +267,7 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
       <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
         <div class="flex w-full flex-col gap-4">
           <section data-section="gpt-pro-login">
-            <AgentSettingsCard title={t("gptPro.loginSection")} priority="primary" size="wide">
+            <AgentSettingsCard title={t("gptPro.loginSection")} size="wide">
               <div class="flex flex-wrap items-center justify-start gap-2">
                 <Button
                   size="small"
@@ -479,7 +479,7 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
           <section class="space-y-3" data-section="gpt-pro-settings">
             <h3 class="text-14-medium text-text-strong">{t("gptPro.configSection")}</h3>
             <AgentSettingsGrid>
-              <AgentSettingsCard title={t("agentSettings.gptPro.timing")} priority="secondary" size="compact">
+              <AgentSettingsCard title={t("agentSettings.gptPro.timing")} size="compact">
                 <div class="flex min-w-0 flex-wrap gap-4">
                   <AgentSettingsField>
                     <label class="flex flex-wrap items-center justify-between gap-2 text-13-regular">
@@ -520,7 +520,7 @@ export function GptProSettings(props: { onConfig?: (config: GptProConfig) => voi
                   <p>{t("gptPro.persistence")}</p>
                 </AgentSettingsDetails>
               </AgentSettingsCard>
-              <AgentSettingsCard title={t("agentSettings.gptPro.capacity")} priority="secondary" size="compact">
+              <AgentSettingsCard title={t("agentSettings.gptPro.capacity")} size="compact">
                 <div class="flex min-w-0 flex-wrap gap-4">
                   <AgentSettingsField>
                     <label class="flex flex-wrap items-center justify-between gap-2 text-13-regular">

@@ -177,17 +177,41 @@ const button = (container: HTMLElement, name: string) => {
   if (!result) throw new Error(`Missing button ${key(name)}`)
   return result
 }
-const select = (container: HTMLElement, name: string) => {
-  const result = [...container.querySelectorAll<HTMLSelectElement>("select")].find(
-    (item) =>
-      item.getAttribute("aria-label") === key(name) || item.closest("label")?.textContent?.trim().startsWith(key(name)),
-  )
-  if (!result) throw new Error(`Missing select ${key(name)}`)
+const transportTabs = (container: HTMLElement) => {
+  const result = container.querySelector<HTMLElement>('[role="tablist"][aria-label="agentBackend.transport"]')
+  if (!result) throw new Error("Missing transport tablist")
   return result
 }
-const choose = (element: HTMLSelectElement, value: string) => {
-  element.value = value
-  element.dispatchEvent(new Event("change", { bubbles: true }))
+const transportTab = (container: HTMLElement, value: "cli-json" | "acp" | "native-rpc") => {
+  const label = value === "acp" ? "ACP" : value === "native-rpc" ? "Native RPC" : "CLI"
+  const result = [...transportTabs(container).querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+    (item) => item.textContent?.trim() === label,
+  )
+  if (!result) throw new Error(`Missing transport tab ${label}`)
+  return result
+}
+const chooseTransport = (container: HTMLElement, value: "cli-json" | "acp" | "native-rpc") => {
+  const target = transportTab(container, value)
+  target.click()
+  expect(target.getAttribute("aria-selected")).toBe("true")
+  expect(transportTabs(container).querySelectorAll('[aria-selected="true"]')).toHaveLength(1)
+}
+const select = (container: HTMLElement, name: string) => {
+  const result = container.querySelector<HTMLElement>(`[data-slot="select-select-trigger"][aria-label="${key(name)}"]`)
+  if (!result) throw new Error(`Missing select trigger ${key(name)}`)
+  return result
+}
+const choose = async (element: HTMLElement, label: string) => {
+  const details = element.closest("details")
+  if (details) details.open = true
+  element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }))
+  element.click()
+  await settle()
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (item) => item.textContent?.trim() === key(label),
+  )
+  if (!option) throw new Error(`Missing select option ${key(label)}`)
+  option.click()
 }
 const field = (container: HTMLElement, name: string) => {
   const row = [...container.querySelectorAll<HTMLElement>('[data-component="input"]')].find(
@@ -229,10 +253,10 @@ describe("AgentBackendSettings save and probe contracts", () => {
       await settle()
       expect(mounts).toBe(0)
       expect(view.container.textContent).not.toContain("CLI parameters and actions")
-      choose(select(view.container, "transport"), "cli-json")
+      chooseTransport(view.container, "cli-json")
       expect(mounts).toBe(1)
       expect(view.container.textContent).toContain("CLI parameters and actions")
-      choose(select(view.container, "transport"), "acp")
+      chooseTransport(view.container, "acp")
       expect(view.container.textContent).not.toContain("CLI parameters and actions")
       expect(view.saves).toHaveLength(0)
       expect(mock.calls).toHaveLength(0)
@@ -252,7 +276,7 @@ describe("AgentBackendSettings save and probe contracts", () => {
       )!
       expect(advanced.open).toBe(false)
       expect(runtime.open).toBe(false)
-      expect(select(view.container, "transport").closest("details")).toBeNull()
+      expect(transportTabs(view.container).closest("details")).toBeNull()
       expect(field(view.container, "command").closest("details")).toBeNull()
       advanced.open = true
       runtime.open = true
@@ -353,7 +377,11 @@ describe("AgentBackendSettings save and probe contracts", () => {
     }
   })
 
-  const edits: Array<{ name: string; change: (container: HTMLElement) => void; expected: Partial<AcpConfig> }> = [
+  const edits: Array<{
+    name: string
+    change: (container: HTMLElement) => void | Promise<void>
+    expected: Partial<AcpConfig>
+  }> = [
     {
       name: "command",
       change: (container) => typeInto(field(container, "command"), '["/test/other-adapter","--acp"]'),
@@ -385,7 +413,7 @@ describe("AgentBackendSettings save and probe contracts", () => {
       try {
         await settle()
         await manuallyTest(view.container)
-        edit.change(view.container)
+        await edit.change(view.container)
         expect(button(view.container, "activate").disabled).toBe(false)
         expect(button(view.container, "messageTest").disabled).toBe(true)
         button(view.container, "activate").click()
@@ -529,7 +557,7 @@ describe("AgentBackendSettings save and probe contracts", () => {
     const view = mount({ client: mock.client, config: current })
     try {
       await settle()
-      expect(select(view.container, "source").value).toBe("managed")
+      expect(select(view.container, "source").textContent).toContain("agentBackend.managed")
       const card = view.container.querySelector('section[aria-label="agentSettings.adapter"]')
       expect(card).not.toBeNull()
       expect(view.container.querySelector("textarea")).not.toBeNull()
@@ -544,7 +572,7 @@ describe("AgentBackendSettings save and probe contracts", () => {
       pending.resolve(managedStatus(true))
       await settle()
       expect(view.container.querySelector('section[aria-label="agentSettings.adapter"]')).toBe(card)
-      expect(select(view.container, "source").value).toBe("managed")
+      expect(select(view.container, "source").textContent).toContain("agentBackend.managed")
     } finally {
       pending.resolve(managedStatus(true))
       view.dispose()
@@ -568,7 +596,7 @@ describe("AgentBackendSettings save and probe contracts", () => {
       const details = model.closest("details")!
       const card = view.container.querySelector('section[aria-label="agentSettings.adapter"]')
       button(view.container, "refresh").click()
-      expect(select(view.container, "source").value).toBe("managed")
+      expect(select(view.container, "source").textContent).toContain("agentBackend.managed")
       expect(view.container.textContent).toContain("local-test-server")
       pending.reject(new Error("Inspection unavailable"))
       await settle()
@@ -614,7 +642,7 @@ describe("AgentBackendSettings save and probe contracts", () => {
     })
     try {
       await settle()
-      expect(select(view.container, "source").value).toBe("managed")
+      expect(select(view.container, "source").textContent).toContain("agentBackend.managed")
       expect(view.container.textContent).not.toContain("agentBackend.customOnly")
       expect(alerts(view.container)).toContain("Offline")
       expect(button(view.container, "activate").disabled).toBe(true)
@@ -628,7 +656,7 @@ describe("AgentBackendSettings save and probe contracts", () => {
     const view = mount({ client: mock.client, config: {} })
     try {
       await settle()
-      choose(select(view.container, "transport"), "acp")
+      chooseTransport(view.container, "acp")
       expect(button(view.container, "activate").disabled).toBe(false)
       button(view.container, "activate").click()
       await settle()
@@ -652,7 +680,7 @@ describe("AgentBackendSettings save and probe contracts", () => {
     )
     try {
       await settle()
-      choose(select(view.container, "transport"), "acp")
+      chooseTransport(view.container, "acp")
       button(view.container, "activate").click()
       await settle()
       expect(mock.calls).toHaveLength(1)
@@ -809,7 +837,7 @@ describe("AgentBackendSettings save and probe contracts", () => {
     const view = mount({ client: mock.client, config: current })
     try {
       await settle()
-      choose(select(view.container, "transport"), "cli-json")
+      chooseTransport(view.container, "cli-json")
       expect(button(view.container, "activate").disabled).toBe(false)
       button(view.container, "activate").click()
       await settle()
@@ -834,7 +862,7 @@ describe("AgentBackendSettings save and probe contracts", () => {
     const view = mount({ client: mock.client, config: current, advisor: "pi" })
     try {
       await settle()
-      expect(select(view.container, "transport").value).toBe("native-rpc")
+      expect(transportTab(view.container, "native-rpc").getAttribute("aria-selected")).toBe("true")
       expect(maybeButton(view.container, "test")).toBeUndefined()
       expect(button(view.container, "activate").disabled).toBe(false)
       button(view.container, "activate").click()

@@ -1,40 +1,29 @@
 import { Show, type JSX } from "solid-js"
 
 export function AgentSettingsGrid(props: { children: JSX.Element }) {
-  return <div class="flex min-w-0 flex-wrap items-start gap-3">{props.children}</div>
+  return <div class="flex min-w-0 flex-wrap items-stretch gap-3">{props.children}</div>
 }
 
 export function AgentSettingsCard(props: {
   title?: string
   badge?: string
-  priority?: "primary" | "secondary"
   size?: "compact" | "standard" | "wide"
   children: JSX.Element
 }) {
   return (
     <section
       aria-label={props.title}
-      class="min-w-0 max-w-full rounded-xl border p-4"
+      class="min-w-0 max-w-full rounded-xl border border-border-base bg-surface-raised-base p-4"
       classList={{
-        "border-border-base bg-surface-raised-base": props.priority === "primary",
-        "border-border-weak-base bg-surface-base": props.priority !== "primary",
         "w-fit flex-[0_1_auto]": props.size === "compact",
         "w-full flex-[1_1_20rem]": !props.size || props.size === "standard",
         "w-full flex-[1_1_100%]": props.size === "wide",
       }}
     >
       <Show when={props.title || props.badge}>
-        <div class="mb-3 flex flex-wrap items-center gap-2">
+        <div class="mb-3 flex min-h-6 flex-wrap items-center gap-2">
           <Show when={props.title}>
-            <h3
-              class="text-13-medium"
-              classList={{
-                "text-text-strong": props.priority === "primary",
-                "text-text-base": props.priority !== "primary",
-              }}
-            >
-              {props.title}
-            </h3>
+            <h3 class="text-13-medium text-text-strong">{props.title}</h3>
           </Show>
           <Show when={props.badge}>
             <span class="rounded-md bg-surface-secondary px-1.5 py-0.5 text-11-medium text-text-weak">

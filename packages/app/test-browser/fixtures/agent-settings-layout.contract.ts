@@ -194,7 +194,7 @@ describe("agent settings layout contracts", () => {
       expect(cards[0]!.textContent).toContain("Enabled")
       expect(cards[0]!.classList.contains("bg-surface-raised-base")).toBe(true)
       expect(cards[0]!.classList.contains("flex-[1_1_20rem]")).toBe(true)
-      expect(cards[1]!.classList.contains("bg-surface-base")).toBe(true)
+      expect(cards[1]!.classList.contains("bg-surface-raised-base")).toBe(true)
       expect(cards[1]!.classList.contains("w-fit")).toBe(true)
       expect(cards[2]!.classList.contains("flex-[1_1_100%]")).toBe(true)
       expect(details(view.container, "Initially open").open).toBe(true)

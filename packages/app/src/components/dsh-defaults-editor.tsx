@@ -96,7 +96,7 @@ export function DshDefaultsEditor(props: {
         <p class="mt-1 text-12-regular text-text-weak">{language.t("agentSettings.dsh.summary")}</p>
       </div>
       <AgentSettingsGrid>
-        <AgentSettingsCard title={language.t("agentSettings.dsh.common")} priority="primary" size="standard">
+        <AgentSettingsCard title={language.t("agentSettings.dsh.common")} size="standard">
           <div class="flex min-w-0 flex-wrap gap-4">
             <AgentSettingsField>
               <DshChoice
@@ -127,7 +127,7 @@ export function DshDefaultsEditor(props: {
             </AgentSettingsField>
           </div>
         </AgentSettingsCard>
-        <AgentSettingsCard title={language.t("agentSettings.dsh.permissions")} priority="secondary" size="standard">
+        <AgentSettingsCard title={language.t("agentSettings.dsh.permissions")} size="standard">
           <div class="flex min-w-0 flex-wrap gap-4">
             <AgentSettingsField>
               <DshChoice
