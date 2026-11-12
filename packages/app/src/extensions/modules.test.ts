@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot, getOwner } from "solid-js"
 import solidPackage from "solid-js/package.json"
+import { SHARED_EXPORTS } from "../../../extension-kit/shims.js"
 import { HOST_SOLID_VERSION, installExtensionHostModules } from "./modules"
 import { compareSolidVersions, ExtensionActivationManager, type WebExtensionModule } from "./activation"
 import type { ExtensionInfo } from "./types"
@@ -91,6 +92,49 @@ describe("installExtensionHostModules", () => {
   test("reinstall returns the already installed frozen host", () => {
     expect(installExtensionHostModules("other")).toBe(host)
   })
+})
+
+// Parity with the extension-kit shim whitelist: the modules the host
+// publishes and the modules kit rewrites imports to must stay in lockstep,
+// and every name a shim re-exports must exist on the host module or the
+// shim's load-time check rejects the extension. The per-module check runs
+// in a --conditions=browser child because this test file resolves solid-js
+// server builds, whose export surface omits DOM-only helpers the real
+// (browser-bundled) host does provide.
+describe("shared module whitelist parity", () => {
+  test("host module ids match extension-kit SHARED_EXPORTS", () => {
+    expect(Object.keys(host.modules).toSorted()).toEqual(Object.keys(SHARED_EXPORTS).toSorted())
+  })
+
+  test("browser host modules provide every export the kit shims re-export", async () => {
+    const source = `
+      import { installExtensionHostModules } from ${JSON.stringify(new URL("./modules.ts", import.meta.url).href)}
+      const host = installExtensionHostModules()
+      const keys = Object.fromEntries(Object.entries(host.modules).map(([id, mod]) => [id, Object.keys(mod)]))
+      console.log(JSON.stringify(keys))
+    `
+    const child = Bun.spawn([process.execPath, "--conditions=browser", "-e", source], {
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    const timer = setTimeout(() => child.kill(), 10_000)
+    try {
+      const [stdout, stderr, code] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ])
+      if (code !== 0) throw new Error(`Browser host module inspection failed (${code}): ${stderr}`)
+      const keys = JSON.parse(stdout) as Record<string, string[]>
+      expect(Object.keys(keys).toSorted()).toEqual(Object.keys(SHARED_EXPORTS).toSorted())
+      const missing = Object.entries(SHARED_EXPORTS).flatMap(([id, names]) =>
+        names.filter((name) => !(keys[id] ?? []).includes(name)).map((name) => `${id}.${name}`),
+      )
+      expect(missing).toEqual([])
+    } finally {
+      clearTimeout(timer)
+    }
+  }, 15_000)
 })
 
 describe("compareSolidVersions", () => {

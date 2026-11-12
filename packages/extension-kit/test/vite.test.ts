@@ -1,6 +1,8 @@
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { createRequire } from "node:module"
+import { pathToFileURL } from "node:url"
 import { describe, expect, test } from "bun:test"
 import { build } from "vite"
 import extensionKit from "../vite.js"
@@ -106,6 +108,43 @@ describe("extension kit vite build", () => {
     // Nothing leaked outside the scope apart from the intended at-rules.
     const outsideScope = css.split("}").filter((chunk) => chunk.includes(".scope-fixture") && !chunk.includes(SCOPE))
     expect(outsideScope).toEqual([])
+    fs.rmSync(outDir, { recursive: true, force: true })
+  })
+
+  test("stamps the entry chunk with the build-time solid-js version", async () => {
+    const fixtureDir = path.resolve(import.meta.dir, "fixture")
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "extension-kit-stamp-"))
+    const previousCwd = process.cwd()
+    process.chdir(fixtureDir)
+    try {
+      await build({
+        root: fixtureDir,
+        configFile: false,
+        logLevel: "error",
+        plugins: extensionKit({
+          entry: path.join(fixtureDir, "src/web.ts"),
+          outDir,
+        }),
+      })
+    } finally {
+      process.chdir(previousCwd)
+    }
+
+    // The host reads module.__opencodeBuild.solid during activation, so the
+    // stamp must be a real named export of the entry chunk and name the
+    // solid-js version the extension resolved at build time. Minification
+    // may rewrite the local binding, so the namespace export is the contract.
+    const expected = JSON.parse(
+      fs.readFileSync(
+        createRequire(path.join(fixtureDir, "package.json")).resolve("solid-js/package.json"),
+        "utf8",
+      ),
+    ).version
+    const code = fs.readFileSync(path.join(outDir, "index.js"), "utf8")
+    expect(code).toContain("__opencodeBuild")
+    expect(code).toContain(JSON.stringify(expected))
+    const mod = await import(pathToFileURL(path.join(outDir, "index.js")).href)
+    expect(mod.__opencodeBuild).toEqual({ solid: expected })
     fs.rmSync(outDir, { recursive: true, force: true })
   })
 })

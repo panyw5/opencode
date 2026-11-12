@@ -1,9 +1,29 @@
+import fs from "node:fs"
 import path from "node:path"
+import { createRequire } from "node:module"
+import { fileURLToPath } from "node:url"
 import solid from "vite-plugin-solid"
 import { SHARED_EXPORTS, sharedShim } from "./shims.js"
 import { extensionScopePostcssPlugin, scopeExtensionID } from "./scope.js"
 
 const virtualPrefix = "\0opencode:extension-host:"
+
+// The build stamp must record the solid-js the extension is compiled
+// against, so resolve the extension's own install first and only then fall
+// back to the kit's. Returns undefined when solid-js cannot be resolved;
+// the caller warns and skips the stamp instead of writing a wrong version.
+function resolveSolidVersion(baseDir) {
+  for (const base of [path.join(baseDir, "package.json"), fileURLToPath(import.meta.url)]) {
+    try {
+      const pkg = createRequire(base).resolve("solid-js/package.json")
+      const { version } = JSON.parse(fs.readFileSync(pkg, "utf8"))
+      if (typeof version === "string" && version) return version
+    } catch {
+      // Try the next resolution base.
+    }
+  }
+  return undefined
+}
 
 /**
  * @typedef {{ entry?: string; outDir?: string; scope?: string }} ExtensionKitOptions
@@ -19,6 +39,7 @@ export default function extensionKit(options = {}) {
   const entry = path.resolve(process.cwd(), options.entry ?? "src/web.tsx")
   const outDir = path.resolve(process.cwd(), options.outDir ?? "dist/web")
   const scopeID = scopeExtensionID(options)
+  const solidVersion = resolveSolidVersion(path.dirname(entry))
 
   /** @type {import("vite").Plugin} */
   const hostModules = {
@@ -48,6 +69,15 @@ export default function extensionKit(options = {}) {
               entryFileNames: "index.js",
               chunkFileNames: "[name]-[hash].js",
               assetFileNames: (asset) => (asset.name?.endsWith(".css") ? "index.css" : "assets/[name]-[hash][extname]"),
+              // Build metadata read by the host during activation (see
+              // app/src/extensions/activation.ts): module.__opencodeBuild.solid
+              // is compared against the host's shared solid-js version.
+              // Minification may rewrite the local binding but the exported
+              // name is preserved verbatim.
+              banner: (chunk) =>
+                chunk.isEntry && solidVersion
+                  ? `export const __opencodeBuild = { solid: ${JSON.stringify(solidVersion)} };`
+                  : "",
             },
           },
         },
@@ -62,6 +92,11 @@ export default function extensionKit(options = {}) {
     load(id) {
       if (!id.startsWith(virtualPrefix)) return
       return sharedShim(id.slice(virtualPrefix.length))
+    },
+    buildStart() {
+      if (!solidVersion) {
+        this.warn("could not resolve solid-js for this extension; __opencodeBuild metadata will be omitted")
+      }
     },
     generateBundle(_options, bundle) {
       for (const output of Object.values(bundle)) {

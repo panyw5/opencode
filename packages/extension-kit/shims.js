@@ -145,10 +145,18 @@ export function sharedShim(moduleID) {
   const exports = SHARED_EXPORTS[moduleID]
   if (!exports) throw new Error(`Unsupported OpenCode extension host module: ${moduleID}`)
   const module = JSON.stringify(moduleID)
-  const header = `const m = globalThis.${HOST_GLOBAL}?.modules?.[${module}]\nif (!m) throw new Error(${JSON.stringify(`OpenCode host module is unavailable: ${moduleID}`)})`
+  // The export check runs at module evaluation: when the host predates the
+  // kit an extension was built with, a silently undefined export would
+  // surface far from the real cause, so fail loudly with the missing names.
+  const header = [
+    `const m = globalThis.${HOST_GLOBAL}?.modules?.[${module}]`,
+    `if (!m) throw new Error(${JSON.stringify(`OpenCode host module is unavailable: ${moduleID}`)})`,
+    `const missing = ${JSON.stringify(exports)}.filter((n) => !Object.hasOwn(m, n))`,
+    `if (missing.length) throw new Error(${JSON.stringify(`OpenCode host module "${moduleID}" is missing exports: `)} + missing.join(","))`,
+  ]
   const bindings = exports.map((name) => {
     if (!identifier.test(name)) throw new Error(`Invalid shared export name: ${name}`)
     return `export const ${name} = m[${JSON.stringify(name)}]`
   })
-  return [header, ...bindings, ""].join("\n")
+  return [...header, ...bindings, ""].join("\n")
 }
