@@ -15,7 +15,7 @@ function dump(node: Pretty): unknown {
     case "sqrt":
       return { sqrt: node.arg.map(dump) }
     case "group":
-      return node.inner.map(dump)
+      return [node.open, ...node.inner.map(dump), ...(node.close ? [node.close] : [])]
   }
 }
 const line = (source: string) => prettyLines(source)[0].map(dump)

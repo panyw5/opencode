@@ -10,7 +10,7 @@ export type Pretty =
   | { kind: "sup"; base: Pretty[]; exp: Pretty[] }
   | { kind: "sub"; base: Pretty[]; sub: Pretty[] }
   | { kind: "sqrt"; arg: Pretty[] }
-  | { kind: "group"; inner: Pretty[] }
+  | { kind: "group"; open: string; inner: Pretty[]; close: string }
 
 type Tok = { kind: string; text: string }
 
@@ -56,6 +56,7 @@ const MERGE = new Set([
   "??",
   "::",
   "[[",
+  "]]",
   "\u003c|",
   "|>",
   "!!",
@@ -103,7 +104,7 @@ const trim = (items: Pretty[]) => {
   return items.slice(a, b)
 }
 
-type PGroup = { kind: "group"; inner: Pretty[]; args: Pretty[][] }
+type PGroup = { kind: "group"; open: string; inner: Pretty[]; close: string; args: Pretty[][] }
 
 class Parser {
   i = 0
@@ -125,13 +126,29 @@ class Parser {
   // Bracketed group with comma-separated arguments.
   group(): PGroup {
     const open = this.next()!
-    const close = CLOSERS[open.text]
-    const inner: Pretty[] = [this.tok(open)]
+    const closer = CLOSERS[open.text]
+    const inner: Pretty[] = []
     const args: Pretty[][] = []
-    const stop = new Set([",", close])
+    // mergeOps folds adjacent ] into ]], which still must close a single-[.
+    // Stopping on it here lets takeClose split off the leftover ] for an
+    // enclosing bracket (GetAlgebra[a[b]] keeps both ends).
+    const stop = new Set([",", closer, "]]"])
+    const atClose = (t: Tok) => t.text === closer || (closer === "]" && t.text === "]]")
+    let close = ""
+    const takeClose = () => {
+      const t = this.next()!
+      if (t.text === "]]") {
+        close = "]"
+        this.toks.splice(this.i, 0, { kind: "punctuation", text: "]" })
+      } else close = t.text
+    }
     while (this.peek()) {
       const t = this.peek()!
-      if (t.text === close || t.text === ",") break
+      if (t.text === ",") break
+      if (atClose(t)) {
+        takeClose()
+        break
+      }
       const arg = this.seq(stop)
       args.push(arg)
       inner.push(...arg)
@@ -142,13 +159,10 @@ class Parser {
         this.next()
         continue
       }
-      if (n.text === close) {
-        inner.push(this.tok(n))
-        this.next()
-      }
+      if (atClose(n)) takeClose()
       break
     }
-    return { kind: "group", inner, args }
+    return { kind: "group", open: open.text, inner, close, args }
   }
 
   // A single primary expression: literal, name, blank, slot or bracketed group.
