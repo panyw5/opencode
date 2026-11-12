@@ -5,6 +5,7 @@ import { Readable, Transform, type TransformCallback } from "node:stream"
 import { pipeline } from "node:stream/promises"
 import { createGunzip } from "node:zlib"
 import tar from "tar-stream"
+import { MAX_ARCHIVE_BYTES } from "@opencode-ai/util/extension-release"
 
 export type ArchiveLimits = {
   compressedBytes: number
@@ -17,7 +18,7 @@ export type ArchiveLimits = {
 }
 
 export const archiveLimits: Readonly<ArchiveLimits> = Object.freeze({
-  compressedBytes: 100 * 1024 * 1024,
+  compressedBytes: MAX_ARCHIVE_BYTES,
   inflatedBytes: 512 * 1024 * 1024,
   fileBytes: 128 * 1024 * 1024,
   entries: 20_000,

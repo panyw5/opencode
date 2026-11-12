@@ -1,4 +1,13 @@
-import { isExtensionID } from "./id"
+import semver from "semver"
+import {
+  MAX_ARCHIVE_BYTES,
+  MAX_DESCRIPTOR_BYTES,
+  MAX_SIGNATURE_BYTES,
+  ReleaseProtocolError,
+  isSha256Hex,
+  normalizeReleaseHttpsUrl,
+  parseReleaseDescriptor as parseSharedDescriptor,
+} from "@opencode-ai/util/extension-release"
 import { ExtensionInstallationError } from "./install-error"
 
 export type ReleaseDescriptor = {
@@ -6,64 +15,44 @@ export type ReleaseDescriptor = {
   version: string
   artifactUrl: string
   artifactSha256: string
+  /** Host compatibility range declared by the release; absent means unrestricted but undeclared. */
+  engines?: { opencode: string }
 }
 
-const MAX_ARCHIVE_BYTES = 100 * 1024 * 1024
-const MAX_DESCRIPTOR_BYTES = 64 * 1024
 const DESCRIPTOR_INVALID = "Release descriptor does not match schema version 1"
 
-function exact(value: unknown, keys: string[]): value is Record<string, unknown> {
-  return (
-    !!value &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    Object.keys(value).length === keys.length &&
-    keys.every((key) => Object.hasOwn(value, key))
-  )
-}
-
 function httpsURL(value: string, descriptor = false) {
-  if (
-    !/^https:\/\//i.test(value) ||
-    /[\s\\\u0000-\u001f\u007f]/.test(value) ||
-    value.length > 16_384 ||
-    value.includes("#") ||
-    (descriptor && value.includes("?"))
-  ) {
-    throw new ExtensionInstallationError("Release URL must be a credential-free https URL")
+  try {
+    return normalizeReleaseHttpsUrl(value, { descriptor })
+  } catch (error) {
+    if (error instanceof ReleaseProtocolError) {
+      throw new ExtensionInstallationError("Release URL must be a credential-free https URL")
+    }
+    throw error
   }
-  const target = new URL(value)
-  if (target.protocol !== "https:" || target.username || target.password) {
-    throw new ExtensionInstallationError("Release URL must be a credential-free https URL")
-  }
-  return target.href
 }
 
 /** Data-only validation; the installer repeats schema, identity and digest checks. */
 export function parseReleaseDescriptor(value: unknown): ReleaseDescriptor {
-  if (
-    !exact(value, ["schemaVersion", "id", "version", "artifact"]) ||
-    value.schemaVersion !== 1 ||
-    typeof value.id !== "string" ||
-    !isExtensionID(value.id) ||
-    typeof value.version !== "string" ||
-    !value.version ||
-    !exact(value.artifact, ["url", "sha256"]) ||
-    typeof value.artifact.url !== "string" ||
-    typeof value.artifact.sha256 !== "string"
-  ) {
+  let parsed: ReturnType<typeof parseSharedDescriptor>
+  try {
+    parsed = parseSharedDescriptor(value, { isValidRange: (range) => semver.validRange(range) !== null })
+  } catch (error) {
+    if (!(error instanceof ReleaseProtocolError)) throw error
+    if (error.reason === "artifactUrl") {
+      throw new ExtensionInstallationError("Release URL must be a credential-free https URL")
+    }
+    if (error.reason === "artifactSha256") {
+      throw new ExtensionInstallationError("Artifact digest must be 64 hexadecimal digits")
+    }
     throw new ExtensionInstallationError(DESCRIPTOR_INVALID)
   }
-  const artifact = value.artifact
-  const url = httpsURL(artifact.url as string)
-  if (!/^[a-f0-9]{64}$/i.test(artifact.sha256 as string)) {
-    throw new ExtensionInstallationError("Artifact digest must be 64 hexadecimal digits")
-  }
   return {
-    id: value.id,
-    version: value.version,
-    artifactUrl: url,
-    artifactSha256: (artifact.sha256 as string).toLowerCase(),
+    id: parsed.id,
+    version: parsed.version,
+    artifactUrl: parsed.artifact.url,
+    artifactSha256: parsed.artifact.sha256,
+    ...(parsed.engines === undefined ? {} : { engines: parsed.engines }),
   }
 }
 
@@ -129,7 +118,23 @@ export async function fetchReleaseDocument(releaseUrl: string, doFetch: typeof f
       "Release descriptor is not valid JSON; use a raw stable.json URL, not a web page",
     )
   }
-  return { url, document, descriptor: parseReleaseDescriptor(value) }
+  // The detached signature is optional here: the installer enforces it for
+  // pinned trusted origins and treats a missing or unreadable one as unsigned.
+  let signature: string | undefined
+  try {
+    const signed = await doFetch(`${url}.sig`, { redirect: "error", signal: AbortSignal.timeout(120_000) })
+    if (signed.ok) {
+      const bytes_sig = await boundedBytes(
+        signed,
+        MAX_SIGNATURE_BYTES,
+        "Release signature exceeds the 4 KiB download limit",
+      )
+      signature = new TextDecoder("utf-8", { fatal: true }).decode(bytes_sig)
+    }
+  } catch {
+    signature = undefined
+  }
+  return { url, document, signature, descriptor: parseReleaseDescriptor(value) }
 }
 
 export async function fetchReleaseDescriptor(releaseUrl: string, doFetch: typeof fetch = fetch) {
@@ -148,7 +153,7 @@ export async function fetchArtifact(
   download?: (url: string) => Promise<Uint8Array>,
 ): Promise<{ bytes: Uint8Array; digest: string }> {
   const url = httpsURL(descriptor.artifactUrl)
-  if (descriptor.artifactSha256 !== undefined && !/^[a-f0-9]{64}$/i.test(descriptor.artifactSha256)) {
+  if (descriptor.artifactSha256 !== undefined && !isSha256Hex(descriptor.artifactSha256)) {
     throw new ExtensionInstallationError("Invalid archive SHA-256")
   }
   try {
@@ -174,7 +179,6 @@ export async function fetchArtifact(
 }
 
 export async function fetchArtifactVerified(descriptor: ReleaseDescriptor, doFetch: typeof fetch = fetch) {
-  if (!/^[a-f0-9]{64}$/i.test(descriptor.artifactSha256))
-    throw new ExtensionInstallationError("Invalid archive SHA-256")
+  if (!isSha256Hex(descriptor.artifactSha256)) throw new ExtensionInstallationError("Invalid archive SHA-256")
   return fetchArtifact(descriptor, doFetch)
 }

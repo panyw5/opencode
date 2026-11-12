@@ -1,3 +1,4 @@
+import { isSha256Hex } from "@opencode-ai/util/extension-release"
 import type {
   InstallationOperations,
   InstallationRequest,
@@ -60,7 +61,7 @@ export function createLocalInstallationOperations(
  * the file bytes server-side; this comparison is UX-only.
  */
 export function digestMatches(expected: string, actual: string): boolean {
-  return expected.trim().toLowerCase() === actual.trim().toLowerCase() && /^[a-f0-9]{64}$/i.test(actual.trim())
+  return expected.trim().toLowerCase() === actual.trim().toLowerCase() && isSha256Hex(actual.trim())
 }
 
 type ArchiveDropHandler = (paths: string[]) => boolean

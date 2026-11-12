@@ -1,6 +1,8 @@
+import { MAX_ARCHIVE_BYTES } from "@opencode-ai/util/extension-release"
+
 export type ArchiveFetch = (url: string, init: RequestInit) => Promise<Response>
 
-const MAX_BYTES = 100 * 1024 * 1024
+const MAX_BYTES = MAX_ARCHIVE_BYTES
 
 function target(value: string) {
   const url = new URL(value)

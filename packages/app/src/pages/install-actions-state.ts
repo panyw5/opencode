@@ -1,3 +1,4 @@
+import { isSha256Hex } from "@opencode-ai/util/extension-release"
 import type { ExtensionInfo, FileViewerContribution } from "../extensions/types"
 
 type WireNumber = number | "NaN" | "Infinity" | "-Infinity"
@@ -35,6 +36,8 @@ export interface PreparedInstallation {
     settings?: Record<string, unknown>
   }
   source: NonNullable<ExtensionInfo["source"]>
+  signatureStatus?: "verified" | "unsigned"
+  releaseSequence?: WireNumber
   expectedRevision?: WireNumber
   expectedRegistryVersion?: WireNumber
   registryUpgrade?: { from: 2; to: 3 }
@@ -172,7 +175,7 @@ export function installationRequest(
       const parsed = new URL(url)
       if (!/^https:\/\//i.test(url) || parsed.protocol !== "https:" || parsed.username || parsed.password) return
       if (input.sourceType === "release" && (parsed.search || parsed.hash || /[?#]/.test(url))) return
-      if (input.sourceType === "archive" && sha256 && !/^[a-f0-9]{64}$/i.test(sha256)) return
+      if (input.sourceType === "archive" && sha256 && !isSha256Hex(sha256)) return
       source =
         input.sourceType === "release"
           ? { type: "release", url: parsed.href }
@@ -188,7 +191,7 @@ export function installationRequest(
       !path ||
       path.length > 4096 ||
       !/\.tgz$/i.test(path) ||
-      !/^[a-f0-9]{64}$/i.test(sha256)
+      !isSha256Hex(sha256)
     )
       return
     source = { type: "local", path, sha256: sha256.toLowerCase() }
@@ -254,6 +257,7 @@ export const installationTranslationKeys = [
   "config.extensions.install.downloadHost",
   "config.extensions.install.integrityMatched",
   "config.extensions.install.publisherUnsigned",
+  "config.extensions.install.publisherVerified",
   "config.extensions.install.registryUpgradeWarning",
   "config.extensions.install.acceptRegistryUpgrade",
   "config.extensions.install.npm",

@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto"
 import { stat } from "node:fs/promises"
-
-const MAX_ARCHIVE_BYTES = 200 * 1024 * 1024
+import { MAX_ARCHIVE_BYTES } from "@opencode-ai/util/extension-release"
 
 export function archiveSha256(buffer: Buffer): string {
   return createHash("sha256").update(buffer).digest("hex")
