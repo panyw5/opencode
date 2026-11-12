@@ -37,32 +37,49 @@ function resultFromJob(job: GptProJob): GptProCachedResult {
   }
 }
 
-export function parseGptProOutputFallback(
+export type GptProOutputRecord = {
+  id: string
+  phase?: string
+  url?: string
+  text?: string
+  html?: string
+  error?: string
+}
+
+export function parseGptProOutputRecord(
   output: string | undefined,
   expectedID: string,
-): GptProCachedResult | undefined {
+): GptProOutputRecord | undefined {
   if (!output) return
   try {
     const value = JSON.parse(output) as Record<string, unknown>
     const id = typeof value.consultation_id === "string" ? value.consultation_id : undefined
-    if (!id || id !== expectedID || !finalPhase(value.phase)) return
+    if (!id || id !== expectedID) return
     return {
       id,
-      phase: value.phase,
-      url: typeof value.url === "string" ? value.url : "",
+      phase: typeof value.phase === "string" ? value.phase : undefined,
+      url: typeof value.url === "string" ? value.url : undefined,
       text:
         typeof value.text === "string"
           ? value.text
           : typeof value.partial_text === "string"
             ? value.partial_text
             : undefined,
-      error: typeof value.error === "string" ? value.error : undefined,
       html: typeof value.html === "string" ? value.html : undefined,
-      source: "output",
+      error: typeof value.error === "string" ? value.error : undefined,
     }
   } catch {
     return
   }
+}
+
+export function parseGptProOutputFallback(
+  output: string | undefined,
+  expectedID: string,
+): GptProCachedResult | undefined {
+  const record = parseGptProOutputRecord(output, expectedID)
+  if (!record || !finalPhase(record.phase)) return
+  return { ...record, phase: record.phase, url: record.url ?? "", source: "output" }
 }
 
 export async function resolveGptProView(

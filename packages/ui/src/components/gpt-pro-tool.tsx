@@ -1,4 +1,4 @@
-import { createEffect, createMemo, For, lazy, onCleanup, Show, Suspense } from "solid-js"
+import { createEffect, createMemo, createSignal, For, lazy, onCleanup, Show, Suspense } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { ToolPart } from "@opencode-ai/sdk/v2"
 import { type GptProAPI } from "@opencode-ai/util/gpt-pro"
@@ -7,7 +7,9 @@ import { Button } from "./button"
 import { FileIcon } from "./file-icon"
 import { Spinner } from "./spinner"
 import { handoffGptPro } from "./gpt-pro-handoff"
-import { resolveGptProView, type GptProCachedResult } from "./gpt-pro-result"
+import { parseGptProOutputRecord, resolveGptProView, type GptProCachedResult } from "./gpt-pro-result"
+import { gptProMarkdown } from "./gpt-pro-markdown"
+import { Markdown } from "./markdown"
 import { useI18n } from "../context/i18n"
 import { GptProErrorNotice } from "./gpt-pro-error-notice"
 import { gptProDiagnostic, type GptProIssueCode } from "@opencode-ai/util/gpt-pro-error"
@@ -48,6 +50,22 @@ export type AttachmentPreviewState = {
 }
 const desktopApi = () =>
   typeof window === "undefined" ? undefined : (window as unknown as { api?: { gptPro?: GptProAPI } }).api?.gptPro
+
+const HISTORICAL_PHASES = new Set([
+  "queued",
+  "preparing",
+  "sending",
+  "generating",
+  "completed",
+  "paused",
+  "cancelled",
+  "failed",
+  "interrupted",
+  "send_uncertain",
+  "pending",
+  "running",
+  "error",
+])
 
 function displayName(value: string) {
   let path = value
@@ -182,6 +200,7 @@ export function GptProTool(props: Props) {
     error: "",
     busy: false,
     historyOpen: !api() && !!id(),
+    history: { loading: false, result: undefined as GptProCachedResult | undefined, error: "" },
     preview: { open: false, loading: false, error: "", file: undefined as AttachmentPreviewData | undefined },
     result: {
       open: false,
@@ -197,6 +216,54 @@ export function GptProTool(props: Props) {
   const previewJobID = resolvedID
   let previewRequest = 0
   let resultRequest = 0
+  let historyRequest = 0
+  const recorded = createMemo(() => {
+    const jobID = id()
+    return jobID ? parseGptProOutputRecord(props.output, jobID) : undefined
+  })
+  const recordedText = createMemo(() => {
+    const record = recorded()
+    return record ? gptProMarkdown(record.html, record.text) : ""
+  })
+  const historyText = createMemo(() => {
+    const saved = state.history.result
+    return recordedText() || (saved ? gptProMarkdown(saved.html, saved.text) : "")
+  })
+  const historicalPhaseLabel = () => {
+    const value = historical().phase
+    return value && HISTORICAL_PHASES.has(value) ? t(`ui.tool.gptPro.phase.${value}`) : value
+  }
+  createEffect(() => {
+    if (!state.historyOpen || state.history.loading || state.history.result || recordedText()) return
+    const client = api()
+    const jobID = resolvedID()
+    if (!client || !jobID) return
+    const request = ++historyRequest
+    set("history", { loading: true, error: "", result: undefined })
+    console.debug(`[gpt-pro-tool] history record resolving id=${jobID}`)
+    void resolveGptProView(client, jobID, props.output)
+      .then((resolution) => {
+        if (request !== historyRequest) return
+        if (resolution.kind === "cached") {
+          console.debug(
+            `[gpt-pro-tool] history record ready id=${resolution.result.id} source=${resolution.result.source}`,
+          )
+          set("history", { loading: false, result: resolution.result, error: "" })
+          return
+        }
+        if (resolution.kind === "unavailable") {
+          console.warn(`[gpt-pro-tool] history record unavailable id=${resolution.id}`)
+          set("history", { loading: false, error: resolution.error ?? "" })
+          return
+        }
+        set("history", { loading: false })
+      })
+      .catch((error) => {
+        if (request !== historyRequest) return
+        console.warn(`[gpt-pro-tool] history record failed id=${jobID} error=${String(error)}`)
+        set("history", { loading: false, error: String(error) })
+      })
+  })
   const closePreview = () => {
     console.debug(`[gpt-pro-tool] attachment preview closed job=${previewJobID() ?? "unknown"}`)
     previewRequest++
@@ -213,6 +280,7 @@ export function GptProTool(props: Props) {
     )
     previewRequest++
     resultRequest++
+    historyRequest++
   })
   const phase = () => execution()?.phase ?? archive()?.phase ?? (historyOnly() ? (historical().phase ?? "") : "")
   const queueReason = () => execution()?.queueReason ?? (historyOnly() ? String(props.metadata.queue_reason ?? "") : "")
@@ -640,8 +708,13 @@ export function GptProTool(props: Props) {
       </Show>
       <Show when={state.historyOpen}>
         <section data-testid="gpt-pro-historical-record" class="p-3 text-12-regular text-text-weak">
-          <div>
-            {t("ui.tool.gptPro.state.historical")}: {historical().phase}
+          <div class="flex items-center gap-2">
+            <span>
+              {t("ui.tool.gptPro.state.historical")}: {historicalPhaseLabel()}
+            </span>
+            <Show when={state.history.loading}>
+              <Spinner />
+            </Show>
           </div>
           <Show when={!historyOnly() && historicalAttachments().length}>
             <div>
@@ -649,6 +722,40 @@ export function GptProTool(props: Props) {
                 .map((attachment) => attachment.name)
                 .join(", ")}
             </div>
+          </Show>
+          <Show when={historyText()}>
+            {(text) => {
+              const [markdownReady, setMarkdownReady] = createSignal(false)
+              return (
+                <div
+                  class="mt-2 max-h-96 overflow-y-auto rounded-lg border border-border-weak-base bg-background-base p-3"
+                  data-scrollable
+                  data-testid="gpt-pro-historical-output"
+                >
+                  <pre
+                    class="whitespace-pre-wrap break-words text-13-regular text-text-base"
+                    classList={{ hidden: markdownReady() }}
+                    aria-hidden={markdownReady()}
+                    data-testid="gpt-pro-historical-text-fallback"
+                  >
+                    {text()}
+                  </pre>
+                  <Markdown
+                    text={text()}
+                    cacheKey={`gpt-pro-history-${props.part?.id ?? id() ?? "record"}`}
+                    fileLinks={false}
+                    eager
+                    onStage={(_key, stage) => {
+                      if (stage === "full") setMarkdownReady(true)
+                    }}
+                    class="gpt-pro-result-markdown"
+                  />
+                </div>
+              )
+            }}
+          </Show>
+          <Show when={state.history.error}>
+            <GptProErrorNotice error={state.history.error} />
           </Show>
           <pre class="whitespace-pre-wrap break-words" data-testid="gpt-pro-historical-error">
             {gptProDiagnostic(
