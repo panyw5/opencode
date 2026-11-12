@@ -23,9 +23,26 @@ const flat = (items: unknown[]): string => JSON.stringify(items)
 
 describe("prettyLines", () => {
   test("fraction binds immediate operands", () => {
-    expect(line("(a+b)/2")).toEqual([
-      { frac: [[["(", "a", "+", "b", ")"]], ["2"]] },
-    ])
+    // A sole (...) operand is unwrapped: the bar already groups it.
+    expect(line("(a+b)/2")).toEqual([{ frac: [["a", "+", "b"], ["2"]] }])
+  })
+  test("fraction unwraps both parenthesized operands", () => {
+    expect(line("(x+y)/(x-y)")).toEqual([{ frac: [["x", "+", "y"], ["x", "-", "y"]] }])
+    // unclosed or non-paren wrappers stay put
+    expect(line("x/[a+b]")[0]).toEqual({ frac: [["x"], [["[", "a", "+", "b", "]"]]] })
+  })
+  test("groups carrying fractions are marked tall", () => {
+    const hasTall = (src: string): boolean =>
+      prettyLines(src)[0].some((n) => n.kind === "group" && n.tall)
+    expect(hasTall("f[(a/b)]")).toBe(true)
+    expect(hasTall("f[a/b]")).toBe(true)
+    expect(hasTall("g[h[(a/b)]]")).toBe(true)
+    expect(hasTall("{a/b, c}")).toBe(true)
+    expect(hasTall("f[x]")).toBe(false)
+    expect(hasTall("Sum[x, {i, n}]")).toBe(false)
+    // sqrt only makes a group tall when its argument is tall too
+    expect(hasTall("f[Sqrt[a/b]]")).toBe(true)
+    expect(hasTall("f[Sqrt[x]]")).toBe(false)
   })
   test("fraction keeps implicit-times factor after the denominator", () => {
     // 1/2 (a+b) typesets as a unit fraction followed by the group.

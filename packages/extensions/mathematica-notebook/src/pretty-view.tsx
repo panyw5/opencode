@@ -1,5 +1,36 @@
-import { createMemo, For, onCleanup, onMount } from "solid-js"
+import { createMemo, For, Show } from "solid-js"
 import { prettyLines, type Pretty } from "./pretty"
+
+// Stretched-delimiter outlines in a 10x100 box. The svg is scaled to the row's
+// height and non-scaling-stroke keeps the line at text weight, the way
+// Mathematica draws tall brackets instead of blowing up the glyph.
+const DELIM: Record<string, string> = {
+  "(": "M7.6 2C4.9 13 3.4 30 3.4 50S4.9 87 7.6 98",
+  ")": "M2.4 2C5.1 13 6.6 30 6.6 50S5.1 87 2.4 98",
+  "[": "M7 3H3.4V97H7",
+  "]": "M3 3H6.6V97H3",
+  "[[": "M8.6 3H6.4V97H8.6 M4.4 3H2.2V97H4.4",
+  "]]": "M1.4 3H3.6V97H1.4 M5.6 3H7.8V97H5.6",
+  "{": "M7.4 2C5.2 2 4.4 4.5 4.4 9V40C4.4 45.5 2.2 46.5 2.2 50C2.2 53.5 4.4 54.5 4.4 60V91C4.4 95.5 5.2 98 7.4 98",
+  "}": "M2.6 2C4.8 2 5.6 4.5 5.6 9V40C5.6 45.5 7.8 46.5 7.8 50C7.8 53.5 5.6 54.5 5.6 60V91C5.6 95.5 4.8 98 2.6 98",
+  "\u003c|": "M5.6 4L2.2 50L5.6 96 M8 4V96",
+  "|>": "M4.4 4L7.8 50L4.4 96 M2 4V96",
+}
+
+// The check part of the radical in a 14x100 box; the overline comes from the
+// radicand's own border-top so it always sits above the content.
+const RADSIGN = "M1 52L4.6 52L7 94L11 1.5L13.8 1.5"
+
+function Delim(props: { text: string }) {
+  const d = () => DELIM[props.text]
+  return (
+    <Show when={d()} fallback={<span data-token="punctuation">{props.text}</span>}>
+      <svg class="oc-nb-d" data-d={props.text} viewBox="0 0 10 100" preserveAspectRatio="none" aria-hidden="true">
+        <path d={d()} fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" vector-effect="non-scaling-stroke" />
+      </svg>
+    </Show>
+  )
+}
 
 function Items(props: { items: Pretty[] }) {
   return <For each={props.items}>{(node) => <Node node={node} />}</For>
@@ -39,23 +70,30 @@ function Node(props: { node: Pretty }) {
     case "sqrt":
       return (
         <span class="oc-nb-sqrt">
-          √<span class="oc-nb-rad">
+          <svg class="oc-nb-radsign" viewBox="0 0 14 100" preserveAspectRatio="none" aria-hidden="true">
+            <path d={RADSIGN} fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" vector-effect="non-scaling-stroke" />
+          </svg>
+          <span class="oc-nb-rad">
             <Items items={props.node.arg} />
           </span>
         </span>
       )
     case "group":
+      // Flat groups keep their source glyphs so wrapping stays free; tall
+      // groups become a flex row whose drawn delimiters stretch to content.
+      if (!props.node.tall)
+        return (
+          <>
+            <span data-token="punctuation">{props.node.open}</span>
+            <Items items={props.node.inner} />
+            {props.node.close ? <span data-token="punctuation">{props.node.close}</span> : null}
+          </>
+        )
       return (
-        <span class="oc-nb-gr">
-          <span class="oc-nb-d" data-token="punctuation">
-            {props.node.open}
-          </span>
+        <span class="oc-nb-gt" data-o={props.node.open} data-c={props.node.close}>
+          <Delim text={props.node.open} />
           <Items items={props.node.inner} />
-          {props.node.close ? (
-            <span class="oc-nb-d" data-token="punctuation">
-              {props.node.close}
-            </span>
-          ) : null}
+          {props.node.close ? <Delim text={props.node.close} /> : null}
         </span>
       )
     default:
@@ -63,51 +101,12 @@ function Node(props: { node: Pretty }) {
   }
 }
 
-// Enclosing delimiters track the height of what they wrap: each .oc-nb-d
-// glyph is scaled to the union of its siblings' boxes (a taller fraction or
-// radical inside a call gets matching brackets). One observer per rendered
-// view refits every group whenever the block relayouts.
-function fitGroups(root: HTMLElement) {
-  for (const gr of root.querySelectorAll(".oc-nb-gr")) {
-    let top = Infinity
-    let bot = -Infinity
-    // A nested group's own box is only a line tall — its fraction content
-    // overflows it — so union every descendant, not just direct children.
-    for (const c of gr.querySelectorAll("*")) {
-      if (c.classList.contains("oc-nb-d")) continue
-      const r = c.getBoundingClientRect()
-      if (r.top < top) top = r.top
-      if (r.bottom > bot) bot = r.bottom
-    }
-    const fs = parseFloat(getComputedStyle(gr).fontSize)
-    if (!fs) continue
-    const h = bot > top ? bot - top : fs
-    // Glyphs like ( [ { stand ~1.15em tall, so the font is set a bit under the
-    // measured content height; never shrink below the plain text size.
-    const px = Math.min(fs * 4, Math.max(fs, h * 0.88))
-    const size = `${Math.round(px * 10) / 10}px`
-    for (const d of gr.children) {
-      if (!d.classList.contains("oc-nb-d")) continue
-      const el = d as HTMLElement
-      if (el.style.fontSize !== size) el.style.fontSize = size
-    }
-  }
-}
-
 // Rendered display of a code cell. Purely visual: the textarea still owns
 // editing, focus, selection and the raw source.
 export function PrettyCode(props: { value: string }) {
   const lines = createMemo(() => prettyLines(props.value))
-  let root!: HTMLDivElement
-  onMount(() => {
-    const fit = () => fitGroups(root)
-    fit()
-    const ro = new ResizeObserver(fit)
-    ro.observe(root)
-    onCleanup(() => ro.disconnect())
-  })
   return (
-    <div class="oc-nb-pretty" aria-hidden="true" ref={root}>
+    <div class="oc-nb-pretty" aria-hidden="true">
       <For each={lines()}>
         {(line) => <div class="oc-nb-pl">{line.length ? <Items items={line} /> : "​"}</div>}
       </For>

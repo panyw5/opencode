@@ -10,7 +10,7 @@ export type Pretty =
   | { kind: "sup"; base: Pretty[]; exp: Pretty[] }
   | { kind: "sub"; base: Pretty[]; sub: Pretty[] }
   | { kind: "sqrt"; arg: Pretty[] }
-  | { kind: "group"; open: string; inner: Pretty[]; close: string }
+  | { kind: "group"; open: string; inner: Pretty[]; close: string; tall: boolean }
 
 type Tok = { kind: string; text: string }
 
@@ -104,7 +104,44 @@ const trim = (items: Pretty[]) => {
   return items.slice(a, b)
 }
 
-type PGroup = { kind: "group"; open: string; inner: Pretty[]; close: string; args: Pretty[][] }
+// A fraction bar groups its operands on its own, so a sole (...) around
+// the whole numerator or denominator is dropped from the display, like
+// Mathematica's typeset input.
+const unparen = (items: Pretty[]) => {
+  const t = trim(items)
+  return t.length === 1 && t[0].kind === "group" && t[0].open === "(" && t[0].close === ")"
+    ? t[0].inner
+    : t
+}
+
+type PGroup = {
+  kind: "group"
+  open: string
+  inner: Pretty[]
+  close: string
+  tall: boolean
+  args: Pretty[][]
+}
+
+// Whether a group's contents stand taller than one line of source: any
+// fraction, or a taller construct (radical, script) carrying one. Drives the
+// drawn-stroke delimiters in the view.
+const tall = (n: Pretty): boolean => {
+  switch (n.kind) {
+    case "frac":
+      return true
+    case "sqrt":
+      return n.arg.some(tall)
+    case "sup":
+      return n.base.some(tall) || n.exp.some(tall)
+    case "sub":
+      return n.base.some(tall) || n.sub.some(tall)
+    case "group":
+      return n.tall
+    default:
+      return false
+  }
+}
 
 class Parser {
   i = 0
@@ -162,7 +199,7 @@ class Parser {
       if (atClose(n)) takeClose()
       break
     }
-    return { kind: "group", open: open.text, inner, close, args }
+    return { kind: "group", open: open.text, inner, close, tall: inner.some(tall), args }
   }
 
   // A single primary expression: literal, name, blank, slot or bracketed group.
@@ -256,7 +293,7 @@ class Parser {
           acc = [...acc, this.tok(t)]
           continue
         }
-        acc = [{ kind: "frac", num: trim(acc), den: trim(den) }]
+        acc = [{ kind: "frac", num: unparen(acc), den: unparen(den) }]
         continue
       }
       if (isFiller(t)) {
