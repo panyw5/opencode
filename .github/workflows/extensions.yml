@@ -1,0 +1,222 @@
+name: extensions
+
+# Extension-system CI (T6.3). Runs only on the panyw5/opencode fork.
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - ".github/workflows/extensions.yml"
+      - "packages/opencode/src/extension/**"
+      - "packages/opencode/test/extension/**"
+      - "packages/app/src/extensions/**"
+      - "packages/extension-kit/**"
+      - "packages/extensions/**"
+      - "packages/wolfram-lang/**"
+      - "packages/util/src/extension-release*"
+      - "packages/desktop/src/main/extension*"
+      - "packages/desktop/src/main/archive-digest*"
+      - "script/extension-*.ts"
+      - "script/verify-pack.ts"
+  pull_request:
+    branches: [dev]
+    paths:
+      - ".github/workflows/extensions.yml"
+      - "packages/opencode/src/extension/**"
+      - "packages/opencode/test/extension/**"
+      - "packages/app/src/extensions/**"
+      - "packages/extension-kit/**"
+      - "packages/extensions/**"
+      - "packages/wolfram-lang/**"
+      - "packages/util/src/extension-release*"
+      - "packages/desktop/src/main/extension*"
+      - "packages/desktop/src/main/archive-digest*"
+      - "script/extension-*.ts"
+      - "script/verify-pack.ts"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  opencode:
+    if: github.repository == 'panyw5/opencode'
+    name: opencode
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Typecheck
+        working-directory: packages/opencode
+        run: bun run typecheck
+
+      # Includes the T6.1 e2e-lifecycle test, which runs by default.
+      - name: Run extension tests
+        working-directory: packages/opencode
+        run: bun test --timeout 30000 test/extension
+
+  app:
+    if: github.repository == 'panyw5/opencode'
+    name: app
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Typecheck
+        working-directory: packages/app
+        run: bun run typecheck
+
+      # Scoped to src/extensions only: the full test:unit suite covers the whole
+      # app and is already exercised by the `test` workflow.
+      - name: Run extension tests
+        working-directory: packages/app
+        run: bun test --preload ./happydom.ts ./src/extensions
+
+  extension-kit:
+    if: github.repository == 'panyw5/opencode'
+    name: extension-kit
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Typecheck
+        working-directory: packages/extension-kit
+        run: bun run typecheck
+
+      - name: Run tests
+        working-directory: packages/extension-kit
+        run: bun run test
+
+      - name: Build
+        working-directory: packages/extension-kit
+        run: bun run build
+
+  extension:
+    if: github.repository == 'panyw5/opencode'
+    name: extension (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        name:
+          - hello-viewer
+          - mathematica-notebook
+          - wls-repl
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Typecheck
+        working-directory: packages/extensions/${{ matrix.name }}
+        run: bun run typecheck
+
+      - name: Run tests
+        working-directory: packages/extensions/${{ matrix.name }}
+        run: bun run test
+
+      - name: Build
+        working-directory: packages/extensions/${{ matrix.name }}
+        run: bun run build
+
+  wolfram-lang:
+    if: github.repository == 'panyw5/opencode'
+    name: wolfram-lang
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Typecheck
+        working-directory: packages/wolfram-lang
+        run: bun run typecheck
+
+      - name: Run tests
+        working-directory: packages/wolfram-lang
+        run: bun run test
+
+  util:
+    if: github.repository == 'panyw5/opencode'
+    name: util
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Typecheck
+        working-directory: packages/util
+        run: bun run typecheck
+
+      - name: Run tests
+        working-directory: packages/util
+        run: bun test
+
+  desktop:
+    if: github.repository == 'panyw5/opencode'
+    name: desktop
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Typecheck
+        working-directory: packages/desktop
+        run: bun run typecheck
+
+      # Scoped to extension-related main-process tests. The full desktop suite
+      # imports the real `electron` module, which fails outside Electron.
+      - name: Run extension tests
+        working-directory: packages/desktop
+        run: bun test src/main/extension src/main/archive-digest.test.ts
+
+  verify-pack:
+    if: github.repository == 'panyw5/opencode'
+    name: verify-pack
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      # T4.2 out-of-repo build verification: packs extension-kit, scaffolds an
+      # external extension project in a temp dir, then vite build + bun build +
+      # tsc --noEmit against the shipped dist.
+      - name: Run out-of-repo pack verification
+        run: bun script/verify-pack.ts
