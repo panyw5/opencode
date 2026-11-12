@@ -37,6 +37,7 @@ import { FileProvider } from "@/context/file"
 import { GlobalSDKProvider } from "@/context/global-sdk"
 import { GlobalSyncProvider } from "@/context/global-sync"
 import { ExtensionHostProvider } from "@/extensions/host"
+import { notifyExtensionPageError } from "@/extensions/safe-mode"
 import { HighlightsProvider } from "@/context/highlights"
 import { LanguageProvider, type Locale, useLanguage } from "@/context/language"
 import { LayoutProvider, useLayout } from "@/context/layout"
@@ -339,6 +340,9 @@ const ConfigRoute = () => (
   <ConfigRouteFrame>
     <ErrorBoundary
       fallback={(error, reset) => {
+        // Page-level boundary: count the crash toward extension crash-strike
+        // safe mode when an extension failure was observed this launch.
+        notifyExtensionPageError()
         // 捕获 context 相关错误，提供重试机制
         if (error.message?.includes("GlobalSyncProvider")) {
           return (
@@ -504,7 +508,15 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
       >
         <LanguageProvider locale={props.locale}>
           <UiI18nBridge>
-            <ErrorBoundary fallback={(error) => <ErrorPage error={error} />}>
+            <ErrorBoundary
+              fallback={(error) => {
+                // Page-level boundary: count the crash toward extension
+                // crash-strike safe mode when an extension failure was
+                // observed this launch.
+                notifyExtensionPageError()
+                return <ErrorPage error={error} />
+              }}
+            >
               <CrashProbe />
               <QueryProvider>
                 <DialogProvider>

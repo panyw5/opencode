@@ -116,6 +116,42 @@ describe("extension scoped mount", () => {
     }
   })
 
+  test("renders a disable button next to retry that invokes the disable callback", async () => {
+    const log = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      await createRoot(async (dispose) => {
+        let disabled = 0
+        const Wrapped = extensionScopedMount(
+          "acme.demo",
+          () => {
+            throw new Error("setup failed")
+          },
+          "demo_tool",
+          { disable: () => disabled++ },
+        )
+        let root: HTMLElement | undefined
+        try {
+          root = Wrapped({}) as HTMLElement
+          document.body.append(root)
+          await Promise.resolve()
+          const buttons = [...root.querySelectorAll("button")]
+          expect(buttons.map((button) => button.textContent)).toEqual(["Retry", "Disable extension"])
+          expect(buttons[1].dataset.action).toBe("disable-extension")
+          buttons[1].click()
+          await Promise.resolve()
+          expect(disabled).toBe(1)
+          // Retrying still works after a declined disable.
+          root.querySelector("button")!.click()
+        } finally {
+          root?.remove()
+          dispose()
+        }
+      })
+    } finally {
+      log.mockRestore()
+    }
+  })
+
   test("contains an accessor error during the initial insert", async () => {
     const log = spyOn(console, "error").mockImplementation(() => {})
     try {

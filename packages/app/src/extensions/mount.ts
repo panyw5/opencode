@@ -1,5 +1,6 @@
 import { createComponent, ErrorBoundary, type Component } from "solid-js"
 import { insert } from "solid-js/web"
+import { markExtensionFailure } from "./safe-mode"
 
 // DOM mount contract for extension CSS scoping. The extension-kit vite build
 // prefixes every selector with `[data-extension="<id>"]` (see
@@ -38,6 +39,7 @@ export function extensionScopedMount<P extends Record<string, any>>(
   extensionID: string,
   component: Component<P>,
   tool = extensionID,
+  options?: { disable?: () => unknown },
 ): Component<P> {
   return (props: P) => {
     const root = document.createElement("div")
@@ -49,6 +51,7 @@ export function extensionScopedMount<P extends Record<string, any>>(
         fallback(error, reset) {
           const message = error instanceof Error ? error.message : String(error)
           console.error(`[extension-tool] render failed id=${extensionID} tool=${tool} error=${message}`)
+          markExtensionFailure()
           const fallback = document.createElement("div")
           fallback.className = "flex flex-col gap-2 p-3 text-text-weak"
           const title = document.createElement("div")
@@ -65,6 +68,23 @@ export function extensionScopedMount<P extends Record<string, any>>(
             reset()
           }
           fallback.append(title, detail, retry)
+          if (options?.disable) {
+            const disable = document.createElement("button")
+            disable.type = "button"
+            disable.className = "self-start text-text-strong underline"
+            disable.dataset.action = "disable-extension"
+            disable.textContent = "Disable extension"
+            disable.onclick = () => {
+              console.info(`[extension-tool] disable requested id=${extensionID} tool=${tool}`)
+              try {
+                void Promise.resolve(options.disable!())
+              } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error)
+                console.warn(`[extension-tool] disable failed id=${extensionID} tool=${tool} error=${reason}`)
+              }
+            }
+            fallback.append(disable)
+          }
           return fallback
         },
         get children() {
@@ -80,4 +100,28 @@ export function extensionScopedMount<P extends Record<string, any>>(
     )
     return root
   }
+}
+
+export type ExtensionDisableRequest = {
+  id: string
+  // Where the disable was triggered from (tool renderer, panel, viewer
+  // placeholder); logged for debugging.
+  surface: string
+  setEnabled(id: string, enabled: boolean): Promise<unknown>
+}
+
+// Shared "disable this extension" action for every extension error fallback.
+// The host's setEnabled reconciles registrations and open surfaces (panels
+// fall back to the unavailable view, tool renderers restore the previous
+// registration), so the button never mutates registries directly. The
+// returned promise never rejects: toggle failures are logged, not thrown.
+export function requestExtensionDisable(input: ExtensionDisableRequest) {
+  console.info(`[extension-disable] requested id=${input.id} surface=${input.surface}`)
+  return Promise.resolve(input.setEnabled(input.id, false)).then(
+    () => console.info(`[extension-disable] disabled id=${input.id} surface=${input.surface}`),
+    (error) => {
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn(`[extension-disable] failed id=${input.id} surface=${input.surface} error=${message}`)
+    },
+  )
 }

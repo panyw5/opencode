@@ -902,6 +902,12 @@ export const dict = {
   "session.extensionTab.unavailable.title": "Extension unavailable",
   "session.extensionTab.unavailable.description":
     "The extension that provides this panel is not installed or is disabled.",
+  "session.extensionTab.disable": "Disable extension",
+  "extensions.safeMode.auto.title": "Extensions disabled after repeated errors",
+  "extensions.safeMode.auto.description":
+    "Extensions caused errors on consecutive launches and were skipped. Review the installed extensions, then re-enable them.",
+  "extensions.safeMode.auto.reactivate": "Re-enable extensions",
+  "extensions.contributions.missing": "Extension did not register declared contributions: {{missing}}",
   "prompt.context.removeActiveFile": "Remove active file from context",
   "prompt.context.removeFile": "Remove file from context",
   "prompt.action.attachFile": "Add files",

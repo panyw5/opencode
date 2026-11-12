@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot, getOwner } from "solid-js"
-import { ExtensionActivationManager, ExtensionStyleLoadError, type WebExtensionModule } from "./activation"
+import {
+  ExtensionActivationManager,
+  ExtensionStyleLoadError,
+  missingContributions,
+  type MissingContribution,
+  type WebExtensionModule,
+} from "./activation"
 import { createExtensionApi } from "./api"
 import { declaredViewer, extensionViewerID } from "./context"
 import { safeModeFromURL } from "./safe-mode"
@@ -27,7 +33,13 @@ const manifest = (): ExtensionInfo => ({
   },
 })
 
-function manager(input: { load?: () => Promise<WebExtensionModule>; style?: () => Promise<void> } = {}) {
+function manager(
+  input: {
+    load?: () => Promise<WebExtensionModule>
+    style?: () => Promise<void>
+    missing?: (manifest: ExtensionInfo, missing: MissingContribution[]) => void
+  } = {},
+) {
   const events: string[] = []
   const owner = createRoot((dispose) => {
     const current = getOwner()
@@ -58,6 +70,7 @@ function manager(input: { load?: () => Promise<WebExtensionModule>; style?: () =
       events.push(`command:add:${contribution.id}`)
       return () => events.push(`command:remove:${contribution.id}`)
     },
+    onMissingContributions: input.missing,
     callRpc: () => {
       events.push("rpc")
       return Promise.resolve(undefined)
@@ -419,6 +432,72 @@ describe("extension host helpers", () => {
     serverOnly.web = { base: "http://127.0.0.1:4096/asset/", styles: [], apiVersion: 1 }
     await expect(instance.activate(serverOnly)).rejects.toThrow("no web entry")
     expect(events).toEqual([])
+    dispose()
+  })
+
+  test("missingContributions diffs declared contributions against registrations", () => {
+    const missing = missingContributions(manifest(), {
+      fileViewers: new Set(["hello"]),
+      toolRenderers: new Set<string>(),
+      panels: new Set<string>(),
+      commands: new Set(["restart"]),
+    })
+    expect(missing).toEqual([
+      { kind: "toolRenderers", id: "wolfram_eval" },
+      { kind: "panels", id: "main" },
+    ])
+  })
+
+  test("audits declared contributions after activate and reports the missing ones", async () => {
+    const reported: Array<{ id: string; missing: string[] }> = []
+    const { instance, dispose } = manager({
+      missing: (item, missing) => {
+        reported.push({ id: item.id, missing: missing.map((entry) => `${entry.kind}:${entry.id}`) })
+      },
+      load: async () => ({
+        default: {
+          id: "test.viewer",
+          apiVersion: 1,
+          activate(ctx: any) {
+            ctx.fileViewers.register({ id: "hello", component: () => null })
+            ctx.commands.register({ id: "restart", run: () => {} })
+          },
+        },
+      }),
+    })
+    const warn = console.warn
+    const warnings: string[] = []
+    console.warn = (message: string) => warnings.push(String(message))
+    try {
+      await instance.activate(manifest())
+    } finally {
+      console.warn = warn
+    }
+    expect(reported).toEqual([{ id: "test.viewer", missing: ["toolRenderers:wolfram_eval", "panels:main"] }])
+    expect(warnings.some((line) => line.includes("toolRenderers:wolfram_eval"))).toBe(true)
+    expect(warnings.every((line) => typeof line === "string")).toBe(true)
+    dispose()
+  })
+
+  test("does not report when every declared contribution registers", async () => {
+    const reported: MissingContribution[][] = []
+    const { instance, dispose } = manager({
+      missing: (_item, missing) => reported.push(missing),
+      load: async () => ({
+        default: {
+          id: "test.viewer",
+          apiVersion: 1,
+          activate(ctx: any) {
+            ctx.fileViewers.register({ id: "hello", component: () => null })
+            ctx.toolRenderers.register({ tool: "wolfram_eval", component: () => null })
+            ctx.panels.register({ id: "main", component: () => null })
+            ctx.commands.register({ id: "restart", run: () => {} })
+          },
+        },
+      }),
+    })
+    await instance.activate(manifest())
+    expect(reported).toEqual([])
     dispose()
   })
 })

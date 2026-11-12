@@ -739,6 +739,12 @@ export const dict = {
   "session.fileTab.viewer.default": "預設檢視器",
   "session.extensionTab.unavailable.title": "擴充功能無法使用",
   "session.extensionTab.unavailable.description": "提供此面板的擴充功能未安裝或已停用。",
+  "session.extensionTab.disable": "停用此擴充功能",
+  "extensions.safeMode.auto.title": "擴充功能因重複錯誤已停用",
+  "extensions.safeMode.auto.description":
+    "擴充功能在連續啟動時造成頁面錯誤，已自動略過。請檢查已安裝的擴充功能，然後重新啟用。",
+  "extensions.safeMode.auto.reactivate": "重新啟用擴充功能",
+  "extensions.contributions.missing": "擴充功能未註冊其宣告的貢獻點：{{missing}}",
   "session.files.all": "所有檔案",
   "session.files.empty": "沒有檔案",
   "session.files.binaryContent": "二進位檔案（無法顯示內容）",

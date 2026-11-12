@@ -7,6 +7,9 @@ import { Mark } from "@opencode-ai/ui/logo"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useSessionLayout } from "@/pages/session/session-layout"
+import { useExtensionHost } from "./host"
+import { requestExtensionDisable } from "./mount"
+import { markExtensionFailure } from "./safe-mode"
 import {
   extensionPanelTitle,
   getExtensionPanel,
@@ -55,6 +58,7 @@ export function ExtensionPanelVisual(props: { tab: string }): JSX.Element {
 export function ExtensionPanelContent(props: { tab: string }): JSX.Element {
   const language = useLanguage()
   const sdk = useSDK()
+  const host = useExtensionHost()
   const { params, tabs } = useSessionLayout()
   const parsed = createMemo(() => parseExtensionPanelTab(props.tab))
   const entry = createMemo(() => {
@@ -101,13 +105,30 @@ export function ExtensionPanelContent(props: { tab: string }): JSX.Element {
           <div data-extension={value().extensionID} class="oc-extension-root relative h-full min-h-0 overflow-hidden">
             <ErrorBoundary
               fallback={(error, reset) => {
+                const extensionID = value().extensionID
                 console.error(`[extension-panel] render failed tab=${props.tab} err=${errorText(error)}`)
+                markExtensionFailure()
                 return (
                   <div class="h-full px-6 flex flex-col items-center justify-center text-center gap-3">
                     <div class="text-13-regular text-text-weak break-words max-w-96">{errorText(error)}</div>
-                    <Button variant="secondary" size="small" onClick={reset}>
-                      {language.t("ui.presentation.retry")}
-                    </Button>
+                    <div class="flex items-center justify-center gap-2">
+                      <Button variant="secondary" size="small" onClick={reset}>
+                        {language.t("ui.presentation.retry")}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="small"
+                        onClick={() =>
+                          void requestExtensionDisable({
+                            id: extensionID,
+                            surface: `panel:${props.tab}`,
+                            setEnabled: host.setEnabled,
+                          })
+                        }
+                      >
+                        {language.t("session.extensionTab.disable")}
+                      </Button>
+                    </div>
                   </div>
                 )
               }}

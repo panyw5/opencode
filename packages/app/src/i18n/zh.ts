@@ -896,6 +896,12 @@ export const dict = {
   "session.fileTab.viewer.default": "默认查看器",
   "session.extensionTab.unavailable.title": "扩展不可用",
   "session.extensionTab.unavailable.description": "提供此面板的扩展未安装或已停用。",
+  "session.extensionTab.disable": "停用此扩展",
+  "extensions.safeMode.auto.title": "扩展因反复出错已停用",
+  "extensions.safeMode.auto.description":
+    "扩展在连续启动中引发页面错误，已自动跳过。请检查已安装的扩展，然后重新启用。",
+  "extensions.safeMode.auto.reactivate": "重新启用扩展",
+  "extensions.contributions.missing": "扩展未注册其声明的贡献点：{{missing}}",
   "prompt.context.removeActiveFile": "从上下文移除活动文件",
   "prompt.context.removeFile": "从上下文移除文件",
   "prompt.action.attachFile": "附加文件",

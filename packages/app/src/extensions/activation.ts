@@ -51,6 +51,33 @@ function declaredSolidVersion(module: WebExtensionModule) {
   return typeof solid === "string" ? solid : undefined
 }
 
+export type ContributionKind = "fileViewers" | "toolRenderers" | "panels" | "commands"
+
+export type MissingContribution = { kind: ContributionKind; id: string }
+
+// Declared contributions that activate() did not register. `contributes.settings`
+// is host-rendered straight from the manifest and has no activation-time
+// registration to verify.
+export function missingContributions(
+  manifest: ExtensionInfo,
+  registered: Record<ContributionKind, ReadonlySet<string>>,
+): MissingContribution[] {
+  const missing: MissingContribution[] = []
+  for (const viewer of manifest.contributes.fileViewers ?? []) {
+    if (!registered.fileViewers.has(viewer.id)) missing.push({ kind: "fileViewers", id: viewer.id })
+  }
+  for (const renderer of manifest.contributes.toolRenderers ?? []) {
+    if (!registered.toolRenderers.has(renderer.tool)) missing.push({ kind: "toolRenderers", id: renderer.tool })
+  }
+  for (const panel of manifest.contributes.panels ?? []) {
+    if (!registered.panels.has(panel.id)) missing.push({ kind: "panels", id: panel.id })
+  }
+  for (const command of manifest.contributes.commands ?? []) {
+    if (!registered.commands.has(command.id)) missing.push({ kind: "commands", id: command.id })
+  }
+  return missing
+}
+
 export type ActivationDeps = {
   hostOwner: Owner
   importModule(url: string): Promise<WebExtensionModule>
@@ -59,6 +86,10 @@ export type ActivationDeps = {
   registerToolRenderer(manifest: ExtensionInfo, contribution: ToolRendererContribution): () => void
   registerPanel(manifest: ExtensionInfo, contribution: PanelContribution): () => void
   registerCommand(manifest: ExtensionInfo, contribution: CommandContribution): () => void
+  // Post-activation audit: the manager logs a warn for every declared
+  // contribution activate() did not register; the host uses this hook to
+  // surface the same list in the UI.
+  onMissingContributions?(manifest: ExtensionInfo, missing: MissingContribution[]): void
   // Server bridge. The host owns transport/auth/events; the manager only
   // forwards per-extension calls keyed by the activated manifest.
   callRpc(
@@ -187,6 +218,20 @@ export class ExtensionActivationManager {
       }
     }
 
+    // Tracks which declared contributions activate() actually registered so
+    // the post-activation audit can report manifest/code drift.
+    const registered: Record<ContributionKind, Set<string>> = {
+      fileViewers: new Set<string>(),
+      toolRenderers: new Set<string>(),
+      panels: new Set<string>(),
+      commands: new Set<string>(),
+    }
+    const track = <T>(kind: ContributionKind, id: string, register: () => T) => {
+      const result = register()
+      registered[kind].add(id)
+      return result
+    }
+
     await new Promise<void>((resolve, reject) => {
       runWithOwner(this.deps.hostOwner, () => {
         createRoot((dispose) => {
@@ -201,10 +246,16 @@ export class ExtensionActivationManager {
             owner: extensionOwner,
             valid,
             subscriptions: runtime.subscriptions,
-            registerViewer: (contribution) => this.deps.registerViewer(runtime.manifest, contribution),
-            registerToolRenderer: (contribution) => this.deps.registerToolRenderer(runtime.manifest, contribution),
-            registerPanel: (contribution) => this.deps.registerPanel(runtime.manifest, contribution),
-            registerCommand: (contribution) => this.deps.registerCommand(runtime.manifest, contribution),
+            registerViewer: (contribution) =>
+              track("fileViewers", contribution.id, () => this.deps.registerViewer(runtime.manifest, contribution)),
+            registerToolRenderer: (contribution) =>
+              track("toolRenderers", contribution.tool, () =>
+                this.deps.registerToolRenderer(runtime.manifest, contribution),
+              ),
+            registerPanel: (contribution) =>
+              track("panels", contribution.id, () => this.deps.registerPanel(runtime.manifest, contribution)),
+            registerCommand: (contribution) =>
+              track("commands", contribution.id, () => this.deps.registerCommand(runtime.manifest, contribution)),
             callRpc: (input) => this.deps.callRpc(runtime.manifest, input),
             listenEvents: (name, listener) => this.deps.listenEvents(runtime.manifest, name, listener),
             readSetting: (key) => this.deps.readSetting(runtime.manifest, key),
@@ -225,7 +276,16 @@ export class ExtensionActivationManager {
         })
       })
     })
-    if (!valid()) await this.disposeRuntime(runtime)
+    if (!valid()) {
+      await this.disposeRuntime(runtime)
+      return
+    }
+    const missing = missingContributions(runtime.manifest, registered)
+    if (missing.length > 0) {
+      const summary = missing.map((item) => `${item.kind}:${item.id}`).join(",")
+      console.warn(`[extension-host] declared contributions missing id=${runtime.manifest.id} missing=${summary}`)
+      this.deps.onMissingContributions?.(runtime.manifest, missing)
+    }
   }
 
   async deactivate(id: string) {
