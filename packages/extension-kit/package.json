@@ -6,6 +6,7 @@
   "license": "MIT",
   "exports": {
     "./web": "./src/web.ts",
+    "./rpc": "./src/rpc.ts",
     "./server": "./src/server.ts",
     "./vite": "./vite.js"
   },

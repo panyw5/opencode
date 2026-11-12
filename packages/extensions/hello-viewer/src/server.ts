@@ -3,8 +3,8 @@ import {
   type ExtensionHooks,
   type ExtensionHost,
   type ExtensionService,
-  type RpcHandler,
 } from "@opencode-ai/extension-kit/server"
+import { messageInput, rpc, textInput } from "./contract"
 import { spawn, type ChildProcess } from "node:child_process"
 import { tool } from "@opencode-ai/plugin/tool"
 import { resolveChildRuntime } from "./child-runtime"
@@ -146,31 +146,31 @@ const extension = defineServerExtension({
     const state: ChildState = {}
 
     const service: ExtensionService = {
-      rpc: {
-        echo: async (input) => {
-          const message =
-            typeof (input as { message?: unknown } | null | undefined)?.message === "string"
-              ? (input as { message: string }).message
-              : ""
-          return {
-            echo: message,
+      rpc: rpc.handlers({
+        echo: {
+          input: messageInput,
+          handle: async (input) => ({
+            echo: input.message ?? "",
             extension: EXTENSION_ID,
             at: new Date().toISOString(),
-          }
+          }),
         },
 
         /**
          * Event demo: turns an RPC call into a server-pushed event so the
          * web part can exercise `ctx.rpc` and `ctx.events` together.
          */
-        greet: async (input, ctx) => {
-          const message =
-            typeof (input as { message?: unknown } | null | undefined)?.message === "string"
-              ? (input as { message: string }).message
-              : "hello from the server part"
-          const payload = { message, from: EXTENSION_ID, at: new Date().toISOString() }
-          host.emit(GREETING_EVENT, payload, { directory: ctx.directory })
-          return payload
+        greet: {
+          input: messageInput,
+          handle: async (input, ctx) => {
+            const payload = {
+              message: input.message ?? "hello from the server part",
+              from: EXTENSION_ID,
+              at: new Date().toISOString(),
+            }
+            host.emit(GREETING_EVENT, payload, { directory: ctx.directory })
+            return payload
+          },
         },
 
         /** Explicitly spawns the demo child; cheap and lazy by design. */
@@ -179,23 +179,19 @@ const extension = defineServerExtension({
           return { running: true, pid: child.pid ?? -1 }
         },
 
-        "child.ping": async (input) => {
-          if (!isRunning(state.child)) {
-            throw new Error("child is not running; call child.start first")
-          }
-          const text =
-            typeof (input as { text?: unknown } | null | undefined)?.text === "string"
-              ? (input as { text: string }).text
-              : "ping"
-          const echoed = await pingChild(state.child, text)
-          return { echoed }
+        "child.ping": {
+          input: textInput,
+          handle: async (input) => {
+            if (!isRunning(state.child)) {
+              throw new Error("child is not running; call child.start first")
+            }
+            const echoed = await pingChild(state.child, input.text ?? "ping")
+            return { echoed }
+          },
         },
 
-        "child.stop": async () => {
-          const stopped = await stopChild(state)
-          return { stopped }
-        },
-      },
+        "child.stop": async () => ({ stopped: await stopChild(state) }),
+      }),
 
       dispose: async () => {
         await stopChild(state)

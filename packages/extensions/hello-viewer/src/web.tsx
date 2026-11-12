@@ -2,14 +2,17 @@ import { createMemo, createSignal, For, Show } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { defineWebExtension, type ExtensionContext, type FileViewerProps } from "@opencode-ai/extension-kit/web"
+import { rpc, type Contract } from "./contract"
+import type { RpcContractOutput } from "@opencode-ai/extension-kit/rpc"
 import "./web.css"
 
 const EXTENSION_ID = "example.hello-viewer"
 const GREETING_EVENT = `${EXTENSION_ID}/greeting`
 
-type HelloRpc = ExtensionContext["rpc"]
-type HelloEvents = ExtensionContext["events"]
-type Bridge = { rpc?: HelloRpc; events?: HelloEvents }
+// The typed caller bound to the host bridge; see contract.ts for the shared
+// contract between this web part and the server part.
+type HelloCall = ReturnType<typeof rpc.bind>
+type Bridge = { rpc?: ExtensionContext["rpc"]; events?: ExtensionContext["events"] }
 
 const [bridge, setBridge] = createSignal<Bridge>({})
 const [log, setLog] = createSignal<string[]>([])
@@ -21,15 +24,16 @@ function appendLog(entry: string) {
   setLog((prev) => [...prev.slice(-19), `[${stamp()}] ${entry}`])
 }
 
-async function runRpc(label: string, run: (rpc: HelloRpc) => Promise<string>) {
-  const rpc = bridge().rpc
-  if (!rpc) {
+async function runRpc(label: string, run: (call: HelloCall) => Promise<string>) {
+  const bridgeRpc = bridge().rpc
+  if (!bridgeRpc) {
     appendLog(`${label}: RPC bridge not available in this host`)
     return
   }
+  const call = rpc.bind(bridgeRpc)
   setBusy(label === "echo" ? "echo" : label === "greet" ? "greet" : "child")
   try {
-    appendLog(`${label}: ${await run(rpc)}`)
+    appendLog(`${label}: ${await run(call)}`)
   } catch (error) {
     appendLog(`${label} failed: ${error instanceof Error ? error.message : String(error)}`)
   } finally {
@@ -59,27 +63,25 @@ function HelloViewer(props: FileViewerProps) {
   }
 
   const echo = () =>
-    void runRpc("echo", async (rpc) => {
-      const result = await rpc.call<{ echo: string; at: string }>("echo", {
-        message: `hello from web (${props.file.path})`,
-      })
+    void runRpc("echo", async (call) => {
+      const result = await call("echo", { message: `hello from web (${props.file.path})` })
       return JSON.stringify(result)
     })
 
   const childPing = () =>
-    void runRpc("child", async (rpc) => {
-      await rpc.call("child.start")
+    void runRpc("child", async (call) => {
+      await call("child.start")
       try {
-        const ping = await rpc.call<{ echoed: string }>("child.ping", { text: `ping (${props.file.name})` })
+        const ping = await call("child.ping", { text: `ping (${props.file.name})` })
         return JSON.stringify(ping)
       } finally {
-        await rpc.call("child.stop")
+        await call("child.stop")
       }
     })
 
   const greet = () =>
-    void runRpc("greet", async (rpc) => {
-      const result = await rpc.call<{ message: string }>("greet", { message: `greet me (${props.file.name})` })
+    void runRpc("greet", async (call) => {
+      const result = await call("greet", { message: `greet me (${props.file.name})` })
       return `server emitted event: ${JSON.stringify(result)}`
     })
 
@@ -167,10 +169,10 @@ export default defineWebExtension({
   activate(context: ExtensionContext) {
     context.log.info("activating hello viewer")
     const offGreeting = context.events.on(GREETING_EVENT, (data) => {
-      const payload = data && typeof data === "object" ? (data as { message?: unknown }) : undefined
-      appendLog(
-        `event ${GREETING_EVENT}: ${typeof payload?.message === "string" ? payload.message : JSON.stringify(data)}`,
-      )
+      // The event payload mirrors the `greet` output shape from the contract.
+      const payload =
+        data && typeof data === "object" ? (data as Partial<RpcContractOutput<Contract, "greet">>) : undefined
+      appendLog(`event ${GREETING_EVENT}: ${payload?.message ?? JSON.stringify(data)}`)
     })
     setBridge({ rpc: context.rpc, events: context.events })
 

@@ -46,10 +46,18 @@ describe("hello-viewer server extension", () => {
     await service.dispose?.()
   })
 
-  test("echo rpc tolerates a missing or malformed message", async () => {
+  test("echo rpc rejects malformed input with invalid_input", async () => {
     const { host } = makeHost()
     const service = (await extension.activate?.(host as never)) ?? {}
-    const result = (await service.rpc?.["echo"](null, { signal: new AbortController().signal })) as {
+    for (const input of [null, "nope", { message: 1 }]) {
+      const error = await service.rpc?.["echo"](input, { signal: new AbortController().signal }).then(
+        () => undefined,
+        (failure: unknown) => failure,
+      )
+      expect(error).toMatchObject({ name: "ExtensionRpcError", code: "invalid_input" })
+    }
+    // A missing `message` field is valid and falls back to the default.
+    const result = (await service.rpc?.["echo"]({}, { signal: new AbortController().signal })) as {
       echo: string
     }
     expect(result.echo).toBe("")
