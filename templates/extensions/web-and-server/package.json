@@ -1,0 +1,50 @@
+{
+  "name": "opencode-web-extension-starter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A standalone, dependency-free OpenCode extension starter with web and server parts.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    "./web": "./src/web.js",
+    "./server": "./src/server.js"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "pack": "node scripts/release.mjs --pack-only",
+    "release": "node scripts/release.mjs"
+  },
+  "opencode": {
+    "manifestVersion": 1,
+    "id": "example.web-extension-starter",
+    "displayName": "Web Extension Starter",
+    "description": "A minimal extension with a file viewer and a server RPC.",
+    "web": {
+      "apiVersion": 1,
+      "styles": [
+        "./src/web.css"
+      ]
+    },
+    "activation": [
+      "onFileViewer:starter"
+    ],
+    "contributes": {
+      "fileViewers": [
+        {
+          "id": "starter",
+          "title": "Starter Viewer",
+          "extensions": [
+            "ocstarter"
+          ],
+          "mode": "replace"
+        }
+      ]
+    },
+    "permissions": []
+  }
+}

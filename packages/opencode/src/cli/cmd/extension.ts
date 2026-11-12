@@ -18,6 +18,7 @@ import {
 } from "@/extension/install"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ExtensionID, type Info, type Source } from "@/extension/schema"
+import { createFromTemplate, packPackage, TEMPLATES, validatePackage } from "@/extension/release-author"
 import { errorMessage } from "@/util/error"
 import { isSha256Hex } from "@opencode-ai/util/extension-release"
 
@@ -419,6 +420,122 @@ const LinkCommand = effectCmd({
   }),
 })
 
+// Authoring commands (create/validate/pack) run no extension code and never
+// touch the shared registry, so they are not gated by mutationsAllowed.
+function authorAttempt<A>(run: () => Promise<A>) {
+  return Effect.tryPromise({ try: run, catch: (error) => errorMessage(error) }).pipe(
+    Effect.catch((message) => fail(message)),
+  )
+}
+
+const ValidateCommand = effectCmd({
+  command: "validate [directory]",
+  describe: "validate an extension package directory before packing or installing",
+  instance: false,
+  builder: (yargs) =>
+    yargs
+      .positional("directory", {
+        type: "string",
+        default: ".",
+        describe: "extension package directory",
+      })
+      .option("json", { type: "boolean", default: false, describe: "print JSON" }),
+  handler: Effect.fn("Cli.extension.validate")(function* (args) {
+    const directory = path.resolve(String(args.directory ?? "."))
+    const result = yield* authorAttempt(() => validatePackage(directory))
+    if (args.json) {
+      process.stdout.write(
+        `${JSON.stringify(
+          {
+            id: result.loaded.id,
+            name: result.loaded.name,
+            version: result.loaded.version,
+            displayName: result.loaded.displayName,
+            server: result.loaded.serverEntry ?? null,
+            web: result.loaded.entry ?? null,
+            styles: result.loaded.styles,
+            icon: result.loaded.icon ?? null,
+            files: result.files,
+            warnings: result.warnings,
+          },
+          null,
+          2,
+        )}\n`,
+      )
+      return
+    }
+    const entries = [
+      result.loaded.serverEntry ? `server=${text(result.loaded.serverEntry)}` : undefined,
+      result.loaded.entry ? `web=${text(result.loaded.entry)}` : undefined,
+    ].filter(Boolean)
+    UI.println(`${text(result.loaded.id)}@${text(result.loaded.version)} is valid`)
+    UI.println(`Name: ${text(result.loaded.name)}`)
+    UI.println(`Display name: ${text(result.loaded.displayName)}`)
+    UI.println(`Entries: ${entries.join(", ") || "none"}`)
+    UI.println(`Packed files: ${result.files.length}`)
+    UI.println(`Warnings: ${result.warnings.map(text).join(", ") || "none"}`)
+  }),
+})
+
+const PackCommand = effectCmd({
+  command: "pack [directory]",
+  describe: "validate and pack an extension directory into an installable .tgz",
+  instance: false,
+  builder: (yargs) =>
+    yargs.positional("directory", {
+      type: "string",
+      default: ".",
+      describe: "extension package directory",
+    }),
+  handler: Effect.fn("Cli.extension.pack")(function* (args) {
+    const directory = path.resolve(String(args.directory ?? "."))
+    const result = yield* authorAttempt(() => packPackage(directory))
+    UI.println(`${text(result.id)}@${text(result.version)} packed (${result.files} files)`)
+    UI.println(`Archive: ${text(result.archive)}`)
+    UI.println(`sha256: ${result.sha256}`)
+    UI.println(
+      `Install locally: opencode extension install ${text(result.archive)} --sha256 ${result.sha256} --yes`,
+    )
+  }),
+})
+
+const CreateCommand = effectCmd({
+  command: "create <directory>",
+  describe: "create a new extension project from a template",
+  instance: false,
+  builder: (yargs) =>
+    yargs
+      .positional("directory", {
+        type: "string",
+        demandOption: true,
+        describe: "new extension package directory",
+      })
+      .option("template", {
+        type: "string",
+        choices: TEMPLATES,
+        demandOption: true,
+        describe: "template to copy",
+      })
+      .option("id", { type: "string", describe: "opencode extension id (default: derived from directory name)" })
+      .option("name", { type: "string", describe: "npm package name (default: derived from directory name)" })
+      .option("display-name", { type: "string", describe: "display name (default: derived from directory name)" }),
+  handler: Effect.fn("Cli.extension.create")(function* (args) {
+    const result = yield* authorAttempt(() =>
+      createFromTemplate(path.resolve(String(args.directory)), {
+        template: String(args.template),
+        ...(args.id === undefined ? {} : { id: args.id }),
+        ...(args.name === undefined ? {} : { name: args.name }),
+        ...(args.displayName === undefined ? {} : { displayName: args.displayName }),
+      }),
+    )
+    UI.println(
+      `${UI.Style.TEXT_SUCCESS_BOLD}Created${UI.Style.TEXT_NORMAL} ${result.id} in ${text(result.dir)}`,
+    )
+    UI.println(`Files: ${result.files.length}`)
+    UI.println("Next: edit the generated files, then run `opencode extension validate` and `opencode extension pack`")
+  }),
+})
+
 const ListCommand = effectCmd({
   command: "list",
   aliases: ["ls"],
@@ -479,6 +596,9 @@ export const ExtensionCommand = cmd({
   describe: "manage OpenCode extensions",
   builder: (yargs) =>
     yargs
+      .command(CreateCommand)
+      .command(ValidateCommand)
+      .command(PackCommand)
       .command(LinkCommand)
       .command(InstallCommand)
       .command(UpdateCommand)

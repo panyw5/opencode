@@ -52,20 +52,37 @@ function fail(message: string): never {
   throw new Error(`Invalid extension archive: ${message}`)
 }
 
-function archivePath(name: string, directory: boolean, limits: ArchiveLimits) {
+function pathParts(name: string, directory: boolean, limits: ArchiveLimits) {
   if (Buffer.byteLength(name) > limits.pathBytes) fail("path limit exceeded")
   if (/[\\\x00-\x1f\x7f:<>"|?*]/.test(name) || name.startsWith("/")) fail("unsafe path")
   const value = directory && name.endsWith("/") ? name.slice(0, -1) : name
   const parts = value.split("/")
-  if (parts[0] !== "package") fail("expected package/ root")
-  if (parts.length - 1 > limits.depth) fail("depth limit exceeded")
   for (const part of parts) {
     if (!part || part === "." || part === ".." || /[. ]$/.test(part)) fail("unsafe path component")
     if (/^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/i.test(part)) fail("reserved Windows name")
     if (forbidden.has(part.toLowerCase())) fail(`forbidden path component: ${part}`)
   }
+  return parts
+}
+
+function archivePath(name: string, directory: boolean, limits: ArchiveLimits) {
+  const parts = pathParts(name, directory, limits)
+  if (parts[0] !== "package") fail("expected package/ root")
+  if (parts.length - 1 > limits.depth) fail("depth limit exceeded")
   if (parts.length === 1 && !directory) fail("package root must be a directory")
   return parts.slice(1)
+}
+
+/**
+ * The same per-component path rules extractArchive enforces below the
+ * `package/` prefix, applied to a path relative to a package directory. Used
+ * by authoring tools (extension validate/pack/create) to predict whether a
+ * packed file is legal inside an extension archive. Throws on rejection.
+ */
+export function packPathParts(name: string, directory = false, limits: ArchiveLimits = archiveLimits) {
+  const parts = pathParts(name, directory, limits)
+  if (parts.length > limits.depth) fail("depth limit exceeded")
+  return parts
 }
 
 function countBytes(limit: number, label: string) {

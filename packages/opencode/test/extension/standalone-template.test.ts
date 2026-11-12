@@ -7,7 +7,7 @@ import { extractArchive } from "../../src/extension/archive"
 import { load } from "../../src/extension/manifest"
 
 const repository = path.resolve(import.meta.dir, "../../../..")
-const template = path.join(repository, "templates/extensions/server-only")
+const templates = path.join(repository, "templates/extensions")
 const author = path.join(repository, "script/extension-release.ts")
 const root = await mkdtemp(path.join(await realpath(tmpdir()), "oc-standalone-template-"))
 afterAll(() => rm(root, { recursive: true, force: true }))
@@ -43,12 +43,12 @@ async function run(command: string[], cwd: string, environment: NodeJS.ProcessEn
   return { stdout, stderr }
 }
 
-async function copy() {
+async function copy(template: string) {
   const directory = await mkdtemp(path.join(root, "project-"))
   expect(await realpath(directory)).toBe(directory)
   const relative = path.relative(repository, directory)
   expect(relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)).toBe(true)
-  await cp(template, directory, { recursive: true })
+  await cp(path.join(templates, template), directory, { recursive: true })
   expect(await lstat(path.join(directory, "node_modules")).catch(() => undefined)).toBeUndefined()
   const pkg = JSON.parse(await readFile(path.join(directory, "package.json"), "utf8"))
   for (const field of [
@@ -82,12 +82,20 @@ async function files(directory: string, prefix = ""): Promise<string[]> {
     .sort()
 }
 
-async function inspect(archive: string, expected: { name: string; version: string; opencode: { id: string } }) {
+type Expected = {
+  name: string
+  version: string
+  opencode: { id: string }
+  packedFiles: string[]
+  web?: { entry: string; styles: string[] }
+}
+
+async function inspect(archive: string, expected: Expected) {
   const bytes = await readFile(archive)
   const directory = path.join(await mkdtemp(path.join(root, "unpack-")), "package")
   await extractArchive({ input: bytes, directory, policy: "npm" })
   // Only runtime files and npm's standard package metadata/documentation may ship.
-  expect(await files(directory)).toEqual(["README.md", "package.json", "src/server.js"])
+  expect(await files(directory)).toEqual(expected.packedFiles)
   const pkg = JSON.parse(await readFile(path.join(directory, "package.json"), "utf8"))
   expect(pkg.name).toBe(expected.name)
   expect(pkg.version).toBe(expected.version)
@@ -99,7 +107,8 @@ async function inspect(archive: string, expected: { name: string; version: strin
     id: expected.opencode.id,
     serverEntry: "src/server.js",
   })
-  expect(loaded.entry).toBeUndefined()
+  expect(loaded.entry).toBe(expected.web?.entry)
+  expect(loaded.styles).toEqual(expected.web?.styles ?? [])
   const execution = await run(
     [
       node,
@@ -113,10 +122,10 @@ async function inspect(archive: string, expected: { name: string; version: strin
   return bytes
 }
 
-describe("standalone server-only extension template", () => {
-  test("runs npm test outside the repository with real Node and no installed dependencies", async () => {
-    const input = await copy()
-    expect(input.pkg).toMatchObject({
+const cases = [
+  {
+    template: "server-only",
+    packageJSON: {
       name: "opencode-extension-starter",
       version: "0.1.0",
       type: "module",
@@ -127,71 +136,108 @@ describe("standalone server-only extension template", () => {
         pack: "node scripts/release.mjs --pack-only",
         release: "node scripts/release.mjs",
       },
+    },
+    packedFiles: ["README.md", "package.json", "src/server.js"],
+  },
+  {
+    template: "web-and-server",
+    packageJSON: {
+      name: "opencode-web-extension-starter",
+      version: "0.1.0",
+      type: "module",
+      exports: { "./web": "./src/web.js", "./server": "./src/server.js" },
+      files: ["src"],
+      scripts: {
+        test: "node --test",
+        pack: "node scripts/release.mjs --pack-only",
+        release: "node scripts/release.mjs",
+      },
+    },
+    packedFiles: ["README.md", "package.json", "src/server.js", "src/web.css", "src/web.js"],
+    web: { entry: "web.js", styles: ["web.css"] },
+  },
+]
+
+for (const entry of cases) {
+  describe(`standalone ${entry.template} extension template`, () => {
+    const expected = (pkg: { name: string; version: string; opencode: { id: string } }): Expected => ({
+      ...pkg,
+      packedFiles: entry.packedFiles,
+      ...(entry.web === undefined ? {} : { web: entry.web }),
     })
-    const runtime = await run(
-      [node, "--eval", "process.stdout.write(JSON.stringify({name:process.release.name,bun:!!process.versions.bun}))"],
-      input.directory,
-    )
-    expect(JSON.parse(runtime.stdout)).toEqual({ name: "node", bun: false })
-    const tested = await run([node, npm, "test"], input.directory)
-    // Accept both TAP and Node's spec reporter, and npm's surrounding output.
-    expect(tested.stdout).toMatch(/\btests\s+[1-9]\d*\b/)
-    expect(await lstat(path.join(input.directory, "node_modules")).catch(() => undefined)).toBeUndefined()
-  }, 120_000)
 
-  test("releases a real npm tgz whose descriptor agrees with the host authoring CLI", async () => {
-    const input = await copy()
-    await writeFile(path.join(input.directory, ".env"), "PRIVATE_TEMPLATE_TEST_TOKEN=must-not-ship\n")
-    const url = "https://artifacts.example.test/starter/v0.1.0.tgz"
-    const released = result(
-      (
-        await run(
-          [node, npm, "run", "release", "--", "--artifact-url", url, "--output", "artifacts/stable.json"],
-          input.directory,
-        )
-      ).stdout,
-    )
-    expect(released.archive).toBe(path.join(input.directory, "artifacts/opencode-extension-starter-0.1.0.tgz"))
-    expect(released.output).toBe(path.join(input.directory, "artifacts/stable.json"))
-    const bytes = await inspect(released.archive, input.pkg)
-    const descriptor = JSON.parse(await readFile(released.output, "utf8"))
-    expect(descriptor).toEqual({
-      schemaVersion: 1,
-      id: input.pkg.opencode.id,
-      version: input.pkg.version,
-      artifact: { url, sha256: createHash("sha256").update(bytes).digest("hex") },
-    })
-    expect(released.descriptor).toEqual(descriptor)
+    test("runs npm test outside the repository with real Node and no installed dependencies", async () => {
+      const input = await copy(entry.template)
+      expect(input.pkg).toMatchObject(entry.packageJSON)
+      const runtime = await run(
+        [node, "--eval", "process.stdout.write(JSON.stringify({name:process.release.name,bun:!!process.versions.bun}))"],
+        input.directory,
+      )
+      expect(JSON.parse(runtime.stdout)).toEqual({ name: "node", bun: false })
+      const tested = await run([node, npm, "test"], input.directory)
+      // Accept both TAP and Node's spec reporter, and npm's surrounding output.
+      expect(tested.stdout).toMatch(/\btests\s+[1-9]\d*\b/)
+      expect(await lstat(path.join(input.directory, "node_modules")).catch(() => undefined)).toBeUndefined()
+    }, 120_000)
 
-    const output = path.join(input.directory, "artifacts/host-stable.json")
-    // Deliberately omit --manifest: the host must discover identity in the same real tgz.
-    await run(
-      [process.execPath, author, "--archive", released.archive, "--artifact-url", url, "--output", output],
-      input.directory,
-      { ...env, BUN_BE_BUN: "1" },
-    )
-    expect(JSON.parse(await readFile(output, "utf8"))).toEqual(descriptor)
-    expect(await readFile(released.archive)).toEqual(bytes)
-    expect(await lstat(path.join(input.directory, "node_modules")).catch(() => undefined)).toBeUndefined()
-  }, 60_000)
+    test("releases a real npm tgz whose descriptor agrees with the host authoring CLI", async () => {
+      const input = await copy(entry.template)
+      await writeFile(path.join(input.directory, ".env"), "PRIVATE_TEMPLATE_TEST_TOKEN=must-not-ship\n")
+      const url = "https://artifacts.example.test/starter/v0.1.0.tgz"
+      const released = result(
+        (
+          await run(
+            [node, npm, "run", "release", "--", "--artifact-url", url, "--output", "artifacts/stable.json"],
+            input.directory,
+          )
+        ).stdout,
+      )
+      expect(released.archive).toBe(
+        path.join(input.directory, `artifacts/${input.pkg.name}-${input.pkg.version}.tgz`),
+      )
+      expect(released.output).toBe(path.join(input.directory, "artifacts/stable.json"))
+      const bytes = await inspect(released.archive, expected(input.pkg))
+      const descriptor = JSON.parse(await readFile(released.output, "utf8"))
+      expect(descriptor).toEqual({
+        schemaVersion: 1,
+        id: input.pkg.opencode.id,
+        version: input.pkg.version,
+        artifact: { url, sha256: createHash("sha256").update(bytes).digest("hex") },
+      })
+      expect(released.descriptor).toEqual(descriptor)
 
-  test("packs renamed and versioned metadata and keeps the exported server ID in sync", async () => {
-    const input = await copy()
-    const pkg = {
-      ...input.pkg,
-      name: "@standalone-fixture/renamed-server",
-      version: "2.3.4",
-      opencode: { ...input.pkg.opencode, id: "test.renamed-server" },
-    }
-    await writeFile(path.join(input.directory, "package.json"), JSON.stringify(pkg, null, 2) + "\n")
-    const packed = result((await run([node, npm, "run", "pack"], input.directory)).stdout)
-    expect(packed.archive).toBe(path.join(input.directory, "artifacts/standalone-fixture-renamed-server-2.3.4.tgz"))
-    expect(packed.output).toBeNull()
-    expect(packed.descriptor).toBeNull()
-    await inspect(packed.archive, pkg)
-    expect((await readdir(path.join(input.directory, "artifacts"))).sort()).toEqual([
-      "standalone-fixture-renamed-server-2.3.4.tgz",
-    ])
-    expect(await lstat(path.join(input.directory, "node_modules")).catch(() => undefined)).toBeUndefined()
-  }, 60_000)
-})
+      const output = path.join(input.directory, "artifacts/host-stable.json")
+      // Deliberately omit --manifest: the host must discover identity in the same real tgz.
+      await run(
+        [process.execPath, author, "--archive", released.archive, "--artifact-url", url, "--output", output],
+        input.directory,
+        { ...env, BUN_BE_BUN: "1" },
+      )
+      expect(JSON.parse(await readFile(output, "utf8"))).toEqual(descriptor)
+      expect(await readFile(released.archive)).toEqual(bytes)
+      expect(await lstat(path.join(input.directory, "node_modules")).catch(() => undefined)).toBeUndefined()
+    }, 60_000)
+
+    test("packs renamed and versioned metadata and keeps the exported server ID in sync", async () => {
+      const input = await copy(entry.template)
+      const pkg = {
+        ...input.pkg,
+        name: "@standalone-fixture/renamed-server",
+        version: "2.3.4",
+        opencode: { ...input.pkg.opencode, id: "test.renamed-server" },
+      }
+      await writeFile(path.join(input.directory, "package.json"), JSON.stringify(pkg, null, 2) + "\n")
+      const packed = result((await run([node, npm, "run", "pack"], input.directory)).stdout)
+      expect(packed.archive).toBe(
+        path.join(input.directory, "artifacts/standalone-fixture-renamed-server-2.3.4.tgz"),
+      )
+      expect(packed.output).toBeNull()
+      expect(packed.descriptor).toBeNull()
+      await inspect(packed.archive, expected(pkg))
+      expect((await readdir(path.join(input.directory, "artifacts"))).sort()).toEqual([
+        "standalone-fixture-renamed-server-2.3.4.tgz",
+      ])
+      expect(await lstat(path.join(input.directory, "node_modules")).catch(() => undefined)).toBeUndefined()
+    }, 60_000)
+  })
+}

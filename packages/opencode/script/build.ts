@@ -123,7 +123,43 @@ const createEmbeddedWebUIBundle = async () => {
   ].join("\n")
 }
 
+// Extension author templates (opencode extension create) are embedded the same
+// way as the Web UI so `create` works from the compiled binary.
+const createEmbeddedExtensionTemplates = async () => {
+  const root = path.join(dir, "../../templates/extensions")
+  const names = (await fs.promises.readdir(root, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+  const imports: string[] = []
+  const entries: string[] = []
+  let index = 0
+  for (const name of names) {
+    const files = (await Array.fromAsync(
+      new Bun.Glob("**/*").scan({ cwd: path.join(root, name), dot: true, onlyFiles: true }),
+    ))
+      .map((file) => file.replaceAll("\\", "/"))
+      .sort()
+    const items = files.map((file) => {
+      const spec = path.relative(dir, path.join(root, name, file)).replaceAll("\\", "/")
+      const alias = `file_${index++}`
+      imports.push(`import ${alias} from ${JSON.stringify(spec.startsWith(".") ? spec : `./${spec}`)} with { type: "file" };`)
+      return `    ${JSON.stringify(file)}: ${alias},`
+    })
+    entries.push(`  ${JSON.stringify(name)}: {\n${items.join("\n")}\n  },`)
+  }
+  return [
+    `// Import all files as file_$i with type: "file"`,
+    ...imports,
+    `// Export with original mappings, grouped by template name`,
+    `export default {`,
+    ...entries,
+    `}`,
+  ].join("\n")
+}
+
 const embeddedFileMap = skipEmbedWebUi ? null : await createEmbeddedWebUIBundle()
+const embeddedTemplates = await createEmbeddedExtensionTemplates()
 
 const allTargets: {
   os: string
@@ -249,8 +285,16 @@ for (const item of targets) {
       execArgv: [`--user-agent=opencode/${Script.version}`, "--use-system-ca", "--"],
       windows: {},
     },
-    files: embeddedFileMap ? { "opencode-web-ui.gen.ts": embeddedFileMap } : {},
-    entrypoints: ["./src/index.ts", "./src/photon-worker.ts", ...(embeddedFileMap ? ["opencode-web-ui.gen.ts"] : [])],
+    files: {
+      ...(embeddedFileMap ? { "opencode-web-ui.gen.ts": embeddedFileMap } : {}),
+      "opencode-extension-templates.gen.ts": embeddedTemplates,
+    },
+    entrypoints: [
+      "./src/index.ts",
+      "./src/photon-worker.ts",
+      ...(embeddedFileMap ? ["opencode-web-ui.gen.ts"] : []),
+      "opencode-extension-templates.gen.ts",
+    ],
     define: {
       OPENCODE_VERSION: `'${Script.version}'`,
       OPENCODE_MIGRATIONS: JSON.stringify(migrations),

@@ -1,0 +1,26 @@
+/* Every selector must stay scoped under the extension's data-extension root;
+   the extension-kit vite plugin prefixes selectors automatically, while this
+   no-build template writes the prefix by hand. */
+[data-extension="example.web-extension-starter"] .oc-web-starter {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  font: inherit;
+}
+
+[data-extension="example.web-extension-starter"] .oc-web-starter-title {
+  font-weight: 600;
+}
+
+[data-extension="example.web-extension-starter"] .oc-web-starter-path {
+  opacity: 0.7;
+  word-break: break-all;
+}
+
+[data-extension="example.web-extension-starter"] .oc-web-starter-body {
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
