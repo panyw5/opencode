@@ -1,10 +1,11 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { createHash } from "node:crypto"
 import { lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm } from "node:fs/promises"
 import type { PluginInput } from "@opencode-ai/plugin"
 import { Global } from "@opencode-ai/core/global"
+import * as Log from "@opencode-ai/core/util/log"
 import { GlobalBus } from "../../src/bus/global"
 import { ExtensionRegistry, registryFile } from "../../src/extension/registry"
 import { ExtensionLeases } from "../../src/extension/leases"
@@ -887,6 +888,84 @@ describe("extension runtime process pins", () => {
     busy = false
     expect(await ExtensionRuntime.rpc({ id: "test.srv", method: "ping" })).toBe("ok")
     expect(events.filter((value) => value === "acquire:data:test.srv")).toHaveLength(1)
+  })
+})
+
+describe("extension runtime limits", () => {
+  test("rejects RPC beyond the per-extension concurrency cap with code busy", async () => {
+    await link("test.srv", path.join(root, "test-srv"))
+    ExtensionRuntime.testing.setLimits({ rpcConcurrency: 2 })
+    const gate = deferred()
+    let running = 0
+    let busy = 0
+    let other = 0
+    ExtensionRuntime.testing.setImporter(async () => ({
+      id: "test.srv",
+      async activate() {
+        return {
+          rpc: {
+            wait: async () => {
+              running++
+              await gate.promise
+              return "done"
+            },
+          },
+        }
+      },
+    }))
+    // Concurrent callers resume in microtask order, not initiation order: any
+    // one of the three may lose the admission race, and a straggler could even
+    // reach admission after the gate released. Hold the gate until every call
+    // is accounted for — running the handler, rejected busy, or other error —
+    // so the assertion is deterministic.
+    const calls = Array.from({ length: 3 }, () =>
+      ExtensionRuntime.rpc({ id: "test.srv", method: "wait" }).then(
+        () => "done",
+        (error: unknown) => {
+          if (error instanceof ExtensionRpcError && error.code === "busy") busy++
+          else other++
+          return error
+        },
+      ),
+    )
+    for (let i = 0; i < 5000 && running + busy + other < 3; i++) await Bun.sleep(1)
+    expect({ running, busy, other }).toEqual({ running: 2, busy: 1, other: 0 })
+    gate.resolve()
+    const settled = await Promise.all(calls)
+    expect(settled.filter((value) => value === "done")).toHaveLength(2)
+    expect(settled.filter((value) => value instanceof ExtensionRpcError && value.code === "busy")).toHaveLength(1)
+    // Admission frees up as handlers settle; the next call goes through.
+    expect(await ExtensionRuntime.rpc({ id: "test.srv", method: "wait" })).toBe("done")
+    ExtensionRuntime.testing.setLimits(undefined)
+  })
+
+  test("drops host.emit bursts beyond the token bucket and logs an aggregated warning", async () => {
+    await link("test.srv", path.join(root, "test-srv"))
+    const warn = spyOn(Log.create({ service: "extension" }), "warn")
+    try {
+      ExtensionRuntime.testing.setLimits({ emitRatePerSecond: 5, emitBurst: 10, emitWindowMs: 50 })
+      await ExtensionRuntime.instanceHooks(pluginInput())
+      const host = counters().lastHost as { emit(name: string, data?: unknown): void }
+      const bus = busProbe("extension.event")
+      try {
+        for (let i = 0; i < 15; i++) host.emit("tick", i)
+        expect(bus.seen).toHaveLength(10)
+        for (let i = 0; i < 5000 && !warn.mock.calls.some(([m]) => m === "extension emit rate limit dropped events"); i++)
+          await Bun.sleep(1)
+        const summaries = warn.mock.calls.filter(([message]) => message === "extension emit rate limit dropped events")
+        expect(summaries).toEqual([
+          [
+            "extension emit rate limit dropped events",
+            expect.objectContaining({ extension: "test.srv", dropped: 5 }),
+          ],
+        ])
+      } finally {
+        bus.stop()
+        ExtensionRuntime.testing.setLimits(undefined)
+      }
+    } finally {
+      warn.mockRestore()
+    }
   })
 })
 

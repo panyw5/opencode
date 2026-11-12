@@ -149,6 +149,18 @@ const SERVER_TIMEOUT_MS = 10_000
 let activateTimeoutMs = ACTIVATE_TIMEOUT_MS
 let serverTimeoutMs = SERVER_TIMEOUT_MS
 
+// Per-extension runtime ceilings (remediation T2.6). RPC admission is bounded
+// instead of queued; host.emit is a token bucket whose overflow is dropped and
+// summarized once per window. Tests adjust them via testing.setLimits.
+const RPC_CONCURRENCY_LIMIT = 32
+const EMIT_RATE_PER_SECOND = 200
+const EMIT_BURST = 400
+const EMIT_WINDOW_MS = 1_000
+let rpcConcurrencyLimit = RPC_CONCURRENCY_LIMIT
+let emitRatePerSecond = EMIT_RATE_PER_SECOND
+let emitBurst = EMIT_BURST
+let emitWindowMs = EMIT_WINDOW_MS
+
 class ExtensionPhaseTimeoutError extends Error {
   constructor(phase: "activation" | "server", timeoutMs: number) {
     super(`${phase} timed out after ${timeoutMs}ms`)
@@ -252,6 +264,29 @@ function cacheDir(id: string) {
   return path.join(Global.Path.cache, "extensions", id)
 }
 
+/**
+ * Per-extension token bucket for `host.emit`. Keyed by extension id so every
+ * host of the same generation (process activate plus instance servers) shares
+ * one budget; events beyond the sustained rate are dropped rather than
+ * buffered, and a single warn log aggregates the drop count once per window.
+ */
+type EmitLimiter = {
+  tokens: number
+  updatedAt: number
+  dropped: number
+  flush?: ReturnType<typeof setTimeout>
+}
+const emitLimiters = new Map<string, EmitLimiter>()
+
+function emitLimiter(id: string) {
+  let limiter = emitLimiters.get(id)
+  if (!limiter) {
+    limiter = { tokens: emitBurst, updatedAt: Date.now(), dropped: 0 }
+    emitLimiters.set(id, limiter)
+  }
+  return limiter
+}
+
 function disposeResources(entry: Entry | undefined) {
   if (!entry) return
   for (const dispose of [...entry.resources]) dispose()
@@ -310,6 +345,31 @@ function createHost(entry: Entry, manifest: Loaded, serverUrl: URL | undefined) 
     setTimeout: timers.setTimeout,
     setInterval: timers.setInterval,
     emit(name, data, options) {
+      const limiter = emitLimiter(id)
+      const now = Date.now()
+      limiter.tokens = Math.min(emitBurst, limiter.tokens + ((now - limiter.updatedAt) * emitRatePerSecond) / 1000)
+      limiter.updatedAt = now
+      if (limiter.tokens < 1) {
+        limiter.dropped++
+        if (!limiter.flush) {
+          limiter.flush = setTimeout(() => {
+            limiter.flush = undefined
+            const dropped = limiter.dropped
+            limiter.dropped = 0
+            log.warn("extension emit rate limit dropped events", {
+              extension: id,
+              phase: "emit",
+              gen: generationOf(id),
+              epoch: slots.get(id).epoch ?? 0,
+              elapsedMs: Date.now() - started,
+              dropped,
+            })
+          }, emitWindowMs)
+          limiter.flush.unref?.()
+        }
+        return
+      }
+      limiter.tokens -= 1
       GlobalBus.emit("event", {
         directory: options?.directory ?? "global",
         payload: {
@@ -903,6 +963,7 @@ async function instanceHooks(input: PluginInput, options: { disabled?: boolean }
 }
 
 async function rpc(call: ExtensionRpcCall): Promise<unknown> {
+  const started = Date.now()
   const signal = call.signal
   const aborted = () => new ExtensionRpcAbortedError(call.id, call.method)
   if (signal?.aborted) throw aborted()
@@ -942,16 +1003,28 @@ async function rpc(call: ExtensionRpcCall): Promise<unknown> {
   const cancel = () => request.abort(signal?.reason)
   if (signal?.aborted) cancel()
   else signal?.addEventListener("abort", cancel, { once: true })
-  entry.requests.add(request)
-  let requests = slots.get(id).requests
-
-  requests.add(request)
+  const requests = slots.get(id).requests
   if (request.signal.aborted) {
-    entry.requests.delete(request)
-    requests.delete(request)
     signal?.removeEventListener("abort", cancel)
     throw aborted()
   }
+  // Bounded admission, not a queue: beyond the per-extension cap the call is
+  // rejected immediately so a busy extension cannot accumulate unbounded
+  // in-flight work.
+  if (requests.size >= rpcConcurrencyLimit) {
+    signal?.removeEventListener("abort", cancel)
+    log.warn("extension rpc rejected by concurrency limit", {
+      extension: id,
+      phase: "rpc",
+      gen: generationOf(id),
+      epoch,
+      elapsedMs: Date.now() - started,
+      limit: rpcConcurrencyLimit,
+    })
+    throw new ExtensionRpcError("busy", `Extension RPC concurrency limit reached: ${id}`)
+  }
+  entry.requests.add(request)
+  requests.add(request)
   try {
     const result = await track(
       id,
@@ -1117,12 +1190,24 @@ export const ExtensionRuntime = {
       activateTimeoutMs = next?.activateMs ?? ACTIVATE_TIMEOUT_MS
       serverTimeoutMs = next?.serverMs ?? SERVER_TIMEOUT_MS
     },
+    setLimits(next?: { rpcConcurrency?: number; emitRatePerSecond?: number; emitBurst?: number; emitWindowMs?: number }) {
+      rpcConcurrencyLimit = next?.rpcConcurrency ?? RPC_CONCURRENCY_LIMIT
+      emitRatePerSecond = next?.emitRatePerSecond ?? EMIT_RATE_PER_SECOND
+      emitBurst = next?.emitBurst ?? EMIT_BURST
+      emitWindowMs = next?.emitWindowMs ?? EMIT_WINDOW_MS
+    },
     async reset() {
       clearTimeout(staleHooksTimer)
       staleHooksTimer = undefined
       staleHookIds.clear()
       activateTimeoutMs = ACTIVATE_TIMEOUT_MS
       serverTimeoutMs = SERVER_TIMEOUT_MS
+      rpcConcurrencyLimit = RPC_CONCURRENCY_LIMIT
+      emitRatePerSecond = EMIT_RATE_PER_SECOND
+      emitBurst = EMIT_BURST
+      emitWindowMs = EMIT_WINDOW_MS
+      for (const limiter of emitLimiters.values()) if (limiter.flush) clearTimeout(limiter.flush)
+      emitLimiters.clear()
       await disposeAll({ timeoutMs: 100 })
       const canReleasePins = slots.canReleasePins()
       slots.reset()
