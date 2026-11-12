@@ -339,7 +339,7 @@ export default defineServerExtension({
   },
   server: async (input) => ({
     tool: {
-      mathematica_notebook: tool({
+      cells: tool({
         description:
           "Read, edit, append or run Mathematica .nb cells. Read first for zero-based indices and revision. Preview never evaluates code. Running shares a persistent kernel with the user. Outputs are transient, not saved into the .nb. Unsupported boxes are read-only and preserved. A stop resets kernel variables.",
         args: {

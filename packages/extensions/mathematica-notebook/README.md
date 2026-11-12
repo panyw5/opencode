@@ -7,7 +7,7 @@ An OpenCode file-viewer extension for textual Mathematica `.nb` notebooks.
 - Code cells and textual results have lightweight, theme-aware Wolfram syntax coloring. Editing keeps the native textarea, with a scroll-synchronized highlight layer; this is lexical coloring rather than full semantic analysis.
 - Run a cell or all supported input cells in document order. A persistent local Wolfram kernel shares variables across cells and agent calls. Print/messages, textual results and PNG graphics appear below the input. Stop/reset kills the kernel and clears its variables.
 - Run all, Stop/reset, Save, Reload and Source share a compact host toolbar above the notebook, without a duplicated title or filename. Older hosts fall back to an inline toolbar.
-- The `mathematica_notebook` agent tool reads cells and outputs, edits/appends with a revision token, runs cells and stops the shared kernel. Editing and execution use normal agent permission prompts. Graphical tool results include image attachments.
+- The `mathematica_notebook_cells` agent tool reads cells and outputs, edits/appends with a revision token, runs cells and stops the shared kernel. Editing and execution use normal agent permission prompts. Graphical tool results include image attachments.
 
 ## Build And Install
 

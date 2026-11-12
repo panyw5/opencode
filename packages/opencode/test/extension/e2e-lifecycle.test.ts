@@ -61,7 +61,9 @@ import { testEffect } from "../lib/effect"
 const FIXTURE_DIR = path.join(import.meta.dir, "fixtures", "e2e-ext")
 const id = ExtensionID.make("test.e2e-ext")
 const PING_EVENT = "test.e2e-ext/ping"
-const TOOL_ID = "e2e_ping"
+// D1: the registry exposes the fixture's `e2e_ping` tool under the extension
+// namespace — `test.e2e-ext` → last segment `e2e-ext` → `e2e_ext`.
+const TOOL_ID = "e2e_ext_e2e_ping"
 
 // Same layer stack as test/tool/registry.test.ts: the real ToolRegistry pulls
 // extension tools through Plugin.list → ExtensionRuntime.instanceHooks, which

@@ -63,6 +63,7 @@ import { Format } from "../format"
 import { InstanceState } from "@/effect/instance-state"
 import { InstanceStore } from "@/project/instance-store"
 import { ExtensionRuntime } from "@/extension/runtime"
+import { extensionToolName } from "@/extension/tools"
 import { EffectBridge } from "@/effect/bridge"
 import { Question } from "../question"
 import { Todo } from "../session/todo"
@@ -301,8 +302,13 @@ export const layer: Layer.Layer<
     const state = yield* InstanceState.make<State>(
       Effect.fn("ToolRegistry.state")(function* (ctx) {
         const custom: Tool.Def[] = []
+        // Public names already claimed by builtins and custom tools, mapped to
+        // their owner so extension tools (renamed to `<ns>_<tool>` under D1)
+        // can be rejected with a useful conflict message instead of handing
+        // the model two same-named tools.
+        const taken = new Map<string, string>(Object.keys(infos).map((id) => [id, "builtin"]))
 
-        function fromPlugin(id: string, def: ToolDefinition): Tool.Def {
+        function fromPlugin(id: string, def: ToolDefinition, extension?: { id: string; tool: string }): Tool.Def {
           // Plugin tools still expose Zod args publicly; keep that compatibility
           // boxed at the registry boundary and give the LLM the original JSON Schema.
           // Normalize missing args to `{}` once — pre-1.14.49 the code was
@@ -343,6 +349,10 @@ export const layer: Layer.Layer<
                   attachments,
                   metadata: {
                     ...metadata,
+                    // The full extension id (not just the namespace prefix)
+                    // rides along in tool metadata so results attribute the
+                    // exact contributing extension (D1).
+                    ...(extension ? { extension: extension.id, extensionTool: extension.tool } : {}),
                     truncated: out.truncated,
                     ...(out.truncated && { outputPath: out.outputPath }),
                   },
@@ -372,14 +382,30 @@ export const layer: Layer.Layer<
           const mod = yield* Effect.promise(() => import(pathToFileURL(match).href))
           for (const [id, def] of Object.entries(mod)) {
             if (!isPluginTool(def)) continue
-            custom.push(fromPlugin(id === "default" ? namespace : `${namespace}_${id}`, def))
+            const toolID = id === "default" ? namespace : `${namespace}_${id}`
+            taken.set(toolID, `file:${namespace}`)
+            custom.push(fromPlugin(toolID, def))
           }
         }
 
-        const plugins = yield* plugin.list()
-        for (const p of plugins) {
-          for (const [id, def] of Object.entries(p.tool ?? {})) {
-            custom.push(fromPlugin(id, def))
+        for (const p of yield* plugin.entries()) {
+          // Extension hooks keep their manifest-declared tool names until this
+          // boundary; they are exposed as `<ns>_<tool>` (D1). A post-rename
+          // collision with a builtin or an earlier custom tool skips the tool,
+          // logs the conflict, and marks the extension errored. Plugin and
+          // file tools keep their names untouched.
+          const extension = p.id.startsWith("extension:") ? p.id.slice("extension:".length) : undefined
+          for (const [id, def] of Object.entries(p.hooks.tool ?? {})) {
+            const name = extension ? extensionToolName(extension, id) : id
+            const owner = taken.get(name)
+            if (extension && owner) {
+              const message = `Extension tool ${name} (${extension}.${id}) conflicts with ${owner}`
+              log.error("extension tool name conflict", { extension, tool: id, name, owner })
+              ExtensionRuntime.markToolConflict(extension, message)
+              continue
+            }
+            taken.set(name, extension ? `extension:${extension}` : p.id)
+            custom.push(extension ? fromPlugin(name, def, { id: extension, tool: id }) : fromPlugin(name, def))
           }
         }
 

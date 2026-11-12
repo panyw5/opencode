@@ -87,7 +87,7 @@ test("agent exposes read/edit/append, enforces permission prompts and disabled s
       permissions.push(input.permission)
     },
   } as never
-  const execute = hooks.tool!.mathematica_notebook.execute
+  const execute = hooks.tool!.cells.execute
   const first = JSON.parse((await execute({ path, action: "read" }, ctx)) as string)
   const next = JSON.parse(
     (await execute({ path, action: "append", revision: first.revision, text: "2+2" }, ctx)) as string,
@@ -118,7 +118,7 @@ test("agent retains edit/run/stop permissions, image attachments and sanitized r
       permissions.push(input.permission)
     },
   } as never
-  const execute = hooks.tool!.mathematica_notebook.execute
+  const execute = hooks.tool!.cells.execute
   const first = JSON.parse((await execute({ path, action: "read" }, ctx)) as string)
   const saved = JSON.parse(
     (await execute({ path, action: "edit", revision: first.revision, index: 0, text: "7" }, ctx)) as string,

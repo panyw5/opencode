@@ -25,9 +25,9 @@ bun packages/extensions/wls-repl/scripts/viewport-cdp.ts
 
 真实 Wolfram 内核的端到端行为由 `test/bridge-integration.test.ts` 单独验证。
 
-## Agent 工具：`wolfram_eval`
+## Agent 工具：`wls_repl_wolfram_eval`
 
-扩展同时注册一个 LLM 工具 `wolfram_eval`（实例级 hooks）：
+扩展同时注册一个 LLM 工具（实例级 hooks；manifest 名 `wolfram_eval`，宿主命名空间化后对 Agent 暴露为 `wls_repl_wolfram_eval`）：
 
 - 参数 `code`（必填）+ `path`（可选，某个 `.wls` 文件的绝对路径）。
 - 带 `path` 时复用该文件在 viewer 里跑的那个 kernel——**Agent 和你共享变量状态**：

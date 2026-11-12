@@ -152,9 +152,9 @@ describe("hello-viewer server extension", () => {
       extension: { ...host, service },
     } as never)
     const tools = Object.keys(hooks?.tool ?? {})
-    expect(tools).toEqual(["hello_greet"])
+    expect(tools).toEqual(["greet"])
 
-    const result = await hooks?.tool?.hello_greet.execute({ name: "World" }, {
+    const result = await hooks?.tool?.greet.execute({ name: "World" }, {
       sessionID: "ses_test",
       messageID: "msg_test",
       agent: "build",

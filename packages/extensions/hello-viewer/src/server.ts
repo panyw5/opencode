@@ -213,7 +213,7 @@ const extension = defineServerExtension({
   async server(input) {
     const hooks: ExtensionHooks = {
       tool: {
-        hello_greet: tool({
+        greet: tool({
           description:
             "Greet someone through the hello-viewer example extension. Use it to demonstrate extension-provided tools.",
           args: {

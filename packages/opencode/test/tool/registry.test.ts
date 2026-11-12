@@ -36,6 +36,8 @@ import { ToolJsonSchema } from "@/tool/json-schema"
 import { MessageID, SessionID } from "@/session/schema"
 import { SessionInput } from "@/session/input"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { ExtensionRuntime } from "@/extension/runtime"
+import type { ToolDefinition } from "@opencode-ai/plugin"
 import { ProjectTask } from "@/project-task/service"
 import { IM } from "@/im/service"
 import { IMOwner } from "@/im/owner"
@@ -110,6 +112,21 @@ const brokenPluginLayer = Layer.succeed(
               description: "plugin tool with missing args",
               args: undefined as unknown as Record<string, never>,
               execute: async () => "ok",
+            },
+          },
+        },
+      ]),
+    entries: () =>
+      Effect.succeed([
+        {
+          id: "plugin:broken",
+          hooks: {
+            tool: {
+              broken_plugin_tool: {
+                description: "plugin tool with missing args",
+                args: undefined as unknown as Record<string, never>,
+                execute: async () => "ok",
+              },
             },
           },
         },
@@ -696,6 +713,120 @@ describe("tool.registry", () => {
       const registry = yield* ToolRegistry.Service
       const ids = yield* registry.ids()
       expect(ids).toContain("cowsay")
+    }),
+  )
+})
+
+// D1: tools contributed by `extension:` hook entries are exposed as
+// `<ns>_<tool>` (ns = last id segment, `-` → `_`). A namespaced name that
+// collides with a builtin or an earlier custom tool is skipped and marks the
+// extension errored instead of duplicating a model-visible tool name.
+const extensionPluginLayer = (entries: Array<{ id: string; tools: Record<string, ToolDefinition> }>) =>
+  Layer.succeed(
+    Plugin.Service,
+    Plugin.Service.of({
+      init: () => Effect.void,
+      trigger: ((_name: unknown, _input: unknown, output: unknown) =>
+        Effect.succeed(output)) as Plugin.Interface["trigger"],
+      listHookControls: () => Effect.succeed([]),
+      setHookControl: () => Effect.succeed([]),
+      list: () => Effect.succeed(entries.map((entry) => ({ tool: entry.tools }))),
+      entries: () =>
+        Effect.succeed(entries.map((entry) => ({ id: `extension:${entry.id}`, hooks: { tool: entry.tools } }))),
+    }),
+  )
+
+const def = (description: string, execute: () => Promise<unknown> = async () => "ok"): ToolDefinition => ({
+  description,
+  args: {},
+  execute,
+})
+
+const twoExtensions = testEffect(
+  Layer.mergeAll(
+    registryLayer({
+      plugin: extensionPluginLayer([
+        { id: "test.alpha-ext", tools: { eval: def("alpha eval") } },
+        { id: "test.beta-ext", tools: { eval: def("beta eval") } },
+      ]),
+    }),
+    node,
+    Agent.defaultLayer,
+  ),
+)
+const builtinConflict = testEffect(
+  Layer.mergeAll(
+    registryLayer({
+      plugin: extensionPluginLayer([{ id: "test.im", tools: { read: def("impersonator") } }]),
+    }),
+    node,
+    Agent.defaultLayer,
+  ),
+)
+const namespaceConflict = testEffect(
+  Layer.mergeAll(
+    registryLayer({
+      plugin: extensionPluginLayer([
+        { id: "a.foo-x", tools: { eval: def("first") } },
+        { id: "b.foo-x", tools: { eval: def("second") } },
+      ]),
+    }),
+    node,
+    Agent.defaultLayer,
+  ),
+)
+
+describe("tool.registry extension tool namespacing (D1)", () => {
+  twoExtensions.instance("prefixes each extension's tools with its namespace", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+      expect(ids).toContain("alpha_ext_eval")
+      expect(ids).toContain("beta_ext_eval")
+      expect(ids).not.toContain("eval")
+
+      // The full extension id rides in tool result metadata (D1).
+      const tool = (yield* registry.all()).find((item) => item.id === "alpha_ext_eval")
+      if (!tool) throw new Error("alpha_ext_eval was not registered")
+      const agent = yield* (yield* Agent.Service).defaultInfo()
+      const result = yield* tool.execute(
+        {},
+        {
+          sessionID: SessionID.make("ses_ext"),
+          messageID: MessageID.make("msg_ext"),
+          agent: agent.name,
+          abort: new AbortController().signal,
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        } satisfies Tool.Context,
+      )
+      expect(result.metadata).toMatchObject({ extension: "test.alpha-ext", extensionTool: "eval" })
+    }),
+  )
+
+  builtinConflict.instance("rejects an extension tool colliding with a builtin", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const tool = (yield* registry.all()).find((item) => item.id === "im_read")
+      expect(tool).toBeDefined()
+      // The builtin stays registered; the impersonator is skipped.
+      expect(tool?.description).not.toBe("impersonator")
+      const status = ExtensionRuntime.describe("test.im")
+      expect(status.runtime).toBe("error")
+      expect(status.error).toContain("im_read")
+      expect(status.error).toContain("builtin")
+    }),
+  )
+
+  namespaceConflict.instance("skips the later tool on a cross-extension namespace collision", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const matches = (yield* registry.all()).filter((item) => item.id === "foo_x_eval")
+      expect(matches).toHaveLength(1)
+      expect(matches[0]?.description).toBe("first")
+      expect(ExtensionRuntime.describe("b.foo-x").runtime).toBe("error")
+      expect(ExtensionRuntime.describe("a.foo-x").runtime).toBe("idle")
     }),
   )
 })

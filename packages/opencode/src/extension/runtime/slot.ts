@@ -54,11 +54,11 @@ export type Slot = {
   error?: string
   version?: string
   failure?: {
-    phase: "import" | "activate" | "dispose" | "quiesce" | "server" | "timeout" | "timer"
+    phase: "import" | "activate" | "dispose" | "quiesce" | "server" | "timeout" | "timer" | "tool"
     message: string
     at: number
   }
-  transientError?: { phase: "server" | "timer"; message: string; at: number }
+  transientError?: { phase: "server" | "timer" | "tool"; message: string; at: number }
 }
 
 export function phaseOf(slot: Slot) {
@@ -79,7 +79,7 @@ type Transition =
   | { type: "entry.set"; entry: Entry }
   | { type: "activate.ready"; entry: Entry; service: ExtensionService }
   | { type: "entry.error"; entry: Entry; phase: "import" | "activate" | "timeout"; error: string }
-  | { type: "runtime.error"; phase: "server" | "timer"; error: string }
+  | { type: "runtime.error"; phase: "server" | "timer" | "tool"; error: string }
   | { type: "server.ready" }
   | { type: "entry.drop" }
   | { type: "load.set"; loading: Promise<Entry | undefined> }

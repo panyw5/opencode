@@ -1047,6 +1047,26 @@ async function disposeAll(options: { timeoutMs?: number } = {}) {
   await Promise.all(ids.map((id) => disable(id, options)))
 }
 
+/**
+ * Records a tool-name conflict detected while merging extension tools into the
+ * ToolRegistry (D1). The caller skips the offending tool; this marks the
+ * extension runtime as errored (surfaced through describe/Info.server) and
+ * publishes a status event once per distinct conflict message.
+ */
+function markToolConflict(id: string, error: string) {
+  const slot = slots.get(id)
+  if (slot.transientError?.phase === "tool" && slot.transientError.message === error) return
+  slots.transition(id, { type: "runtime.error", phase: "tool", error })
+  log.error("extension tool name conflict", {
+    extension: id,
+    phase: "tool",
+    gen: slot.generation,
+    epoch: slot.epoch ?? 0,
+    error,
+  })
+  publishError(ExtensionID.make(id), slot.version ?? "unknown", error)
+}
+
 function describe(id: string): ServerInfo {
   const slot = slots.get(id)
   const entry = slot.entry
@@ -1082,6 +1102,7 @@ export const ExtensionRuntime = {
   notifySettings,
   disposeAll,
   describe,
+  markToolConflict,
   retry,
   invalidateHooks,
   registerCacheInvalidator,

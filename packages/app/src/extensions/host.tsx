@@ -20,6 +20,7 @@ import { registerFileViewer } from "@opencode-ai/ui/file-viewer-registry"
 import { GenericTool } from "@opencode-ai/ui/basic-tool"
 import { isBuiltinToolRenderer, registerTool, type ToolProps } from "@opencode-ai/ui/message-part"
 import { useCommand, type CommandOption } from "@/context/command"
+import { useLanguage } from "@/context/language"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
@@ -55,12 +56,18 @@ import {
   type FileViewerContribution,
 } from "./context"
 import { installExtensionHostModules } from "./modules"
-import { extensionScopedMount } from "./mount"
+import { extensionToolRendererNames } from "./id"
+import { extensionScopedMount, requestExtensionDisable } from "./mount"
 import { createExtensionMutationTracker, ExtensionMutationStaleError } from "./mutation"
 import { reconcileExtensions } from "./reconcile"
 import { createExtensionReadiness } from "./readiness"
 import { evictExtensionPanelState, registerExtensionPanel, type ExtensionPanelProps } from "./panel-registry"
-import { safeModeFromURL } from "./safe-mode"
+import {
+  EXTENSION_CRASH_THRESHOLD,
+  createExtensionCrashReporter,
+  registerExtensionCrashReporter,
+  safeModeFromURL,
+} from "./safe-mode"
 import { createDesktopArchiveOperations } from "./install-desktop"
 import type { CommandDeclaration, ExtensionInfo, ExtensionStatusEvent, PanelDeclaration } from "./types"
 
@@ -103,6 +110,7 @@ function LoadingViewer(props: {
   failed: () => boolean
   retry: () => void
   showSource?: () => void
+  disable?: () => void
 }) {
   onMount(() => {
     if (!props.failed()) void props.activate()
@@ -113,6 +121,11 @@ function LoadingViewer(props: {
         <button type="button" class="text-text-strong underline" onClick={props.retry}>
           Retry extension
         </button>
+        <Show when={props.disable}>
+          <button type="button" class="text-text-strong underline" onClick={() => props.disable?.()}>
+            Disable extension
+          </button>
+        </Show>
         <Show when={props.showSource}>
           <button type="button" class="text-text-strong underline" onClick={() => props.showSource?.()}>
             Show source
@@ -165,6 +178,7 @@ export function ExtensionHostProvider(props: ParentProps) {
       return result.value.bytes
     },
     fetch: platform.fetch,
+    hostVersion: () => platform.version,
   })
   // Authenticated transport for the extension server bridge (P2). Credentials
   // come from the current server connection, matching how the SDK client and
@@ -184,14 +198,28 @@ export function ExtensionHostProvider(props: ParentProps) {
     fetch: platform.fetch ?? fetch,
   })
   const command = useCommand()
+  const language = useLanguage()
   const [safe, setSafe, , safeReady] = persisted(
     Persist.global("extension.safeMode.v1"),
     createStore({ disabled: false }),
   )
-  const mode = createMemo(() => safeModeFromURL(location.search, safe.disabled))
+  // Crash-strike reporter for automatic safe mode. The persisted read is
+  // async (desktop IPC), so extension activation waits on `crashReady`
+  // through readiness.safeReady — an armed auto safe mode lands before the
+  // first manifest refresh.
+  const crashes = createExtensionCrashReporter()
+  const unregisterCrashReporter = registerExtensionCrashReporter(crashes)
+  const [crashReady, setCrashReady] = createSignal(false)
+  const [autoSafe, setAutoSafe] = createSignal(false)
+  const mode = createMemo(() => safeModeFromURL(location.search, safe.disabled, autoSafe()))
   const [readinessVersion, setReadinessVersion] = createSignal(0)
   const readiness = createExtensionReadiness(
-    () => ({ url: globalSDK.url, client: globalSDK.client, disabled: mode().disabled, safeReady: safeReady() }),
+    () => ({
+      url: globalSDK.url,
+      client: globalSDK.client,
+      disabled: mode().disabled,
+      safeReady: safeReady() && crashReady(),
+    }),
     () => setReadinessVersion((version) => version + 1),
   )
   const ready = () => {
@@ -253,6 +281,47 @@ export function ExtensionHostProvider(props: ParentProps) {
     setSafe("disabled", mode().disabled)
   })
 
+  const reenableExtensions = () => {
+    console.info("[extension-safe-mode] extensions re-enable requested")
+    void crashes.reset().then(() => {
+      if (disposed) return
+      setAutoSafe(false)
+      if (safe.disabled) setSafe("disabled", false)
+      console.info("[extension-safe-mode] extensions re-enabled")
+    })
+  }
+
+  void crashes.load().then(
+    (count) => {
+      if (disposed) return
+      if (count >= EXTENSION_CRASH_THRESHOLD) {
+        setAutoSafe(true)
+        console.warn(`[extension-safe-mode] auto safe mode engaged strikes=${count}`)
+        showToast({
+          variant: "error",
+          title: language.t("extensions.safeMode.auto.title"),
+          description: language.t("extensions.safeMode.auto.description"),
+          persistent: true,
+          actions: [{ label: language.t("extensions.safeMode.auto.reactivate"), onClick: reenableExtensions }],
+        })
+      }
+      setCrashReady(true)
+    },
+    (error) => {
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn(`[extension-safe-mode] crash counter load failed error=${message}`)
+      if (!disposed) setCrashReady(true)
+    },
+  )
+
+  // A launch that reaches readiness with extensions enabled clears the
+  // strikes; safe-mode and not-yet-ready launches leave the count alone so a
+  // crash loop keeps arming automatic safe mode.
+  createEffect(() => {
+    if (!ready() || mode().disabled) return
+    void crashes.startupSucceeded()
+  })
+
   installExtensionHostModules(platform.version)
 
   const manager = new ExtensionActivationManager({
@@ -278,19 +347,49 @@ export function ExtensionHostProvider(props: ParentProps) {
     registerToolRenderer(manifest, contribution) {
       const declared = declaredToolRenderer(manifest, contribution.tool)
       if (!declared) throw new Error(`Extension registered undeclared tool renderer: ${contribution.tool}`)
-      if (isBuiltinToolRenderer(contribution.tool)) {
-        throw new Error(`Extension cannot override built-in tool renderer: ${contribution.tool}`)
+      // Manifests declare the unprefixed tool name; the registry exposes the
+      // extension's tools under `<ns>_<tool>` (D1). The unprefixed name stays
+      // registered as a legacy alias for one version so parts recorded before
+      // namespacing still resolve — first use logs a deprecation warning.
+      const names = extensionToolRendererNames(manifest.id, contribution.tool)
+      if (isBuiltinToolRenderer(names.primary)) {
+        throw new Error(`Extension cannot override built-in tool renderer: ${names.primary}`)
       }
-      const disposeRenderer = registerTool({
-        name: contribution.tool,
-        render: extensionScopedMount(manifest.id, contribution.component, contribution.tool),
+      const render = extensionScopedMount(manifest.id, contribution.component, contribution.tool, {
+        disable: () =>
+          requestExtensionDisable({
+            id: manifest.id,
+            surface: `tool:${names.primary}`,
+            setEnabled: setEnabledByID,
+          }),
       })
-      const disposeEstimator = contribution.estimateHeight
-        ? registerToolHeightEstimator(contribution.tool, contribution.estimateHeight)
-        : undefined
+      const disposers = [registerTool({ name: names.primary, render })]
+      if (contribution.estimateHeight) {
+        disposers.push(registerToolHeightEstimator(names.primary, contribution.estimateHeight))
+      }
+      if (names.legacy && !isBuiltinToolRenderer(names.legacy)) {
+        let warned = false
+        disposers.push(
+          registerTool({
+            name: names.legacy,
+            render: (props) => {
+              onMount(() => {
+                if (warned) return
+                warned = true
+                console.warn(
+                  `[extension-host] deprecated unprefixed tool renderer id=${manifest.id} tool=${names.legacy} renamed=${names.primary}`,
+                )
+              })
+              return render(props)
+            },
+          }),
+        )
+        if (contribution.estimateHeight) {
+          disposers.push(registerToolHeightEstimator(names.legacy, contribution.estimateHeight))
+        }
+      }
       return () => {
-        disposeRenderer()
-        disposeEstimator?.()
+        for (const dispose of disposers) dispose()
       }
     },
     registerPanel(manifest, contribution) {
@@ -347,6 +446,13 @@ export function ExtensionHostProvider(props: ParentProps) {
         },
       })
     },
+    onMissingContributions(item, missing) {
+      const summary = missing.map((entry) => `${entry.kind}:${entry.id}`).join(",")
+      showToast({
+        title: item.displayName,
+        description: language.t("extensions.contributions.missing", { missing: summary }),
+      })
+    },
     readSetting(extension, key) {
       return manifest(extension.id)?.settings?.[key]
     },
@@ -391,6 +497,7 @@ export function ExtensionHostProvider(props: ParentProps) {
       },
       (error) => {
         if (disposed || globalSDK.url !== serverURL || globalSDK.client !== client) return
+        crashes.markExtensionFailure()
         setFailures((current) => new Set(current).add(id))
         const message = error instanceof Error ? error.message : String(error)
         console.error(`[extension-host] activate failed id=${id} error=${message}`)
@@ -450,26 +557,39 @@ export function ExtensionHostProvider(props: ParentProps) {
             activate={() => activate(item.id)}
             failed={() => failures().has(item.id)}
             retry={() => retryActivation(item.id)}
+            disable={() =>
+              void requestExtensionDisable({
+                id: item.id,
+                surface: `viewer:${viewer.id}`,
+                setEnabled: setEnabledByID,
+              })
+            }
             showSource={() => props.showSource()}
           />
         ),
       }),
     )
-    const toolPlaceholders = (item.contributes.toolRenderers ?? [])
-      .filter((renderer) => {
-        if (!isBuiltinToolRenderer(renderer.tool)) return true
-        console.warn(`[extension-host] skipping built-in tool renderer id=${item.id} tool=${renderer.tool}`)
-        return false
-      })
-      .map((renderer) => {
-        const Placeholder = (props: ToolProps) => {
-          onMount(() => {
-            if (!failures().has(item.id)) void activate(item.id)
-          })
-          return <GenericTool {...props} />
-        }
-        return registerTool({ name: renderer.tool, render: Placeholder })
-      })
+    const toolPlaceholders = (item.contributes.toolRenderers ?? []).map((renderer) => {
+      const names = extensionToolRendererNames(item.id, renderer.tool)
+      const Placeholder = (props: ToolProps) => {
+        onMount(() => {
+          if (!failures().has(item.id)) void activate(item.id)
+        })
+        return <GenericTool {...props} />
+      }
+      const disposers: Array<() => void> = []
+      if (isBuiltinToolRenderer(names.primary)) {
+        console.warn(`[extension-host] skipping built-in tool renderer id=${item.id} tool=${names.primary}`)
+      } else {
+        disposers.push(registerTool({ name: names.primary, render: Placeholder }))
+      }
+      if (names.legacy && !isBuiltinToolRenderer(names.legacy)) {
+        disposers.push(registerTool({ name: names.legacy, render: Placeholder }))
+      }
+      return () => {
+        for (const dispose of disposers) dispose()
+      }
+    })
     const commandPlaceholders = (item.contributes.commands ?? []).map((declared: CommandDeclaration) => {
       const id = extensionCommandID(item.id, declared.id)
       const option: CommandOption = {
@@ -501,6 +621,13 @@ export function ExtensionHostProvider(props: ParentProps) {
                 activate={() => activate(item.id)}
                 failed={() => failures().has(item.id)}
                 retry={() => retryActivation(item.id)}
+                disable={() =>
+                  void requestExtensionDisable({
+                    id: item.id,
+                    surface: `panel:${declared.id}`,
+                    setEnabled: setEnabledByID,
+                  })
+                }
               />
             }
           >
@@ -720,6 +847,7 @@ export function ExtensionHostProvider(props: ParentProps) {
 
   onCleanup(() => {
     disposed = true
+    unregisterCrashReporter()
     clearTimeout(refreshRetry)
     readiness.dispose()
     stop()
