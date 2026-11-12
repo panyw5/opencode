@@ -9,6 +9,7 @@ import {
   type ReleaseDescriptorShape,
 } from "@opencode-ai/util/extension-release"
 import { requestJsonDocument } from "./download"
+import { satisfiesHostRange } from "@/plugin/shared"
 import {
   SignatureError,
   TRUSTED_KEYS,
@@ -73,7 +74,7 @@ export function releaseCompatible(release: Pick<ReleaseDescriptor, "engines">, h
   const range = release.engines?.opencode
   if (typeof range !== "string") return true
   if (!semver.valid(hostVersion) || semver.major(hostVersion) === 0) return true
-  return semver.satisfies(hostVersion, range)
+  return satisfiesHostRange(hostVersion, range)
 }
 
 export async function resolveRelease(

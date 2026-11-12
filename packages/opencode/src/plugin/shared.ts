@@ -191,6 +191,19 @@ export async function resolvePathPluginTarget(spec: string) {
   throw new Error(`Plugin directory ${file} is missing package.json or index file`)
 }
 
+/**
+ * Range check that ignores the host's prerelease segment: development builds
+ * carry versions like `1.18.64-local.5`, which semver treats as a prerelease
+ * that never satisfies a normal range. The gate compares the base version so
+ * dev installs still respect engines.
+ */
+export function satisfiesHostRange(opencodeVersion: string, range: string) {
+  const base = semver.prerelease(opencodeVersion)
+    ? `${semver.major(opencodeVersion)}.${semver.minor(opencodeVersion)}.${semver.patch(opencodeVersion)}`
+    : opencodeVersion
+  return semver.satisfies(base, range)
+}
+
 export async function checkPluginCompatibility(target: string, opencodeVersion: string, pkg?: PluginPackage) {
   if (!semver.valid(opencodeVersion) || semver.major(opencodeVersion) === 0) return
   const hit = pkg ?? (await readPluginPackage(target).catch(() => undefined))
@@ -199,7 +212,7 @@ export async function checkPluginCompatibility(target: string, opencodeVersion: 
   if (!isRecord(engines)) return
   const range = engines.opencode
   if (typeof range !== "string") return
-  if (!semver.satisfies(opencodeVersion, range)) {
+  if (!satisfiesHostRange(opencodeVersion, range)) {
     throw new Error(`Plugin requires opencode ${range} but running ${opencodeVersion}`)
   }
 }

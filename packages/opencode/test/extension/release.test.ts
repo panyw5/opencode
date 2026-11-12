@@ -312,6 +312,12 @@ describe("release host compatibility", () => {
     expect(releaseCompatible(release(">=2.0.0"), "local")).toBe(true)
     expect(releaseCompatible(release(">=2.0.0"), "0.0.0")).toBe(true)
   })
+
+  test("compares the base version of prerelease hosts so dev installs still gate", () => {
+    expect(releaseCompatible(release(">=1.18.0"), "1.18.64-local.5")).toBe(true)
+    expect(releaseCompatible(release(">=2.0.0"), "1.18.64-local.5")).toBe(false)
+    expect(releaseCompatible(release("^1.18.0"), "1.18.64-beta.1")).toBe(true)
+  })
 })
 
 describe("release resolver", () => {
