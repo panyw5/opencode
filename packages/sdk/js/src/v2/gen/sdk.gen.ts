@@ -99,6 +99,8 @@ import type {
   ExtensionInstallationStatusResponses,
   ExtensionInstallationUninstallErrors,
   ExtensionInstallationUninstallResponses,
+  ExtensionInstallationUnlockErrors,
+  ExtensionInstallationUnlockResponses,
   ExtensionInstallationUpdateErrors,
   ExtensionInstallationUpdateResponses,
   ExtensionListErrors,
@@ -1122,6 +1124,17 @@ export class ExtensionInstallation extends HeyApiClient {
       ...options,
       ...params,
     })
+  }
+
+  /**
+   * Remove extension lease gates abandoned by interrupted processes
+   */
+  public unlock<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).post<
+      ExtensionInstallationUnlockResponses,
+      ExtensionInstallationUnlockErrors,
+      ThrowOnError
+    >({ url: "/global/extension/unlock", ...options })
   }
 }
 
@@ -5039,6 +5052,7 @@ export class Session2 extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
+      id?: string
       parentID?: string
       title?: string
       agent?: string
@@ -5060,6 +5074,7 @@ export class Session2 extends HeyApiClient {
           args: [
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
+            { in: "body", key: "id" },
             { in: "body", key: "parentID" },
             { in: "body", key: "title" },
             { in: "body", key: "agent" },

@@ -242,6 +242,13 @@ export const dict = {
   "config.extensions.install.diagDescriptorSize": "The release manifest exceeds the 64 KiB download limit.",
   "config.extensions.install.diagDescriptorNetwork":
     "The release manifest download failed. Check the network or proxy.",
+  "config.extensions.install.diagLocked":
+    "Extension storage is still locked by an interrupted process (for example a closed CLI or restarted server).",
+  "config.extensions.install.unlock": "Unlock and continue",
+  "config.extensions.install.unlockHint":
+    "Only locks left for more than 30 seconds are removed; locks in active use are kept.",
+  "config.extensions.install.unlockRecent": "The lock is still in use. Wait a moment, then try again.",
+  "config.extensions.install.unlockFailed": "The lock could not be removed safely.",
   "prompt.mobile.options": "Message options",
   "prompt.channel.label": "Session channel",
   "prompt.channel.native": "OpenCode",

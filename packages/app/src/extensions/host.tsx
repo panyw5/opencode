@@ -35,6 +35,7 @@ import {
   type PreparedInstallation,
   type InstallationResult,
   type InstallationStatus,
+  type InstallationUnlockResult,
 } from "./install-api"
 import {
   activateWithStyleRecovery,
@@ -92,6 +93,7 @@ export type ExtensionHost = {
   commitInstallation(prepared: PreparedInstallation, input?: InstallationCommitInput): Promise<InstallationResult>
   installationStatus(prepared: PreparedInstallation): Promise<InstallationStatus>
   cancelInstallation(prepared: PreparedInstallation): Promise<InstallationResult>
+  unlockInstallation(): Promise<InstallationUnlockResult>
 }
 
 const ExtensionHostContext = createContext<ExtensionHost>()
@@ -929,6 +931,8 @@ export function ExtensionHostProvider(props: ParentProps) {
     commitInstallation,
     installationStatus,
     cancelInstallation,
+    // Gates live beside the registry of the connected server, so HTTP reaches the right storage for sidecar and remote.
+    unlockInstallation: () => installationApi.unlock(),
   }
   return <ExtensionHostContext.Provider value={value}>{props.children}</ExtensionHostContext.Provider>
 }

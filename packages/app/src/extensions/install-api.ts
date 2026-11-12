@@ -6,6 +6,7 @@ import type {
   PreparedInstallation,
   InstallationResult,
   InstallationStatus,
+  InstallationUnlockResult,
 } from "../pages/install-actions-state"
 
 export type {
@@ -14,6 +15,7 @@ export type {
   PreparedInstallation,
   InstallationResult,
   InstallationStatus,
+  InstallationUnlockResult,
 }
 
 /** A durable status is not a substitute for refreshing the host's manifest view. */
@@ -92,6 +94,9 @@ export function createInstallationApi(globalSDK: Pick<ReturnType<typeof useGloba
           noRedirect,
         ),
       )
+    },
+    async unlock() {
+      return result<InstallationUnlockResult>(() => globalSDK.client.extensionInstallation.unlock(noRedirect))
     },
     async cancel(prepared: PreparedInstallation) {
       return result(() =>

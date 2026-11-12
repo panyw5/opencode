@@ -36,6 +36,7 @@ import { OpenClawServeCommand } from "./cli/cmd/openclaw-serve"
 import { ExtraAgentServeCommand } from "./cli/cmd/extra-agent-serve"
 import { MathCommand } from "./cli/cmd/math"
 import { ExtensionCommand } from "./cli/cmd/extension"
+import { ExtensionDrain } from "./extension/drain"
 import path from "path"
 import { Global } from "@opencode-ai/core/global"
 import { JsonMigration } from "./storage/json-migration"
@@ -271,5 +272,7 @@ try {
   // Most notably, some docker-container-based MCP servers don't handle such signals unless
   // run using `docker run --init`.
   // Explicitly exit to avoid any hanging subprocesses.
+  // Extension recovery holds mkdir lease gates; finish it first so no gate is left behind.
+  await ExtensionDrain.drain()
   process.exit()
 }

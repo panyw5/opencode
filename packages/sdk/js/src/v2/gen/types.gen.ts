@@ -409,6 +409,12 @@ export type ExtensionOperationStatus =
     }
   | ExtensionInstallResult
 
+export type ExtensionUnlockResult = {
+  removed: Array<"generation" | "operation" | "data">
+  recent: Array<"generation" | "operation" | "data">
+  untrusted: Array<"generation" | "operation" | "data">
+}
+
 export type ExtensionRpcResult = {
   result: unknown
 }
@@ -6025,6 +6031,49 @@ export type ExtensionInstallationStatusResponses = {
 export type ExtensionInstallationStatusResponse =
   ExtensionInstallationStatusResponses[keyof ExtensionInstallationStatusResponses]
 
+export type ExtensionInstallationUnlockData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/global/extension/unlock"
+}
+
+export type ExtensionInstallationUnlockErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * Gone
+   */
+  410: EffectHttpApiErrorGone
+  /**
+   * UpstreamError
+   */
+  502: UpstreamError
+}
+
+export type ExtensionInstallationUnlockError =
+  ExtensionInstallationUnlockErrors[keyof ExtensionInstallationUnlockErrors]
+
+export type ExtensionInstallationUnlockResponses = {
+  /**
+   * Lease gates removed, kept as recent, or left untrusted
+   */
+  200: ExtensionUnlockResult
+}
+
+export type ExtensionInstallationUnlockResponse =
+  ExtensionInstallationUnlockResponses[keyof ExtensionInstallationUnlockResponses]
+
 export type ExtensionRpcData = {
   body?: {
     input?: unknown
@@ -9793,6 +9842,7 @@ export type SessionListResponse = SessionListResponses[keyof SessionListResponse
 
 export type SessionCreateData = {
   body?: {
+    id?: string
     parentID?: string
     title?: string
     agent?: string

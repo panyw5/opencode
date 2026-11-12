@@ -7,7 +7,7 @@ import {
   installExtensionInstallAdapter,
   resetExtensionInstallAdapter,
 } from "../../src/server/routes/instance/httpapi/handlers/extension-install"
-import { InstallError, type InstallPreview, type InstallResult } from "../../src/extension/install"
+import { InstallError, LOCKED_MESSAGE, type InstallPreview, type InstallResult } from "../../src/extension/install"
 import type { InstallationService } from "../../src/extension/install-service"
 import { ExtensionID } from "../../src/extension/schema"
 
@@ -90,6 +90,25 @@ describe("extension installation HTTP", () => {
     expect(committed.status).toBe(200)
     expect(await committed.json()).toMatchObject({ committed: true, synced: false, cleanupPending: true })
     expect(calls).toBe(3)
+  })
+
+  test("a locked storage gate surfaces its curated message and unlock reports what was removed", async () => {
+    adapter({
+      async prepare() {
+        throw new InstallError("busy", LOCKED_MESSAGE)
+      },
+      async unlock() {
+        calls++
+        return { removed: ["operation" as const], recent: [], untrusted: [] }
+      },
+    })
+    const prepared = await request("/global/extension/prepare", { kind: "uninstall", id })
+    expect(prepared.status).toBe(409)
+    expect(await prepared.json()).toMatchObject({ message: LOCKED_MESSAGE })
+    const unlocked = await request("/global/extension/unlock")
+    expect(unlocked.status).toBe(200)
+    expect(await unlocked.json()).toEqual({ removed: ["operation"], recent: [], untrusted: [] })
+    expect(calls).toBe(1)
   })
 
   test("HTTP rejects local paths without reaching the installer", async () => {

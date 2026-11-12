@@ -124,5 +124,6 @@ export const extensionInstallHandlers = HttpApiBuilder.group(RootHttpApi, "exten
       .handle("uninstall", commit("uninstall"))
       .handle("status", (ctx) => run((service) => service.status(ctx.params.operationId, token(ctx.headers))))
       .handle("cancel", (ctx) => run((service) => service.cancel(ctx.params.operationId, token(ctx.headers))))
+      .handle("unlock", () => run((service) => service.unlock()))
   }),
 )

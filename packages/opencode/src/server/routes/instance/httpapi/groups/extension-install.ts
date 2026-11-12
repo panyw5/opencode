@@ -10,6 +10,7 @@ import {
   ExtensionPreparedOperation,
   ExtensionInstallResult,
   ExtensionOperationStatus,
+  ExtensionUnlockResult,
 } from "@/extension/install-schema"
 import { ConflictError, ForbiddenError, InvalidRequestError, UpstreamError } from "../errors"
 import { Authorization } from "../middleware/authorization"
@@ -21,6 +22,7 @@ export const ExtensionInstallPaths = {
   update: "/global/extension/:id/update",
   uninstall: "/global/extension/:id",
   operation: "/global/extension/operation/:operationId",
+  unlock: "/global/extension/unlock",
 } as const
 const errors = [InvalidRequestError, ForbiddenError, ConflictError, HttpApiError.Gone, UpstreamError] as const
 
@@ -80,6 +82,15 @@ export const ExtensionInstallApi = HttpApi.make("extension-install").add(
         OpenApi.annotations({
           identifier: "extensionInstallation.cancel",
           summary: "Cancel an uncommitted extension operation",
+        }),
+      ),
+      HttpApiEndpoint.post("unlock", ExtensionInstallPaths.unlock, {
+        success: described(ExtensionUnlockResult, "Lease gates removed, kept as recent, or left untrusted"),
+        error: errors,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "extensionInstallation.unlock",
+          summary: "Remove extension lease gates abandoned by interrupted processes",
         }),
       ),
     )

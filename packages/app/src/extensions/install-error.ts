@@ -85,6 +85,11 @@ const diagnostics: ReadonlyArray<{
     key: "config.extensions.install.diagDescriptorNetwork",
     category: "descriptor-network",
   },
+  {
+    message: "Extension storage is locked by an interrupted process; unlock it to continue",
+    key: "config.extensions.install.diagLocked",
+    category: "storage-locked",
+  },
 ]
 
 const whitelist = new Map(diagnostics.map((diagnostic) => [diagnostic.message, diagnostic]))

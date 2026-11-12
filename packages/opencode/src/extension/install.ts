@@ -115,6 +115,14 @@ export class InstallError extends Error {
   }
 }
 
+/** Curated, whitelisted by the app: an interrupted process left a lease gate behind. */
+export const LOCKED_MESSAGE = "Extension storage is locked by an interrupted process; unlock it to continue"
+function gateLocked(error: unknown) {
+  return error instanceof ExtensionLeases.LeaseError && error.gate !== undefined
+    ? new InstallError("busy", LOCKED_MESSAGE)
+    : undefined
+}
+
 type Owned = { directory: string; dev: number; ino: number }
 type Operation = {
   id: string
@@ -706,6 +714,8 @@ export function createInstaller(options: InstallerOptions = {}) {
       operations.delete(id)
       await finishOperation(op)
       if (error instanceof InstallError) throw error
+      const gate = gateLocked(error)
+      if (gate) throw gate
       if (error instanceof ArchiveDownloadError) {
         const message =
           error.code === "address"
@@ -889,6 +899,8 @@ export function createInstaller(options: InstallerOptions = {}) {
             })
             await finishOperation(op)
             if (error instanceof InstallError) throw error
+            const gate = gateLocked(error)
+            if (gate) throw gate
             if (error instanceof Registry.ConflictError) throw new InstallError("conflict", error.message)
             if (error instanceof Registry.SettingsError) throw new InstallError("conflict", error.message)
             throw new InstallError("failed", "Extension commit failed; no registry change was confirmed")
@@ -1030,6 +1042,16 @@ export function createInstaller(options: InstallerOptions = {}) {
     status,
     cancel,
     close,
+    /** User-confirmed removal of gates abandoned by killed processes; live (recent) gates are kept. */
+    unlock: async () => {
+      const report = await ExtensionLeases.unlockStaleGates(target)
+      log.info("stale lease gates unlocked", {
+        removed: report.removed.join(",") || "none",
+        recent: report.recent.join(",") || "none",
+        untrusted: report.untrusted.join(",") || "none",
+      })
+      return report
+    },
   }
 }
 

@@ -408,6 +408,43 @@ describe("extension generation leases", () => {
     expect((await stat(gate)).isDirectory()).toBe(true)
   })
 
+  test("a held gate reports its namespace so callers can offer an explicit unlock", async () => {
+    const { registry, id, root } = await fixture()
+    await mkdir(path.join(root, "operation-ref", ".gate"), { recursive: true })
+    await expect(Leases.acquireOperation(registry, id)).rejects.toMatchObject({ code: "busy", gate: "operation" })
+  })
+
+  test("explicit unlock removes only abandoned gates and restores acquisition", async () => {
+    const { registry, id, root } = await fixture()
+    const gate = path.join(root, "ref", ".gate")
+    await mkdir(gate, { recursive: true })
+    await writeFile(path.join(gate, "owner"), randomUUID())
+    await utimes(gate, new Date(0), new Date(0))
+    const report = await Leases.unlockStaleGates(registry)
+    expect(report.removed).toEqual(["generation"])
+    expect(await readdir(path.join(root, "ref"))).toEqual([])
+    await (await acquire(registry, id)).release()
+  })
+
+  test("explicit unlock keeps a recent gate that may still be in use", async () => {
+    const { registry, root } = await fixture()
+    const gate = path.join(root, "operation-ref", ".gate")
+    await mkdir(gate, { recursive: true })
+    const report = await Leases.unlockStaleGates(registry)
+    expect(report).toMatchObject({ removed: [], recent: ["operation"] })
+    expect((await stat(gate)).isDirectory()).toBe(true)
+  })
+
+  test("explicit unlock never deletes a gate with unexpected contents", async () => {
+    const { registry, root } = await fixture()
+    const gate = path.join(root, "ref", ".gate")
+    await mkdir(path.join(gate, "nested"), { recursive: true })
+    await utimes(gate, new Date(0), new Date(0))
+    const report = await Leases.unlockStaleGates(registry)
+    expect(report).toMatchObject({ removed: [], untrusted: ["generation"] })
+    expect((await stat(path.join(gate, "nested"))).isDirectory()).toBe(true)
+  })
+
   test.skipIf(!native || !node)("a real Node process may run but permanently prevents native collection", async () => {
     const { registry, id, root } = await fixture()
     const remote = await worker(registry, id, node!)

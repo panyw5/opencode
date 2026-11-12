@@ -1,6 +1,6 @@
 import path from "node:path"
 import { randomUUID } from "node:crypto"
-import { constants, realpathSync } from "node:fs"
+import { constants, realpathSync, type Stats } from "node:fs"
 import { lstat, mkdir, open, readdir, realpath, rename, rmdir, unlink } from "node:fs/promises"
 import type { FileHandle } from "node:fs/promises"
 
@@ -21,9 +21,58 @@ export namespace ExtensionLeases {
     constructor(
       readonly code: "invalid" | "unsafe" | "busy",
       message: string,
+      /** Set when the portable mkdir gate itself is held; only an explicit user unlock may clear it. */
+      readonly gate?: Namespace,
     ) {
       super(message)
     }
+  }
+  export type UnlockReport = { removed: Namespace[]; recent: Namespace[]; untrusted: Namespace[] }
+  /**
+   * Explicit, user-confirmed recovery for gates abandoned by a killed process. Never called automatically:
+   * gates are held for milliseconds, so only gates older than `minAgeMs` are removed, and only when the
+   * directory identity is unchanged between inspection and removal.
+   */
+  export async function unlockStaleGates(registry: string, minAgeMs = 30_000): Promise<UnlockReport> {
+    const report: UnlockReport = { removed: [], recent: [], untrusted: [] }
+    for (const namespace of ["generation", "operation", "data"] as const) {
+      const { refs } = await refsFor(registry, namespace)
+      const gate = path.join(refs, ".gate")
+      let before: Stats
+      try {
+        before = await lstat(gate)
+      } catch (error) {
+        if (code(error) === "ENOENT") continue
+        throw error
+      }
+      if (!before.isDirectory() || before.isSymbolicLink()) {
+        report.untrusted.push(namespace)
+        continue
+      }
+      if (Date.now() - before.mtimeMs < minAgeMs) {
+        report.recent.push(namespace)
+        continue
+      }
+      const entries = await readdir(gate)
+      if (entries.some((entry) => entry !== "owner")) {
+        report.untrusted.push(namespace)
+        continue
+      }
+      // Atomic rename first: a concurrent unlocker or a fresh owner can never lose a newer gate silently.
+      const tombstone = path.join(refs, `.gate-stale-${randomUUID()}`)
+      await rename(gate, tombstone)
+      if (!same(before, await lstat(tombstone))) {
+        await rename(tombstone, gate).catch(() => {})
+        report.untrusted.push(namespace)
+        continue
+      }
+      await unlink(path.join(tombstone, "owner")).catch((error) => {
+        if (code(error) !== "ENOENT") throw error
+      })
+      await rmdir(tombstone)
+      report.removed.push(namespace)
+    }
+    return report
   }
 
   export type Lease = {
@@ -101,12 +150,15 @@ async function locations(registry: string, namespace: Namespace, id: string) {
   if (typeof id !== "string" || (namespace === "data" ? id.length > 64 || !EXTENSION_ID.test(id) : !UUID.test(id))) {
     throw new ExtensionLeases.LeaseError("invalid", "Invalid extension lease identity")
   }
+  const { root, refs } = await refsFor(registry, namespace)
+  return { root, refs, directory: path.join(refs, id), gate: path.join(refs, ".gate"), namespace, id }
+}
+async function refsFor(registry: string, namespace: Namespace) {
   const root =
     namespace === "data"
       ? rootFor(path.join((await import("@opencode-ai/core/global")).Global.Path.data, "extensions", "registry.json"))
       : rootFor(registry)
-  const refs = path.join(root, namespace === "generation" ? "ref" : `${namespace}-ref`)
-  return { root, refs, directory: path.join(refs, id), gate: path.join(refs, ".gate"), namespace, id }
+  return { root, refs: path.join(root, namespace === "generation" ? "ref" : `${namespace}-ref`) }
 }
 async function directory(target: string) {
   const info = await lstat(target)
@@ -153,7 +205,8 @@ async function gated<T>(layout: Layout, create: boolean, fn: () => Promise<T>): 
       if (create) await new Promise((resolve) => setTimeout(resolve, 5))
     }
   }
-  if (!acquired) throw new ExtensionLeases.LeaseError("busy", "Extension lease gate is busy (never TTL-reclaimed)")
+  if (!acquired)
+    throw new ExtensionLeases.LeaseError("busy", "Extension lease gate is busy (never TTL-reclaimed)", layout.namespace)
   // A crash at any point leaves a fail-closed gate. Only this owner's verified metadata is removed.
   const owned = await directory(layout.gate)
   const token = randomUUID()

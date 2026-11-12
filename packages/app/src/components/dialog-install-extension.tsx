@@ -76,12 +76,13 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
     } as InstallationInput,
     localDigest: undefined as string | undefined,
     localDigestError: undefined as string | undefined,
-    phase: "edit" as "edit" | "preparing" | "preview" | "committing" | "status" | "result",
+    phase: "edit" as "edit" | "preparing" | "preview" | "committing" | "status" | "result" | "unlocking",
     prepared: undefined as PreparedInstallation | undefined,
     result: undefined as InstallationResult | undefined,
     error: undefined as InstallationTranslationKey | undefined,
     diagnostic: undefined as string | undefined,
     diagnosticKey: undefined as InstallationTranslationKey | undefined,
+    unlockNotice: undefined as InstallationTranslationKey | undefined,
     enable: false,
     stale: false,
   })
@@ -109,7 +110,9 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
   // The host marks this extension busy during our own prepare. Busy disables interaction,
   // but must not invalidate that operation; safe mode or unsaved settings still do.
   const invalidated = () => installationBlocked({ ...props, busy: false })
-  const pending = () => ["preparing", "committing", "status"].includes(state.phase)
+  const pending = () => ["preparing", "committing", "status", "unlocking"].includes(state.phase)
+  const storageLocked = () =>
+    state.diagnosticKey === "config.extensions.install.diagLocked" && !!props.operations.unlockInstallation
   const removalComplete = () =>
     state.result?.state === "committed" && state.result.committed === true && state.result.synced === true
   const removalFailed = () => !pending() && !!(state.result || state.error) && !removalComplete()
@@ -300,6 +303,35 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
       }
     } catch {
       if (current(ticket)) setState({ phase: "result", error: "config.extensions.install.statusFailed" })
+    }
+  }
+  const unlock = async () => {
+    const operations = props.operations
+    console.info(`[extension-install] unlock clicked alive=${alive} blocked=${blocked()} phase=${state.phase}`)
+    if (!alive || blocked() || pending() || !operations.unlockInstallation) return
+    const ticket = ++serial
+    setState({ phase: "unlocking", unlockNotice: undefined })
+    try {
+      const report = await operations.unlockInstallation()
+      console.info(
+        `[extension-install] unlock returned removed=${report.removed.join(",") || "none"} recent=${report.recent.join(",") || "none"} untrusted=${report.untrusted.join(",") || "none"} current=${current(ticket)}`,
+      )
+      if (!current(ticket)) return
+      if (report.recent.length || report.untrusted.length) {
+        setState({
+          phase: "edit",
+          unlockNotice: report.recent.length
+            ? "config.extensions.install.unlockRecent"
+            : "config.extensions.install.unlockFailed",
+        })
+        return
+      }
+      // Continue the interrupted operation: removal prepares and commits, other intents return to the preview.
+      setState({ phase: "edit", error: undefined, diagnostic: undefined, diagnosticKey: undefined })
+      await prepare()
+    } catch (error) {
+      console.warn(`[extension-install] unlock failed category=${installationDiagnosticCategory(error)}`)
+      if (current(ticket)) setState({ phase: "edit", unlockNotice: "config.extensions.install.unlockFailed" })
     }
   }
   const restartRemoval = async () => {
@@ -597,10 +629,29 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
                       ? "config.extensions.install.removeIncomplete"
                       : state.result?.state === "unknown" || state.error === "config.extensions.install.statusFailed"
                         ? "config.extensions.install.removeUnknown"
-                        : "config.extensions.install.failed",
+                        : (state.diagnosticKey ?? "config.extensions.install.failed"),
                 )}
               </p>
             </Show>
+          </div>
+        </Show>
+        <Show when={storageLocked() && !state.result}>
+          <div data-install-locked class="flex flex-col gap-2">
+            <p class="text-12-regular text-text-weak">{t("config.extensions.install.unlockHint")}</p>
+            <Show when={state.unlockNotice}>
+              {(notice) => (
+                <p role="alert" class="text-text-danger-base">
+                  {t(notice())}
+                </p>
+              )}
+            </Show>
+            <Button
+              data-action="extension-install-unlock"
+              disabled={blocked() || pending()}
+              onClick={() => void unlock()}
+            >
+              {t(state.phase === "unlocking" ? "config.extensions.install.busy" : "config.extensions.install.unlock")}
+            </Button>
           </div>
         </Show>
         <Show when={!removal() ? state.result : undefined}>
@@ -626,13 +677,21 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
                 <p role="alert">{t("config.extensions.install.cleanupPending")}</p>
               </Show>
               <For each={result().warnings}>{(warning) => <p class="break-all">{warning}</p>}</For>
-              <Button
-                data-action="extension-install-status"
-                disabled={blocked() || pending()}
-                onClick={() => void status()}
+              <Show
+                when={
+                  result().state === "unknown" ||
+                  result().committed === undefined ||
+                  state.error === "config.extensions.install.statusFailed"
+                }
               >
-                {t(pending() ? "config.extensions.install.busy" : "config.extensions.install.status")}
-              </Button>
+                <Button
+                  data-action="extension-install-status"
+                  disabled={blocked() || pending()}
+                  onClick={() => void status()}
+                >
+                  {t(pending() ? "config.extensions.install.busy" : "config.extensions.install.status")}
+                </Button>
+              </Show>
             </div>
           )}
         </Show>

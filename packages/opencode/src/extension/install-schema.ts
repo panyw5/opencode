@@ -96,6 +96,12 @@ export const ExtensionInstallResult = Schema.Struct({
   cleanupPending: Schema.Boolean,
   warnings: Schema.Array(Schema.String),
 }).annotate({ identifier: "ExtensionInstallResult" })
+const LeaseNamespace = Schema.Literals(["generation", "operation", "data"])
+export const ExtensionUnlockResult = Schema.Struct({
+  removed: Schema.Array(LeaseNamespace),
+  recent: Schema.Array(LeaseNamespace),
+  untrusted: Schema.Array(LeaseNamespace),
+}).annotate({ identifier: "ExtensionUnlockResult" })
 export const ExtensionOperationStatus = Schema.Union([
   Schema.Struct({ ...preview, state: Schema.Literal("prepared"), committed: Schema.Literal(false) }),
   ExtensionInstallResult,

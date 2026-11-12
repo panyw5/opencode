@@ -7,6 +7,7 @@ import { ExtensionWatcher } from "./watch"
 import { ExtensionLeases } from "./leases"
 import { createCleanup } from "./cleanup"
 import { quarantineData } from "./data"
+import { track } from "./drain"
 import type { ExtensionID, RegistryRow } from "./schema"
 
 const services = new Map<string, ReturnType<typeof createInstaller>>()
@@ -214,11 +215,13 @@ export async function observeInstallations() {
         // cleanups; re-run recovery with in-flight deduplication so a burst of
         // writes collapses into one recovery pass.
         if (!recoverInFlight) {
-          recoverInFlight = recoverInstallations(registry)
-            .catch(() => undefined)
-            .finally(() => {
-              recoverInFlight = undefined
-            })
+          recoverInFlight = track(
+            recoverInstallations(registry)
+              .catch(() => undefined)
+              .finally(() => {
+                recoverInFlight = undefined
+              }),
+          )
         }
       },
       onError: () => {
@@ -255,5 +258,7 @@ export async function observeInstallations() {
     if (--acquired.users > 0) return
     if (monitors.get(registry) === acquired) monitors.delete(registry)
     await acquired.stop()
+    // Recovery holds mkdir lease gates; letting a CLI process.exit() interrupt it leaves them behind forever.
+    await recoverInFlight?.catch(() => undefined)
   }
 }

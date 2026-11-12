@@ -2,9 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test"
 import path from "node:path"
 import { createHash } from "node:crypto"
 import { gzipSync } from "node:zlib"
-import { mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, utimes, writeFile } from "node:fs/promises"
 import tar from "tar-stream"
-import { createInstaller, type InstallerOptions } from "../../src/extension/install"
+import { createInstaller, LOCKED_MESSAGE, type InstallerOptions } from "../../src/extension/install"
 import * as Registry from "../../src/extension/registry"
 import { ExtensionID } from "../../src/extension/schema"
 import { resolveNpm } from "../../src/extension/npm"
@@ -221,6 +221,24 @@ describe("extension installation transactions", () => {
     expect(JSON.stringify(await context.installer.status(remove.operationId, remove.token))).not.toContain(
       "DO_NOT_DISCLOSE",
     )
+  })
+
+  test("an abandoned operation gate is reported as locked and an explicit unlock lets removal continue", async () => {
+    const context = await setup()
+    await install(context)
+    const gate = path.join(context.root, "operation-ref", ".gate")
+    await mkdir(gate)
+    await writeFile(path.join(gate, "owner"), "00000000-0000-4000-8000-000000000000")
+    await utimes(gate, new Date(0), new Date(0))
+    await expect(context.installer.prepare({ kind: "uninstall", id })).rejects.toMatchObject({
+      name: "ExtensionInstallError",
+      code: "busy",
+      message: LOCKED_MESSAGE,
+    })
+    expect((await context.installer.unlock()).removed).toContain("operation")
+    const removal = await context.installer.prepare({ kind: "uninstall", id })
+    expect((await context.installer.commit(removal.operationId, removal.token)).committed).toBe(true)
+    expect((await Registry.snapshot(id, context.registry)).row).toBeUndefined()
   })
 
   test("cancel is serialized with commit and no registry pointer is published", async () => {

@@ -66,6 +66,14 @@ export interface InstallationOperations {
   commitInstallation(prepared: PreparedInstallation, input?: InstallationCommitInput): Promise<InstallationResult>
   cancelInstallation(prepared: PreparedInstallation): Promise<InstallationResult>
   installationStatus(prepared: PreparedInstallation): Promise<InstallationStatus>
+  /** User-confirmed removal of lease gates left by interrupted processes. */
+  unlockInstallation?(): Promise<InstallationUnlockResult>
+}
+type LeaseNamespace = "generation" | "operation" | "data"
+export interface InstallationUnlockResult {
+  removed: LeaseNamespace[]
+  recent: LeaseNamespace[]
+  untrusted: LeaseNamespace[]
 }
 export type InstallationIntent =
   | { kind: "install" }
@@ -323,6 +331,11 @@ export const installationTranslationKeys = [
   "config.extensions.install.diagDescriptorSchema",
   "config.extensions.install.diagDescriptorSize",
   "config.extensions.install.diagDescriptorNetwork",
+  "config.extensions.install.diagLocked",
+  "config.extensions.install.unlock",
+  "config.extensions.install.unlockHint",
+  "config.extensions.install.unlockRecent",
+  "config.extensions.install.unlockFailed",
   "config.extensions.install.releaseHint",
 ] as const
 export type InstallationTranslationKey = (typeof installationTranslationKeys)[number]
