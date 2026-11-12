@@ -29,7 +29,9 @@ describe("markdown stream", () => {
     const text = "## Outline\n\n$$\nB_0=\\sum_{i<j}R_{ij}F_iF_j\n$$\n\nAFTER_FORMULA\n\n## Proof\n\nFINAL_MARKER"
     for (let length = 1; length <= text.length; length++) {
       const source = text.slice(0, length)
-      const result = stream(source, true).map((block) => block.src).join("")
+      const result = stream(source, true)
+        .map((block) => block.src)
+        .join("")
       expect(result).toStartWith(source.trimEnd())
     }
   })

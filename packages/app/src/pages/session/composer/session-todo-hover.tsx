@@ -182,14 +182,14 @@ export function SessionTodoHover(props: { sessionID?: string; todos: Todo[] }) {
           >
             <div class="pt-2 -mb-8">
               <TodoList
-              todos={props.todos}
-              open={open()}
-              maxHeight="none"
-              completedAsCircle
-              textClass="text-[15px]"
-              itemLineHeight="24px"
-              gap="12px"
-            />
+                todos={props.todos}
+                open={open()}
+                maxHeight="none"
+                completedAsCircle
+                textClass="text-[15px]"
+                itemLineHeight="24px"
+                gap="12px"
+              />
             </div>
           </div>
         </div>

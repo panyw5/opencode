@@ -252,9 +252,7 @@ export function NewSessionView(props: NewSessionViewProps) {
             <Show when={extraAgent()?.emptyIcon} fallback={<Mark class="w-10" />}>
               {(icon) => <Icon name={icon()} size="x-large" />}
             </Show>
-            <div class="text-20-medium text-text-strong">
-              {greet()}
-            </div>
+            <div class="text-20-medium text-text-strong">{greet()}</div>
           </div>
           <div class={`w-full px-3 py-2 sm:px-5 ${body()}`.trim()}>
             <div class="text-28-medium text-text-strong select-text break-words">{name()}</div>
@@ -317,7 +315,9 @@ export function NewSessionView(props: NewSessionViewProps) {
                     </div>
                     <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-15-medium text-text-strong">
                       <span>Hermes Agent</span>
-                      <Show when={metaInfo().version}>{(item) => <span class="text-icon-warning-base">v{item()}</span>}</Show>
+                      <Show when={metaInfo().version}>
+                        {(item) => <span class="text-icon-warning-base">v{item()}</span>}
+                      </Show>
                       <Show when={metaInfo().upstream}>
                         {(item) => (
                           <span class="text-12-regular text-text-weak">
@@ -456,13 +456,18 @@ export function NewSessionView(props: NewSessionViewProps) {
                         "justify-content": "space-between",
                         padding: "10px 4px 10px 8px",
                       }}
-                      contentStyle={{ width: "var(--kb-popper-anchor-width)", "max-width": "var(--kb-popper-anchor-width)" }}
+                      contentStyle={{
+                        width: "var(--kb-popper-anchor-width)",
+                        "max-width": "var(--kb-popper-anchor-width)",
+                      }}
                     >
                       {(item) => {
                         if (!item) return ""
                         return (
                           <div class="min-w-0 flex flex-col text-left">
-                            <div class="truncate text-14-medium text-text-strong">{getFilename(item.path) || item.path}</div>
+                            <div class="truncate text-14-medium text-text-strong">
+                              {getFilename(item.path) || item.path}
+                            </div>
                             <div class="truncate text-12-regular text-text-weak">{item.path}</div>
                           </div>
                         )
@@ -475,7 +480,9 @@ export function NewSessionView(props: NewSessionViewProps) {
                     <div class="text-[10px] uppercase tracking-[0.12em] text-text-weaker">
                       {language.t("session.new.meta.target")}
                     </div>
-                    <div class="mt-1 break-all font-mono text-[13px] leading-6 text-text-strong select-text">{next()}</div>
+                    <div class="mt-1 break-all font-mono text-[13px] leading-6 text-text-strong select-text">
+                      {next()}
+                    </div>
                   </div>
                 </Show>
               </div>

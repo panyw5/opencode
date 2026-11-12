@@ -317,10 +317,7 @@
 [data-component="dialog"] [data-component="list"],
 [data-component="popover-content"] [data-component="list"] {
   [data-slot="list-search"] {
-    background: light-dark(
-      color-mix(in srgb, var(--background-base) 54%, transparent),
-      rgb(255 255 255 / 0.05)
-    );
+    background: light-dark(color-mix(in srgb, var(--background-base) 54%, transparent), rgb(255 255 255 / 0.05));
     border: 1px solid light-dark(color-mix(in srgb, var(--border-weak-base) 72%, transparent), rgb(255 255 255 / 0.06));
   }
 }

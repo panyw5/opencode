@@ -5,10 +5,7 @@ import type { JSX } from "solid-js"
  * rail/titlebar color instead of revealing canvas. Place absolutely behind
  * the rounded pane; size/color come from [data-component="scoop-join"] CSS.
  */
-export function ScoopJoin(props: {
-  class?: string
-  style?: JSX.CSSProperties
-}): JSX.Element {
+export function ScoopJoin(props: { class?: string; style?: JSX.CSSProperties }): JSX.Element {
   return (
     <div
       data-component="scoop-join"

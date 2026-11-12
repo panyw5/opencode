@@ -28,8 +28,7 @@ class MockCdpClient {
           },
         },
       }
-    if (method === "Runtime.callFunctionOn" && !params?.returnByValue)
-      result = { result: { objectId: "input-handle" } }
+    if (method === "Runtime.callFunctionOn" && !params?.returnByValue) result = { result: { objectId: "input-handle" } }
     if (method === "DOM.requestNode") result = { nodeId: 2 }
     if (method === "DOM.describeNode")
       result = { node: { backendNodeId: 123, attributes: ["type", "file", "multiple", ""] } }
@@ -60,7 +59,9 @@ class FixtureElement {
   }
 
   getClientRects() {
-    return this.style.display === "none" || this.style.visibility === "hidden" || this.style.contentVisibility === "hidden"
+    return this.style.display === "none" ||
+      this.style.visibility === "hidden" ||
+      this.style.contentVisibility === "hidden"
       ? []
       : [{}]
   }
@@ -81,7 +82,11 @@ class FixtureElement {
     }
     if (selector.includes("[inert]")) {
       for (let current: FixtureElement | null = this; current; current = current.parentElement) {
-        if (current.attributes.has("inert") || current.attributes.has("hidden") || current.attributes.get("aria-hidden") === "true")
+        if (
+          current.attributes.has("inert") ||
+          current.attributes.has("hidden") ||
+          current.attributes.get("aria-hidden") === "true"
+        )
           return current
       }
     }
@@ -99,10 +104,13 @@ class FixtureElement {
   }
 }
 
-function withFixture<T>(input: {
-  editors: FixtureElement[]
-  inputs: FixtureElement[]
-}, run: () => T) {
+function withFixture<T>(
+  input: {
+    editors: FixtureElement[]
+    inputs: FixtureElement[]
+  },
+  run: () => T,
+) {
   const previousDocument = globalThis.document
   const previousGetComputedStyle = globalThis.getComputedStyle
   const fakeDocument = {

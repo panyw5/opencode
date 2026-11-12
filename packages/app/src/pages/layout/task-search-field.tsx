@@ -65,7 +65,13 @@ export function TaskSearchField(props: {
         }}
       >
         <svg aria-hidden="true" viewBox="0 0 20 20" width="16" height="16" fill="none" class="shrink-0">
-          <path d="M4 3v14m-2.5-3L4 17l2.5-3M9 4h8M9 9h6M9 14h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+          <path
+            d="M4 3v14m-2.5-3L4 17l2.5-3M9 4h8M9 9h6M9 14h3"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
         </svg>
         <span class="truncate">{sortLabel()}</span>
       </Button>

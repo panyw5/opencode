@@ -95,8 +95,7 @@ const OPENCLAW_ERRORS: ReadonlyArray<ExtraAgentErrorMatcher> = [
     lines: [
       {
         key: "error.openclaw.fileUnsupported",
-        fallback:
-          "OpenClaw 目前还不提供项目文件树。你可以继续在 OpenClaw 中对话，但文件浏览/打开请切回普通项目。",
+        fallback: "OpenClaw 目前还不提供项目文件树。你可以继续在 OpenClaw 中对话，但文件浏览/打开请切回普通项目。",
       },
       {
         key: "error.openclaw.fileUnsupported.hint",
@@ -159,8 +158,7 @@ const OPENCLAW_ERRORS: ReadonlyArray<ExtraAgentErrorMatcher> = [
       { key: "error.openclaw.gatewayAuth", fallback: "OpenClaw gateway 鉴权可能失败了。" },
       {
         key: "error.openclaw.gatewayAuth.hint",
-        fallback:
-          "请检查桌面设置中的 Gateway Token 是否仍然有效，并确认当前账号/设备有权限连接该 gateway。",
+        fallback: "请检查桌面设置中的 Gateway Token 是否仍然有效，并确认当前账号/设备有权限连接该 gateway。",
       },
     ],
     appendOriginal: true,
@@ -249,8 +247,7 @@ export const extraAgentIdFromDomain = (value?: string) => {
   return isExtraAgentIntegration(id) ? id : undefined
 }
 
-export const isExtraAgentDomain = (value?: string): value is `extra-agent/${string}` =>
-  !!extraAgentIdFromDomain(value)
+export const isExtraAgentDomain = (value?: string): value is `extra-agent/${string}` => !!extraAgentIdFromDomain(value)
 
 export const extraAgentDir = (id: ExtraAgentId) => extraAgents.find((agent) => agent.id === id)?.directory ?? ""
 

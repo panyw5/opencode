@@ -129,8 +129,7 @@ describe("ProjectLocation", () => {
     const secondProject = ProjectID.make(`owner-two-${crypto.randomUUID()}`)
     Database.use((db) => {
       for (const id of [firstProject, secondProject]) {
-        db
-          .insert(ProjectTable)
+        db.insert(ProjectTable)
           .values({ id, worktree: `D:/owner-${id}`, sandboxes: [], time_created: now, time_updated: now })
           .run()
       }

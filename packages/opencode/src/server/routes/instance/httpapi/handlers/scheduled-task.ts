@@ -23,12 +23,8 @@ export const scheduledTaskHandlers = HttpApiBuilder.group(InstanceHttpApi, "sche
             locationID: ctx.query.locationID,
             directory: ctx.query.directory,
           })
-          const directory = ctx.query.directory
-            ? AppFileSystem.resolve(ctx.query.directory)
-            : undefined
-          const persistedLocation = directory
-            ? ProjectLocation.getByDirectory(directory)
-            : undefined
+          const directory = ctx.query.directory ? AppFileSystem.resolve(ctx.query.directory) : undefined
+          const persistedLocation = directory ? ProjectLocation.getByDirectory(directory) : undefined
           const locationID = ctx.query.locationID
             ? ctx.query.locationID
             : persistedLocation
@@ -47,11 +43,7 @@ export const scheduledTaskHandlers = HttpApiBuilder.group(InstanceHttpApi, "sche
             projectID: ctx.query.projectID,
             locationID,
             directory: ctx.query.directory,
-            locationSource: ctx.query.locationID
-              ? "query"
-              : persistedLocation
-                ? "persisted-location"
-                : "none",
+            locationSource: ctx.query.locationID ? "query" : persistedLocation ? "persisted-location" : "none",
             durationMs: Date.now() - started,
             count: tasks.length,
           })

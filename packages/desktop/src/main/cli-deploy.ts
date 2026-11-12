@@ -59,7 +59,9 @@ export async function deployCli(input: {
         { cause: lastError },
       )
     }
-    throw new Error(`Could not install OpenCode CLI at ${input.target}: ${errorMessage(lastError)}`, { cause: lastError })
+    throw new Error(`Could not install OpenCode CLI at ${input.target}: ${errorMessage(lastError)}`, {
+      cause: lastError,
+    })
   } finally {
     await operations.rm(temp, { force: true }).catch(() => undefined)
   }

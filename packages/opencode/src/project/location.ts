@@ -88,33 +88,21 @@ function pathParts(directory: string, pathContext: PathContext = localPathContex
 export function getByDirectory(directory: string, pathContext: PathContext = localPathContext): Info | undefined {
   const parts = pathParts(directory, pathContext)
   const row = Database.use((db) =>
-    db
-      .select()
-      .from(ProjectLocationTable)
-      .where(eq(ProjectLocationTable.canonical_directory, parts.identity))
-      .get(),
+    db.select().from(ProjectLocationTable).where(eq(ProjectLocationTable.canonical_directory, parts.identity)).get(),
   )
   return row ? fromRow(row) : undefined
 }
 
 export function getByID(locationID: LocationID): Info | undefined {
   const row = Database.use((db) =>
-    db
-      .select()
-      .from(ProjectLocationTable)
-      .where(eq(ProjectLocationTable.id, locationID))
-      .get(),
+    db.select().from(ProjectLocationTable).where(eq(ProjectLocationTable.id, locationID)).get(),
   )
   return row ? fromRow(row) : undefined
 }
 
 export function listByLifecycleState(state: ProjectLocationLifecycleState): Info[] {
   return Database.use((db) =>
-    db
-      .select()
-      .from(ProjectLocationTable)
-      .where(eq(ProjectLocationTable.lifecycle_state, state))
-      .all(),
+    db.select().from(ProjectLocationTable).where(eq(ProjectLocationTable.lifecycle_state, state)).all(),
   ).map(fromRow)
 }
 

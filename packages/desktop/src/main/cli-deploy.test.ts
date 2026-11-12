@@ -46,7 +46,9 @@ describe("deployCli", () => {
       },
     })
 
-    await expect(deployCli({ source, target, platform: "win32", retryDelayMs: 1, operations: mock.operations })).resolves.toBe(target)
+    await expect(
+      deployCli({ source, target, platform: "win32", retryDelayMs: 1, operations: mock.operations }),
+    ).resolves.toBe(target)
     expect(mock.calls).toEqual([
       `copy:${source}:${temp}`,
       `rename:${temp}:${target}`,
@@ -65,7 +67,9 @@ describe("deployCli", () => {
       },
     })
 
-    await expect(deployCli({ source, target, platform: "win32", attempts: 2, retryDelayMs: 1, operations: mock.operations })).rejects.toThrow(
+    await expect(
+      deployCli({ source, target, platform: "win32", attempts: 2, retryDelayMs: 1, operations: mock.operations }),
+    ).rejects.toThrow(
       "Could not update OpenCode CLI at /bin/opencode.exe: the destination executable may still be running. Close opencode.exe and retry. access denied",
     )
     expect(mock.calls.at(-1)).toBe(`rm:${temp}`)
@@ -78,7 +82,9 @@ describe("deployCli", () => {
       },
     })
 
-    await expect(deployCli({ source, target, platform: "win32", operations: mock.operations })).rejects.toThrow("Could not install OpenCode CLI")
+    await expect(deployCli({ source, target, platform: "win32", operations: mock.operations })).rejects.toThrow(
+      "Could not install OpenCode CLI",
+    )
     expect(mock.calls.filter((call) => call.startsWith("rename:"))).toHaveLength(1)
   })
 })

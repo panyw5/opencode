@@ -293,63 +293,63 @@ export function DialogCustomProvider(props: Props) {
                 const m = entry.model
                 const modelIndex = entry.index
                 return (
-                <div
-                  class="flex flex-col gap-2 rounded-xl border border-border-weak-base bg-background-base/60 p-2"
-                  data-row={m.row}
-                >
-                  <div class="flex gap-2 items-start">
-                    <IconButton
-                      type="button"
-                      icon={m.expanded ? "chevron-down" : "chevron-right"}
-                      variant="ghost"
-                      class="mt-1.5"
-                      onClick={() => toggleModelConfig(modelIndex)}
-                      aria-label={
-                        m.expanded
-                          ? language.t("provider.custom.models.config.collapse")
-                          : language.t("provider.custom.models.config.expand")
-                      }
-                    />
-                    <div class="flex-1">
-                      <TextField
-                        label={language.t("provider.custom.models.id.label")}
-                        hideLabel
-                        placeholder={language.t("provider.custom.models.id.placeholder")}
-                        value={m.id}
-                        onChange={(v) => setModel(modelIndex, "id", v)}
-                        validationState={m.err.id ? "invalid" : undefined}
-                        error={m.err.id}
+                  <div
+                    class="flex flex-col gap-2 rounded-xl border border-border-weak-base bg-background-base/60 p-2"
+                    data-row={m.row}
+                  >
+                    <div class="flex gap-2 items-start">
+                      <IconButton
+                        type="button"
+                        icon={m.expanded ? "chevron-down" : "chevron-right"}
+                        variant="ghost"
+                        class="mt-1.5"
+                        onClick={() => toggleModelConfig(modelIndex)}
+                        aria-label={
+                          m.expanded
+                            ? language.t("provider.custom.models.config.collapse")
+                            : language.t("provider.custom.models.config.expand")
+                        }
+                      />
+                      <div class="flex-1">
+                        <TextField
+                          label={language.t("provider.custom.models.id.label")}
+                          hideLabel
+                          placeholder={language.t("provider.custom.models.id.placeholder")}
+                          value={m.id}
+                          onChange={(v) => setModel(modelIndex, "id", v)}
+                          validationState={m.err.id ? "invalid" : undefined}
+                          error={m.err.id}
+                        />
+                      </div>
+                      <div class="flex-1">
+                        <TextField
+                          label={language.t("provider.custom.models.name.label")}
+                          hideLabel
+                          placeholder={language.t("provider.custom.models.name.placeholder")}
+                          value={m.name}
+                          onChange={(v) => setModel(modelIndex, "name", v)}
+                          validationState={m.err.name ? "invalid" : undefined}
+                          error={m.err.name}
+                        />
+                      </div>
+                      <IconButton
+                        type="button"
+                        icon="trash"
+                        variant="ghost"
+                        class="mt-1.5"
+                        onClick={() => removeModel(modelIndex)}
+                        disabled={form.models.length <= 1}
+                        aria-label={language.t("provider.custom.models.remove")}
                       />
                     </div>
-                    <div class="flex-1">
-                      <TextField
-                        label={language.t("provider.custom.models.name.label")}
-                        hideLabel
-                        placeholder={language.t("provider.custom.models.name.placeholder")}
-                        value={m.name}
-                        onChange={(v) => setModel(modelIndex, "name", v)}
-                        validationState={m.err.name ? "invalid" : undefined}
-                        error={m.err.name}
+                    <Show when={m.expanded}>
+                      <ModelConfigFields
+                        providerID={form.providerID}
+                        model={m}
+                        onChange={(configIndex, value) => setModelConfig(modelIndex, configIndex, value)}
                       />
-                    </div>
-                    <IconButton
-                      type="button"
-                      icon="trash"
-                      variant="ghost"
-                      class="mt-1.5"
-                      onClick={() => removeModel(modelIndex)}
-                      disabled={form.models.length <= 1}
-                      aria-label={language.t("provider.custom.models.remove")}
-                    />
+                    </Show>
                   </div>
-                  <Show when={m.expanded}>
-                    <ModelConfigFields
-                      providerID={form.providerID}
-                      model={m}
-                      onChange={(configIndex, value) => setModelConfig(modelIndex, configIndex, value)}
-                    />
-                  </Show>
-                </div>
                 )
               }}
             </For>

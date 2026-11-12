@@ -1,6 +1,9 @@
 import { workspaceKey } from "@/pages/layout/helpers"
 
-export function filterActiveProjects<T extends { worktree: string }>(projects: T[], active: Array<{ worktree: string }>) {
+export function filterActiveProjects<T extends { worktree: string }>(
+  projects: T[],
+  active: Array<{ worktree: string }>,
+) {
   const keys = new Set(active.map((project) => workspaceKey(project.worktree)))
   return projects.filter((project) => keys.has(workspaceKey(project.worktree)))
 }

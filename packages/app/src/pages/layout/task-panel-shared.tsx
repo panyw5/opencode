@@ -13,7 +13,10 @@ export const labelStatus = (status: string) =>
 
 export type TaskProgressKind = "empty" | "quarter" | "half" | "three-quarter" | "complete"
 
-export function progressKindForStatus(status: string, opts?: { current?: boolean; completedAt?: string | null }): TaskProgressKind {
+export function progressKindForStatus(
+  status: string,
+  opts?: { current?: boolean; completedAt?: string | null },
+): TaskProgressKind {
   if (opts?.completedAt || status === "done" || status === "completed" || status === "archived") return "complete"
   if (status === "review") return "three-quarter"
   if (status === "in_progress" || status === "implementing") return "half"
@@ -219,9 +222,7 @@ export function TaskCardShell(props: {
                 if ((event.target as HTMLElement | null)?.closest("button")) event.stopPropagation()
               }}
             >
-              <For each={capsules()}>
-                {(item) => <span class={TASK_CARD_CHIP_CLASS}>{item}</span>}
-              </For>
+              <For each={capsules()}>{(item) => <span class={TASK_CARD_CHIP_CLASS}>{item}</span>}</For>
               {props.actions}
             </div>
           </Show>

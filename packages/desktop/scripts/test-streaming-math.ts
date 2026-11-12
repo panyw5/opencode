@@ -6,7 +6,11 @@ import { withCdp } from "./cdp"
 const fixture = process.env.OPENCODE_STREAM_PART
 const database = fixture ? new Database(process.env.OPENCODE_STREAM_DB!, { readonly: true }) : undefined
 const text = database
-  ? (database.query("select json_extract(data, '$.text') as text from part where id = ?").get(fixture!) as { text: string }).text
+  ? (
+      database.query("select json_extract(data, '$.text') as text from part where id = ?").get(fixture!) as {
+        text: string
+      }
+    ).text
   : String.raw`## First section
 
 FIRST_MARKER proof outline:
@@ -65,11 +69,17 @@ await withCdp(async (cdp, target) => {
         return { text: root.textContent, headings: root.querySelectorAll("h2").length,
           math: root.querySelectorAll(".katex-display").length, html: root.innerHTML.length };
       })()`)
-      assert.ok(snapshot.headings >= previousHeadings, `headings vanished at chars=${length} ${JSON.stringify(snapshot)}`)
+      assert.ok(
+        snapshot.headings >= previousHeadings,
+        `headings vanished at chars=${length} ${JSON.stringify(snapshot)}`,
+      )
       assert.ok(snapshot.math >= previousMath, `math vanished at chars=${length} ${JSON.stringify(snapshot)}`)
       previousHeadings = snapshot.headings
       previousMath = snapshot.math
-      if (length % 140 === 1) console.log(`[streaming-math-test] chars=${length} headings=${snapshot.headings} math=${snapshot.math} html=${snapshot.html}`)
+      if (length % 140 === 1)
+        console.log(
+          `[streaming-math-test] chars=${length} headings=${snapshot.headings} math=${snapshot.math} html=${snapshot.html}`,
+        )
     }
     await cdp.evaluate(`window.__streamingMath.setState("text", ${JSON.stringify(text)})`)
     await cdp.evaluate('window.__streamingMath.setState("streaming", false)')

@@ -15,10 +15,10 @@ export function formatToolCallTime(start: number, locale: string, timeZone?: str
 
 export function ToolCallTime(props: { part?: ToolPart }) {
   const i18n = useI18n()
-  const timefmt = createMemo(
-    () => new Intl.DateTimeFormat(i18n.locale(), { dateStyle: "medium", timeStyle: "short" }),
+  const timefmt = createMemo(() => new Intl.DateTimeFormat(i18n.locale(), { dateStyle: "medium", timeStyle: "short" }))
+  const titlefmt = createMemo(
+    () => new Intl.DateTimeFormat(i18n.locale(), { dateStyle: "medium", timeStyle: "medium" }),
   )
-  const titlefmt = createMemo(() => new Intl.DateTimeFormat(i18n.locale(), { dateStyle: "medium", timeStyle: "medium" }))
 
   const start = createMemo(() => toolCallStartMs(props.part?.state))
   const label = createMemo(() => {

@@ -76,7 +76,10 @@ function pushUniqueDirectory(directories: string[], seen: Set<string>, directory
 }
 
 /** Row → Info shell. `description` is filled later from the file (or legacy column during migrate). */
-function taskBaseFromRow(row: TaskRow, descriptionContent: string): Omit<Info, "sessionCount" | "lastSessionAt" | "progress" | "sessionDirectories"> {
+function taskBaseFromRow(
+  row: TaskRow,
+  descriptionContent: string,
+): Omit<Info, "sessionCount" | "lastSessionAt" | "progress" | "sessionDirectories"> {
   const descriptionPath =
     (typeof row.description_path === "string" && row.description_path.trim()) || descriptionRelativePath(row.id)
   return {
@@ -110,7 +113,13 @@ export type TaskRowMeta = {
   sessionDirectories: string[]
 }
 
-function rowMeta(row: TaskRow, sessionCount: number, progress: Progress, sessionDirectories: string[], lastSessionAt?: number): TaskRowMeta {
+function rowMeta(
+  row: TaskRow,
+  sessionCount: number,
+  progress: Progress,
+  sessionDirectories: string[],
+  lastSessionAt?: number,
+): TaskRowMeta {
   return {
     id: row.id,
     projectID: row.project_id,
@@ -204,10 +213,7 @@ export function get(id: ProjectTaskID): Effect.Effect<Info | undefined> {
   })
 }
 
-export function listRows(input: {
-  projectID: ProjectID
-  includeArchived?: boolean
-}): Effect.Effect<TaskRowMeta[]> {
+export function listRows(input: { projectID: ProjectID; includeArchived?: boolean }): Effect.Effect<TaskRowMeta[]> {
   return Effect.sync(() => {
     ensureDescriptionPathColumn()
     const conditions = [eq(ProjectTaskTable.project_id, input.projectID)]
@@ -229,10 +235,7 @@ export function listRows(input: {
   })
 }
 
-export function list(input: {
-  projectID: ProjectID
-  includeArchived?: boolean
-}): Effect.Effect<Info[]> {
+export function list(input: { projectID: ProjectID; includeArchived?: boolean }): Effect.Effect<Info[]> {
   return Effect.gen(function* () {
     const rows = yield* listRows(input)
     return rows.map((meta) => toInfo(meta, meta.legacyDescription))
@@ -284,7 +287,10 @@ export function listGlobal(input: { includeArchived?: boolean; limit?: number } 
       }
     })
     console.debug(
-      `[project-task] global-list-end limit=${input.limit ?? "all"} count=${tasks.length} ids=${tasks.slice(0, 10).map((task) => task.id).join(",")}`,
+      `[project-task] global-list-end limit=${input.limit ?? "all"} count=${tasks.length} ids=${tasks
+        .slice(0, 10)
+        .map((task) => task.id)
+        .join(",")}`,
     )
     return tasks
   })
@@ -382,7 +388,9 @@ export function archive(id: ProjectTaskID, now = Date.now()): Effect.Effect<Info
   })
 }
 
-export function detailRow(id: ProjectTaskID): Effect.Effect<(TaskRowMeta & { sessions: SessionTodoBundle[] }) | undefined> {
+export function detailRow(
+  id: ProjectTaskID,
+): Effect.Effect<(TaskRowMeta & { sessions: SessionTodoBundle[] }) | undefined> {
   return Effect.sync(() => {
     ensureDescriptionPathColumn()
     const row = Database.use((db) => db.select().from(ProjectTaskTable).where(eq(ProjectTaskTable.id, id)).get())

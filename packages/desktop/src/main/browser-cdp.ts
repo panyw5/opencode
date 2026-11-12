@@ -472,7 +472,12 @@ export class BrowserCdp {
         node?: { backendNodeId?: number; nodeName?: string; attributes?: string[] }
       }
       if (!described.node?.backendNodeId) throw new Error("Resolved page target has no backend identity")
-      return { objectId, nodeId: requested.nodeId, backendNodeId: described.node.backendNodeId, nodeName: described.node.nodeName }
+      return {
+        objectId,
+        nodeId: requested.nodeId,
+        backendNodeId: described.node.backendNodeId,
+        nodeName: described.node.nodeName,
+      }
     } catch (error) {
       await this.releaseRemoteObject(objectId)
       throw error
@@ -563,7 +568,8 @@ export class BrowserCdp {
   /** Compare a snapshot UID with the exact target from the shared resolver. */
   async matchesResolved(uid: string, expression: string) {
     const expectedBackendNodeId = uid.startsWith("n") ? Number.parseInt(uid.slice(1), 10) : Number.NaN
-    if (!Number.isFinite(expectedBackendNodeId)) throw new Error("Invalid element uid; take a new browser_read snapshot")
+    if (!Number.isFinite(expectedBackendNodeId))
+      throw new Error("Invalid element uid; take a new browser_read snapshot")
     const target = await this.resolveElementExpression(expression)
     await this.releaseRemoteObject(target.objectId)
     return target.nodeName === "BUTTON" && target.backendNodeId === expectedBackendNodeId
@@ -963,18 +969,38 @@ export class BrowserCdp {
         this.wc.off("destroyed", destroyed)
         this.wc.off("did-fail-load", failed)
       }
-      const loaded = () => { cleanup(); resolve() }
-      const destroyed = () => { cleanup(); reject(new Error("Page closed during reconnect refresh")) }
-      const failed = (_event: Electron.Event, code: number, _description: string, _url: string, isMainFrame: boolean) => {
+      const loaded = () => {
+        cleanup()
+        resolve()
+      }
+      const destroyed = () => {
+        cleanup()
+        reject(new Error("Page closed during reconnect refresh"))
+      }
+      const failed = (
+        _event: Electron.Event,
+        code: number,
+        _description: string,
+        _url: string,
+        isMainFrame: boolean,
+      ) => {
         if (!isMainFrame || code === -3) return
         cleanup()
         reject(new Error(`Reconnect refresh failed code=${code}`))
       }
-      const timer = setTimeout(() => { cleanup(); reject(new Error("Reconnect refresh timed out")) }, timeoutMs)
+      const timer = setTimeout(() => {
+        cleanup()
+        reject(new Error("Reconnect refresh timed out"))
+      }, timeoutMs)
       this.wc.on("did-stop-loading", loaded)
       this.wc.on("destroyed", destroyed)
       this.wc.on("did-fail-load", failed)
-      try { this.reload() } catch (error) { cleanup(); reject(error) }
+      try {
+        this.reload()
+      } catch (error) {
+        cleanup()
+        reject(error)
+      }
     })
   }
 
@@ -986,9 +1012,18 @@ export class BrowserCdp {
         this.wc.off("did-stop-loading", loaded)
         this.wc.off("destroyed", destroyed)
       }
-      const loaded = () => { cleanup(); resolve() }
-      const destroyed = () => { cleanup(); reject(new Error("Page closed while awaiting its document")) }
-      const timer = setTimeout(() => { cleanup(); reject(new Error("Document loading timed out")) }, timeoutMs)
+      const loaded = () => {
+        cleanup()
+        resolve()
+      }
+      const destroyed = () => {
+        cleanup()
+        reject(new Error("Page closed while awaiting its document"))
+      }
+      const timer = setTimeout(() => {
+        cleanup()
+        reject(new Error("Document loading timed out"))
+      }, timeoutMs)
       this.wc.on("did-stop-loading", loaded)
       this.wc.on("destroyed", destroyed)
       if (!this.wc.isLoading()) loaded()

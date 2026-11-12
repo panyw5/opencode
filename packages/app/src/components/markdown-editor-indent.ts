@@ -43,12 +43,7 @@ function lineEnd(text: string, pos: number) {
 }
 
 /** Tab / Shift+Tab indent-outdent for markdown source editors. */
-export function indent(input: {
-  text: string
-  start: number
-  end: number
-  shiftKey: boolean
-}): IndentEdit | null {
+export function indent(input: { text: string; start: number; end: number; shiftKey: boolean }): IndentEdit | null {
   const { text, start, end, shiftKey } = input
 
   // Caret only: insert or remove indent at the current line start relative to caret.

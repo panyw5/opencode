@@ -88,15 +88,15 @@
 
 ### 本轮验证（2026-10-14）
 
-| 检查 | 实际结果 |
-| --- | --- |
-| App 全量 unit suite | 1671 pass / 0 fail，205 文件 |
-| UI 全量 suite | 268 pass / 0 fail，32 文件 |
-| opencode extension + 选定 HTTP/鉴权/UI tests | 150 pass / 0 fail，13 文件 |
-| 扩展相关 browser-condition tests | 22 pass / 0 fail，6 文件；计数按本轮 runner 汇总，不与历史隔离契约计数叠加 |
-| extension-kit browser-condition tests | 17 pass / 0 fail，3 文件 |
-| hello-viewer tests | 14 pass / 0 fail，2 文件 |
-| App / opencode / extension-kit / hello-viewer typecheck | 4 项通过 |
+| 检查                                                    | 实际结果                                                                   |
+| ------------------------------------------------------- | -------------------------------------------------------------------------- |
+| App 全量 unit suite                                     | 1671 pass / 0 fail，205 文件                                               |
+| UI 全量 suite                                           | 268 pass / 0 fail，32 文件                                                 |
+| opencode extension + 选定 HTTP/鉴权/UI tests            | 150 pass / 0 fail，13 文件                                                 |
+| 扩展相关 browser-condition tests                        | 22 pass / 0 fail，6 文件；计数按本轮 runner 汇总，不与历史隔离契约计数叠加 |
+| extension-kit browser-condition tests                   | 17 pass / 0 fail，3 文件                                                   |
+| hello-viewer tests                                      | 14 pass / 0 fail，2 文件                                                   |
+| App / opencode / extension-kit / hello-viewer typecheck | 4 项通过                                                                   |
 
 本轮未重新构建 SDK/示例/生产 UI/内嵌二进制，未运行全仓 opencode suite、完整 workspace typecheck 或最新 GUI 矩阵。测试通过不等于所有运行形态发布验收完成。历史 Web/Electron/内嵌验收仍按原日期、产物和范围保留。
 

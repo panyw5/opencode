@@ -1,12 +1,5 @@
 import { test, expect } from "../fixtures"
-import {
-  defocus,
-  createTestProject,
-  cleanupSession,
-  cleanupTestProject,
-  slugFromUrl,
-  waitSession,
-} from "../actions"
+import { defocus, createTestProject, cleanupSession, cleanupTestProject, slugFromUrl, waitSession } from "../actions"
 import {
   promptSelector,
   projectSwitchSelector,

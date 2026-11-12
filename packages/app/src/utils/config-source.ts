@@ -107,11 +107,21 @@ function isGlobalOpenCodePlugin(value: string) {
     return true
   }
   const roam = low.lastIndexOf("roaming")
-  if (roam > 0 && low[roam - 1] === "appdata" && low[roam + 1] === "opencode" && ["plugin", "plugins"].includes(low[roam + 2] ?? "")) {
+  if (
+    roam > 0 &&
+    low[roam - 1] === "appdata" &&
+    low[roam + 1] === "opencode" &&
+    ["plugin", "plugins"].includes(low[roam + 2] ?? "")
+  ) {
     return true
   }
   const local = low.lastIndexOf("local")
-  return local > 0 && low[local - 1] === "appdata" && low[local + 1] === "opencode" && ["plugin", "plugins"].includes(low[local + 2] ?? "")
+  return (
+    local > 0 &&
+    low[local - 1] === "appdata" &&
+    low[local + 1] === "opencode" &&
+    ["plugin", "plugins"].includes(low[local + 2] ?? "")
+  )
 }
 
 export function classifySkillSource(
@@ -123,12 +133,25 @@ export function classifySkillSource(
   if (isInsidePath(value, input.claudeRoot)) return { scope: "global", group: "claude", origin: ".claude" }
   const owner = findProjectOwner(value, projects)
   if (owner) {
-    return { scope: "project", group: "project", project: owner.label, root: owner.item.worktree, origin: sourceOrigin(value, "skill"), owner }
+    return {
+      scope: "project",
+      group: "project",
+      project: owner.label,
+      root: owner.item.worktree,
+      origin: sourceOrigin(value, "skill"),
+      owner,
+    }
   }
   if (input.allowPathFallback !== false) {
     const fallback = sourceByPath(value, ["skill", "skills"])
     if (fallback && fallback.origin !== ".claude") {
-      return { scope: "project", group: "project", project: fallback.project, root: fallback.root, origin: fallback.origin }
+      return {
+        scope: "project",
+        group: "project",
+        project: fallback.project,
+        root: fallback.root,
+        origin: fallback.origin,
+      }
     }
   }
   const origin = sourceOrigin(value, "skill")
@@ -142,13 +165,31 @@ export function classifyPluginSource(
 ): ConfigSource {
   const owner = findProjectOwner(value, projects)
   if (owner) {
-    return { scope: "project", group: "project", project: owner.label, root: owner.item.worktree, origin: sourceOrigin(value, "plugin"), owner }
+    return {
+      scope: "project",
+      group: "project",
+      project: owner.label,
+      root: owner.item.worktree,
+      origin: sourceOrigin(value, "plugin"),
+      owner,
+    }
   }
   if (input.allowPathFallback !== false) {
     const fallback = sourceByPath(value, ["plugin", "plugins"])
     if (fallback && !isGlobalOpenCodePlugin(value)) {
-      return { scope: "project", group: "project", project: fallback.project, root: fallback.root, origin: fallback.origin }
+      return {
+        scope: "project",
+        group: "project",
+        project: fallback.project,
+        root: fallback.root,
+        origin: fallback.origin,
+      }
     }
   }
-  return { scope: "global", group: "global", project: isGlobalOpenCodePlugin(value) ? "global" : undefined, origin: sourceOrigin(value, "plugin") }
+  return {
+    scope: "global",
+    group: "global",
+    project: isGlobalOpenCodePlugin(value) ? "global" : undefined,
+    origin: sourceOrigin(value, "plugin"),
+  }
 }

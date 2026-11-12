@@ -148,9 +148,7 @@ export function RailTooltip(props: {
               }}
             >
               <span>{props.title}</span>
-              <Show when={props.keybind}>
-                {(keybind) => <RailKeybind value={keybind()} />}
-              </Show>
+              <Show when={props.keybind}>{(keybind) => <RailKeybind value={keybind()} />}</Show>
             </div>
           )}
         </Show>

@@ -56,9 +56,14 @@ describe("command keybind helpers", () => {
     const semicolon = parseKeybind("ctrl+shift+;")
     const period = parseKeybind("ctrl+shift+.")
 
-    expect(matchKeybind(comma, new KeyboardEvent("keydown", { key: "<", code: "Comma", ctrlKey: true, shiftKey: true }))).toBe(true)
     expect(
-      matchKeybind(semicolon, new KeyboardEvent("keydown", { key: ":", code: "Semicolon", ctrlKey: true, shiftKey: true })),
+      matchKeybind(comma, new KeyboardEvent("keydown", { key: "<", code: "Comma", ctrlKey: true, shiftKey: true })),
+    ).toBe(true)
+    expect(
+      matchKeybind(
+        semicolon,
+        new KeyboardEvent("keydown", { key: ":", code: "Semicolon", ctrlKey: true, shiftKey: true }),
+      ),
     ).toBe(true)
     expect(
       matchKeybind(period, new KeyboardEvent("keydown", { key: ">", code: "Period", ctrlKey: true, shiftKey: true })),
@@ -67,10 +72,12 @@ describe("command keybind helpers", () => {
   })
 
   test("keyFromEvent falls back to the event key when code is unknown", () => {
-    expect(matchKeybind(parseKeybind("ctrl+comma"), new KeyboardEvent("keydown", { key: ",", ctrlKey: true }))).toBe(true)
-    expect(matchKeybind(parseKeybind("ctrl+a"), new KeyboardEvent("keydown", { key: "a", code: "KeyA", ctrlKey: true }))).toBe(
+    expect(matchKeybind(parseKeybind("ctrl+comma"), new KeyboardEvent("keydown", { key: ",", ctrlKey: true }))).toBe(
       true,
     )
+    expect(
+      matchKeybind(parseKeybind("ctrl+a"), new KeyboardEvent("keydown", { key: "a", code: "KeyA", ctrlKey: true })),
+    ).toBe(true)
   })
 
   test("formatKeybind returns human readable output", () => {
@@ -90,9 +97,9 @@ describe("command keybind helpers", () => {
   })
 
   test("preserves macOS editable cursor movement keybinds", () => {
-    expect(shouldPreserveNativeEditableKeybind(new KeyboardEvent("keydown", { key: "ArrowUp", metaKey: true }), true)).toBe(
-      true,
-    )
+    expect(
+      shouldPreserveNativeEditableKeybind(new KeyboardEvent("keydown", { key: "ArrowUp", metaKey: true }), true),
+    ).toBe(true)
     expect(
       shouldPreserveNativeEditableKeybind(new KeyboardEvent("keydown", { key: "ArrowDown", metaKey: true }), true),
     ).toBe(true)
@@ -102,8 +109,8 @@ describe("command keybind helpers", () => {
         true,
       ),
     ).toBe(false)
-    expect(shouldPreserveNativeEditableKeybind(new KeyboardEvent("keydown", { key: "ArrowUp", metaKey: true }), false)).toBe(
-      false,
-    )
+    expect(
+      shouldPreserveNativeEditableKeybind(new KeyboardEvent("keydown", { key: "ArrowUp", metaKey: true }), false),
+    ).toBe(false)
   })
 })

@@ -40,9 +40,7 @@ function mapWorktreeError<A, R>(self: Effect.Effect<A, Worktree.Error, R>) {
 function mapDeleteError<A>(self: Effect.Effect<A, LocationLifecycle.DeleteLocationError>) {
   return self.pipe(
     Effect.mapError((error) => {
-      const message = "leases" in error
-        ? `Location is busy with ${error.leases} active lease(s)`
-        : error.message
+      const message = "leases" in error ? `Location is busy with ${error.leases} active lease(s)` : error.message
       return new WorktreeApiError({
         name: "WorktreeRemoveFailedError",
         data: { message },

@@ -26,12 +26,8 @@ const genericagentBridge: ExtraAgentBridge = {
       hostname: opts.hostname,
       port: opts.port,
       cors: opts.cors,
-      pythonExecutable:
-        readString(config, "pythonExecutable") ??
-        readEnv("OPENCODE_GENERICAGENT_PYTHON"),
-      genericAgentDir:
-        readString(config, "genericAgentDir") ??
-        readEnv("OPENCODE_GENERICAGENT_DIR"),
+      pythonExecutable: readString(config, "pythonExecutable") ?? readEnv("OPENCODE_GENERICAGENT_PYTHON"),
+      genericAgentDir: readString(config, "genericAgentDir") ?? readEnv("OPENCODE_GENERICAGENT_DIR"),
     })
   },
 }
@@ -44,15 +40,9 @@ const hermesBridge: ExtraAgentBridge = {
       hostname: opts.hostname,
       port: opts.port,
       cors: opts.cors,
-      pythonExecutable:
-        readString(config, "pythonExecutable") ??
-        readEnv("OPENCODE_HERMES_PYTHON"),
-      hermesDir:
-        readString(config, "hermesDir") ??
-        readEnv("OPENCODE_HERMES_DIR"),
-      hermesHome:
-        readString(config, "hermesHome") ??
-        readEnv("OPENCODE_HERMES_HOME"),
+      pythonExecutable: readString(config, "pythonExecutable") ?? readEnv("OPENCODE_HERMES_PYTHON"),
+      hermesDir: readString(config, "hermesDir") ?? readEnv("OPENCODE_HERMES_DIR"),
+      hermesHome: readString(config, "hermesHome") ?? readEnv("OPENCODE_HERMES_HOME"),
     })
   },
 }

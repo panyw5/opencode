@@ -249,8 +249,12 @@ test("reverted messages stay removed after a new prompt and session switch", asy
       if (!text.includes("session-revert-sync") && !text.includes("prompt-submit")) return
       console.log(`[revert-switch-browser] ${text}`)
       if (!text.includes("session-revert-sync")) return
-      const value = await message.args()[1]?.jsonValue().catch(() => undefined)
-      if (value?.stage !== "event-received" || value.sessionID !== targetSessionID || typeof value.type !== "string") return
+      const value = await message
+        .args()[1]
+        ?.jsonValue()
+        .catch(() => undefined)
+      if (value?.stage !== "event-received" || value.sessionID !== targetSessionID || typeof value.type !== "string")
+        return
       revertEvents.push(value.type)
     })
   })
@@ -298,10 +302,13 @@ test("reverted messages stay removed after a new prompt and session switch", asy
           )
           .toBe(false)
         await expect
-          .poll(async () => {
-            await consoleEvents
-            return revertEvents.slice(-3)
-          }, { timeout: 30_000 })
+          .poll(
+            async () => {
+              await consoleEvents
+              return revertEvents.slice(-3)
+            },
+            { timeout: 30_000 },
+          )
           .toEqual(["message.removed", "message.removed", "session.updated"])
         for (const message of removedMessages) await expect(message).toHaveCount(0)
 

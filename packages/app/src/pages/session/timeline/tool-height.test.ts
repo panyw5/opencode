@@ -91,9 +91,7 @@ describe("estimateRowHeight with registered tool estimators", () => {
     })
     const part = toolPart("ext_tool")
     expect(estimateRowHeight(row(part), WIDTH, { ...base, parts: lookup(part), viewportWidth: 1440 })).toBe(180)
-    expect(
-      estimateRowHeight(row(part), WIDTH, { ...base, parts: lookup(part), toolDefaultOpen: () => true }),
-    ).toBe(300)
+    expect(estimateRowHeight(row(part), WIDTH, { ...base, parts: lookup(part), toolDefaultOpen: () => true })).toBe(300)
     expect(calls).toEqual([
       { width: WIDTH, viewportWidth: 1440, open: false },
       { width: WIDTH, viewportWidth: undefined, open: true },

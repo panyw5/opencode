@@ -40,9 +40,7 @@ describe("math initialization", () => {
     expect(createMathProblemID("Does n! + 1 = m^2?", "12345678-abcd-4abc-9000-123456789abc")).toBe(
       "does-n-1-m-2-12345678abcd",
     )
-    expect(createMathProblemID("同余问题", "aaaaaaaa-bbbb-4ccc-8000-dddddddddddd")).toBe(
-      "problem-aaaaaaaabbbb",
-    )
+    expect(createMathProblemID("同余问题", "aaaaaaaa-bbbb-4ccc-8000-dddddddddddd")).toBe("problem-aaaaaaaabbbb")
   })
 
   test("uses singular worker grammar for a one-worker roster", () => {

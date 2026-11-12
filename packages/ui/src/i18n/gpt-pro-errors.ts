@@ -2,7 +2,10 @@ import type { GptProIssueCode } from "@opencode-ai/util/gpt-pro-error"
 
 const messages = {
   result_storage: {
-    en: ["Answer storage needs recovery", "The original page was preserved. Restore local result storage, then resume the same consultation. No question was resent."],
+    en: [
+      "Answer storage needs recovery",
+      "The original page was preserved. Restore local result storage, then resume the same consultation. No question was resent.",
+    ],
     zh: ["回答存储需要恢复", "原网页已保留。恢复本地结果存储后再继续同一咨询；程序没有重发问题。"],
   },
   login_invalid_session: {
@@ -51,7 +54,10 @@ const messages = {
     zh: ["正在等待登录导入完成", "等待登录核验。重连后恢复的未发送咨询需显式继续；不要创建替代咨询或重复提交。"],
   },
   login_expired: {
-    en: ["The ChatGPT login could not be renewed", "Reconnect ChatGPT through the approved browser import and verify the candidate login. The original question was not resent."],
+    en: [
+      "The ChatGPT login could not be renewed",
+      "Reconnect ChatGPT through the approved browser import and verify the candidate login. The original question was not resent.",
+    ],
     zh: ["ChatGPT 登录无法续用", "通过已批准的浏览器导入流程重连，并核验候选登录。原问题没有重发。"],
   },
   login_connection_expired: {

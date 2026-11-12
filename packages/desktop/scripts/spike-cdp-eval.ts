@@ -2,11 +2,15 @@
 // usage: bun scripts/spike-cdp-eval.ts <url-substring> <expression>
 const [needle, expression] = process.argv.slice(2)
 
-const targets: Array<{ url: string; webSocketDebuggerUrl: string; title: string }> =
-  await (await fetch("http://127.0.0.1:9222/json/list")).json()
+const targets: Array<{ url: string; webSocketDebuggerUrl: string; title: string }> = await (
+  await fetch("http://127.0.0.1:9222/json/list")
+).json()
 const target = targets.find((t) => t.url.includes(needle))
 if (!target) {
-  console.error(`no target matching ${needle}; have:`, targets.map((t) => t.url))
+  console.error(
+    `no target matching ${needle}; have:`,
+    targets.map((t) => t.url),
+  )
   process.exit(1)
 }
 

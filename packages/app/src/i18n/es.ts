@@ -440,8 +440,10 @@ export const dict = {
 
   "toast.file.loadFailed.title": "Fallo al cargar archivo",
   "toast.file.listFailed.title": "Fallo al listar archivos",
-  "toast.file.listFailed.openclaw": "OpenClaw does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
-  "toast.file.listFailed.generalagent": "GeneralAgent does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
+  "toast.file.listFailed.openclaw":
+    "OpenClaw does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
+  "toast.file.listFailed.generalagent":
+    "GeneralAgent does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
 
   "toast.context.noLineSelection.title": "Sin selección de líneas",
   "toast.context.noLineSelection.description": "Primero selecciona un rango de líneas en una pestaña de archivo.",
@@ -666,7 +668,8 @@ export const dict = {
     "Indexa los mensajes de las sesiones en este dispositivo para buscar en todas las sesiones. Al deshabilitarlo se borra el índice local, pero no el contenido de las sesiones.",
   "settings.general.searchIndex.status.loading": "Cargando el estado del índice...",
   "settings.general.searchIndex.status.disabled": "El índice de contenido de las sesiones está deshabilitado",
-  "settings.general.searchIndex.status.unavailable": "El estado del índice de contenido de las sesiones no está disponible",
+  "settings.general.searchIndex.status.unavailable":
+    "El estado del índice de contenido de las sesiones no está disponible",
   "settings.general.searchIndex.status.complete": "Índice de contenido de las sesiones completado",
   "settings.general.searchIndex.status.buildingUnknown": "Creando el índice de contenido de las sesiones...",
   "settings.general.searchIndex.status.building":

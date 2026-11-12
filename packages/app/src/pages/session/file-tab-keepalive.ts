@@ -47,44 +47,41 @@ export function createFileTabKeepAlive(input: FileTabKeepAliveInput) {
   // close action) and session switches, and dispose the viewer state of tabs
   // that went away so no dirty/handler state survives its tab.
   createEffect(
-    on(
-      [input.sessionKey, input.openedTabs],
-      ([session, list], prev) => {
-        if (!prev) return
-        const [prevSession, prevList] = prev
-        if (prevSession === session) {
-          const open = new Set(list)
-          const closed = prevList.filter((tab) => !open.has(tab) && keepable(tab))
-          if (closed.length === 0) return
-          setWarmed((prevSet) => {
-            const next = new Set(prevSet)
-            let changed = false
-            for (const tab of closed) {
-              if (next.delete(fileViewerTabKey(session, tab))) changed = true
-            }
-            return changed ? next : prevSet
-          })
-          for (const tab of closed) disposeFileViewerTabState(fileViewerTabKey(session, tab))
-          return
-        }
-        // Session switch: every previous tab is gone from this panel. Drop
-        // only the previous session's keys so tabs the new session warmed in
-        // the same flush survive.
+    on([input.sessionKey, input.openedTabs], ([session, list], prev) => {
+      if (!prev) return
+      const [prevSession, prevList] = prev
+      if (prevSession === session) {
+        const open = new Set(list)
+        const closed = prevList.filter((tab) => !open.has(tab) && keepable(tab))
+        if (closed.length === 0) return
         setWarmed((prevSet) => {
           const next = new Set(prevSet)
           let changed = false
-          for (const tab of prevList) {
-            if (!keepable(tab)) continue
-            if (next.delete(fileViewerTabKey(prevSession, tab))) changed = true
+          for (const tab of closed) {
+            if (next.delete(fileViewerTabKey(session, tab))) changed = true
           }
           return changed ? next : prevSet
         })
+        for (const tab of closed) disposeFileViewerTabState(fileViewerTabKey(session, tab))
+        return
+      }
+      // Session switch: every previous tab is gone from this panel. Drop
+      // only the previous session's keys so tabs the new session warmed in
+      // the same flush survive.
+      setWarmed((prevSet) => {
+        const next = new Set(prevSet)
+        let changed = false
         for (const tab of prevList) {
           if (!keepable(tab)) continue
-          disposeFileViewerTabState(fileViewerTabKey(prevSession, tab))
+          if (next.delete(fileViewerTabKey(prevSession, tab))) changed = true
         }
-      },
-    ),
+        return changed ? next : prevSet
+      })
+      for (const tab of prevList) {
+        if (!keepable(tab)) continue
+        disposeFileViewerTabState(fileViewerTabKey(prevSession, tab))
+      }
+    }),
   )
 
   // Safety net when the whole panel goes away (session page unmount, desktop

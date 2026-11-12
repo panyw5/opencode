@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  createPickedFileAuthorizations,
-  assertAttachmentBudget,
-  MAX_ATTACHMENT_BYTES,
-} from "./attachment-picker"
+import { createPickedFileAuthorizations, assertAttachmentBudget, MAX_ATTACHMENT_BYTES } from "./attachment-picker"
 
 function mockRead(data: Record<string, ArrayBuffer>) {
   return async (path: string, maxBytes: number): Promise<ArrayBuffer> => {

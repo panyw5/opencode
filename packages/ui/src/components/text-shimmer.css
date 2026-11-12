@@ -119,9 +119,13 @@
 /* Shared dual-layer brightness sweep used by session title + thinking labels. */
 @keyframes session-title-text-shimmer {
   0% {
-    background-position: 100% center, 0 0;
+    background-position:
+      100% center,
+      0 0;
   }
   100% {
-    background-position: -100% center, 0 0;
+    background-position:
+      -100% center,
+      0 0;
   }
 }

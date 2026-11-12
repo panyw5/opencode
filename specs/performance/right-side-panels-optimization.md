@@ -40,26 +40,26 @@
 
 ### 2.1 主要现有文件
 
-| 职责 | 现有文件（相对项目根） |
-| --- | --- |
-| 面板挂载、显隐、文件 tab | `packages/app/src/pages/session/session-side-panel.tsx` |
-| 模式选择、VCS 请求、事件监听、审查定位 | `packages/app/src/pages/session.tsx` |
-| 真实目录树、过滤、递归行 | `packages/app/src/components/file-tree.tsx` |
-| 目录状态及请求去重 | `packages/app/src/context/file/tree-store.ts` |
-| 文件内容、watcher、文件缓存 | `packages/app/src/context/file.tsx`、`packages/app/src/context/file/watcher.ts` |
-| 面板路径及内部 file tab | `packages/app/src/context/file/path.ts` |
-| 文件预览 | `packages/app/src/pages/session/file-tabs.tsx` |
-| session diff 数据服务 | `packages/app/src/context/global-sync/session-diff-service.ts` |
-| 审查列表、展开、评论控制器 | `packages/ui/src/components/session-review.tsx` |
-| 补丁解析、文本恢复与缓存 | `packages/ui/src/components/session-diff.ts` |
-| Pierre 查看器生命周期 | `packages/ui/src/components/file.tsx` |
-| Worker 与共享行级虚拟化 | `packages/ui/src/pierre/worker.ts`、`packages/ui/src/pierre/virtualizer.ts` |
-| 上下文感知路径工具 | `packages/core/src/util/path.ts` |
-| SDK 工作区路径上下文 | `packages/app/src/context/sdk.tsx`、`packages/app/src/pages/layout/helpers.ts` |
-| Git 清单与 patch | `packages/opencode/src/git/index.ts`、`packages/opencode/src/project/vcs.ts` |
-| 文件列表、读取 | `packages/opencode/src/file/index.ts` |
-| session 历史差异存储读取 | `packages/opencode/src/session/summary.ts` |
-| 公开 API | `packages/opencode/src/server/routes/instance/httpapi/groups/instance.ts`、`handlers/instance.ts` |
+| 职责                                   | 现有文件（相对项目根）                                                                            |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| 面板挂载、显隐、文件 tab               | `packages/app/src/pages/session/session-side-panel.tsx`                                           |
+| 模式选择、VCS 请求、事件监听、审查定位 | `packages/app/src/pages/session.tsx`                                                              |
+| 真实目录树、过滤、递归行               | `packages/app/src/components/file-tree.tsx`                                                       |
+| 目录状态及请求去重                     | `packages/app/src/context/file/tree-store.ts`                                                     |
+| 文件内容、watcher、文件缓存            | `packages/app/src/context/file.tsx`、`packages/app/src/context/file/watcher.ts`                   |
+| 面板路径及内部 file tab                | `packages/app/src/context/file/path.ts`                                                           |
+| 文件预览                               | `packages/app/src/pages/session/file-tabs.tsx`                                                    |
+| session diff 数据服务                  | `packages/app/src/context/global-sync/session-diff-service.ts`                                    |
+| 审查列表、展开、评论控制器             | `packages/ui/src/components/session-review.tsx`                                                   |
+| 补丁解析、文本恢复与缓存               | `packages/ui/src/components/session-diff.ts`                                                      |
+| Pierre 查看器生命周期                  | `packages/ui/src/components/file.tsx`                                                             |
+| Worker 与共享行级虚拟化                | `packages/ui/src/pierre/worker.ts`、`packages/ui/src/pierre/virtualizer.ts`                       |
+| 上下文感知路径工具                     | `packages/core/src/util/path.ts`                                                                  |
+| SDK 工作区路径上下文                   | `packages/app/src/context/sdk.tsx`、`packages/app/src/pages/layout/helpers.ts`                    |
+| Git 清单与 patch                       | `packages/opencode/src/git/index.ts`、`packages/opencode/src/project/vcs.ts`                      |
+| 文件列表、读取                         | `packages/opencode/src/file/index.ts`                                                             |
+| session 历史差异存储读取               | `packages/opencode/src/session/summary.ts`                                                        |
+| 公开 API                               | `packages/opencode/src/server/routes/instance/httpapi/groups/instance.ts`、`handlers/instance.ts` |
 
 ### 2.2 目标结构
 
@@ -90,12 +90,12 @@ SDK 工作区上下文 + 路径边界适配
 
 ### 3.1 四种值不能混用
 
-| 值 | 用途 | 禁止事项 |
-| --- | --- | --- |
-| 逻辑路径 LogicalPath | API、展示、保留文件名拼写；Windows 分隔符为 `/` | 不因身份比较而改成小写 |
-| 路径身份 PathIdentity | Map/Set、请求去重、节点 key、缓存命中 | 不传给文件读取或 shell |
-| 原生路径 NativePath | 后端文件系统、Git cwd、Electron shell、watcher 边界 | 不作为前端树节点和持久化新键 |
-| tab / URL / route slug | UI 标签或传输编码 | 不当作原始文件名，不重复解码 |
+| 值                     | 用途                                                | 禁止事项                     |
+| ---------------------- | --------------------------------------------------- | ---------------------------- |
+| 逻辑路径 LogicalPath   | API、展示、保留文件名拼写；Windows 分隔符为 `/`     | 不因身份比较而改成小写       |
+| 路径身份 PathIdentity  | Map/Set、请求去重、节点 key、缓存命中               | 不传给文件读取或 shell       |
+| 原生路径 NativePath    | 后端文件系统、Git cwd、Electron shell、watcher 边界 | 不作为前端树节点和持久化新键 |
+| tab / URL / route slug | UI 标签或传输编码                                   | 不当作原始文件名，不重复解码 |
 
 已有 core `Path.logical/identity/native/isInside/relative/route` 应优先复用。注意：目前 `Path.logical` 和 `Path.identity` 不统一折叠 dot segments；不能假设仅调用 identity 就能去除 `.` 和 `..`。需要项目相对解析时，使用显式的 resolve-within 操作并独立测试。
 
@@ -110,20 +110,20 @@ SDK 工作区上下文 + 路径边界适配
 
 ### 3.3 macOS 与 Windows 的具体规则
 
-| 场景 | 规范 |
-| --- | --- |
-| macOS/POSIX `src/a\b.ts` | 反斜杠是文件名字符，不拆为目录；编码到 tab 时成为 `%5C` |
-| macOS/POSIX 大小写 | 保留大小写并默认区分身份，不因为常见卷不区分大小写就全局 lowercase |
-| Windows `C:\Repo\src\App.ts` | 逻辑路径 `C:/Repo/src/App.ts`；身份按现有明确本地 Windows 策略比较 |
-| Windows 相对 `src\App.ts` | 根据工作区 Windows 上下文转成 `src/App.ts`，不能因没有盘符就漏掉处理 |
-| Windows `C:foo` | 是 drive-relative，不当作 `C:/foo`；新的文件读取接口拒绝该歧义输入 |
-| Windows `\foo` | 是 rooted-relative，不擅自补盘符；协议入口要求明确绝对路径或工作区相对路径 |
-| UNC `\\server\share\Repo` | 逻辑路径 `//server/share/Repo`；保留 server/share 根，不折叠成单 `/` |
-| 不同 Windows 盘符或 UNC share | 不得匹配同一工作区，不得简单去掉首字符后当相对路径 |
-| Windows case-sensitive 目录 | 当前全局策略不支持这类精细身份。首阶段保持已有策略；若宣称支持，必须先引入后端能力和大小写测试，不能悄悄合并两个真实文件 |
-| `/tmp` 与 `/private/tmp` | 仅在明确 macOS 本地工作区且后端确认规范根/别名时匹配，不对任意平台字符串做替换 |
-| 中文、NFC/NFD、空格、emoji | 不在客户端任意 Unicode 归一化；保留后端权威拼写；需要别名时由后端确认 |
-| Windows extended-length/device path | 不进入通用逻辑路径替换；设备命名空间拒绝，合法 extended-length 本地路径在后端专门适配，并补 Windows 实机测试 |
+| 场景                                | 规范                                                                                                                     |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| macOS/POSIX `src/a\b.ts`            | 反斜杠是文件名字符，不拆为目录；编码到 tab 时成为 `%5C`                                                                  |
+| macOS/POSIX 大小写                  | 保留大小写并默认区分身份，不因为常见卷不区分大小写就全局 lowercase                                                       |
+| Windows `C:\Repo\src\App.ts`        | 逻辑路径 `C:/Repo/src/App.ts`；身份按现有明确本地 Windows 策略比较                                                       |
+| Windows 相对 `src\App.ts`           | 根据工作区 Windows 上下文转成 `src/App.ts`，不能因没有盘符就漏掉处理                                                     |
+| Windows `C:foo`                     | 是 drive-relative，不当作 `C:/foo`；新的文件读取接口拒绝该歧义输入                                                       |
+| Windows `\foo`                      | 是 rooted-relative，不擅自补盘符；协议入口要求明确绝对路径或工作区相对路径                                               |
+| UNC `\\server\share\Repo`           | 逻辑路径 `//server/share/Repo`；保留 server/share 根，不折叠成单 `/`                                                     |
+| 不同 Windows 盘符或 UNC share       | 不得匹配同一工作区，不得简单去掉首字符后当相对路径                                                                       |
+| Windows case-sensitive 目录         | 当前全局策略不支持这类精细身份。首阶段保持已有策略；若宣称支持，必须先引入后端能力和大小写测试，不能悄悄合并两个真实文件 |
+| `/tmp` 与 `/private/tmp`            | 仅在明确 macOS 本地工作区且后端确认规范根/别名时匹配，不对任意平台字符串做替换                                           |
+| 中文、NFC/NFD、空格、emoji          | 不在客户端任意 Unicode 归一化；保留后端权威拼写；需要别名时由后端确认                                                    |
+| Windows extended-length/device path | 不进入通用逻辑路径替换；设备命名空间拒绝，合法 extended-length 本地路径在后端专门适配，并补 Windows 实机测试             |
 
 ### 3.4 原始路径、Git 输出、内部 tab、标准 file URL 分别解析
 
@@ -243,13 +243,13 @@ Git 返回的 repository-relative 路径与 SDK directory-relative 路径需要�
 
 具体 URL 为设计建议：
 
-| 能力 | 实施建议 |
-| --- | --- |
-| Git/branch manifest | 新增 `GET /vcs/changes?mode=git|branch`；复用现有 status/stats，但 branch 必须针对同一 base ref，不能直接复用仅 working-tree 的 `/vcs/status` |
-| 单文件 patch | 新增 `GET /vcs/diff/file?mode=...&path=...&revision=...&context=...` |
-| session/turn manifest | 为现有 session diff 增加显式轻量能力或新增 changes endpoint，session 和 turn 均明确版本/消息边界 |
-| session/turn 单文件 patch | 从对应历史差异或快照读取，不从当前工作树伪造历史内容 |
-| content-only read | file read 增加兼容参数或独立读取能力，旧默认仍保留 Git 补丁返回 |
+| 能力                      | 实施建议                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| Git/branch manifest       | 新增 `GET /vcs/changes?mode=git                                                                  | branch`；复用现有 status/stats，但 branch 必须针对同一 base ref，不能直接复用仅 working-tree 的 `/vcs/status` |
+| 单文件 patch              | 新增 `GET /vcs/diff/file?mode=...&path=...&revision=...&context=...`                             |
+| session/turn manifest     | 为现有 session diff 增加显式轻量能力或新增 changes endpoint，session 和 turn 均明确版本/消息边界 |
+| session/turn 单文件 patch | 从对应历史差异或快照读取，不从当前工作树伪造历史内容                                             |
+| content-only read         | file read 增加兼容参数或独立读取能力，旧默认仍保留 Git 补丁返回                                  |
 
 新增 query/success/error schema 在 Effect HttpApi group 定义，handler 关闭捕获稳定服务；同步 public schema/覆盖检查与 SDK 生成产物。使用 `packages/sdk/js/script/build.ts` 既有生成流程，不手改生成文件代替契约更新。
 
@@ -367,17 +367,17 @@ review scroll 写入按帧合并，与文件 tab 已有调度方式保持一致�
 
 纯函数测试必须显式传入 darwin/win32/linux context，可在 macOS 上验证 Windows 字符串规则；不能用宿主 `path` 的默认语义模拟 Windows。
 
-| 类别 | 必测用例 |
-| --- | --- |
-| POSIX 原始文件名 | `a#b.ts`、`a?b.ts`、`a%20b.ts`、`a\b.ts`、引号、空格、换行、中文、不同 Unicode 拼写 |
-| Windows drive | 原生/正斜杠/混合分隔符、盘符大小写、路径大小写、盘符根、不同盘符、drive-relative、rooted-relative |
-| UNC | 原生 UNC、逻辑 UNC、标准 file URL、share 根、不同 share、host 大小写及明确身份策略 |
-| URL 与 tab | 标准 Windows/POSIX file URL、内部相对 tab、编码 `%23/%25/%5C`、只解码一次、query/hash 不混入 raw 文件名 |
-| 工作区边界 | `/repo` 对 `/repo2`、`C:/repo` 对 `C:/repo2`、dot segments、外部绝对路径、仓库子目录、不同 worktree |
-| 命名空间 | mac 客户端连 Windows 后端、Windows 客户端连 POSIX/WSL/SSH 后端、虚拟工作区、两个连接相同 directory |
-| 身份与请求 | 等价 Windows 输入合并一个 node/请求，但实际读取 path 保留权威拼写；mac 不随意合并大小写或反斜杠文件名 |
-| 根/别名 | `/`、`C:/`、UNC share；mac 后端确认的 tmp/private 别名；不能跨平台套用别名 |
-| Git 边界 | NUL 分隔路径、quoted/octal UTF-8、已解码路径不二次处理、仓库子目录 prefix 映射 |
+| 类别             | 必测用例                                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------------------- |
+| POSIX 原始文件名 | `a#b.ts`、`a?b.ts`、`a%20b.ts`、`a\b.ts`、引号、空格、换行、中文、不同 Unicode 拼写                     |
+| Windows drive    | 原生/正斜杠/混合分隔符、盘符大小写、路径大小写、盘符根、不同盘符、drive-relative、rooted-relative       |
+| UNC              | 原生 UNC、逻辑 UNC、标准 file URL、share 根、不同 share、host 大小写及明确身份策略                      |
+| URL 与 tab       | 标准 Windows/POSIX file URL、内部相对 tab、编码 `%23/%25/%5C`、只解码一次、query/hash 不混入 raw 文件名 |
+| 工作区边界       | `/repo` 对 `/repo2`、`C:/repo` 对 `C:/repo2`、dot segments、外部绝对路径、仓库子目录、不同 worktree     |
+| 命名空间         | mac 客户端连 Windows 后端、Windows 客户端连 POSIX/WSL/SSH 后端、虚拟工作区、两个连接相同 directory      |
+| 身份与请求       | 等价 Windows 输入合并一个 node/请求，但实际读取 path 保留权威拼写；mac 不随意合并大小写或反斜杠文件名   |
+| 根/别名          | `/`、`C:/`、UNC share；mac 后端确认的 tmp/private 别名；不能跨平台套用别名                              |
+| Git 边界         | NUL 分隔路径、quoted/octal UTF-8、已解码路径不二次处理、仓库子目录 prefix 映射                          |
 
 补充现有 core path、app path、watcher、file-cache-key 和 file-tree 测试，并给新增 identity/model/service 配独立测试。迁移现有测试中刻意保留原生相对分隔符的断言时，说明新 logical contract，不简单删测试。
 
@@ -419,15 +419,15 @@ review scroll 写入按帧合并，与文件 tab 已有调度方式保持一致�
 
 ## 10. 建议实施批次与完成标准
 
-| 批次 | 改动范围 | 完成标准 |
-| --- | --- | --- |
-| A：基线与路径契约 | 路径适配、显式 source、sdk.pathContext 接入、新测试、日志；不改全局 DB/路由键 | raw/tab/URL 往返、Windows/UNC 身份、mac 特殊文件名通过；后续模块只消费合法 logical path/fileKey |
-| B：调度与惰性解析 | review-data-service、事件入口合并、保留旧数据、稳定 reconcile、ReviewDiffBody | 刷新并发 1；100 个折叠项解析 0；未变化项不重建 |
-| C：纯路径更改树 | change-tree-model/change-tree、独立展开状态、manifest 索引接口 | 「更改」目录请求 0；移除 D × F 扫描；all 展开不被 changes 污染 |
-| D：轻量 API 与按需内容 | VCS/session manifest、单文件 patch、content-only read、API/SDK、版本协议 | 列表无 patch；只有需要文件取内容；历史版本及原始行号正确；旧后端可回退 |
-| E：metadata/Worker/cache/viewer | 直接 patch metadata、解析任务队列、byte LRU、增量更新 | 不从恢复文本再 diff；视口优先；同内容换样式尽量复用；超限可控 |
-| F：可见行与正文窗口 | all 虚拟化、review body gate、锚点定位、隐藏暂停、滚动合并 | 大目录 DOM 有界；评论和选区不丢；滚动/定位/重开跨平台通过 |
-| G：后台和长期内存优化 | ignore matcher 缓存、stale 内容策略、可选目录预算 | 日志证明后台重复工作减少，长期切换/打开无不可控内存增长 |
+| 批次                            | 改动范围                                                                      | 完成标准                                                                                        |
+| ------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| A：基线与路径契约               | 路径适配、显式 source、sdk.pathContext 接入、新测试、日志；不改全局 DB/路由键 | raw/tab/URL 往返、Windows/UNC 身份、mac 特殊文件名通过；后续模块只消费合法 logical path/fileKey |
+| B：调度与惰性解析               | review-data-service、事件入口合并、保留旧数据、稳定 reconcile、ReviewDiffBody | 刷新并发 1；100 个折叠项解析 0；未变化项不重建                                                  |
+| C：纯路径更改树                 | change-tree-model/change-tree、独立展开状态、manifest 索引接口                | 「更改」目录请求 0；移除 D × F 扫描；all 展开不被 changes 污染                                  |
+| D：轻量 API 与按需内容          | VCS/session manifest、单文件 patch、content-only read、API/SDK、版本协议      | 列表无 patch；只有需要文件取内容；历史版本及原始行号正确；旧后端可回退                          |
+| E：metadata/Worker/cache/viewer | 直接 patch metadata、解析任务队列、byte LRU、增量更新                         | 不从恢复文本再 diff；视口优先；同内容换样式尽量复用；超限可控                                   |
+| F：可见行与正文窗口             | all 虚拟化、review body gate、锚点定位、隐藏暂停、滚动合并                    | 大目录 DOM 有界；评论和选区不丢；滚动/定位/重开跨平台通过                                       |
+| G：后台和长期内存优化           | ignore matcher 缓存、stale 内容策略、可选目录预算                             | 日志证明后台重复工作减少，长期切换/打开无不可控内存增长                                         |
 
 C 可先复用旧响应里的轻量字段，先消除目录 I/O；D 再替换数据来源。E 的直接 metadata 与行号回归完成前，不启用缩短 patch context 的新行为。
 

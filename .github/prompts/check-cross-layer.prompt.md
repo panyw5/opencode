@@ -12,11 +12,11 @@ Check if your changes considered all dimensions. Most bugs come from "didn't thi
 
 ## Related Documents
 
-| Document | Purpose | Timing |
-|----------|---------|--------|
-| [Pre-Implementation Checklist](.trellis/spec/guides/pre-implementation-checklist.md) | Questions before coding | **Before** writing code |
-| [Code Reuse Thinking Guide](.trellis/spec/guides/code-reuse-thinking-guide.md) | Pattern recognition | During implementation |
-| **`/`** (this) | Verification check | **After** implementation |
+| Document                                                                             | Purpose                 | Timing                   |
+| ------------------------------------------------------------------------------------ | ----------------------- | ------------------------ |
+| [Pre-Implementation Checklist](.trellis/spec/guides/pre-implementation-checklist.md) | Questions before coding | **Before** writing code  |
+| [Code Reuse Thinking Guide](.trellis/spec/guides/code-reuse-thinking-guide.md)       | Pattern recognition     | During implementation    |
+| **`/`** (this)                                                                       | Verification check      | **After** implementation |
 
 ---
 
@@ -39,15 +39,16 @@ Based on your change type, execute relevant checks below:
 
 **Trigger**: Changes involve 3 or more layers
 
-| Layer | Common Locations |
-|-------|------------------|
-| API/Routes | `routes/`, `api/`, `handlers/`, `controllers/` |
-| Service/Business Logic | `services/`, `lib/`, `core/`, `domain/` |
-| Database/Storage | `db/`, `models/`, `repositories/`, `schema/` |
-| UI/Presentation | `components/`, `views/`, `templates/`, `pages/` |
-| Utility | `utils/`, `helpers/`, `common/` |
+| Layer                  | Common Locations                                |
+| ---------------------- | ----------------------------------------------- |
+| API/Routes             | `routes/`, `api/`, `handlers/`, `controllers/`  |
+| Service/Business Logic | `services/`, `lib/`, `core/`, `domain/`         |
+| Database/Storage       | `db/`, `models/`, `repositories/`, `schema/`    |
+| UI/Presentation        | `components/`, `views/`, `templates/`, `pages/` |
+| Utility                | `utils/`, `helpers/`, `common/`                 |
 
 **Checklist**:
+
 - [ ] Read flow: Database -> Service -> API -> UI
 - [ ] Write flow: UI -> API -> Service -> Database
 - [ ] Types/schemas correctly passed between layers?
@@ -60,7 +61,8 @@ Based on your change type, execute relevant checks below:
 
 ## Dimension B: Code Reuse (Required when modifying constants/config)
 
-**Trigger**: 
+**Trigger**:
+
 - Modifying UI constants (label, icon, color)
 - Modifying any hardcoded value
 - Seeing similar code in multiple places
@@ -68,6 +70,7 @@ Based on your change type, execute relevant checks below:
 - Just finished batch modifications across files
 
 **Checklist**:
+
 - [ ] Search first: How many places define this value?
   ```bash
   # Search in source files (adjust extensions for your project)
@@ -86,6 +89,7 @@ Based on your change type, execute relevant checks below:
 **Trigger**: About to create a new utility/helper function
 
 **Checklist**:
+
 - [ ] Search for existing similar utilities first
   ```bash
   grep -r "functionNamePattern" src/
@@ -100,6 +104,7 @@ Based on your change type, execute relevant checks below:
 **Trigger**: Just modified similar patterns in multiple files
 
 **Checklist**:
+
 - [ ] Did you check ALL files with similar patterns?
   ```bash
   grep -r "patternYouChanged" src/
@@ -114,6 +119,7 @@ Based on your change type, execute relevant checks below:
 **Trigger**: Creating new source files
 
 **Checklist**:
+
 - [ ] Using correct import paths (relative vs absolute)?
 - [ ] No circular dependencies?
 - [ ] Consistent with project's module organization?
@@ -122,11 +128,13 @@ Based on your change type, execute relevant checks below:
 
 ## Dimension D: Same-Layer Consistency
 
-**Trigger**: 
+**Trigger**:
+
 - Modifying display logic or formatting
 - Same domain concept used in multiple places
 
 **Checklist**:
+
 - [ ] Search for other places using same concept
   ```bash
   grep -r "ConceptName" src/
@@ -138,20 +146,21 @@ Based on your change type, execute relevant checks below:
 
 ## Common Issues Quick Reference
 
-| Issue | Root Cause | Prevention |
-|-------|------------|------------|
-| Changed one place, missed others | Didn't search impact scope | `grep` before changing |
-| Data lost at some layer | Didn't check data flow | Trace data source to destination |
-| Type/schema mismatch | Cross-layer types inconsistent | Use shared type definitions |
-| UI/output inconsistent | Same concept in multiple places | Extract shared constants |
-| Similar utility exists | Didn't search first | Search before creating |
-| Batch fix incomplete | Didn't verify all occurrences | grep after fixing |
+| Issue                            | Root Cause                      | Prevention                       |
+| -------------------------------- | ------------------------------- | -------------------------------- |
+| Changed one place, missed others | Didn't search impact scope      | `grep` before changing           |
+| Data lost at some layer          | Didn't check data flow          | Trace data source to destination |
+| Type/schema mismatch             | Cross-layer types inconsistent  | Use shared type definitions      |
+| UI/output inconsistent           | Same concept in multiple places | Extract shared constants         |
+| Similar utility exists           | Didn't search first             | Search before creating           |
+| Batch fix incomplete             | Didn't verify all occurrences   | grep after fixing                |
 
 ---
 
 ## Output
 
 Report:
+
 1. Which dimensions your changes involve
 2. Check results for each dimension
 3. Issues found and fix suggestions

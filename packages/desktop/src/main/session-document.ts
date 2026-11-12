@@ -18,9 +18,15 @@ let exporting = false
 
 export async function exportSessionDocument(parent: BrowserWindow, value: unknown) {
   if (exporting) throw new Error("Another document export is in progress")
-  log("session-export", `policy=payload-v2 pid=${process.pid} main=${import.meta.url} budgets markdown=8388608 html=33554432; validating`)
+  log(
+    "session-export",
+    `policy=payload-v2 pid=${process.pid} main=${import.meta.url} budgets markdown=8388608 html=33554432; validating`,
+  )
   const input = validateDocument(value)
-  log("session-export", `policy=payload-v2 format=${input.format} bytes=${Buffer.byteLength(input.format === "markdown" ? input.markdown! : input.html!)}`)
+  log(
+    "session-export",
+    `policy=payload-v2 format=${input.format} bytes=${Buffer.byteLength(input.format === "markdown" ? input.markdown! : input.html!)}`,
+  )
   exporting = true
   let window: BrowserWindow | undefined
   const partition = session.fromPartition(`session-export-${randomUUID()}`, { cache: false })

@@ -137,16 +137,16 @@ The MVP does not:
 
 Each fact has one writer:
 
-| Fact | Owner |
-| --- | --- |
-| Logical repository identity | `Project` |
-| Checkout or directory identity | `ProjectLocation` |
-| Location availability and deletion transition | `LocationLifecycle` |
-| Runtime state and operation leases | `LocationLifecycle` |
-| Instance construction and resource finalization | `InstanceStore` adapter |
-| A client's open project rail | That client's UI registry |
-| Renderer workspace state | Cache adapter |
-| Historical Session data | SQLite Session storage |
+| Fact                                            | Owner                     |
+| ----------------------------------------------- | ------------------------- |
+| Logical repository identity                     | `Project`                 |
+| Checkout or directory identity                  | `ProjectLocation`         |
+| Location availability and deletion transition   | `LocationLifecycle`       |
+| Runtime state and operation leases              | `LocationLifecycle`       |
+| Instance construction and resource finalization | `InstanceStore` adapter   |
+| A client's open project rail                    | That client's UI registry |
+| Renderer workspace state                        | Cache adapter             |
+| Historical Session data                         | SQLite Session storage    |
 
 `LocationLifecycle` is the only module allowed to combine availability,
 admission, runtime startup, runtime disposal, and deletion ordering.
@@ -240,17 +240,11 @@ interface LocationLifecycle {
     effect: Effect.Effect<A, E, R>,
   ) => Effect.Effect<A, E | AdmissionError | LocationBusy, R>
 
-  readonly delete: (
-    input: DeleteLocationInput,
-  ) => Effect.Effect<DeleteLocationResult, DeleteLocationError>
+  readonly delete: (input: DeleteLocationInput) => Effect.Effect<DeleteLocationResult, DeleteLocationError>
 
-  readonly observe: (
-    input: LocationObservation,
-  ) => Effect.Effect<LocationSnapshot>
+  readonly observe: (input: LocationObservation) => Effect.Effect<LocationSnapshot>
 
-  readonly snapshot: (
-    locationID: LocationID,
-  ) => Effect.Effect<LocationSnapshot, LocationNotFound>
+  readonly snapshot: (locationID: LocationID) => Effect.Effect<LocationSnapshot, LocationNotFound>
 }
 ```
 
@@ -267,12 +261,7 @@ progresses.
 Initial purposes:
 
 ```ts
-type AdmissionPurpose =
-  | "http-request"
-  | "session-run"
-  | "scheduled-task"
-  | "pty"
-  | "background-job"
+type AdmissionPurpose = "http-request" | "session-run" | "scheduled-task" | "pty" | "background-job"
 ```
 
 An open rail item, notification, historical Session, title lookup, or renderer

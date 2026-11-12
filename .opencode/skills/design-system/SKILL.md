@@ -37,9 +37,10 @@ Component (component-specific)
 ```
 
 **Example:**
+
 ```css
 /* Primitive */
---color-blue-600: #2563EB;
+--color-blue-600: #2563eb;
 
 /* Semantic */
 --color-primary: var(--color-blue-600);
@@ -51,50 +52,52 @@ Component (component-specific)
 ## Quick Start
 
 **Generate tokens:**
+
 ```bash
 node scripts/generate-tokens.cjs --config tokens.json -o tokens.css
 ```
 
 **Validate usage:**
+
 ```bash
 node scripts/validate-tokens.cjs --dir src/
 ```
 
 ## References
 
-| Topic | File |
-|-------|------|
-| Token Architecture | `references/token-architecture.md` |
-| Primitive Tokens | `references/primitive-tokens.md` |
-| Semantic Tokens | `references/semantic-tokens.md` |
-| Component Tokens | `references/component-tokens.md` |
-| Component Specs | `references/component-specs.md` |
-| States & Variants | `references/states-and-variants.md` |
+| Topic                | File                                 |
+| -------------------- | ------------------------------------ |
+| Token Architecture   | `references/token-architecture.md`   |
+| Primitive Tokens     | `references/primitive-tokens.md`     |
+| Semantic Tokens      | `references/semantic-tokens.md`      |
+| Component Tokens     | `references/component-tokens.md`     |
+| Component Specs      | `references/component-specs.md`      |
+| States & Variants    | `references/states-and-variants.md`  |
 | Tailwind Integration | `references/tailwind-integration.md` |
 
 ## Component Spec Pattern
 
-| Property | Default | Hover | Active | Disabled |
-|----------|---------|-------|--------|----------|
-| Background | primary | primary-dark | primary-darker | muted |
-| Text | white | white | white | muted-fg |
-| Border | none | none | none | muted-border |
-| Shadow | sm | md | none | none |
+| Property   | Default | Hover        | Active         | Disabled     |
+| ---------- | ------- | ------------ | -------------- | ------------ |
+| Background | primary | primary-dark | primary-darker | muted        |
+| Text       | white   | white        | white          | muted-fg     |
+| Border     | none    | none         | none           | muted-border |
+| Shadow     | sm      | md           | none           | none         |
 
 ## Scripts
 
-| Script | Purpose |
-|--------|---------|
-| `generate-tokens.cjs` | Generate CSS from JSON token config |
-| `validate-tokens.cjs` | Check for hardcoded values in code |
-| `search-slides.py` | BM25 search + contextual recommendations |
+| Script                     | Purpose                                  |
+| -------------------------- | ---------------------------------------- |
+| `generate-tokens.cjs`      | Generate CSS from JSON token config      |
+| `validate-tokens.cjs`      | Check for hardcoded values in code       |
+| `search-slides.py`         | BM25 search + contextual recommendations |
 | `slide-token-validator.py` | Validate slide HTML for token compliance |
-| `fetch-background.py` | Fetch images from Pexels/Unsplash |
+| `fetch-background.py`      | Fetch images from Pexels/Unsplash        |
 
 ## Templates
 
-| Template | Purpose |
-|----------|---------|
+| Template                     | Purpose                                 |
+| ---------------------------- | --------------------------------------- |
 | `design-tokens-starter.json` | Starter JSON with three-layer structure |
 
 ## Integration
@@ -111,12 +114,12 @@ Brand-compliant presentations using design tokens + Chart.js + contextual decisi
 
 ### Source of Truth
 
-| File | Purpose |
-|------|---------|
-| `docs/brand-guidelines.md` | Brand identity, voice, colors |
-| `assets/design-tokens.json` | Token definitions (primitive→semantic→component) |
-| `assets/design-tokens.css` | CSS variables (import in slides) |
-| `assets/css/slide-animations.css` | CSS animation library |
+| File                              | Purpose                                          |
+| --------------------------------- | ------------------------------------------------ |
+| `docs/brand-guidelines.md`        | Brand identity, voice, colors                    |
+| `assets/design-tokens.json`       | Token definitions (primitive→semantic→component) |
+| `assets/design-tokens.css`        | CSS variables (import in slides)                 |
+| `assets/css/slide-animations.css` | CSS animation library                            |
 
 ### Slide Search (BM25)
 
@@ -135,16 +138,16 @@ python scripts/search-slides.py "cta" --context --position 9 --prev-emotion frus
 
 ### Decision System CSVs
 
-| File | Purpose |
-|------|---------|
-| `data/slide-strategies.csv` | 15 deck structures + emotion arcs + sparkline beats |
-| `data/slide-layouts.csv` | 25 layouts + component variants + animations |
-| `data/slide-layout-logic.csv` | Goal → Layout + break_pattern flag |
-| `data/slide-typography.csv` | Content type → Typography scale |
-| `data/slide-color-logic.csv` | Emotion → Color treatment |
-| `data/slide-backgrounds.csv` | Slide type → Image category (Pexels/Unsplash) |
-| `data/slide-copy.csv` | 25 copywriting formulas (PAS, AIDA, FAB) |
-| `data/slide-charts.csv` | 25 chart types with Chart.js config |
+| File                          | Purpose                                             |
+| ----------------------------- | --------------------------------------------------- |
+| `data/slide-strategies.csv`   | 15 deck structures + emotion arcs + sparkline beats |
+| `data/slide-layouts.csv`      | 25 layouts + component variants + animations        |
+| `data/slide-layout-logic.csv` | Goal → Layout + break_pattern flag                  |
+| `data/slide-typography.csv`   | Content type → Typography scale                     |
+| `data/slide-color-logic.csv`  | Emotion → Color treatment                           |
+| `data/slide-backgrounds.csv`  | Slide type → Image category (Pexels/Unsplash)       |
+| `data/slide-copy.csv`         | 25 copywriting formulas (PAS, AIDA, FAB)            |
+| `data/slide-charts.csv`       | 25 chart types with Chart.js config                 |
 
 ### Contextual Decision Flow
 
@@ -168,6 +171,7 @@ python scripts/search-slides.py "cta" --context --position 9 --prev-emotion frus
 ### Pattern Breaking (Duarte Sparkline)
 
 Premium decks alternate between emotions for engagement:
+
 ```
 "What Is" (frustration) ↔ "What Could Be" (hope)
 ```
@@ -177,6 +181,7 @@ System calculates pattern breaks at 1/3 and 2/3 positions.
 ### Slide Requirements
 
 **ALL slides MUST:**
+
 1. Import `assets/design-tokens.css` - single source of truth
 2. Use CSS variables: `var(--color-primary)`, `var(--slide-bg)`, etc.
 3. Use Chart.js for charts (NOT CSS-only bars)
@@ -191,19 +196,21 @@ System calculates pattern breaks at 1/3 and 2/3 positions.
 
 <canvas id="revenueChart"></canvas>
 <script>
-new Chart(document.getElementById('revenueChart'), {
-    type: 'line',
+  new Chart(document.getElementById("revenueChart"), {
+    type: "line",
     data: {
-        labels: ['Sep', 'Oct', 'Nov', 'Dec'],
-        datasets: [{
-            data: [5, 12, 28, 45],
-            borderColor: '#FF6B6B',  // Use brand coral
-            backgroundColor: 'rgba(255, 107, 107, 0.1)',
-            fill: true,
-            tension: 0.4
-        }]
-    }
-});
+      labels: ["Sep", "Oct", "Nov", "Dec"],
+      datasets: [
+        {
+          data: [5, 12, 28, 45],
+          borderColor: "#FF6B6B", // Use brand coral
+          backgroundColor: "rgba(255, 107, 107, 0.1)",
+          fill: true,
+          tension: 0.4,
+        },
+      ],
+    },
+  })
 </script>
 ```
 
@@ -216,14 +223,15 @@ color: var(--color-primary);
 font-family: var(--typography-font-heading);
 
 /* WRONG - hardcoded */
-background: #0D0D0D;
-color: #FF6B6B;
-font-family: 'Space Grotesk';
+background: #0d0d0d;
+color: #ff6b6b;
+font-family: "Space Grotesk";
 ```
 
 ### Reference Implementation
 
 Working example with all features:
+
 ```
 assets/designs/slides/claudekit-pitch-251223.html
 ```

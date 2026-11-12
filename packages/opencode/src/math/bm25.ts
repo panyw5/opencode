@@ -8,11 +8,7 @@ export function tokenize(text: string): string[] {
  * One BM25 score per already-tokenized document. k1=1.5, b=0.75 (Danus).
  * Corpus is re-tokenized per call; no persisted index.
  */
-export function bm25Scores(
-  query: string,
-  documents: string[][],
-  options?: { k1?: number; b?: number },
-): number[] {
+export function bm25Scores(query: string, documents: string[][], options?: { k1?: number; b?: number }): number[] {
   const k1 = options?.k1 ?? 1.5
   const b = options?.b ?? 0.75
   const queryTokens = tokenize(query)

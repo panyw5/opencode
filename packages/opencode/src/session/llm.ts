@@ -346,11 +346,7 @@ const live: Layer.Layer<
                       // ProviderTransform operates on the AI SDK's public ModelMessage shape.
                       // The V3 middleware prompt type is narrower but has the same runtime representation.
                       // @ts-expect-error
-                      prompt: ProviderTransform.message(
-                        params.prompt,
-                        input.model,
-                        prepared.messageTransformOptions,
-                      ),
+                      prompt: ProviderTransform.message(params.prompt, input.model, prepared.messageTransformOptions),
                     }
                   }
                   if (suppressDeepSeekV4ToolChoice && params.toolChoice !== undefined) {

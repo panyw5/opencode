@@ -22,30 +22,32 @@ void app.whenReady().then(async () => {
       const result = await exportSessionDocument(parent, { format, name: "fixture", html, width: 600, theme: "light" })
       if (result.cancelled || result.files < 1) throw new Error("Unexpected export result")
       if (format === "png" && result.files > 1) {
-        const folders = (await readdir(folder)).filter(name => name.startsWith("fixture-png-parts-"));
-        const output = join(folder, folders[folders.length - 1]);
-        const files = (await readdir(output)).filter(name => name.endsWith('.png')).sort();
-        if (files.length !== result.files) throw new Error('Missing PNG parts');
-        let height = 0;
+        const folders = (await readdir(folder)).filter((name) => name.startsWith("fixture-png-parts-"))
+        const output = join(folder, folders[folders.length - 1])
+        const files = (await readdir(output)).filter((name) => name.endsWith(".png")).sort()
+        if (files.length !== result.files) throw new Error("Missing PNG parts")
+        let height = 0
         for (const file of files) {
-          const image = nativeImage.createFromPath(join(output, file));
-          const size = image.getSize();
-          if (size.width !== 600 || size.height < 1 || size.height > 16000) throw new Error('Invalid PNG part');
-          height += size.height;
-          console.log(`[fidelity-test] PNG ${file} ${size.width}x${size.height} bytes=${(await stat(join(output,file))).size}`);
+          const image = nativeImage.createFromPath(join(output, file))
+          const size = image.getSize()
+          if (size.width !== 600 || size.height < 1 || size.height > 16000) throw new Error("Invalid PNG part")
+          height += size.height
+          console.log(
+            `[fidelity-test] PNG ${file} ${size.width}x${size.height} bytes=${(await stat(join(output, file))).size}`,
+          )
         }
-        const image = nativeImage.createFromPath(join(output, files[files.length - 1]));
-        const pixel = ((image.getSize().height - 40) * 600 + 40) * 4;
-        const bitmap = image.toBitmap({scaleFactor:1});
-        if (bitmap[pixel+1] < 180 || bitmap[pixel+1] < bitmap[pixel+2]+80) throw new Error('Lost final tile');
-        console.log(`[fidelity-test] PNG total height=${height}; final tile verified; folder=${output}`);
-        continue;
+        const image = nativeImage.createFromPath(join(output, files[files.length - 1]))
+        const pixel = ((image.getSize().height - 40) * 600 + 40) * 4
+        const bitmap = image.toBitmap({ scaleFactor: 1 })
+        if (bitmap[pixel + 1] < 180 || bitmap[pixel + 1] < bitmap[pixel + 2] + 80) throw new Error("Lost final tile")
+        console.log(`[fidelity-test] PNG total height=${height}; final tile verified; folder=${output}`)
+        continue
       }
       if ((await stat(destination)).size < 1000) throw new Error("Empty export")
       if (format === "png") {
         const image = nativeImage.createFromPath(destination)
         const size = image.getSize()
-         if (size.width !== 600 || size.height < 5000 || size.height > 30000)
+        if (size.width !== 600 || size.height < 5000 || size.height > 30000)
           throw new Error(`Invalid image size ${JSON.stringify(size)}`)
         // Long fixture's last rows are saturated green; ensure stitching retained them.
         const bitmap = image.toBitmap({ scaleFactor: 1 })

@@ -33,7 +33,8 @@ function bridge(input: { respond?: Parameters<typeof fetchMock>[0]; headers?: Re
   const fetch = fetchMock(
     input.respond ??
       ((url) => {
-        if (url.pathname.endsWith("/settings")) return { status: 200, body: { settings: { apiKey: SECRET_MASK, theme: "dark" } } }
+        if (url.pathname.endsWith("/settings"))
+          return { status: 200, body: { settings: { apiKey: SECRET_MASK, theme: "dark" } } }
         return { status: 200, body: { result: "pong" } }
       }),
   )
@@ -255,8 +256,16 @@ describe("extension event dispatch", () => {
       listener: (data, meta) => seen.push({ data, meta }),
       source: bus.source,
     })
-    bus.send({ name: "global", details: { type: "extension.event", properties: { id: "test.viewer", name: "tick", data: 1 } }, domain: "opencode" })
-    bus.send({ name: "/tmp/project", details: { type: "extension.event", properties: { id: "test.viewer", name: "tick", data: 2 } }, domain: "opencode" })
+    bus.send({
+      name: "global",
+      details: { type: "extension.event", properties: { id: "test.viewer", name: "tick", data: 1 } },
+      domain: "opencode",
+    })
+    bus.send({
+      name: "/tmp/project",
+      details: { type: "extension.event", properties: { id: "test.viewer", name: "tick", data: 2 } },
+      domain: "opencode",
+    })
     expect(seen).toEqual([
       { data: 1, meta: { directory: undefined } },
       { data: 2, meta: { directory: "/tmp/project" } },
@@ -274,10 +283,26 @@ describe("extension event dispatch", () => {
       listener: (data) => seen.push(data),
       source: bus.source,
     })
-    bus.send({ name: "global", details: { type: "extension.event", properties: { id: "other", name: "tick", data: 1 } }, domain: "opencode" })
-    bus.send({ name: "global", details: { type: "extension.event", properties: { id: "test.viewer", name: "tock", data: 2 } }, domain: "opencode" })
-    bus.send({ name: "global", details: { type: "extension.event", properties: { id: "test.viewer", name: "tick", data: 3 } }, domain: "other" })
-    bus.send({ name: "global", details: { type: "extension.event", properties: { id: "test.viewer", name: "tick", data: 4 } }, domain: "opencode" })
+    bus.send({
+      name: "global",
+      details: { type: "extension.event", properties: { id: "other", name: "tick", data: 1 } },
+      domain: "opencode",
+    })
+    bus.send({
+      name: "global",
+      details: { type: "extension.event", properties: { id: "test.viewer", name: "tock", data: 2 } },
+      domain: "opencode",
+    })
+    bus.send({
+      name: "global",
+      details: { type: "extension.event", properties: { id: "test.viewer", name: "tick", data: 3 } },
+      domain: "other",
+    })
+    bus.send({
+      name: "global",
+      details: { type: "extension.event", properties: { id: "test.viewer", name: "tick", data: 4 } },
+      domain: "opencode",
+    })
     expect(seen).toEqual([4])
   })
 
@@ -290,7 +315,11 @@ describe("extension event dispatch", () => {
       listener: (data) => seen.push(data),
       source: bus.source,
     })
-    bus.send({ name: "global", details: { type: "extension.event", properties: { id: "test.viewer" } }, domain: "opencode" })
+    bus.send({
+      name: "global",
+      details: { type: "extension.event", properties: { id: "test.viewer" } },
+      domain: "opencode",
+    })
     expect(seen).toEqual([])
   })
 
@@ -306,9 +335,17 @@ describe("extension event dispatch", () => {
       },
       source: bus.source,
     })
-    bus.send({ name: "global", details: { type: "extension.event", properties: { id: "test.viewer", name: "tick", data: 1 } }, domain: "opencode" })
+    bus.send({
+      name: "global",
+      details: { type: "extension.event", properties: { id: "test.viewer", name: "tick", data: 1 } },
+      domain: "opencode",
+    })
     bus.setURL("http://elsewhere:4096")
-    bus.send({ name: "global", details: { type: "extension.event", properties: { id: "test.viewer", name: "tick", data: 2 } }, domain: "other" })
+    bus.send({
+      name: "global",
+      details: { type: "extension.event", properties: { id: "test.viewer", name: "tick", data: 2 } },
+      domain: "other",
+    })
     expect(seen).toEqual([2])
   })
 })
@@ -326,11 +363,19 @@ const settingsManifest = (): ExtensionInfo => ({
 
 function bridgeContext(input: { manifest?: ExtensionInfo; valid?: boolean } = {}) {
   const calls: string[] = []
-  const rpcInputs: Array<{ method: string; input?: unknown; directory?: string; signal?: AbortSignal; timeoutMs?: number }> = []
+  const rpcInputs: Array<{
+    method: string
+    input?: unknown
+    directory?: string
+    signal?: AbortSignal
+    timeoutMs?: number
+  }> = []
   const patches: Array<Record<string, unknown>> = []
   // Mirrors the host: the settings snapshot lives in a signal so the
   // reactive accessors created by `settings.get` re-run when it changes.
-  const [settings, setSettings] = createSignal<Record<string, unknown>>(input.manifest?.settings ?? settingsManifest().settings ?? {})
+  const [settings, setSettings] = createSignal<Record<string, unknown>>(
+    input.manifest?.settings ?? settingsManifest().settings ?? {},
+  )
   let readCount = 0
   const deps: ContextDeps = {
     manifest: input.manifest ?? settingsManifest(),

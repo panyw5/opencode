@@ -69,7 +69,9 @@ describe("canonical GPT-Pro runtime cards", () => {
     r.session.authentication = { phase: "invalid", checkedAt: 1 }
     const html = render(r)
     for (const kind of ["identity", "model", "connection", "storage"]) {
-      const classes = card(html, kind).match(/<article\b[^>]*\bclass="([^"]*)"/)?.[1].split(/\s+/)
+      const classes = card(html, kind)
+        .match(/<article\b[^>]*\bclass="([^"]*)"/)?.[1]
+        .split(/\s+/)
       expect(classes).toBeDefined()
       expect(classes).toContain("border")
       expect(classes?.filter((name) => /^(?:shadow|ring|outline)(?:-|$)/.test(name))).toEqual([])

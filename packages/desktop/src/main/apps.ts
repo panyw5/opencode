@@ -35,7 +35,13 @@ export function getPowerShellLauncherArgs(command: string, cwd: string) {
     "$ErrorActionPreference = 'Stop'",
     `Start-Process -FilePath ${quote(command)} -ArgumentList @('-NoExit') -WorkingDirectory ${quote(cwd)}`,
   ].join("; ")
-  return ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")]
+  return [
+    "-NoLogo",
+    "-NoProfile",
+    "-NonInteractive",
+    "-EncodedCommand",
+    Buffer.from(script, "utf16le").toString("base64"),
+  ]
 }
 
 export function checkAppExists(appName: string) {

@@ -60,9 +60,7 @@ describe("getWorkspaceRouteSessionID", () => {
 
 describe("sessionRouteDirectory", () => {
   test("uses the persisted session directory over an unrelated request context", () => {
-    expect(sessionRouteDirectory("/projects/current-ui", "/projects/session-owner")).toBe(
-      "/projects/session-owner",
-    )
+    expect(sessionRouteDirectory("/projects/current-ui", "/projects/session-owner")).toBe("/projects/session-owner")
   })
 
   test("keeps request routing for endpoints without a persisted session", () => {

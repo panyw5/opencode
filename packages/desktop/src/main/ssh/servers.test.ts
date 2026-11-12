@@ -42,29 +42,39 @@ type TestOverrides = {
   probeHost?: (target: string) => Promise<{ reachable: boolean; error: string | null }>
   resolveOpencode?: (target: string) => Promise<string | null>
   readCommandVersion?: (target: string, path: string) => Promise<string | null>
-  installOpencode?: (target: string, version: string) => Promise<{ code: number | null; stdout: string; stderr: string }>
+  installOpencode?: (
+    target: string,
+    version: string,
+  ) => Promise<{ code: number | null; stdout: string; stderr: string }>
   readServers?: () => Array<{ id: string; target: string; autoStart: boolean }>
 }
 
 function createController(overrides: TestOverrides = {}) {
   const logs: Array<{ level: string; message: string; meta?: unknown }> = []
-  const controller = mod.createSshServersController(APP_VERSION, overrides.spawnSidecar ?? (async () => {
-    throw new Error("spawnSidecar not stubbed")
-  }), {
-    logger: {
-      log: (message, meta) => logs.push({ level: "info", message, meta }),
-      error: (message, meta) => logs.push({ level: "error", message, meta }),
+  const controller = mod.createSshServersController(
+    APP_VERSION,
+    overrides.spawnSidecar ??
+      (async () => {
+        throw new Error("spawnSidecar not stubbed")
+      }),
+    {
+      logger: {
+        log: (message, meta) => logs.push({ level: "info", message, meta }),
+        error: (message, meta) => logs.push({ level: "error", message, meta }),
+      },
+      readServers:
+        overrides.readServers ??
+        (() => {
+          const record = storeData.get("sshServers") as { servers?: unknown } | undefined
+          return (record?.servers as Array<{ id: string; target: string; autoStart: boolean }>) ?? []
+        }),
+      writeServers: (servers) => storeData.set("sshServers", { servers }),
+      probeHost: overrides.probeHost ?? (async () => ({ reachable: true, error: null })),
+      resolveOpencode: overrides.resolveOpencode ?? (async () => "/home/amy/.opencode/bin/opencode"),
+      readCommandVersion: overrides.readCommandVersion ?? (async () => APP_VERSION),
+      installOpencode: overrides.installOpencode ?? (async () => ({ code: 0, stdout: "", stderr: "" })),
     },
-    readServers: overrides.readServers ?? (() => {
-      const record = storeData.get("sshServers") as { servers?: unknown } | undefined
-      return (record?.servers as Array<{ id: string; target: string; autoStart: boolean }>) ?? []
-    }),
-    writeServers: (servers) => storeData.set("sshServers", { servers }),
-    probeHost: overrides.probeHost ?? (async () => ({ reachable: true, error: null })),
-    resolveOpencode: overrides.resolveOpencode ?? (async () => "/home/amy/.opencode/bin/opencode"),
-    readCommandVersion: overrides.readCommandVersion ?? (async () => APP_VERSION),
-    installOpencode: overrides.installOpencode ?? (async () => ({ code: 0, stdout: "", stderr: "" })),
-  })
+  )
   return { controller, logs }
 }
 
@@ -290,9 +300,9 @@ describe("createSshServersController", () => {
     expect(spawnCount).toBe(2)
     expect(stoppedUrls).toEqual(["sidecar-1"])
     expect(controller.getState().servers[0].runtime.kind).toBe("ready")
-    expect(controller.getState().servers[0].runtime.kind === "ready" && controller.getState().servers[0].runtime.url).toBe(
-      "http://127.0.0.1:4122",
-    )
+    expect(
+      controller.getState().servers[0].runtime.kind === "ready" && controller.getState().servers[0].runtime.url,
+    ).toBe("http://127.0.0.1:4122")
     controller.stopAll()
   })
 })

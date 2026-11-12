@@ -108,7 +108,10 @@ async function caseRun(name: string, surface: Result["surface"], fn: () => Promi
     results.push({ name, surface, status: "fail", error: errorText(error) })
     log(`FAIL ${surface} ${name}: ${errorText(error)}`)
     if ((surface === "ui" || surface === "mixed") && cdp) {
-      const diagnosticName = `case-${name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").slice(0, 60)}`
+      const diagnosticName = `case-${name
+        .toLowerCase()
+        .replace(/[^a-z0-9-]+/g, "-")
+        .slice(0, 60)}`
       await writeUiDiagnostics(diagnosticName).catch((diagnosticError) => {
         log(`UI diagnostic failed case=${diagnosticName}: ${errorText(diagnosticError)}`)
       })
@@ -431,11 +434,12 @@ async function navigate(directory: string, sessionID: string) {
   const route = `/${Buffer.from(directory).toString("base64url")}/session/${sessionID}`
   const source = `/@fs${appSource}utils/notification-click.ts`
   log(`UI navigation requested session=${sessionID}`)
-  await cdp.evaluate(`(() => { void import(${JSON.stringify(source)}).then(m=>m.handleNotificationClick(${JSON.stringify(route)})); return true })()`)
+  await cdp.evaluate(
+    `(() => { void import(${JSON.stringify(source)}).then(m=>m.handleNotificationClick(${JSON.stringify(route)})); return true })()`,
+  )
   try {
     await wait(`visible prompt scope ${sessionID}`, () =>
-      cdp!.evaluate<boolean>(visibleSessionExpression(sessionID))
-        .then((yes) => yes || undefined),
+      cdp!.evaluate<boolean>(visibleSessionExpression(sessionID)).then((yes) => yes || undefined),
     )
     log(`UI navigation ready session=${sessionID}`)
   } catch (error) {
@@ -448,7 +452,9 @@ async function openFixtureProjectViaHomeUI(directory: string) {
   assert(cdp, "CDP client is not connected")
   await wait("home project path input becomes visible", () =>
     cdp!
-      .evaluate<boolean>(`(() => { const input=document.querySelector('[data-component="home-path-input"] input[role="combobox"]'); return !!input&&input.getClientRects().length>0 })()`)
+      .evaluate<boolean>(
+        `(() => { const input=document.querySelector('[data-component="home-path-input"] input[role="combobox"]'); return !!input&&input.getClientRects().length>0 })()`,
+      )
       .then((visible) => visible || undefined),
   )
   const focused = await cdp.evaluate<boolean>(`(() => {
@@ -462,13 +468,15 @@ async function openFixtureProjectViaHomeUI(directory: string) {
   await cdp.call("Input.insertText", { text: directory })
   await wait("home launcher has exact fixture path and enabled Open button", () =>
     cdp!
-      .evaluate<boolean>(`(() => {
+      .evaluate<boolean>(
+        `(() => {
         const root=document.querySelector('[data-component="home-path-input"]');
         const input=root?.querySelector('input[role="combobox"]');
         const button=root?.querySelector('button[data-variant="primary"]');
         return input instanceof HTMLInputElement&&input.value===${JSON.stringify(directory)}&&
           button instanceof HTMLButtonElement&&!button.disabled&&button.getClientRects().length>0;
-      })()`)
+      })()`,
+      )
       .then((ready) => ready || undefined),
   )
   log(`UI fixture project open requested pathLength=${directory.length}`)
@@ -482,9 +490,12 @@ async function openFixtureProjectViaHomeUI(directory: string) {
   assert(clicked, "home launcher did not submit the exact fixture path")
   try {
     await wait("fixture project opened from home UI", () =>
-      cdp!.evaluate<boolean>(`(() => [...document.querySelectorAll('[data-prompt-scope]')]
+      cdp!
+        .evaluate<boolean>(
+          `(() => [...document.querySelectorAll('[data-prompt-scope]')]
         .filter(node=>node.getClientRects().length>0)
-        .some(node=>{try{return JSON.parse(node.getAttribute('data-prompt-scope')||'null')?.[0]===${JSON.stringify(directory)}}catch{return false}}))()`)
+        .some(node=>{try{return JSON.parse(node.getAttribute('data-prompt-scope')||'null')?.[0]===${JSON.stringify(directory)}}catch{return false}}))()`,
+        )
         .then((yes) => yes || undefined),
     )
     log("UI fixture project opened from home launcher")
@@ -503,12 +514,14 @@ async function waitPermission(session: Session, permission = "external_directory
 
 async function permissionDock(request: { id: string; sessionID: string; patterns?: string[] }) {
   assert(cdp, "CDP client is not connected")
-  log(`UI permission dock wait request=${request.id} session=${request.sessionID} patterns=${request.patterns?.length ?? 0}`)
+  log(
+    `UI permission dock wait request=${request.id} session=${request.sessionID} patterns=${request.patterns?.length ?? 0}`,
+  )
   try {
     return await wait(`UI permission dock ${request.id}`, () =>
       cdp!
         .evaluate<boolean>(
-        `(() => {
+          `(() => {
       const visible=node=>node.getClientRects().length>0;
       const current=${visibleSessionExpression(request.sessionID)};
       if(!current)return false;
@@ -534,7 +547,9 @@ async function permissionDock(request: { id: string; sessionID: string; patterns
 
 async function clickPermissionAction(action: "allow" | "deny", request: { sessionID: string; patterns?: string[] }) {
   assert(cdp, "CDP client is not connected")
-  log(`UI permission action requested action=${action} session=${request.sessionID} patterns=${request.patterns?.length ?? 0}`)
+  log(
+    `UI permission action requested action=${action} session=${request.sessionID} patterns=${request.patterns?.length ?? 0}`,
+  )
   const clicked = await cdp.evaluate<{ ok: boolean; label?: string }>(`(() => {
     const expected=${JSON.stringify(request.patterns ?? [])};
     const visible=node=>node.getClientRects().length>0;
@@ -624,7 +639,9 @@ async function renderedBashOutput(sessionID: string, expectedOutput: string, inp
   try {
     log(`UI Bash output inspection requested session=${sessionID}`)
     const hydrationPoint = await wait(`deferred Bash part visible ${sessionID}`, () =>
-      cdp!.evaluate<{ x: number; y: number } | { hydrated: true } | undefined>(`(() => {
+      cdp!
+        .evaluate<{ x: number; y: number } | { hydrated: true } | undefined>(
+          `(() => {
         const page=document.querySelector('[data-component="session-page"][data-session-id="${sessionID}"]');
         if(!page)return undefined;
         let expanded=false;
@@ -640,7 +657,9 @@ async function renderedBashOutput(sessionID: string, expectedOutput: string, inp
         if(!placeholder)return undefined;
         const rect=placeholder.getBoundingClientRect();
         return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};
-      })()`).then((value) => value),
+      })()`,
+        )
+        .then((value) => value),
     )
     if ("x" in hydrationPoint) {
       log(`UI deferred tool hydration pointer session=${sessionID}`)
@@ -660,7 +679,9 @@ async function renderedBashOutput(sessionID: string, expectedOutput: string, inp
       })
     }
     return await wait(`rendered Bash output ${sessionID}`, () =>
-      cdp!.evaluate<string | undefined>(`(() => {
+      cdp!
+        .evaluate<string | undefined>(
+          `(() => {
         const page=document.querySelector('[data-component="session-page"][data-session-id="${sessionID}"]');
         if(!page)return undefined;
         const wrappers=[...(page?.querySelectorAll('[data-component="tool-part-wrapper"][data-tool="bash"][data-session-id="${sessionID}"]')||[])];
@@ -674,7 +695,9 @@ async function renderedBashOutput(sessionID: string, expectedOutput: string, inp
         if(separator<0)return undefined;
         const output=body.slice(separator+2);
         return output.includes(${JSON.stringify(expectedOutput)})?output:undefined;
-      })()`).then((value) => value || undefined),
+      })()`,
+        )
+        .then((value) => value || undefined),
     )
   } catch (error) {
     await writeUiDiagnostics(`bash-output-${sessionID}`)
@@ -701,7 +724,9 @@ async function routePermissionCase(input: {
   else if (input.uiAction) throw new Error("UI permission actions require navigation to the owned session")
   await startToolCase(input.session, input.marker)
   const permission = await waitPermission(input.session, input.permissionName)
-  log(`permission request observed id=${permission.id} session=${input.session.id} permission=${permission.permission} patterns=${permission.patterns?.length ?? 0}`)
+  log(
+    `permission request observed id=${permission.id} session=${input.session.id} permission=${permission.permission} patterns=${permission.patterns?.length ?? 0}`,
+  )
   if (input.uiAction) {
     await navigate(input.session.directory, input.session.id)
     await permissionDock({ ...permission, sessionID: input.session.id })
@@ -1071,7 +1096,10 @@ async function runPermissionCases() {
     assert(result.permission.permission === "bash", "UI approved the wrong permission class")
     const markerPath = path.join(project!, "QA_BASH_ALLOWED_MARKER")
     assert(await Bun.file(markerPath).exists(), "approved Bash redirect did not run")
-    assert((await readFile(markerPath, "utf8")) === "INSIDE_CONTROLLED\n", "approved redirect did not consume owned stdin")
+    assert(
+      (await readFile(markerPath, "utf8")) === "INSIDE_CONTROLLED\n",
+      "approved redirect did not consume owned stdin",
+    )
     return {
       sessionID: bashAllow.id,
       permissionID: result.permission.id,
@@ -1113,7 +1141,10 @@ async function runPermissionCases() {
     description: "Create Bash-denied in-project marker",
   })
   await caseRun("permission dock denies Bash before an in-project redirect", "mixed", async () => {
-    assert(!(await Bun.file(path.join(project!, "QA_BASH_DENIED_MARKER")).exists()), "Bash marker existed before denial")
+    assert(
+      !(await Bun.file(path.join(project!, "QA_BASH_DENIED_MARKER")).exists()),
+      "Bash marker existed before denial",
+    )
     const result = await routePermissionCase({
       session: bashDeny,
       marker: "permission-bash-deny",
@@ -1320,12 +1351,14 @@ async function runManualShell(session: Session) {
     })
     await wait("composer contains the multiline shell command", () =>
       cdp!
-        .evaluate<boolean>(`(() => {
+        .evaluate<boolean>(
+          `(() => {
           const page=document.querySelector('[data-component="session-page"][data-session-id="${session.id}"]');
           const node=page?.querySelector('[data-component="prompt-input"][contenteditable="true"]');
           const text=node?.textContent||'';
           return text.includes(${JSON.stringify(composerMarker)})&&text.includes('$(touch QA_COMPOSER_MARKER)');
-        })()`)
+        })()`,
+        )
         .then((ready) => ready || undefined),
     )
     const focused = await cdp.evaluate<boolean>(`(() => {
@@ -1334,7 +1367,9 @@ async function runManualShell(session: Session) {
       if(!(node instanceof HTMLElement))return false;node.focus();return document.activeElement===node;
     })()`)
     assert(focused, "current session shell editor lost focus before Enter")
-    const inputLength = await cdp.evaluate<number>(`document.querySelector('[data-component="session-page"][data-session-id="${session.id}"] [data-component="prompt-input"][contenteditable="true"]')?.textContent?.length||0`)
+    const inputLength = await cdp.evaluate<number>(
+      `document.querySelector('[data-component="session-page"][data-session-id="${session.id}"] [data-component="prompt-input"][contenteditable="true"]')?.textContent?.length||0`,
+    )
     log(`UI composer shell Enter dispatch session=${session.id} inputLength=${inputLength}`)
     await cdp.call("Input.dispatchKeyEvent", {
       type: "rawKeyDown",
@@ -1634,10 +1669,14 @@ async function cleanup() {
   } else if (cdp) {
     try {
       const source = `/@fs${appSource}utils/notification-click.ts`
-      await cdp.evaluate(`(() => { void import(${JSON.stringify(source)}).then(m=>m.handleNotificationClick('/')); return true })()`)
+      await cdp.evaluate(
+        `(() => { void import(${JSON.stringify(source)}).then(m=>m.handleNotificationClick('/')); return true })()`,
+      )
       await wait("restore renderer Home route", () =>
         cdp!
-          .evaluate<boolean>(`(() => { const node=document.querySelector('[data-component="home-shell"]'); return !!node&&node.getClientRects().length>0 })()`)
+          .evaluate<boolean>(
+            `(() => { const node=document.querySelector('[data-component="home-shell"]'); return !!node&&node.getClientRects().length>0 })()`,
+          )
           .then((yes) => yes || undefined),
       )
       log("restored renderer Home route")

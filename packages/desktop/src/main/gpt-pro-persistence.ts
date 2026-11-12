@@ -9,7 +9,11 @@ export function createGptProPersistence(
   store: Store,
   log: (message: string) => void,
   archive?: { save(jobs: GptProJob[]): void; read(id: string, owners?: string[]): GptProJob | undefined },
-  execution?: { load(legacy: () => GptProJob[]): GptProJob[]; save(jobs: GptProJob[]): void; flush?(): void | Promise<void> },
+  execution?: {
+    load(legacy: () => GptProJob[]): GptProJob[]
+    save(jobs: GptProJob[]): void
+    flush?(): void | Promise<void>
+  },
 ) {
   const started = performance.now()
   // electron-store parses the entire history on get(), including completed results.
@@ -54,7 +58,9 @@ export function createGptProPersistence(
       return { ...config }
     },
     readResult: archive?.read,
-    flush: async () => { await execution?.flush?.() },
+    flush: async () => {
+      await execution?.flush?.()
+    },
     setConfig(next: GptProConfig) {
       const copy = { ...next }
       // Publish only after the durable write succeeds, so failed settings writes don't take effect.

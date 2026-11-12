@@ -162,9 +162,7 @@ export function InjectedPromptFromParts(props: InjectedPromptFromPartsProps) {
   const summary = createMemo(() =>
     i18n.t("ui.message.injection.chars", { count: injectionTextLength(selected()).toLocaleString() }),
   )
-  const title = createMemo(() =>
-    injectionTitleFromParts(selected(), (key, params) => i18n.t(key as any, params)),
-  )
+  const title = createMemo(() => injectionTitleFromParts(selected(), (key, params) => i18n.t(key as any, params)))
   const kind = createMemo(() => {
     const kinds = new Set(
       selected()

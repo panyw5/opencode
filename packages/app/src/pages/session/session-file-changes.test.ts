@@ -93,10 +93,13 @@ describe("collectSessionFileChanges", () => {
 
   test("snapshot diffs still override the latest report in git projects", () => {
     expect(
-      collectSessionFileChanges([diff("kept.ts", "modified")], [
-        { file: "kept.ts", status: "added" },
-        { file: "only-reported.ts", status: "added" },
-      ]),
+      collectSessionFileChanges(
+        [diff("kept.ts", "modified")],
+        [
+          { file: "kept.ts", status: "added" },
+          { file: "only-reported.ts", status: "added" },
+        ],
+      ),
     ).toEqual({
       added: ["only-reported.ts"],
       modified: ["kept.ts"],

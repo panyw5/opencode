@@ -9,7 +9,8 @@ const args = process.argv.slice(2)
 const value = (name: string) => args[args.indexOf(name) + 1]
 const id = args.includes("--id") ? value("--id") : undefined
 const restoreID = args.includes("--restore-id") ? value("--restore-id") : undefined
-if (!id || !restoreID || id === restoreID) throw new Error("Provide distinct --id QA-result and --restore-id viewed-result")
+if (!id || !restoreID || id === restoreID)
+  throw new Error("Provide distinct --id QA-result and --restore-id viewed-result")
 const output = await mkdtemp(join(tmpdir(), "opencode-lifecycle-e2e-"))
 const { client, target } = await connectCdp()
 if (!target.url.includes("localhost:5173")) {
@@ -27,13 +28,18 @@ try {
   const job = await read(id)
   const pageID = job.pageID
   if (!pageID) throw Error("The completed QA job has no recorded page identity; refusing to guess one")
-  if (job.phase !== "completed" || !job.owner.includes("opencode-multipage-e2e-") || !job.text?.startsWith("OPENCODE_MULTIPAGE_"))
+  if (
+    job.phase !== "completed" ||
+    !job.owner.includes("opencode-multipage-e2e-") ||
+    !job.text?.startsWith("OPENCODE_MULTIPAGE_")
+  )
     throw new Error("The selected result is not this harness's completed multipage QA answer")
   if (before.some((page) => (page.pageID ?? page.partition) === pageID))
     throw new Error("QA page is already resident; this harness will not take it over")
   if ((await read(restoreID)).phase !== "completed") throw new Error("Restore target must be a completed result")
   const afterRead = await views()
-  if (JSON.stringify(afterRead) !== JSON.stringify(before)) throw new Error("Cached read allocated or changed a native page")
+  if (JSON.stringify(afterRead) !== JSON.stringify(before))
+    throw new Error("Cached read allocated or changed a native page")
   log(`cached full read verified id=${id} answerChars=${job.text.length} no native allocation`)
   await client.evaluate(`window.api.gptPro.command({action:'open',id:${JSON.stringify(id)}})`)
   opened = true
@@ -48,15 +54,22 @@ try {
   const deadline = Date.now() + 45_000
   while ((await views()).some((page) => (page.pageID ?? page.partition) === pageID)) {
     if (Date.now() > deadline)
-      throw new Error("Hidden terminal page was not safely reaped; inspect diagnostics rather than force-close or resend")
+      throw new Error(
+        "Hidden terminal page was not safely reaped; inspect diagnostics rather than force-close or resend",
+      )
     await new Promise((resolve) => setTimeout(resolve, 1000))
   }
   const saved = await read(id)
   if (saved.phase !== job.phase || saved.text !== job.text || saved.html !== job.html || saved.userID !== job.userID)
     throw new Error("Native-page teardown altered the persisted result or send evidence")
-  await writeFile(join(output, "result.json"), JSON.stringify({ passed: true, id, epoch, restoreID, answerChars: job.text.length }, null, 2), { mode: 0o600 })
+  await writeFile(
+    join(output, "result.json"),
+    JSON.stringify({ passed: true, id, epoch, restoreID, answerChars: job.text.length }, null, 2),
+    { mode: 0o600 },
+  )
   log(`PASS hidden page reclaimed, saved answer unchanged, prior result restored artifacts=${output}`)
 } finally {
-  if (opened) await client.evaluate(`window.api.gptPro.command({action:'open',id:${JSON.stringify(restoreID)}})`).catch(() => {})
+  if (opened)
+    await client.evaluate(`window.api.gptPro.command({action:'open',id:${JSON.stringify(restoreID)}})`).catch(() => {})
   client.close()
 }

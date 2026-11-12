@@ -24,7 +24,11 @@ test("restore rejects incomplete, mixed and partially expired Cookie families as
   const base = cookies[0]
   const chunk = (index: number, extra: Partial<Cookie> = {}) => ({ ...base, name: `${base.name}.${index}`, ...extra })
   expect(restorableGptProCookies([chunk(0), chunk(1)], 100)).toHaveLength(2)
-  for (const group of [[chunk(0), chunk(2)], [chunk(0), chunk(1, { expirationDate: 50 })], [base, chunk(0)]])
+  for (const group of [
+    [chunk(0), chunk(2)],
+    [chunk(0), chunk(1, { expirationDate: 50 })],
+    [base, chunk(0)],
+  ])
     expect(restorableGptProCookies(group, 100)).toEqual([])
   expect(restorableGptProCookies([chunk(0), chunk(1), { ...base, domain: "chatgpt.com" }], 100)).toHaveLength(3)
 })

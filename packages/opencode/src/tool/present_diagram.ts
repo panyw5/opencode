@@ -46,7 +46,12 @@ const FLOWCHART_RESERVED =
 const log = Log.create({ service: "tool.present_diagram" })
 
 function sanitizeFlowchartLabel(label: string) {
-  return Array.from(label.replace(/["`\\|]/g, " ").replace(/\s+/g, " ").trim())
+  return Array.from(
+    label
+      .replace(/["`\\|]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  )
     .slice(0, MAX_FLOWCHART_LABEL)
     .join("")
 }

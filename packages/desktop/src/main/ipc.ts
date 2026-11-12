@@ -97,8 +97,15 @@ const pickerFilters = (ext?: string[]) => {
 }
 
 const pickedFiles = createPickedFileAuthorizations()
-const gptProProbe = new GptProProbe(browserController, (message) => writeLog("gpt-pro", message), () => getGptProCredentials().profileID())
-const gptProSession = () => getGptProSessionCoordinator(browserController, getGptProCredentials().profileID(), (message) => writeLog("gpt-pro", message))
+const gptProProbe = new GptProProbe(
+  browserController,
+  (message) => writeLog("gpt-pro", message),
+  () => getGptProCredentials().profileID(),
+)
+const gptProSession = () =>
+  getGptProSessionCoordinator(browserController, getGptProCredentials().profileID(), (message) =>
+    writeLog("gpt-pro", message),
+  )
 const runtimeListeners = new Set<() => void>()
 const runtimeSourceID = randomUUID()
 let runtimeSequence = 0
@@ -109,11 +116,15 @@ const runtimeChanged = () => {
 let gptProLogin: GptProLoginServer | undefined
 let gptProTransaction: GptProLoginTransaction | undefined
 function loginTransaction() {
-  return gptProTransaction ??= new GptProLoginTransaction({
-    controller: getGptProController(), credentials: getGptProCredentials(), browser: browserController,
-    coordinator: profile => getGptProSessionCoordinator(browserController, profile, message => writeLog("gpt-pro", message)),
-    changed: runtimeChanged, log: message => writeLog("gpt-pro", message),
-  })
+  return (gptProTransaction ??= new GptProLoginTransaction({
+    controller: getGptProController(),
+    credentials: getGptProCredentials(),
+    browser: browserController,
+    coordinator: (profile) =>
+      getGptProSessionCoordinator(browserController, profile, (message) => writeLog("gpt-pro", message)),
+    changed: runtimeChanged,
+    log: (message) => writeLog("gpt-pro", message),
+  }))
 }
 
 function loginConnection() {
@@ -186,28 +197,38 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("export-session-document", (event, input: unknown) => {
     const parent = BrowserWindow.fromWebContents(event.sender)
     const url = (event.senderFrame?.url ?? "").split(/[?#]/, 1)[0]
-    const trusted = url === "oc://renderer/index.html" ||
-      (!!process.env.ELECTRON_RENDERER_URL && url === new URL("index.html", process.env.ELECTRON_RENDERER_URL).toString())
-    if (!parent || event.senderFrame !== event.sender.mainFrame ||
-      !trusted)
-      throw new Error("Untrusted export sender")
+    const trusted =
+      url === "oc://renderer/index.html" ||
+      (!!process.env.ELECTRON_RENDERER_URL &&
+        url === new URL("index.html", process.env.ELECTRON_RENDERER_URL).toString())
+    if (!parent || event.senderFrame !== event.sender.mainFrame || !trusted) throw new Error("Untrusted export sender")
     return exportSessionDocument(parent, input)
   })
   getGptProController()
   // Startup is an explicit lifecycle operation, never a side effect of runtimeStatus.
   void getGptProCredentials().ready().then(runtimeChanged, runtimeChanged)
-  const runtimeSnapshot = () => ({ ...gptProRuntimeSnapshot({
-    session: { ...gptProSession().snapshot(), import: { ...gptProSession().snapshot().import, candidateProfileID: gptProTransaction?.pendingProfileID() } },
-    config: getGptProController().config(),
-    login: loginConnection().status(),
-    credentials: getGptProCredentials().status(),
-    bridge: gptProBridgeState(),
-    managed: getGptProController().importStatus(),
-  }), sourceID: runtimeSourceID, sequence: runtimeSequence, executionStorage: getGptProController().storageStatus() })
+  const runtimeSnapshot = () => ({
+    ...gptProRuntimeSnapshot({
+      session: {
+        ...gptProSession().snapshot(),
+        import: { ...gptProSession().snapshot().import, candidateProfileID: gptProTransaction?.pendingProfileID() },
+      },
+      config: getGptProController().config(),
+      login: loginConnection().status(),
+      credentials: getGptProCredentials().status(),
+      bridge: gptProBridgeState(),
+      managed: getGptProController().importStatus(),
+    }),
+    sourceID: runtimeSourceID,
+    sequence: runtimeSequence,
+    executionStorage: getGptProController().storageStatus(),
+  })
   const runtimeSubscriptions = new Map<string, () => void>()
   let observedSession = gptProSession()
   let sessionUnsubscribe = observedSession.subscribe(runtimeChanged)
-  const runtimeCleanup = [getGptProController().subscribeState(runtimeChanged), onGptProBridgeState(runtimeChanged),
+  const runtimeCleanup = [
+    getGptProController().subscribeState(runtimeChanged),
+    onGptProBridgeState(runtimeChanged),
     getGptProCredentials().subscribe(() => {
       const current = gptProSession()
       if (current !== observedSession) {
@@ -217,13 +238,17 @@ export function registerIpcHandlers(deps: Deps) {
       }
       runtimeChanged()
     }),
-    getGptProCredentials().onSessionChanged(id => getGptProSessionCoordinator(browserController, id).credentialsChanged()),
-    getGptProCredentials().onProfileReleased(id => {
+    getGptProCredentials().onSessionChanged((id) =>
+      getGptProSessionCoordinator(browserController, id).credentialsChanged(),
+    ),
+    getGptProCredentials().onProfileReleased((id) => {
       releaseGptProSessionCoordinator(browserController, id)
       gptProTransaction?.profileReleased(id)
     }),
     browserController.onViewClosed(() => {
-      void getGptProCredentials().collect(id => browserController.getState().some(view => view.profileID === id)).catch(() => writeLog("gpt-pro", "retired profile cleanup deferred"))
+      void getGptProCredentials()
+        .collect((id) => browserController.getState().some((view) => view.profileID === id))
+        .catch(() => writeLog("gpt-pro", "retired profile cleanup deferred"))
     }),
   ]
   app.once("before-quit", () => {
@@ -234,7 +259,8 @@ export function registerIpcHandlers(deps: Deps) {
     observedSession.dispose()
   })
   ipcMain.handle("gpt-pro-runtime-subscribe", (event, subscriptionID: string) => {
-    if (typeof subscriptionID !== "string" || subscriptionID.length > 100) throw new Error("Invalid runtime subscription")
+    if (typeof subscriptionID !== "string" || subscriptionID.length > 100)
+      throw new Error("Invalid runtime subscription")
     const sender = event.sender
     const key = `${sender.id}:${subscriptionID}`
     runtimeSubscriptions.get(key)?.()
@@ -295,7 +321,11 @@ export function registerIpcHandlers(deps: Deps) {
     await getGptProCredentials().ready()
     const pending = gptProTransaction?.pendingProfileID()
     if (pending && browserController.has(pending)) {
-      return new GptProProbe(browserController, message => writeLog("gpt-pro", message), () => pending).open()
+      return new GptProProbe(
+        browserController,
+        (message) => writeLog("gpt-pro", message),
+        () => pending,
+      ).open()
     }
     const status = await gptProProbe.open()
     return status

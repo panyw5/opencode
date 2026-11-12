@@ -28,7 +28,10 @@ function columns(sqlite: SQLite, table: string) {
 }
 
 function projectRow(sqlite: SQLite, id: string) {
-  return sqlite.query("SELECT id, worktree FROM project WHERE id = ?").get(id) as { id: string; worktree: string } | null
+  return sqlite.query("SELECT id, worktree FROM project WHERE id = ?").get(id) as {
+    id: string
+    worktree: string
+  } | null
 }
 
 describe("IM migration compatibility", () => {
@@ -90,7 +93,9 @@ describe("IM migration compatibility", () => {
     expect(sqlite.query("SELECT project_id FROM im_outbound WHERE id = ?").get("legacy-send")).toEqual({
       project_id: "global",
     })
-    expect(sqlite.query("SELECT provider_sequence_key, provider_sequence FROM im_outbound WHERE id = ?").get("legacy-send")).toEqual({
+    expect(
+      sqlite.query("SELECT provider_sequence_key, provider_sequence FROM im_outbound WHERE id = ?").get("legacy-send"),
+    ).toEqual({
       provider_sequence_key: "qq\u0000legacy\u0000c2c\u0000private:user-1\u0000proactive",
       provider_sequence: 1,
     })
@@ -99,10 +104,13 @@ describe("IM migration compatibility", () => {
     })
     expect(sqlite.query("SELECT text FROM im_message WHERE id = ?").get("legacy-inbound")).toEqual({ text: "hello" })
 
-    sqlite.run(
-      "INSERT INTO project (id, worktree, time_created, time_updated, sandboxes) VALUES (?, ?, ?, ?, ?)",
-      ["project-2", "/tmp/project-2", 2, 2, "[]"],
-    )
+    sqlite.run("INSERT INTO project (id, worktree, time_created, time_updated, sandboxes) VALUES (?, ?, ?, ?, ?)", [
+      "project-2",
+      "/tmp/project-2",
+      2,
+      2,
+      "[]",
+    ])
     sqlite.run(
       `INSERT INTO im_outbound
         (id, project_id, platform, channel_name, mode, target, provider_sequence_key, provider_sequence, text, status, attempt_count, time_created, time_updated)
@@ -123,7 +131,9 @@ describe("IM migration compatibility", () => {
         2,
       ],
     )
-    expect(sqlite.query("SELECT count(*) AS count FROM im_outbound WHERE id = ?").get("legacy-send")).toEqual({ count: 2 })
+    expect(sqlite.query("SELECT count(*) AS count FROM im_outbound WHERE id = ?").get("legacy-send")).toEqual({
+      count: 2,
+    })
     expect(sqlite.query("PRAGMA foreign_key_check").all()).toEqual([])
 
     sqlite.run("DELETE FROM project WHERE id = ?", "project-2")

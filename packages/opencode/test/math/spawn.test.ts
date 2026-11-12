@@ -104,72 +104,72 @@ describe("math.spawn", () => {
 })
 
 describe("math.detach-probe", () => {
-  test(
-    "worker process stays alive and session parts grow after parent exits",
-    async () => {
-      await using tmp = await tmpdir({ git: true })
-      const dbPath = path.join(tmp.path, "opencode.db")
-      const helper = path.join(import.meta.dir, "spawn-and-die.ts")
-      const spawned = spawnSync(process.execPath, [helper, tmp.path, dbPath, "200"], {
-        cwd: tmp.path,
-        env: {
-          ...process.env,
-          OPENCODE_DB: dbPath,
-          OPENCODE_PURE: "1",
-          OPENCODE_DISABLE_AUTOUPDATE: "1",
-          OPENCODE_DISABLE_AUTOCOMPACT: "1",
-          OPENCODE_DISABLE_MODELS_FETCH: "1",
-          OPENCODE_DISABLE_PROJECT_CONFIG: "1",
-        },
-        encoding: "utf8",
-      })
-      if (spawned.status !== 0) {
-        throw new Error(`spawn-and-die failed: ${spawned.stderr || spawned.stdout}`)
-      }
-      const { pid, sessionID, projectDir } = JSON.parse(spawned.stdout.trim().split("\n").at(-1)!) as {
-        pid: number
-        sessionID: string
-        projectDir: string
-      }
-      expect(pid).toBeGreaterThan(0)
+  test("worker process stays alive and session parts grow after parent exits", async () => {
+    await using tmp = await tmpdir({ git: true })
+    const dbPath = path.join(tmp.path, "opencode.db")
+    const helper = path.join(import.meta.dir, "spawn-and-die.ts")
+    const spawned = spawnSync(process.execPath, [helper, tmp.path, dbPath, "200"], {
+      cwd: tmp.path,
+      env: {
+        ...process.env,
+        OPENCODE_DB: dbPath,
+        OPENCODE_PURE: "1",
+        OPENCODE_DISABLE_AUTOUPDATE: "1",
+        OPENCODE_DISABLE_AUTOCOMPACT: "1",
+        OPENCODE_DISABLE_MODELS_FETCH: "1",
+        OPENCODE_DISABLE_PROJECT_CONFIG: "1",
+      },
+      encoding: "utf8",
+    })
+    if (spawned.status !== 0) {
+      throw new Error(`spawn-and-die failed: ${spawned.stderr || spawned.stdout}`)
+    }
+    const { pid, sessionID, projectDir } = JSON.parse(spawned.stdout.trim().split("\n").at(-1)!) as {
+      pid: number
+      sessionID: string
+      projectDir: string
+    }
+    expect(pid).toBeGreaterThan(0)
 
-      waitUntil(() => pidAlive(pid), 15_000, "worker pid")
-      const bootLog = path.join(projectDir, "logs", "worker-boot.log")
-      try {
-        waitUntil(() => {
+    waitUntil(() => pidAlive(pid), 15_000, "worker pid")
+    const bootLog = path.join(projectDir, "logs", "worker-boot.log")
+    try {
+      waitUntil(
+        () => {
           try {
             return readSwarm(projectDir).workers[sessionID]?.pid === pid
           } catch {
             return false
           }
-        }, 25_000, "swarm.json workers")
-      } catch (error) {
-        const logText = existsSync(bootLog) ? readFileSync(bootLog, "utf8") : "(no worker-boot.log)"
-        throw new Error(`${String(error)}\n--- worker-boot.log ---\n${logText}`)
+        },
+        25_000,
+        "swarm.json workers",
+      )
+    } catch (error) {
+      const logText = existsSync(bootLog) ? readFileSync(bootLog, "utf8") : "(no worker-boot.log)"
+      throw new Error(`${String(error)}\n--- worker-boot.log ---\n${logText}`)
+    }
+
+    expect(sessionID.startsWith("ses")).toBe(true)
+    expect(pidAlive(pid)).toBe(true)
+
+    const countParts = () => {
+      try {
+        const db = new Database(dbPath, { readonly: true })
+        const row = db.query("select count(*) as c from part").get() as { c: number } | undefined
+        db.close()
+        return row?.c ?? 0
+      } catch {
+        return 0
       }
+    }
 
-      expect(sessionID.startsWith("ses")).toBe(true)
-      expect(pidAlive(pid)).toBe(true)
+    waitUntil(() => countParts() >= 1, 20_000, "first heartbeat part")
+    const first = countParts()
+    waitUntil(() => countParts() > first, 10_000, "heartbeat growth")
+    expect(pidAlive(pid)).toBe(true)
 
-      const countParts = () => {
-        try {
-          const db = new Database(dbPath, { readonly: true })
-          const row = db.query("select count(*) as c from part").get() as { c: number } | undefined
-          db.close()
-          return row?.c ?? 0
-        } catch {
-          return 0
-        }
-      }
-
-      waitUntil(() => countParts() >= 1, 20_000, "first heartbeat part")
-      const first = countParts()
-      waitUntil(() => countParts() > first, 10_000, "heartbeat growth")
-      expect(pidAlive(pid)).toBe(true)
-
-      writeFileSync(stopPath(projectDir, sessionID), `${Date.now()}\n`)
-      waitUntil(() => !pidAlive(pid), 10_000, "worker exit after .stop")
-    },
-    60_000,
-  )
+    writeFileSync(stopPath(projectDir, sessionID), `${Date.now()}\n`)
+    waitUntil(() => !pidAlive(pid), 10_000, "worker exit after .stop")
+  }, 60_000)
 })

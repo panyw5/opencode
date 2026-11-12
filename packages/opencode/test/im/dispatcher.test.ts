@@ -109,63 +109,145 @@ const providerConfig = (url: string) => ({
   },
 })
 
-const lsp = Layer.succeed(LSP.Service, LSP.Service.of({
-  init: () => Effect.void,
-  status: () => Effect.succeed([]),
-  hasClients: () => Effect.succeed(false),
-  touchFile: () => Effect.void,
-  diagnostics: () => Effect.succeed({}),
-  hover: () => Effect.succeed({}),
-  definition: () => Effect.succeed([]),
-  references: () => Effect.succeed([]),
-  implementation: () => Effect.succeed([]),
-  documentSymbol: () => Effect.succeed([]),
-  workspaceSymbol: () => Effect.succeed([]),
-  prepareCallHierarchy: () => Effect.succeed({}),
-  incomingCalls: () => Effect.succeed([]),
-  outgoingCalls: () => Effect.succeed([]),
-}))
+const lsp = Layer.succeed(
+  LSP.Service,
+  LSP.Service.of({
+    init: () => Effect.void,
+    status: () => Effect.succeed([]),
+    hasClients: () => Effect.succeed(false),
+    touchFile: () => Effect.void,
+    diagnostics: () => Effect.succeed({}),
+    hover: () => Effect.succeed({}),
+    definition: () => Effect.succeed([]),
+    references: () => Effect.succeed([]),
+    implementation: () => Effect.succeed([]),
+    documentSymbol: () => Effect.succeed([]),
+    workspaceSymbol: () => Effect.succeed([]),
+    prepareCallHierarchy: () => Effect.succeed({}),
+    incomingCalls: () => Effect.succeed([]),
+    outgoingCalls: () => Effect.succeed([]),
+  }),
+)
 
-const mcp = Layer.succeed(MCP.Service, MCP.Service.of({
-  status: () => Effect.succeed({}), clients: () => Effect.succeed({}), tools: () => Effect.succeed({}), prompts: () => Effect.succeed({}), resources: () => Effect.succeed({}),
-  add: () => Effect.succeed({ status: { status: "disabled" as const } }), connect: () => Effect.void, disconnect: () => Effect.void,
-  getPrompt: () => Effect.succeed(undefined), readResource: () => Effect.succeed(undefined), startAuth: () => Effect.die("unexpected"), authenticate: () => Effect.die("unexpected"), finishAuth: () => Effect.die("unexpected"), removeAuth: () => Effect.void, supportsOAuth: () => Effect.succeed(false), hasStoredTokens: () => Effect.succeed(false), getAuthStatus: () => Effect.succeed("not_authenticated" as const),
-}))
+const mcp = Layer.succeed(
+  MCP.Service,
+  MCP.Service.of({
+    status: () => Effect.succeed({}),
+    clients: () => Effect.succeed({}),
+    tools: () => Effect.succeed({}),
+    prompts: () => Effect.succeed({}),
+    resources: () => Effect.succeed({}),
+    add: () => Effect.succeed({ status: { status: "disabled" as const } }),
+    connect: () => Effect.void,
+    disconnect: () => Effect.void,
+    getPrompt: () => Effect.succeed(undefined),
+    readResource: () => Effect.succeed(undefined),
+    startAuth: () => Effect.die("unexpected"),
+    authenticate: () => Effect.die("unexpected"),
+    finishAuth: () => Effect.die("unexpected"),
+    removeAuth: () => Effect.void,
+    supportsOAuth: () => Effect.succeed(false),
+    hasStoredTokens: () => Effect.succeed(false),
+    getAuthStatus: () => Effect.succeed("not_authenticated" as const),
+  }),
+)
 
 const infrastructure = Layer.mergeAll(NodeFileSystem.layer, CrossSpawnSpawner.defaultLayer)
 const bus = Bus.defaultLayer
 const status = SessionStatus.layer.pipe(Layer.provideMerge(bus))
 const runState = SessionRunState.layer.pipe(Layer.provide(status), Layer.provide(SessionHistory.defaultLayer))
-const summary = Layer.succeed(SessionSummary.Service, SessionSummary.Service.of({ repair: () => Effect.void, summarize: () => Effect.void, invalidate: () => Effect.void, diff: () => Effect.succeed([]), computeDiff: () => Effect.succeed([]) }))
+const summary = Layer.succeed(
+  SessionSummary.Service,
+  SessionSummary.Service.of({
+    repair: () => Effect.void,
+    summarize: () => Effect.void,
+    invalidate: () => Effect.void,
+    diff: () => Effect.succeed([]),
+    computeDiff: () => Effect.succeed([]),
+  }),
+)
 
 const dependencies = Layer.mergeAll(
-  Session.defaultLayer, Snapshot.defaultLayer, LLM.defaultLayer, Env.defaultLayer, Agent.defaultLayer, Command.defaultLayer,
-  Permission.defaultLayer, Plugin.defaultLayer, Config.defaultLayer, Provider.defaultLayer, lsp, mcp, AppFileSystem.defaultLayer,
-  BackgroundJob.defaultLayer, BackgroundShell.defaultLayer, SessionInput.defaultLayer, IM.defaultLayer, owner,
-  subscriptionLayer, status, SyncEvent.defaultLayer, EventV2Bridge.defaultLayer,
+  Session.defaultLayer,
+  Snapshot.defaultLayer,
+  LLM.defaultLayer,
+  Env.defaultLayer,
+  Agent.defaultLayer,
+  Command.defaultLayer,
+  Permission.defaultLayer,
+  Plugin.defaultLayer,
+  Config.defaultLayer,
+  Provider.defaultLayer,
+  lsp,
+  mcp,
+  AppFileSystem.defaultLayer,
+  BackgroundJob.defaultLayer,
+  BackgroundShell.defaultLayer,
+  SessionInput.defaultLayer,
+  IM.defaultLayer,
+  owner,
+  subscriptionLayer,
+  status,
+  SyncEvent.defaultLayer,
+  EventV2Bridge.defaultLayer,
 ).pipe(Layer.provideMerge(infrastructure))
 const question = Question.layer.pipe(Layer.provideMerge(dependencies))
 const todo = Todo.layer.pipe(Layer.provideMerge(dependencies))
 const registry = ToolRegistry.layer.pipe(
   Layer.provide(testInstanceStoreLayer),
   Layer.provide(Skill.defaultLayer),
-  Layer.provide(Discovery.defaultLayer), Layer.provide(FetchHttpClient.layer), Layer.provide(CrossSpawnSpawner.defaultLayer),
-  Layer.provide(RepositoryCache.defaultLayer), Layer.provide(Git.defaultLayer), Layer.provide(Reference.defaultLayer), Layer.provide(Ripgrep.defaultLayer), Layer.provide(Format.defaultLayer),
-  Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })), Layer.provide(ProjectTask.defaultLayer), Layer.provide(SystemPrompt.defaultLayer), Layer.provideMerge(todo), Layer.provideMerge(question), Layer.provideMerge(dependencies),
+  Layer.provide(Discovery.defaultLayer),
+  Layer.provide(FetchHttpClient.layer),
+  Layer.provide(CrossSpawnSpawner.defaultLayer),
+  Layer.provide(RepositoryCache.defaultLayer),
+  Layer.provide(Git.defaultLayer),
+  Layer.provide(Reference.defaultLayer),
+  Layer.provide(Ripgrep.defaultLayer),
+  Layer.provide(Format.defaultLayer),
+  Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+  Layer.provide(ProjectTask.defaultLayer),
+  Layer.provide(SystemPrompt.defaultLayer),
+  Layer.provideMerge(todo),
+  Layer.provideMerge(question),
+  Layer.provideMerge(dependencies),
   Layer.provide(Browser.defaultLayer),
 )
 const truncate = Truncate.layer.pipe(Layer.provideMerge(dependencies))
-const processor = SessionProcessor.layer.pipe(Layer.provide(summary), Layer.provide(Image.defaultLayer), Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })), Layer.provideMerge(dependencies))
-const compaction = SessionCompaction.layer.pipe(Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })), Layer.provideMerge(processor), Layer.provideMerge(dependencies))
+const processor = SessionProcessor.layer.pipe(
+  Layer.provide(summary),
+  Layer.provide(Image.defaultLayer),
+  Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+  Layer.provideMerge(dependencies),
+)
+const compaction = SessionCompaction.layer.pipe(
+  Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+  Layer.provideMerge(processor),
+  Layer.provideMerge(dependencies),
+)
 const prompt = SessionPrompt.layer.pipe(
   Layer.provide(Browser.defaultLayer),
   Layer.provide(SessionHistory.defaultLayer),
   Layer.provide(BackgroundGptPro.defaultLayer),
-  Layer.provideMerge(SessionRevert.defaultLayer), Layer.provide(Image.defaultLayer), Layer.provide(Reference.defaultLayer), Layer.provide(summary),
-  Layer.provideMerge(runState), Layer.provideMerge(compaction), Layer.provideMerge(processor), Layer.provideMerge(registry), Layer.provideMerge(truncate),
-  Layer.provide(Instruction.defaultLayer), Layer.provide(SystemPrompt.defaultLayer), Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })), Layer.provide(ProjectTask.defaultLayer), Layer.provideMerge(dependencies), Layer.provide(summary),
+  Layer.provideMerge(SessionRevert.defaultLayer),
+  Layer.provide(Image.defaultLayer),
+  Layer.provide(Reference.defaultLayer),
+  Layer.provide(summary),
+  Layer.provideMerge(runState),
+  Layer.provideMerge(compaction),
+  Layer.provideMerge(processor),
+  Layer.provideMerge(registry),
+  Layer.provideMerge(truncate),
+  Layer.provide(Instruction.defaultLayer),
+  Layer.provide(SystemPrompt.defaultLayer),
+  Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+  Layer.provide(ProjectTask.defaultLayer),
+  Layer.provideMerge(dependencies),
+  Layer.provide(summary),
 )
-const lifecycle = LocationLifecycle.layer.pipe(Layer.provideMerge(testInstanceStoreLayer), Layer.provide(AppFileSystem.defaultLayer))
+const lifecycle = LocationLifecycle.layer.pipe(
+  Layer.provideMerge(testInstanceStoreLayer),
+  Layer.provide(AppFileSystem.defaultLayer),
+)
 const layer = Layer.mergeAll(TestLLMServer.layer, ProjectTask.defaultLayer, prompt, lifecycle)
 const it = testEffect(layer)
 const fastIt = testEffect(
@@ -195,58 +277,101 @@ const retryIt = testEffect(
 )
 
 describe("IM dispatcher", () => {
-  it.instance("rejects old owner and group admissions while recovering already accepted input after owner changes", () =>
-    Effect.gen(function* () {
-      const { directory } = yield* TestInstance
-      const llm = yield* TestLLMServer
-      yield* Effect.promise(() => Bun.write(path.join(directory, "opencode.json"), JSON.stringify(providerConfig(llm.url))))
-      const projectID = (yield* InstanceState.context).project.id
-      const sessions = yield* Session.Service
-      const subscriptions = yield* IMSubscription.Service
-      const inbox = yield* SessionInput.Service
-      const im = yield* IM.Service
-      const session = yield* sessions.create({ title: "Owner transition recovery" })
-      const target = fixedTarget("dispatcher-owner-transition", "owner-a-chat", "owner-a")
-      const subscription = yield* subscriptions.create({ projectID, sessionID: session.id, sessionDirectory: directory, target })
-      const accepted = yield* im.ingest({ message: new NormalizedMessage({
-        id: messageRecordID("feishu", target.channelName, "accepted-a"), platform: "feishu", channelName: target.channelName,
-        eventID: "accepted-a", target, senderID: target.senderID, text: "accepted before switch",
-      }) })
-      yield* inbox.admit({
-        id: `evt_im_${accepted.message.id}_${session.id}`, sessionID: session.id,
-        prompt: { text: "accepted before switch", metadata: { externalContent: true } },
-        source: `im:feishu:${target.channelName}`, delivery: "deferred",
-      })
-      yield* subscriptions.recordDelivery(subscription.id, accepted.message.id, accepted.message.ingestSeq)
-      yield* im.ingest({ message: new NormalizedMessage({
-        id: messageRecordID("feishu", target.channelName, "unaccepted-a"), platform: "feishu", channelName: target.channelName,
-        eventID: "unaccepted-a", target, senderID: target.senderID, text: "not accepted before switch",
-      }) })
-      const groupTarget = new Target({ ...target, conversationID: "old-group-chat" })
-      yield* subscriptions.create({ projectID, sessionID: session.id, sessionDirectory: directory, target: groupTarget })
-      const group = yield* im.ingest({ message: new NormalizedMessage({
-        id: messageRecordID("feishu", target.channelName, "old-group"), platform: "feishu", channelName: target.channelName,
-        eventID: "old-group", target: groupTarget, senderID: target.senderID, text: "old arbitrary group subscription",
-      }) })
-      fixedTarget(target.channelName, "owner-b-chat", "owner-b")
-      expect(yield* dispatch(group.message)).toMatchObject({ matched: 0, admitted: 0, failed: 0 })
-      yield* llm.push(reply().text("accepted recovery only").stop())
-      expect(yield* recover()).toMatchObject({ dispatched: 0 })
-      expect(yield* llm.calls).toBe(1)
-      expect(yield* inbox.pending(session.id)).toHaveLength(0)
-      const messages = yield* sessions.messages({ sessionID: session.id, limit: 20 })
-      expect(messages.filter((item) => item.info.role === "assistant")).toHaveLength(1)
-      expect(messages.some((item) => item.parts.some((part) => part.type === "text" && part.text.includes("not accepted before switch")))).toBe(false)
-      expect(yield* recover()).toMatchObject({ dispatched: 0 })
-      expect(yield* llm.calls).toBe(1)
-    }),
+  it.instance(
+    "rejects old owner and group admissions while recovering already accepted input after owner changes",
+    () =>
+      Effect.gen(function* () {
+        const { directory } = yield* TestInstance
+        const llm = yield* TestLLMServer
+        yield* Effect.promise(() =>
+          Bun.write(path.join(directory, "opencode.json"), JSON.stringify(providerConfig(llm.url))),
+        )
+        const projectID = (yield* InstanceState.context).project.id
+        const sessions = yield* Session.Service
+        const subscriptions = yield* IMSubscription.Service
+        const inbox = yield* SessionInput.Service
+        const im = yield* IM.Service
+        const session = yield* sessions.create({ title: "Owner transition recovery" })
+        const target = fixedTarget("dispatcher-owner-transition", "owner-a-chat", "owner-a")
+        const subscription = yield* subscriptions.create({
+          projectID,
+          sessionID: session.id,
+          sessionDirectory: directory,
+          target,
+        })
+        const accepted = yield* im.ingest({
+          message: new NormalizedMessage({
+            id: messageRecordID("feishu", target.channelName, "accepted-a"),
+            platform: "feishu",
+            channelName: target.channelName,
+            eventID: "accepted-a",
+            target,
+            senderID: target.senderID,
+            text: "accepted before switch",
+          }),
+        })
+        yield* inbox.admit({
+          id: `evt_im_${accepted.message.id}_${session.id}`,
+          sessionID: session.id,
+          prompt: { text: "accepted before switch", metadata: { externalContent: true } },
+          source: `im:feishu:${target.channelName}`,
+          delivery: "deferred",
+        })
+        yield* subscriptions.recordDelivery(subscription.id, accepted.message.id, accepted.message.ingestSeq)
+        yield* im.ingest({
+          message: new NormalizedMessage({
+            id: messageRecordID("feishu", target.channelName, "unaccepted-a"),
+            platform: "feishu",
+            channelName: target.channelName,
+            eventID: "unaccepted-a",
+            target,
+            senderID: target.senderID,
+            text: "not accepted before switch",
+          }),
+        })
+        const groupTarget = new Target({ ...target, conversationID: "old-group-chat" })
+        yield* subscriptions.create({
+          projectID,
+          sessionID: session.id,
+          sessionDirectory: directory,
+          target: groupTarget,
+        })
+        const group = yield* im.ingest({
+          message: new NormalizedMessage({
+            id: messageRecordID("feishu", target.channelName, "old-group"),
+            platform: "feishu",
+            channelName: target.channelName,
+            eventID: "old-group",
+            target: groupTarget,
+            senderID: target.senderID,
+            text: "old arbitrary group subscription",
+          }),
+        })
+        fixedTarget(target.channelName, "owner-b-chat", "owner-b")
+        expect(yield* dispatch(group.message)).toMatchObject({ matched: 0, admitted: 0, failed: 0 })
+        yield* llm.push(reply().text("accepted recovery only").stop())
+        expect(yield* recover()).toMatchObject({ dispatched: 0 })
+        expect(yield* llm.calls).toBe(1)
+        expect(yield* inbox.pending(session.id)).toHaveLength(0)
+        const messages = yield* sessions.messages({ sessionID: session.id, limit: 20 })
+        expect(messages.filter((item) => item.info.role === "assistant")).toHaveLength(1)
+        expect(
+          messages.some((item) =>
+            item.parts.some((part) => part.type === "text" && part.text.includes("not accepted before switch")),
+          ),
+        ).toBe(false)
+        expect(yield* recover()).toMatchObject({ dispatched: 0 })
+        expect(yield* llm.calls).toBe(1)
+      }),
   )
 
   it.instance("admits a subscribed message and drains one assistant turn", () =>
     Effect.gen(function* () {
       const { directory } = yield* TestInstance
       const llm = yield* TestLLMServer
-      yield* Effect.promise(() => Bun.write(path.join(directory, "opencode.json"), JSON.stringify(providerConfig(llm.url))))
+      yield* Effect.promise(() =>
+        Bun.write(path.join(directory, "opencode.json"), JSON.stringify(providerConfig(llm.url))),
+      )
       const sessions = yield* Session.Service
       const subscriptions = yield* IMSubscription.Service
       const inbox = yield* SessionInput.Service
@@ -271,13 +396,36 @@ describe("IM dispatcher", () => {
       const result = yield* dispatch(stored.message)
       expect(result).toMatchObject({ matched: 1, admitted: 1, failed: 0 })
       const messages = yield* sessions.messages({ sessionID: session.id, limit: 20 })
-      expect(messages.some((item) => item.parts.some((part) => part.type === "text" && part.text.includes("dispatcher assistant")))).toBe(true)
+      expect(
+        messages.some((item) =>
+          item.parts.some((part) => part.type === "text" && part.text.includes("dispatcher assistant")),
+        ),
+      ).toBe(true)
       const otherProject = ProjectID.ascending()
       const otherSession = `ses_other_${crypto.randomUUID()}` as SessionID
       const now = Date.now()
       Database.use((db) => {
-        db.insert(ProjectTable).values({ id: otherProject, worktree: path.join(directory, "other"), time_created: now, time_updated: now, sandboxes: [] }).run()
-        db.insert(SessionTable).values({ id: otherSession, project_id: otherProject, slug: "other", directory: path.join(directory, "other"), title: "Other", version: "test", time_created: now, time_updated: now }).run()
+        db.insert(ProjectTable)
+          .values({
+            id: otherProject,
+            worktree: path.join(directory, "other"),
+            time_created: now,
+            time_updated: now,
+            sandboxes: [],
+          })
+          .run()
+        db.insert(SessionTable)
+          .values({
+            id: otherSession,
+            project_id: otherProject,
+            slug: "other",
+            directory: path.join(directory, "other"),
+            title: "Other",
+            version: "test",
+            time_created: now,
+            time_updated: now,
+          })
+          .run()
       })
       expect(yield* inbox.pending(otherSession)).toHaveLength(0)
     }),
@@ -287,19 +435,39 @@ describe("IM dispatcher", () => {
     Effect.gen(function* () {
       const { directory } = yield* TestInstance
       const llm = yield* TestLLMServer
-      yield* Effect.promise(() => Bun.write(path.join(directory, "opencode.json"), JSON.stringify(providerConfig(llm.url))))
+      yield* Effect.promise(() =>
+        Bun.write(path.join(directory, "opencode.json"), JSON.stringify(providerConfig(llm.url))),
+      )
       const instance = yield* InstanceState.context
       const sessions = yield* Session.Service
       const subscriptions = yield* IMSubscription.Service
       const session = yield* sessions.create({ title: "IM overlap" })
       const target = fixedTarget("dispatcher-overlap")
-      yield* subscriptions.create({ projectID: instance.project.id, sessionID: session.id, sessionDirectory: directory, target })
-      const latestSubscription = yield* subscriptions.create({ projectID: instance.project.id, sessionID: session.id, sessionDirectory: directory, target, keyword: "hello" })
+      yield* subscriptions.create({
+        projectID: instance.project.id,
+        sessionID: session.id,
+        sessionDirectory: directory,
+        target,
+      })
+      const latestSubscription = yield* subscriptions.create({
+        projectID: instance.project.id,
+        sessionID: session.id,
+        sessionDirectory: directory,
+        target,
+        keyword: "hello",
+      })
       yield* llm.push(reply().text("overlap assistant").stop())
       const message: MessageInfo = {
         id: messageRecordID("feishu", target.channelName, "event-overlap"),
-        platform: "feishu", channelName: target.channelName, eventID: "event-overlap", ingestSeq: latestSubscription.startSeq + 1,
-        direction: "inbound", target, senderID: target.senderID, text: "hello", timeCreated: Date.now(),
+        platform: "feishu",
+        channelName: target.channelName,
+        eventID: "event-overlap",
+        ingestSeq: latestSubscription.startSeq + 1,
+        direction: "inbound",
+        target,
+        senderID: target.senderID,
+        text: "hello",
+        timeCreated: Date.now(),
       }
       expect(yield* dispatch(message)).toMatchObject({ matched: 2, admitted: 1, failed: 0 })
       expect(yield* dispatch(message)).toMatchObject({ matched: 0, admitted: 0, failed: 0 })
@@ -312,7 +480,9 @@ describe("IM dispatcher", () => {
     Effect.gen(function* () {
       const { directory } = yield* TestInstance
       const llm = yield* TestLLMServer
-      yield* Effect.promise(() => Bun.write(path.join(directory, "opencode.json"), JSON.stringify(providerConfig(llm.url))))
+      yield* Effect.promise(() =>
+        Bun.write(path.join(directory, "opencode.json"), JSON.stringify(providerConfig(llm.url))),
+      )
       const instance = yield* InstanceState.context
       const sessions = yield* Session.Service
       const subscriptions = yield* IMSubscription.Service
@@ -322,24 +492,41 @@ describe("IM dispatcher", () => {
       const oldSession = yield* sessions.create({ title: "IM old" })
       const oldMessage = yield* im.ingest({
         message: new NormalizedMessage({
-          id: messageRecordID("feishu", target.channelName, "event-old"), platform: "feishu", channelName: target.channelName,
-          eventID: "event-old", target, senderID: target.senderID, text: "old",
+          id: messageRecordID("feishu", target.channelName, "event-old"),
+          platform: "feishu",
+          channelName: target.channelName,
+          eventID: "event-old",
+          target,
+          senderID: target.senderID,
+          text: "old",
         }),
       })
-      yield* subscriptions.create({ projectID: instance.project.id, sessionID: oldSession.id, sessionDirectory: directory, target })
+      yield* subscriptions.create({
+        projectID: instance.project.id,
+        sessionID: oldSession.id,
+        sessionDirectory: directory,
+        target,
+      })
       expect(yield* recover()).toMatchObject({ dispatched: 0 })
       expect(yield* inbox.pending(oldSession.id)).toHaveLength(0)
 
       const session = yield* sessions.create({ title: "IM recovery" })
       const recoveryTarget = fixedTarget(target.channelName, "chat-2")
       const currentSubscription = yield* subscriptions.create({
-        projectID: instance.project.id, sessionID: session.id, sessionDirectory: directory,
+        projectID: instance.project.id,
+        sessionID: session.id,
+        sessionDirectory: directory,
         target: recoveryTarget,
       })
       const message = yield* im.ingest({
         message: new NormalizedMessage({
-          id: messageRecordID("feishu", target.channelName, "event-admitted"), platform: "feishu", channelName: target.channelName,
-          eventID: "event-admitted", target: recoveryTarget, senderID: recoveryTarget.senderID, text: "recover me",
+          id: messageRecordID("feishu", target.channelName, "event-admitted"),
+          platform: "feishu",
+          channelName: target.channelName,
+          eventID: "event-admitted",
+          target: recoveryTarget,
+          senderID: recoveryTarget.senderID,
+          text: "recover me",
         }),
       })
       const admissionID = `evt_im_${message.message.id}_${session.id}`
@@ -366,7 +553,9 @@ describe("IM dispatcher", () => {
     Effect.gen(function* () {
       const { directory } = yield* TestInstance
       const llm = yield* TestLLMServer
-      yield* Effect.promise(() => Bun.write(path.join(directory, "opencode.json"), JSON.stringify(providerConfig(llm.url))))
+      yield* Effect.promise(() =>
+        Bun.write(path.join(directory, "opencode.json"), JSON.stringify(providerConfig(llm.url))),
+      )
       const instance = yield* InstanceState.context
       const sessions = yield* Session.Service
       const subscriptions = yield* IMSubscription.Service
@@ -374,12 +563,22 @@ describe("IM dispatcher", () => {
       const im = yield* IM.Service
       const session = yield* sessions.create({ title: "IM ingest recovery" })
       const target = fixedTarget("dispatcher-ingest-recovery")
-      yield* subscriptions.create({ projectID: instance.project.id, sessionID: session.id, sessionDirectory: directory, target })
+      yield* subscriptions.create({
+        projectID: instance.project.id,
+        sessionID: session.id,
+        sessionDirectory: directory,
+        target,
+      })
       yield* llm.push(reply().text("ingest recovery assistant").stop())
       const stored = yield* im.ingest({
         message: new NormalizedMessage({
-          id: messageRecordID("feishu", target.channelName, "event-ingest-recovery"), platform: "feishu",
-          channelName: target.channelName, eventID: "event-ingest-recovery", target, senderID: target.senderID, text: "recover this",
+          id: messageRecordID("feishu", target.channelName, "event-ingest-recovery"),
+          platform: "feishu",
+          channelName: target.channelName,
+          eventID: "event-ingest-recovery",
+          target,
+          senderID: target.senderID,
+          text: "recover this",
         }),
       })
       expect(stored.inserted).toBe(true)
@@ -396,23 +595,44 @@ describe("IM dispatcher", () => {
     Effect.gen(function* () {
       const { directory } = yield* TestInstance
       const llm = yield* TestLLMServer
-      yield* Effect.promise(() => Bun.write(path.join(directory, "opencode.json"), JSON.stringify(providerConfig(llm.url))))
+      yield* Effect.promise(() =>
+        Bun.write(path.join(directory, "opencode.json"), JSON.stringify(providerConfig(llm.url))),
+      )
       const instance = yield* InstanceState.context
       const sessions = yield* Session.Service
       const subscriptions = yield* IMSubscription.Service
       const session = yield* sessions.create({ title: "IM busy" })
       const target = fixedTarget("dispatcher-busy")
-      const subscription = yield* subscriptions.create({ projectID: instance.project.id, sessionID: session.id, sessionDirectory: directory, target })
+      const subscription = yield* subscriptions.create({
+        projectID: instance.project.id,
+        sessionID: session.id,
+        sessionDirectory: directory,
+        target,
+      })
       let release!: () => void
       const gate = new Promise<void>((resolve) => {
         release = resolve
       })
       yield* llm.hold("first", gate)
       const first: MessageInfo = {
-        id: messageRecordID("feishu", target.channelName, "event-busy-1"), platform: "feishu", channelName: target.channelName,
-        eventID: "event-busy-1", ingestSeq: subscription.startSeq + 1, direction: "inbound", target, senderID: target.senderID, text: "first", timeCreated: Date.now(),
+        id: messageRecordID("feishu", target.channelName, "event-busy-1"),
+        platform: "feishu",
+        channelName: target.channelName,
+        eventID: "event-busy-1",
+        ingestSeq: subscription.startSeq + 1,
+        direction: "inbound",
+        target,
+        senderID: target.senderID,
+        text: "first",
+        timeCreated: Date.now(),
       }
-      const second: MessageInfo = { ...first, id: messageRecordID("feishu", target.channelName, "event-busy-2"), eventID: "event-busy-2", ingestSeq: first.ingestSeq + 1, text: "second" }
+      const second: MessageInfo = {
+        ...first,
+        id: messageRecordID("feishu", target.channelName, "event-busy-2"),
+        eventID: "event-busy-2",
+        ingestSeq: first.ingestSeq + 1,
+        text: "second",
+      }
       const fiber = yield* dispatch(first).pipe(Effect.forkChild)
       yield* llm.wait(1)
       const secondResult = yield* dispatch(second)
@@ -430,19 +650,36 @@ describe("IM dispatcher", () => {
     Effect.gen(function* () {
       const { directory } = yield* TestInstance
       const llm = yield* TestLLMServer
-      yield* Effect.promise(() => Bun.write(path.join(directory, "opencode.json"), JSON.stringify(providerConfig(llm.url))))
+      yield* Effect.promise(() =>
+        Bun.write(path.join(directory, "opencode.json"), JSON.stringify(providerConfig(llm.url))),
+      )
       const instance = yield* InstanceState.context
       const sessions = yield* Session.Service
       const subscriptions = yield* IMSubscription.Service
       const session = yield* sessions.create({ title: "IM ordering" })
       const target = fixedTarget("dispatcher-order")
-      const subscription = yield* subscriptions.create({ projectID: instance.project.id, sessionID: session.id, sessionDirectory: directory, target })
+      const subscription = yield* subscriptions.create({
+        projectID: instance.project.id,
+        sessionID: session.id,
+        sessionDirectory: directory,
+        target,
+      })
       yield* llm.push(reply().text("two").stop(), reply().text("one").stop())
       const makeMessage = (seq: number, eventID: string, text: string): MessageInfo => ({
-        id: messageRecordID("feishu", target.channelName, eventID), platform: "feishu", channelName: target.channelName,
-        eventID, ingestSeq: subscription.startSeq + seq, direction: "inbound", target, senderID: "channel-owner", text, timeCreated: Date.now(),
+        id: messageRecordID("feishu", target.channelName, eventID),
+        platform: "feishu",
+        channelName: target.channelName,
+        eventID,
+        ingestSeq: subscription.startSeq + seq,
+        direction: "inbound",
+        target,
+        senderID: "channel-owner",
+        text,
+        timeCreated: Date.now(),
       })
-      expect(yield* dispatch({ ...makeMessage(5, "foreign-event", "foreign"), senderID: "foreign-user" })).toMatchObject({ matched: 0, admitted: 0 })
+      expect(
+        yield* dispatch({ ...makeMessage(5, "foreign-event", "foreign"), senderID: "foreign-user" }),
+      ).toMatchObject({ matched: 0, admitted: 0 })
       expect(yield* dispatch(makeMessage(2, "event-2", "two"))).toMatchObject({ matched: 1, admitted: 1 })
       expect(yield* dispatch(makeMessage(1, "event-1", "one"))).toMatchObject({ matched: 1, admitted: 1 })
       expect(yield* subscriptions.stop(subscription.id, instance.project.id)).toBeDefined()
@@ -463,24 +700,32 @@ describe("IM dispatcher", () => {
       const sessionID = `ses_recovery_batch_${crypto.randomUUID()}` as SessionID
       const now = Date.now()
       Database.use((db) =>
-        db.insert(SessionTable).values({
-          id: sessionID,
-          project_id: instance.project.id,
-          slug: "recovery-batch",
-          directory,
-          title: "Recovery batch",
-          version: "test",
-          time_created: now,
-          time_updated: now,
-        }).run(),
+        db
+          .insert(SessionTable)
+          .values({
+            id: sessionID,
+            project_id: instance.project.id,
+            slug: "recovery-batch",
+            directory,
+            title: "Recovery batch",
+            version: "test",
+            time_created: now,
+            time_updated: now,
+          })
+          .run(),
       )
       const target = fixedTarget("dispatcher-recovery-batch")
       yield* subscriptions.create({ projectID: instance.project.id, sessionID, sessionDirectory: directory, target })
       for (let index = 0; index < 101; index++) {
         yield* im.ingest({
           message: new NormalizedMessage({
-            id: messageRecordID("feishu", target.channelName, `event-${index}`), platform: "feishu",
-            channelName: target.channelName, eventID: `event-${index}`, target, senderID: target.senderID, text: `message-${index}`,
+            id: messageRecordID("feishu", target.channelName, `event-${index}`),
+            platform: "feishu",
+            channelName: target.channelName,
+            eventID: `event-${index}`,
+            target,
+            senderID: target.senderID,
+            text: `message-${index}`,
           }),
         })
       }
@@ -506,28 +751,43 @@ describe("IM dispatcher", () => {
         const sessionID = `ses_dispatch_batch_${index}_${crypto.randomUUID()}` as SessionID
         sessionIDs.push(sessionID)
         Database.use((db) =>
-          db.insert(SessionTable).values({
-            id: sessionID,
-            project_id: instance.project.id,
-            slug: `dispatch-${index}`,
-            directory,
-            title: `Dispatch ${index}`,
-            version: "test",
-            time_created: now,
-            time_updated: now,
-          }).run(),
+          db
+            .insert(SessionTable)
+            .values({
+              id: sessionID,
+              project_id: instance.project.id,
+              slug: `dispatch-${index}`,
+              directory,
+              title: `Dispatch ${index}`,
+              version: "test",
+              time_created: now,
+              time_updated: now,
+            })
+            .run(),
         )
-        const subscription = yield* subscriptions.create({ projectID: instance.project.id, sessionID, sessionDirectory: directory, target })
+        const subscription = yield* subscriptions.create({
+          projectID: instance.project.id,
+          sessionID,
+          sessionDirectory: directory,
+          target,
+        })
         latestStartSeq = Math.max(latestStartSeq, subscription.startSeq)
       }
       const message: MessageInfo = {
-        id: messageRecordID("feishu", target.channelName, "event-session-batch"), platform: "feishu",
-        channelName: target.channelName, eventID: "event-session-batch", ingestSeq: latestStartSeq + 1,
-        direction: "inbound", target, senderID: target.senderID, text: "fanout", timeCreated: now,
+        id: messageRecordID("feishu", target.channelName, "event-session-batch"),
+        platform: "feishu",
+        channelName: target.channelName,
+        eventID: "event-session-batch",
+        ingestSeq: latestStartSeq + 1,
+        direction: "inbound",
+        target,
+        senderID: target.senderID,
+        text: "fanout",
+        timeCreated: now,
       }
       const result = yield* dispatch(message)
       expect(result).toMatchObject({ matched: 101, admitted: 101, failed: 0 })
-      expect((yield* Effect.forEach(sessionIDs, (sessionID) => inbox.pending(sessionID)) ).flat()).toHaveLength(101)
+      expect((yield* Effect.forEach(sessionIDs, (sessionID) => inbox.pending(sessionID))).flat()).toHaveLength(101)
     }),
   )
 
@@ -542,17 +802,31 @@ describe("IM dispatcher", () => {
       const sessionID = `ses_retry_${crypto.randomUUID()}` as SessionID
       const now = Date.now()
       Database.use((db) =>
-        db.insert(SessionTable).values({
-          id: sessionID, project_id: instance.project.id, slug: "retry", directory,
-          title: "Retry", version: "test", time_created: now, time_updated: now,
-        }).run(),
+        db
+          .insert(SessionTable)
+          .values({
+            id: sessionID,
+            project_id: instance.project.id,
+            slug: "retry",
+            directory,
+            title: "Retry",
+            version: "test",
+            time_created: now,
+            time_updated: now,
+          })
+          .run(),
       )
       const target = fixedTarget("dispatcher-retry")
       yield* subscriptions.create({ projectID: instance.project.id, sessionID, sessionDirectory: directory, target })
       yield* im.ingest({
         message: new NormalizedMessage({
-          id: messageRecordID("feishu", target.channelName, "event-retry"), platform: "feishu",
-          channelName: target.channelName, eventID: "event-retry", target, senderID: target.senderID, text: "retry me",
+          id: messageRecordID("feishu", target.channelName, "event-retry"),
+          platform: "feishu",
+          channelName: target.channelName,
+          eventID: "event-retry",
+          target,
+          senderID: target.senderID,
+          text: "retry me",
         }),
       })
       const result = yield* recoverWithRetry(2)
@@ -566,14 +840,21 @@ describe("IM dispatcher", () => {
     Effect.gen(function* () {
       const { directory } = yield* TestInstance
       const llm = yield* TestLLMServer
-      yield* Effect.promise(() => Bun.write(path.join(directory, "opencode.json"), JSON.stringify(providerConfig(llm.url))))
+      yield* Effect.promise(() =>
+        Bun.write(path.join(directory, "opencode.json"), JSON.stringify(providerConfig(llm.url))),
+      )
       const instance = yield* InstanceState.context
       const sessions = yield* Session.Service
       const subscriptions = yield* IMSubscription.Service
       const inbox = yield* SessionInput.Service
       const session = yield* sessions.create({ title: "Stopped recovery" })
       const target = fixedTarget("dispatcher-stopped-recovery")
-      const subscription = yield* subscriptions.create({ projectID: instance.project.id, sessionID: session.id, sessionDirectory: directory, target })
+      const subscription = yield* subscriptions.create({
+        projectID: instance.project.id,
+        sessionID: session.id,
+        sessionDirectory: directory,
+        target,
+      })
       yield* inbox.admit({
         id: `evt_im_stopped_${crypto.randomUUID()}` as never,
         sessionID: session.id,
@@ -595,14 +876,21 @@ describe("IM dispatcher", () => {
     Effect.gen(function* () {
       const { directory } = yield* TestInstance
       const llm = yield* TestLLMServer
-      yield* Effect.promise(() => Bun.write(path.join(directory, "opencode.json"), JSON.stringify(providerConfig(llm.url))))
+      yield* Effect.promise(() =>
+        Bun.write(path.join(directory, "opencode.json"), JSON.stringify(providerConfig(llm.url))),
+      )
       const instance = yield* InstanceState.context
       const sessions = yield* Session.Service
       const subscriptions = yield* IMSubscription.Service
       const inbox = yield* SessionInput.Service
       const session = yield* sessions.create({ title: "Promoted recovery" })
       const target = fixedTarget("dispatcher-promoted-recovery")
-      const subscription = yield* subscriptions.create({ projectID: instance.project.id, sessionID: session.id, sessionDirectory: directory, target })
+      const subscription = yield* subscriptions.create({
+        projectID: instance.project.id,
+        sessionID: session.id,
+        sessionDirectory: directory,
+        target,
+      })
       const inputID = `evt_im_promoted_${crypto.randomUUID()}` as never
       yield* inbox.admit({
         id: inputID,
@@ -628,7 +916,9 @@ describe("IM dispatcher", () => {
     Effect.gen(function* () {
       const { directory } = yield* TestInstance
       const llm = yield* TestLLMServer
-      yield* Effect.promise(() => Bun.write(path.join(directory, "opencode.json"), JSON.stringify(providerConfig(llm.url))))
+      yield* Effect.promise(() =>
+        Bun.write(path.join(directory, "opencode.json"), JSON.stringify(providerConfig(llm.url))),
+      )
       const instance = yield* InstanceState.context
       const sessions = yield* Session.Service
       const subscriptions = yield* IMSubscription.Service
@@ -636,11 +926,21 @@ describe("IM dispatcher", () => {
       const im = yield* IM.Service
       const session = yield* sessions.create({ title: "Canonical recovery" })
       const target = fixedTarget("dispatcher-canonical-recovery")
-      const subscription = yield* subscriptions.create({ projectID: instance.project.id, sessionID: session.id, sessionDirectory: directory, target })
+      const subscription = yield* subscriptions.create({
+        projectID: instance.project.id,
+        sessionID: session.id,
+        sessionDirectory: directory,
+        target,
+      })
       const message = yield* im.ingest({
         message: new NormalizedMessage({
-          id: messageRecordID("feishu", target.channelName, "event-canonical"), platform: "feishu",
-          channelName: target.channelName, eventID: "event-canonical", target, senderID: target.senderID, text: "canonical recovery",
+          id: messageRecordID("feishu", target.channelName, "event-canonical"),
+          platform: "feishu",
+          channelName: target.channelName,
+          eventID: "event-canonical",
+          target,
+          senderID: target.senderID,
+          text: "canonical recovery",
         }),
       })
       const admissionID = `evt_im_${message.message.id}_${session.id}` as never
@@ -648,7 +948,7 @@ describe("IM dispatcher", () => {
         id: admissionID,
         sessionID: session.id,
         prompt: {
-          text: "<im_message source=\"feishu\" channel=\"dispatcher-canonical-recovery\" subscription=\"test\">\ncanonical recovery\n</im_message>",
+          text: '<im_message source="feishu" channel="dispatcher-canonical-recovery" subscription="test">\ncanonical recovery\n</im_message>',
           metadata: {
             imSource: "feishu",
             imChannel: target.channelName,
@@ -666,7 +966,15 @@ describe("IM dispatcher", () => {
       expect(yield* llm.calls).toBe(1)
       expect(yield* inbox.pending(session.id)).toHaveLength(0)
       expect(yield* inbox.promotedUnacked(session.id)).toHaveLength(0)
-      expect(Database.use((db) => db.select().from(IMSubscriptionDeliveryTable).where(eq(IMSubscriptionDeliveryTable.message_id, message.message.id)).all())).toHaveLength(1)
+      expect(
+        Database.use((db) =>
+          db
+            .select()
+            .from(IMSubscriptionDeliveryTable)
+            .where(eq(IMSubscriptionDeliveryTable.message_id, message.message.id))
+            .all(),
+        ),
+      ).toHaveLength(1)
       yield* recover()
       expect(yield* llm.calls).toBe(1)
     }),

@@ -162,7 +162,9 @@ export async function shareHTML(preview: HTMLElement, theme: "light" | "dark") {
   const fonts = await fontStyles(families)
   // Style elements contain trusted computed CSS, not text from Markdown.
   const css = [...rules].map(([style, name]) => `.export-style-${name}{${style}}`).join("\n")
-  console.debug(`[session-share] snapshot bytes=${new Blob([fonts + css + pseudoRules.join("\n") + clone.outerHTML]).size}`)
+  console.debug(
+    `[session-share] snapshot bytes=${new Blob([fonts + css + pseudoRules.join("\n") + clone.outerHTML]).size}`,
+  )
   // The preview's ancestor is zoomed to fit the panel; export its unscaled layout.
   const width = preview.offsetWidth || Math.ceil(preview.getBoundingClientRect().width)
   clone.style.cssText = `margin:0;width:${width}px;min-height:0;max-height:none;position:relative!important;left:0!important;right:auto!important;top:0!important;bottom:auto!important;inset-inline-start:0!important;inset-inline-end:auto!important;transform:none!important;`

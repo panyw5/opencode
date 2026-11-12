@@ -24,7 +24,9 @@ test("reconnect reload waits for the document and releases all listeners", async
   wc.reload = () => {}
   const cdp = new BrowserCdp(wc as never)
   let settled = false
-  const pending = cdp.reloadAndWait(100).then(() => { settled = true })
+  const pending = cdp.reloadAndWait(100).then(() => {
+    settled = true
+  })
   await Promise.resolve()
   expect(settled).toBe(false)
   wc.emit("did-stop-loading")
@@ -112,7 +114,13 @@ function fixture(
       )
         return {
           result: {
-            value: { editorCount: 1, globalInputCount: 2, eligibleGlobalInputCount: 2, scopedInputCount: 1, reason: "ok" },
+            value: {
+              editorCount: 1,
+              globalInputCount: 2,
+              eligibleGlobalInputCount: 2,
+              scopedInputCount: 1,
+              reason: "ok",
+            },
           },
         }
       if (
@@ -155,8 +163,7 @@ function fixture(
       if (method === "Runtime.callFunctionOn") return { result: { value: options.active ?? true } }
       if (method === "DOM.requestNode") return { nodeId: 2 }
       if (method === "DOM.resolveNode") return { object: { objectId: "element" } }
-      if (method === "DOM.getBoxModel")
-        return { model: { content: [0, 0, 100, 0, 100, 100, 0, 100] } }
+      if (method === "DOM.getBoxModel") return { model: { content: [0, 0, 100, 0, 100, 100, 0, 100] } }
       if (method === "DOM.describeNode")
         return {
           node: {
@@ -209,15 +216,21 @@ describe("CDP file attachment", () => {
     })
     expect(prepared).toBe(1)
     expect(committed).toBe(1)
-    expect(f.calls.filter((call) => call.method === "Runtime.evaluate" && call.params.expression === "send-target-fixture")).toHaveLength(3)
-    expect(f.calls.filter((call) => call.method === "Runtime.callFunctionOn" && String(call.params.objectId).startsWith("send-target-")).length).toBe(3)
+    expect(
+      f.calls.filter((call) => call.method === "Runtime.evaluate" && call.params.expression === "send-target-fixture"),
+    ).toHaveLength(3)
+    expect(
+      f.calls.filter(
+        (call) => call.method === "Runtime.callFunctionOn" && String(call.params.objectId).startsWith("send-target-"),
+      ).length,
+    ).toBe(3)
     expect(commitCallCount).toBeGreaterThan(0)
-    expect(commitCallCount).toBe(f.calls.findIndex((call) => call.method === "Input.dispatchMouseEvent" && call.params.type === "mousePressed"))
-    expect(f.calls.filter((call) => call.method === "Input.dispatchMouseEvent").map((call) => call.params.type)).toEqual([
-      "mouseMoved",
-      "mousePressed",
-      "mouseReleased",
-    ])
+    expect(commitCallCount).toBe(
+      f.calls.findIndex((call) => call.method === "Input.dispatchMouseEvent" && call.params.type === "mousePressed"),
+    )
+    expect(
+      f.calls.filter((call) => call.method === "Input.dispatchMouseEvent").map((call) => call.params.type),
+    ).toEqual(["mouseMoved", "mousePressed", "mouseReleased"])
     expect(f.focusCount()).toBe(0)
   })
   test("rejects covered or replaced resolver buttons without mouse dispatch", async () => {
@@ -274,9 +287,9 @@ describe("CDP file attachment", () => {
       "simulated mouse move failure",
     )
     expect(uidCommitted).toBe(0)
-    expect(uid.calls.some((call) => call.method === "Input.dispatchMouseEvent" && call.params.type === "mousePressed")).toBe(
-      false,
-    )
+    expect(
+      uid.calls.some((call) => call.method === "Input.dispatchMouseEvent" && call.params.type === "mousePressed"),
+    ).toBe(false)
   })
   test("matches a recovery UID only to the exact current resolver button", async () => {
     const f = fixture({ resolvedBackendNodeIds: [31, 31] })
@@ -297,12 +310,12 @@ describe("CDP file attachment", () => {
     })
     expect(prepared).toBe(1)
     expect(committed).toBe(1)
-    expect(commitCallCount).toBe(f.calls.findIndex((call) => call.method === "Input.dispatchMouseEvent" && call.params.type === "mousePressed"))
-    expect(f.calls.filter((call) => call.method === "Input.dispatchMouseEvent").map((call) => call.params.type)).toEqual([
-      "mouseMoved",
-      "mousePressed",
-      "mouseReleased",
-    ])
+    expect(commitCallCount).toBe(
+      f.calls.findIndex((call) => call.method === "Input.dispatchMouseEvent" && call.params.type === "mousePressed"),
+    )
+    expect(
+      f.calls.filter((call) => call.method === "Input.dispatchMouseEvent").map((call) => call.params.type),
+    ).toEqual(["mouseMoved", "mousePressed", "mouseReleased"])
   })
 
   test("normalizes accessibility scalar values for every control, not per website", async () => {
@@ -335,7 +348,11 @@ describe("CDP file attachment", () => {
       },
     )
     expect(dispatched).toBe(true)
-    expect(stable.calls.filter((call) => call.method === "Runtime.evaluate" && call.params.expression === "composer-resolver-fixture")).toHaveLength(2)
+    expect(
+      stable.calls.filter(
+        (call) => call.method === "Runtime.evaluate" && call.params.expression === "composer-resolver-fixture",
+      ),
+    ).toHaveLength(2)
     expect(stable.calls.find((call) => call.method === "DOM.setFileInputFiles")?.params.nodeId).toBe(102)
     expect(stable.calls.filter((call) => call.method === "Runtime.releaseObject")).toHaveLength(4)
 
@@ -365,7 +382,11 @@ describe("CDP file attachment", () => {
   test("re-resolves the active composer immediately before dispatch and rejects a replaced input", async () => {
     const stable = fixture({ composerBackendNodeIds: [21, 21] })
     await stable.browser.setInputFiles("input[type=file]", ["/tmp/chart.png"], "composer-resolver-fixture")
-    expect(stable.calls.filter((call) => call.method === "Runtime.evaluate" && call.params.expression === "composer-resolver-fixture")).toHaveLength(2)
+    expect(
+      stable.calls.filter(
+        (call) => call.method === "Runtime.evaluate" && call.params.expression === "composer-resolver-fixture",
+      ),
+    ).toHaveLength(2)
     expect(stable.calls.find((call) => call.method === "DOM.setFileInputFiles")?.params.nodeId).toBe(102)
 
     const replaced = fixture({ composerBackendNodeIds: [21, 22] })

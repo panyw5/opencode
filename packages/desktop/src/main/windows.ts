@@ -290,7 +290,14 @@ function wireWindowsShortcuts(win: BrowserWindow) {
   if (process.platform !== "win32") return
 
   win.webContents.on("before-input-event", (event, input) => {
-    if (input.type === "keyUp" && input.control && !input.meta && !input.alt && !input.shift && input.code === "Comma") {
+    if (
+      input.type === "keyUp" &&
+      input.control &&
+      !input.meta &&
+      !input.alt &&
+      !input.shift &&
+      input.code === "Comma"
+    ) {
       event.preventDefault()
       writeLog("keyboard", "Windows Ctrl+Comma keyUp converted to renderer shortcut event")
       win.webContents.send("windows-shortcut", "ctrl+comma")

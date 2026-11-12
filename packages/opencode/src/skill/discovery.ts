@@ -103,7 +103,8 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | Path.Pat
                 )
                 for (const entry of backups) {
                   const backup = path.join(cache, entry)
-                  if (!(yield* fs.exists(path.join(backup, "SKILL.md")).pipe(Effect.orElseSucceed(() => false)))) continue
+                  if (!(yield* fs.exists(path.join(backup, "SKILL.md")).pipe(Effect.orElseSucceed(() => false))))
+                    continue
                   const restored = yield* fs.rename(backup, root).pipe(
                     Effect.as(true),
                     Effect.orElseSucceed(() => false),

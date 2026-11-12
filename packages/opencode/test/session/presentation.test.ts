@@ -4,8 +4,18 @@ import os from "node:os"
 import path from "node:path"
 import { readArtifact, removeSessionArtifacts, snapshot } from "../../src/session/presentation"
 
-const png = Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mNk+M/wHwAF/gL+JQ7nNwAAAABJRU5ErkJggg==", "base64"))
-const jpeg = Uint8Array.from(Buffer.from("/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAH/AP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAT8Af//Z", "base64"))
+const png = Uint8Array.from(
+  Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mNk+M/wHwAF/gL+JQ7nNwAAAABJRU5ErkJggg==",
+    "base64",
+  ),
+)
+const jpeg = Uint8Array.from(
+  Buffer.from(
+    "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAH/AP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAT8Af//Z",
+    "base64",
+  ),
+)
 let dirs: string[] = []
 let sessions: string[] = []
 afterEach(async () => {
@@ -42,20 +52,29 @@ describe("session presentation", () => {
     sessions.push(sessionID)
     const first = await snapshot({ sessionID, sourcePath: safe, purpose: "diagram" })
     expect(first.mime).toBe("image/png")
-    expect((await readArtifact({ sessionID, artifactID: first.artifactID, variant: "thumbnail" }))?.body.length).toBeLessThanOrEqual(500 * 1024)
+    expect(
+      (await readArtifact({ sessionID, artifactID: first.artifactID, variant: "thumbnail" }))?.body.length,
+    ).toBeLessThanOrEqual(500 * 1024)
     const jpegPath = path.join(dir, "photo.jpg")
     await writeFile(jpegPath, jpeg)
     const jpegArtifact = await snapshot({ sessionID, sourcePath: jpegPath, purpose: "result" })
-    expect((await readArtifact({ sessionID, artifactID: jpegArtifact.artifactID, variant: "thumbnail" }))?.mime).toBe("image/jpeg")
+    expect((await readArtifact({ sessionID, artifactID: jpegArtifact.artifactID, variant: "thumbnail" }))?.mime).toBe(
+      "image/jpeg",
+    )
     expect(jpegArtifact.width).toBeUndefined()
     const unsafe = path.join(dir, "unsafe.svg")
     await writeFile(unsafe, `<svg><image href="https://evil.invalid/a.png" /></svg>`)
     await expect(snapshot({ sessionID, sourcePath: unsafe, purpose: "diagram" })).rejects.toThrow("unsafe")
     const safeSvg = path.join(dir, "safe.svg")
-    await writeFile(safeSvg, `  \n<svg xmlns="http://www.w3.org/2000/svg"><defs><path id="dot" d="M0 0h1v1z"/></defs><use href="#dot"/></svg>`)
+    await writeFile(
+      safeSvg,
+      `  \n<svg xmlns="http://www.w3.org/2000/svg"><defs><path id="dot" d="M0 0h1v1z"/></defs><use href="#dot"/></svg>`,
+    )
     const svg = await snapshot({ sessionID, sourcePath: safeSvg, purpose: "diagram" })
     expect(svg.mime).toBe("image/svg+xml")
-    expect((await readArtifact({ sessionID, artifactID: svg.artifactID, variant: "thumbnail" }))?.mime).toBe("image/svg+xml")
+    expect((await readArtifact({ sessionID, artifactID: svg.artifactID, variant: "thumbnail" }))?.mime).toBe(
+      "image/svg+xml",
+    )
     const invalid = path.join(dir, "invalid.svg")
     await writeFile(invalid, "not svg")
     await expect(snapshot({ sessionID, sourcePath: invalid, purpose: "diagram" })).rejects.toThrow("SVG")

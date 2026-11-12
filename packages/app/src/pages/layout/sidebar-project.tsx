@@ -163,8 +163,7 @@ const ProjectTile = (props: {
         ? props.language.t("command.project.openInFileExplorer")
         : props.language.t("command.project.openInFileManager")
 
-  const openInFileManagerDisabled = () =>
-    platform.os === "windows" ? !platform.openPath : !platform.openInFinder
+  const openInFileManagerDisabled = () => (platform.os === "windows" ? !platform.openPath : !platform.openInFinder)
 
   return (
     <RailTooltip mobile={props.mobile} title={name()} inactive={props.active()}>
@@ -210,99 +209,99 @@ const ProjectTile = (props: {
         >
           <ProjectIcon project={props.project} notify />
         </ContextMenu.Trigger>
-      <ContextMenu.Portal>
-        <ContextMenu.Content>
-          <ContextMenu.Item
-            data-action="project-new-session"
-            data-project={base64Encode(props.project.worktree)}
-            onSelect={openNewSession}
-          >
-            <ContextMenu.Icon>
-              <span class="flex shrink-0 text-icon-base">
-                <Icon name="new-session" size="small" />
-              </span>
-            </ContextMenu.Icon>
-            <ContextMenu.ItemLabel>{props.language.t("command.session.new")}</ContextMenu.ItemLabel>
-          </ContextMenu.Item>
-          <ContextMenu.Item
-            data-action="project-copy-path"
-            data-project={base64Encode(props.project.worktree)}
-            onSelect={copyProjectPath}
-          >
-            <ContextMenu.Icon>
-              <span class="flex shrink-0 text-icon-base">
-                <Icon name={copyState.copied ? "check" : "copy"} size="small" />
-              </span>
-            </ContextMenu.Icon>
-            <ContextMenu.ItemLabel>{props.language.t("command.project.copyPath")}</ContextMenu.ItemLabel>
-          </ContextMenu.Item>
-          <ContextMenu.Item
-            data-action="project-open-in-finder"
-            data-project={base64Encode(props.project.worktree)}
-            disabled={openInFileManagerDisabled()}
-            onSelect={openInFileManager}
-          >
-            <ContextMenu.Icon>
-              <span class="flex shrink-0 text-icon-base">
-                <Icon name="folder" size="small" />
-              </span>
-            </ContextMenu.Icon>
-            <ContextMenu.ItemLabel>{openInFileManagerLabel()}</ContextMenu.ItemLabel>
-          </ContextMenu.Item>
-          <ContextMenu.Separator />
-          <ContextMenu.Item onSelect={() => props.showEditProjectDialog(props.project)}>
-            <ContextMenu.Icon>
-              <span class="flex shrink-0 text-icon-base">
-                <Icon name="edit" size="small" />
-              </span>
-            </ContextMenu.Icon>
-            <ContextMenu.ItemLabel>{props.language.t("common.edit")}</ContextMenu.ItemLabel>
-          </ContextMenu.Item>
-          <ContextMenu.Item
-            data-action="project-workspaces-toggle"
-            data-project={base64Encode(props.project.worktree)}
-            disabled={props.project.vcs !== "git" && !props.workspacesEnabled(props.project)}
-            onSelect={() => props.toggleProjectWorkspaces(props.project)}
-          >
-            <ContextMenu.Icon>
-              <span class="flex shrink-0 text-icon-base">
-                <Icon name="play" size="small" />
-              </span>
-            </ContextMenu.Icon>
-            <ContextMenu.ItemLabel>
-              {props.workspacesEnabled(props.project)
-                ? props.language.t("sidebar.workspaces.disable")
-                : props.language.t("sidebar.workspaces.enable")}
-            </ContextMenu.ItemLabel>
-          </ContextMenu.Item>
-          <ContextMenu.Item
-            data-action="project-clear-notifications"
-            data-project={base64Encode(props.project.worktree)}
-            disabled={unseenCount() === 0}
-            onSelect={clear}
-          >
-            <ContextMenu.Icon>
-              <span class="flex shrink-0 text-icon-base">
-                <Icon name="bell-off" size="small" />
-              </span>
-            </ContextMenu.Icon>
-            <ContextMenu.ItemLabel>{props.language.t("sidebar.project.clearNotifications")}</ContextMenu.ItemLabel>
-          </ContextMenu.Item>
-          <ContextMenu.Separator />
-          <ContextMenu.Item
-            data-action="project-close-menu"
-            data-project={base64Encode(props.project.worktree)}
-            onSelect={() => props.closeProject(props.project.worktree)}
-          >
-            <ContextMenu.Icon>
-              <span class="flex shrink-0 text-icon-base">
-                <Icon name="close-small" size="small" />
-              </span>
-            </ContextMenu.Icon>
-            <ContextMenu.ItemLabel>{props.language.t("common.close")}</ContextMenu.ItemLabel>
-          </ContextMenu.Item>
-        </ContextMenu.Content>
-      </ContextMenu.Portal>
+        <ContextMenu.Portal>
+          <ContextMenu.Content>
+            <ContextMenu.Item
+              data-action="project-new-session"
+              data-project={base64Encode(props.project.worktree)}
+              onSelect={openNewSession}
+            >
+              <ContextMenu.Icon>
+                <span class="flex shrink-0 text-icon-base">
+                  <Icon name="new-session" size="small" />
+                </span>
+              </ContextMenu.Icon>
+              <ContextMenu.ItemLabel>{props.language.t("command.session.new")}</ContextMenu.ItemLabel>
+            </ContextMenu.Item>
+            <ContextMenu.Item
+              data-action="project-copy-path"
+              data-project={base64Encode(props.project.worktree)}
+              onSelect={copyProjectPath}
+            >
+              <ContextMenu.Icon>
+                <span class="flex shrink-0 text-icon-base">
+                  <Icon name={copyState.copied ? "check" : "copy"} size="small" />
+                </span>
+              </ContextMenu.Icon>
+              <ContextMenu.ItemLabel>{props.language.t("command.project.copyPath")}</ContextMenu.ItemLabel>
+            </ContextMenu.Item>
+            <ContextMenu.Item
+              data-action="project-open-in-finder"
+              data-project={base64Encode(props.project.worktree)}
+              disabled={openInFileManagerDisabled()}
+              onSelect={openInFileManager}
+            >
+              <ContextMenu.Icon>
+                <span class="flex shrink-0 text-icon-base">
+                  <Icon name="folder" size="small" />
+                </span>
+              </ContextMenu.Icon>
+              <ContextMenu.ItemLabel>{openInFileManagerLabel()}</ContextMenu.ItemLabel>
+            </ContextMenu.Item>
+            <ContextMenu.Separator />
+            <ContextMenu.Item onSelect={() => props.showEditProjectDialog(props.project)}>
+              <ContextMenu.Icon>
+                <span class="flex shrink-0 text-icon-base">
+                  <Icon name="edit" size="small" />
+                </span>
+              </ContextMenu.Icon>
+              <ContextMenu.ItemLabel>{props.language.t("common.edit")}</ContextMenu.ItemLabel>
+            </ContextMenu.Item>
+            <ContextMenu.Item
+              data-action="project-workspaces-toggle"
+              data-project={base64Encode(props.project.worktree)}
+              disabled={props.project.vcs !== "git" && !props.workspacesEnabled(props.project)}
+              onSelect={() => props.toggleProjectWorkspaces(props.project)}
+            >
+              <ContextMenu.Icon>
+                <span class="flex shrink-0 text-icon-base">
+                  <Icon name="play" size="small" />
+                </span>
+              </ContextMenu.Icon>
+              <ContextMenu.ItemLabel>
+                {props.workspacesEnabled(props.project)
+                  ? props.language.t("sidebar.workspaces.disable")
+                  : props.language.t("sidebar.workspaces.enable")}
+              </ContextMenu.ItemLabel>
+            </ContextMenu.Item>
+            <ContextMenu.Item
+              data-action="project-clear-notifications"
+              data-project={base64Encode(props.project.worktree)}
+              disabled={unseenCount() === 0}
+              onSelect={clear}
+            >
+              <ContextMenu.Icon>
+                <span class="flex shrink-0 text-icon-base">
+                  <Icon name="bell-off" size="small" />
+                </span>
+              </ContextMenu.Icon>
+              <ContextMenu.ItemLabel>{props.language.t("sidebar.project.clearNotifications")}</ContextMenu.ItemLabel>
+            </ContextMenu.Item>
+            <ContextMenu.Separator />
+            <ContextMenu.Item
+              data-action="project-close-menu"
+              data-project={base64Encode(props.project.worktree)}
+              onSelect={() => props.closeProject(props.project.worktree)}
+            >
+              <ContextMenu.Icon>
+                <span class="flex shrink-0 text-icon-base">
+                  <Icon name="close-small" size="small" />
+                </span>
+              </ContextMenu.Icon>
+              <ContextMenu.ItemLabel>{props.language.t("common.close")}</ContextMenu.ItemLabel>
+            </ContextMenu.Item>
+          </ContextMenu.Content>
+        </ContextMenu.Portal>
       </ContextMenu>
     </RailTooltip>
   )
@@ -326,7 +325,9 @@ export const SortableProject = (props: {
     const next = `session=${sessionCurrent() ? "true" : "false"} sidebar=${sidebarExpanded() ? "true" : "false"}`
     if (next === lastIndicator) return
     lastIndicator = next
-    console.debug(`[sidebar-project] indicator root=${props.project.worktree} session-root=${props.ctx.sessionCurrent() ?? "none"} sidebar-root=${props.ctx.sidebarExpanded() ?? "none"} ${next}`)
+    console.debug(
+      `[sidebar-project] indicator root=${props.project.worktree} session-root=${props.ctx.sessionCurrent() ?? "none"} sidebar-root=${props.ctx.sidebarExpanded() ?? "none"} ${next}`,
+    )
   })
   const language = useLanguage()
   const dirs = createMemo(() => props.ctx.workspaceIds(props.project))

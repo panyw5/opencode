@@ -42,13 +42,16 @@ function normalizeDirectory(input: string) {
   }
 }
 
-function boot(input: {
-  directory: ReturnType<typeof normalizeDirectory>
-  init?: () => Promise<any>
-  project?: Project.Info
-  worktree?: string
-  location?: ProjectLocation.Info
-}, options?: { reload?: boolean }) {
+function boot(
+  input: {
+    directory: ReturnType<typeof normalizeDirectory>
+    init?: () => Promise<any>
+    project?: Project.Info
+    worktree?: string
+    location?: ProjectLocation.Info
+  },
+  options?: { reload?: boolean },
+) {
   return iife(async () => {
     const at = Date.now()
     const ctx = await (options?.reload ? InstanceRuntime.reloadInstance : InstanceRuntime.load)({

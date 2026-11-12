@@ -65,7 +65,12 @@ export function providerGroupIconID(items: readonly ModelIconItem[]): string {
 export function modelProviderIconID(item: ModelIconItem): string {
   const candidates = [item.api?.id, item.id, item.provider.id, item.name]
     .filter((value): value is string => typeof value === "string" && value.length > 0)
-    .flatMap((value) => value.toLowerCase().replace(/^hf:/, "").split(/[/.:-]/))
+    .flatMap((value) =>
+      value
+        .toLowerCase()
+        .replace(/^hf:/, "")
+        .split(/[/.:-]/),
+    )
   for (const candidate of candidates) {
     const mapped = MODEL_PROVIDER_ICON_PREFIXES[candidate]
     if (mapped) return mapped

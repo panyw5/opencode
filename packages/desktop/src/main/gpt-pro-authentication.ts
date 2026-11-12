@@ -64,9 +64,7 @@ export async function readGptProAuthentication(
   if (value.phase === "needs_login")
     return {
       phase: "needs_login",
-      ...(["refresh_failed", "expired"].includes(value.reason ?? "")
-        ? { detail: GPT_PRO_LOGIN_EXPIRED_DETAIL }
-        : {}),
+      ...(["refresh_failed", "expired"].includes(value.reason ?? "") ? { detail: GPT_PRO_LOGIN_EXPIRED_DETAIL } : {}),
     }
   return { phase: "unknown", ...(value.retryAfterMs === undefined ? {} : { retryAfterMs: value.retryAfterMs }) }
 }

@@ -364,7 +364,11 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
 
   const taskFile = taskPath(projectDir, session.id)
   writeFileSync(taskFile, input.task.trim() + "\n", "utf8")
-  registerProblemWorker({ parentSessionID: input.parentSessionID, workerSessionID: session.id, problemID: path.basename(projectDir) })
+  registerProblemWorker({
+    parentSessionID: input.parentSessionID,
+    workerSessionID: session.id,
+    problemID: path.basename(projectDir),
+  })
   const taskFingerprint = mathWorkerTaskFingerprint(input.task)
   const generation = 1
   const logFile = path.join(layout(projectDir).logs, `worker-${session.id}.log`)
@@ -495,7 +499,11 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
   const stop = stopPath(input.projectDir, input.sessionID)
   if (!existsSync(taskFile)) throw new Error(`math worker TASK is missing: ${taskFile}`)
   const currentTaskFingerprint = mathWorkerTaskFingerprint(readFileSync(taskFile, "utf8"))
-  registerProblemWorker({ parentSessionID: parent.id, workerSessionID: session.id, problemID: path.basename(input.projectDir) })
+  registerProblemWorker({
+    parentSessionID: parent.id,
+    workerSessionID: session.id,
+    problemID: path.basename(input.projectDir),
+  })
   const blockedSameTask = existing?.state === "blocked" && existing.blockedTaskFingerprint === currentTaskFingerprint
   const infraRetry = blockedSameTask && isInfraBlockedReason(existing?.blockedReason)
   if (blockedSameTask && !infraRetry) {

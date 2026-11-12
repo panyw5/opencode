@@ -13,10 +13,10 @@ export function providerSdkFromModels(models: ProviderModelMap): string | undefi
   return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0]
 }
 
-export function providerDisplaySdk(input: {
-  config?: ProviderCfg
-  models: ProviderModelMap
-}): { sdk?: string; custom: boolean } {
+export function providerDisplaySdk(input: { config?: ProviderCfg; models: ProviderModelMap }): {
+  sdk?: string
+  custom: boolean
+} {
   const configuredSdk = input.config?.npm
   return {
     sdk: configuredSdk ?? providerSdkFromModels(input.models),

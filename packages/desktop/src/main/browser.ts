@@ -177,11 +177,17 @@ export class BrowserController {
     const applied = await entry.cdp.setFocusEmulation(enabled).then(
       () => this.views.get(pageID) === entry && (this.epochs.get(pageID) ?? 0) === epoch,
       (error) => {
-        log("focus-emulation", `pageID=${pageID} epoch=${epoch} enabled=${enabled} outcome=failed error=${String(error)}`)
+        log(
+          "focus-emulation",
+          `pageID=${pageID} epoch=${epoch} enabled=${enabled} outcome=failed error=${String(error)}`,
+        )
         return false
       },
     )
-    log(`focus-emulation`, `pageID=${pageID} epoch=${epoch} enabled=${enabled} outcome=${applied ? "applied" : "stale-after-command"}`)
+    log(
+      `focus-emulation`,
+      `pageID=${pageID} epoch=${epoch} enabled=${enabled} outcome=${applied ? "applied" : "stale-after-command"}`,
+    )
     return applied
   }
 
@@ -255,7 +261,10 @@ export class BrowserController {
       const onNavigate = (event: Electron.Event, url: string, _inPlace: boolean, isMainFrame: boolean) => {
         if (!isCurrent() || isMainFrame === false) return
         const allowed = navigationGuard.request(url)
-        log("navigation", `GPT login navigation requested pageID=${pageID} path=${new URL(url).pathname} allowed=${allowed}`)
+        log(
+          "navigation",
+          `GPT login navigation requested pageID=${pageID} path=${new URL(url).pathname} allowed=${allowed}`,
+        )
         if (allowed) return
         event.preventDefault()
         log("navigation", `login redirect loop stopped pageID=${pageID}; credentials and page contents preserved`)
@@ -269,7 +278,10 @@ export class BrowserController {
         if (!isCurrent() || isMainFrame === false) return
         const blocked = navigationGuard.blocked
         navigationGuard.allow(url)
-        log("navigation", `GPT login navigation committed pageID=${pageID} path=${new URL(url).pathname} blocked=${navigationGuard.blocked}`)
+        log(
+          "navigation",
+          `GPT login navigation committed pageID=${pageID} path=${new URL(url).pathname} blocked=${navigationGuard.blocked}`,
+        )
         if (!blocked && navigationGuard.blocked)
           log("navigation", `login SPA redirect loop detected pageID=${pageID}; next navigation will be cancelled`)
         this.emitState(pageID)
@@ -308,7 +320,10 @@ export class BrowserController {
       entry.documentEpoch = (entry.documentEpoch ?? 0) + 1
       entry.navigationReason = entry.pendingNavigationReason ?? "website"
       entry.pendingNavigationReason = undefined
-      log("navigation", `document started pageID=${pageID} documentEpoch=${entry.documentEpoch} reason=${entry.navigationReason}; url omitted`)
+      log(
+        "navigation",
+        `document started pageID=${pageID} documentEpoch=${entry.documentEpoch} reason=${entry.navigationReason}; url omitted`,
+      )
       this.emitState(pageID)
     })
     view.webContents.on("did-start-loading", () => isCurrent() && this.emitState(pageID))
@@ -323,7 +338,7 @@ export class BrowserController {
       }
     })
 
-    const cdp = new BrowserCdp(view.webContents, reason => {
+    const cdp = new BrowserCdp(view.webContents, (reason) => {
       navigationGuard?.reset()
       const entry = this.views.get(pageID)
       if (entry) entry.pendingNavigationReason = reason
@@ -408,10 +423,16 @@ export class BrowserController {
   /** Navigate (creating the view if needed) and make it visible. */
   async open(partition: string, url: string, reason: BrowserNavigationReason = "user") {
     const existing = this.views.get(partition)?.identity
-    return this.openPage(partition, existing?.profileID ?? partition, url, {
-      owner: existing?.owner,
-      kind: existing?.kind,
-    }, reason)
+    return this.openPage(
+      partition,
+      existing?.profileID ?? partition,
+      url,
+      {
+        owner: existing?.owner,
+        kind: existing?.kind,
+      },
+      reason,
+    )
   }
 
   /** Open a distinct page backed by an existing/shared Electron session. */
@@ -572,7 +593,9 @@ export class BrowserController {
     const bounds = frame.bounds
     if (
       (pageID !== null && typeof pageID !== "string") ||
-      (frame.protectedPageID !== undefined && frame.protectedPageID !== null && typeof frame.protectedPageID !== "string") ||
+      (frame.protectedPageID !== undefined &&
+        frame.protectedPageID !== null &&
+        typeof frame.protectedPageID !== "string") ||
       (pageID === null) !== (bounds === null) ||
       (bounds &&
         (![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isSafeInteger) ||
@@ -600,11 +623,17 @@ export class BrowserController {
     const target = pageID ? this.views.get(pageID) : undefined
     if (target && bounds && this.isAutomationPage(target)) {
       const epoch = this.epochs.get(pageID!) ?? 0
-      log("viewport", `pageID=${pageID} epoch=${epoch} width=${bounds.width} height=${bounds.height} outcome=resize-start`)
+      log(
+        "viewport",
+        `pageID=${pageID} epoch=${epoch} width=${bounds.width} height=${bounds.height} outcome=resize-start`,
+      )
       try {
         await target.cdp.setViewport(bounds.width, bounds.height)
       } catch (error) {
-        log("viewport", `pageID=${pageID} epoch=${epoch} width=${bounds.width} height=${bounds.height} outcome=resize-failed error=${String(error)}`)
+        log(
+          "viewport",
+          `pageID=${pageID} epoch=${epoch} width=${bounds.width} height=${bounds.height} outcome=resize-failed error=${String(error)}`,
+        )
         if (
           this.views.get(pageID!) === target &&
           this.displayLease === frame.lease &&
@@ -616,7 +645,10 @@ export class BrowserController {
             prior.entry.bounds = prior.bounds
             this.applyBounds(prior.id)
           }
-          log("display", `restored prior native presentation after viewport failure pageID=${pageID} revision=${frame.revision}`)
+          log(
+            "display",
+            `restored prior native presentation after viewport failure pageID=${pageID} revision=${frame.revision}`,
+          )
         }
         return false
       }
@@ -626,7 +658,10 @@ export class BrowserController {
         this.displayLease !== frame.lease ||
         this.displayRevision !== frame.revision
       ) {
-        log("viewport", `pageID=${pageID} epoch=${epoch} width=${bounds.width} height=${bounds.height} outcome=stale-after-resize`)
+        log(
+          "viewport",
+          `pageID=${pageID} epoch=${epoch} width=${bounds.width} height=${bounds.height} outcome=stale-after-resize`,
+        )
         return false
       }
       target.visible = true
@@ -815,8 +850,7 @@ export class BrowserController {
     const now = Date.now()
     for (const [partition, entry] of this.views) {
       if (entry.identity.kind === "consultation") continue
-      if (entry.identity.kind !== "agent" && !partition.startsWith("agent-browser-"))
-        continue // user views are never reaped
+      if (entry.identity.kind !== "agent" && !partition.startsWith("agent-browser-")) continue // user views are never reaped
       if (entry.visible) continue // user is watching this tab
       if (now - entry.lastActivity < BrowserController.AGENT_IDLE_TTL_MS) continue
       this.teardown(partition, "idle-reap")

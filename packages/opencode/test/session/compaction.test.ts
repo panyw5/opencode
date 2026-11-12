@@ -1030,103 +1030,97 @@ describe("session.compaction.process", () => {
     }).pipe(withCompaction({ result: "compact" })),
   )
 
-  itCompaction.instance(
-    "shrinks summary history and retries when the summary request overflows",
-    () => {
-      const captures: Array<LLM.StreamInput> = []
-      return Effect.gen(function* () {
-        const ssn = yield* SessionNs.Service
-        const session = yield* ssn.create({})
-        for (const text of ["turn-1", "turn-2", "turn-3", "turn-4", "turn-5"]) {
-          yield* createUserMessage(session.id, text)
-        }
-        yield* createSummaryCompaction(session.id)
+  itCompaction.instance("shrinks summary history and retries when the summary request overflows", () => {
+    const captures: Array<LLM.StreamInput> = []
+    return Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const session = yield* ssn.create({})
+      for (const text of ["turn-1", "turn-2", "turn-3", "turn-4", "turn-5"]) {
+        yield* createUserMessage(session.id, text)
+      }
+      yield* createSummaryCompaction(session.id)
 
-        const msgs = yield* ssn.messages({ sessionID: session.id })
-        const parent = msgs.at(-1)?.info.id
-        expect(parent).toBeTruthy()
+      const msgs = yield* ssn.messages({ sessionID: session.id })
+      const parent = msgs.at(-1)?.info.id
+      expect(parent).toBeTruthy()
 
-        const result = yield* SessionCompaction.use.process({
-          parentID: parent!,
-          messages: msgs,
-          sessionID: session.id,
-          auto: false,
-        })
+      const result = yield* SessionCompaction.use.process({
+        parentID: parent!,
+        messages: msgs,
+        sessionID: session.id,
+        auto: false,
+      })
 
-        expect(result).toBe("continue")
-        expect(captures.length).toBe(2)
-        const first = JSON.stringify(captures[0]?.messages)
-        const second = JSON.stringify(captures[1]?.messages)
-        // First attempt summarizes the full head, second attempt drops the oldest turn.
-        expect(first).toContain("turn-1")
-        expect(second).not.toContain("turn-1")
-        expect(second).toContain("turn-3")
-        expect(second.length).toBeLessThan(first.length)
+      expect(result).toBe("continue")
+      expect(captures.length).toBe(2)
+      const first = JSON.stringify(captures[0]?.messages)
+      const second = JSON.stringify(captures[1]?.messages)
+      // First attempt summarizes the full head, second attempt drops the oldest turn.
+      expect(first).toContain("turn-1")
+      expect(second).not.toContain("turn-1")
+      expect(second).toContain("turn-3")
+      expect(second.length).toBeLessThan(first.length)
 
-        const all = yield* ssn.messages({ sessionID: session.id })
-        const summaries = all.filter((item) => item.info.role === "assistant" && item.info.summary)
-        expect(summaries.length).toBe(2)
-        const errored = summaries[0]?.info
-        const ok = summaries[1]?.info
-        if (errored?.role === "assistant") {
-          expect(errored.error).toBeUndefined()
-          expect(errored.finish).not.toBe("error")
-        }
-        if (ok?.role === "assistant") {
-          expect(ok.error).toBeUndefined()
-          expect(ok.finish).toBeUndefined()
-        }
-        // Original history survives the retried compaction.
-        expect(all.some((item) => item.info.id === msgs[0]?.info.id)).toBe(true)
-      }).pipe(withCompaction({ processors: layerSeq(["compact", "continue"], captures) }))
-    },
-  )
+      const all = yield* ssn.messages({ sessionID: session.id })
+      const summaries = all.filter((item) => item.info.role === "assistant" && item.info.summary)
+      expect(summaries.length).toBe(2)
+      const errored = summaries[0]?.info
+      const ok = summaries[1]?.info
+      if (errored?.role === "assistant") {
+        expect(errored.error).toBeUndefined()
+        expect(errored.finish).not.toBe("error")
+      }
+      if (ok?.role === "assistant") {
+        expect(ok.error).toBeUndefined()
+        expect(ok.finish).toBeUndefined()
+      }
+      // Original history survives the retried compaction.
+      expect(all.some((item) => item.info.id === msgs[0]?.info.id)).toBe(true)
+    }).pipe(withCompaction({ processors: layerSeq(["compact", "continue"], captures) }))
+  })
 
-  itCompaction.instance(
-    "pre-shrinks summary input that cannot fit the model budget before requesting",
-    () => {
-      const captures: Array<LLM.StreamInput> = []
-      return Effect.gen(function* () {
-        const ssn = yield* SessionNs.Service
-        const session = yield* ssn.create({})
-        for (const text of [
-          `alpha-${"1".repeat(6_000)}`,
-          `bravo-${"2".repeat(6_000)}`,
-          `charlie-${"3".repeat(6_000)}`,
-          "delta",
-          "echo",
-        ]) {
-          yield* createUserMessage(session.id, text)
-        }
-        yield* createSummaryCompaction(session.id)
+  itCompaction.instance("pre-shrinks summary input that cannot fit the model budget before requesting", () => {
+    const captures: Array<LLM.StreamInput> = []
+    return Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const session = yield* ssn.create({})
+      for (const text of [
+        `alpha-${"1".repeat(6_000)}`,
+        `bravo-${"2".repeat(6_000)}`,
+        `charlie-${"3".repeat(6_000)}`,
+        "delta",
+        "echo",
+      ]) {
+        yield* createUserMessage(session.id, text)
+      }
+      yield* createSummaryCompaction(session.id)
 
-        const msgs = yield* ssn.messages({ sessionID: session.id })
-        const parent = msgs.at(-1)?.info.id
-        expect(parent).toBeTruthy()
+      const msgs = yield* ssn.messages({ sessionID: session.id })
+      const parent = msgs.at(-1)?.info.id
+      expect(parent).toBeTruthy()
 
-        const result = yield* SessionCompaction.use.process({
-          parentID: parent!,
-          messages: msgs,
-          sessionID: session.id,
-          auto: false,
-        })
+      const result = yield* SessionCompaction.use.process({
+        parentID: parent!,
+        messages: msgs,
+        sessionID: session.id,
+        auto: false,
+      })
 
-        // Tiny context forces pre-emptive shrinking down to the last head turn
-        // without any wasted overflow request.
-        expect(result).toBe("continue")
-        expect(captures.length).toBe(1)
-        const captured = JSON.stringify(captures[0]?.messages)
-        expect(captured).not.toContain("alpha-")
-        expect(captured).not.toContain("bravo-")
-        expect(captured).toContain("charlie-")
-      }).pipe(
-        withCompaction({
-          processors: layerSeq(["continue"], captures),
-          provider: ProviderTest.fake({ model: createModel({ context: 2_000, output: 500 }) }),
-        }),
-      )
-    },
-  )
+      // Tiny context forces pre-emptive shrinking down to the last head turn
+      // without any wasted overflow request.
+      expect(result).toBe("continue")
+      expect(captures.length).toBe(1)
+      const captured = JSON.stringify(captures[0]?.messages)
+      expect(captured).not.toContain("alpha-")
+      expect(captured).not.toContain("bravo-")
+      expect(captured).toContain("charlie-")
+    }).pipe(
+      withCompaction({
+        processors: layerSeq(["continue"], captures),
+        provider: ProviderTest.fake({ model: createModel({ context: 2_000, output: 500 }) }),
+      }),
+    )
+  })
 
   itCompaction.instance(
     "recovers when the summary LLM stream fails with context overflow then succeeds",

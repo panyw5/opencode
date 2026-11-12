@@ -10,7 +10,11 @@ import type { InitStep, SqliteMigrationProgress } from "../preload/types"
 import { api } from "./api"
 
 const root = document.getElementById("root")!
-const fallbackMessages = ["Preparing local database", "Applying database migrations", "This may take a couple of minutes"]
+const fallbackMessages = [
+  "Preparing local database",
+  "Applying database migrations",
+  "This may take a couple of minutes",
+]
 const fallbackDelays = [3000, 9000]
 
 render(() => {

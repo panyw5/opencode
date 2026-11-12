@@ -14,13 +14,23 @@ import { testEffect } from "../lib/effect"
 
 const it = testEffect(Layer.mergeAll(Session.defaultLayer, SessionRevert.defaultLayer))
 
-it.effect("instruction edits choose compact diffs and preserve semantic source ordering",()=>Effect.sync(()=>{
-  const before=Array.from({length:100},(_,index)=>`line ${index}`).join("\n")
-  const after=before.replace("line 50\n","updated line 50\n")
-  expect(InstructionGuidance.updateFiles([{path:"AGENTS.md",content:before}],[{path:"AGENTS.md",content:after}])).toContain("```diff")
-  const files=[{path:"a",content:"first"},{path:"b",content:"second"}]
-  expect(InstructionGuidance.updateFiles(files,[...files].reverse())).toContain("ordered list replaces")
-}))
+it.effect("instruction edits choose compact diffs and preserve semantic source ordering", () =>
+  Effect.sync(() => {
+    const before = Array.from({ length: 100 }, (_, index) => `line ${index}`).join("\n")
+    const after = before.replace("line 50\n", "updated line 50\n")
+    expect(
+      InstructionGuidance.updateFiles(
+        [{ path: "AGENTS.md", content: before }],
+        [{ path: "AGENTS.md", content: after }],
+      ),
+    ).toContain("```diff")
+    const files = [
+      { path: "a", content: "first" },
+      { path: "b", content: "second" },
+    ]
+    expect(InstructionGuidance.updateFiles(files, [...files].reverse())).toContain("ordered list replaces")
+  }),
+)
 const rows = (id: SessionID) =>
   Database.use((db) =>
     db.select().from(InstructionSnapshotTable).where(eq(InstructionSnapshotTable.session_id, id)).all(),

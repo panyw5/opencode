@@ -22,10 +22,7 @@ type SessionCache = {
   session_history?: Record<string, SessionHistoryMeta>
 }
 
-type CoolableSessionCache = Pick<
-  SessionCache,
-  "message" | "part" | "session_diff" | "todo" | "session_history"
->
+type CoolableSessionCache = Pick<SessionCache, "message" | "part" | "session_diff" | "todo" | "session_history">
 
 export function canCoolSessionCache(store: SessionCache, sessionID: string) {
   const status = store.session_status[sessionID]

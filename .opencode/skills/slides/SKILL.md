@@ -20,18 +20,18 @@ Strategic HTML presentation design with data visualization.
 
 ## Subcommands
 
-| Subcommand | Description | Reference |
-|------------|-------------|-----------|
-| `create` | Create strategic presentation slides | `references/create.md` |
+| Subcommand | Description                          | Reference              |
+| ---------- | ------------------------------------ | ---------------------- |
+| `create`   | Create strategic presentation slides | `references/create.md` |
 
 ## References (Knowledge Base)
 
-| Topic | File |
-|-------|------|
-| Layout Patterns | `references/layout-patterns.md` |
-| HTML Template | `references/html-template.md` |
+| Topic                | File                                 |
+| -------------------- | ------------------------------------ |
+| Layout Patterns      | `references/layout-patterns.md`      |
+| HTML Template        | `references/html-template.md`        |
 | Copywriting Formulas | `references/copywriting-formulas.md` |
-| Slide Strategies | `references/slide-strategies.md` |
+| Slide Strategies     | `references/slide-strategies.md`     |
 
 ## Routing
 

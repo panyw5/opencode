@@ -89,8 +89,7 @@ export function SessionUserMessageRail(props: {
           >
             <For each={props.entries}>
               {(entry, index) => {
-                const label = () =>
-                  `${language.t("session.userMessages.index", { index: index() + 1 })}: ${entry.text}`
+                const label = () => `${language.t("session.userMessages.index", { index: index() + 1 })}: ${entry.text}`
 
                 return (
                   <div class="min-h-0 flex-1">
@@ -115,11 +114,9 @@ export function SessionUserMessageRail(props: {
                       <span
                         aria-hidden="true"
                         classList={{
-                          "block h-[3px] rounded-full transition-[width,background-color,opacity] duration-150 ease-out motion-reduce:transition-none":
-                            true,
+                          "block h-[3px] rounded-full transition-[width,background-color,opacity] duration-150 ease-out motion-reduce:transition-none": true,
                           "bg-text-strong opacity-100": hovered() === index(),
-                          "bg-text-strong opacity-90":
-                            hovered() !== index() && active() === index(),
+                          "bg-text-strong opacity-90": hovered() !== index() && active() === index(),
                           "bg-text-weak opacity-70":
                             hovered() !== index() && active() !== index() && hovered() !== undefined,
                           "bg-border-strong-base opacity-75": hovered() === undefined && active() !== index(),

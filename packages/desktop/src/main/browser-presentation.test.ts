@@ -91,47 +91,50 @@ mock.module("./browser-cdp", () => ({
 const { BrowserController } = await import("./browser")
 
 describe("sidebar browser presentation", () => {
-  test.each(["consult-gpt-pro-secure", "consult-gpt-pro-secure-generation-synthetic"])("login loop guard protects GPT profile %s", async (profileID) => {
-    const controller = new BrowserController()
-    const children: FakeView[] = []
-    controller.attachWindow({
-      isDestroyed: () => false,
-      contentView: { addChildView: (view: FakeView) => children.push(view), removeChildView: () => {} },
-    } as never)
-    await controller.openPage("loop", profileID, "https://chatgpt.com/", { kind: "login" })
-    let prevented = 0
-    const event = { preventDefault: () => prevented++ }
-    for (let i = 0; i < 8; i++)
-      children[0].emit(
-        "will-redirect",
-        event,
-        i % 2 ? "https://chatgpt.com/" : "https://chatgpt.com/auth/login?next=%2F",
-        false,
-        false,
-      )
-    expect(prevented).toBe(0)
-    for (let i = 0; i < 5; i++)
-      children[0].emit(
-        "will-navigate",
-        event,
-        i % 2 ? "https://chatgpt.com/" : "https://chatgpt.com/auth/login?next=%2F",
-      )
-    expect(prevented).toBe(1)
-    expect(controller.getState()[0].authRedirectLoop).toBe(true)
-    await controller.openPage("loop", profileID, "https://chatgpt.com/")
-    expect(controller.getState()[0].authRedirectLoop).toBeUndefined()
-    // The real site uses pushState for login and document navigation for home.
-    for (let i = 0; i < 2; i++) {
+  test.each(["consult-gpt-pro-secure", "consult-gpt-pro-secure-generation-synthetic"])(
+    "login loop guard protects GPT profile %s",
+    async (profileID) => {
+      const controller = new BrowserController()
+      const children: FakeView[] = []
+      controller.attachWindow({
+        isDestroyed: () => false,
+        contentView: { addChildView: (view: FakeView) => children.push(view), removeChildView: () => {} },
+      } as never)
+      await controller.openPage("loop", profileID, "https://chatgpt.com/", { kind: "login" })
+      let prevented = 0
+      const event = { preventDefault: () => prevented++ }
+      for (let i = 0; i < 8; i++)
+        children[0].emit(
+          "will-redirect",
+          event,
+          i % 2 ? "https://chatgpt.com/" : "https://chatgpt.com/auth/login?next=%2F",
+          false,
+          false,
+        )
+      expect(prevented).toBe(0)
+      for (let i = 0; i < 5; i++)
+        children[0].emit(
+          "will-navigate",
+          event,
+          i % 2 ? "https://chatgpt.com/" : "https://chatgpt.com/auth/login?next=%2F",
+        )
+      expect(prevented).toBe(1)
+      expect(controller.getState()[0].authRedirectLoop).toBe(true)
+      await controller.openPage("loop", profileID, "https://chatgpt.com/")
+      expect(controller.getState()[0].authRedirectLoop).toBeUndefined()
+      // The real site uses pushState for login and document navigation for home.
+      for (let i = 0; i < 2; i++) {
+        children[0].emit("will-navigate", event, "https://chatgpt.com/")
+        children[0].emit("did-navigate-in-page", event, "https://chatgpt.com/auth/login?next=%2F", true)
+      }
       children[0].emit("will-navigate", event, "https://chatgpt.com/")
-      children[0].emit("did-navigate-in-page", event, "https://chatgpt.com/auth/login?next=%2F", true)
-    }
-    children[0].emit("will-navigate", event, "https://chatgpt.com/")
-    expect(prevented).toBe(2)
-    expect(controller.getState()[0].authRedirectLoop).toBe(true)
-    await controller.open("ordinary", "https://chatgpt.com/")
-    expect(children[1].listeners.has("will-navigate")).toBe(false)
-    controller.dispose()
-  })
+      expect(prevented).toBe(2)
+      expect(controller.getState()[0].authRedirectLoop).toBe(true)
+      await controller.open("ordinary", "https://chatgpt.com/")
+      expect(children[1].listeners.has("will-navigate")).toBe(false)
+      controller.dispose()
+    },
+  )
   test("preview captures the live viewport without changing visibility or geometry", async () => {
     const controller = new BrowserController()
     const children: FakeView[] = []
@@ -168,7 +171,12 @@ describe("sidebar browser presentation", () => {
     await controller.open("user", "https://example.com/")
     await controller.open("agent", "https://example.com/")
     const lease = controller.acquireDisplay()
-    await controller.updateDisplay({ lease, revision: 1, partition: "user", bounds: { x: 0, y: 0, width: 500, height: 500 } })
+    await controller.updateDisplay({
+      lease,
+      revision: 1,
+      partition: "user",
+      bounds: { x: 0, y: 0, width: 500, height: 500 },
+    })
     expect(controller.focusedPartition(children[0].webContents.id, win as never)).toBe("user")
     expect(controller.focusedPartition(children[1].webContents.id, win as never)).toBeUndefined()
     expect(controller.focusedPartition(children[0].webContents.id, {} as never)).toBeUndefined()
@@ -193,9 +201,9 @@ describe("sidebar browser presentation", () => {
     expect(await controller.updateDisplay({ lease, revision: 1, partition: "user", bounds })).toBe(true)
     expect(children.map((view) => view.visible)).toEqual([true, false])
     expect(await controller.updateDisplay({ lease, revision: NaN, partition: "agent", bounds })).toBe(false)
-    expect(await controller.updateDisplay({ lease, revision: 2, partition: "agent", bounds: { ...bounds, x: NaN } })).toBe(
-      false,
-    )
+    expect(
+      await controller.updateDisplay({ lease, revision: 2, partition: "agent", bounds: { ...bounds, x: NaN } }),
+    ).toBe(false)
     expect(children.map((view) => view.visible)).toEqual([true, false])
     expect(await controller.updateDisplay({ lease, revision: 3, partition: "agent", bounds })).toBe(true)
     expect(children.map((view) => view.visible)).toEqual([false, true])
@@ -297,10 +305,9 @@ describe("sidebar browser presentation", () => {
     })
 
     expect(children).toHaveLength(2)
-    expect(children.map((view) => (view.options as { webPreferences: { partition: string } }).webPreferences.partition)).toEqual([
-      profileID,
-      profileID,
-    ])
+    expect(
+      children.map((view) => (view.options as { webPreferences: { partition: string } }).webPreferences.partition),
+    ).toEqual([profileID, profileID])
     expect(first).toMatchObject({ pageID: "consult:one", partition: "consult:one", profileID, epoch: 1 })
     expect(second).toMatchObject({ pageID: "consult:two", partition: "consult:two", profileID, epoch: 1 })
     expect(controller.cdp("consult:one")).toBeDefined()
@@ -331,7 +338,9 @@ describe("sidebar browser presentation", () => {
     expect(children.map((view) => view.visible)).toEqual([false, true])
     expect(children[0].bounds).toEqual({ x: -32000, y: 0, width: 1280, height: 800 })
     expect(children[1].bounds).toEqual({ x: 0, y: 0, width: 500, height: 500 })
-    expect((controller.cdp("consult:two") as never as { operations: string[] }).operations).toContain("viewport:500x500")
+    expect((controller.cdp("consult:two") as never as { operations: string[] }).operations).toContain(
+      "viewport:500x500",
+    )
     expect(
       await controller.updateDisplay({
         lease,
@@ -509,7 +518,9 @@ describe("sidebar browser presentation", () => {
       partition: null,
       bounds: null,
     })
-    expect(controller.listConsultationPages().find((page) => page.pageID === "consult:protected-one")?.protected).toBe(true)
+    expect(controller.listConsultationPages().find((page) => page.pageID === "consult:protected-one")?.protected).toBe(
+      true,
+    )
     await controller.updateDisplay({
       lease,
       revision: 2,

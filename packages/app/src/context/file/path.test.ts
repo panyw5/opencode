@@ -62,7 +62,10 @@ describe("explicit source parsers (path contract)", () => {
   })
 
   test("POSIX backslash filename round-trips through the internal tab", () => {
-    const path = createPathHelpers(() => "/repo", () => ({ platform: "darwin", kind: "local-filesystem" }))
+    const path = createPathHelpers(
+      () => "/repo",
+      () => ({ platform: "darwin", kind: "local-filesystem" }),
+    )
     const encoded = path.tab("src/a\\b.ts")
     expect(encoded).toBe(`file://src/${encodeURIComponent("a\\b.ts")}`)
     expect(path.pathFromTab(encoded)).toBe("src/a\\b.ts")

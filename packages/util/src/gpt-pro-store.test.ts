@@ -177,7 +177,13 @@ describe("GPT-Pro shared state store", () => {
   test("cleared fields replace earlier errors, recovery, stopping, and attachments", async () => {
     const f = fixture()
     f.replace(
-      [job({ error: "old", recovery: { stage: "ready", reason: "old", humanAction: "verification" }, stopPending: true })],
+      [
+        job({
+          error: "old",
+          recovery: { stage: "ready", reason: "old", humanAction: "verification" },
+          stopPending: true,
+        }),
+      ],
       1,
     )
     const off = f.store.watch("one", () => {})

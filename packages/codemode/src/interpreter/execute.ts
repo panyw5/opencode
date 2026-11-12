@@ -39,7 +39,14 @@ export const executeProgram = <R>(
         Effect.gen(function* () {
           const program = parseProgram(code)
           const pending = new Pending<R>(scope, builtins.Promise)
-          const ctx = new Interpreter<R>({ tools, pending, builtins, logs, globals, maxLogBytes: limits.maxOutputBytes })
+          const ctx = new Interpreter<R>({
+            tools,
+            pending,
+            builtins,
+            logs,
+            globals,
+            maxLogBytes: limits.maxOutputBytes,
+          })
           // The main job holds the turn until leftover promise work is interrupted.
           return yield* pending.turn.hold(
             Effect.gen(function* () {

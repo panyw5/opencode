@@ -237,10 +237,7 @@ describe("tool.repo_clone", () => {
         )
         const feature = yield* githubBase(
           `file://${remoteRoot}/`,
-          tool.execute(
-            { repository: "branch-isolation-owner/branch-isolation-repo", branch: "feature/docs" },
-            ctx,
-          ),
+          tool.execute({ repository: "branch-isolation-owner/branch-isolation-repo", branch: "feature/docs" }, ctx),
         )
 
         expect(main.metadata.localPath).not.toBe(feature.metadata.localPath)
@@ -291,19 +288,19 @@ describe("tool.repo_clone", () => {
         )
 
         const tool = yield* init()
-        const first = yield* githubBase(
-          `file://${remoteRoot}/`,
-          tool.execute({ repository, branch: "docs" }, ctx),
-        )
+        const first = yield* githubBase(`file://${remoteRoot}/`, tool.execute({ repository, branch: "docs" }, ctx))
         expect(first.metadata.status).toBe("cloned")
         yield* fs.ensureDir(path.dirname(legacy))
         yield* fs.rename(current, legacy)
 
         const migrated = yield* githubBase(
           `file://${remoteRoot}/`,
-          Effect.all([1, 2].map(() => tool.execute({ repository, branch: "docs" }, ctx)), {
-            concurrency: "unbounded",
-          }),
+          Effect.all(
+            [1, 2].map(() => tool.execute({ repository, branch: "docs" }, ctx)),
+            {
+              concurrency: "unbounded",
+            },
+          ),
         )
         expect(migrated.map((item) => item.metadata.status)).toEqual(["cached", "cached"])
         expect(migrated.map((item) => item.metadata.localPath)).toEqual([current, current])
@@ -406,7 +403,10 @@ describe("tool.repo_clone", () => {
 
         const tool = yield* init()
         const repository = "concurrent-owner/concurrent-repo"
-        const first = yield* githubBase(`file://${remoteRoot}/`, tool.execute({ repository, branch: "feature/concurrent" }, ctx))
+        const first = yield* githubBase(
+          `file://${remoteRoot}/`,
+          tool.execute({ repository, branch: "feature/concurrent" }, ctx),
+        )
         const results = yield* githubBase(
           `file://${remoteRoot}/`,
           Effect.all(

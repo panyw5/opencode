@@ -42,10 +42,7 @@ export function buildTaskSessionLookup(sessions: readonly Session[]): TaskSessio
 }
 
 /** Children of a parent session from a lookup (empty for unknown/blank ids). */
-export function taskChildSessions(
-  lookup: TaskSessionLookup | undefined,
-  parentID: string | undefined,
-): Session[] {
+export function taskChildSessions(lookup: TaskSessionLookup | undefined, parentID: string | undefined): Session[] {
   const key = text(parentID)
   if (!lookup || !key) return []
   return lookup.childrenByParentID.get(key) ?? []
@@ -206,11 +203,7 @@ export function taskSessionBadge(index: number | undefined, resume?: boolean): s
 }
 
 /** Prefix agent/menu title with a stable session badge. */
-export function withTaskSessionIndex(
-  title: string,
-  index: number | undefined,
-  options?: { resume?: boolean },
-): string {
+export function withTaskSessionIndex(title: string, index: number | undefined, options?: { resume?: boolean }): string {
   const badge = taskSessionBadge(index, options?.resume === true)
   if (!badge) return title
   if (!title) return badge

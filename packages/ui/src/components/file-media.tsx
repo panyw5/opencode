@@ -10,11 +10,7 @@ import {
   normalizeMimeType,
   svgTextFromValue,
 } from "../pierre/media"
-import {
-  fileViewerTarget,
-  resolveFileViewers,
-  type FileViewerFile,
-} from "./file-viewer-registry"
+import { fileViewerTarget, resolveFileViewers, type FileViewerFile } from "./file-viewer-registry"
 import "./file-table-preview"
 import { IconButton } from "./icon-button"
 import { Tooltip } from "./tooltip"
@@ -319,11 +315,7 @@ export function FileMedia(props: {
                 return (
                   <div class="flex flex-col items-start gap-3 px-6 py-4 text-text-weak">
                     <div>{message}</div>
-                    <button
-                      type="button"
-                      class="text-text-strong underline"
-                      onClick={() => setSourceMode(true)}
-                    >
+                    <button type="button" class="text-text-strong underline" onClick={() => setSourceMode(true)}>
                       {i18n.t("ui.file.source")}
                     </button>
                   </div>

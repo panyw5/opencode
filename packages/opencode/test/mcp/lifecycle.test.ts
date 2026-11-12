@@ -200,17 +200,19 @@ const { McpOAuthCallback } = await import("../../src/mcp/oauth-callback")
 
 const it = testEffect(MCP.defaultLayer)
 
-it.instance("MCP tools retain server identity and runtime Code Mode overrides", () => Effect.gen(function* () {
-  const mcp = yield* MCP.Service
-  lastCreatedClientName = "code-mode"
-  getOrCreateClientState("code-mode")
-  yield* mcp.add("code-mode", { type: "remote", url: "https://example.test/mcp", codemode: false })
-  const direct = yield* mcp.tools()
-  expect(direct["code-mode_test_tool"].mcp).toEqual({ server: "code-mode", name: "test_tool", codemode: false })
-  lastCreatedClientName = "code-mode"
-  yield* mcp.add("code-mode", { type: "remote", url: "https://example.test/mcp", codemode: true })
-  expect((yield* mcp.tools())["code-mode_test_tool"].mcp?.codemode).toBe(true)
-}))
+it.instance("MCP tools retain server identity and runtime Code Mode overrides", () =>
+  Effect.gen(function* () {
+    const mcp = yield* MCP.Service
+    lastCreatedClientName = "code-mode"
+    getOrCreateClientState("code-mode")
+    yield* mcp.add("code-mode", { type: "remote", url: "https://example.test/mcp", codemode: false })
+    const direct = yield* mcp.tools()
+    expect(direct["code-mode_test_tool"].mcp).toEqual({ server: "code-mode", name: "test_tool", codemode: false })
+    lastCreatedClientName = "code-mode"
+    yield* mcp.add("code-mode", { type: "remote", url: "https://example.test/mcp", codemode: true })
+    expect((yield* mcp.tools())["code-mode_test_tool"].mcp?.codemode).toBe(true)
+  }),
+)
 
 function statusName(status: Record<string, MCPNS.Status> | MCPNS.Status, server: string) {
   if ("status" in status) return status.status
@@ -258,9 +260,7 @@ it.instance(
       Effect.gen(function* () {
         lastCreatedClientName = "abort-server"
         const serverState = getOrCreateClientState("abort-server")
-        serverState.tools = [
-          { name: "wait", description: "waits", inputSchema: { type: "object", properties: {} } },
-        ]
+        serverState.tools = [{ name: "wait", description: "waits", inputSchema: { type: "object", properties: {} } }]
 
         yield* mcp.add("abort-server", {
           type: "local",
@@ -274,9 +274,12 @@ it.instance(
         const controller = new AbortController()
         const execution = tool.execute({}, { toolCallId: "call-1", messages: [], abortSignal: controller.signal })
         controller.abort(new Error("cancelled by test"))
-        const aborted = yield* Effect.promise(() => Promise.resolve(execution).then(() => false, () => true)).pipe(
-          Effect.timeout("1 second"),
-        )
+        const aborted = yield* Effect.promise(() =>
+          Promise.resolve(execution).then(
+            () => false,
+            () => true,
+          ),
+        ).pipe(Effect.timeout("1 second"))
 
         expect(serverState.callToolSignal).toBe(controller.signal)
         expect(aborted).toBe(true)

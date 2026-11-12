@@ -27,7 +27,13 @@ ws.onmessage = (event) => {
 await new Promise((resolve) => (ws.onopen = resolve))
 const { result } = await send("Target.getTargets")
 const targets = result.targetInfos.filter((t: any) => t.type === "page" && t.url.includes("example.com"))
-console.log(JSON.stringify(targets.map((t: any) => ({ id: t.targetId, url: t.url })), null, 1))
+console.log(
+  JSON.stringify(
+    targets.map((t: any) => ({ id: t.targetId, url: t.url })),
+    null,
+    1,
+  ),
+)
 for (const t of targets) {
   // Electron strips Target.crash/Page.crash; chrome://crash is the classic
   // intentional-crash page and fires a real render-process-gone.

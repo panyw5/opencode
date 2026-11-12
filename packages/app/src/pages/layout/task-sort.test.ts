@@ -9,9 +9,8 @@ for (const kind of ["scheduled", "project"] as const) {
       lastRunAt: recent,
       lastSessionAt: recent,
     })
-    const sort = kind === "scheduled"
-      ? sortScheduledTasks<ReturnType<typeof task>>
-      : sortProjectTasks<ReturnType<typeof task>>
+    const sort =
+      kind === "scheduled" ? sortScheduledTasks<ReturnType<typeof task>> : sortProjectTasks<ReturnType<typeof task>>
     const ids = (tasks: { id: string }[]) => tasks.map((task) => task.id)
 
     test("creation time is descending regardless of activity", () => {
@@ -19,8 +18,9 @@ for (const kind of ["scheduled", "project"] as const) {
     })
 
     test("recent activity is descending with missing activity last", () => {
-      expect(ids(sort([task("none", 100), task("old", 3, 10), task("new", 1, 20), task("zero", 2, 0)], "recent")))
-        .toEqual(["new", "old", "zero", "none"])
+      expect(
+        ids(sort([task("none", 100), task("old", 3, 10), task("new", 1, 20), task("zero", 2, 0)], "recent")),
+      ).toEqual(["new", "old", "zero", "none"])
     })
 
     test("ties and missing activity fall back to creation time then id", () => {

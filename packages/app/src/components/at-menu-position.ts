@@ -1,9 +1,4 @@
-export function resolveAtMenuLeft(input: {
-  anchorLeft: number
-  boxWidth: number
-  menuWidth: number
-  margin?: number
-}) {
+export function resolveAtMenuLeft(input: { anchorLeft: number; boxWidth: number; menuWidth: number; margin?: number }) {
   const margin = input.margin ?? 8
   const maxLeft = Math.max(margin, input.boxWidth - input.menuWidth - margin)
   const right = input.anchorLeft

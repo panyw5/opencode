@@ -27,11 +27,15 @@ let run: Run
 try {
   if (watch) {
     run = JSON.parse(await readFile(watch, "utf8")) as Run
-    if (!run.binding) throw Error("Saved run predates profile/account binding; refusing unverifiable acceptance, never resending")
-  }
-  else {
-    const binding = requireGptProLiveProfile(await client.evaluate<GptProRuntimeStatus>("window.api.gptPro.runtimeStatus()"))
-    const active = await client.evaluate<boolean>("window.api.gptPro.list().then(jobs=>jobs.some(j=>['queued','preparing','sending','generating'].includes(j.phase)))")
+    if (!run.binding)
+      throw Error("Saved run predates profile/account binding; refusing unverifiable acceptance, never resending")
+  } else {
+    const binding = requireGptProLiveProfile(
+      await client.evaluate<GptProRuntimeStatus>("window.api.gptPro.runtimeStatus()"),
+    )
+    const active = await client.evaluate<boolean>(
+      "window.api.gptPro.list().then(jobs=>jobs.some(j=>['queued','preparing','sending','generating'].includes(j.phase)))",
+    )
     if (active) throw Error("Another consultation is active; no multipage sessions were created")
     const directory = join(output, "project")
     await mkdir(directory, { recursive: true })

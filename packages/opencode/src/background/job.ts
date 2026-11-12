@@ -226,11 +226,7 @@ export const layer = Layer.effect(
                 onFailure: (cause) =>
                   finish(id, token, Cause.hasInterruptsOnly(cause) ? "cancelled" : "error", {
                     error: errorText(Cause.squash(cause)),
-                  }).pipe(
-                    Effect.andThen(
-                      close(Exit.failCause(cause)),
-                    ),
-                  ),
+                  }).pipe(Effect.andThen(close(Exit.failCause(cause)))),
               }),
               Effect.ensuring(
                 close(Exit.void).pipe(Effect.andThen(Deferred.succeed(cleanup, undefined)), Effect.asVoid),
@@ -290,7 +286,10 @@ export const layer = Layer.effect(
               metadata: { ...job.info.metadata, background: true },
             },
           }
-          return [{ info: snapshot(next), onPromote: job.onPromote, promoted: job.promoted }, new Map(jobs).set(id, next)]
+          return [
+            { info: snapshot(next), onPromote: job.onPromote, promoted: job.promoted },
+            new Map(jobs).set(id, next),
+          ]
         },
       )
       if (result.info && result.promoted) yield* Deferred.succeed(result.promoted, result.info).pipe(Effect.ignore)

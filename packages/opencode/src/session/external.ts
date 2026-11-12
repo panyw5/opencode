@@ -111,13 +111,15 @@ export function makeExternalSessions(
     })
     return {
       flush: (items: readonly TranscriptItem[], final = false, error?: string) =>
-        projector.apply(items, final, error).pipe(
-          Effect.tap(() =>
-            Effect.sync(() =>
-              log.debug(`projected child=${child.id} items=${items.length} final=${final} error=${!!error}`),
+        projector
+          .apply(items, final, error)
+          .pipe(
+            Effect.tap(() =>
+              Effect.sync(() =>
+                log.debug(`projected child=${child.id} items=${items.length} final=${final} error=${!!error}`),
+              ),
             ),
           ),
-        ),
     }
   }
 

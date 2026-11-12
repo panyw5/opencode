@@ -127,7 +127,11 @@ test("Instance shares one cache and state across Windows path aliases", async ()
   const state = Instance.state(() => ({ initialized: ++initialized }))
 
   const [first, second] = await Promise.all([
-    Instance.provide({ directory: tmp.path, init: async () => undefined, fn: () => ({ ctx: Instance.current, state: state() }) }),
+    Instance.provide({
+      directory: tmp.path,
+      init: async () => undefined,
+      fn: () => ({ ctx: Instance.current, state: state() }),
+    }),
     Instance.provide({ directory: alias, fn: () => ({ ctx: Instance.current, state: state() }) }),
   ])
 

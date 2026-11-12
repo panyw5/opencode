@@ -298,22 +298,22 @@ export const RunCommand = effectCmd({
       }
 
       const rules: Permission.Ruleset = [
-            {
-              permission: "question",
-              action: "deny",
-              pattern: "*",
-            },
-            {
-              permission: "plan_enter",
-              action: "deny",
-              pattern: "*",
-            },
-            {
-              permission: "plan_exit",
-              action: "deny",
-              pattern: "*",
-            },
-          ]
+        {
+          permission: "question",
+          action: "deny",
+          pattern: "*",
+        },
+        {
+          permission: "plan_enter",
+          action: "deny",
+          pattern: "*",
+        },
+        {
+          permission: "plan_exit",
+          action: "deny",
+          pattern: "*",
+        },
+      ]
 
       function title() {
         if (args.title === undefined) return

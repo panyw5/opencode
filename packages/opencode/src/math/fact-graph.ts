@@ -4,13 +4,7 @@ import { tokenize, bm25Scores } from "./bm25"
 import { UNIVERSAL_TERMS, undefinedSymbols } from "./glossary"
 import { appendJsonl } from "./jsonl"
 import { layout } from "./layout"
-import {
-  type ExternalRef,
-  type Fact,
-  cleanExternalRefs,
-  computeFactId,
-  dumps,
-} from "./schema"
+import { type ExternalRef, type Fact, cleanExternalRefs, computeFactId, dumps } from "./schema"
 
 const PRED_RE = /^predecessors:\s*\[(.*)\]\s*$/
 const GLOSS_LINE_RE = /^\s{2}([^:]+):\s*(.*)$/

@@ -12,7 +12,21 @@ export type HermesMeta = {
 }
 
 const groups = [
-  { id: "browser", tools: ["browser_back", "browser_click", "browser_console", "browser_get_images", "browser_navigate", "browser_press", "browser_scroll", "browser_snapshot", "browser_type", "browser_vision"] },
+  {
+    id: "browser",
+    tools: [
+      "browser_back",
+      "browser_click",
+      "browser_console",
+      "browser_get_images",
+      "browser_navigate",
+      "browser_press",
+      "browser_scroll",
+      "browser_snapshot",
+      "browser_type",
+      "browser_vision",
+    ],
+  },
   { id: "browser-cdp", tools: ["browser_cdp", "browser_dialog"] },
   { id: "clarify", tools: ["clarify"] },
   { id: "code_execution", tools: ["execute_code"] },

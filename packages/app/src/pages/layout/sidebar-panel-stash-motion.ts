@@ -100,9 +100,7 @@ export async function animateToSidebarStash(source?: HTMLElement) {
     await flight.finished
     console.debug("[sidebar-panel-motion] finish")
   } catch (error) {
-    console.error(
-      `[sidebar-panel-motion] failed error=${error instanceof Error ? error.message : String(error)}`,
-    )
+    console.error(`[sidebar-panel-motion] failed error=${error instanceof Error ? error.message : String(error)}`)
   } finally {
     clone.remove()
   }

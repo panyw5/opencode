@@ -12,9 +12,7 @@ describe("message-order", () => {
 
   test("falls back to id order when created times are missing or equal", () => {
     expect(compareMessages({ id: "msg_a" }, { id: "msg_b" })).toBe(-1)
-    expect(
-      compareMessages({ id: "msg_b", time: { created: 10 } }, { id: "msg_a", time: { created: 10 } }),
-    ).toBe(1)
+    expect(compareMessages({ id: "msg_b", time: { created: 10 } }, { id: "msg_a", time: { created: 10 } })).toBe(1)
   })
 
   test("keeps input order when created times are absent", () => {

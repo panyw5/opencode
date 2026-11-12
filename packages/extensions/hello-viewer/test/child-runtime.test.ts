@@ -22,15 +22,20 @@ describe("hello-viewer child runtime", () => {
   })
 
   test("accepts an explicit runtime executable before PATH", () => {
-    expect(resolveChildRuntime({
-      execPath: "/tmp/build/bin/opencode",
-      env: { OPENCODE_JS_RUNTIME: "/custom/bun" },
-      find: () => { throw new Error("should not search PATH") },
-    })).toBe("/custom/bun")
+    expect(
+      resolveChildRuntime({
+        execPath: "/tmp/build/bin/opencode",
+        env: { OPENCODE_JS_RUNTIME: "/custom/bun" },
+        find: () => {
+          throw new Error("should not search PATH")
+        },
+      }),
+    ).toBe("/custom/bun")
   })
 
   test("fails fast with a useful error when neither runtime is installed", () => {
-    expect(() => resolveChildRuntime({ execPath: "/tmp/build/bin/opencode", env: {}, find: () => undefined }))
-      .toThrow("OPENCODE_JS_RUNTIME")
+    expect(() => resolveChildRuntime({ execPath: "/tmp/build/bin/opencode", env: {}, find: () => undefined })).toThrow(
+      "OPENCODE_JS_RUNTIME",
+    )
   })
 })

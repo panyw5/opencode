@@ -45,11 +45,7 @@ export async function saveMap(map: ChannelSessionMap): Promise<void> {
   }
 }
 
-export function sessionKey(input: {
-  channelName: string
-  chatId: string
-  threadId?: string
-}): string {
+export function sessionKey(input: { channelName: string; chatId: string; threadId?: string }): string {
   return input.threadId
     ? `${input.channelName}::${input.chatId}::${input.threadId}`
     : `${input.channelName}::${input.chatId}`

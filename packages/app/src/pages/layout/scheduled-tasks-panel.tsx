@@ -251,11 +251,13 @@ export function ScheduledTaskFormDialog(props: {
     at:
       restored?.at ??
       (task?.schedule.kind === "at"
-        ? formatDateTimeLocal(task.schedule.at, task.schedule.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone)
+        ? formatDateTimeLocal(
+            task.schedule.at,
+            task.schedule.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+          )
         : ""),
     intervalMinutes:
-      restored?.intervalMinutes ??
-      (task?.schedule.kind === "every" ? String(task.schedule.interval / 60_000) : "60"),
+      restored?.intervalMinutes ?? (task?.schedule.kind === "every" ? String(task.schedule.interval / 60_000) : "60"),
     cron: restored?.cron ?? (task?.schedule.kind === "cron" ? task.schedule.expression : "0 9 * * 1-5"),
     timezone:
       restored?.timezone ??
@@ -469,7 +471,9 @@ export function ScheduledTaskFormDialog(props: {
     console.debug(`[scheduled-panel] edit open-session probe-start task=${task.id} id=${sessionID}`)
     setState("error", "")
     try {
-      const session = await sdk.client.session.get({ directory: task.directory, sessionID }).then((result) => result.data)
+      const session = await sdk.client.session
+        .get({ directory: task.directory, sessionID })
+        .then((result) => result.data)
       if (!session) throw new Error(`Session not found: ${sessionID}`)
       console.debug(
         `[scheduled-panel] edit open-session probe-success task=${task.id} id=${sessionID} archived=${String(!!session.time.archived)}`,
@@ -488,7 +492,9 @@ export function ScheduledTaskFormDialog(props: {
         parentID: restored.parentID,
       })
       const result = await sessionTabs.activate({ type: "session", directory: restored.directory, id: sessionID })
-      console.debug(`[scheduled-panel] edit open-session activate-finish task=${task.id} id=${sessionID} result=${result}`)
+      console.debug(
+        `[scheduled-panel] edit open-session activate-finish task=${task.id} id=${sessionID} result=${result}`,
+      )
       if (result !== "navigated") throw new Error(`Failed to open session: ${result}`)
       dialog.close()
     } catch (error) {
@@ -613,312 +619,314 @@ export function ScheduledTaskFormDialog(props: {
         `}
       />
       <Dialog
-      title={
-        <div class="flex min-w-0 flex-col pl-1">
-          <div class="flex min-w-0 items-center gap-3">
-            <span class="min-w-0 flex-1 truncate leading-6">{task?.name ?? language.t("scheduled.create")}</span>
-            <Show when={props.projectName || props.directory}>
-              <span class="max-w-[40%] shrink-0 truncate rounded-full bg-surface-base px-2.5 py-0.5 text-16-medium leading-6 text-text-weak">
-                {props.projectName || getFilename(props.directory ?? "") || props.directory}
-              </span>
-            </Show>
+        title={
+          <div class="flex min-w-0 flex-col pl-1">
+            <div class="flex min-w-0 items-center gap-3">
+              <span class="min-w-0 flex-1 truncate leading-6">{task?.name ?? language.t("scheduled.create")}</span>
+              <Show when={props.projectName || props.directory}>
+                <span class="max-w-[40%] shrink-0 truncate rounded-full bg-surface-base px-2.5 py-0.5 text-16-medium leading-6 text-text-weak">
+                  {props.projectName || getFilename(props.directory ?? "") || props.directory}
+                </span>
+              </Show>
+            </div>
+            <span class="mt-0.5 truncate text-12-regular leading-4 text-text-weak">
+              {task?.id ?? props.directory ?? language.t("scheduled.subtitle")}
+            </span>
           </div>
-          <span class="mt-0.5 truncate text-12-regular leading-4 text-text-weak">
-            {task?.id ?? props.directory ?? language.t("scheduled.subtitle")}
-          </span>
-        </div>
-      }
-      size="x-large"
-      transition
-      containerStyle={dialogContainerStyle()}
-      data-scheduled-task-dialog={task?.id}
-      data-maximized={task && maximized() ? "" : undefined}
-      action={
-        task || props.onMinimize ? (
-          <div class="flex items-center gap-2">
-            <Show when={props.onMinimize}>
-              <Tooltip placement="bottom" value={props.minimizeLabel ?? ""}>
-                <IconButton
-                  icon="panel-minimize"
-                  size="large"
-                  variant="ghost"
-                  onClick={minimize}
-                  aria-label={props.minimizeLabel}
-                  data-action="dialog-minimize"
-                />
-              </Tooltip>
-            </Show>
-            <Show when={task}>
-              <Tooltip
-                placement="bottom"
-                value={maximized() ? language.t("trellis.tasks.restore") : language.t("trellis.tasks.maximize")}
-              >
-                <IconButton
-                  icon={maximized() ? "collapse" : "expand"}
-                  size="large"
-                  variant="ghost"
-                  onClick={toggleMaximized}
-                  aria-label={maximized() ? language.t("trellis.tasks.restore") : language.t("trellis.tasks.maximize")}
-                />
-              </Tooltip>
-            </Show>
-            <IconButton
-              icon="close"
-              size="large"
-              variant="ghost"
-              onClick={() => dialog.close()}
-              aria-label={language.t("common.close")}
+        }
+        size="x-large"
+        transition
+        containerStyle={dialogContainerStyle()}
+        data-scheduled-task-dialog={task?.id}
+        data-maximized={task && maximized() ? "" : undefined}
+        action={
+          task || props.onMinimize ? (
+            <div class="flex items-center gap-2">
+              <Show when={props.onMinimize}>
+                <Tooltip placement="bottom" value={props.minimizeLabel ?? ""}>
+                  <IconButton
+                    icon="panel-minimize"
+                    size="large"
+                    variant="ghost"
+                    onClick={minimize}
+                    aria-label={props.minimizeLabel}
+                    data-action="dialog-minimize"
+                  />
+                </Tooltip>
+              </Show>
+              <Show when={task}>
+                <Tooltip
+                  placement="bottom"
+                  value={maximized() ? language.t("trellis.tasks.restore") : language.t("trellis.tasks.maximize")}
+                >
+                  <IconButton
+                    icon={maximized() ? "collapse" : "expand"}
+                    size="large"
+                    variant="ghost"
+                    onClick={toggleMaximized}
+                    aria-label={
+                      maximized() ? language.t("trellis.tasks.restore") : language.t("trellis.tasks.maximize")
+                    }
+                  />
+                </Tooltip>
+              </Show>
+              <IconButton
+                icon="close"
+                size="large"
+                variant="ghost"
+                onClick={() => dialog.close()}
+                aria-label={language.t("common.close")}
+              />
+            </div>
+          ) : undefined
+        }
+      >
+        <form onSubmit={save} class="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4">
+          <div
+            class="grid min-h-0 flex-1 gap-4 overflow-hidden"
+            classList={{
+              "lg:grid-cols-[minmax(0,1.3fr)_minmax(300px,0.7fr)]": !task,
+              "lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.8fr)_minmax(220px,0.65fr)]": !!task,
+            }}
+          >
+            <MarkdownEditorField
+              text={state.prompt}
+              preview
+              placeholder={language.t("scheduled.prompt.placeholder")}
+              onInput={(value) => setState("prompt", value)}
+              class="min-h-[320px] h-full min-w-0 bg-background-base lg:min-h-0"
             />
-          </div>
-        ) : undefined
-      }
-    >
-      <form onSubmit={save} class="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4">
-        <div
-          class="grid min-h-0 flex-1 gap-4 overflow-hidden"
-          classList={{
-            "lg:grid-cols-[minmax(0,1.3fr)_minmax(300px,0.7fr)]": !task,
-            "lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.8fr)_minmax(220px,0.65fr)]": !!task,
-          }}
-        >
-          <MarkdownEditorField
-            text={state.prompt}
-            preview
-            placeholder={language.t("scheduled.prompt.placeholder")}
-            onInput={(value) => setState("prompt", value)}
-            class="min-h-[320px] h-full min-w-0 bg-background-base lg:min-h-0"
-          />
 
-          <div class="config-scrollbar flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto px-1">
-            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
-              <div class="grid gap-4">
-                <div>
-                  <TextField
-                    label={language.t("scheduled.name")}
-                    value={state.name}
-                    onChange={(value) => setState("name", value)}
-                  />
-                </div>
-                <FieldLabel label={language.t("scheduled.agent")}>
-                  <Select
-                    options={agentOptions()}
-                    current={state.agent}
-                    onSelect={(item) => item && setState("agent", item)}
-                    class="max-w-full"
-                  />
-                </FieldLabel>
-                <FieldLabel label={language.t("scheduled.model")}>
-                  <Select
-                    options={modelOptions()}
-                    current={currentModel()}
-                    value={(item) => item.key}
-                    label={(item) => `${item.providerName} / ${item.name}`}
-                    groupBy={(item) => item.providerName}
-                    onSelect={(item) => {
-                      if (!item) return
-                      const variants = item.variants ? Object.keys(item.variants) : []
-                      setState({
-                        providerID: item.providerID,
-                        modelID: item.modelID,
-                        variant: state.variant && variants.includes(state.variant) ? state.variant : "",
-                      })
-                    }}
-                    class="max-w-full"
-                  />
-                </FieldLabel>
-                <Show when={variantOptions().length > 1}>
-                  <FieldLabel label={language.t("scheduled.variant")}>
+            <div class="config-scrollbar flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto px-1">
+              <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
+                <div class="grid gap-4">
+                  <div>
+                    <TextField
+                      label={language.t("scheduled.name")}
+                      value={state.name}
+                      onChange={(value) => setState("name", value)}
+                    />
+                  </div>
+                  <FieldLabel label={language.t("scheduled.agent")}>
                     <Select
-                      options={variantOptions()}
-                      current={state.variant || "default"}
-                      label={(item) => (item === "default" ? language.t("common.default") : item)}
-                      onSelect={(item) => item && setState("variant", item === "default" ? "" : item)}
+                      options={agentOptions()}
+                      current={state.agent}
+                      onSelect={(item) => item && setState("agent", item)}
                       class="max-w-full"
                     />
                   </FieldLabel>
-                </Show>
-              </div>
-            </section>
-
-            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
-              <div class="grid gap-4">
-                <FieldLabel label={language.t("scheduled.execution")}>
-                  <Select
-                    options={["automatic_session", "existing_session", "new_session"] as const}
-                    current={state.executionMode}
-                    label={(item) => language.t(executionModeKey(item))}
-                    onSelect={(item) => item && setState("executionMode", item)}
-                    class="max-w-full"
-                  />
-                </FieldLabel>
-                <FieldLabel label={language.t("scheduled.schedule")}>
-                  <Select
-                    options={["at", "every", "cron"] as const}
-                    current={state.scheduleKind}
-                    label={(item) => language.t(`scheduled.schedule.${item}`)}
-                    onSelect={(item) => {
-                      if (!item) return
-                      setState({
-                        scheduleKind: item,
-                        ...(item === "at" && !state.timezone
-                          ? { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }
-                          : {}),
-                      })
-                    }}
-                    class="max-w-full"
-                  />
-                </FieldLabel>
-                <Show when={state.scheduleKind === "at"}>
-                  <FieldLabel label={language.t("scheduled.schedule.at.time")}>
-                    <TextField
-                      type="datetime-local"
-                      value={state.at}
-                      onChange={(value) => setState("at", value)}
-                      class="!w-fit max-w-full"
+                  <FieldLabel label={language.t("scheduled.model")}>
+                    <Select
+                      options={modelOptions()}
+                      current={currentModel()}
+                      value={(item) => item.key}
+                      label={(item) => `${item.providerName} / ${item.name}`}
+                      groupBy={(item) => item.providerName}
+                      onSelect={(item) => {
+                        if (!item) return
+                        const variants = item.variants ? Object.keys(item.variants) : []
+                        setState({
+                          providerID: item.providerID,
+                          modelID: item.modelID,
+                          variant: state.variant && variants.includes(state.variant) ? state.variant : "",
+                        })
+                      }}
+                      class="max-w-full"
                     />
                   </FieldLabel>
-                  <TimezoneSelectField
-                    label={language.t("scheduled.timezone")}
-                    value={state.timezone}
-                    onChange={(value) => setState("timezone", value)}
-                  />
-                </Show>
-                <Show when={state.scheduleKind === "every"}>
-                  <TextField
-                    type="number"
-                    min="1"
-                    label={language.t("scheduled.intervalMinutes")}
-                    value={state.intervalMinutes}
-                    onChange={(value) => setState("intervalMinutes", value)}
-                  />
-                </Show>
-                <Show when={state.scheduleKind === "cron"}>
-                  <CronExpressionField
-                    label={language.t("scheduled.cron")}
-                    meaningLabel={language.t("scheduled.cron.meaning")}
-                    value={state.cron}
-                    timezone={state.timezone}
-                    locale={language.locale()}
-                    onChange={(value) => setState("cron", value)}
-                  />
-                  <TimezoneSelectField
-                    label={language.t("scheduled.timezone")}
-                    value={state.timezone}
-                    onChange={(value) => setState("timezone", value)}
-                  />
-                </Show>
-              </div>
-            </section>
-
-            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
-              <Checkbox
-                checked={state.unattended}
-                onChange={(value) => setState("unattended", value)}
-                description={language.t("scheduled.unattended.detail")}
-              >
-                {language.t("scheduled.unattended.accept")}
-              </Checkbox>
-            </section>
-
-            <Show when={state.error}>
-              <div class="rounded-lg border border-border-critical-base bg-surface-critical-base px-3 py-2 text-12-regular text-text-strong">
-                {state.error}
-              </div>
-            </Show>
-          </div>
-
-          <Show when={task}>
-            <aside class="config-scrollbar min-h-0 min-w-0 overflow-y-auto px-1">
-              <section
-                data-slot="scheduled-task-runs"
-                class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4"
-              >
-                <div class="mb-3 flex items-center justify-between gap-2">
-                  <div class="text-12-medium text-text-weak">{language.t("scheduled.history")}</div>
-                  <span class="text-11-regular text-text-weaker">{state.runs.length}</span>
+                  <Show when={variantOptions().length > 1}>
+                    <FieldLabel label={language.t("scheduled.variant")}>
+                      <Select
+                        options={variantOptions()}
+                        current={state.variant || "default"}
+                        label={(item) => (item === "default" ? language.t("common.default") : item)}
+                        onSelect={(item) => item && setState("variant", item === "default" ? "" : item)}
+                        class="max-w-full"
+                      />
+                    </FieldLabel>
+                  </Show>
                 </div>
-                <Show
-                  when={state.runs.length > 0}
-                  fallback={
-                    <Show when={!state.loadingRuns}>
-                      <div class="py-3 text-center text-12-regular text-text-weak">
-                        {language.t("scheduled.history.empty")}
-                      </div>
-                    </Show>
-                  }
-                >
-                  <div class="grid gap-2">
-                    <For each={state.runs}>
-                      {(run) => {
-                        const sessionID = () => run.sessionID ?? task?.sessionID
-                        return (
-                          <button
-                            type="button"
-                            data-run-id={run.id}
-                            class="min-w-0 rounded-lg border border-border-weak-base bg-background-base px-3 py-2 text-left transition-colors enabled:hover:bg-surface-raised-base-hover disabled:cursor-default"
-                            disabled={!sessionID()}
-                            title={run.error ?? (sessionID() ? language.t("scheduled.openSession") : undefined)}
-                            onClick={() => void openSession(sessionID())}
-                          >
-                            <div class={`truncate text-11-medium ${statusTone(run.status)}`}>{run.status}</div>
-                            <div class="mt-1 text-11-regular leading-4 text-text-weak">
-                              {formatDate(run.scheduledAt)}
-                            </div>
-                          </button>
-                        )
-                      }}
-                    </For>
-                  </div>
-                </Show>
               </section>
-            </aside>
-          </Show>
-        </div>
-        <div class="mt-4 flex shrink-0 flex-wrap items-center gap-2 border-t border-border-weak-base pt-4">
-          <Show when={task}>
-            <Button
-              type="button"
-              icon="arrow-right"
-              variant="ghost"
-              disabled={state.pendingAction}
-              onClick={() => void runNow()}
-            >
-              {language.t("scheduled.runNow")}
-            </Button>
-            <Button
-              type="button"
-              icon={state.enabled ? "stop" : "play"}
-              variant="ghost"
-              disabled={state.pendingAction}
-              onClick={() => void toggleEnabled()}
-            >
-              {state.enabled ? language.t("scheduled.disable") : language.t("scheduled.enable")}
-            </Button>
-          </Show>
-          <div class="ml-auto flex items-center gap-2">
-            <Show when={task}>
-              <Tooltip value={language.t("scheduled.delete")}>
-                <Button
-                  type="button"
-                  icon="trash"
-                  variant="ghost"
-                  disabled={state.pendingAction}
-                  onClick={() => void remove()}
-                  aria-label={language.t("scheduled.delete")}
+
+              <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
+                <div class="grid gap-4">
+                  <FieldLabel label={language.t("scheduled.execution")}>
+                    <Select
+                      options={["automatic_session", "existing_session", "new_session"] as const}
+                      current={state.executionMode}
+                      label={(item) => language.t(executionModeKey(item))}
+                      onSelect={(item) => item && setState("executionMode", item)}
+                      class="max-w-full"
+                    />
+                  </FieldLabel>
+                  <FieldLabel label={language.t("scheduled.schedule")}>
+                    <Select
+                      options={["at", "every", "cron"] as const}
+                      current={state.scheduleKind}
+                      label={(item) => language.t(`scheduled.schedule.${item}`)}
+                      onSelect={(item) => {
+                        if (!item) return
+                        setState({
+                          scheduleKind: item,
+                          ...(item === "at" && !state.timezone
+                            ? { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }
+                            : {}),
+                        })
+                      }}
+                      class="max-w-full"
+                    />
+                  </FieldLabel>
+                  <Show when={state.scheduleKind === "at"}>
+                    <FieldLabel label={language.t("scheduled.schedule.at.time")}>
+                      <TextField
+                        type="datetime-local"
+                        value={state.at}
+                        onChange={(value) => setState("at", value)}
+                        class="!w-fit max-w-full"
+                      />
+                    </FieldLabel>
+                    <TimezoneSelectField
+                      label={language.t("scheduled.timezone")}
+                      value={state.timezone}
+                      onChange={(value) => setState("timezone", value)}
+                    />
+                  </Show>
+                  <Show when={state.scheduleKind === "every"}>
+                    <TextField
+                      type="number"
+                      min="1"
+                      label={language.t("scheduled.intervalMinutes")}
+                      value={state.intervalMinutes}
+                      onChange={(value) => setState("intervalMinutes", value)}
+                    />
+                  </Show>
+                  <Show when={state.scheduleKind === "cron"}>
+                    <CronExpressionField
+                      label={language.t("scheduled.cron")}
+                      meaningLabel={language.t("scheduled.cron.meaning")}
+                      value={state.cron}
+                      timezone={state.timezone}
+                      locale={language.locale()}
+                      onChange={(value) => setState("cron", value)}
+                    />
+                    <TimezoneSelectField
+                      label={language.t("scheduled.timezone")}
+                      value={state.timezone}
+                      onChange={(value) => setState("timezone", value)}
+                    />
+                  </Show>
+                </div>
+              </section>
+
+              <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
+                <Checkbox
+                  checked={state.unattended}
+                  onChange={(value) => setState("unattended", value)}
+                  description={language.t("scheduled.unattended.detail")}
                 >
-                  {language.t("common.delete")}
-                </Button>
-              </Tooltip>
+                  {language.t("scheduled.unattended.accept")}
+                </Checkbox>
+              </section>
+
+              <Show when={state.error}>
+                <div class="rounded-lg border border-border-critical-base bg-surface-critical-base px-3 py-2 text-12-regular text-text-strong">
+                  {state.error}
+                </div>
+              </Show>
+            </div>
+
+            <Show when={task}>
+              <aside class="config-scrollbar min-h-0 min-w-0 overflow-y-auto px-1">
+                <section
+                  data-slot="scheduled-task-runs"
+                  class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4"
+                >
+                  <div class="mb-3 flex items-center justify-between gap-2">
+                    <div class="text-12-medium text-text-weak">{language.t("scheduled.history")}</div>
+                    <span class="text-11-regular text-text-weaker">{state.runs.length}</span>
+                  </div>
+                  <Show
+                    when={state.runs.length > 0}
+                    fallback={
+                      <Show when={!state.loadingRuns}>
+                        <div class="py-3 text-center text-12-regular text-text-weak">
+                          {language.t("scheduled.history.empty")}
+                        </div>
+                      </Show>
+                    }
+                  >
+                    <div class="grid gap-2">
+                      <For each={state.runs}>
+                        {(run) => {
+                          const sessionID = () => run.sessionID ?? task?.sessionID
+                          return (
+                            <button
+                              type="button"
+                              data-run-id={run.id}
+                              class="min-w-0 rounded-lg border border-border-weak-base bg-background-base px-3 py-2 text-left transition-colors enabled:hover:bg-surface-raised-base-hover disabled:cursor-default"
+                              disabled={!sessionID()}
+                              title={run.error ?? (sessionID() ? language.t("scheduled.openSession") : undefined)}
+                              onClick={() => void openSession(sessionID())}
+                            >
+                              <div class={`truncate text-11-medium ${statusTone(run.status)}`}>{run.status}</div>
+                              <div class="mt-1 text-11-regular leading-4 text-text-weak">
+                                {formatDate(run.scheduledAt)}
+                              </div>
+                            </button>
+                          )
+                        }}
+                      </For>
+                    </div>
+                  </Show>
+                </section>
+              </aside>
             </Show>
-            <Button type="button" variant="ghost" onClick={() => dialog.close()}>
-              {language.t("common.cancel")}
-            </Button>
-            <Button type="submit" variant="primary" disabled={state.saving || state.pendingAction}>
-              {state.saving ? language.t("common.saving") : language.t("common.save")}
-            </Button>
           </div>
-        </div>
-      </form>
+          <div class="mt-4 flex shrink-0 flex-wrap items-center gap-2 border-t border-border-weak-base pt-4">
+            <Show when={task}>
+              <Button
+                type="button"
+                icon="arrow-right"
+                variant="ghost"
+                disabled={state.pendingAction}
+                onClick={() => void runNow()}
+              >
+                {language.t("scheduled.runNow")}
+              </Button>
+              <Button
+                type="button"
+                icon={state.enabled ? "stop" : "play"}
+                variant="ghost"
+                disabled={state.pendingAction}
+                onClick={() => void toggleEnabled()}
+              >
+                {state.enabled ? language.t("scheduled.disable") : language.t("scheduled.enable")}
+              </Button>
+            </Show>
+            <div class="ml-auto flex items-center gap-2">
+              <Show when={task}>
+                <Tooltip value={language.t("scheduled.delete")}>
+                  <Button
+                    type="button"
+                    icon="trash"
+                    variant="ghost"
+                    disabled={state.pendingAction}
+                    onClick={() => void remove()}
+                    aria-label={language.t("scheduled.delete")}
+                  >
+                    {language.t("common.delete")}
+                  </Button>
+                </Tooltip>
+              </Show>
+              <Button type="button" variant="ghost" onClick={() => dialog.close()}>
+                {language.t("common.cancel")}
+              </Button>
+              <Button type="submit" variant="primary" disabled={state.saving || state.pendingAction}>
+                {state.saving ? language.t("common.saving") : language.t("common.save")}
+              </Button>
+            </div>
+          </div>
+        </form>
       </Dialog>
     </>
   )
@@ -952,7 +960,13 @@ export function ScheduledTasksPanel(props: {
   const sdk = useGlobalSDK()
   const language = useLanguage()
   const dialog = useDialog()
-  const [state, setState] = createStore({ tasks: [] as ScheduledTask[], loading: true, error: "", query: "", sort: "created" as TaskSort })
+  const [state, setState] = createStore({
+    tasks: [] as ScheduledTask[],
+    loading: true,
+    error: "",
+    query: "",
+    sort: "created" as TaskSort,
+  })
   let request = 0
   const activeScope = createMemo<ScheduledTaskPanelScope>(
     () => ({ projectID: props.projectID(), directory: props.directory().replaceAll("\\", "/").replace(/\/+$/, "") }),
@@ -1038,13 +1052,16 @@ export function ScheduledTasksPanel(props: {
         onMinimize={
           props.onStashEditor
             ? (snapshot, source) =>
-                props.onStashEditor!({
-                  task,
-                  projectID: props.projectID() || undefined,
-                  projectName: props.projectName() || task.projectName,
-                  directory: props.directory() || task.directory || undefined,
-                  snapshot,
-                }, source)
+                props.onStashEditor!(
+                  {
+                    task,
+                    projectID: props.projectID() || undefined,
+                    projectName: props.projectName() || task.projectName,
+                    directory: props.directory() || task.directory || undefined,
+                    snapshot,
+                  },
+                  source,
+                )
             : undefined
         }
       />
@@ -1081,7 +1098,8 @@ export function ScheduledTasksPanel(props: {
         minimizeLabel={props.editorMinimizeLabel}
         onMinimize={
           props.onStashEditor
-            ? (snapshot, source) => props.onStashEditor!({ projectID, projectName: props.projectName(), directory, snapshot }, source)
+            ? (snapshot, source) =>
+                props.onStashEditor!({ projectID, projectName: props.projectName(), directory, snapshot }, source)
             : undefined
         }
       />

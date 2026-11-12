@@ -133,10 +133,9 @@ describe("project location identity migration", () => {
     const result = migrateProjectLocationIdentity(db, { platform: "win32", kind: "local-filesystem" })
 
     expect(result.mergedLocations).toBe(2)
-    expect(db.$client.query("SELECT canonical_directory FROM project_location ORDER BY canonical_directory").all()).toEqual([
-      { canonical_directory: "//server/share/repo" },
-      { canonical_directory: "d:/" },
-    ])
+    expect(
+      db.$client.query("SELECT canonical_directory FROM project_location ORDER BY canonical_directory").all(),
+    ).toEqual([{ canonical_directory: "//server/share/repo" }, { canonical_directory: "d:/" }])
   })
 
   test("rejects cross-project identity conflicts before any write", () => {

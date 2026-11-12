@@ -22,12 +22,7 @@ export function SessionSkippedQuestionsDialog(props: {
   }
 
   return (
-    <Dialog
-      title={language.t("session.question.skipped.title")}
-      class="w-full max-w-[560px] mx-auto"
-      fit
-      transition
-    >
+    <Dialog title={language.t("session.question.skipped.title")} class="w-full max-w-[560px] mx-auto" fit transition>
       <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3 pt-1">
         <Show when={props.sessionEnded()}>
           <div class="mr-3 rounded-xl border border-border-warning-base bg-surface-warning-weak/80 px-3.5 py-3 shadow-xs-border-base">

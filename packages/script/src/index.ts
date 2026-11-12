@@ -25,7 +25,9 @@ const env = {
   OPENCODE_RELEASE: process.env["OPENCODE_RELEASE"],
 }
 const base = (() => {
-  const value = Bun.file(versionPath).text().then((x) => x.trim())
+  const value = Bun.file(versionPath)
+    .text()
+    .then((x) => x.trim())
   return value
 })()
 const baseVersion = await base.then((value) => {

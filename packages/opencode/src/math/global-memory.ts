@@ -97,9 +97,7 @@ export class GlobalMemory {
     const out: GlobalEntry[] = []
     for (const e of await readJsonl(this.pathFor(kind))) {
       const st = typeof e.id === "string" ? latest.get(e.id) : undefined
-      const folded = st
-        ? { ...e, status: st.status, fact_id: st.fact_id ?? e.fact_id }
-        : e
+      const folded = st ? { ...e, status: st.status, fact_id: st.fact_id ?? e.fact_id } : e
       out.push(folded as GlobalEntry)
     }
     return out
@@ -109,7 +107,10 @@ export class GlobalMemory {
     query: string,
     kinds?: string[],
     limitPerKind = 10,
-  ): Promise<{ query: string; results_by_kind: Record<string, { count: number; results: Array<{ score: number; entry: GlobalEntry }> }> }> {
+  ): Promise<{
+    query: string
+    results_by_kind: Record<string, { count: number; results: Array<{ score: number; entry: GlobalEntry }> }>
+  }> {
     const latest = await this.latestStatus()
     const out: Record<string, { count: number; results: Array<{ score: number; entry: GlobalEntry }> }> = {}
     const selected = kinds?.length ? kinds : Object.keys(GLOBAL_KINDS)

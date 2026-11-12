@@ -17,9 +17,7 @@ export const projectTaskHandlers = HttpApiBuilder.group(InstanceHttpApi, "projec
       .handle("list", (ctx: { query: typeof ListQuery.Type }) =>
         tasks.list({ includeArchived: ctx.query.includeArchived }),
       )
-      .handle("create", (ctx) =>
-        tasks.create(ctx.payload).pipe(Effect.mapError(() => badRequest())),
-      )
+      .handle("create", (ctx) => tasks.create(ctx.payload).pipe(Effect.mapError(() => badRequest())))
       .handle("get", (ctx: { params: { taskID: ProjectTaskID } }) =>
         tasks.get(ctx.params.taskID).pipe(Effect.mapError(notFound)),
       )

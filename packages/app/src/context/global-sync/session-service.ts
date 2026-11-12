@@ -62,7 +62,13 @@ export function createSessionService(deps: SessionControllerDeps) {
     },
     event(directory: string, mutation: SessionDataMutation) {
       if (mutation.kind === "messages")
-        messageEvent(directory, mutation.sessionID, mutation.strategy, mutation.removedMessageID, mutation.confirmedMessageID)
+        messageEvent(
+          directory,
+          mutation.sessionID,
+          mutation.strategy,
+          mutation.removedMessageID,
+          mutation.confirmedMessageID,
+        )
       if (mutation.kind === "todo") todoEvent(directory, mutation.sessionID)
       if (mutation.kind === "diff") diffEvent(directory, mutation.sessionID)
     },

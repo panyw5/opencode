@@ -43,7 +43,9 @@ export function extensionSelection(items: readonly ExtensionInfo[], pick: string
 function fallbackSelection(items: readonly ExtensionInfo[], pick: string) {
   if (items.length === 0) return ""
   const next = extensionPick(items[0].id)
-  console.info(`[config-extensions] selection normalized from=${pick || "(empty)"} to=${next} installed=${items.length}`)
+  console.info(
+    `[config-extensions] selection normalized from=${pick || "(empty)"} to=${next} installed=${items.length}`,
+  )
   return next
 }
 

@@ -123,12 +123,7 @@ export function makeExtensionContext(deps: ContextDeps): WebExtensionContext {
     console[level](`[ext:${deps.manifest.id}] ${message}`)
   }
 
-  const registerDeclared = (
-    guard: () => boolean,
-    undeclared: string,
-    failed: string,
-    register: () => () => void,
-  ) => {
+  const registerDeclared = (guard: () => boolean, undeclared: string, failed: string, register: () => () => void) => {
     if (!deps.valid()) throw new Error(`Extension activation is stale: ${deps.manifest.id}`)
     if (!guard()) throw new Error(undeclared)
     const dispose = runWithOwner(deps.owner, register)
@@ -197,7 +192,11 @@ export function makeExtensionContext(deps: ContextDeps): WebExtensionContext {
       error: (message) => log("error", message),
     },
     rpc: {
-      call<T>(method: string, input?: unknown, options?: { directory?: string; signal?: AbortSignal; timeoutMs?: number }): Promise<T> {
+      call<T>(
+        method: string,
+        input?: unknown,
+        options?: { directory?: string; signal?: AbortSignal; timeoutMs?: number },
+      ): Promise<T> {
         return deps.callRpc({
           method,
           input,

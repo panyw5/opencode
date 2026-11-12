@@ -241,10 +241,9 @@ describe("HttpApi authorization middleware", () => {
   itUrlSafeSecret.live("prefers urlsafe auth token query credentials over basic auth", () =>
     Effect.gen(function* () {
       // unpadded base64url token that standard strict decoding cannot accept
-      const response = yield* HttpClientRequest.get(`/probe?auth_token=${encodeURIComponent(tokenUrl("opencode", "se?cr~et"))}`).pipe(
-        HttpClientRequest.setHeader("authorization", basic("opencode", "wrong")),
-        HttpClient.execute,
-      )
+      const response = yield* HttpClientRequest.get(
+        `/probe?auth_token=${encodeURIComponent(tokenUrl("opencode", "se?cr~et"))}`,
+      ).pipe(HttpClientRequest.setHeader("authorization", basic("opencode", "wrong")), HttpClient.execute)
 
       expect(response.status).toBe(200)
     }),

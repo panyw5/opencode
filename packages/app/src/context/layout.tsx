@@ -506,10 +506,14 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         if (store.rightPanel.active === "browser") setRightPanel("none")
       },
     })
-    const rightPanelSize = createMemo(() => rightPanelGeometry(
-      store.rightPanel.active, store.fileTree?.opened ?? true,
-      store.session?.width ?? DEFAULT_SESSION_WIDTH, store.fileTree?.width ?? DEFAULT_PANEL_WIDTH,
-    ))
+    const rightPanelSize = createMemo(() =>
+      rightPanelGeometry(
+        store.rightPanel.active,
+        store.fileTree?.opened ?? true,
+        store.session?.width ?? DEFAULT_SESSION_WIDTH,
+        store.fileTree?.width ?? DEFAULT_PANEL_WIDTH,
+      ),
+    )
     onMount(() => {
       browserTabs.start()
       const openTab = (event: Event) => {

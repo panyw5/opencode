@@ -23,7 +23,9 @@ const A = MAX_ARRAY_LENGTH
 describe("one built-in cannot build an unbounded value", () => {
   test("console retention is bounded while a program is running", async () => {
     const runtime = CodeMode.make({ tools: {}, limits: { maxOutputBytes: 128 } })
-    const result = await Effect.runPromise(runtime.execute('for (let i=0;i<10000;i++) console.log("x".repeat(1000)); return 1'))
+    const result = await Effect.runPromise(
+      runtime.execute('for (let i=0;i<10000;i++) console.log("x".repeat(1000)); return 1'),
+    )
     expect(result.ok).toBe(true)
     expect(result.truncated).toBe(true)
     expect((result.logs ?? []).join("\n").length).toBeLessThan(300)
@@ -64,20 +66,16 @@ describe("one built-in cannot build an unbounded value", () => {
     }
   })
 
-  test(
-    "promises: too many pending at once, while settled ones do not count",
-    async () => {
-      const n = MAX_PENDING_PROMISES
-      expect(await value(`for (let i = 0; i < ${n * 2}; i++) Promise.resolve(i); return 1`)).toBe(1)
-      expect(
-        await failure(
-          `try { for (let i = 0; i <= ${n}; i++) new Promise(() => {}) } catch (e) { throw Error(e.name + ": " + e.message) }`,
-        ),
-      ).toContain("RangeError: Too many pending promises")
-      expect(await failure(`await Promise.all(Array(${n + 1}).fill(0).map(() => new Promise(() => {})))`)).toContain(
-        "Too many pending promises",
-      )
-    },
-    10_000,
-  )
+  test("promises: too many pending at once, while settled ones do not count", async () => {
+    const n = MAX_PENDING_PROMISES
+    expect(await value(`for (let i = 0; i < ${n * 2}; i++) Promise.resolve(i); return 1`)).toBe(1)
+    expect(
+      await failure(
+        `try { for (let i = 0; i <= ${n}; i++) new Promise(() => {}) } catch (e) { throw Error(e.name + ": " + e.message) }`,
+      ),
+    ).toContain("RangeError: Too many pending promises")
+    expect(await failure(`await Promise.all(Array(${n + 1}).fill(0).map(() => new Promise(() => {})))`)).toContain(
+      "Too many pending promises",
+    )
+  }, 10_000)
 })

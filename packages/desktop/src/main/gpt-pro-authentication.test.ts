@@ -13,7 +13,12 @@ function sessionFixture(responses: Array<{ status: number; data?: unknown; error
         fetch: async () => {
           const response = responses[Math.min(calls++, responses.length - 1)]
           if (response.error) throw new Error("PRIVATE_FETCH_ERROR")
-          return { status: response.status, ok: response.status === 200, headers: { get: () => response.retryAfter }, json: async () => response.data }
+          return {
+            status: response.status,
+            ok: response.status === 200,
+            headers: { get: () => response.retryAfter },
+            json: async () => response.data,
+          }
         },
       })) as T,
   }

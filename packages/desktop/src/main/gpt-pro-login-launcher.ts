@@ -26,7 +26,9 @@ export async function launchGptProLogin(
   } catch {
     login.cancel()
     log("login-launch default-browser outcome=failed; connection URL and token omitted")
-    throw new Error("browser_open_failed: Could not open the default browser. Check your default browser and try again.")
+    throw new Error(
+      "browser_open_failed: Could not open the default browser. Check your default browser and try again.",
+    )
   }
   log(`login-launch default-browser outcome=request-accepted phase=${login.status().phase}; cookiesChanged=false`)
   return login.status()

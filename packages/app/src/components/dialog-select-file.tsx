@@ -72,13 +72,7 @@ const renderSnippet = (snippet: string) => {
       continue
     }
     if (!part) continue
-    nodes.push(
-      highlight ? (
-        <span class="rounded-sm bg-surface-info-base text-text-strong px-0.5">{part}</span>
-      ) : (
-        part
-      ),
-    )
+    nodes.push(highlight ? <span class="rounded-sm bg-surface-info-base text-text-strong px-0.5">{part}</span> : part)
   }
   return nodes
 }
@@ -640,7 +634,9 @@ function DialogSelectFileWithSessionContext(props: {
     <Dialog size={filesOnly() ? "large" : undefined} class="pt-4 !max-h-[480px]" transition>
       <List
         search={{
-          placeholder: filesOnly() ? language.t("session.header.searchFiles") : language.t("palette.search.placeholder"),
+          placeholder: filesOnly()
+            ? language.t("session.header.searchFiles")
+            : language.t("palette.search.placeholder"),
           autofocus: true,
           hideIcon: true,
         }}

@@ -112,10 +112,7 @@ export default function FileTreeSearch(props: ParentProps<{ onFileClick: (path: 
           </Show>
         </div>
       </div>
-      <Show
-        when={query().trim()}
-        fallback={props.children}
-      >
+      <Show when={query().trim()} fallback={props.children}>
         <div class="flex flex-col gap-0.5 pb-3">
           <Show when={!loading() && results().length === 0}>
             <div class="px-2 py-1 text-12-regular text-text-weak">{language.t("palette.empty")}</div>

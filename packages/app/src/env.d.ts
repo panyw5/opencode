@@ -12,9 +12,7 @@ interface ImportMeta {
   readonly env: ImportMetaEnv
 }
 
-declare var __OPENCODE_EXTENSION_HOST__:
-  | import("@/extensions/modules").ExtensionHostModules
-  | undefined
+declare var __OPENCODE_EXTENSION_HOST__: import("@/extensions/modules").ExtensionHostModules | undefined
 
 export declare module "solid-js" {
   namespace JSX {

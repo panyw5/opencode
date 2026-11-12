@@ -104,9 +104,7 @@ describe("extension kit vite build", () => {
     expect(css).toContain("@property --scope-fixture-size")
 
     // Nothing leaked outside the scope apart from the intended at-rules.
-    const outsideScope = css
-      .split("}")
-      .filter((chunk) => chunk.includes(".scope-fixture") && !chunk.includes(SCOPE))
+    const outsideScope = css.split("}").filter((chunk) => chunk.includes(".scope-fixture") && !chunk.includes(SCOPE))
     expect(outsideScope).toEqual([])
     fs.rmSync(outDir, { recursive: true, force: true })
   })

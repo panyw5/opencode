@@ -120,9 +120,7 @@ describe("native browser display", () => {
     display.start()
     await flush()
     await flush()
-    expect(frames).toEqual([
-      { lease: 7, revision: 1, protectedPageID: "first", partition: null, bounds: null },
-    ])
+    expect(frames).toEqual([{ lease: 7, revision: 1, protectedPageID: "first", partition: null, bounds: null }])
     display.dispose()
   })
 

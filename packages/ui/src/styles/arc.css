@@ -264,9 +264,7 @@ html[data-theme="arc"][data-color-scheme="light"] [data-component="sidebar-panel
 /* Sidebar keycaps intentionally retain a light face on the mauve panel, so
    they need a local dark text token instead of inheriting the chrome's light
    secondary text. */
-html[data-theme="arc"][data-color-scheme="light"]
-  [data-component="sidebar-panel"]
-  [data-component="keybind"] {
+html[data-theme="arc"][data-color-scheme="light"] [data-component="sidebar-panel"] [data-component="keybind"] {
   --surface-base: #f6f1fa;
   --color-surface-base: #f6f1fa;
   --text-weak: #352d3c;
@@ -340,12 +338,7 @@ html[data-theme="arc"] [data-component="sidebar-nav-mobile"] {
 html[data-theme="arc"] [data-component="sidebar-float-shadow"] {
   --sidebar-float-shadow-radius: var(--radius-xl);
   width: 16px;
-  background: linear-gradient(
-    to right,
-    rgba(0, 0, 0, 0.14) 0%,
-    rgba(0, 0, 0, 0.04) 45%,
-    transparent 100%
-  );
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.14) 0%, rgba(0, 0, 0, 0.04) 45%, transparent 100%);
 }
 
 /* Arc's light sidebar is a mauve chrome panel against a white main pane, so the
@@ -353,12 +346,7 @@ html[data-theme="arc"] [data-component="sidebar-float-shadow"] {
    widened so the stronger onset still eases out. */
 html[data-theme="arc"][data-color-scheme="light"] [data-component="sidebar-float-shadow"] {
   width: 20px;
-  background: linear-gradient(
-    to right,
-    rgba(0, 0, 0, 0.14) 0%,
-    rgba(0, 0, 0, 0.04) 45%,
-    transparent 100%
-  );
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.14) 0%, rgba(0, 0, 0, 0.04) 45%, transparent 100%);
 }
 
 /* ScoopJoin: shared chrome patch under top-left radii (session panel when
@@ -496,7 +484,8 @@ html[data-theme="arc"][data-color-scheme="dark"] [data-component="titlebar"] {
    Black rather than white: white would lighten these already very light
    surfaces, which has nowhere to go (white-on-white) and inverts the
    descending model the chrome scope below depends on. */
-html[data-theme="arc"][data-color-scheme="light"] :is(button, [data-component="button"], [data-component="icon-button"]) {
+html[data-theme="arc"][data-color-scheme="light"]
+  :is(button, [data-component="button"], [data-component="icon-button"]) {
   --surface-base-hover: rgba(0, 0, 0, 0.085);
   --color-surface-base-hover: rgba(0, 0, 0, 0.085);
   --surface-raised-base-hover: rgba(0, 0, 0, 0.085);
@@ -539,7 +528,13 @@ html[data-theme="arc"][data-color-scheme="light"] :is(button, [data-component="b
    perceivability floor breaks the light-on-dark ramp in 12 places, a black one
    in none. */
 html[data-theme="arc"][data-color-scheme="light"]
-  :is([data-component="sidebar-rail"], [data-component="sidebar-nav-desktop"], [data-component="sidebar-nav-mobile"], [data-component="sidebar-panel"], [data-component="titlebar"])
+  :is(
+    [data-component="sidebar-rail"],
+    [data-component="sidebar-nav-desktop"],
+    [data-component="sidebar-nav-mobile"],
+    [data-component="sidebar-panel"],
+    [data-component="titlebar"]
+  )
   :is(button, [data-component="button"], [data-component="icon-button"]) {
   --surface-base-hover: rgba(0, 0, 0, 0.165);
   --color-surface-base-hover: rgba(0, 0, 0, 0.165);

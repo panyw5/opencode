@@ -21,5 +21,8 @@ export const PermissionScopeTable = sqliteTable(
     data: text({ mode: "json" }).notNull().$type<Ruleset>(),
     ...Timestamps,
   },
-  (table) => [index("permission_scope_project_idx").on(table.project_id), index("permission_scope_location_idx").on(table.location_id)],
+  (table) => [
+    index("permission_scope_project_idx").on(table.project_id),
+    index("permission_scope_location_idx").on(table.location_id),
+  ],
 )

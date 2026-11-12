@@ -24,7 +24,9 @@ type Connection = { server: Server; token: Buffer; port: number; timer: ReturnTy
 export class GptProLoginServer {
   private connection?: Connection
   private value: GptProLoginStatus = { phase: "idle" }
-  private get state() { return this.value }
+  private get state() {
+    return this.value
+  }
   private set state(value: GptProLoginStatus) {
     this.value = value
     this.deps.changed?.()

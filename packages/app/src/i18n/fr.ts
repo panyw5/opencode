@@ -402,8 +402,10 @@ export const dict = {
   "toast.model.none.description": "Connectez un fournisseur pour résumer cette session",
   "toast.file.loadFailed.title": "Échec du chargement du fichier",
   "toast.file.listFailed.title": "Échec de la liste des fichiers",
-  "toast.file.listFailed.openclaw": "OpenClaw does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
-  "toast.file.listFailed.generalagent": "GeneralAgent does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
+  "toast.file.listFailed.openclaw":
+    "OpenClaw does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
+  "toast.file.listFailed.generalagent":
+    "GeneralAgent does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
   "toast.context.noLineSelection.title": "Aucune sélection de lignes",
   "toast.context.noLineSelection.description": "Sélectionnez d'abord une plage de lignes dans un onglet de fichier.",
   "toast.session.share.copyFailed.title": "Échec de la copie de l'URL dans le presse-papiers",
@@ -609,8 +611,7 @@ export const dict = {
   "settings.general.searchIndex.status.unavailable": "L'état de l'index du contenu des sessions est indisponible",
   "settings.general.searchIndex.status.complete": "Index du contenu des sessions terminé",
   "settings.general.searchIndex.status.buildingUnknown": "Création de l'index du contenu des sessions...",
-  "settings.general.searchIndex.status.building":
-    "Création de l'index du contenu des sessions ({{indexed}}/{{total}})",
+  "settings.general.searchIndex.status.building": "Création de l'index du contenu des sessions ({{indexed}}/{{total}})",
   "settings.general.searchIndex.progress.label": "Progression de l'indexation du contenu des sessions",
   "settings.general.searchIndex.action.enable": "Activer",
   "settings.general.searchIndex.action.disable": "Désactiver",

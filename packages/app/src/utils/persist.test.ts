@@ -118,9 +118,9 @@ describe("persist localStorage resilience", () => {
     expect(persistTesting.workspaceStorage("D:/chat", windows)).toBe(
       persistTesting.workspaceStorage("d:\\CHAT\\", windows),
     )
-    expect(persistTesting.workspaceStorage("/Users/A/project", { platform: "darwin", kind: "local-filesystem" })).not.toBe(
-      persistTesting.workspaceStorage("/Users/a/project", { platform: "darwin", kind: "local-filesystem" }),
-    )
+    expect(
+      persistTesting.workspaceStorage("/Users/A/project", { platform: "darwin", kind: "local-filesystem" }),
+    ).not.toBe(persistTesting.workspaceStorage("/Users/a/project", { platform: "darwin", kind: "local-filesystem" }))
     expect(persistTesting.workspaceStorage("D:/chat")).not.toBe(persistTesting.workspaceStorage("d:/chat"))
   })
 

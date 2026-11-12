@@ -441,8 +441,10 @@ export const dict = {
 
   "toast.file.loadFailed.title": "Kunne ikke laste fil",
   "toast.file.listFailed.title": "Kunne ikke liste filer",
-  "toast.file.listFailed.openclaw": "OpenClaw does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
-  "toast.file.listFailed.generalagent": "GeneralAgent does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
+  "toast.file.listFailed.openclaw":
+    "OpenClaw does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
+  "toast.file.listFailed.generalagent":
+    "GeneralAgent does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
 
   "toast.context.noLineSelection.title": "Ingen linjevalg",
   "toast.context.noLineSelection.description": "Velg først et linjeområde i en filfane.",

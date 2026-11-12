@@ -2,6 +2,7 @@
 name: ui-ux-pro-max
 description: "UI/UX design intelligence for web, mobile, and desktop. This skill should be used when designing, building, reviewing, or fixing interfaces, including pages, components, design systems, accessibility, interaction, responsive layout, typography, color, charts, and stack-specific UI implementation. Searchable local data: 79 searchable styles (50 active), 192 product palettes and reasoning profiles, 74 font pairings, 119 UX guidelines, 105 icons, 17 GSAP presets, 25 chart types, and 22 stacks."
 ---
+
 # ui-ux-pro-max
 
 UI/UX design intelligence for web, mobile, and desktop. This skill should be used when designing, building, reviewing, or fixing interfaces, including pages, components, design systems, accessibility, interaction, responsive layout, typography, color, charts, and stack-specific UI implementation. Searchable local data: 79 searchable styles (50 active), 192 product palettes and reasoning profiles, 74 font pairings, 119 UX guidelines, 105 icons, 17 GSAP presets, 25 chart types, and 22 stacks.
@@ -26,17 +27,17 @@ If the user prefers not to install Python, skip the CLI searches and rely on the
 
 Use this skill when the user requests any of the following:
 
-| Scenario | Trigger Examples | Start From |
-|----------|-----------------|------------|
-| **New project / page** | "做一个 landing page"、"Build a dashboard" | Step 1 → Step 2 (design system) |
-| **New component** | "Create a pricing card"、"Fix modal focus" | Step 3 (one focused domain search) |
-| **Choose style / color / font** | "What style fits a fintech app?"、"推荐配色" | Step 2 (design system) |
-| **Review existing UI** | "Review this page for UX issues"、"检查无障碍" | Quick Reference checklist above |
-| **Fix a UI bug** | "Button hover is broken"、"Layout shifts on load" | Quick Reference → relevant section |
-| **Improve / optimize** | "Reduce React list rerenders"、"Fix mobile touch targets" | Step 3 (explicit `react`, `ux`, or `web` domain) |
-| **Implement dark mode** | "Add dark mode support" | Step 3 (domain: style "dark mode") |
-| **Add charts / data viz** | "Add an analytics dashboard chart" | Step 3 (domain: chart) |
-| **Stack best practices** | "React performance tips"、"SwiftUI navigation" | Step 4 (stack search) |
+| Scenario                        | Trigger Examples                                          | Start From                                       |
+| ------------------------------- | --------------------------------------------------------- | ------------------------------------------------ |
+| **New project / page**          | "做一个 landing page"、"Build a dashboard"                | Step 1 → Step 2 (design system)                  |
+| **New component**               | "Create a pricing card"、"Fix modal focus"                | Step 3 (one focused domain search)               |
+| **Choose style / color / font** | "What style fits a fintech app?"、"推荐配色"              | Step 2 (design system)                           |
+| **Review existing UI**          | "Review this page for UX issues"、"检查无障碍"            | Quick Reference checklist above                  |
+| **Fix a UI bug**                | "Button hover is broken"、"Layout shifts on load"         | Quick Reference → relevant section               |
+| **Improve / optimize**          | "Reduce React list rerenders"、"Fix mobile touch targets" | Step 3 (explicit `react`, `ux`, or `web` domain) |
+| **Implement dark mode**         | "Add dark mode support"                                   | Step 3 (domain: style "dark mode")               |
+| **Add charts / data viz**       | "Add an analytics dashboard chart"                        | Step 3 (domain: chart)                           |
+| **Stack best practices**        | "React performance tips"、"SwiftUI navigation"            | Step 4 (stack search)                            |
 
 Follow this workflow:
 
@@ -62,6 +63,7 @@ This skill handles UI/UX design intelligence and implementation guidance. It doe
 ### Step 1: Analyze User Requirements
 
 Extract key information from user request:
+
 - **Product type**: Entertainment (social, video, music, gaming), Tool (scanner, editor, converter), Productivity (task manager, notes, calendar), or hybrid
 - **Target audience**: C-end consumer users; consider age group, usage context (commute, leisure, work)
 - **Style keywords**: playful, vibrant, minimal, dark mode, content-first, immersive, etc.
@@ -81,12 +83,14 @@ python3 .opencode/skills/ui-ux-pro-max/scripts/search.py "<product_type> <indust
 ```
 
 This command:
+
 1. Aggregates product, style, color, landing, and typography matches
 2. Applies reasoning rules from `ui-reasoning.csv` to select best matches
 3. Returns complete design system: pattern, style, colors, typography, effects
 4. Includes anti-patterns to avoid
 
 **Example:**
+
 ```bash
 python3 .opencode/skills/ui-ux-pro-max/scripts/search.py "beauty spa wellness service" --design-system -p "Serenity Spa"
 ```
@@ -100,25 +104,30 @@ python3 .opencode/skills/ui-ux-pro-max/scripts/search.py "<query>" --design-syst
 ```
 
 This creates:
+
 - `design-system/<project-slug>/MASTER.md` — Global Source of Truth with all design rules
 - `design-system/<project-slug>/pages/` — Folder for page-specific overrides
 
 **With page-specific override:**
+
 ```bash
 python3 .opencode/skills/ui-ux-pro-max/scripts/search.py "<query>" --design-system --persist -p "Project Name" --page "dashboard" --output-dir "<project-root>"
 ```
 
 This also creates:
+
 - `design-system/<project-slug>/pages/dashboard.md` — Page-specific deviations from Master
 
 If Master already exists, a new page file is created without changing Master. Existing Master and page files are skipped by default. Read an existing `MASTER.md` before deciding whether `--force` is justified; without explicit user authorization, keep existing files unchanged.
 
 **How hierarchical retrieval works:**
+
 1. Read `design-system/<project-slug>/MASTER.md`
 2. When building a specific page (e.g., "Checkout"), check `design-system/<project-slug>/pages/checkout.md`
 3. If the page file exists, its rules **override** the Master file; otherwise use Master exclusively
 
 **Context-aware retrieval prompt:**
+
 ```
 I am building the [Page Name] page. Please read design-system/[project-slug]/MASTER.md.
 Also check if design-system/[project-slug]/pages/[page-name].md exists.
@@ -135,17 +144,18 @@ Three optional 1-10 sliders that tune `--design-system` output without changing 
 python3 .opencode/skills/ui-ux-pro-max/scripts/search.py "<query>" --design-system --variance <1-10> --motion <1-10> --density <1-10>
 ```
 
-| Dial | Low (1-3) | Mid (4-7) | High (8-10) |
-|------|-----------|-----------|-------------|
-| `--variance` | Centered / minimal (biases toward Minimalism-style categories) | Balanced / modern | Bold / asymmetric (biases toward Brutalism, Bento Grids) |
-| `--motion` | Subtle micro-interactions | Standard scroll/stagger motion | Complex choreography (pin, Flip, SplitText) |
-| `--density` | Spacious (24-96px spacing scale) | Standard (16-64px, current default) | Dense/dashboard (8-32px spacing scale) |
+| Dial         | Low (1-3)                                                      | Mid (4-7)                           | High (8-10)                                              |
+| ------------ | -------------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------- |
+| `--variance` | Centered / minimal (biases toward Minimalism-style categories) | Balanced / modern                   | Bold / asymmetric (biases toward Brutalism, Bento Grids) |
+| `--motion`   | Subtle micro-interactions                                      | Standard scroll/stagger motion      | Complex choreography (pin, Flip, SplitText)              |
+| `--density`  | Spacious (24-96px spacing scale)                               | Standard (16-64px, current default) | Dense/dashboard (8-32px spacing scale)                   |
 
 - `--motion` attaches a ready-to-use GSAP snippet (with framework notes, Do/Don't, and performance notes) pulled from `--domain gsap`, matched to the resolved tier (Subtle/Standard/Complex).
 - `--density` overrides the `--space-*` CSS variable table in the ASCII/markdown/MASTER.md output — use it for dashboards (high) vs. marketing pages (low) without hand-editing tokens.
 - Leaving a dial unset keeps that part of the output exactly as it was before (no behavior change).
 
 **Example:**
+
 ```bash
 python3 .opencode/skills/ui-ux-pro-max/scripts/search.py "internal analytics dashboard" --design-system --variance 8 --motion 7 --density 8 -p "Ops Console"
 ```
@@ -160,20 +170,20 @@ python3 .opencode/skills/ui-ux-pro-max/scripts/search.py "<keyword>" --domain <d
 
 **When to use detailed searches:**
 
-| Need | Domain | Example |
-|------|--------|---------|
-| Product type patterns | `product` | `"entertainment social" --domain product` |
-| More style options | `style` | `"glassmorphism dark" --domain style` |
-| Color palettes | `color` | `"entertainment vibrant" --domain color` |
-| Font pairings | `typography` | `"playful modern" --domain typography` |
-| Chart recommendations | `chart` | `"real-time dashboard" --domain chart` |
-| UX best practices | `ux` | `"error summary validation" --domain ux` |
-| Landing structure | `landing` | `"hero social-proof" --domain landing` |
-| React/Next.js performance | `react` | `"rerender memo list" --domain react` |
-| Native/app interface guidance | `web` | `"accessibilityLabel touch safe-areas" --domain web` |
-| Icon suggestions | `icons` | `"decorative icon aria hidden" --domain icons` |
-| Individual Google Fonts | `google-fonts` | `"variable sans serif" --domain google-fonts` |
-| GSAP animation snippets | `gsap` | `"scroll reveal stagger" --domain gsap` |
+| Need                          | Domain         | Example                                              |
+| ----------------------------- | -------------- | ---------------------------------------------------- |
+| Product type patterns         | `product`      | `"entertainment social" --domain product`            |
+| More style options            | `style`        | `"glassmorphism dark" --domain style`                |
+| Color palettes                | `color`        | `"entertainment vibrant" --domain color`             |
+| Font pairings                 | `typography`   | `"playful modern" --domain typography`               |
+| Chart recommendations         | `chart`        | `"real-time dashboard" --domain chart`               |
+| UX best practices             | `ux`           | `"error summary validation" --domain ux`             |
+| Landing structure             | `landing`      | `"hero social-proof" --domain landing`               |
+| React/Next.js performance     | `react`        | `"rerender memo list" --domain react`                |
+| Native/app interface guidance | `web`          | `"accessibilityLabel touch safe-areas" --domain web` |
+| Icon suggestions              | `icons`        | `"decorative icon aria hidden" --domain icons`       |
+| Individual Google Fonts       | `google-fonts` | `"variable sans serif" --domain google-fonts`        |
+| GSAP animation snippets       | `gsap`         | `"scroll reveal stagger" --domain gsap`              |
 
 ### Step 4: Stack Guidelines
 
@@ -195,20 +205,20 @@ python3 .opencode/skills/ui-ux-pro-max/scripts/search.py "virtualized list" --st
 
 ### Available Domains
 
-| Domain | Use For | Example Keywords |
-|--------|---------|------------------|
-| `product` | Product type recommendations | SaaS, e-commerce, portfolio, healthcare, beauty, service |
-| `style` | UI styles, colors, effects | glassmorphism, minimalism, dark mode, brutalism |
-| `typography` | Font pairings, Google Fonts | elegant, playful, professional, modern |
-| `color` | Color palettes by product type | saas, ecommerce, healthcare, beauty, fintech, service |
-| `landing` | Page structure, CTA strategies | hero, hero-centric, testimonial, pricing, social-proof |
-| `chart` | Chart types, library recommendations | trend, comparison, timeline, funnel, pie |
-| `ux` | Best practices, anti-patterns | animation, accessibility, z-index, loading |
-| `gsap` | GSAP animation skeletons by intensity tier | scroll reveal, stagger, magnetic cursor, page transition |
-| `react` | React/Next.js performance | waterfall, bundle, suspense, memo, rerender, cache |
-| `web` | App interface guidelines (iOS/Android/React Native) | accessibilityLabel, touch targets, safe areas, Dynamic Type |
-| `icons` | Icon recommendations with import code | arrow, navigation, lucide, phosphor |
-| `google-fonts` | Individual Google Fonts lookup | sans serif, monospace, japanese, variable font, popular |
+| Domain         | Use For                                             | Example Keywords                                            |
+| -------------- | --------------------------------------------------- | ----------------------------------------------------------- |
+| `product`      | Product type recommendations                        | SaaS, e-commerce, portfolio, healthcare, beauty, service    |
+| `style`        | UI styles, colors, effects                          | glassmorphism, minimalism, dark mode, brutalism             |
+| `typography`   | Font pairings, Google Fonts                         | elegant, playful, professional, modern                      |
+| `color`        | Color palettes by product type                      | saas, ecommerce, healthcare, beauty, fintech, service       |
+| `landing`      | Page structure, CTA strategies                      | hero, hero-centric, testimonial, pricing, social-proof      |
+| `chart`        | Chart types, library recommendations                | trend, comparison, timeline, funnel, pie                    |
+| `ux`           | Best practices, anti-patterns                       | animation, accessibility, z-index, loading                  |
+| `gsap`         | GSAP animation skeletons by intensity tier          | scroll reveal, stagger, magnetic cursor, page transition    |
+| `react`        | React/Next.js performance                           | waterfall, bundle, suspense, memo, rerender, cache          |
+| `web`          | App interface guidelines (iOS/Android/React Native) | accessibilityLabel, touch targets, safe areas, Dynamic Type |
+| `icons`        | Icon recommendations with import code               | arrow, navigation, lucide, phosphor                         |
+| `google-fonts` | Individual Google Fonts lookup                      | sans serif, monospace, japanese, variable font, popular     |
 
 ### Available Stacks
 
@@ -228,6 +238,7 @@ python3 .opencode/skills/ui-ux-pro-max/scripts/search.py "enterprise tableview d
 **User request:** "Make an AI search homepage。"
 
 ### Step 1: Analyze Requirements
+
 - Product type: Tool (AI search engine)
 - Target audience: C-end users looking for fast, intelligent search
 - Style keywords: modern, minimal, content-first, dark mode
@@ -286,15 +297,15 @@ python3 .opencode/skills/ui-ux-pro-max/scripts/search.py "fintech crypto" --desi
 
 ### Common Sticking Points
 
-| Problem | What to Do |
-|---------|------------|
-| Can't decide on style/color | Verify the category, then retry once with one product and one tone |
-| Dark mode contrast issues | Quick Reference §6: `color-dark-mode` + `color-accessible-pairs` |
-| Animations feel unnatural | Quick Reference §7: `spring-physics` + `easing` + `exit-faster-than-enter` |
-| Form UX is poor | Quick Reference §8: `inline-validation` + `error-clarity` + `focus-management` |
-| Navigation feels confusing | Quick Reference §9: `nav-hierarchy` + `bottom-nav-limit` + `back-behavior` |
-| Layout breaks on small screens | Quick Reference §5: `mobile-first` + `breakpoint-consistency` |
-| Performance / jank | Quick Reference §3: `virtualize-lists` + `main-thread-budget` + `debounce-throttle` |
+| Problem                        | What to Do                                                                          |
+| ------------------------------ | ----------------------------------------------------------------------------------- |
+| Can't decide on style/color    | Verify the category, then retry once with one product and one tone                  |
+| Dark mode contrast issues      | Quick Reference §6: `color-dark-mode` + `color-accessible-pairs`                    |
+| Animations feel unnatural      | Quick Reference §7: `spring-physics` + `easing` + `exit-faster-than-enter`          |
+| Form UX is poor                | Quick Reference §8: `inline-validation` + `error-clarity` + `focus-management`      |
+| Navigation feels confusing     | Quick Reference §9: `nav-hierarchy` + `bottom-nav-limit` + `back-behavior`          |
+| Layout breaks on small screens | Quick Reference §5: `mobile-first` + `breakpoint-consistency`                       |
+| Performance / jank             | Quick Reference §3: `virtualize-lists` + `main-thread-budget` + `debounce-throttle` |
 
 ### Pre-Delivery Checklist
 
@@ -321,57 +332,56 @@ Scope notice: The rules below are for App UI (iOS/Android/React Native/Flutter),
   - **优先继续从 Phosphor 的完整图标集中选择任何语义更贴切的图标**；
   - 如果 Phosphor 也没有理想选项，可以使用 **Heroicons (`@heroicons/react`)** 作为备选，注意保持风格一致（线性/填充、笔画粗细、圆角风格）。
 
-| Rule | Standard | Avoid | Why It Matters |
-|------|----------|--------|----------------|
-| **No Emoji as Structural Icons** | Use vector-based icons (e.g., Phosphor `@phosphor-icons/react`, Heroicons `@heroicons/react`, react-native-vector-icons, @expo/vector-icons). | Using emojis (🎨 🚀 ⚙️) for navigation, settings, or system controls. | Emojis are font-dependent, inconsistent across platforms, and cannot be controlled via design tokens. |
-| **Vector-Only Assets** | Use SVG or platform vector icons that scale cleanly and support theming. | Raster PNG icons that blur or pixelate. | Ensures scalability, crisp rendering, and dark/light mode adaptability. |
-| **Contextual Semantics** | Choose semantics from use, not glyph: use `aria-hidden="true"` for decorative icons beside visible text; give meaningful standalone icons a text alternative; give icon controls an accessible name and expose selected/pressed/expanded state when applicable. | Treating one icon name as permanently decorative, meaningful, or interactive. | The same glyph can serve different purposes in different components. |
-| **Stable Interaction States** | Use color, opacity, or elevation transitions for press states without changing layout bounds. | Layout-shifting transforms that move surrounding content or trigger visual jitter. | Prevents unstable interactions and preserves smooth motion/perceived quality on mobile. |
-| **Correct Brand Logos** | Use official brand assets and follow their usage guidelines (spacing, color, clear space). | Guessing logo paths, recoloring unofficially, or modifying proportions. | Prevents brand misuse and ensures legal/platform compliance. |
-| **Consistent Icon Sizing** | Define icon sizes as design tokens (e.g., icon-sm, icon-md = 24pt, icon-lg). | Mixing arbitrary values like 20pt / 24pt / 28pt randomly. | Maintains rhythm and visual hierarchy across the interface. |
-| **Stroke Consistency** | Use a consistent stroke width within the same visual layer (e.g., 1.5px or 2px). | Mixing thick and thin stroke styles arbitrarily. | Inconsistent strokes reduce perceived polish and cohesion. |
-| **Filled vs Outline Discipline** | Use one icon style per hierarchy level. | Mixing filled and outline icons at the same hierarchy level. | Maintains semantic clarity and stylistic coherence. |
-| **Touch Target Minimum** | Use at least 44pt on iOS and 48dp on Android; expand the hit area when the visual icon is smaller. | Small icons without expanded tap area, or one unit reused across platforms. | Matches platform-specific target guidance. |
-| **Icon Alignment** | Align icons to text baseline and maintain consistent padding. | Misaligned icons or inconsistent spacing around them. | Prevents subtle visual imbalance that reduces perceived quality. |
-| **Icon Contrast** | Meaningful icons and control boundaries need at least 3:1 against adjacent colors; decorative icons must not carry information. | Low-contrast icons that carry meaning or state. | Applies the non-text contrast role instead of a text-size rule. |
-
+| Rule                             | Standard                                                                                                                                                                                                                                                        | Avoid                                                                              | Why It Matters                                                                                        |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **No Emoji as Structural Icons** | Use vector-based icons (e.g., Phosphor `@phosphor-icons/react`, Heroicons `@heroicons/react`, react-native-vector-icons, @expo/vector-icons).                                                                                                                   | Using emojis (🎨 🚀 ⚙️) for navigation, settings, or system controls.              | Emojis are font-dependent, inconsistent across platforms, and cannot be controlled via design tokens. |
+| **Vector-Only Assets**           | Use SVG or platform vector icons that scale cleanly and support theming.                                                                                                                                                                                        | Raster PNG icons that blur or pixelate.                                            | Ensures scalability, crisp rendering, and dark/light mode adaptability.                               |
+| **Contextual Semantics**         | Choose semantics from use, not glyph: use `aria-hidden="true"` for decorative icons beside visible text; give meaningful standalone icons a text alternative; give icon controls an accessible name and expose selected/pressed/expanded state when applicable. | Treating one icon name as permanently decorative, meaningful, or interactive.      | The same glyph can serve different purposes in different components.                                  |
+| **Stable Interaction States**    | Use color, opacity, or elevation transitions for press states without changing layout bounds.                                                                                                                                                                   | Layout-shifting transforms that move surrounding content or trigger visual jitter. | Prevents unstable interactions and preserves smooth motion/perceived quality on mobile.               |
+| **Correct Brand Logos**          | Use official brand assets and follow their usage guidelines (spacing, color, clear space).                                                                                                                                                                      | Guessing logo paths, recoloring unofficially, or modifying proportions.            | Prevents brand misuse and ensures legal/platform compliance.                                          |
+| **Consistent Icon Sizing**       | Define icon sizes as design tokens (e.g., icon-sm, icon-md = 24pt, icon-lg).                                                                                                                                                                                    | Mixing arbitrary values like 20pt / 24pt / 28pt randomly.                          | Maintains rhythm and visual hierarchy across the interface.                                           |
+| **Stroke Consistency**           | Use a consistent stroke width within the same visual layer (e.g., 1.5px or 2px).                                                                                                                                                                                | Mixing thick and thin stroke styles arbitrarily.                                   | Inconsistent strokes reduce perceived polish and cohesion.                                            |
+| **Filled vs Outline Discipline** | Use one icon style per hierarchy level.                                                                                                                                                                                                                         | Mixing filled and outline icons at the same hierarchy level.                       | Maintains semantic clarity and stylistic coherence.                                                   |
+| **Touch Target Minimum**         | Use at least 44pt on iOS and 48dp on Android; expand the hit area when the visual icon is smaller.                                                                                                                                                              | Small icons without expanded tap area, or one unit reused across platforms.        | Matches platform-specific target guidance.                                                            |
+| **Icon Alignment**               | Align icons to text baseline and maintain consistent padding.                                                                                                                                                                                                   | Misaligned icons or inconsistent spacing around them.                              | Prevents subtle visual imbalance that reduces perceived quality.                                      |
+| **Icon Contrast**                | Meaningful icons and control boundaries need at least 3:1 against adjacent colors; decorative icons must not carry information.                                                                                                                                 | Low-contrast icons that carry meaning or state.                                    | Applies the non-text contrast role instead of a text-size rule.                                       |
 
 ### Interaction (App)
 
-| Rule | Do | Don't |
-|------|----|----- |
-| **Tap feedback** | Provide clear pressed feedback (ripple/opacity/elevation) within 80-150ms | No visual response on tap |
-| **Animation timing** | Use shared tokens chosen for distance, complexity, platform, and user context | One duration/easing copied to every transition |
-| **Accessibility focus** | Ensure screen reader focus order matches visual order and labels are descriptive | Unlabeled controls or confusing focus traversal |
-| **Disabled state clarity** | Use disabled semantics (`disabled`/native disabled props), reduced emphasis, and no tap action | Controls that look tappable but do nothing |
-| **Touch target minimum** | Keep tap areas >=44x44pt (iOS) or >=48x48dp (Android), expand hit area when icon is smaller | Tiny tap targets or icon-only hit areas without padding |
-| **Gesture conflict prevention** | Keep one primary gesture per region and avoid nested tap/drag conflicts | Overlapping gestures causing accidental actions |
-| **Semantic native controls** | Prefer native interactive primitives (`Button`, `Pressable`, platform equivalents) with proper accessibility roles | Generic containers used as primary controls without semantics |
+| Rule                            | Do                                                                                                                 | Don't                                                         |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| **Tap feedback**                | Provide clear pressed feedback (ripple/opacity/elevation) within 80-150ms                                          | No visual response on tap                                     |
+| **Animation timing**            | Use shared tokens chosen for distance, complexity, platform, and user context                                      | One duration/easing copied to every transition                |
+| **Accessibility focus**         | Ensure screen reader focus order matches visual order and labels are descriptive                                   | Unlabeled controls or confusing focus traversal               |
+| **Disabled state clarity**      | Use disabled semantics (`disabled`/native disabled props), reduced emphasis, and no tap action                     | Controls that look tappable but do nothing                    |
+| **Touch target minimum**        | Keep tap areas >=44x44pt (iOS) or >=48x48dp (Android), expand hit area when icon is smaller                        | Tiny tap targets or icon-only hit areas without padding       |
+| **Gesture conflict prevention** | Keep one primary gesture per region and avoid nested tap/drag conflicts                                            | Overlapping gestures causing accidental actions               |
+| **Semantic native controls**    | Prefer native interactive primitives (`Button`, `Pressable`, platform equivalents) with proper accessibility roles | Generic containers used as primary controls without semantics |
 
 ### Light/Dark Mode Contrast
 
-| Rule | Do | Don't |
-|------|----|----- |
-| **Surface readability (light)** | Keep cards/surfaces clearly separated from background with sufficient opacity/elevation | Overly transparent surfaces that blur hierarchy |
-| **Text contrast (light)** | Maintain body text contrast >=4.5:1 against light surfaces | Low-contrast gray body text |
-| **Text contrast (dark)** | Maintain normal text contrast >=4.5:1 on dark surfaces; 3:1 is only for large text or non-text UI | Muted normal text that falls below the text threshold |
-| **Border and divider visibility** | Ensure separators are visible in both themes (not just light mode) | Theme-specific borders disappearing in one mode |
-| **State contrast parity** | Keep pressed/focused/disabled states equally distinguishable in light and dark themes | Defining interaction states for one theme only |
-| **Token-driven theming** | Use semantic color tokens mapped per theme across app surfaces/text/icons | Hardcoded per-screen hex values |
-| **Scrim and modal legibility** | Measure the composed result and use a scrim strong enough to isolate foreground content | Reusing one opacity without checking the actual background |
+| Rule                              | Do                                                                                                | Don't                                                      |
+| --------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| **Surface readability (light)**   | Keep cards/surfaces clearly separated from background with sufficient opacity/elevation           | Overly transparent surfaces that blur hierarchy            |
+| **Text contrast (light)**         | Maintain body text contrast >=4.5:1 against light surfaces                                        | Low-contrast gray body text                                |
+| **Text contrast (dark)**          | Maintain normal text contrast >=4.5:1 on dark surfaces; 3:1 is only for large text or non-text UI | Muted normal text that falls below the text threshold      |
+| **Border and divider visibility** | Ensure separators are visible in both themes (not just light mode)                                | Theme-specific borders disappearing in one mode            |
+| **State contrast parity**         | Keep pressed/focused/disabled states equally distinguishable in light and dark themes             | Defining interaction states for one theme only             |
+| **Token-driven theming**          | Use semantic color tokens mapped per theme across app surfaces/text/icons                         | Hardcoded per-screen hex values                            |
+| **Scrim and modal legibility**    | Measure the composed result and use a scrim strong enough to isolate foreground content           | Reusing one opacity without checking the actual background |
 
 ### Layout & Spacing
 
-| Rule | Do | Don't |
-|------|----|----- |
-| **Safe-area compliance** | Respect top/bottom safe areas for all fixed headers, tab bars, and CTA bars | Placing fixed UI under notch, status bar, or gesture area |
-| **System bar clearance** | Add spacing for status/navigation bars and gesture home indicator | Let tappable content collide with OS chrome |
-| **Consistent content width** | Keep predictable content width per device class (phone/tablet) | Mixing arbitrary widths between screens |
-| **8dp spacing rhythm** | Use a consistent 4/8dp spacing system for padding/gaps/section spacing | Random spacing increments with no rhythm |
-| **Readable text measure** | Keep long-form text readable on large devices (avoid edge-to-edge paragraphs on tablets) | Full-width long text that hurts readability |
-| **Section spacing hierarchy** | Define clear vertical rhythm tiers (e.g., 16/24/32/48) by hierarchy | Similar UI levels with inconsistent spacing |
-| **Adaptive gutters by breakpoint** | Increase horizontal insets on larger widths and in landscape | Same narrow gutter on all device sizes/orientations |
-| **Scroll and fixed element coexistence** | Add bottom/top content insets so lists are not hidden behind fixed bars | Scroll content obscured by sticky headers/footers |
+| Rule                                     | Do                                                                                       | Don't                                                     |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| **Safe-area compliance**                 | Respect top/bottom safe areas for all fixed headers, tab bars, and CTA bars              | Placing fixed UI under notch, status bar, or gesture area |
+| **System bar clearance**                 | Add spacing for status/navigation bars and gesture home indicator                        | Let tappable content collide with OS chrome               |
+| **Consistent content width**             | Keep predictable content width per device class (phone/tablet)                           | Mixing arbitrary widths between screens                   |
+| **8dp spacing rhythm**                   | Use a consistent 4/8dp spacing system for padding/gaps/section spacing                   | Random spacing increments with no rhythm                  |
+| **Readable text measure**                | Keep long-form text readable on large devices (avoid edge-to-edge paragraphs on tablets) | Full-width long text that hurts readability               |
+| **Section spacing hierarchy**            | Define clear vertical rhythm tiers (e.g., 16/24/32/48) by hierarchy                      | Similar UI levels with inconsistent spacing               |
+| **Adaptive gutters by breakpoint**       | Increase horizontal insets on larger widths and in landscape                             | Same narrow gutter on all device sizes/orientations       |
+| **Scroll and fixed element coexistence** | Add bottom/top content insets so lists are not hidden behind fixed bars                  | Scroll content obscured by sticky headers/footers         |
 
 ---
 
@@ -381,6 +391,7 @@ Before delivering UI code, verify these items:
 Scope notice: This checklist is for App UI (iOS/Android/React Native/Flutter).
 
 ### Visual Quality
+
 - [ ] No emojis used as icons (use SVG instead)
 - [ ] All icons come from a consistent icon family and style
 - [ ] Official brand assets are used with correct proportions and clear space
@@ -388,6 +399,7 @@ Scope notice: This checklist is for App UI (iOS/Android/React Native/Flutter).
 - [ ] Semantic theme tokens are used consistently (no ad-hoc per-screen hardcoded colors)
 
 ### Interaction
+
 - [ ] All tappable elements provide clear pressed feedback (ripple/opacity/elevation)
 - [ ] Touch targets meet minimum size (>=44x44pt iOS, >=48x48dp Android)
 - [ ] Micro-interaction timing uses shared, platform-appropriate tokens and remains responsive in context
@@ -396,6 +408,7 @@ Scope notice: This checklist is for App UI (iOS/Android/React Native/Flutter).
 - [ ] Gesture regions avoid nested/conflicting interactions (tap/drag/back-swipe conflicts)
 
 ### Light/Dark Mode
+
 - [ ] Primary text contrast >=4.5:1 in both light and dark mode
 - [ ] Normal primary and secondary text contrast >=4.5:1 in both light and dark mode
 - [ ] Dividers/borders and interaction states are distinguishable in both modes
@@ -403,6 +416,7 @@ Scope notice: This checklist is for App UI (iOS/Android/React Native/Flutter).
 - [ ] Both themes are tested before delivery (not inferred from a single theme)
 
 ### Layout
+
 - [ ] Safe areas are respected for headers, tab bars, and bottom CTA bars
 - [ ] Scroll content is not hidden behind fixed/sticky bars
 - [ ] Verified on small phone, large phone, and tablet (portrait + landscape)
@@ -411,6 +425,7 @@ Scope notice: This checklist is for App UI (iOS/Android/React Native/Flutter).
 - [ ] Long-form text measure remains readable on larger devices (no edge-to-edge paragraphs)
 
 ### Accessibility
+
 - [ ] Decorative icons beside visible text are hidden from the accessibility tree (`aria-hidden="true"` on web or the native equivalent)
 - [ ] Meaningful images/icons without equivalent visible text have a text alternative
 - [ ] Icon controls have an accessible name and announce applicable selected/pressed/expanded state

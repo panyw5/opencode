@@ -11,7 +11,8 @@ const norm = (value: string) => file(value).replace(/\\/g, "/").replace(/\/+$/, 
 
 const plug = (value: string) => {
   const next = file(value)
-  if (value.startsWith("file://") || next !== value || value.includes("/") || value.includes("\\")) return stem(base(next))
+  if (value.startsWith("file://") || next !== value || value.includes("/") || value.includes("\\"))
+    return stem(base(next))
   const at = value.lastIndexOf("@")
   if (at > 0) return value.slice(0, at)
   return value
@@ -88,7 +89,8 @@ export const source = (input: {
 }) => {
   const next = input.config?.[input.name]
   const prev = input.global?.[input.name]
-  const local = keys(input.project).has(input.name) || keys(input.projectDir).has(input.name) || input.claude.has(input.name)
+  const local =
+    keys(input.project).has(input.name) || keys(input.projectDir).has(input.name) || input.claude.has(input.name)
   if (local) return input.group
   if (prev && same(next, prev)) return "global"
   if (input.omo && !prev) return "oh-my-openagent"

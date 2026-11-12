@@ -164,7 +164,12 @@ export function BasicTool(props: BasicToolProps) {
   }
 
   return (
-    <Collapsible open={open()} onOpenChange={handleOpenChange} class="tool-collapsible" data-detail-mounted={mountDetails() ? "true" : undefined}>
+    <Collapsible
+      open={open()}
+      onOpenChange={handleOpenChange}
+      class="tool-collapsible"
+      data-detail-mounted={mountDetails() ? "true" : undefined}
+    >
       <Collapsible.Trigger>
         <div data-component="tool-trigger">
           <div data-slot="basic-tool-tool-trigger-content">

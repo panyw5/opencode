@@ -55,7 +55,9 @@ export function presentationRequestIsCurrent(input: {
   return !input.aborted && input.requestedArtifactID === input.currentArtifactID
 }
 
-export function readPresentationMetadata(metadata: PresentationCardProps["metadata"]): PresentationMetadata | undefined {
+export function readPresentationMetadata(
+  metadata: PresentationCardProps["metadata"],
+): PresentationMetadata | undefined {
   const value = metadata?.presentation ?? metadata
   if (!value || typeof value.artifactID !== "string" || typeof value.mime !== "string") return undefined
   if (!IMAGE_MIME.test(value.mime)) return undefined
@@ -65,7 +67,8 @@ export function readPresentationMetadata(metadata: PresentationCardProps["metada
     width: typeof value.width === "number" && value.width > 0 ? value.width : undefined,
     height: typeof value.height === "number" && value.height > 0 ? value.height : undefined,
     filename: value.filename || "Presented file",
-    size: typeof value.size === "number" && Number.isSafeInteger(value.size) && value.size >= 0 ? value.size : undefined,
+    size:
+      typeof value.size === "number" && Number.isSafeInteger(value.size) && value.size >= 0 ? value.size : undefined,
     sourcePath: value.sourcePath || "",
     purpose: value.purpose ?? "result",
     caption: value.caption,
@@ -82,18 +85,30 @@ function OriginalPreview(props: { sessionID: string; metadata: PresentationMetad
     if (!data.loadPresentation) return
     controller = new AbortController()
     console.debug(`[presentation] original load start session=${props.sessionID} artifact=${props.metadata.artifactID}`)
-    void data.loadPresentation({ sessionID: props.sessionID, artifactID: props.metadata.artifactID, variant: "original", signal: controller.signal }).then((blob) => {
-      if (!controller?.signal.aborted) {
-        console.debug(`[presentation] original load success session=${props.sessionID} artifact=${props.metadata.artifactID} bytes=${blob.size}`)
-        setUrl(URL.createObjectURL(blob))
-      }
-    }).catch((reason) => {
-      if (!controller?.signal.aborted) {
-        const message = reason instanceof Error ? reason.message : i18n.t("ui.presentation.loadError")
-        console.warn(`[presentation] original load failed session=${props.sessionID} artifact=${props.metadata.artifactID} error=${message}`)
-        setError(message)
-      }
-    })
+    void data
+      .loadPresentation({
+        sessionID: props.sessionID,
+        artifactID: props.metadata.artifactID,
+        variant: "original",
+        signal: controller.signal,
+      })
+      .then((blob) => {
+        if (!controller?.signal.aborted) {
+          console.debug(
+            `[presentation] original load success session=${props.sessionID} artifact=${props.metadata.artifactID} bytes=${blob.size}`,
+          )
+          setUrl(URL.createObjectURL(blob))
+        }
+      })
+      .catch((reason) => {
+        if (!controller?.signal.aborted) {
+          const message = reason instanceof Error ? reason.message : i18n.t("ui.presentation.loadError")
+          console.warn(
+            `[presentation] original load failed session=${props.sessionID} artifact=${props.metadata.artifactID} error=${message}`,
+          )
+          setError(message)
+        }
+      })
   })
   onCleanup(() => {
     controller?.abort()
@@ -104,7 +119,13 @@ function OriginalPreview(props: { sessionID: string; metadata: PresentationMetad
     <ImagePreview
       src={url()}
       alt={props.metadata.filename}
-      fallback={<div class="presentation-card__lightbox-placeholder"><Show when={!error()} fallback={error()}><Spinner /></Show></div>}
+      fallback={
+        <div class="presentation-card__lightbox-placeholder">
+          <Show when={!error()} fallback={error()}>
+            <Spinner />
+          </Show>
+        </div>
+      }
     />
   )
 }
@@ -124,7 +145,13 @@ export function PresentationCard(props: PresentationCardProps): JSX.Element {
 
   const load = async (variant: PresentationVariant = "thumbnail") => {
     const value = metadata()
-    if (!value || !data.loadPresentation || (url() && (variant === "thumbnail" || loadedVariant() === "original")) || loading()) return
+    if (
+      !value ||
+      !data.loadPresentation ||
+      (url() && (variant === "thumbnail" || loadedVariant() === "original")) ||
+      loading()
+    )
+      return
     controller?.abort()
     const request = new AbortController()
     controller = request
@@ -137,22 +164,27 @@ export function PresentationCard(props: PresentationCardProps): JSX.Element {
         variant,
         signal: request.signal,
       })
-      if (!presentationRequestIsCurrent({
-        aborted: request.signal.aborted,
-        requestedArtifactID: value.artifactID,
-        currentArtifactID: metadata()?.artifactID,
-      })) return
+      if (
+        !presentationRequestIsCurrent({
+          aborted: request.signal.aborted,
+          requestedArtifactID: value.artifactID,
+          currentArtifactID: metadata()?.artifactID,
+        })
+      )
+        return
       const next = URL.createObjectURL(blob)
       const previous = url()
       if (previous) URL.revokeObjectURL(previous)
       setUrl(next)
       setLoadedVariant(variant)
     } catch (error) {
-      if (presentationRequestIsCurrent({
-        aborted: request.signal.aborted,
-        requestedArtifactID: value.artifactID,
-        currentArtifactID: metadata()?.artifactID,
-      })) {
+      if (
+        presentationRequestIsCurrent({
+          aborted: request.signal.aborted,
+          requestedArtifactID: value.artifactID,
+          currentArtifactID: metadata()?.artifactID,
+        })
+      ) {
         setLoadError(error instanceof Error ? error.message : i18n.t("ui.presentation.loadError"))
       }
     } finally {
@@ -180,12 +212,15 @@ export function PresentationCard(props: PresentationCardProps): JSX.Element {
       void load()
       return
     }
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        void load()
-        observer.disconnect()
-      }
-    }, { rootMargin: "320px" })
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          void load()
+          observer.disconnect()
+        }
+      },
+      { rootMargin: "320px" },
+    )
     observer.observe(rootRef)
     onCleanup(() => observer.disconnect())
   })
@@ -209,7 +244,12 @@ export function PresentationCard(props: PresentationCardProps): JSX.Element {
     data.openPresentationSource?.({ sessionID: props.sessionID, path: value.sourcePath })
   }
 
-  const state = () => props.status === "error" || !!props.error || !!loadError() ? "error" : props.status === "pending" || props.status === "running" ? "pending" : "ready"
+  const state = () =>
+    props.status === "error" || !!props.error || !!loadError()
+      ? "error"
+      : props.status === "pending" || props.status === "running"
+        ? "pending"
+        : "ready"
   const ratio = () => {
     const value = metadata()
     if (!value?.width || !value.height) return "16 / 9"
@@ -233,7 +273,19 @@ export function PresentationCard(props: PresentationCardProps): JSX.Element {
         />
       </Show>
       <div class="presentation-card__preview" style={{ "aspect-ratio": ratio() }}>
-        <Show when={url()} fallback={<div class="presentation-card__placeholder" aria-hidden="true"><Show when={loading() || state() === "pending"} fallback={<Icon name={state() === "error" ? "circle-x" : "file"} size="large" />}><Spinner /></Show></div>}>
+        <Show
+          when={url()}
+          fallback={
+            <div class="presentation-card__placeholder" aria-hidden="true">
+              <Show
+                when={loading() || state() === "pending"}
+                fallback={<Icon name={state() === "error" ? "circle-x" : "file"} size="large" />}
+              >
+                <Spinner />
+              </Show>
+            </div>
+          }
+        >
           {(src) => <img src={src()} alt={metadata()?.filename ?? "Presented file"} loading="lazy" decoding="async" />}
         </Show>
       </div>
@@ -249,17 +301,25 @@ export function PresentationCard(props: PresentationCardProps): JSX.Element {
       <div class="presentation-card__body">
         <div class="presentation-card__heading">
           <div class="presentation-card__file-line">
-            <strong title={metadata()?.filename}>{metadata()?.filename ?? pendingFilename(props.input) ?? i18n.t("ui.presentation.file")}</strong>
+            <strong title={metadata()?.filename}>
+              {metadata()?.filename ?? pendingFilename(props.input) ?? i18n.t("ui.presentation.file")}
+            </strong>
             <Show when={formatPresentationSize(metadata()?.size, i18n.locale())}>
               {(size) => <span class="presentation-card__size">{size()}</span>}
             </Show>
           </div>
-          <Show when={metadata()?.caption}><span class="presentation-card__caption">{metadata()!.caption}</span></Show>
-          <Show when={loadError() || props.error}><span class="presentation-card__error">{loadError() ?? props.error}</span></Show>
+          <Show when={metadata()?.caption}>
+            <span class="presentation-card__caption">{metadata()!.caption}</span>
+          </Show>
+          <Show when={loadError() || props.error}>
+            <span class="presentation-card__error">{loadError() ?? props.error}</span>
+          </Show>
         </div>
         <div class="presentation-card__actions">
           <Show when={!!loadError()}>
-            <Button class="presentation-card__retry" size="small" variant="secondary" onClick={() => void load()}>{i18n.t("ui.presentation.retry")}</Button>
+            <Button class="presentation-card__retry" size="small" variant="secondary" onClick={() => void load()}>
+              {i18n.t("ui.presentation.retry")}
+            </Button>
           </Show>
         </div>
       </div>

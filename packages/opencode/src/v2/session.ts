@@ -195,20 +195,23 @@ export const layer = Layer.effect(
       try {
         return {
           dbPath: Database.getPath(),
-          legacyMessageCount: Database.use((db) =>
-            db.select({ id: MessageTable.id }).from(MessageTable).where(eq(MessageTable.session_id, sessionID)).all()
-              .length,
+          legacyMessageCount: Database.use(
+            (db) =>
+              db.select({ id: MessageTable.id }).from(MessageTable).where(eq(MessageTable.session_id, sessionID)).all()
+                .length,
           ),
-          v2MessageCount: Database.use((db) =>
-            db
-              .select({ id: SessionMessageTable.id })
-              .from(SessionMessageTable)
-              .where(eq(SessionMessageTable.session_id, sessionID))
-              .all().length,
+          v2MessageCount: Database.use(
+            (db) =>
+              db
+                .select({ id: SessionMessageTable.id })
+                .from(SessionMessageTable)
+                .where(eq(SessionMessageTable.session_id, sessionID))
+                .all().length,
           ),
-          childCount: Database.use((db) =>
-            db.select({ id: SessionTable.id }).from(SessionTable).where(eq(SessionTable.parent_id, sessionID)).all()
-              .length,
+          childCount: Database.use(
+            (db) =>
+              db.select({ id: SessionTable.id }).from(SessionTable).where(eq(SessionTable.parent_id, sessionID)).all()
+                .length,
           ),
         }
       } catch (error) {

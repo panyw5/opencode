@@ -38,15 +38,15 @@ instance.
 
 ## Where files live
 
-| Scope                         | Path                                                                                                                      |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Project config                | `./opencode.json`, `./opencode.jsonc`, or `.opencode/opencode.json` (opencode walks up from the cwd to the worktree root) |
+| Scope                         | Path                                                                                                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Project config                | `./opencode.json`, `./opencode.jsonc`, or `.opencode/opencode.json` (opencode walks up from the cwd to the worktree root)                                          |
 | Global config                 | `$XDG_CONFIG_HOME/opencode/config.json`, `opencode.json`, or `opencode.jsonc`; `~/.opencode/opencode.json` and `opencode.jsonc` are also scanned for compatibility |
-| Project agents                | `.opencode/agent/<name>.md` or `.opencode/agents/<name>.md`                                                               |
-| Global agents                 | `$XDG_CONFIG_HOME/opencode/agent/<name>.md` or `agents/<name>.md`; the same directories under `~/.opencode/` are also scanned |
-| Project skills                | `.opencode/skill(s)/<name>/SKILL.md`                                                                                      |
-| Global skills                 | `$XDG_CONFIG_HOME/opencode/skill/<name>/SKILL.md` or `skills/<name>/SKILL.md`; the same directories under `~/.opencode/` are also scanned |
-| External skills (auto-loaded) | `~/.claude/skills/<name>/SKILL.md`, `~/.agents/skills/<name>/SKILL.md`                                                    |
+| Project agents                | `.opencode/agent/<name>.md` or `.opencode/agents/<name>.md`                                                                                                        |
+| Global agents                 | `$XDG_CONFIG_HOME/opencode/agent/<name>.md` or `agents/<name>.md`; the same directories under `~/.opencode/` are also scanned                                      |
+| Project skills                | `.opencode/skill(s)/<name>/SKILL.md`                                                                                                                               |
+| Global skills                 | `$XDG_CONFIG_HOME/opencode/skill/<name>/SKILL.md` or `skills/<name>/SKILL.md`; the same directories under `~/.opencode/` are also scanned                          |
+| External skills (auto-loaded) | `~/.claude/skills/<name>/SKILL.md`, `~/.agents/skills/<name>/SKILL.md`                                                                                             |
 
 Config sources are merged by scope and precedence. Object fields generally
 inherit and override earlier values, while some arrays and plugin entries have
@@ -351,9 +351,8 @@ scheduled_task_create, scheduled_task_list, scheduled_task_get,
 scheduled_task_update, scheduled_task_delete, scheduled_task_run_now,
 scheduled_task_runs, question, im_list, im_read, im_send, im_watch, webfetch,
 websearch, codex_consult, claude_consult, grok_consult, dsh_consult, pi_consult,
-repo_clone, repo_overview, lsp, doom_loop, skill, and `plan_exit`, plus any
-custom tool IDs. Action-only keys include `todowrite`, all `project_task_*`
-and `scheduled_task_*` keys, `question`, all `im_*` keys, `webfetch`,
+repo_clone, repo_overview, lsp, doom_loop, skill, and `plan*exit`, plus any
+custom tool IDs. Action-only keys include `todowrite`, all `project_task*_`and`scheduled*task*_`keys,`question`, all `im\_\*`keys,`webfetch`,
 `websearch`, the consult keys, and `doom_loop`; they do not accept
 per-pattern objects.
 

@@ -29,11 +29,11 @@
 
 自动化（`bun test test`，16/0）：
 
-| 文件 | 覆盖 |
-| --- | --- |
-| `test/server.test.ts`（7） | 假 kernel：ctl 命令写入、协议路由/状态机、busy 门禁、非法输入、dispose、kernel-exit、maxKernels LRU 逐出 |
+| 文件                                   | 覆盖                                                                                                                        |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `test/server.test.ts`（7）             | 假 kernel：ctl 命令写入、协议路由/状态机、busy 门禁、非法输入、dispose、kernel-exit、maxKernels LRU 逐出                    |
 | `test/bridge-integration.test.ts`（6） | 真实 wolframscript：断点暂停+变量快照+检视+继续+结果行、step/abort、语句超时中止、语法错误、Stop 终止进程、死亡宿主孤儿清扫 |
-| `test/web.test.ts`（3） | 定义文本美化（`HoldPattern[a] :> 1` → `a = 1` 等） |
+| `test/web.test.ts`（3）                | 定义文本美化（`HoldPattern[a] :> 1` → `a = 1` 等）                                                                          |
 
 实机（隔离 dev Electron：`OPENCODE_TEST_ONBOARDING=1` + `OPENCODE_CDP_PORT=9255`，唯一
 临时 userData/XDG，隔离 registry `opencode extension link`；全部由本人经 CDP 操作）：
@@ -53,7 +53,7 @@
 1. 暂停循环 `While` 多一个参数 → 整个暂停机制失效（spike 抓到）。
 2. `Definition[Symbol[name]]` 触发 `Definition::ssym`；`With`/`Evaluate` 传入会先取 own
    value。最终惯用法 `ToExpression[...] + RuleDelayed`。
-3. bridge Module/Table 名污染 `Global`` → 用户变量 `b`/`t` 撞名 `shdw` 告警。
+3. bridge Module/Table 名污染 `Global`` → 用户变量 `b`/`t`撞名`shdw` 告警。
 4. wolframscript 忽略 SIGTERM + unref 升级定时器在宿主快速退出时不触发 → 测试孤儿泄漏；
    改为 shutdown 命令 → SIGTERM → await 路径内 SIGKILL。
 5. 宿主被直接 kill 时不 dispose → detached kernel 孤儿；`kernel-pids.json` 记录
@@ -103,7 +103,7 @@ registry 未触碰（全程隔离 registry）。
   两个提交（初始内容 + stable.json/README 修正）。dist 保留提交——web 构建依赖 kit 的
   vite 插件（未公开发布），monorepo 外暂不可构建，README 已注明。
 - 分发链路：仓库内 `npm pack --offline` 产出 81759 字节归档 → `gh release create
-  v1.18.58` 上传资产 → `script/extension-release.ts` 生成 `stable.json`（artifact URL
+v1.18.58` 上传资产 → `script/extension-release.ts` 生成 `stable.json`（artifact URL
   指向 release 资产，sha256 `22d0d61f…2432`）→ 提交到仓库根，raw URL 公网可达（200）。
   curl 复核资产下载 200、字节数与摘要逐位一致。
 - **首次真实公网 `--release` 在线安装尝试失败并定位为环境边界**：CLI 无 `--release`

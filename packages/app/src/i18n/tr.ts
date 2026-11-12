@@ -443,8 +443,10 @@ export const dict = {
 
   "toast.file.loadFailed.title": "Dosya yüklenemedi",
   "toast.file.listFailed.title": "Dosyalar listelenemedi",
-  "toast.file.listFailed.openclaw": "OpenClaw does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
-  "toast.file.listFailed.generalagent": "GeneralAgent does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
+  "toast.file.listFailed.openclaw":
+    "OpenClaw does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
+  "toast.file.listFailed.generalagent":
+    "GeneralAgent does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
 
   "toast.context.noLineSelection.title": "Satır seçimi yok",
   "toast.context.noLineSelection.description": "Önce bir dosya sekmesinde satır aralığı seçin.",

@@ -143,7 +143,9 @@ describe("ProjectLocation multi-process convergence", () => {
     const verify = new SQLite(dbPath)
     const directoryIdentity = Path.identity(directory, { platform: "win32", kind: "local-filesystem" })
     expect(
-      verify.query("SELECT count(*) AS count FROM project_location WHERE canonical_directory = ?").get(directoryIdentity),
+      verify
+        .query("SELECT count(*) AS count FROM project_location WHERE canonical_directory = ?")
+        .get(directoryIdentity),
     ).toEqual({ count: 1 })
     for (const table of ["session", "scheduled_task", "workspace"]) {
       expect(verify.query(`SELECT project_id, location_id FROM ${table}`).get()).toEqual({

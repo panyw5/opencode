@@ -330,21 +330,23 @@ try {
     process.exit(0)
   }
   const status = await client.evaluate<GptProProbeStatus>("window.api.gptPro.status()")
-  const binding = savedRun?.binding ?? (!existingSession && !probeOnly
-    ? requireGptProLiveProfile(await client.evaluate<GptProRuntimeStatus>("window.api.gptPro.runtimeStatus()")) : undefined)
+  const binding =
+    savedRun?.binding ??
+    (!existingSession && !probeOnly
+      ? requireGptProLiveProfile(await client.evaluate<GptProRuntimeStatus>("window.api.gptPro.runtimeStatus()"))
+      : undefined)
   const chatTargets = (await listTargets(endpoint)).filter(
     (item) => item.type === "page" && item.url.startsWith("https://chatgpt.com/"),
   )
   const jobs = await client.evaluate<GptProJob[]>("window.api.gptPro.list()")
   const active = jobs.filter((job) => activePhases.includes(job.phase))
-  const pageBlocked = status.session.authentication.phase === "verification" || status.session.page.phase === "navigation_error"
+  const pageBlocked =
+    status.session.authentication.phase === "verification" || status.session.page.phase === "navigation_error"
   log(
     `probe page=${status.session.page.phase} auth=${status.session.authentication.phase} chatTargets=${chatTargets.length} activeJobs=${active.length}`,
   )
   if (pageBlocked) {
-    log(
-      "BLOCKED: verification or navigation anomaly; neither proves token expiry, and no consultation was sent",
-    )
+    log("BLOCKED: verification or navigation anomaly; neither proves token expiry, and no consultation was sent")
     if (!probeOnly && !existingSession)
       throw new Error("Real consultation blocked by ChatGPT validation; no question was submitted")
   }
@@ -358,7 +360,10 @@ try {
     if (pageBlocked) throw new Error("ChatGPT page needs attention; refusing to submit")
     if (active.length) throw new Error("Another GPT-Pro consultation is active; refusing to submit")
   }
-  if (!binding) throw Error("Attachment acceptance requires a saved profile/account binding; old watch runs remain read-only, never resent")
+  if (!binding)
+    throw Error(
+      "Attachment acceptance requires a saved profile/account binding; old watch runs remain read-only, never resent",
+    )
 
   const markerList = Object.values(markers)
   const fileParts = [fixtures.markdown, fixtures.text, fixtures.pdf, fixtures.png].map((path) => ({

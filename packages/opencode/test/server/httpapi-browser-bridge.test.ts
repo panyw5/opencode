@@ -157,7 +157,10 @@ describe("browser bridge HttpApi", () => {
         .runRaw((message) =>
           Queue.offer(messages, typeof message === "string" ? message : new TextDecoder().decode(message)),
         )
-        .pipe(Effect.catch(() => Effect.void), Effect.forkScoped)
+        .pipe(
+          Effect.catch(() => Effect.void),
+          Effect.forkScoped,
+        )
       const write = yield* socket.writer
 
       const bridge = yield* BrowserBridge.Service

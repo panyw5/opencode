@@ -684,22 +684,19 @@ function normalizeDataUrl(data: string, mediaType: string): string {
 // model-request time. Attachments whose file can no longer be read are dropped
 // so a cleaned-up temp file never fails the request.
 function resolveFileAttachments<T extends { mime: string; url: string }>(attachments: readonly T[]) {
-  return Effect.forEach(
-    attachments,
-    (attachment): Effect.Effect<T | undefined> => {
-      if (!attachment.url.startsWith("file:")) return Effect.succeed(attachment)
-      return Effect.tryPromise({
-        try: async () => {
-          const data = await readFile(fileURLToPath(attachment.url))
-          return { ...attachment, url: `data:${attachment.mime};base64,${data.toString("base64")}` }
-        },
-        catch: (error) => new Error(error instanceof Error ? error.message : String(error)),
-      }).pipe(
-        Effect.tapError((error) => log.warn("dropping unreadable file attachment", { error: error.message })),
-        Effect.catch(() => Effect.succeed(undefined)),
-      )
-    },
-  ).pipe(Effect.map((items) => items.filter((item): item is T => item !== undefined)))
+  return Effect.forEach(attachments, (attachment): Effect.Effect<T | undefined> => {
+    if (!attachment.url.startsWith("file:")) return Effect.succeed(attachment)
+    return Effect.tryPromise({
+      try: async () => {
+        const data = await readFile(fileURLToPath(attachment.url))
+        return { ...attachment, url: `data:${attachment.mime};base64,${data.toString("base64")}` }
+      },
+      catch: (error) => new Error(error instanceof Error ? error.message : String(error)),
+    }).pipe(
+      Effect.tapError((error) => log.warn("dropping unreadable file attachment", { error: error.message })),
+      Effect.catch(() => Effect.succeed(undefined)),
+    )
+  }).pipe(Effect.map((items) => items.filter((item): item is T => item !== undefined)))
 }
 
 function toolReplayRank(part: ToolPart): number {

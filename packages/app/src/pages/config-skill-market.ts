@@ -49,7 +49,10 @@ export function skillMarketContentUrls(repo: string, branch: string, path: strin
   ]
 }
 
-export function skillMarketIndexSources(repo: string, branch: string): Array<{ kind: SkillMarketIndexKind; url: string }> {
+export function skillMarketIndexSources(
+  repo: string,
+  branch: string,
+): Array<{ kind: SkillMarketIndexKind; url: string }> {
   const encodedBranch = encodeURIComponent(branch)
   return [
     { kind: "ungh", url: `https://ungh.cc/repos/${repo}/files/${encodedBranch}` },
@@ -180,8 +183,13 @@ export async function loadSkillMarketIndex(
   for (const branch of branches) {
     for (const source of skillMarketIndexSources(repo.repo, branch)) {
       try {
-        console.log(`[skill-market] fetch index repo=${repo.repo} branch=${branch} source=${source.kind} path=${repo.path ?? ""}`)
-        const data = await withIndexTimeout(marketJSON<unknown>(fetcher, source.url, signal), SKILL_MARKET_INDEX_SOURCE_TIMEOUT_MS)
+        console.log(
+          `[skill-market] fetch index repo=${repo.repo} branch=${branch} source=${source.kind} path=${repo.path ?? ""}`,
+        )
+        const data = await withIndexTimeout(
+          marketJSON<unknown>(fetcher, source.url, signal),
+          SKILL_MARKET_INDEX_SOURCE_TIMEOUT_MS,
+        )
         const paths = parseSkillMarketIndex(source.kind, data, repo.path)
         console.log(
           `[skill-market] index parsed repo=${repo.repo} branch=${branch} source=${source.kind} skills=${String(paths.length)}`,
@@ -200,7 +208,9 @@ export async function loadSkillMarketIndex(
           continue
         }
 
-        console.log(`[skill-market] index ready repo=${repo.repo} branch=${branch} source=${source.kind} skills=${String(paths.length)}`)
+        console.log(
+          `[skill-market] index ready repo=${repo.repo} branch=${branch} source=${source.kind} skills=${String(paths.length)}`,
+        )
         return { branch, paths, source: source.kind }
       } catch (err) {
         lastErr = err
@@ -235,7 +245,9 @@ export async function fetchSkillMarketFile(
       return { url, content: await resp.text() }
     } catch (err) {
       lastErr = err
-      console.warn(`[skill-market] skill fetch failed repo=${repo} branch=${branch} path=${path} url=${url} error=${String(err)}`)
+      console.warn(
+        `[skill-market] skill fetch failed repo=${repo} branch=${branch} path=${path} url=${url} error=${String(err)}`,
+      )
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr ?? "Skill file fetch failed"))

@@ -68,7 +68,10 @@ export function pidMatchesMathWorker(pid: number, sessionID: string): boolean | 
   if (result.error || result.status === null) return undefined
   if (result.status !== 0) return false
   const command = result.stdout.trim()
-  return command.includes(sessionID) && (command.includes("--math-worker") || (command.includes(" math ") && command.includes(" worker ")))
+  return (
+    command.includes(sessionID) &&
+    (command.includes("--math-worker") || (command.includes(" math ") && command.includes(" worker ")))
+  )
 }
 
 export function killProcessGroup(pid: number, signal: NodeJS.Signals = "SIGTERM"): void {
@@ -112,7 +115,12 @@ export function resolveSelfArgv(subcommand: string[], runtime: SelfArgvRuntime):
   const script = runtime.argv[1]
   if (script) {
     const base = path.basename(script)
-    if (base === "index.ts" || base === "index.js" || base === "opencode" || script.includes(`${path.sep}src${path.sep}index.`)) {
+    if (
+      base === "index.ts" ||
+      base === "index.js" ||
+      base === "opencode" ||
+      script.includes(`${path.sep}src${path.sep}index.`)
+    ) {
       return [exec, script, ...subcommand]
     }
   }

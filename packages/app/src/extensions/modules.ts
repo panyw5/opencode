@@ -22,6 +22,8 @@ export function installExtensionHostModules(opencodeVersion?: string) {
       "@opencode-ai/ui/spinner": Spinner,
     },
   }
-  ;(globalThis as typeof globalThis & { __OPENCODE_EXTENSION_HOST__?: ExtensionHostModules }).__OPENCODE_EXTENSION_HOST__ = host
+  ;(
+    globalThis as typeof globalThis & { __OPENCODE_EXTENSION_HOST__?: ExtensionHostModules }
+  ).__OPENCODE_EXTENSION_HOST__ = host
   return host
 }

@@ -25,11 +25,7 @@
         "top_score": 19.421164296172666
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "domain-style-glassmorphism",
       "route": "style",
       "scores": {
@@ -64,11 +60,7 @@
         "top_score": 18.602163047459552
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        1,
-        0
-      ],
+      "grades": [2, 1, 0],
       "id": "domain-style-accessible-paraphrase",
       "route": "style",
       "scores": {
@@ -103,11 +95,7 @@
         "top_score": 24.838233706028305
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "domain-color-spa",
       "route": "color",
       "scores": {
@@ -142,11 +130,7 @@
         "top_score": 6.918236171519476
       },
       "expectedRoute": null,
-      "grades": [
-        0,
-        2,
-        0
-      ],
+      "grades": [0, 2, 0],
       "id": "domain-color-cyber-typo",
       "route": "color",
       "scores": {
@@ -181,11 +165,7 @@
         "top_score": 15.823019587021193
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "domain-chart-time-series",
       "route": "chart",
       "scores": {
@@ -217,10 +197,7 @@
         "top_score": 2.8616051044569106
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0
-      ],
+      "grades": [2, 0],
       "id": "domain-chart-correlation-paraphrase",
       "route": "chart",
       "scores": {
@@ -255,11 +232,7 @@
         "top_score": 14.93196380044748
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        2,
-        1
-      ],
+      "grades": [2, 2, 1],
       "id": "domain-landing-pricing",
       "route": "landing",
       "scores": {
@@ -294,11 +267,7 @@
         "top_score": 14.089259966269058
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        1,
-        0
-      ],
+      "grades": [2, 1, 0],
       "id": "domain-landing-enterprise-typo",
       "route": "landing",
       "scores": {
@@ -333,11 +302,7 @@
         "top_score": 25.362536446909242
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        1,
-        0
-      ],
+      "grades": [2, 1, 0],
       "id": "domain-product-spa",
       "route": "product",
       "scores": {
@@ -400,11 +365,7 @@
         "top_score": 16.87894135799571
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "domain-ux-keyboard-focus",
       "route": "ux",
       "scores": {
@@ -442,11 +403,7 @@
         "top_score": 8.10059241109163
       },
       "expectedRoute": null,
-      "grades": [
-        1,
-        2,
-        0
-      ],
+      "grades": [1, 2, 0],
       "id": "domain-ux-motion-paraphrase",
       "route": "ux",
       "scores": {
@@ -484,11 +441,7 @@
         "top_score": 8.084300242098724
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        2,
-        0
-      ],
+      "grades": [2, 2, 0],
       "id": "domain-typography-luxury",
       "route": "typography",
       "scores": {
@@ -526,11 +479,7 @@
         "top_score": 14.956366522914799
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        1,
-        0
-      ],
+      "grades": [2, 1, 0],
       "id": "domain-typography-accessible-typo",
       "route": "typography",
       "scores": {
@@ -568,11 +517,7 @@
         "top_score": 17.995499341235067
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "domain-icons-search",
       "route": "icons",
       "scores": {
@@ -610,11 +555,7 @@
         "top_score": 13.947338325879397
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "domain-icons-warning-typo",
       "route": "icons",
       "scores": {
@@ -647,9 +588,7 @@
         "calibration_version": "2026-08-12-v1",
         "margin": 0.47825840830284605,
         "normalized_query": "GSAP reveal elements when they enter the viewport on scroll",
-        "query_rewrites": [
-          "gsap->animation"
-        ],
+        "query_rewrites": ["gsap->animation"],
         "reason": "matched",
         "runner_up_score": 7.3587320792912365,
         "search_query": "GSAP reveal elements when they enter the viewport on scroll animation",
@@ -657,11 +596,7 @@
         "top_score": 7.836990487594083
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        2,
-        1
-      ],
+      "grades": [2, 2, 1],
       "id": "domain-gsap-scroll-reveal",
       "route": "gsap",
       "scores": {
@@ -697,10 +632,7 @@
         "top_score": 3.6646910964244377
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        1
-      ],
+      "grades": [2, 1],
       "id": "domain-gsap-skeleton-typo",
       "route": "gsap",
       "scores": {
@@ -738,11 +670,7 @@
         "top_score": 18.327080916626503
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        1,
-        0
-      ],
+      "grades": [2, 1, 0],
       "id": "domain-react-parallel-promises",
       "route": "react",
       "scores": {
@@ -780,11 +708,7 @@
         "top_score": 7.115262876366316
       },
       "expectedRoute": null,
-      "grades": [
-        1,
-        0,
-        2
-      ],
+      "grades": [1, 0, 2],
       "id": "domain-react-dynamic-import-paraphrase",
       "route": "react",
       "scores": {
@@ -822,11 +746,7 @@
         "top_score": 14.793729431451158
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "domain-web-icon-label",
       "route": "web",
       "scores": {
@@ -860,10 +780,7 @@
         "top_score": 3.3080709258004615
       },
       "expectedRoute": null,
-      "grades": [
-        0,
-        2
-      ],
+      "grades": [0, 2],
       "id": "domain-web-virtual-list-paraphrase",
       "route": "web",
       "scores": {
@@ -901,11 +818,7 @@
         "top_score": 9.098817951042024
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        1
-      ],
+      "grades": [2, 0, 1],
       "id": "domain-google-fonts-inter",
       "route": "google-fonts",
       "scores": {
@@ -943,11 +856,7 @@
         "top_score": 6.8386412271842305
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        1
-      ],
+      "grades": [2, 0, 1],
       "id": "domain-google-fonts-atkinson-paraphrase",
       "route": "google-fonts",
       "scores": {
@@ -985,11 +894,7 @@
         "top_score": 12.016528828355334
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-angular-standalone",
       "route": "stack",
       "scores": {
@@ -1027,11 +932,7 @@
         "top_score": 15.136104764569753
       },
       "expectedRoute": null,
-      "grades": [
-        0,
-        2,
-        0
-      ],
+      "grades": [0, 2, 0],
       "id": "stack-angular-signals-paraphrase",
       "route": "stack",
       "scores": {
@@ -1069,11 +970,7 @@
         "top_score": 13.082574549712
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-astro-islands",
       "route": "stack",
       "scores": {
@@ -1136,11 +1033,7 @@
         "top_score": 11.905376834625912
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-avalonia-namespace",
       "route": "stack",
       "scores": {
@@ -1178,11 +1071,7 @@
         "top_score": 11.472567845636211
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-avalonia-compiled-binding",
       "route": "stack",
       "scores": {
@@ -1220,11 +1109,7 @@
         "top_score": 10.032780651047597
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-flutter-stateless",
       "route": "stack",
       "scores": {
@@ -1262,11 +1147,7 @@
         "top_score": 9.207036941413302
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-flutter-const-paraphrase",
       "route": "stack",
       "scores": {
@@ -1304,11 +1185,7 @@
         "top_score": 10.843117242557055
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-html-tailwind-z-index",
       "route": "stack",
       "scores": {
@@ -1346,11 +1223,7 @@
         "top_score": 7.86703394080603
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-html-tailwind-hover",
       "route": "stack",
       "scores": {
@@ -1388,11 +1261,7 @@
         "top_score": 12.96135169842605
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-javafx-application",
       "route": "stack",
       "scores": {
@@ -1430,11 +1299,7 @@
         "top_score": 15.53247101943149
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-javafx-threading-paraphrase",
       "route": "stack",
       "scores": {
@@ -1472,11 +1337,7 @@
         "top_score": 7.858556672361283
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-compose-pure-ui",
       "route": "stack",
       "scores": {
@@ -1514,11 +1375,7 @@
         "top_score": 6.605092002681308
       },
       "expectedRoute": null,
-      "grades": [
-        0,
-        0,
-        2
-      ],
+      "grades": [0, 0, 2],
       "id": "stack-compose-single-source",
       "route": "stack",
       "scores": {
@@ -1556,11 +1413,7 @@
         "top_score": 11.53626310422107
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-laravel-blade-component",
       "route": "stack",
       "scores": {
@@ -1598,11 +1451,7 @@
         "top_score": 13.667235179545852
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-laravel-props",
       "route": "stack",
       "scores": {
@@ -1640,11 +1489,7 @@
         "top_score": 14.432404905064335
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-nextjs-app-router",
       "route": "stack",
       "scores": {
@@ -1682,11 +1527,7 @@
         "top_score": 10.457919706611285
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-nextjs-server-components",
       "route": "stack",
       "scores": {
@@ -1724,11 +1565,7 @@
         "top_score": 12.613171223299592
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-nuxt-ui-module",
       "route": "stack",
       "scores": {
@@ -1766,11 +1603,7 @@
         "top_score": 7.74516212242926
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-nuxt-ui-semantic-color",
       "route": "stack",
       "scores": {
@@ -1808,11 +1641,7 @@
         "top_score": 12.671942239528912
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-nuxtjs-file-routing",
       "route": "stack",
       "scores": {
@@ -1850,11 +1679,7 @@
         "top_score": 10.275940501922985
       },
       "expectedRoute": null,
-      "grades": [
-        0,
-        0,
-        0
-      ],
+      "grades": [0, 0, 0],
       "id": "stack-nuxtjs-ssr",
       "route": "stack",
       "scores": {
@@ -1892,11 +1717,7 @@
         "top_score": 9.102535197460885
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-react-native-functional",
       "route": "stack",
       "scores": {
@@ -1934,11 +1755,7 @@
         "top_score": 12.61810541960881
       },
       "expectedRoute": null,
-      "grades": [
-        0,
-        2,
-        0
-      ],
+      "grades": [0, 2, 0],
       "id": "stack-react-native-stylesheet",
       "route": "stack",
       "scores": {
@@ -1976,11 +1793,7 @@
         "top_score": 12.49301542897088
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-react-usestate",
       "route": "stack",
       "scores": {
@@ -2018,11 +1831,7 @@
         "top_score": 9.477606205204266
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-react-effect-cleanup",
       "route": "stack",
       "scores": {
@@ -2060,11 +1869,7 @@
         "top_score": 7.249009294952089
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-shadcn-cli",
       "route": "stack",
       "scores": {
@@ -2102,11 +1907,7 @@
         "top_score": 10.791736407042213
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-shadcn-css-vars",
       "route": "stack",
       "scores": {
@@ -2144,11 +1945,7 @@
         "top_score": 8.353947662760044
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-svelte-state",
       "route": "stack",
       "scores": {
@@ -2186,11 +1983,7 @@
         "top_score": 10.90631865791433
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-svelte-effect",
       "route": "stack",
       "scores": {
@@ -2228,11 +2021,7 @@
         "top_score": 15.331337873887092
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-swiftui-state",
       "route": "stack",
       "scores": {
@@ -2270,11 +2059,7 @@
         "top_score": 11.049765889934884
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-swiftui-navigation",
       "route": "stack",
       "scores": {
@@ -2312,11 +2097,7 @@
         "top_score": 15.76955788615474
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-threejs-orbitcontrols",
       "route": "stack",
       "scores": {
@@ -2354,11 +2135,7 @@
         "top_score": 7.540860433837093
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-threejs-pixel-ratio",
       "route": "stack",
       "scores": {
@@ -2396,11 +2173,7 @@
         "top_score": 15.805509252026244
       },
       "expectedRoute": null,
-      "grades": [
-        0,
-        2,
-        0
-      ],
+      "grades": [0, 2, 0],
       "id": "stack-uno-winui-xaml",
       "route": "stack",
       "scores": {
@@ -2438,11 +2211,7 @@
         "top_score": 13.90566242825478
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-uno-package-paraphrase",
       "route": "stack",
       "scores": {
@@ -2480,11 +2249,7 @@
         "top_score": 9.542660203340766
       },
       "expectedRoute": null,
-      "grades": [
-        0,
-        2,
-        0
-      ],
+      "grades": [0, 2, 0],
       "id": "stack-uwp-xbind",
       "route": "stack",
       "scores": {
@@ -2514,9 +2279,7 @@
         "top_score": 0.0
       },
       "expectedRoute": null,
-      "grades": [
-        2
-      ],
+      "grades": [2],
       "id": "stack-uwp-migration",
       "route": "stack",
       "scores": {
@@ -2554,11 +2317,7 @@
         "top_score": 11.82846687248191
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-vue-composition",
       "route": "stack",
       "scores": {
@@ -2596,11 +2355,7 @@
         "top_score": 11.88186036790731
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-vue-pinia",
       "route": "stack",
       "scores": {
@@ -2638,11 +2393,7 @@
         "top_score": 17.071599778033345
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-winui-infobar",
       "route": "stack",
       "scores": {
@@ -2680,11 +2431,7 @@
         "top_score": 12.699793144268284
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-winui-dispatcherqueue",
       "route": "stack",
       "scores": {
@@ -2722,11 +2469,7 @@
         "top_score": 9.635201645247621
       },
       "expectedRoute": null,
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "stack-wpf-property-change",
       "route": "stack",
       "scores": {
@@ -2764,11 +2507,7 @@
         "top_score": 9.770399567824976
       },
       "expectedRoute": null,
-      "grades": [
-        0,
-        0,
-        2
-      ],
+      "grades": [0, 0, 2],
       "id": "stack-wpf-virtualization",
       "route": "stack",
       "scores": {
@@ -2806,11 +2545,7 @@
         "top_score": 12.12323180886965
       },
       "expectedRoute": "ux",
-      "grades": [
-        0,
-        0,
-        2
-      ],
+      "grades": [0, 0, 2],
       "id": "auto-route-accessibility",
       "route": "ux",
       "scores": {
@@ -2845,11 +2580,7 @@
         "top_score": 1.3810723013506525
       },
       "expectedRoute": "color",
-      "grades": [
-        0,
-        0,
-        0
-      ],
+      "grades": [0, 0, 0],
       "id": "auto-route-color",
       "route": "color",
       "scores": {
@@ -2884,11 +2615,7 @@
         "top_score": 9.981070395138673
       },
       "expectedRoute": "chart",
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "auto-route-chart",
       "route": "chart",
       "scores": {
@@ -2923,11 +2650,7 @@
         "top_score": 7.21351565093959
       },
       "expectedRoute": "landing",
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "auto-route-landing",
       "route": "landing",
       "scores": {
@@ -2965,11 +2688,7 @@
         "top_score": 15.255938611230066
       },
       "expectedRoute": "google-fonts",
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "auto-route-fonts",
       "route": "google-fonts",
       "scores": {
@@ -3007,11 +2726,7 @@
         "top_score": 14.026212818054983
       },
       "expectedRoute": "icons",
-      "grades": [
-        2,
-        1,
-        0
-      ],
+      "grades": [2, 1, 0],
       "id": "auto-route-icons",
       "route": "icons",
       "scores": {
@@ -3044,10 +2759,7 @@
         "calibration_version": "2026-08-12-v1",
         "margin": 1.2795521952300577,
         "normalized_query": "GSAP ScrollTrigger stagger reveal animation",
-        "query_rewrites": [
-          "gsap->animation",
-          "scrolltrigger->scroll"
-        ],
+        "query_rewrites": ["gsap->animation", "scrolltrigger->scroll"],
         "reason": "matched",
         "runner_up_score": 3.4546110204576452,
         "search_query": "GSAP ScrollTrigger stagger reveal animation animation scroll",
@@ -3055,11 +2767,7 @@
         "top_score": 4.734163215687703
       },
       "expectedRoute": "gsap",
-      "grades": [
-        0,
-        0,
-        0
-      ],
+      "grades": [0, 0, 0],
       "id": "auto-route-gsap",
       "route": "gsap",
       "scores": {
@@ -3097,11 +2805,7 @@
         "top_score": 7.736688419041721
       },
       "expectedRoute": "react",
-      "grades": [
-        2,
-        0,
-        0
-      ],
+      "grades": [2, 0, 0],
       "id": "auto-route-react",
       "route": "react",
       "scores": {
@@ -3130,12 +2834,7 @@
       "negativeChecks": 34
     },
     {
-      "falsePositiveTargets": [
-        "domain:ux",
-        "domain:google-fonts",
-        "stack:threejs",
-        "stack:winui"
-      ],
+      "falsePositiveTargets": ["domain:ux", "domain:google-fonts", "stack:threejs", "stack:winui"],
       "falsePositives": 4,
       "id": "negative-math-proof",
       "negativeChecks": 34
@@ -3158,12 +2857,7 @@
         "pattern": "Hero + Testimonials + CTA",
         "style": "Soft UI Evolution"
       },
-      "coherence": [
-        true,
-        true,
-        true,
-        true
-      ],
+      "coherence": [true, true, true, true],
       "id": "design-system-spa"
     },
     {
@@ -3172,12 +2866,7 @@
         "pattern": "Real-Time / Operations Landing",
         "style": "Cyberpunk UI"
       },
-      "coherence": [
-        true,
-        true,
-        true,
-        true
-      ],
+      "coherence": [true, true, true, true],
       "id": "design-system-cybersecurity-dark"
     },
     {
@@ -3186,12 +2875,7 @@
         "pattern": "Hero + Features + CTA",
         "style": "Glassmorphism"
       },
-      "coherence": [
-        true,
-        true,
-        true,
-        true
-      ],
+      "coherence": [true, true, true, true],
       "id": "design-system-saas"
     },
     {
@@ -3200,12 +2884,7 @@
         "pattern": "Hero + Testimonials + CTA",
         "style": "Neumorphism"
       },
-      "coherence": [
-        true,
-        true,
-        true,
-        true
-      ],
+      "coherence": [true, true, true, true],
       "id": "design-system-healthcare"
     },
     {
@@ -3214,13 +2893,7 @@
         "pattern": "Scroll-Triggered Storytelling",
         "style": "Brutalism"
       },
-      "coherence": [
-        true,
-        true,
-        true,
-        true,
-        true
-      ],
+      "coherence": [true, true, true, true, true],
       "id": "design-system-portfolio-dark"
     },
     {
@@ -3229,12 +2902,7 @@
         "pattern": "Trust & Authority + Conversion",
         "style": "Minimalism & Swiss Style"
       },
-      "coherence": [
-        true,
-        true,
-        true,
-        true
-      ],
+      "coherence": [true, true, true, true],
       "id": "design-system-fintech-dark"
     },
     {
@@ -3243,12 +2911,7 @@
         "pattern": "Hero + Testimonials + CTA",
         "style": "Soft UI Evolution"
       },
-      "coherence": [
-        true,
-        true,
-        true,
-        true
-      ],
+      "coherence": [true, true, true, true],
       "id": "design-system-spa-paraphrase"
     },
     {
@@ -3257,12 +2920,7 @@
         "pattern": "Real-Time / Operations Landing",
         "style": "Cyberpunk UI"
       },
-      "coherence": [
-        true,
-        true,
-        true,
-        true
-      ],
+      "coherence": [true, true, true, true],
       "id": "design-system-cyber-typo"
     }
   ],

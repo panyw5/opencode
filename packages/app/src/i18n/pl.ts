@@ -400,8 +400,10 @@ export const dict = {
   "toast.model.none.description": "Połącz dostawcę, aby podsumować tę sesję",
   "toast.file.loadFailed.title": "Nie udało się załadować pliku",
   "toast.file.listFailed.title": "Nie udało się wyświetlić listy plików",
-  "toast.file.listFailed.openclaw": "OpenClaw does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
-  "toast.file.listFailed.generalagent": "GeneralAgent does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
+  "toast.file.listFailed.openclaw":
+    "OpenClaw does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
+  "toast.file.listFailed.generalagent":
+    "GeneralAgent does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
   "toast.context.noLineSelection.title": "Brak zaznaczenia linii",
   "toast.context.noLineSelection.description": "Najpierw wybierz zakres linii w zakładce pliku.",
   "toast.session.share.copyFailed.title": "Nie udało się skopiować URL do schowka",

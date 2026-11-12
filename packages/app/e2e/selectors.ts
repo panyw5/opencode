@@ -51,11 +51,9 @@ export const projectMenuTriggerSelector = (slug: string) =>
 export const projectOpenInFinderSelector = (slug: string) =>
   `[data-action="project-open-in-finder"][data-project="${slug}"]`
 
-export const projectCopyPathSelector = (slug: string) =>
-  `[data-action="project-copy-path"][data-project="${slug}"]`
+export const projectCopyPathSelector = (slug: string) => `[data-action="project-copy-path"][data-project="${slug}"]`
 
-export const projectNewSessionSelector = (slug: string) =>
-  `[data-action="project-new-session"][data-project="${slug}"]`
+export const projectNewSessionSelector = (slug: string) => `[data-action="project-new-session"][data-project="${slug}"]`
 
 export const projectCloseMenuSelector = (slug: string) => `[data-action="project-close-menu"][data-project="${slug}"]`
 

@@ -13,13 +13,13 @@ the stopped-session background-consultation residue that could block it.
 
 ## Identity and Ownership
 
-| Identity | Meaning | Sharing |
-| --- | --- | --- |
-| `owner` | Backend-derived project directory and agent session ID | Never inferred from a model name or supplied arbitrary target |
-| `pageID` | One WebContents/CDP target | Never shared between concurrent consultations |
-| `profileID` | Electron session partition | ChatGPT pages may share `persist:consult-gpt-pro` |
-| `consultationID` | One persisted request, send evidence, answer and outbox | Bound to owner and page |
-| `epoch` | Native page incarnation | Changes when the page is destroyed and recreated |
+| Identity         | Meaning                                                 | Sharing                                                       |
+| ---------------- | ------------------------------------------------------- | ------------------------------------------------------------- |
+| `owner`          | Backend-derived project directory and agent session ID  | Never inferred from a model name or supplied arbitrary target |
+| `pageID`         | One WebContents/CDP target                              | Never shared between concurrent consultations                 |
+| `profileID`      | Electron session partition                              | ChatGPT pages may share `persist:consult-gpt-pro`             |
+| `consultationID` | One persisted request, send evidence, answer and outbox | Bound to owner and page                                       |
+| `epoch`          | Native page incarnation                                 | Changes when the page is destroyed and recreated              |
 
 For protocol compatibility, `partition` temporarily remains a deprecated page
 routing alias. It must never be interpreted as shared login identity when
@@ -59,18 +59,18 @@ The sidebar display lease is separate from task execution.
 
 ## Lifecycle Rules
 
-| Event | Required behavior |
-| --- | --- |
-| Background promotion | Keep the same request, page and owner; send nothing new |
-| Pause or recovery handoff | Affect only that consultation; allow other owners to run |
-| Explicit session stop | Cancel that owner's foreground and background consultations |
-| Normal completion of a parent turn | Do not cancel an explicitly backgrounded consultation |
-| Stop consultation | Persist cancellation first; website stop is best effort with separate diagnostics |
-| Page close or renderer crash | Stop accepting that page's evidence; do not silently recreate or resend |
-| App restart, cancelled/completed | Never requeue |
-| App restart, paused | Remain paused; never reclaim global execution capacity |
-| App restart, confirmed background send | Reopen the original conversation and track the original user turn only |
-| Uncertain send | Require explicit reconciliation; never automatically resend |
+| Event                                  | Required behavior                                                                 |
+| -------------------------------------- | --------------------------------------------------------------------------------- |
+| Background promotion                   | Keep the same request, page and owner; send nothing new                           |
+| Pause or recovery handoff              | Affect only that consultation; allow other owners to run                          |
+| Explicit session stop                  | Cancel that owner's foreground and background consultations                       |
+| Normal completion of a parent turn     | Do not cancel an explicitly backgrounded consultation                             |
+| Stop consultation                      | Persist cancellation first; website stop is best effort with separate diagnostics |
+| Page close or renderer crash           | Stop accepting that page's evidence; do not silently recreate or resend           |
+| App restart, cancelled/completed       | Never requeue                                                                     |
+| App restart, paused                    | Remain paused; never reclaim global execution capacity                            |
+| App restart, confirmed background send | Reopen the original conversation and track the original user turn only            |
+| Uncertain send                         | Require explicit reconciliation; never automatically resend                       |
 
 Queued creation and attachment staging must be fenced against an owner stop
 that happens before the job is persisted. A stale create completion cannot
@@ -261,18 +261,18 @@ Validated on 2026-10-10 in development Electron on CDP 9222. The installed
 OpenCode application was not stopped or updated. No commits, pushes or GitHub
 Actions were performed, and unrelated user edits were preserved.
 
-| Check | Result |
-| --- | --- |
-| Desktop browser, driver, controller, probe and notification regressions | 156 passed |
-| App browser tab/display regressions | 16 passed |
-| UI GPT-Pro tool regressions | 9 passed |
-| Backend browser, consultation tool and background-delivery regressions | 55 passed |
-| Backend cancellation and normal-completion regressions | 17 passed |
-| Desktop, app and backend typechecks | Passed |
-| Final read-only implementation review | No remaining serious findings |
+| Check                                                                               | Result                                                    |
+| ----------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| Desktop browser, driver, controller, probe and notification regressions             | 156 passed                                                |
+| App browser tab/display regressions                                                 | 16 passed                                                 |
+| UI GPT-Pro tool regressions                                                         | 9 passed                                                  |
+| Backend browser, consultation tool and background-delivery regressions              | 55 passed                                                 |
+| Backend cancellation and normal-completion regressions                              | 17 passed                                                 |
+| Desktop, app and backend typechecks                                                 | Passed                                                    |
+| Final read-only implementation review                                               | No remaining serious findings                             |
 | Two real GPT-6-Luna agents navigating, clicking and reading independent local pages | Passed; both actual counters and received replies matched |
-| Explicit sidecar stop of paused consultation A, with consultation B unchanged | Passed; A cancelled and B remained paused |
-| Final real ChatGPT concurrent answer delivery and website stop during generation | Not passed; browser verification prevents sending |
+| Explicit sidecar stop of paused consultation A, with consultation B unchanged       | Passed; A cancelled and B remained paused                 |
+| Final real ChatGPT concurrent answer delivery and website stop during generation    | Not passed; browser verification prevents sending         |
 
 The final blocked consultation pair was never sent. One intermediate build
 received and verified a real ChatGPT marker response after a manual viewport
@@ -291,18 +291,18 @@ Validated on 2026-10-10 against the updated development Electron. GPT-6-Luna
 implemented core lifecycle cleanup and cached-result UI in separate stages;
 the parent integrated review fixes and performed the live tests.
 
-| Check | Result |
-| --- | --- |
-| Desktop browser/CDP/controller/driver/probe/outbox regressions | 173 passed |
-| App browser tab/display regressions | 16 passed |
-| UI result resolution, preview, tool and handoff regressions | 21 passed |
-| Backend browser/consultation/background regressions | 55 passed |
-| Desktop/app/UI/backend typechecks and diff whitespace check | Passed |
-| Native lifecycle harness using an existing real ChatGPT QA answer | Passed: cached read allocates no page; explicit open protects selected page for 35 seconds; hidden page closes after 30 seconds; saved text/HTML/user evidence unchanged |
-| Actual history cached-result Dialog and explicit original-page button | Passed: full saved reply rendered, no implicit page allocation, explicit original page reopened with new epoch, no prompt replay, Dialog closed and browser visible |
-| Actual tool cached-result Dialog covering the selected browser for 35 seconds | Passed: selected protection and epoch retained, no new native page |
-| Two real GPT-6-Luna sidecar agents on independently controlled local pages | Passed: both navigate/read/click/read traces, exact native counters of one, separate targets/profiles and received replies verified |
-| Final read-only review | No actionable findings |
+| Check                                                                         | Result                                                                                                                                                                   |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Desktop browser/CDP/controller/driver/probe/outbox regressions                | 173 passed                                                                                                                                                               |
+| App browser tab/display regressions                                           | 16 passed                                                                                                                                                                |
+| UI result resolution, preview, tool and handoff regressions                   | 21 passed                                                                                                                                                                |
+| Backend browser/consultation/background regressions                           | 55 passed                                                                                                                                                                |
+| Desktop/app/UI/backend typechecks and diff whitespace check                   | Passed                                                                                                                                                                   |
+| Native lifecycle harness using an existing real ChatGPT QA answer             | Passed: cached read allocates no page; explicit open protects selected page for 35 seconds; hidden page closes after 30 seconds; saved text/HTML/user evidence unchanged |
+| Actual history cached-result Dialog and explicit original-page button         | Passed: full saved reply rendered, no implicit page allocation, explicit original page reopened with new epoch, no prompt replay, Dialog closed and browser visible      |
+| Actual tool cached-result Dialog covering the selected browser for 35 seconds | Passed: selected protection and epoch retained, no new native page                                                                                                       |
+| Two real GPT-6-Luna sidecar agents on independently controlled local pages    | Passed: both navigate/read/click/read traces, exact native counters of one, separate targets/profiles and received replies verified                                      |
+| Final read-only review                                                        | No actionable findings                                                                                                                                                   |
 
 Review regressions also cover cancellation during asynchronous resident
 allocation, a fresh request admitted before the cancelled allocation settles,

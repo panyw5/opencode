@@ -109,6 +109,7 @@
 基础阶段当时新增模块：archive/download/npm/install/paths/registry-watch，以及 registry/schema 的基础扩展。当时CLI/HTTP/SDK/UI尚未接入；该限制已由上方“服务与接口接线结果”更新，不应作为当前状态。
 
 已知保守限制：
+
 - npm 完整图上限与嵌套布局，不支持循环、alias、Git/file/workspace、自动 peer；optional 不静默跳过，已知 native/build 标记拒绝，不能静态判断任意脚本是否必需。scripts 永不执行。
 - 解压器只接受 package/ 根、自包含预构建且不带 node_modules/安装配置/链接；CLI 本地路径先经 realpath 可信父目录处理。
 - prepare/capability 进程内存绑定；已提交操作可由 receipt 查询，未提交 graph 不跨重启恢复；启动会扫描具有完整ownership及引用退出证明的残留，未知对象保留。

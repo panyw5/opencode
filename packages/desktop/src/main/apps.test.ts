@@ -12,11 +12,7 @@ describe("getAppLaunchPlan", () => {
 
   test("recognizes resolved PowerShell executable paths case-insensitively", () => {
     expect(
-      getAppLaunchPlan(
-        "D:\\project",
-        "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\PowerShell.EXE",
-        "win32",
-      ),
+      getAppLaunchPlan("D:\\project", "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\PowerShell.EXE", "win32"),
     ).toMatchObject({ mode: "powershell", cwd: "D:\\project" })
   })
 

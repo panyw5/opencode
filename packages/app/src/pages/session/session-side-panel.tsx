@@ -446,13 +446,10 @@ export function SessionSidePanel(props: {
                     <Show when={activeExtPanelTab()} keyed>
                       {(tab) => <ExtensionPanelContent tab={tab} />}
                     </Show>
-
                   </Show>
                   {/* Keep warmed file viewers outside the preview visibility
                       gate, so collapsing the panel does not discard drafts. */}
-                  <For each={keepAlive.kept()}>
-                    {(tab) => <FileTabContent tab={tab} forceMount={true} />}
-                  </For>
+                  <For each={keepAlive.kept()}>{(tab) => <FileTabContent tab={tab} forceMount={true} />}</For>
                 </Tabs>
                 {/* Keep the portaled preview above the composited panel, but below dialogs. */}
                 <DragOverlay style={{ "z-index": 40, "pointer-events": "none" }}>

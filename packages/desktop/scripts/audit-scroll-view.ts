@@ -18,10 +18,13 @@ const send = (method: string, params?: unknown, sessionId?: string) =>
     ws.send(JSON.stringify({ id: mid, method, params, sessionId }))
     setTimeout(() => reject(new Error(`timeout: ${method}`)), 5000)
   })
-await new Promise((res) => ws.onopen = res)
+await new Promise((res) => (ws.onopen = res))
 const { result } = await send("Target.getTargets", {})
 const pages = (result.targetInfos ?? []).filter((t: any) => t.type === "page" && t.url.includes(needle))
-console.log("matching pages:", pages.map((p: any) => p.url.slice(0, 60)))
+console.log(
+  "matching pages:",
+  pages.map((p: any) => p.url.slice(0, 60)),
+)
 if (!pages.length) process.exit(1)
 const { result: attached } = await send("Target.attachToTarget", { targetId: pages[0].targetId, flatten: true })
 const sid = attached.sessionId

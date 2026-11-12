@@ -1,7 +1,13 @@
 /** Reserved @-mention names that route to external CLI consult tools (not task/subagent). */
 export type ConsultMentionID = "codex" | "claude" | "grok" | "dsh" | "pi" | "gpt-pro"
 
-export type ConsultMentionTool = "codex_consult" | "claude_consult" | "grok_consult" | "dsh_consult" | "pi_consult" | "gpt_pro_consult"
+export type ConsultMentionTool =
+  | "codex_consult"
+  | "claude_consult"
+  | "grok_consult"
+  | "dsh_consult"
+  | "pi_consult"
+  | "gpt_pro_consult"
 
 export const CONSULT_MENTION_IDS = [
   "codex",

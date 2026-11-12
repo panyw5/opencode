@@ -4,14 +4,14 @@
 
 ## Locations
 
-| What | Path |
-|---|---|
-| Git worktree | `../trellis-worktrees/session-db-migration-upgrade` |
-| Branch | `trellis/session-db-migration-upgrade` |
-| Trellis task | `.trellis/tasks/07-30-session-db-migration-upgrade/` |
-| Test DB fixture | `.trellis/tasks/07-30-session-db-migration-upgrade/fixtures/opencode-migration-test.db` |
-| Quality reports | `.trellis/tasks/.../reports/quality-*.md` |
-| Mergeable scripts | `packages/opencode/script/session-db-migration/` |
+| What              | Path                                                                                    |
+| ----------------- | --------------------------------------------------------------------------------------- |
+| Git worktree      | `../trellis-worktrees/session-db-migration-upgrade`                                     |
+| Branch            | `trellis/session-db-migration-upgrade`                                                  |
+| Trellis task      | `.trellis/tasks/07-30-session-db-migration-upgrade/`                                    |
+| Test DB fixture   | `.trellis/tasks/07-30-session-db-migration-upgrade/fixtures/opencode-migration-test.db` |
+| Quality reports   | `.trellis/tasks/.../reports/quality-*.md`                                               |
+| Mergeable scripts | `packages/opencode/script/session-db-migration/`                                        |
 
 ## Force test DB
 

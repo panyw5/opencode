@@ -48,9 +48,7 @@ test("project task detail title uses the available header width", async ({ page,
       const dialog = page.getByRole("dialog")
       const heading = dialog.locator('[data-slot="project-task-title"]')
       await expect(heading).toHaveText(title)
-      await expect
-        .poll(() => heading.evaluate((element) => element.scrollWidth <= element.clientWidth))
-        .toBe(true)
+      await expect.poll(() => heading.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
       await expect
         .poll(() =>
           dialog.locator('[data-slot="project-task-title-row"]').evaluate((element) => {

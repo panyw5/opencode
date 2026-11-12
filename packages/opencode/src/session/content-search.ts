@@ -356,9 +356,11 @@ export const backfill = Effect.fn("SessionContentSearch.backfill")(function* () 
 
 export const clearSession = (db: TxOrDb, sessionID: string) => {
   const removed =
-    (db.all(sql`SELECT count(*) AS count FROM session_content_fts WHERE session_id = ${sessionID}`)[0] as
-      | { count: number }
-      | undefined)?.count ?? 0
+    (
+      db.all(sql`SELECT count(*) AS count FROM session_content_fts WHERE session_id = ${sessionID}`)[0] as
+        | { count: number }
+        | undefined
+    )?.count ?? 0
   db.run(sql`DELETE FROM session_content_fts WHERE session_id = ${sessionID}`)
   if (removed > 0) {
     db.run(sql`

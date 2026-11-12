@@ -57,6 +57,7 @@
 Owner: viewport_luna (state/test inventory), viewport_qa_luna (environment), parent (baseline/spec).
 
 Work:
+
 - Read scoped AGENTS.md instructions and existing viewport coordination invariants.
 - Record the current dirty baseline and identify the Electron build/worktree before runtime verification.
 - Inventory all reachable main-viewport writers, including ScrollView and virtualizer callbacks.
@@ -67,6 +68,7 @@ Work:
 - Inspect renderer AND backend logs directly. Never ask the user to perform QA.
 
 Gate:
+
 - Written minimal state/execution API agreed before worker integration edits.
 - Test results distinguish code failures from missing dependencies/environment.
 - CDP and sidecar test setup identified, or a concrete blocker documented.
@@ -76,6 +78,7 @@ Gate:
 Owner: viewport_luna. Scope: message-navigation.ts and focused model tests first.
 
 Work:
+
 - Make the existing navigation model the only holder of positioning intent and generation.
 - Preserve hash acknowledgement/superseded-hash rules and shared-load completion semantics.
 - Add explicit input/return-to-tail transitions without consulting generation status or userScrolled.
@@ -85,6 +88,7 @@ Work:
 - Add bounded string diagnostics at transition boundaries, not per-row console object dumps.
 
 Gate:
+
 - Pure tests cover idle and busy with identical ownership results.
 - Content growth, generated scroll events, and gesture expiry cannot revoke following.
 - Existing rapid-navigation and shared-load/hash tests still pass.
@@ -96,6 +100,7 @@ Owner: assigned Luna worker after Phase 1 API review; core integration has one w
 Scope: scroll-ledger/runtime types, ScrollView optional controlled input, geometry helpers/tests.
 
 Work:
+
 - Replace arbitrary write callbacks with concrete applied-position operations and actual-motion results.
 - Validate captured intent token and root/session lifetime before applying asynchronous positions.
 - Keep ledger math independent of DOM ownership and preserve user/system displacement accounting.
@@ -105,6 +110,7 @@ Work:
 - Prepare virtualizer adaptation so automatic adjustment and manual anchor correction cannot both compensate.
 
 Gate:
+
 - Rejected stale writes do not invoke DOM writes or mutate ledger totals.
 - Clamping/coalesced motion tests pass, including user reversal.
 - Shared ScrollView default tests remain unchanged in behavior.
@@ -115,6 +121,7 @@ Owner: viewport_luna. Scope: session.tsx, use-session-hash-scroll.ts, message-ti
 session-find.ts, live-bottom.ts, and their directly affected tests.
 
 Work:
+
 - Inject/read the sole model rather than creating another owner inside hash or timeline adapters.
 - Remove independent viewportIntent/viewportTarget/navigationTarget copies and page mode setters.
 - Remove main-session createAutoScroll, ui.mode, followBottom, and their reactive feedback effects.
@@ -132,6 +139,7 @@ Work:
 - All target/follow callbacks carry original lifetime validation; cleanup cancels outstanding work.
 
 Mandatory removal checklist:
+
 - [x] Main-session autoScroll and userScrolled effect.
 - [x] ui.mode, followBottom, arm/clear follow synchronizers.
 - [x] Independently writable viewport intent/target selector copies.
@@ -143,6 +151,7 @@ Mandatory removal checklist:
 - [x] Jump to latest visibility inferred from transient physical bottom distance.
 
 Gate:
+
 - Main session has one positioning intent and one application DOM write outlet.
 - Source search plus review confirms no competing production path remains.
 - App/UI type checks and focused tests pass. Intermediate code is not advertised as a fixed app.
@@ -152,6 +161,7 @@ Gate:
 Owner: Luna worker assigned after core cutover. Avoid simultaneous edits to message-timeline.tsx.
 
 Work:
+
 - Remove independent multi-frame prepend restore/pin loops and page anchor capture/restore callbacks.
 - History request completion follows data commit, not scroll-animation completion.
 - Reconcile prepend as a geometry change under the current intent and current reading anchor.
@@ -165,6 +175,7 @@ Work:
 - Broader performance work (new grouping/windowing/parser frameworks) is out of scope unless essential to a failing case.
 
 Gate:
+
 - Prepend after user movement preserves the visible anchor and user delta.
 - Switching to following/target during a request permits data merge but forbids old reading restore.
 - Queued measurements cannot resize or cache the wrong row after prepend/removal.
@@ -175,6 +186,7 @@ Gate:
 Owner: viewport_qa_luna, with implementation changes sent back to the owning worker.
 
 Work:
+
 - Test the actual composed state, Solid effects, timeline/execution, and virtualizer adapter,
   rather than only a standalone ownership reducer or a source-text assertion.
 - Use controlled clocks/RAF and reorder input, measurement, history completion, and submit callbacks.
@@ -185,6 +197,7 @@ Work:
 - Check no unbounded logs, per-row forced layout, or new cross-module feedback loops were introduced.
 
 Gate:
+
 - Every required behavior has a named regression test or a documented runtime scenario.
 - Production deletion checklist complete; tests do not preserve old incorrect behavior.
 
@@ -193,6 +206,7 @@ Gate:
 Owner: viewport_qa_luna; parent independently reviews evidence and checks integration.
 
 Safety/setup:
+
 - Check for a running development Electron before launching. Verify CDP 9222 belongs to the tested worktree.
 - Never stop the installed application. Do not terminate an unidentified process.
 - Read effective persisted keybind overrides before dispatching any shortcut.
@@ -200,6 +214,7 @@ Safety/setup:
 - Read backend and renderer logs directly, without exposing credentials or unrelated conversation content.
 
 Scenarios:
+
 1. Wheel away then naturally return while idle; subsequent generation continues following.
 2. Fractional high-frequency trackpad-like wheel input reaches bottom during real streaming.
 3. Continue observing through later output bursts, pauses, tool/status transitions, and final Markdown resize.
@@ -215,6 +230,7 @@ Scenarios:
     physical gap, and button visibility together so an ownership defect is not hidden by UI.
 
 Evidence:
+
 - Record build/worktree identity, input trajectory, relevant transition/write trace, and measured final geometry.
 - Record actual received sidecar text/tool completion and corresponding backend status.
 - Natural-return acceptance must not click Jump to latest or set scrollTop to simulate the decisive user input.
@@ -378,6 +394,7 @@ The earlier streaming acceptance did not cover sidebar prefetch racing a route t
 It was insufficient to claim that session/generation identity alone protected the DOM binding.
 
 Observed evidence:
+
 - The reported history contained 218 messages, including 20 user messages and 184 tool parts.
   Database contents were inspected before code changes; the original conversation was not edited.
 - Installed renderer logs showed an invalid `session=none owner=undefined/` timeline mount,
@@ -391,6 +408,7 @@ Observed evidence:
   viewport was not at the top. This was not merely a button visibility problem.
 
 Correction boundaries:
+
 - Timeline mounting requires a real session ID and ready messages in one derived key.
   Draft readiness is not timeline readiness. No copied owner or new state machine is added.
 - Replace three independent page registrations (root, content, navigation reset callback)
@@ -403,6 +421,7 @@ Correction boundaries:
   lifecycle evidence in runtime acceptance, rather than hiding it behind a successful scroll.
 
 Verification:
+
 - `session-viewport-reentry.ts` exercises real memory-router/sidebar navigation, real message
   data, optional scoped configuration-response delay, the actual user-message marker, a single
   12px wheel movement, and natural return. It never sends to the historical conversation or

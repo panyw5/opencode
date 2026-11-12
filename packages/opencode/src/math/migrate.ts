@@ -114,13 +114,16 @@ export function migrateLegacyMathProject(input: {
   }
   const active = Object.values(readSwarm(sourceDir).workers).filter((worker) => pidAlive(worker.pid))
   if (active.length > 0) {
-    throw new Error(`stop all legacy math workers before migration: ${active.map((worker) => worker.sessionID).join(", ")}`)
+    throw new Error(
+      `stop all legacy math workers before migration: ${active.map((worker) => worker.sessionID).join(", ")}`,
+    )
   }
   if (existsSync(projectDir)) throw new Error(`math problem workspace already exists: ${projectDir}`)
 
   const problemsRoot = mathProblemsRoot(workspace)
   mkdirSync(problemsRoot, { recursive: true })
-  if (lstatSync(problemsRoot).isSymbolicLink()) throw new Error(`math problems container must not be a symbolic link: ${problemsRoot}`)
+  if (lstatSync(problemsRoot).isSymbolicLink())
+    throw new Error(`math problems container must not be a symbolic link: ${problemsRoot}`)
 
   const staging = path.join(problemsRoot, `.${problemID}.migrate-${randomUUID()}`)
   log.info("legacy math migration started", { sourceDir, projectDir, staging })

@@ -108,7 +108,8 @@ export const MathWorkerStartTool = Tool.define(
           if (references) {
             for (const reference of references) {
               const relative = path.relative(parent.directory, reference)
-              const insideParent = relative === "" || (!relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+              const insideParent =
+                relative === "" || (!relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
               if (!insideParent) yield* assertExternalDirectoryEffect(ctx, reference)
             }
           }
@@ -170,14 +171,12 @@ export const MathWorkerStatusTool = Tool.define(
           })
           const parent = yield* sessions.get(SessionID.make(ctx.sessionID)).pipe(Effect.orDie)
           const projectDir = params.session_id
-            ? (
-                yield* resolveExistingMathWorkspaceFromSessions({
-                  sessions,
-                  parentSessionID: parent.id,
-                  workerSessionID: params.session_id,
-                  problemID: params.project,
-                }).pipe(Effect.orDie)
-              ).problemDirectory
+            ? (yield* resolveExistingMathWorkspaceFromSessions({
+                sessions,
+                parentSessionID: parent.id,
+                workerSessionID: params.session_id,
+                problemID: params.project,
+              }).pipe(Effect.orDie)).problemDirectory
             : mathRoot(parent.directory, params.project || parent.id)
           const rows = yield* discoverMathWorkers({
             projectDir,

@@ -397,8 +397,11 @@ class HermesClient {
       const timer = new Promise<{ done: true; timedOut: true }>((resolve) =>
         setTimeout(() => resolve({ done: true, timedOut: true }), left),
       )
-      const next = (await Promise.race([reader.read(), timer])) as
-        | { value?: Uint8Array; done: boolean; timedOut?: boolean }
+      const next = (await Promise.race([reader.read(), timer])) as {
+        value?: Uint8Array
+        done: boolean
+        timedOut?: boolean
+      }
       if (next.timedOut) {
         this.state = { kind: "error", message: "Hermes shim boot timed out after 20s" }
         break
@@ -505,7 +508,12 @@ class HermesClient {
     ctrl.abort()
   }
 
-  async prompt(sessionID: string, query: string, responseID: string | undefined, onEvent: (event: PromptEvent) => void) {
+  async prompt(
+    sessionID: string,
+    query: string,
+    responseID: string | undefined,
+    onEvent: (event: PromptEvent) => void,
+  ) {
     await this.readyPromise
     const port = this.requireReady()
     const ctrl = new AbortController()
@@ -577,13 +585,16 @@ class HermesClient {
             if (!part || typeof part !== "object") continue
             const type = (part as { type?: unknown }).type
             if (type === "function_call") {
-              const callID = typeof (part as { call_id?: unknown }).call_id === "string"
-                ? (part as { call_id: string }).call_id
-                : Identifier.ascending("tool")
-              const tool = typeof (part as { name?: unknown }).name === "string" ? (part as { name: string }).name : "tool"
-              const raw = typeof (part as { arguments?: unknown }).arguments === "string"
-                ? (part as { arguments: string }).arguments
-                : ""
+              const callID =
+                typeof (part as { call_id?: unknown }).call_id === "string"
+                  ? (part as { call_id: string }).call_id
+                  : Identifier.ascending("tool")
+              const tool =
+                typeof (part as { name?: unknown }).name === "string" ? (part as { name: string }).name : "tool"
+              const raw =
+                typeof (part as { arguments?: unknown }).arguments === "string"
+                  ? (part as { arguments: string }).arguments
+                  : ""
               onEvent({
                 type: "tool_start",
                 callID,
@@ -600,9 +611,8 @@ class HermesClient {
             if (!part || typeof part !== "object") continue
             const type = (part as { type?: unknown }).type
             if (type !== "function_call_output") continue
-            const callID = typeof (part as { call_id?: unknown }).call_id === "string"
-              ? (part as { call_id: string }).call_id
-              : ""
+            const callID =
+              typeof (part as { call_id?: unknown }).call_id === "string" ? (part as { call_id: string }).call_id : ""
             const output = outputText((part as { output?: unknown }).output)
             onEvent({ type: "tool_done", callID, output, raw: (part as { output?: unknown }).output })
             continue
@@ -612,12 +622,12 @@ class HermesClient {
             const resp = item.response
             if (!resp || typeof resp !== "object") continue
             const text = outputText((resp as { output?: unknown }).output) || final
-            const modelID = typeof (resp as { model?: unknown }).model === "string"
-              ? (resp as { model: string }).model
-              : fallbackModelID
-            const responseID = typeof (resp as { id?: unknown }).id === "string"
-              ? (resp as { id: string }).id
-              : undefined
+            const modelID =
+              typeof (resp as { model?: unknown }).model === "string"
+                ? (resp as { model: string }).model
+                : fallbackModelID
+            const responseID =
+              typeof (resp as { id?: unknown }).id === "string" ? (resp as { id: string }).id : undefined
             const usage = (resp as { usage?: UsageInfo }).usage
             onEvent({ type: "done", text, responseID, modelID, usage })
             return
@@ -625,9 +635,10 @@ class HermesClient {
 
           if (name === "response.failed") {
             const resp = item.response
-            const responseID = resp && typeof resp === "object" && typeof (resp as { id?: unknown }).id === "string"
-              ? (resp as { id: string }).id
-              : undefined
+            const responseID =
+              resp && typeof resp === "object" && typeof (resp as { id?: unknown }).id === "string"
+                ? (resp as { id: string }).id
+                : undefined
             const err = item.error
             let message = "Hermes request failed"
             if (err && typeof err === "object" && typeof (err as { message?: unknown }).message === "string") {
@@ -698,13 +709,17 @@ function welcomeMessages(): Message[] {
     messageID: info.id,
     sessionID: "welcome",
     type: "text",
-    text:
-      "Hermes is wired through its local API-server adapter. Start a new conversation to chat with Hermes from inside GeneralAgent.",
+    text: "Hermes is wired through its local API-server adapter. Start a new conversation to chat with Hermes from inside GeneralAgent.",
   }
   return [{ info, parts: [part] }]
 }
 
-function userMessage(sessionID: string, text: string, modelID: string, ids?: { messageID?: string; partID?: string }): Message {
+function userMessage(
+  sessionID: string,
+  text: string,
+  modelID: string,
+  ids?: { messageID?: string; partID?: string },
+): Message {
   const messageID = ids?.messageID ?? Identifier.ascending("message")
   const partID = ids?.partID ?? Identifier.ascending("part")
   const info: MessageInfo = {
@@ -789,7 +804,10 @@ export namespace HermesBridge {
     const serialize = async <T>(sessionID: string, fn: () => Promise<T>): Promise<T> => {
       const prev = locks.get(sessionID) ?? Promise.resolve()
       const next = prev.catch(() => undefined).then(fn)
-      locks.set(sessionID, next.catch(() => undefined))
+      locks.set(
+        sessionID,
+        next.catch(() => undefined),
+      )
       return next
     }
 
@@ -829,7 +847,11 @@ export namespace HermesBridge {
             if (!input) return
             if (input.startsWith("http://localhost:")) return input
             if (input.startsWith("http://127.0.0.1:")) return input
-            if (input === "tauri://localhost" || input === "http://tauri.localhost" || input === "https://tauri.localhost") {
+            if (
+              input === "tauri://localhost" ||
+              input === "http://tauri.localhost" ||
+              input === "https://tauri.localhost"
+            ) {
               return input
             }
             if (opts.cors?.includes(input)) return input
@@ -839,7 +861,9 @@ export namespace HermesBridge {
       .get("/global/health", async (c) => {
         const health = await shim.health()
         if (health.ok) return c.json({ healthy: true, version, model: health.model ?? fallbackModelID })
-        return c.json(new NamedError.Unknown({ message: health.error ?? "Hermes unavailable" }).toObject(), { status: 503 })
+        return c.json(new NamedError.Unknown({ message: health.error ?? "Hermes unavailable" }).toObject(), {
+          status: 503,
+        })
       })
       .get("/global/config", async (c) => {
         const list = await shim.models()
@@ -1113,7 +1137,11 @@ export namespace HermesBridge {
                   time: { ...info.time, updated: Date.now() },
                 }
                 sessions.set(sessionID, next)
-                log.info("response completed", { sessionID, responseID: state.responseID, modelID: assistant.info.modelID })
+                log.info("response completed", {
+                  sessionID,
+                  responseID: state.responseID,
+                  modelID: assistant.info.modelID,
+                })
                 emit({ type: "session.updated", properties: { info: next } })
                 return
               }

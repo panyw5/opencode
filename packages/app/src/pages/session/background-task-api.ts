@@ -35,12 +35,7 @@ async function json<T>(platform: Platform, url: string, init?: RequestInit, auth
   })
   const raw = await response.text()
   const contentType = response.headers.get("content-type") ?? ""
-  console.info(
-    "[background-task-api] response",
-    String(response.status),
-    contentType,
-    `bodyLength=${raw.length}`,
-  )
+  console.info("[background-task-api] response", String(response.status), contentType, `bodyLength=${raw.length}`)
 
   if (!response.ok) {
     const snippet = raw.replace(/\s+/g, " ").trim().slice(0, 180)

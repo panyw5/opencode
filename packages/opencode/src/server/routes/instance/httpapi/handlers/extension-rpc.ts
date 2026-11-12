@@ -196,25 +196,27 @@ export const extensionRpcHandlers = HttpApiBuilder.group(RootHttpApi, "extension
           catch: mapAdapterError,
         })
       const execute = directory
-        ? lifecycle.provide(
-            { directory, purpose: "http-request" },
-            Effect.gen(function* () {
-              const instance = yield* InstanceRef
-              if (!instance) return yield* Effect.die(new Error("Extension RPC instance context unavailable"))
-              // The instance can stay warm while hot reload invalidates only its
-              // plugin hooks, so materialize those hooks on every scoped call.
-              yield* plugin.init()
-              return yield* invoke(instance.directory)
-            }),
-          ).pipe(
-            Effect.catchIf(
-              (error): error is LocationLifecycle.AdmissionError =>
-                error instanceof LocationLifecycle.LocationUnavailable ||
-                error instanceof LocationLifecycle.LocationDeleting ||
-                error instanceof LocationLifecycle.LocationDeleted,
-              () => Effect.fail(new HttpApiError.NotFound({})),
-            ),
-          )
+        ? lifecycle
+            .provide(
+              { directory, purpose: "http-request" },
+              Effect.gen(function* () {
+                const instance = yield* InstanceRef
+                if (!instance) return yield* Effect.die(new Error("Extension RPC instance context unavailable"))
+                // The instance can stay warm while hot reload invalidates only its
+                // plugin hooks, so materialize those hooks on every scoped call.
+                yield* plugin.init()
+                return yield* invoke(instance.directory)
+              }),
+            )
+            .pipe(
+              Effect.catchIf(
+                (error): error is LocationLifecycle.AdmissionError =>
+                  error instanceof LocationLifecycle.LocationUnavailable ||
+                  error instanceof LocationLifecycle.LocationDeleting ||
+                  error instanceof LocationLifecycle.LocationDeleted,
+                () => Effect.fail(new HttpApiError.NotFound({})),
+              ),
+            )
         : invoke(undefined)
       const outcome = yield* execute.pipe(
         Effect.onInterrupt(() => Effect.sync(() => controller.abort(new Error("Extension RPC request canceled")))),

@@ -12,7 +12,11 @@ describe("math.bm25", () => {
   })
 
   test("ranking prefers the document that mentions the query more", () => {
-    const docs = [tokenize("plan reduce to the q case"), tokenize("unrelated symplectic leaf"), tokenize("reduce reduce reduce")]
+    const docs = [
+      tokenize("plan reduce to the q case"),
+      tokenize("unrelated symplectic leaf"),
+      tokenize("reduce reduce reduce"),
+    ]
     const scores = bm25Scores("reduce", docs)
     expect(scores[2]).toBeGreaterThan(scores[0])
     expect(scores[0]).toBeGreaterThan(scores[1])

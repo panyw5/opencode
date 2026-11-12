@@ -135,9 +135,7 @@ describe("Browser facade", () => {
       const frame = JSON.parse(fake.sent[0])
       expect(frame.name).toBe("gpt-pro-cancel-owner")
       expect(frame.args).toEqual({ directory, sessionID: "ses_cancel" })
-      yield* bridge.handleFrame(
-        JSON.stringify({ type: "resp", id: frame.id, ok: true, result: { cancelled: 2 } }),
-      )
+      yield* bridge.handleFrame(JSON.stringify({ type: "resp", id: frame.id, ok: true, result: { cancelled: 2 } }))
       expect(yield* Fiber.join(fiber)).toBe(2)
     }),
   )
@@ -221,7 +219,14 @@ describe("Browser facade", () => {
       const fake = fakeAdapter()
       yield* bridge.connect({ adapter: fake.adapter })
       const pageID = "gpt-pro-page-gpt_console"
-      const entry = { pageID, partition: pageID, profileID: "persist:consult-gpt-pro", level: "log", text: "answer", at: 200 }
+      const entry = {
+        pageID,
+        partition: pageID,
+        profileID: "persist:consult-gpt-pro",
+        level: "log",
+        text: "answer",
+        at: 200,
+      }
       yield* bridge.handleFrame(JSON.stringify({ type: "event", name: "browser.console", properties: entry }))
 
       const fiber = yield* browser.console("ses_owner", { consultationID: "gpt_console" }).pipe(Effect.forkChild)

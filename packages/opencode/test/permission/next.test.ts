@@ -87,18 +87,13 @@ it.instance(
       Database.use((db) => db.delete(PermissionScopeTable).run())
       yield* Effect.addFinalizer(() => Effect.sync(() => Database.use((db) => db.delete(PermissionScopeTable).run())))
       const ctx = yield* InstanceState.context
-      yield* Permission.setScopedRules(
-        { scope: "global" },
-        [{ permission: "bash", pattern: "*", action: "allow" }],
-      )
-      yield* Permission.setScopedRules(
-        { scope: "project", projectID: ctx.project.id },
-        [{ permission: "bash", pattern: "*", action: "deny" }],
-      )
-      yield* Permission.setScopedRules(
-        { scope: "location", locationID: ctx.location.id },
-        [{ permission: "bash", pattern: "*", action: "allow" }],
-      )
+      yield* Permission.setScopedRules({ scope: "global" }, [{ permission: "bash", pattern: "*", action: "allow" }])
+      yield* Permission.setScopedRules({ scope: "project", projectID: ctx.project.id }, [
+        { permission: "bash", pattern: "*", action: "deny" },
+      ])
+      yield* Permission.setScopedRules({ scope: "location", locationID: ctx.location.id }, [
+        { permission: "bash", pattern: "*", action: "allow" },
+      ])
 
       yield* ask({
         sessionID: SessionID.make("session_scoped_allow"),

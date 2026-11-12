@@ -28,7 +28,10 @@ export type PresentationArtifact = {
 
 type Detected = { mime: string; extension: string; width?: number; height?: number }
 
-async function makeThumbnail(data: Uint8Array, originalMime: string): Promise<{ body: Uint8Array; mime: string } | undefined> {
+async function makeThumbnail(
+  data: Uint8Array,
+  originalMime: string,
+): Promise<{ body: Uint8Array; mime: string } | undefined> {
   try {
     ;(globalThis as typeof globalThis & { __OPENCODE_PHOTON_WASM_PATH?: string }).__OPENCODE_PHOTON_WASM_PATH =
       path.isAbsolute(photonWasm) ? photonWasm : fileURLToPath(new URL(photonWasm, import.meta.url))
@@ -81,7 +84,10 @@ function dimensions(data: Uint8Array, mime: string): { width?: number; height?: 
     const viewBox = text.match(/viewBox\s*=\s*["']\s*[-\d.]+\s+[-\d.]+\s+([\d.]+)\s+([\d.]+)/i)
     const width = text.match(/\bwidth\s*=\s*["']([\d.]+)/i)
     const height = text.match(/\bheight\s*=\s*["']([\d.]+)/i)
-    return { width: viewBox ? Number(viewBox[1]) : width ? Number(width[1]) : undefined, height: viewBox ? Number(viewBox[2]) : height ? Number(height[1]) : undefined }
+    return {
+      width: viewBox ? Number(viewBox[1]) : width ? Number(width[1]) : undefined,
+      height: viewBox ? Number(viewBox[2]) : height ? Number(height[1]) : undefined,
+    }
   }
   return {}
 }
@@ -89,12 +95,20 @@ function dimensions(data: Uint8Array, mime: string): { width?: number; height?: 
 function detect(data: Uint8Array, source: string): Detected {
   const ext = path.extname(source).toLowerCase()
   const text = () => new TextDecoder().decode(data.slice(0, 1024)).trimStart()
-  if (data.length >= 8 && data.slice(0, 8).every((v, i) => v === [137, 80, 78, 71, 13, 10, 26, 10][i])) return { mime: "image/png", extension: ".png", ...dimensions(data, "image/png") }
-  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return { mime: "image/jpeg", extension: ".jpg", ...dimensions(data, "image/jpeg") }
+  if (data.length >= 8 && data.slice(0, 8).every((v, i) => v === [137, 80, 78, 71, 13, 10, 26, 10][i]))
+    return { mime: "image/png", extension: ".png", ...dimensions(data, "image/png") }
+  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff)
+    return { mime: "image/jpeg", extension: ".jpg", ...dimensions(data, "image/jpeg") }
   if (text().startsWith("GIF8")) return { mime: "image/gif", extension: ".gif", ...dimensions(data, "image/gif") }
-  if (data.length >= 12 && new TextDecoder().decode(data.slice(0, 4)) === "RIFF" && new TextDecoder().decode(data.slice(8, 12)) === "WEBP") return { mime: "image/webp", extension: ".webp", ...dimensions(data, "image/webp") }
+  if (
+    data.length >= 12 &&
+    new TextDecoder().decode(data.slice(0, 4)) === "RIFF" &&
+    new TextDecoder().decode(data.slice(8, 12)) === "WEBP"
+  )
+    return { mime: "image/webp", extension: ".webp", ...dimensions(data, "image/webp") }
   if (ext === ".svg" || /<svg[\s>]/i.test(text())) {
-    if (!/^\s*(?:<\?xml[^>]*>\s*)?(?:<!--[^]*?-->\s*)*<svg(?:\s|>)/i.test(new TextDecoder().decode(data))) throw new Error("SVG must contain an SVG root element")
+    if (!/^\s*(?:<\?xml[^>]*>\s*)?(?:<!--[^]*?-->\s*)*<svg(?:\s|>)/i.test(new TextDecoder().decode(data)))
+      throw new Error("SVG must contain an SVG root element")
     return { mime: "image/svg+xml", extension: ".svg", ...dimensions(data, "image/svg+xml") }
   }
   throw new Error("present_file only supports PNG, JPEG, GIF, WebP, and SVG images")
@@ -102,11 +116,16 @@ function detect(data: Uint8Array, source: string): Detected {
 
 function safeSvg(data: Uint8Array) {
   const text = new TextDecoder().decode(data)
-  if (/<script\b|\bon[a-z]+\s*=|javascript:|<foreignObject\b|<iframe\b|<object\b|<embed\b/i.test(text)) throw new Error("SVG contains executable, external, or unsafe content")
+  if (/<script\b|\bon[a-z]+\s*=|javascript:|<foreignObject\b|<iframe\b|<object\b|<embed\b/i.test(text))
+    throw new Error("SVG contains executable, external, or unsafe content")
   for (const match of text.matchAll(/(?:href|xlink:href)\s*=\s*["']([^"']*)["']/gi)) {
     if (!match[1]?.startsWith("#")) throw new Error("SVG contains external or unsafe references")
   }
-  if (/@import\b|url\s*\(\s*["']?(?!#)(?:https?:|data:|file:|\/|\.\.?\/)/i.test(text) || /<!ENTITY\b|<!DOCTYPE\b/i.test(text)) throw new Error("SVG contains external CSS or entity declarations")
+  if (
+    /@import\b|url\s*\(\s*["']?(?!#)(?:https?:|data:|file:|\/|\.\.?\/)/i.test(text) ||
+    /<!ENTITY\b|<!DOCTYPE\b/i.test(text)
+  )
+    throw new Error("SVG contains external CSS or entity declarations")
 }
 
 export function validateSvgSource(source: string) {
@@ -120,7 +139,12 @@ function dir(sessionID: string) {
   return path.join(ROOT(), sessionID)
 }
 
-export async function snapshot(input: { sessionID: string; sourcePath: string; purpose: PresentationPurpose; caption?: string }): Promise<PresentationArtifact> {
+export async function snapshot(input: {
+  sessionID: string
+  sourcePath: string
+  purpose: PresentationPurpose
+  caption?: string
+}): Promise<PresentationArtifact> {
   const sourcePath = await realpath(input.sourcePath)
   const source = await stat(sourcePath)
   if (!source.isFile()) throw new Error("present_file source is not a regular file")
@@ -154,10 +178,27 @@ export async function snapshot(input: { sessionID: string; sourcePath: string; p
   }
   if (detected.mime !== "image/svg+xml") {
     const thumbnail = await makeThumbnail(data, detected.mime)
-    if (thumbnail) await writeFile(path.join(targetDir, `${artifactID}.thumb${thumbnail.mime === "image/jpeg" ? ".jpg" : thumbnail.mime === "image/png" ? ".png" : detected.extension}`), thumbnail.body)
+    if (thumbnail)
+      await writeFile(
+        path.join(
+          targetDir,
+          `${artifactID}.thumb${thumbnail.mime === "image/jpeg" ? ".jpg" : thumbnail.mime === "image/png" ? ".png" : detected.extension}`,
+        ),
+        thumbnail.body,
+      )
   }
   log.info("presentation snapshot created", { sessionID: input.sessionID, artifactID, sourcePath, bytes: data.length })
-  return { artifactID, mime: detected.mime, width: detected.width, height: detected.height, filename, size: data.length, sourcePath, purpose: input.purpose, ...(input.caption ? { caption: input.caption } : {}) }
+  return {
+    artifactID,
+    mime: detected.mime,
+    width: detected.width,
+    height: detected.height,
+    filename,
+    size: data.length,
+    sourcePath,
+    purpose: input.purpose,
+    ...(input.caption ? { caption: input.caption } : {}),
+  }
 }
 
 export async function readArtifact(input: { sessionID: string; artifactID: string; variant?: string }) {
@@ -165,14 +206,25 @@ export async function readArtifact(input: { sessionID: string; artifactID: strin
   if (input.variant && input.variant !== "original" && input.variant !== "thumbnail") return undefined
   const root = dir(input.sessionID)
   const entries = await (await import("node:fs/promises")).readdir(root).catch(() => [] as string[])
-  const filename = input.variant === "thumbnail"
-    ? entries.find((name) => name.startsWith(`${input.artifactID}.thumb.`)) ?? entries.find((name) => name.startsWith(`${input.artifactID}.`))
-    : entries.find((name) => name.startsWith(`${input.artifactID}.`) && !name.includes(".thumb."))
+  const filename =
+    input.variant === "thumbnail"
+      ? (entries.find((name) => name.startsWith(`${input.artifactID}.thumb.`)) ??
+        entries.find((name) => name.startsWith(`${input.artifactID}.`)))
+      : entries.find((name) => name.startsWith(`${input.artifactID}.`) && !name.includes(".thumb."))
   if (!filename) return undefined
   const file = path.join(root, filename)
   const body = await readFile(file)
   const ext = path.extname(filename).toLowerCase()
-  const mime = ext === ".png" ? "image/png" : ext === ".jpg" ? "image/jpeg" : ext === ".gif" ? "image/gif" : ext === ".webp" ? "image/webp" : "image/svg+xml"
+  const mime =
+    ext === ".png"
+      ? "image/png"
+      : ext === ".jpg"
+        ? "image/jpeg"
+        : ext === ".gif"
+          ? "image/gif"
+          : ext === ".webp"
+            ? "image/webp"
+            : "image/svg+xml"
   return { body: new Uint8Array(body), mime }
 }
 

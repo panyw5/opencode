@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { runInNewContext } from "node:vm"
-import { captureRect, exportErrorName, heightScript, pdfPageSize, readyScript, scrollScript } from "./session-document-render"
+import {
+  captureRect,
+  exportErrorName,
+  heightScript,
+  pdfPageSize,
+  readyScript,
+  scrollScript,
+} from "./session-document-render"
 import { pngSlices } from "./session-document-policy"
 
 describe("session export render scheduling", () => {

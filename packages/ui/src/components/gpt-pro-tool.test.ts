@@ -196,7 +196,11 @@ describe("GPT-Pro attachment display", () => {
       expect(capacity).toContain("Waiting for an available consultation slot")
       expect(capacity).toContain('data-queue-reason="capacity"')
       const pageCapacity = renderToString(() =>
-        component.GptProTool({ status: "running", input: {}, metadata: { phase: "queued", queue_reason: "page_capacity" } }),
+        component.GptProTool({
+          status: "running",
+          input: {},
+          metadata: { phase: "queued", queue_reason: "page_capacity" },
+        }),
       )
       expect(pageCapacity).toContain("Waiting for a resident consultation page to become available")
       expect(pageCapacity).toContain('data-queue-reason="page_capacity"')
@@ -236,19 +240,19 @@ describe("GPT-Pro attachment display", () => {
         marked.MarkedProvider({
           children: () =>
             component.GptProResultPreviewContent({
-            state: {
-              open: true,
-              loading: false,
-              opening: false,
-              error: "",
-              result: {
-                id: "gpt_cached_preview",
-                phase: "completed",
-                url: "https://chatgpt.com/c/gpt_cached_preview",
-                text: "Cached answer\n\n<script>unsafe result content</script>",
-                source: "read",
+              state: {
+                open: true,
+                loading: false,
+                opening: false,
+                error: "",
+                result: {
+                  id: "gpt_cached_preview",
+                  phase: "completed",
+                  url: "https://chatgpt.com/c/gpt_cached_preview",
+                  text: "Cached answer\n\n<script>unsafe result content</script>",
+                  source: "read",
+                },
               },
-            },
             }),
         }),
       )

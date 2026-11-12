@@ -63,11 +63,7 @@ export type LoadPresentationFn = (input: {
 
 export type OpenPresentationSourceFn = (input: { sessionID: string; path: string }) => void
 
-export type OpenTaskFn = (input: {
-  sessionID: string
-  kind: "project_task" | "scheduled_task"
-  taskID: string
-}) => void
+export type OpenTaskFn = (input: { sessionID: string; kind: "project_task" | "scheduled_task"; taskID: string }) => void
 
 export const { use: useData, provider: DataProvider } = createSimpleContext({
   name: "Data",

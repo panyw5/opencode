@@ -729,7 +729,9 @@ describe("session HttpApi", () => {
         expect(defaultList.map((session) => session.id)).toContain(active.id)
         expect(defaultList.map((session) => session.id)).not.toContain(archived.id)
 
-        const archivedList = yield* requestJson<Session.Info[]>(`${SessionPaths.list}?roots=true&archived=true`, { headers })
+        const archivedList = yield* requestJson<Session.Info[]>(`${SessionPaths.list}?roots=true&archived=true`, {
+          headers,
+        })
         expect(archivedList.map((session) => session.id)).toContain(archived.id)
       }),
     { git: true, config: { formatter: false, lsp: false, share: "disabled" } },

@@ -86,10 +86,7 @@ function dispatchHandoffEvent(handoff: QuestionHandoff | undefined, clearedReque
   )
 }
 
-export function rememberQuestionHandoff(input: {
-  request: QuestionRequest
-  answers: QuestionAnswer[]
-}): void {
+export function rememberQuestionHandoff(input: { request: QuestionRequest; answers: QuestionAnswer[] }): void {
   const global = handoffGlobal()
   if (!global) return
   const now = handoffNow()

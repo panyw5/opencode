@@ -3,14 +3,18 @@ import { formatPresentationSize, presentationRequestIsCurrent, readPresentationM
 
 describe("presentation metadata", () => {
   test("reads the nested tool metadata contract", () => {
-    expect(readPresentationMetadata({ presentation: {
-      artifactID: "artifact-1",
-      mime: "image/png",
-      filename: "screen.png",
-      size: 2048,
-      sourcePath: "/tmp/screen.png",
-      purpose: "verification",
-    } })).toMatchObject({ artifactID: "artifact-1", mime: "image/png", size: 2048, purpose: "verification" })
+    expect(
+      readPresentationMetadata({
+        presentation: {
+          artifactID: "artifact-1",
+          mime: "image/png",
+          filename: "screen.png",
+          size: 2048,
+          sourcePath: "/tmp/screen.png",
+          purpose: "verification",
+        },
+      }),
+    ).toMatchObject({ artifactID: "artifact-1", mime: "image/png", size: 2048, purpose: "verification" })
   })
 
   test("rejects malformed or unsafe media metadata", () => {
@@ -20,7 +24,15 @@ describe("presentation metadata", () => {
 
   test("accepts the completed metadata shape after a pending part", () => {
     expect(readPresentationMetadata(undefined)).toBeUndefined()
-    const legacy = readPresentationMetadata({ presentation: { artifactID: "x", mime: "image/svg+xml", filename: "x.svg", sourcePath: "x.svg", purpose: "result" } })
+    const legacy = readPresentationMetadata({
+      presentation: {
+        artifactID: "x",
+        mime: "image/svg+xml",
+        filename: "x.svg",
+        sourcePath: "x.svg",
+        purpose: "result",
+      },
+    })
     expect(legacy?.artifactID).toBe("x")
     expect(legacy?.size).toBeUndefined()
   })
@@ -35,8 +47,14 @@ describe("presentation metadata", () => {
   })
 
   test("rejects an aborted or stale async response", () => {
-    expect(presentationRequestIsCurrent({ aborted: false, requestedArtifactID: "b", currentArtifactID: "a" })).toBe(false)
-    expect(presentationRequestIsCurrent({ aborted: true, requestedArtifactID: "a", currentArtifactID: "a" })).toBe(false)
-    expect(presentationRequestIsCurrent({ aborted: false, requestedArtifactID: "b", currentArtifactID: "b" })).toBe(true)
+    expect(presentationRequestIsCurrent({ aborted: false, requestedArtifactID: "b", currentArtifactID: "a" })).toBe(
+      false,
+    )
+    expect(presentationRequestIsCurrent({ aborted: true, requestedArtifactID: "a", currentArtifactID: "a" })).toBe(
+      false,
+    )
+    expect(presentationRequestIsCurrent({ aborted: false, requestedArtifactID: "b", currentArtifactID: "b" })).toBe(
+      true,
+    )
   })
 })

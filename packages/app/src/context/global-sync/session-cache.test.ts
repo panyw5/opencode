@@ -133,10 +133,7 @@ describe("app session cache", () => {
     }
     expect(canCoolSessionCache({ ...base, session_status: { ses_1: { type: "busy" } } }, "ses_1")).toBe(false)
     expect(
-      canCoolSessionCache(
-        { ...base, session_status: {}, permission: { ses_1: [{} as PermissionRequest] } },
-        "ses_1",
-      ),
+      canCoolSessionCache({ ...base, session_status: {}, permission: { ses_1: [{} as PermissionRequest] } }, "ses_1"),
     ).toBe(false)
     expect(
       canCoolSessionCache({ ...base, session_status: {}, question: { ses_1: [{} as QuestionRequest] } }, "ses_1"),

@@ -2,8 +2,9 @@
 // usage: bun scripts/spike-cdp-call.ts <url-substring> <method> <params-json>
 const [needle, method, paramsJson] = process.argv.slice(2)
 
-const targets: Array<{ url: string; webSocketDebuggerUrl: string }> =
-  await (await fetch("http://127.0.0.1:9222/json/list")).json()
+const targets: Array<{ url: string; webSocketDebuggerUrl: string }> = await (
+  await fetch("http://127.0.0.1:9222/json/list")
+).json()
 const target = targets.find((t) => t.url.includes(needle))
 if (!target) {
   console.error(`no target matching ${needle}`)

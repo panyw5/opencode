@@ -248,7 +248,10 @@ function rawWorkspaceStorage(dir: string) {
   return `opencode.workspace.${head}.${sum}.dat`
 }
 
-function isWindowsLocal(context: PathContext | undefined, dir: string): context is PathContext & { platform: "win32"; kind: "local-filesystem" } {
+function isWindowsLocal(
+  context: PathContext | undefined,
+  dir: string,
+): context is PathContext & { platform: "win32"; kind: "local-filesystem" } {
   return (
     context?.platform === "win32" &&
     context.kind === "local-filesystem" &&
@@ -414,15 +417,30 @@ export const Persist = {
     return { storage: workspaceStorage(dir, context), key: `workspace:${key}`, legacy, directory: dir, context }
   },
   session(dir: string, session: string, key: string, legacy?: string[], context?: PathContext): PersistTarget {
-    return { storage: workspaceStorage(dir, context), key: `session:${session}:${key}`, legacy, directory: dir, context }
+    return {
+      storage: workspaceStorage(dir, context),
+      key: `session:${session}:${key}`,
+      legacy,
+      directory: dir,
+      context,
+    }
   },
-  scoped(dir: string, session: string | undefined, key: string, legacy?: string[], context?: PathContext): PersistTarget {
+  scoped(
+    dir: string,
+    session: string | undefined,
+    key: string,
+    legacy?: string[],
+    context?: PathContext,
+  ): PersistTarget {
     if (session) return Persist.session(dir, session, key, legacy, context)
     return Persist.workspace(dir, key, legacy, context)
   },
 }
 
-export function removePersisted(target: Pick<PersistTarget, "storage" | "key" | "directory" | "context">, platform?: Platform) {
+export function removePersisted(
+  target: Pick<PersistTarget, "storage" | "key" | "directory" | "context">,
+  platform?: Platform,
+) {
   const isDesktop = platform?.platform === "desktop" && !!platform.storage
   const context = target.context
   const storageName = targetStorage(target, context)
@@ -577,7 +595,6 @@ export function persisted<T>(
           count: migrated.length,
         })
         return serialized
-
       },
       setItem: async (key, value) => {
         await current.setItem(key, value)

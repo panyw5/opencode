@@ -18,14 +18,14 @@
 
 ### 版本与生成产物核对（只读）
 
-| 对象 | 已确认 | 待处理 / 未证明 |
-| --- | --- | --- |
-| 统一版本规则 | `script/sync-version.ts` 按 `VERSION` 更新 packages/sdks 中的 package.json，包含嵌套 fixture；本工作树 VERSION 为 1.18.57 | 当前三个包从已提交 1.18.49 变为未提交 1.18.57；本轮不执行同步脚本或版本提交 |
-| 锁文件 | bun.lock 追踪 extension-kit、hello-viewer 及应用 workspace 条目；同步脚本不更新锁文件 | extension-kit/hello-viewer 元数据仍为 1.18.49，App/opencode 为 1.18.56；需按仓库流程重新核对/更新，不等同当前 manifest 版本 |
-| hello-viewer | package exports 的 dist/web/index.js、index.css、dist/server.js 均已追踪，build 同时构建 Web/Server | 未重建或逐字节比较产物，不能据静态存在宣称与源码构建一致 |
-| extension-kit / fixture | Web/Server/Vite 导出目标及 fixture package/TS/CSS 均已追踪 | 最新版本变更后仍需在确定的交付基线复核生成/测试契约 |
-| SDK v2 | sdk.gen.ts/types.gen.ts 已追踪，含管理、settings PATCH、RPC 与 extension.status/event 静态契约 | 未执行完整生成流程，不保证全量生成一致性 |
-| 追踪 OpenAPI 快照 | `script/generate.ts` 除 JS SDK build 外另生成 packages/sdk/openapi.json | **快照缺 6 项扩展操作及 2 个事件定义，交付前需补齐/复核**；临时 packages/sdk/js/openapi.json 与该追踪文件不是同一产物 |
+| 对象                    | 已确认                                                                                                                    | 待处理 / 未证明                                                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 统一版本规则            | `script/sync-version.ts` 按 `VERSION` 更新 packages/sdks 中的 package.json，包含嵌套 fixture；本工作树 VERSION 为 1.18.57 | 当前三个包从已提交 1.18.49 变为未提交 1.18.57；本轮不执行同步脚本或版本提交                                                 |
+| 锁文件                  | bun.lock 追踪 extension-kit、hello-viewer 及应用 workspace 条目；同步脚本不更新锁文件                                     | extension-kit/hello-viewer 元数据仍为 1.18.49，App/opencode 为 1.18.56；需按仓库流程重新核对/更新，不等同当前 manifest 版本 |
+| hello-viewer            | package exports 的 dist/web/index.js、index.css、dist/server.js 均已追踪，build 同时构建 Web/Server                       | 未重建或逐字节比较产物，不能据静态存在宣称与源码构建一致                                                                    |
+| extension-kit / fixture | Web/Server/Vite 导出目标及 fixture package/TS/CSS 均已追踪                                                                | 最新版本变更后仍需在确定的交付基线复核生成/测试契约                                                                         |
+| SDK v2                  | sdk.gen.ts/types.gen.ts 已追踪，含管理、settings PATCH、RPC 与 extension.status/event 静态契约                            | 未执行完整生成流程，不保证全量生成一致性                                                                                    |
+| 追踪 OpenAPI 快照       | `script/generate.ts` 除 JS SDK build 外另生成 packages/sdk/openapi.json                                                   | **快照缺 6 项扩展操作及 2 个事件定义，交付前需补齐/复核**；临时 packages/sdk/js/openapi.json 与该追踪文件不是同一产物       |
 
 **产物修复结果（2026-10-14，Bun 1.3.9，隔离 XDG/OPENCODE_TEST_HOME、关闭模型拉取）：** 锁文件已更新 21 处版本元数据并保留 integrity；SDK v2 重生成对扩展类型零差异（契约一致），dev 漂移已恢复；hello-viewer Web 产物逐字节一致，server.js 仅打包器辅助代码不同，保留原产物；OpenAPI 与 hello-viewer 各两次生成均一致。`openapi.json` 为 dev 整体漂移，按用户决定随扩展分支更新为完整重新生成结果（含大量非扩展接口变化）；SDK v2 非扩展漂移仍属 dev 侧待办。回归：extension-kit 17/0、hello-viewer 14/0、扩展服务端/HTTP 122/0；SDK、opencode、kit、示例、App 5 项 typecheck 通过。
 
@@ -205,14 +205,14 @@ NEW specs/extensions/p2-delivery.md
 
 ## 5. 排除与分离
 
-| 文件/位置 | 处理建议 | 当前处理 |
-|---|---|---|
-| `packages/opencode/src/provider/models-snapshot.js` | 构建生成变化，与 P2 功能分离核对；若后续决定回退，先检查具体差异并确认 | 保留，未回退 |
-| `packages/app/dist/` | 已被 Git 忽略，仅生产构建/验收使用 | 不交付 |
-| `packages/opencode/dist/` | 已被 Git 忽略，编译二进制仅验收使用 | 不交付 |
-| `/tmp/opencode-p2-*/` 数据、观测扩展、截图 | 本地验收证据，不复制到源码交付 | 保留在临时目录 |
-| `.claude/worktrees/agent-*/` | 独立代理补丁工作树，不整树交付、不自动删除 | 保留 |
-| 主 checkout 的其他 WIP | 不属于此扩展工作树的 P2 文件清单 | 未修改 |
+| 文件/位置                                           | 处理建议                                                               | 当前处理       |
+| --------------------------------------------------- | ---------------------------------------------------------------------- | -------------- |
+| `packages/opencode/src/provider/models-snapshot.js` | 构建生成变化，与 P2 功能分离核对；若后续决定回退，先检查具体差异并确认 | 保留，未回退   |
+| `packages/app/dist/`                                | 已被 Git 忽略，仅生产构建/验收使用                                     | 不交付         |
+| `packages/opencode/dist/`                           | 已被 Git 忽略，编译二进制仅验收使用                                    | 不交付         |
+| `/tmp/opencode-p2-*/` 数据、观测扩展、截图          | 本地验收证据，不复制到源码交付                                         | 保留在临时目录 |
+| `.claude/worktrees/agent-*/`                        | 独立代理补丁工作树，不整树交付、不自动删除                             | 保留           |
+| 主 checkout 的其他 WIP                              | 不属于此扩展工作树的 P2 文件清单                                       | 未修改         |
 
 ## 6. 验证摘要
 

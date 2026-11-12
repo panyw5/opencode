@@ -106,7 +106,9 @@ export function scopeExtensionID(options = {}) {
   }
   const id = pkg?.opencode?.id
   if (typeof id !== "string" || !EXTENSION_ID_PATTERN.test(id)) {
-    throw new Error("OpenCode extension build requires opencode.id in package.json (or pass { scope } to extensionKit())")
+    throw new Error(
+      "OpenCode extension build requires opencode.id in package.json (or pass { scope } to extensionKit())",
+    )
   }
   return id
 }

@@ -104,11 +104,16 @@ const TEXT_WIDTH_INSET = 48
 describe("estimateRowHeight fixed-height rows", () => {
   test("uses fixed present_file geometry regardless of caption", () => {
     const part = presentFilePart("caption ".repeat(100))
-    const row = { _tag: "AssistantPart", group: { type: "part" as const, ref: { messageID: "msg_1", partID: part.id } } }
+    const row = {
+      _tag: "AssistantPart",
+      group: { type: "part" as const, ref: { messageID: "msg_1", partID: part.id } },
+    }
     expect(estimateRowHeight(row, WIDTH, { ...base, parts: lookup(part) })).toBe(PRESENT_FILE_DESKTOP_HEIGHT)
     expect(estimateRowHeight(row, 500, { ...base, parts: lookup(part) })).toBe(PRESENT_FILE_MOBILE_HEIGHT)
     expect(estimateRowHeight(row, 559, { ...base, parts: lookup(part) })).toBe(PRESENT_FILE_MOBILE_HEIGHT)
-    expect(estimateRowHeight(row, 500, { ...base, parts: lookup(part), viewportWidth: 1440 })).toBe(PRESENT_FILE_DESKTOP_HEIGHT)
+    expect(estimateRowHeight(row, 500, { ...base, parts: lookup(part), viewportWidth: 1440 })).toBe(
+      PRESENT_FILE_DESKTOP_HEIGHT,
+    )
     const diagram = { ...part, tool: "present_diagram" } as ToolPart
     expect(estimateRowHeight(row, WIDTH, { ...base, parts: lookup(diagram) })).toBe(PRESENT_DIAGRAM_DESKTOP_HEIGHT)
     expect(estimateRowHeight(row, 500, { ...base, parts: lookup(diagram) })).toBe(PRESENT_DIAGRAM_MOBILE_HEIGHT)
@@ -193,9 +198,9 @@ describe("estimateRowHeight fixed-height rows", () => {
 
   test("ToolGroup uses one compact trigger plus timeline spacing", () => {
     expect(estimateRowHeight({ _tag: "ToolGroup", userMessageID: "m" }, WIDTH, base)).toBe(TOOL_GROUP_HEIGHT)
-    expect(
-      estimateRowHeight({ _tag: "ToolGroup", userMessageID: "m", topSpacing: true }, WIDTH, base),
-    ).toBe(TOOL_GROUP_HEIGHT + PREVIOUS_PART_SPACING)
+    expect(estimateRowHeight({ _tag: "ToolGroup", userMessageID: "m", topSpacing: true }, WIDTH, base)).toBe(
+      TOOL_GROUP_HEIGHT + PREVIOUS_PART_SPACING,
+    )
   })
 
   test("unknown tags keep the legacy fallback", () => {

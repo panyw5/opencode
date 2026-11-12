@@ -15,7 +15,11 @@ export function validMathProjectName(value: string): boolean {
 }
 
 export function defaultMathProjectName(directory: string): string {
-  const base = directory.replace(/[\\/]+$/, "").split(/[\\/]/).at(-1) || "math-project"
+  const base =
+    directory
+      .replace(/[\\/]+$/, "")
+      .split(/[\\/]/)
+      .at(-1) || "math-project"
   const normalized = base
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, "-")
@@ -31,7 +35,10 @@ export function createMathProblemID(problem: string, unique: string = crypto.ran
     .replace(/^-+|-+$/g, "")
     .slice(0, 48)
     .replace(/-+$/g, "")
-  const suffix = unique.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 12)
+  const suffix = unique
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "")
+    .slice(0, 12)
   return `${slug || "problem"}-${suffix || "new"}`
 }
 
@@ -71,7 +78,7 @@ export function buildMathInitializationPrompt(input: MathInitializationConfig): 
     `- The user confirmed a bounded roster of ${total} worker${total === 1 ? "" : "s"}: ${roster}.`,
     `- Use worker model ${model} for every new worker, with the variants specified above.`,
     `- Use verifier model ${verifierModel} for every worker by passing verifier_model=${verifierModel} to math_worker_start and math_worker_ensure.`,
-    "- Decompose the problem into precise, non-overlapping, self-contained evidence workstreams: each TASK must carry the definitions and conventions its route needs, never reference \"the given definition\", the parent session, or files outside the problem workspace.",
+    '- Decompose the problem into precise, non-overlapping, self-contained evidence workstreams: each TASK must carry the definitions and conventions its route needs, never reference "the given definition", the parent session, or files outside the problem workspace.',
     "- Only verifier-backed fact_id values are proof bricks; global memory and worker reports remain hypotheses.",
     "- Do not run mathematical experiments with executable code.",
     input.controlBeat

@@ -913,9 +913,7 @@ export const layer = Layer.effect(
             }
             const directory = info.directory
             const location = directory
-              ? yield* Effect.sync(() =>
-                  ProjectLocation.getByDirectory(AppFileSystem.resolve(directory)),
-                )
+              ? yield* Effect.sync(() => ProjectLocation.getByDirectory(AppFileSystem.resolve(directory)))
               : undefined
 
             yield* db((db) => {

@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  fileIdentityKey,
-  resolveWithinWorkspace,
-  workspaceFoldsCase,
-  type FileIdentityContext,
-} from "./identity"
+import { fileIdentityKey, resolveWithinWorkspace, workspaceFoldsCase, type FileIdentityContext } from "./identity"
 
 const windowsLocal: FileIdentityContext = { platform: "win32", kind: "local-filesystem" }
 const windowsRemote: FileIdentityContext = { platform: "win32", kind: "remote-filesystem" }
@@ -18,9 +13,7 @@ const ok = (result: ReturnType<typeof resolveWithinWorkspace>) => {
 
 describe("workspace file identity", () => {
   test("windows local folds case for identity but keeps authoritative spelling", () => {
-    const resolved = ok(
-      resolveWithinWorkspace("C:\\Repo\\Src\\App.ts", { root: "C:/repo", context: windowsLocal }),
-    )
+    const resolved = ok(resolveWithinWorkspace("C:\\Repo\\Src\\App.ts", { root: "C:/repo", context: windowsLocal }))
     expect(resolved.path).toBe("Src/App.ts")
     expect(resolved.fileKey).toBe("src/app.ts")
     expect(resolved.name).toBe("App.ts")
@@ -32,12 +25,14 @@ describe("workspace file identity", () => {
   })
 
   test("windows segment boundaries: /repo2 never matches /repo", () => {
-    expect(
-      resolveWithinWorkspace("C:/repo2/file.ts", { root: "C:/repo", context: windowsLocal }),
-    ).toMatchObject({ ok: false, reason: "outside-root" })
-    expect(resolveWithinWorkspace("C:/repo/../outside.ts", { root: "C:/repo", context: windowsLocal })).toMatchObject(
-      { ok: false, reason: "outside-root" },
-    )
+    expect(resolveWithinWorkspace("C:/repo2/file.ts", { root: "C:/repo", context: windowsLocal })).toMatchObject({
+      ok: false,
+      reason: "outside-root",
+    })
+    expect(resolveWithinWorkspace("C:/repo/../outside.ts", { root: "C:/repo", context: windowsLocal })).toMatchObject({
+      ok: false,
+      reason: "outside-root",
+    })
   })
 
   test("windows drive-relative and rooted-relative inputs are rejected as ambiguous", () => {
@@ -78,7 +73,9 @@ describe("workspace file identity", () => {
 
   test("posix keeps case and backslash filenames; darwin does not fold case", () => {
     expect(workspaceFoldsCase(darwinLocal)).toBe(false)
-    const resolved = ok(resolveWithinWorkspace("/Users/x/repo/src/a\\b.ts", { root: "/Users/x/repo", context: darwinLocal }))
+    const resolved = ok(
+      resolveWithinWorkspace("/Users/x/repo/src/a\\b.ts", { root: "/Users/x/repo", context: darwinLocal }),
+    )
     expect(resolved.path).toBe("src/a\\b.ts")
     expect(resolved.name).toBe("a\\b.ts")
     expect(resolved.fileKey).toBe("src/a\\b.ts")
@@ -90,9 +87,9 @@ describe("workspace file identity", () => {
   })
 
   test("relative dot segments resolve within the root and never escape", () => {
-    expect(
-      ok(resolveWithinWorkspace("src/../app.ts", { root: "/repo", context: linuxRemote })),
-    ).toMatchObject({ path: "app.ts" })
+    expect(ok(resolveWithinWorkspace("src/../app.ts", { root: "/repo", context: linuxRemote }))).toMatchObject({
+      path: "app.ts",
+    })
     expect(resolveWithinWorkspace("../outside.ts", { root: "/repo", context: linuxRemote })).toMatchObject({
       ok: false,
       reason: "escape",

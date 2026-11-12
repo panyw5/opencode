@@ -12,14 +12,14 @@
 
 ## 关键工作区
 
-| 工作区 | 用途 | 当前进度 |
-| --- | --- | --- |
-| `/Users/lelouch/apps/opencode`，`dev` | 主开发与集成工作区 | HEAD `be5e76cec8`；20 个未提交状态条目，涉及引用当前会话新建会话、侧栏样式、全文检索、shell 提示与模型快照。不是干净发布基线。 |
-| `/Users/lelouch/apps/opencode/.claude/worktrees/extensions-p0`，`claude/extensions-p2-design` | 扩展系统整合与验收；目录名 P0 已过时 | HEAD `6faed064da`；相对 dev 落后 1 条、独有 43 条；另外 4 个未提交条目。已推进到 P2 runtime、P3a 安装管理、release 安装、独立模板、wls-repl 调试器、目录安装及重装修复，尚未合入 dev。 |
-| `/Users/lelouch/apps/opencode/.worktrees/session-collaboration`，`codex/session-collaboration` | 跨会话引用、读取、创建、发送与干预 | HEAD `ffa0b01ba4` 是 dev 祖先，落后 369 条，无分支独有提交；81 个未提交状态条目。计划记载 A01–A09 已验收，A10 进行中，A11–A18 待做，不能视为完整交付。 |
-| `/Users/lelouch/.codex/worktrees/a131/opencode`，detached | 流式消息滚动后重新接管底部跟随的修复 | HEAD `c59a2b229f`，落后 dev 292 条；4 个条目。新增 `shouldResumeLiveBottom`、恢复 live/follow 状态、前后日志及测试，未提交；旧基线代码与当前 dev 已演化，不能直接整包覆盖。 |
-| `/Users/lelouch/.codex/worktrees/scroll-v11852-baseline/opencode`，`codex/scroll-v11855-test` | 旧版滚动行为对照与回归环境 | 实际 HEAD 为 1.18.55 的 `6b5e0a120a`，落后 dev 137 条；当前仅图标修改。另有专用 stash 保留回归 harness，不能因当前无功能代码差异认定没有成果。 |
-| `/Users/lelouch/apps/opencode-task-2`，`task/2` | 本次 worktree 调查 | 调查开始时与 dev 同为 `be5e76cec8`，干净；本次仅新增此清单。 |
+| 工作区                                                                                         | 用途                                 | 当前进度                                                                                                                                                                               |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/Users/lelouch/apps/opencode`，`dev`                                                          | 主开发与集成工作区                   | HEAD `be5e76cec8`；20 个未提交状态条目，涉及引用当前会话新建会话、侧栏样式、全文检索、shell 提示与模型快照。不是干净发布基线。                                                         |
+| `/Users/lelouch/apps/opencode/.claude/worktrees/extensions-p0`，`claude/extensions-p2-design`  | 扩展系统整合与验收；目录名 P0 已过时 | HEAD `6faed064da`；相对 dev 落后 1 条、独有 43 条；另外 4 个未提交条目。已推进到 P2 runtime、P3a 安装管理、release 安装、独立模板、wls-repl 调试器、目录安装及重装修复，尚未合入 dev。 |
+| `/Users/lelouch/apps/opencode/.worktrees/session-collaboration`，`codex/session-collaboration` | 跨会话引用、读取、创建、发送与干预   | HEAD `ffa0b01ba4` 是 dev 祖先，落后 369 条，无分支独有提交；81 个未提交状态条目。计划记载 A01–A09 已验收，A10 进行中，A11–A18 待做，不能视为完整交付。                                 |
+| `/Users/lelouch/.codex/worktrees/a131/opencode`，detached                                      | 流式消息滚动后重新接管底部跟随的修复 | HEAD `c59a2b229f`，落后 dev 292 条；4 个条目。新增 `shouldResumeLiveBottom`、恢复 live/follow 状态、前后日志及测试，未提交；旧基线代码与当前 dev 已演化，不能直接整包覆盖。            |
+| `/Users/lelouch/.codex/worktrees/scroll-v11852-baseline/opencode`，`codex/scroll-v11855-test`  | 旧版滚动行为对照与回归环境           | 实际 HEAD 为 1.18.55 的 `6b5e0a120a`，落后 dev 137 条；当前仅图标修改。另有专用 stash 保留回归 harness，不能因当前无功能代码差异认定没有成果。                                         |
+| `/Users/lelouch/apps/opencode-task-2`，`task/2`                                                | 本次 worktree 调查                   | 调查开始时与 dev 同为 `be5e76cec8`，干净；本次仅新增此清单。                                                                                                                           |
 
 ### 扩展整合树的实际完成边界
 
@@ -44,11 +44,11 @@ A10 停在独立创建的取消、事实性 outcome 与崩溃恢复修正；A10.
 
 下表路径均以 `/Users/lelouch/apps/opencode/.claude/worktrees/` 为前缀。三者 HEAD 都是 `fecd50d21f`，与本地 `origin/dev` 相同，但任务明确要求只读研究原主工作区，不基于隔离树实现。
 
-| 目录 | 任务 | 状态 |
-| --- | --- | --- |
-| `agent-a019cd7416ba5f22b` | 内置 `computer_*` 总体架构、状态、审批与焦点恢复方案 | 干净且锁定；调查时原会话仍有新日志，尚无最终交接。 |
-| `agent-ac3f256194fdbfc59` | Computer service 到 Electron main/sidecar 的认证私有通道、取消与 runtime 接入 | 干净且锁定；调查中，尚无最终交接。 |
-| `agent-afb60e1722b473264` | Computer 面板、预览、急停、人工接管、Electron/Swift helper 包装与构建 | 干净且锁定；调查中，尚无最终交接。 |
+| 目录                      | 任务                                                                          | 状态                                               |
+| ------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------- |
+| `agent-a019cd7416ba5f22b` | 内置 `computer_*` 总体架构、状态、审批与焦点恢复方案                          | 干净且锁定；调查时原会话仍有新日志，尚无最终交接。 |
+| `agent-ac3f256194fdbfc59` | Computer service 到 Electron main/sidecar 的认证私有通道、取消与 runtime 接入 | 干净且锁定；调查中，尚无最终交接。                 |
+| `agent-afb60e1722b473264` | Computer 面板、预览、急停、人工接管、Electron/Swift helper 包装与构建         | 干净且锁定；调查中，尚无最终交接。                 |
 
 三个锁都关联仍存活的 PID `16067`，原会话 ID 为 `a48277be-cd3a-4707-a5f8-958c4ca09c59`。干净是因为任务只读，不是可清理信号。它们相对 dev 的大幅分叉来自上游历史，不表示本任务实现了数千条新提交。
 
@@ -60,72 +60,72 @@ A10 停在独立创建的取消、事实性 outcome 与崩溃恢复修正；A10.
 
 ### P1 与 P2 实现
 
-| 目录 | 用途 | 未提交条目 | 原任务进度 |
-| --- | --- | ---: | --- |
-| `agent-a00b67133829f4786` | P1 manifest、registry、事件、服务与 CLI | 9 | 已交接；12 项测试、类型检查及 CLI 冒烟通过。 |
-| `agent-a22d65b962b1f24cd` | P1 extension-kit 与 hello-viewer | 4 | 已交接；kit 7 项测试、示例构建通过。 |
-| `agent-aa857c1e38d859aea` | P1 前端 ExtensionHost、惰性激活与清理 | 9 | 已交接；6 项 host 测试通过，整包类型检查当时依赖父树契约。 |
-| `agent-p2-contract` | P2 server/web manifest、设置与 kit server 契约 | 8 | 保留契约实现及测试；分支仍停在 P1 HEAD，未找到同名会话日志，不能单独确认该副本最终交接结论。 |
-| `agent-ac2e0f7e8d3154f23` | 重复分配的 P2 契约实现准备 | 0 | 已明确停止重复实现；仅建分支，无代码成果。 |
-| `agent-a5aa65cb9502749be` | P2 设置数据层与事件 | 34 | 已交接；扩展 25、bus 21 项测试及类型检查通过。多数额外改动是测试用基线脚手架，不属于最终交付。 |
-| `agent-a30d7ed373905100e` | P2 server runtime、RPC 生命周期 | 6 | 已交接；runtime 14、扩展 28 项测试通过。 |
-| `agent-a5f9b7ac4bb166bc9` | P2 源码 watcher 与热重载 | 2 | 已交接；watch 13、扩展 27 项测试及类型检查通过。 |
-| `agent-a1c6109b307cb3047` | P2 HTTP RPC 路由、超时与取消 | 7 | 已交接；定向 20 项通过。副本中的 runtime 是临时 stub，不能拿整个树直接集成。 |
-| `agent-ab3e7c20a2fa0c00c` | P2 settings HTTP 端点 | 9 | 已交接；6 项新测试及类型检查通过，有 owned patch。 |
-| `agent-a9a143013d4b20a2e` | P2 tool renderer、panel、command 前端贡献点 | 7 | 已交接，与前端 bridge 子任务已对齐整合顺序。 |
-| `agent-a3ecca560092814fb` | P2 前端 RPC、events、settings 桥 | 9 | 已交接；44 项扩展测试及类型检查通过。 |
-| `agent-a7a5855e5df42efdb` | P2 hello-viewer RPC、事件、工具与子进程示例 | 9 | 已交接；9 项测试及 Node ESM 产物冒烟通过。 |
-| `agent-a00e7eda37aea1f6d` | P2 manifest 驱动最小设置 UI | 17 | 已交接；14 项新测试及类型检查通过，包含入口和掩码/清空处理。 |
-| `agent-a1253ef19d860921a` | runtime 热重载真实路径、代际竞态、取消等修复 | 16 | 已交接；runtime 25、扩展 39 项通过；根目录保留两个补丁。 |
-| `agent-a97c236a19e3cee64` | runtime 设置 defaults、晚到 hooks 守卫与多 Effect scope 引用计数 | 21 | 已交接四文件 owned patch；6 项新增回归先红后绿，扩展 79 项及类型检查通过；其余契约是测试用副本。 |
-| `agent-af0249a456e9be957` | 域过滤、单项容错、reconcile 幂等、失败清理与 RPC timeout | 10 | 已交接；59 项测试及类型检查通过。 |
-| `agent-af5ba124cc8bebfb7` | Vite CSS selector scope 与 DOM 宿主挂载 | 10 | 已交接，报告声明实现和验证完成；隔离副本仍保留改动。 |
-| `agent-a647f13176160a75a` | 编辑 viewer 的 revision、dirty、save 与关闭拦截 | 18 | 已交接；同时保留为编译复制的依赖契约，不应整体覆盖整合树。 |
+| 目录                      | 用途                                                             | 未提交条目 | 原任务进度                                                                                       |
+| ------------------------- | ---------------------------------------------------------------- | ---------: | ------------------------------------------------------------------------------------------------ |
+| `agent-a00b67133829f4786` | P1 manifest、registry、事件、服务与 CLI                          |          9 | 已交接；12 项测试、类型检查及 CLI 冒烟通过。                                                     |
+| `agent-a22d65b962b1f24cd` | P1 extension-kit 与 hello-viewer                                 |          4 | 已交接；kit 7 项测试、示例构建通过。                                                             |
+| `agent-aa857c1e38d859aea` | P1 前端 ExtensionHost、惰性激活与清理                            |          9 | 已交接；6 项 host 测试通过，整包类型检查当时依赖父树契约。                                       |
+| `agent-p2-contract`       | P2 server/web manifest、设置与 kit server 契约                   |          8 | 保留契约实现及测试；分支仍停在 P1 HEAD，未找到同名会话日志，不能单独确认该副本最终交接结论。     |
+| `agent-ac2e0f7e8d3154f23` | 重复分配的 P2 契约实现准备                                       |          0 | 已明确停止重复实现；仅建分支，无代码成果。                                                       |
+| `agent-a5aa65cb9502749be` | P2 设置数据层与事件                                              |         34 | 已交接；扩展 25、bus 21 项测试及类型检查通过。多数额外改动是测试用基线脚手架，不属于最终交付。   |
+| `agent-a30d7ed373905100e` | P2 server runtime、RPC 生命周期                                  |          6 | 已交接；runtime 14、扩展 28 项测试通过。                                                         |
+| `agent-a5f9b7ac4bb166bc9` | P2 源码 watcher 与热重载                                         |          2 | 已交接；watch 13、扩展 27 项测试及类型检查通过。                                                 |
+| `agent-a1c6109b307cb3047` | P2 HTTP RPC 路由、超时与取消                                     |          7 | 已交接；定向 20 项通过。副本中的 runtime 是临时 stub，不能拿整个树直接集成。                     |
+| `agent-ab3e7c20a2fa0c00c` | P2 settings HTTP 端点                                            |          9 | 已交接；6 项新测试及类型检查通过，有 owned patch。                                               |
+| `agent-a9a143013d4b20a2e` | P2 tool renderer、panel、command 前端贡献点                      |          7 | 已交接，与前端 bridge 子任务已对齐整合顺序。                                                     |
+| `agent-a3ecca560092814fb` | P2 前端 RPC、events、settings 桥                                 |          9 | 已交接；44 项扩展测试及类型检查通过。                                                            |
+| `agent-a7a5855e5df42efdb` | P2 hello-viewer RPC、事件、工具与子进程示例                      |          9 | 已交接；9 项测试及 Node ESM 产物冒烟通过。                                                       |
+| `agent-a00e7eda37aea1f6d` | P2 manifest 驱动最小设置 UI                                      |         17 | 已交接；14 项新测试及类型检查通过，包含入口和掩码/清空处理。                                     |
+| `agent-a1253ef19d860921a` | runtime 热重载真实路径、代际竞态、取消等修复                     |         16 | 已交接；runtime 25、扩展 39 项通过；根目录保留两个补丁。                                         |
+| `agent-a97c236a19e3cee64` | runtime 设置 defaults、晚到 hooks 守卫与多 Effect scope 引用计数 |         21 | 已交接四文件 owned patch；6 项新增回归先红后绿，扩展 79 项及类型检查通过；其余契约是测试用副本。 |
+| `agent-af0249a456e9be957` | 域过滤、单项容错、reconcile 幂等、失败清理与 RPC timeout         |         10 | 已交接；59 项测试及类型检查通过。                                                                |
+| `agent-af5ba124cc8bebfb7` | Vite CSS selector scope 与 DOM 宿主挂载                          |         10 | 已交接，报告声明实现和验证完成；隔离副本仍保留改动。                                             |
+| `agent-a647f13176160a75a` | 编辑 viewer 的 revision、dirty、save 与关闭拦截                  |         18 | 已交接；同时保留为编译复制的依赖契约，不应整体覆盖整合树。                                       |
 
 ### 审查与集成修复
 
-| 目录 | 用途 | 未提交条目 | 原任务进度 |
-| --- | --- | ---: | --- |
-| `agent-aaf5d4800e458554a` | 前端工具 renderer 响应性、扩展 mount 等三项修复 | 5 | 已交接 owned patch；记录有类型检查通过。 |
-| `agent-ad80ec022358d29b3` | RPC OpenAPI 可选 requestBody 与 SDK input 丢失修复 | 27 | 已交接；空 body、合法 input、坏 body 和 OpenAPI 契约测试通过；仅少量 owned delta，其他为临时依赖。 |
-| `agent-a2b98b0fc6efadac2` | 文件 tab keepalive，防切页丢编辑草稿 | 6 | 已交接；文件清单区分了自身修改和复制依赖。 |
-| `agent-add0f733b3bb86402` | auth_token Base64URL、带冒号密码与错误优先级 | 2 | 已交接；18 项测试及类型检查通过；相关 stash 当前仍存在。 |
-| `agent-a1bef340b0d404620` | 异步 reconcile 旧 refresh 覆盖新状态的竞态 | 1 | 已交接最小补丁与生产 helper 红绿测试；当时要求主树应用后再跑整体检查。 |
-| `agent-a8031cd7f5bb83055` | watcher 并发 refresh 重复订阅修复尝试 | 661 | 原会话以模型参数 API 错误结束，未找到成功交接；大量工作区差异不等于完成 661 项修改，指定 watch 文件当前无 tracked diff。需单独核对，不能整体集成或直接删除。 |
-| `agent-a5f8d140c8039e0c2` | app tests 窄 UI mock 污染及 rows 回归保护 | 2 | 已交接 patch；主要产物在 mirror 与补丁，报告有组合红绿验证。 |
-| `agent-a476b485a6ec85ebf` | 扩展设置迁到 Config 页 | 16 | 原会话以额度耗尽结束，留有 UI/helper/test 草稿，无最终成功交接。后续整合树已继续推进该区域，不能将旧草稿当待直接合入成果。 |
-| `agent-a0d353c53ad000225` | 启停管理 API/host、互斥与跨 server stale guard | 3 | 已交接实现并做后续只读复核；记录有 82 项扩展测试及类型检查通过。 |
+| 目录                      | 用途                                               | 未提交条目 | 原任务进度                                                                                                                                                   |
+| ------------------------- | -------------------------------------------------- | ---------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `agent-aaf5d4800e458554a` | 前端工具 renderer 响应性、扩展 mount 等三项修复    |          5 | 已交接 owned patch；记录有类型检查通过。                                                                                                                     |
+| `agent-ad80ec022358d29b3` | RPC OpenAPI 可选 requestBody 与 SDK input 丢失修复 |         27 | 已交接；空 body、合法 input、坏 body 和 OpenAPI 契约测试通过；仅少量 owned delta，其他为临时依赖。                                                           |
+| `agent-a2b98b0fc6efadac2` | 文件 tab keepalive，防切页丢编辑草稿               |          6 | 已交接；文件清单区分了自身修改和复制依赖。                                                                                                                   |
+| `agent-add0f733b3bb86402` | auth_token Base64URL、带冒号密码与错误优先级       |          2 | 已交接；18 项测试及类型检查通过；相关 stash 当前仍存在。                                                                                                     |
+| `agent-a1bef340b0d404620` | 异步 reconcile 旧 refresh 覆盖新状态的竞态         |          1 | 已交接最小补丁与生产 helper 红绿测试；当时要求主树应用后再跑整体检查。                                                                                       |
+| `agent-a8031cd7f5bb83055` | watcher 并发 refresh 重复订阅修复尝试              |        661 | 原会话以模型参数 API 错误结束，未找到成功交接；大量工作区差异不等于完成 661 项修改，指定 watch 文件当前无 tracked diff。需单独核对，不能整体集成或直接删除。 |
+| `agent-a5f8d140c8039e0c2` | app tests 窄 UI mock 污染及 rows 回归保护          |          2 | 已交接 patch；主要产物在 mirror 与补丁，报告有组合红绿验证。                                                                                                 |
+| `agent-a476b485a6ec85ebf` | 扩展设置迁到 Config 页                             |         16 | 原会话以额度耗尽结束，留有 UI/helper/test 草稿，无最终成功交接。后续整合树已继续推进该区域，不能将旧草稿当待直接合入成果。                                   |
+| `agent-a0d353c53ad000225` | 启停管理 API/host、互斥与跨 server stale guard     |          3 | 已交接实现并做后续只读复核；记录有 82 项扩展测试及类型检查通过。                                                                                             |
 
 ### P3a 安装与清理
 
-| 目录 | 用途 | 未提交条目 | 原任务进度 |
-| --- | --- | ---: | --- |
-| `agent-a42f534476bc21266` | 安全归档解包与校验 | 2 | 已交接；59 项测试及严格类型检查通过。 |
-| `agent-a490cd8512588c2f7` | HTTPS 下载、摘要与网络安全限制 | 2 | 已交接；85 项测试及严格类型检查通过。 |
-| `agent-a6898065b1e3eaee2` | 严格 npm 依赖图、下载与物化 | 2 | 已交接；25 项测试、139 次断言通过。 |
-| `agent-a3dc8e8e3009b369b` | registry observer | 2 | 已交接；8 项测试通过。 |
-| `agent-a87a44dace6e83bfd` | prepare/commit 安装事务与 CAS | 11 | 已交接，后续确认 leases 接口兼容；副本含复制的配套模块。 |
-| `agent-ac701b8c12c25701d` | runtime mutation fence、quiesce 与代际门禁 | 8 | 已交接；最终记录 56 项测试及类型检查通过，末轮仅修 fixture。 |
-| `agent-a1a664722430ed70e` | CLI install、update、uninstall | 15 | 已交接两个 owned 文件；8 项离线测试及类型检查通过。 |
-| `agent-aaaf0b398273b0185` | install API 客户端测试 | 4 | 已交接测试；SDK 与 install-api.ts 是测试依赖副本，不属于独立交付。 |
-| `agent-a1161217d33a114dc` | 安装、更新、移除确认 UI | 5 | 已交接；10 项真实 Solid 契约、83 次断言及类型检查通过；非真实 GUI E2E。 |
-| `agent-ab1232e1753ae34a7` | 安装服务、HTTP 与 host 状态一致性只读审查 | 0 | 已交接两个确认问题；干净符合审查性质，不代表当时没有工作。 |
-| `agent-aea18ed56e3357b08` | generation/data 租约和进程存活证明 | 2 | 已交接；20 项测试及类型检查通过。 |
-| `agent-a08806efc28b285cf` | generation GC、purge 与重启恢复清理 | 2 | 已交接；18 项测试通过。 |
-| `agent-a418f05be3d5486d7` | data/cleanup/leases 删除安全与竞态只读审查 | 0 | 已交接两个确认问题，后续补充不改变结论。 |
-| `p3a-http-install-owned` | P3a HTTP 安装接口预留工作树 | 0 | 干净 detached `3a0d101b22`，无该树独有提交或工作区实现；名称提示接口任务，但本次未找到独立交接证据。 |
+| 目录                      | 用途                                       | 未提交条目 | 原任务进度                                                                                           |
+| ------------------------- | ------------------------------------------ | ---------: | ---------------------------------------------------------------------------------------------------- |
+| `agent-a42f534476bc21266` | 安全归档解包与校验                         |          2 | 已交接；59 项测试及严格类型检查通过。                                                                |
+| `agent-a490cd8512588c2f7` | HTTPS 下载、摘要与网络安全限制             |          2 | 已交接；85 项测试及严格类型检查通过。                                                                |
+| `agent-a6898065b1e3eaee2` | 严格 npm 依赖图、下载与物化                |          2 | 已交接；25 项测试、139 次断言通过。                                                                  |
+| `agent-a3dc8e8e3009b369b` | registry observer                          |          2 | 已交接；8 项测试通过。                                                                               |
+| `agent-a87a44dace6e83bfd` | prepare/commit 安装事务与 CAS              |         11 | 已交接，后续确认 leases 接口兼容；副本含复制的配套模块。                                             |
+| `agent-ac701b8c12c25701d` | runtime mutation fence、quiesce 与代际门禁 |          8 | 已交接；最终记录 56 项测试及类型检查通过，末轮仅修 fixture。                                         |
+| `agent-a1a664722430ed70e` | CLI install、update、uninstall             |         15 | 已交接两个 owned 文件；8 项离线测试及类型检查通过。                                                  |
+| `agent-aaaf0b398273b0185` | install API 客户端测试                     |          4 | 已交接测试；SDK 与 install-api.ts 是测试依赖副本，不属于独立交付。                                   |
+| `agent-a1161217d33a114dc` | 安装、更新、移除确认 UI                    |          5 | 已交接；10 项真实 Solid 契约、83 次断言及类型检查通过；非真实 GUI E2E。                              |
+| `agent-ab1232e1753ae34a7` | 安装服务、HTTP 与 host 状态一致性只读审查  |          0 | 已交接两个确认问题；干净符合审查性质，不代表当时没有工作。                                           |
+| `agent-aea18ed56e3357b08` | generation/data 租约和进程存活证明         |          2 | 已交接；20 项测试及类型检查通过。                                                                    |
+| `agent-a08806efc28b285cf` | generation GC、purge 与重启恢复清理        |          2 | 已交接；18 项测试通过。                                                                              |
+| `agent-a418f05be3d5486d7` | data/cleanup/leases 删除安全与竞态只读审查 |          0 | 已交接两个确认问题，后续补充不改变结论。                                                             |
+| `p3a-http-install-owned`  | P3a HTTP 安装接口预留工作树                |          0 | 干净 detached `3a0d101b22`，无该树独有提交或工作区实现；名称提示接口任务，但本次未找到独立交接证据。 |
 
 ### Release 安装与独立模板
 
-| 目录 | 用途 | 未提交条目 | 原任务进度 |
-| --- | --- | ---: | --- |
-| `agent-a74417f544c3ccb6c` | release descriptor resolver、下载与端到端集成测试 | 5 | 已交接实现及追加测试；最后追加的 integration 测试当时未运行，不能把它算作该隔离树已验通。 |
-| `agent-adbf3332d4cdd3c8a` | release 来源与 registry v3/receipt/retained 契约 | 7 | 已交接；定向 47、扩展 456 项通过；当时类型检查受其他切片未集成阻塞。 |
-| `agent-adc1c106c4b8ffb96` | release CLI 与 HTTP 适配、独立升版确认 | 5 | 已交接补丁；语法和补丁检查通过，运行时验证当时留给整合树。 |
-| `agent-a1c7ea125a6c3ab62` | release UI、固定来源更新、registry v3 确认及翻译 | 14 | 已交接；62 项回归通过，旧 SDK 类型阻塞留给主树生成后复验。 |
-| `agent-a8d253ebaca1016ed` | 本地 descriptor 作者工具与说明 | 3 | 已交接；28 项真实 CLI 离线测试通过。 |
-| `agent-a9aa6ee366330f0b3` | 独立模板 npm pack 与 release descriptor 脚本 | 1 | 已交接；Node 测试 6/6，通过真实离线 pack。 |
-| `agent-acabe7ca3138089d0` | 独立模板的宿主集成测试 | 1 | 已交接 3 项集成测试；隔离树当时缺模板/宿主实现，仅做语法检查。整合树后来另有完整模板验收记录。 |
+| 目录                      | 用途                                              | 未提交条目 | 原任务进度                                                                                     |
+| ------------------------- | ------------------------------------------------- | ---------: | ---------------------------------------------------------------------------------------------- |
+| `agent-a74417f544c3ccb6c` | release descriptor resolver、下载与端到端集成测试 |          5 | 已交接实现及追加测试；最后追加的 integration 测试当时未运行，不能把它算作该隔离树已验通。      |
+| `agent-adbf3332d4cdd3c8a` | release 来源与 registry v3/receipt/retained 契约  |          7 | 已交接；定向 47、扩展 456 项通过；当时类型检查受其他切片未集成阻塞。                           |
+| `agent-adc1c106c4b8ffb96` | release CLI 与 HTTP 适配、独立升版确认            |          5 | 已交接补丁；语法和补丁检查通过，运行时验证当时留给整合树。                                     |
+| `agent-a1c7ea125a6c3ab62` | release UI、固定来源更新、registry v3 确认及翻译  |         14 | 已交接；62 项回归通过，旧 SDK 类型阻塞留给主树生成后复验。                                     |
+| `agent-a8d253ebaca1016ed` | 本地 descriptor 作者工具与说明                    |          3 | 已交接；28 项真实 CLI 离线测试通过。                                                           |
+| `agent-a9aa6ee366330f0b3` | 独立模板 npm pack 与 release descriptor 脚本      |          1 | 已交接；Node 测试 6/6，通过真实离线 pack。                                                     |
+| `agent-acabe7ca3138089d0` | 独立模板的宿主集成测试                            |          1 | 已交接 3 项集成测试；隔离树当时缺模板/宿主实现，仅做语法检查。整合树后来另有完整模板验收记录。 |
 
 ## 失效记录
 

@@ -79,15 +79,29 @@ export type MathWorkerBootstrap = {
 
 /** Read-only resolver usable before Instance/Session services are bootstrapped. */
 export function resolveMathWorkerBootstrap(sessionID: string, projectDirectory?: string): MathWorkerBootstrap {
-  const row = Database.use((db) => db.select().from(SessionTable).where(eq(SessionTable.id, SessionID.make(sessionID))).get())
+  const row = Database.use((db) =>
+    db
+      .select()
+      .from(SessionTable)
+      .where(eq(SessionTable.id, SessionID.make(sessionID)))
+      .get(),
+  )
   if (!row) throw new Error(`math worker session not found: ${sessionID}`)
   if (row.agent !== "math-worker" || !row.parent_id) throw new Error(`session is not a math-worker child: ${sessionID}`)
-  const parent = Database.use((db) => db.select().from(SessionTable).where(eq(SessionTable.id, SessionID.make(row.parent_id!))).get())
-  if (!parent || parent.agent !== "math-orchestrator") throw new Error(`math worker owner session is invalid: ${row.parent_id}`)
+  const parent = Database.use((db) =>
+    db
+      .select()
+      .from(SessionTable)
+      .where(eq(SessionTable.id, SessionID.make(row.parent_id!)))
+      .get(),
+  )
+  if (!parent || parent.agent !== "math-orchestrator")
+    throw new Error(`math worker owner session is invalid: ${row.parent_id}`)
   if (row.project_id !== parent.project_id) throw new Error(`math worker project differs from owner: ${sessionID}`)
   const location = parent.location_id ? ProjectLocation.getByID(parent.location_id) : undefined
   if (parent.location_id && !location) throw new Error(`math owner location is missing: ${parent.location_id}`)
-  if (location && String(location.projectID) !== String(parent.project_id)) throw new Error(`math owner location project mismatch`)
+  if (location && String(location.projectID) !== String(parent.project_id))
+    throw new Error(`math owner location project mismatch`)
   const ownerInput = path.resolve(location?.directory ?? parent.directory)
   const ownerDirectory = existsSync(ownerInput) ? realpathSync(ownerInput) : ownerInput
   const problemID = path.basename(projectDirectory ?? row.directory)
@@ -99,10 +113,7 @@ export function resolveMathWorkerBootstrap(sessionID: string, projectDirectory?:
   if (!isMathPathWithin(ownerDirectory, realpathSync.native(problemDirectory))) {
     throw new Error(`math problem workspace escapes its owner: ${problemDirectory}`)
   }
-  if (
-    identity.ownerProjectID !== String(parent.project_id) ||
-    identity.orchestratorSessionID !== String(parent.id)
-  ) {
+  if (identity.ownerProjectID !== String(parent.project_id) || identity.orchestratorSessionID !== String(parent.id)) {
     throw new Error(`math problem ownership marker does not match persisted sessions: ${problemDirectory}`)
   }
   if (runtimeDirectory !== problemDirectory) {
@@ -133,7 +144,11 @@ export function deriveMathWorkerPaths(problemDirectory: string, sessionID: strin
   const safeSessionID = assertProjectName(sessionID)
   const root = path.resolve(problemDirectory)
   const taskFile = assertMathPathWithin(root, taskPath(root, safeSessionID), "worker TASK path")
-  const logFile = assertMathPathWithin(root, path.join(layout(root).logs, `worker-${safeSessionID}.log`), "worker log path")
+  const logFile = assertMathPathWithin(
+    root,
+    path.join(layout(root).logs, `worker-${safeSessionID}.log`),
+    "worker log path",
+  )
   return { taskFile, logFile }
 }
 
@@ -182,7 +197,8 @@ export function inspectMathWorkspace(problemDirectory: string): MathProblemIdent
   for (const component of components.slice(mathIndex)) {
     current = path.join(current, component)
     try {
-      if (lstatSync(current).isSymbolicLink()) throw new Error(`MathProblem managed path is a symbolic link: ${current}`)
+      if (lstatSync(current).isSymbolicLink())
+        throw new Error(`MathProblem managed path is a symbolic link: ${current}`)
     } catch (error) {
       if (error instanceof Error && error.message.includes("managed path")) throw error
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
@@ -208,10 +224,13 @@ export function resolveExistingMathWorkspaceFromSessions(input: {
 }): Effect.Effect<MathWorkspace, Error> {
   return Effect.gen(function* () {
     const fail = (message: string) => Effect.fail(new Error(message))
-    const parent = yield* input.sessions.get(SessionID.make(input.parentSessionID)).pipe(Effect.mapError((error) => error as Error))
+    const parent = yield* input.sessions
+      .get(SessionID.make(input.parentSessionID))
+      .pipe(Effect.mapError((error) => error as Error))
     const location = parent.locationID ? ProjectLocation.getByID(parent.locationID) : undefined
     if (parent.locationID && !location) return yield* fail(`Math owner location is missing: ${parent.locationID}`)
-    if (parent.agent !== "math-orchestrator") return yield* fail(`Math owner session is not an orchestrator: ${parent.id}`)
+    if (parent.agent !== "math-orchestrator")
+      return yield* fail(`Math owner session is not an orchestrator: ${parent.id}`)
     const ownerInput = path.resolve(location?.directory ?? parent.directory)
     const ownerDirectory = existsSync(ownerInput) ? realpathSync(ownerInput) : ownerInput
     const ownerProjectID = String(location?.projectID ?? parent.projectID)
@@ -221,7 +240,9 @@ export function resolveExistingMathWorkspaceFromSessions(input: {
     let problemDirectory: string | undefined
     let workerID: string | undefined
     if (input.workerSessionID) {
-      const worker = yield* input.sessions.get(SessionID.make(input.workerSessionID)).pipe(Effect.mapError((error) => error as Error))
+      const worker = yield* input.sessions
+        .get(SessionID.make(input.workerSessionID))
+        .pipe(Effect.mapError((error) => error as Error))
       if (String(worker.parentID ?? "") !== String(parent.id))
         return yield* fail(`Math worker is not a child of the requested owner session: ${input.workerSessionID}`)
       if (worker.agent !== "math-worker") return yield* fail(`Math session is not a worker: ${worker.id}`)
@@ -241,7 +262,8 @@ export function resolveExistingMathWorkspaceFromSessions(input: {
       const adopted = [identity, expectedIdentity].find(
         (record) => record?.legacyAdoption?.workerSessionID === workerID,
       )
-      if (!adopted) return yield* fail(`Math worker directory is not the derived problem workspace: ${problemDirectory}`)
+      if (!adopted)
+        return yield* fail(`Math worker directory is not the derived problem workspace: ${problemDirectory}`)
       // Legacy sessions may retain their owner/runtime directory; the
       // explicit adoption marker authorizes using the registered problem root.
       problemDirectory = expectedDirectory

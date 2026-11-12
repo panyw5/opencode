@@ -123,7 +123,9 @@ export function clearWorkspaceTerminals(
   platform?: Platform,
   context?: ReturnType<typeof workspacePathContext>,
 ) {
-  const key = getWorkspaceTerminalCacheKey(Path.identity(dir, context ?? { platform: "linux", kind: "local-filesystem" }))
+  const key = getWorkspaceTerminalCacheKey(
+    Path.identity(dir, context ?? { platform: "linux", kind: "local-filesystem" }),
+  )
   for (const cache of caches) {
     const entry = cache.get(key)
     entry?.value.clear()
@@ -378,7 +380,8 @@ export const { use: useTerminal, provider: TerminalProvider } = createSimpleCont
     const server = useServer()
     const platform = usePlatform()
     const directory = createMemo(() => decodeRouteDirectory(params.dir))
-    const pathContext = (dir: string) => workspacePathContext({ os: platform.os, isLocal: !!server.isLocal(), directory: dir })
+    const pathContext = (dir: string) =>
+      workspacePathContext({ os: platform.os, isLocal: !!server.isLocal(), directory: dir })
     const cache = new Map<string, TerminalCacheEntry>()
 
     caches.add(cache)

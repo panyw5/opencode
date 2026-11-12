@@ -61,8 +61,12 @@ function fixture() {
     fail: () => {
       fail = true
     },
-    failCleanup: () => { cleanupFailure = true },
-    recoverCleanup: () => { cleanupFailure = false },
+    failCleanup: () => {
+      cleanupFailure = true
+    },
+    recoverCleanup: () => {
+      cleanupFailure = false
+    },
   }
 }
 test("candidate installation never removes old Cookies or writes the vault before verification", async () => {

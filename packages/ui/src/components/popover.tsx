@@ -39,7 +39,7 @@ const NESTED_OVERLAY_SELECTOR = [
   '[data-component="context-menu-sub-content"]',
   '[data-component="select-content"]',
   '[data-component="combobox-content"]',
-  '[data-model-selector-popover-content]',
+  "[data-model-selector-popover-content]",
 ].join(",")
 
 export interface PopoverProps<T extends ValidComponent = "div">

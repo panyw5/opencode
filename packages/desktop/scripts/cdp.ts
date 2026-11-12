@@ -93,7 +93,10 @@ export async function connectCdp(endpoint = DEFAULT_ENDPOINT) {
   return { client, target, targets }
 }
 
-export async function withCdp<T>(fn: (client: CdpClient, target: CdpTarget) => Promise<T>, endpoint = DEFAULT_ENDPOINT) {
+export async function withCdp<T>(
+  fn: (client: CdpClient, target: CdpTarget) => Promise<T>,
+  endpoint = DEFAULT_ENDPOINT,
+) {
   const { client, target } = await connectCdp(endpoint)
   try {
     return await fn(client, target)
@@ -176,7 +179,13 @@ async function main() {
 
   if (command === "targets") {
     const targets = await listTargets(endpoint)
-    console.log(JSON.stringify(targets.map(({ id, type, title, url }) => ({ id, type, title, url })), null, 2))
+    console.log(
+      JSON.stringify(
+        targets.map(({ id, type, title, url }) => ({ id, type, title, url })),
+        null,
+        2,
+      ),
+    )
     return
   }
 

@@ -404,10 +404,7 @@ $$
 
     const html = protectMathExpressions(markdown)
     const texes = [...html.matchAll(/data-opencode-math-tex="([^"]*)"/g)].map((match) =>
-      match[1]
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&#92;/g, "\\"),
+      match[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#92;/g, "\\"),
     )
 
     expect(texes).toEqual(["0<j/24<1", "m=0,1,\\ldots,M."])
@@ -557,7 +554,7 @@ describe("markdown autolinks", () => {
 
   test("stops at CJK punctuation and quotes glued to the URL", () => {
     expect(protectBareAutolinks("见 https://a.com（括号）")).toBe("见 <https://a.com>（括号）")
-    expect(protectBareAutolinks('见 “https://a.com”，随后')).toBe('见 “<https://a.com>”，随后')
+    expect(protectBareAutolinks("见 “https://a.com”，随后")).toBe("见 “<https://a.com>”，随后")
     expect(protectBareAutolinks("见https://a.com即可")).toBe("见<https://a.com>即可")
   })
 

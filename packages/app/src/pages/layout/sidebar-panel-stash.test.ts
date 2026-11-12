@@ -23,7 +23,10 @@ describe("sidebar rail stash", () => {
 
   test("re-stashing the same id moves it to the head without duplicating", () => {
     const stack = stashRailEntry(stashRailEntry([], entry("a")), entry("b"))
-    const reStashed = stashRailEntry(stack, entry("a", () => {}))
+    const reStashed = stashRailEntry(
+      stack,
+      entry("a", () => {}),
+    )
     expect(reStashed).toHaveLength(2)
     expect(reStashed.map((item) => item.id)).toEqual(["a", "b"])
   })
@@ -36,7 +39,9 @@ describe("sidebar rail stash", () => {
 
   test("panel stash ids collapse trailing slashes on the same worktree", () => {
     expect(panelStashId("scheduled", "/Users/example/chat/")).toBe(panelStashId("scheduled", "/Users/example/chat"))
-    expect(panelStashId("scheduled", "/Users/example/chat")).not.toBe(panelStashId("projectTasks", "/Users/example/chat"))
+    expect(panelStashId("scheduled", "/Users/example/chat")).not.toBe(
+      panelStashId("projectTasks", "/Users/example/chat"),
+    )
     expect(panelStashId("scheduled", "/Users/example/chat")).not.toBe(panelStashId("scheduled", "/Users/example/other"))
   })
 

@@ -167,10 +167,6 @@ const build = (messages: Message[] = [], providers: Provider[] = [], session?: S
   }
 }
 
-export function getSessionContextMetrics(
-  messages: Message[] = [],
-  providers: Provider[] = [],
-  session?: SessionLike,
-) {
+export function getSessionContextMetrics(messages: Message[] = [], providers: Provider[] = [], session?: SessionLike) {
   return build(messages, providers, session)
 }

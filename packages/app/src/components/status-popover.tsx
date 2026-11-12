@@ -676,61 +676,61 @@ export function StatusPopover() {
           <Show when={!platform.remoteMode}>
             <Tabs.Content value="servers">
               <Show when={tab() === "servers"}>
-              <div class="flex flex-col px-2 pb-2 max-h-[calc(100vh-120px)] overflow-y-auto">
-                <div class="flex flex-col p-3 bg-background-base rounded-sm min-h-14">
-                  <For each={sortedServers()}>
-                    {(s) => {
-                      const key = ServerConnection.key(s)
-                      const isBlocked = () => health[key]?.healthy === false
-                      return (
-                        <div
-                          class="status-list-item flex items-center gap-2 w-full min-h-8 pl-3 pr-1.5 py-1.5 rounded-md transition-colors text-left"
-                          classList={{
-                            "cursor-not-allowed": isBlocked(),
-                          }}
-                          aria-disabled={isBlocked()}
-                        >
-                          <ServerHealthIndicator health={health[key]} />
-                          <ServerRow
-                            conn={s}
-                            dimmed={isBlocked()}
-                            status={health[key]}
-                            class="flex items-center gap-2 w-full min-w-0"
-                            nameClass="text-14-regular text-text-base truncate"
-                            versionClass="text-12-regular text-text-weak truncate"
-                            badge={
-                              <Show when={key === defaultServer.key()}>
-                                <span class="text-11-regular text-text-base bg-surface-base px-1.5 py-0.5 rounded-md">
-                                  {language.t("common.default")}
-                                </span>
-                              </Show>
-                            }
+                <div class="flex flex-col px-2 pb-2 max-h-[calc(100vh-120px)] overflow-y-auto">
+                  <div class="flex flex-col p-3 bg-background-base rounded-sm min-h-14">
+                    <For each={sortedServers()}>
+                      {(s) => {
+                        const key = ServerConnection.key(s)
+                        const isBlocked = () => health[key]?.healthy === false
+                        return (
+                          <div
+                            class="status-list-item flex items-center gap-2 w-full min-h-8 pl-3 pr-1.5 py-1.5 rounded-md transition-colors text-left"
+                            classList={{
+                              "cursor-not-allowed": isBlocked(),
+                            }}
+                            aria-disabled={isBlocked()}
                           >
-                            <div class="flex-1" />
-                            <Show when={server.current && key === ServerConnection.key(server.current)}>
-                              <Icon name="check" size="small" class="text-icon-weak shrink-0" />
-                            </Show>
-                          </ServerRow>
-                        </div>
-                      )
-                    }}
-                  </For>
+                            <ServerHealthIndicator health={health[key]} />
+                            <ServerRow
+                              conn={s}
+                              dimmed={isBlocked()}
+                              status={health[key]}
+                              class="flex items-center gap-2 w-full min-w-0"
+                              nameClass="text-14-regular text-text-base truncate"
+                              versionClass="text-12-regular text-text-weak truncate"
+                              badge={
+                                <Show when={key === defaultServer.key()}>
+                                  <span class="text-11-regular text-text-base bg-surface-base px-1.5 py-0.5 rounded-md">
+                                    {language.t("common.default")}
+                                  </span>
+                                </Show>
+                              }
+                            >
+                              <div class="flex-1" />
+                              <Show when={server.current && key === ServerConnection.key(server.current)}>
+                                <Icon name="check" size="small" class="text-icon-weak shrink-0" />
+                              </Show>
+                            </ServerRow>
+                          </div>
+                        )
+                      }}
+                    </For>
 
-                  <Button
-                    variant="secondary"
-                    class="mt-3 self-start h-8 px-3 py-1.5"
-                    onClick={() => {
-                      const run = ++dialogRun
-                      void import("./dialog-select-server").then((x) => {
-                        if (dialogDead || dialogRun !== run) return
-                        dialog.show(() => <x.DialogSelectServer />, defaultServer.refresh)
-                      })
-                    }}
-                  >
-                    {language.t("status.popover.action.manageServers")}
-                  </Button>
+                    <Button
+                      variant="secondary"
+                      class="mt-3 self-start h-8 px-3 py-1.5"
+                      onClick={() => {
+                        const run = ++dialogRun
+                        void import("./dialog-select-server").then((x) => {
+                          if (dialogDead || dialogRun !== run) return
+                          dialog.show(() => <x.DialogSelectServer />, defaultServer.refresh)
+                        })
+                      }}
+                    >
+                      {language.t("status.popover.action.manageServers")}
+                    </Button>
+                  </div>
                 </div>
-              </div>
               </Show>
             </Tabs.Content>
           </Show>

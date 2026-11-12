@@ -196,7 +196,15 @@ const add = Effect.fnUntraced(function* (state: State, match: string, bus: Bus.I
         const message = ConfigMarkdown.FrontmatterError.isInstance(err)
           ? err.data.message
           : `Failed to parse skill ${match}`
-        yield* DiagnosticIssue.report({ source: "skill", scope: "project", code: "skill.load_failed", state: "recorded", key: match, message, details: match })
+        yield* DiagnosticIssue.report({
+          source: "skill",
+          scope: "project",
+          code: "skill.load_failed",
+          state: "recorded",
+          key: match,
+          message,
+          details: match,
+        })
         log.error("failed to load skill", { skill: match, err })
         return undefined
       }),

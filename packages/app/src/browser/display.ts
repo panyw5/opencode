@@ -50,9 +50,7 @@ export function createBrowserDisplay(input: {
             ? { pageID: null, partition: null, bounds: null }
             : { pageID, partition: pageID, bounds: snapshot.bounds }
       const framePageID = "pageID" in frame ? frame.pageID : frame.partition
-      console.debug(
-        `[browser-display] submit lease=${lease} revision=${version} pageID=${framePageID ?? "none"}`,
-      )
+      console.debug(`[browser-display] submit lease=${lease} revision=${version} pageID=${framePageID ?? "none"}`)
       void input
         .api!.updateDisplay({
           lease: lease!,

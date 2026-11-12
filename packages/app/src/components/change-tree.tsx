@@ -103,10 +103,7 @@ export default function ChangeTree(props: {
             onClick={() => props.onFileClick?.(node.path)}
           >
             <FileIcon node={{ path: node.path, type: "file" }} mono class="text-text-weak" />
-            <span
-              class="flex-1 min-w-0 text-12-medium whitespace-nowrap truncate"
-              style={kindTextColor(node.kind)}
-            >
+            <span class="flex-1 min-w-0 text-12-medium whitespace-nowrap truncate" style={kindTextColor(node.kind)}>
               {node.name}
             </span>
             <span class="shrink-0 w-4 text-center text-12-medium" style={kindTextColor(node.kind)}>

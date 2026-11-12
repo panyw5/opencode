@@ -194,7 +194,9 @@
 
   /* Completed blocks fade at the clipped edge to hint at hidden code. Streaming
      blocks stay anchored to the live tail, so the active lines stay readable. */
-  [data-component="markdown-code"][data-code-collapse="true"]:not([data-code-expanded="true"]):not([data-code-streaming="true"])
+  [data-component="markdown-code"][data-code-collapse="true"]:not([data-code-expanded="true"]):not(
+      [data-code-streaming="true"]
+    )
     > pre {
     mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent);
   }

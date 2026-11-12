@@ -75,9 +75,9 @@ describe("extension registry", () => {
     await expect(ExtensionRegistry.list(base, registry)).rejects.toThrow("invalid JSON")
 
     await Bun.write(registry, JSON.stringify({ version: 1, extensions: {} }))
-    await expect(
-      ExtensionRegistry.setEnabled(ExtensionID.make("test.missing"), false, base, registry),
-    ).rejects.toThrow("Extension not found")
+    await expect(ExtensionRegistry.setEnabled(ExtensionID.make("test.missing"), false, base, registry)).rejects.toThrow(
+      "Extension not found",
+    )
   })
 
   test("sorts entries by id", async () => {

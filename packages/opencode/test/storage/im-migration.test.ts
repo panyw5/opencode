@@ -24,7 +24,9 @@ describe("IM migration compatibility", () => {
     db.run(`INSERT INTO im_outbound (id, platform, channel_name, mode, target, text, status, time_created, time_updated)
       VALUES ('legacy-send', 'qq', 'legacy', 'reply', '{}', 'hello', 'unknown', 1, 1)`)
     expect(() => db.run(migration("20260914085735_im_outbound_scope"))).not.toThrow()
-    expect(db.query("SELECT project_id FROM im_outbound WHERE id='legacy-send'").get()).toEqual({ project_id: "global" })
+    expect(db.query("SELECT project_id FROM im_outbound WHERE id='legacy-send'").get()).toEqual({
+      project_id: "global",
+    })
     db.close()
   })
 })

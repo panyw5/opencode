@@ -118,9 +118,7 @@ describe("instance directory lifecycle gaps", () => {
           const after = yield* Effect.promise(() => withTestInstance({ directory: dir, fn: (ctx) => ctx }))
           expect(after).toBe(before)
 
-          yield* Effect.promise(() =>
-            $`git worktree list --porcelain`.cwd(root).quiet().text(),
-          ).pipe(
+          yield* Effect.promise(() => $`git worktree list --porcelain`.cwd(root).quiet().text()).pipe(
             Effect.tap((list) =>
               Effect.sync(() => {
                 expect(list).not.toContain(`worktree ${dir}`)

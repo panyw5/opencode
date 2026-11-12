@@ -7,18 +7,17 @@ import { Icon, type IconProps } from "./icon"
 import { IconButton } from "./icon-button"
 import { TextField } from "./text-field"
 
-function log(_kind: string, _fields: Record<string, string | number | boolean | undefined>) {
-}
+function log(_kind: string, _fields: Record<string, string | number | boolean | undefined>) {}
 
 /**
  * List component for displaying filterable, searchable, and keyboard-navigable lists.
- * 
+ *
  * Architecture:
  * - Uses `useScrollContainer` hook for scroll operations (scrollToElement, scrollToTop, findByKey)
  * - Uses `useFilteredList` hook for data filtering and keyboard navigation
  * - Scroll container uses native scrollbar with CSS customization (not ScrollView component)
  * - ScrollView component is for custom thumb-based scrollbars (used in session-review)
- * 
+ *
  * Naming:
  * - `data-slot="list-viewport"` is the scrollable container (renamed from "list-scroll")
  * - Not to be confused with ScrollView's `data-slot="scroll-view-viewport"`
@@ -392,15 +391,14 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
             </div>
           }
         >
-          <Show
-            when={props.virtual !== false}
-            fallback={
-              <For each={virtualRows()}>
-                {(row) => rowNode(row)}
-              </For>
-            }
-          >
-            <Virtualizer data={virtualRows()} scrollRef={scrollRef()} ref={(h) => { virtualizerHandle = h }}>
+          <Show when={props.virtual !== false} fallback={<For each={virtualRows()}>{(row) => rowNode(row)}</For>}>
+            <Virtualizer
+              data={virtualRows()}
+              scrollRef={scrollRef()}
+              ref={(h) => {
+                virtualizerHandle = h
+              }}
+            >
               {(row) => rowNode(row)}
             </Virtualizer>
           </Show>

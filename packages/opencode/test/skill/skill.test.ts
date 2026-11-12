@@ -93,12 +93,13 @@ describe("skill", () => {
         ).toBe("Second version")
         expect((yield* svc.require("fresh")).content).toContain("body two")
         yield* Effect.acquireUseRelease(
-          Effect.sync(()=>spyOn(Glob,"scan").mockResolvedValue([])),
-          ()=>Effect.gen(function*(){
-            expect((yield* svc.available(undefined,{refresh:true}).pipe(Effect.exit))._tag).toBe("Failure")
-            expect((yield* svc.require("fresh")).description).toBe("Second version")
-          }),
-          spy=>Effect.sync(()=>spy.mockRestore()),
+          Effect.sync(() => spyOn(Glob, "scan").mockResolvedValue([])),
+          () =>
+            Effect.gen(function* () {
+              expect((yield* svc.available(undefined, { refresh: true }).pipe(Effect.exit))._tag).toBe("Failure")
+              expect((yield* svc.require("fresh")).description).toBe("Second version")
+            }),
+          (spy) => Effect.sync(() => spy.mockRestore()),
         )
         yield* Effect.promise(() => Bun.write(file, "---\nname: [\n---\nbroken"))
         expect((yield* svc.available(undefined, { refresh: true }).pipe(Effect.exit))._tag).toBe("Failure")

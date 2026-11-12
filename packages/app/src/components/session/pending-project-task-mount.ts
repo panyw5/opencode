@@ -16,10 +16,7 @@ export function pendingProjectTaskMount(directory: string): PendingProjectTaskMo
   return store.byDirectory[key(directory)] ?? { taskID: undefined, inject: true }
 }
 
-export function setPendingProjectTaskMount(
-  directory: string,
-  next: Partial<PendingProjectTaskMount> | null,
-) {
+export function setPendingProjectTaskMount(directory: string, next: Partial<PendingProjectTaskMount> | null) {
   const id = key(directory)
   if (next === null) {
     setStore(

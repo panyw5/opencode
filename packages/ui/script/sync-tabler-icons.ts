@@ -176,9 +176,7 @@ export type TablerIconGlyph = {
 }
 
 export const tablerIcons: Partial<Record<string, TablerIconGlyph>> = {
-${entries
-  .map(([name, glyph]) => `  ${JSON.stringify(name)}: ${JSON.stringify(glyph)},`)
-  .join("\n")}
+${entries.map(([name, glyph]) => `  ${JSON.stringify(name)}: ${JSON.stringify(glyph)},`).join("\n")}
 }
 `
 

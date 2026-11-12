@@ -17,28 +17,11 @@ export const GLOBAL_KINDS = {
 
 export type GlobalKind = keyof typeof GLOBAL_KINDS
 
-export const STATUSES = [
-  "unverified",
-  "verifying",
-  "verified",
-  "refuted",
-  "open",
-  "supported",
-  "challenged",
-] as const
+export const STATUSES = ["unverified", "verifying", "verified", "refuted", "open", "supported", "challenged"] as const
 
 export type Status = (typeof STATUSES)[number]
 
-export const EXTERNAL_REF_KEYS = [
-  "key",
-  "authors",
-  "title",
-  "arxiv",
-  "year",
-  "venue",
-  "doi",
-  "cited_for",
-] as const
+export const EXTERNAL_REF_KEYS = ["key", "authors", "title", "arxiv", "year", "venue", "doi", "cited_for"] as const
 
 export type ExternalRef = Record<string, unknown>
 

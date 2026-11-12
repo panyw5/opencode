@@ -439,8 +439,10 @@ export const dict = {
   "toast.file.loadFailed.title": "Kunne ikke indlæse fil",
 
   "toast.file.listFailed.title": "Kunne ikke liste filer",
-  "toast.file.listFailed.openclaw": "OpenClaw does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
-  "toast.file.listFailed.generalagent": "GeneralAgent does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
+  "toast.file.listFailed.openclaw":
+    "OpenClaw does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
+  "toast.file.listFailed.generalagent":
+    "GeneralAgent does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
   "toast.context.noLineSelection.title": "Ingen linjevalg",
   "toast.context.noLineSelection.description": "Vælg først et linjeinterval i en filfane.",
   "toast.session.share.copyFailed.title": "Kunne ikke kopiere URL til udklipsholder",

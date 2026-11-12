@@ -46,7 +46,10 @@ describe("change tree model", () => {
 
   test("windows workspaces fold identity case but keep authoritative spelling", () => {
     const tree = buildChangeTree(
-      [{ path: "SRC/App.ts", kind: "mix" }, { path: "src/other.ts", kind: "add" }],
+      [
+        { path: "SRC/App.ts", kind: "mix" },
+        { path: "src/other.ts", kind: "add" },
+      ],
       { foldCase: true },
     )
     expect(tree.index.get("src/app.ts")?.path).toBe("SRC/App.ts")
@@ -54,7 +57,10 @@ describe("change tree model", () => {
   })
 
   test("posix workspaces keep case-sensitive identity", () => {
-    const tree = buildChangeTree([{ path: "SRC/App.ts", kind: "mix" }, { path: "src/App.ts", kind: "add" }])
+    const tree = buildChangeTree([
+      { path: "SRC/App.ts", kind: "mix" },
+      { path: "src/App.ts", kind: "add" },
+    ])
     expect(tree.index.get("SRC/App.ts")).toBeDefined()
     expect(tree.index.get("src/App.ts")).toBeDefined()
   })
@@ -75,7 +81,10 @@ describe("change tree model", () => {
     const original = console.warn
     console.warn = (message: string) => warnings.push(message)
     try {
-      buildChangeTree([{ path: "a/b.ts", kind: "mix" }, { path: "a", kind: "add" }])
+      buildChangeTree([
+        { path: "a/b.ts", kind: "mix" },
+        { path: "a", kind: "add" },
+      ])
     } finally {
       console.warn = original
     }

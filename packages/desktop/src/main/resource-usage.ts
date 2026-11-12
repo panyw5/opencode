@@ -90,9 +90,10 @@ async function measureTargets(): Promise<ResourceUsageTarget[]> {
       path: target.path,
       bytes:
         target.id === "desktop-cache"
-          ? (
-              await Promise.all(desktopCachePaths.map((path) => measurePath(path)))
-            ).reduce((sum, bytes) => sum + bytes, 0)
+          ? (await Promise.all(desktopCachePaths.map((path) => measurePath(path)))).reduce(
+              (sum, bytes) => sum + bytes,
+              0,
+            )
           : await measurePath(target.path),
     })),
   )
@@ -112,9 +113,7 @@ export async function cleanResourceTarget(id: string): Promise<ResourceUsage | n
     await removeContents(join(userData, "logs"))
   } else if (id === "desktop-cache") {
     await Promise.all([
-      ...CHROMIUM_CACHE_DIRS.map((dir) =>
-        rm(join(userData, dir), { recursive: true, force: true }).catch(() => {}),
-      ),
+      ...CHROMIUM_CACHE_DIRS.map((dir) => rm(join(userData, dir), { recursive: true, force: true }).catch(() => {})),
       session.defaultSession.clearCache().catch(() => {}),
     ])
   } else {

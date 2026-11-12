@@ -16,7 +16,7 @@ export const ExtraAgentServeCommand = effectCmd({
       })
       .option("config", {
         type: "string",
-        describe: "JSON-encoded bridge config (agent-specific, e.g. '{\"gatewayUrl\":\"ws://...\"}')",
+        describe: 'JSON-encoded bridge config (agent-specific, e.g. \'{"gatewayUrl":"ws://..."}\')',
       }),
   handler: Effect.fn("Cli.extraAgentServe")(function* (args) {
     const bridge = getBridge(args.id)
@@ -44,7 +44,9 @@ export const ExtraAgentServeCommand = effectCmd({
       cors: net.cors,
       config,
     })
-    console.log(`extra-agent ${bridge.id} listening on http://${server.hostname ?? net.hostname}:${server.port ?? net.port}`)
+    console.log(
+      `extra-agent ${bridge.id} listening on http://${server.hostname ?? net.hostname}:${server.port ?? net.port}`,
+    )
 
     let shuttingDown = false
     const shutdown = async (sig: NodeJS.Signals) => {

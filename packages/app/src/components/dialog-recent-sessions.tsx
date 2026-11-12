@@ -43,7 +43,8 @@ export function DialogRecentSessions(props: {
             DateTime.fromMillis(item.time.updated ?? item.time.created)
               .setLocale(language.intl())
               .toRelative()
-          const workspace = () => item.project?.name || getFilename(item.project?.worktree ?? item.directory) || item.directory
+          const workspace = () =>
+            item.project?.name || getFilename(item.project?.worktree ?? item.directory) || item.directory
           return (
             <div class="w-full flex items-center justify-between rounded-md pl-1">
               <div class="flex items-center grow min-w-0">
@@ -56,9 +57,7 @@ export function DialogRecentSessions(props: {
                 <span class="text-12-regular text-text-weak truncate shrink-0 max-w-[10rem] text-left pl-3">
                   {workspace()}
                 </span>
-                <span class="text-12-regular text-text-weak shrink-0 whitespace-nowrap pl-2">
-                  {updated()}
-                </span>
+                <span class="text-12-regular text-text-weak shrink-0 whitespace-nowrap pl-2">{updated()}</span>
                 <Show when={isCurrent()}>
                   <span class="text-12-regular text-text-weak shrink-0 ml-2">
                     {language.t("project.switch.current")}

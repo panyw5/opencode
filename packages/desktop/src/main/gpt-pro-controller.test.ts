@@ -438,7 +438,11 @@ async function previewJob(
 describe("gpt-pro consultation control", () => {
   test("answer changes during the final checkpoint are re-read before completion", async () => {
     let flushes = 0
-    const f = fixture({ flush: async () => { if (flushes++ === 0) f.finish("Revised final answer") } })
+    const f = fixture({
+      flush: async () => {
+        if (flushes++ === 0) f.finish("Revised final answer")
+      },
+    })
     try {
       await f.controller.command({ prompt: "Final revalidation", background: true }, "/repo\nses_final_revalidation")
       await until(() => f.counts().submits === 1)
@@ -446,9 +450,16 @@ describe("gpt-pro consultation control", () => {
       await until(() => f.controller.list()[0].phase === "completed")
       expect(f.saved()[0].text).toBe("Revised final answer")
       expect(flushes).toBeGreaterThanOrEqual(2)
-      expect(f.controller.notifications().filter(event => event.kind === "completed").map(event => event.text)).toEqual(["Revised final answer"])
+      expect(
+        f.controller
+          .notifications()
+          .filter((event) => event.kind === "completed")
+          .map((event) => event.text),
+      ).toEqual(["Revised final answer"])
       expect(f.counts().submits).toBe(1)
-    } finally { f.controller.dispose() }
+    } finally {
+      f.controller.dispose()
+    }
   })
   test("persistent execution faults revoke authority, release scheduler locks and recover without replay or restart", async () => {
     let diskFault = false

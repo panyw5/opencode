@@ -310,7 +310,10 @@ function channelFollowup(
   gptProFailure: { returned: boolean; error?: string } | undefined,
 ) {
   const labels = (names: string[]) =>
-    names.map((name) => consultMentionFor(name)?.label ?? name).filter(Boolean).join(", ")
+    names
+      .map((name) => consultMentionFor(name)?.label ?? name)
+      .filter(Boolean)
+      .join(", ")
   return [
     returned.length
       ? `External consultations already ran for: ${labels(returned)}. Their results are in this conversation.`

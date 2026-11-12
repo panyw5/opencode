@@ -1,6 +1,12 @@
 import { LocalContext } from "@/util/local-context"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
-import { Path, type LogicalPath, type NativePath, type PathContext, type PathIdentity } from "@opencode-ai/core/util/path"
+import {
+  Path,
+  type LogicalPath,
+  type NativePath,
+  type PathContext,
+  type PathIdentity,
+} from "@opencode-ai/core/util/path"
 import type * as Project from "./project"
 import type { ProjectLocation } from "./location"
 

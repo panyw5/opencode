@@ -16,21 +16,31 @@
     "description": "Example extension: lazy-loaded .hello viewer with a server part (RPC, events, one LLM tool).",
     "web": {
       "apiVersion": 1,
-      "styles": ["./dist/web/index.css"]
+      "styles": [
+        "./dist/web/index.css"
+      ]
     },
-    "activation": ["onFileViewer:hello"],
+    "activation": [
+      "onFileViewer:hello"
+    ],
     "contributes": {
       "fileViewers": [
         {
           "id": "hello",
           "title": "Hello Viewer",
-          "extensions": ["hello"],
+          "extensions": [
+            "hello"
+          ],
           "priority": 100,
           "mode": "replace"
         }
       ]
     },
-    "permissions": ["fs:read", "process:spawn", "tools"]
+    "permissions": [
+      "fs:read",
+      "process:spawn",
+      "tools"
+    ]
   },
   "scripts": {
     "dev": "vite build --watch",

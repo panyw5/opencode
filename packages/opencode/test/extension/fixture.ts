@@ -43,8 +43,9 @@ export async function extensionPackage(
   }
   const contributes: Record<string, unknown> = {}
   if (input.fileViewers !== null) {
-    contributes.fileViewers =
-      input.fileViewers ?? [{ id: "hello", title: "Hello", extensions: ["hello"], mode: "replace" }]
+    contributes.fileViewers = input.fileViewers ?? [
+      { id: "hello", title: "Hello", extensions: ["hello"], mode: "replace" },
+    ]
   }
   if (input.toolRenderers) contributes.toolRenderers = input.toolRenderers
   if (input.commands) contributes.commands = input.commands

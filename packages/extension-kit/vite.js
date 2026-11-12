@@ -66,9 +66,10 @@ export default function extensionKit(options = {}) {
     generateBundle(_options, bundle) {
       for (const output of Object.values(bundle)) {
         if (output.type !== "chunk") continue
-        const bare = /(?:\bfrom\s*["'](?:solid-js(?:\/[^"']*)?|@opencode-ai\/ui\/[^"']+)["']|\bimport\s*["'](?:solid-js(?:\/[^"']*)?|@opencode-ai\/ui\/[^"']+)["']|\bimport\s*\(\s*["'](?:solid-js(?:\/[^"']*)?|@opencode-ai\/ui\/[^"']+)["']\s*\))/.exec(
-          output.code,
-        )
+        const bare =
+          /(?:\bfrom\s*["'](?:solid-js(?:\/[^"']*)?|@opencode-ai\/ui\/[^"']+)["']|\bimport\s*["'](?:solid-js(?:\/[^"']*)?|@opencode-ai\/ui\/[^"']+)["']|\bimport\s*\(\s*["'](?:solid-js(?:\/[^"']*)?|@opencode-ai\/ui\/[^"']+)["']\s*\))/.exec(
+            output.code,
+          )
         if (!bare) continue
         throw new Error(`OpenCode extension output contains an unresolved host import: ${bare[0]}`)
       }

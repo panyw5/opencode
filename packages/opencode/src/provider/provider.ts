@@ -1271,9 +1271,9 @@ export const layer = Layer.effect(
     const modelsDevSvc = yield* ModelsDev.Service
     const runtimeFlags = yield* RuntimeFlags.Service
 
-        const state = yield* InstanceState.make<State>(() =>
-          Effect.gen(function* () {
-            using _ = log.time("state")
+    const state = yield* InstanceState.make<State>(() =>
+      Effect.gen(function* () {
+        using _ = log.time("state")
         const bridge = yield* EffectBridge.make()
         const cfg = yield* config.get()
         const modelsDev = yield* modelsDevSvc.get()
@@ -1463,9 +1463,10 @@ export const layer = Layer.effect(
             // user-defined variant sets (e.g. openai-compatible deepseek models).
             const generated = ProviderTransform.variants(parsedModel)
             const configured = model.variants ?? {}
-            const chosen = Object.keys(configured).length > 0
-              ? mapValues(configured, (v, key) => (generated[key] ? mergeDeep(generated[key]!, v) : v))
-              : generated
+            const chosen =
+              Object.keys(configured).length > 0
+                ? mapValues(configured, (v, key) => (generated[key] ? mergeDeep(generated[key]!, v) : v))
+                : generated
             parsedModel.variants = mapValues(
               pickBy(chosen, (v) => !v.disabled),
               (v) => omit(v, ["disabled"]),

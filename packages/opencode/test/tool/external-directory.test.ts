@@ -111,7 +111,9 @@ describe("tool.assertExternalDirectory", () => {
       const root = yield* tmpdirScoped()
       const own = path.join(root, "problem-a")
       const other = path.join(root, "problem-b")
-      yield* Effect.promise(() => Promise.all([Bun.write(path.join(own, "fact.md"), "a"), Bun.write(path.join(other, "fact.md"), "b")]))
+      yield* Effect.promise(() =>
+        Promise.all([Bun.write(path.join(own, "fact.md"), "a"), Bun.write(path.join(other, "fact.md"), "b")]),
+      )
       const previous = process.env.OPENCODE_MATH_PROJECT_DIR
       process.env.OPENCODE_MATH_PROJECT_DIR = own
       try {

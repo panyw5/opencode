@@ -32,7 +32,10 @@ export function rebaseChannelMap(
       if (!equalValue(before, desired)) result[name] = desired
       continue
     }
-    const merged = { ...(result[name] && typeof result[name] === "object" ? result[name] : {}) } as Record<string, unknown>
+    const merged = { ...(result[name] && typeof result[name] === "object" ? result[name] : {}) } as Record<
+      string,
+      unknown
+    >
     for (const field of new Set([...Object.keys(before), ...Object.keys(desired)])) {
       const oldValue = (before as Record<string, unknown>)[field]
       const newValue = (desired as Record<string, unknown>)[field]

@@ -762,12 +762,7 @@ function escapedDollar(text: string, at: number) {
 function isHtmlTagNameChar(ch: string | undefined) {
   if (!ch) return false
   const code = ch.charCodeAt(0)
-  return (
-    (code >= 65 && code <= 90) ||
-    (code >= 97 && code <= 122) ||
-    (code >= 48 && code <= 57) ||
-    ch === "-"
-  )
+  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || (code >= 48 && code <= 57) || ch === "-"
 }
 
 function isHtmlTagWs(ch: string | undefined) {
@@ -913,15 +908,7 @@ function isMarkdownPunctuation(ch: string | undefined) {
 
 function isMarkdownWhitespace(ch: string | undefined) {
   if (!ch) return false
-  return (
-    ch === " " ||
-    ch === "\t" ||
-    ch === "\n" ||
-    ch === "\r" ||
-    ch === "\f" ||
-    ch === "\v" ||
-    /\p{Zs}/u.test(ch)
-  )
+  return ch === " " || ch === "\t" || ch === "\n" || ch === "\r" || ch === "\f" || ch === "\v" || /\p{Zs}/u.test(ch)
 }
 
 // CommonMark will not close **text：**Grok because the closer is preceded by
@@ -1184,9 +1171,7 @@ async function highlightCodeBlocks(html: string): Promise<string> {
         }
         return output
       })(),
-      new Promise<string>((resolve) =>
-        setTimeout(() => resolve(html), timeoutMs),
-      ),
+      new Promise<string>((resolve) => setTimeout(() => resolve(html), timeoutMs)),
     ])
     return result
   } catch {
@@ -1230,9 +1215,7 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
               lang,
             )
           })(),
-          new Promise<string>((resolve) =>
-            setTimeout(() => resolve(plainCode(code, lang)), highlightTimeoutMs),
-          ),
+          new Promise<string>((resolve) => setTimeout(() => resolve(plainCode(code, lang)), highlightTimeoutMs)),
         ])
         return result
       } catch {
@@ -1310,7 +1293,10 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
       // prepared text whose display-math protection inserts extra lines.
       const prepared = prepareMarkdownTracked(markdown)
       const tokens = fullParser.lexer(prepared.text) as unknown as Token[]
-      const defs = tokens.filter((token) => token.type === "def").map((token) => token.raw).join("")
+      const defs = tokens
+        .filter((token) => token.type === "def")
+        .map((token) => token.raw)
+        .join("")
       let html = ""
       let line = 1
       for (const token of tokens) {

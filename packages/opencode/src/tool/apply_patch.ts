@@ -307,9 +307,9 @@ export const ApplyPatchTool = Tool.define(
                 yield* ctx.recordFileChange?.({
                   tool: "apply_patch",
                   file: edited,
-                before: change.newContent,
-                after: formatted,
-                source: "formatter",
+                  before: change.newContent,
+                  after: formatted,
+                  source: "formatter",
                 }) ?? Effect.void
               }
               yield* bus.publish(File.Event.Edited, { file: edited })

@@ -114,7 +114,8 @@ function DiagramLightbox(props: { svg: string; title: string; tall: boolean }): 
   const pointerEnd = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
     if (!drag || drag.pointerID !== event.pointerId) return
     drag = undefined
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId)
     console.debug(`[diagram] lightbox pan end title=${props.title} pointer=${event.pointerId}`)
   }
   return (
@@ -318,7 +319,8 @@ export function DiagramCard(props: DiagramCardProps): JSX.Element {
   const panEnd = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
     if (!drag || drag.pointerID !== event.pointerId) return
     drag = undefined
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId)
     setPanning(false)
     console.debug(`[diagram] card pan end session=${props.sessionID} part=${props.partID} pointer=${event.pointerId}`)
   }

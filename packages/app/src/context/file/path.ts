@@ -178,10 +178,7 @@ export function parseTabPath(input: string): string | undefined {
  * format (`file://src/app.ts`) is NOT a standard file URL and returns
  * undefined here; parse it with {@link parseTabPath}.
  */
-export function parseStandardFileUrl(
-  input: string,
-  options?: { allowHost?: boolean },
-): string | undefined {
+export function parseStandardFileUrl(input: string, options?: { allowHost?: boolean }): string | undefined {
   if (!/^file:/i.test(input)) return undefined
   let url: URL
   try {

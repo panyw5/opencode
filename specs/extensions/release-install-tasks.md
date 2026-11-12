@@ -69,21 +69,21 @@
 
 ## 验证结果（2026-10-19，主工作树实测；导航缺口以上方复核为准）
 
-| 范围 | 结果 |
-| --- | --- |
-| 扩展目录＋HTTP扩展/安装＋HTTP鉴权明确文件组合 | **644 pass / 0 fail，26文件** |
-| 初次完整extension过滤选择（集成测试加入前） | 630/0，25文件；不是最新完整组合，不叠加 |
-| 真正resolver→安全transport→archive→installer→Registry新增组合 | 2/0，110断言；已纳入最终644 |
-| descriptor/download/npm定向 | 244/0；与最终组合重叠 |
-| 本地作者工具真实Bun.spawn | 28/0；已纳入最终644 |
-| App全量unit | **1719/0，208文件** |
-| browser-condition | **63/0，17文件**；安装外层wrapper内18项真实Solid契约，不重复累计 |
-| extension-kit / hello-viewer tests | **17/0、14/0** |
-| opencode / App / SDK / kit / hello-viewer typecheck | **5项通过** |
-| SDK生成、SDK编译、OpenAPI连续两次生成 | 通过，公共快照逐字节一致；install/update生成body白名单均含acceptRegistryUpgrade |
-| 生产App构建 | 通过；存在既有动态/静态导入和大chunk警告，不是构建失败 |
-| 定向只读代码复核 | v3确认、CAS、receipt、retained/secret/data、query脱敏与内容绑定范围内无新确认缺陷；非完整审计 |
-| git diff --check / 修改源码Prettier | 通过；未做全仓格式化 |
+| 范围                                                          | 结果                                                                                          |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| 扩展目录＋HTTP扩展/安装＋HTTP鉴权明确文件组合                 | **644 pass / 0 fail，26文件**                                                                 |
+| 初次完整extension过滤选择（集成测试加入前）                   | 630/0，25文件；不是最新完整组合，不叠加                                                       |
+| 真正resolver→安全transport→archive→installer→Registry新增组合 | 2/0，110断言；已纳入最终644                                                                   |
+| descriptor/download/npm定向                                   | 244/0；与最终组合重叠                                                                         |
+| 本地作者工具真实Bun.spawn                                     | 28/0；已纳入最终644                                                                           |
+| App全量unit                                                   | **1719/0，208文件**                                                                           |
+| browser-condition                                             | **63/0，17文件**；安装外层wrapper内18项真实Solid契约，不重复累计                              |
+| extension-kit / hello-viewer tests                            | **17/0、14/0**                                                                                |
+| opencode / App / SDK / kit / hello-viewer typecheck           | **5项通过**                                                                                   |
+| SDK生成、SDK编译、OpenAPI连续两次生成                         | 通过，公共快照逐字节一致；install/update生成body白名单均含acceptRegistryUpgrade               |
+| 生产App构建                                                   | 通过；存在既有动态/静态导入和大chunk警告，不是构建失败                                        |
+| 定向只读代码复核                                              | v3确认、CAS、receipt、retained/secret/data、query脱敏与内容绑定范围内无新确认缺陷；非完整审计 |
+| git diff --check / 修改源码Prettier                           | 通过；未做全仓格式化                                                                          |
 
 测试覆盖预览A后描述及artifact同时变B仍提交冻结A、显式v3确认、原子版本/row/receipt、同发布地址新artifact更新、摘要篡改拒绝、卸载retained及重启receipt查询、同来源重装、secret/data来源隔离；可信fixture transport并未放宽生产HTTPS/DNS/TLS门槛。
 

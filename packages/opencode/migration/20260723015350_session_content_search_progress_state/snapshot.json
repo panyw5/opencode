@@ -2,9 +2,7 @@
   "version": "7",
   "dialect": "sqlite",
   "id": "837c8efa-3c37-4c72-b951-d0e3fd9174b0",
-  "prevIds": [
-    "8096f04d-0280-43b4-8bb4-1a34c045f72d"
-  ],
+  "prevIds": ["8096f04d-0280-43b4-8bb4-1a34c045f72d"],
   "ddl": [
     {
       "name": "account_state",
@@ -1737,13 +1735,9 @@
       "table": "event"
     },
     {
-      "columns": [
-        "active_account_id"
-      ],
+      "columns": ["active_account_id"],
       "tableTo": "account",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -1752,13 +1746,9 @@
       "table": "account_state"
     },
     {
-      "columns": [
-        "project_id"
-      ],
+      "columns": ["project_id"],
       "tableTo": "project",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -1767,13 +1757,9 @@
       "table": "workspace"
     },
     {
-      "columns": [
-        "task_id"
-      ],
+      "columns": ["task_id"],
       "tableTo": "scheduled_task",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -1782,13 +1768,9 @@
       "table": "scheduled_task_run"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "tableTo": "session",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -1797,13 +1779,9 @@
       "table": "scheduled_task_run"
     },
     {
-      "columns": [
-        "project_id"
-      ],
+      "columns": ["project_id"],
       "tableTo": "project",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -1812,13 +1790,9 @@
       "table": "scheduled_task"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "tableTo": "session",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "nameExplicit": false,
@@ -1827,13 +1801,9 @@
       "table": "scheduled_task"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "tableTo": "session",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -1842,13 +1812,9 @@
       "table": "message"
     },
     {
-      "columns": [
-        "message_id"
-      ],
+      "columns": ["message_id"],
       "tableTo": "message",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -1857,13 +1823,9 @@
       "table": "part"
     },
     {
-      "columns": [
-        "project_id"
-      ],
+      "columns": ["project_id"],
       "tableTo": "project",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -1872,13 +1834,9 @@
       "table": "permission"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "tableTo": "session",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -1887,13 +1845,9 @@
       "table": "session_context_epoch"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "tableTo": "session",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -1902,13 +1856,9 @@
       "table": "session_input"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "tableTo": "session",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -1917,13 +1867,9 @@
       "table": "session_message"
     },
     {
-      "columns": [
-        "project_id"
-      ],
+      "columns": ["project_id"],
       "tableTo": "project",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -1932,13 +1878,9 @@
       "table": "session"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "tableTo": "session",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -1947,13 +1889,9 @@
       "table": "todo"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "tableTo": "session",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -1962,13 +1900,9 @@
       "table": "session_share"
     },
     {
-      "columns": [
-        "aggregate_id"
-      ],
+      "columns": ["aggregate_id"],
       "tableTo": "event_sequence",
-      "columnsTo": [
-        "aggregate_id"
-      ],
+      "columnsTo": ["aggregate_id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -1977,182 +1911,140 @@
       "table": "event"
     },
     {
-      "columns": [
-        "email",
-        "url"
-      ],
+      "columns": ["email", "url"],
       "nameExplicit": false,
       "name": "control_account_pk",
       "entityType": "pks",
       "table": "control_account"
     },
     {
-      "columns": [
-        "session_id",
-        "position"
-      ],
+      "columns": ["session_id", "position"],
       "nameExplicit": false,
       "name": "todo_pk",
       "entityType": "pks",
       "table": "todo"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "account_state_pk",
       "table": "account_state",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "account_pk",
       "table": "account",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "workspace_pk",
       "table": "workspace",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "name"
-      ],
+      "columns": ["name"],
       "nameExplicit": false,
       "name": "data_migration_pk",
       "table": "data_migration",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "project_pk",
       "table": "project",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "scheduled_task_run_pk",
       "table": "scheduled_task_run",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "scheduled_task_pk",
       "table": "scheduled_task",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "session_content_search_progress_pk",
       "table": "session_content_search_progress",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "message_pk",
       "table": "message",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "part_pk",
       "table": "part",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "project_id"
-      ],
+      "columns": ["project_id"],
       "nameExplicit": false,
       "name": "permission_pk",
       "table": "permission",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "nameExplicit": false,
       "name": "session_context_epoch_pk",
       "table": "session_context_epoch",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "session_input_pk",
       "table": "session_input",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "session_message_pk",
       "table": "session_message",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "session_pk",
       "table": "session",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "session_id"
-      ],
+      "columns": ["session_id"],
       "nameExplicit": false,
       "name": "session_share_pk",
       "table": "session_share",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "aggregate_id"
-      ],
+      "columns": ["aggregate_id"],
       "nameExplicit": false,
       "name": "event_sequence_pk",
       "table": "event_sequence",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "event_pk",
       "table": "event",

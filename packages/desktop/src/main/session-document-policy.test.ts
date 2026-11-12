@@ -20,13 +20,19 @@ describe("session document policy", () => {
     const long = `<style>.math{font-family:KaTeX}</style><div class='math'>${"x+y=z ".repeat(1_500_000)}</div>`
     expect(Buffer.byteLength(long)).toBeGreaterThan(8 * 1024 * 1024)
     expect(validateDocument({ format: "png", name: "math", html: long }).html).toBe(long)
-    expect(() => validateDocument({ format: "png", name: "math", html: "x".repeat(32 * 1024 * 1024 + 1) })).toThrow("32 MiB")
+    expect(() => validateDocument({ format: "png", name: "math", html: "x".repeat(32 * 1024 * 1024 + 1) })).toThrow(
+      "32 MiB",
+    )
   })
   test("only validates and retains the payload consumed by the selected exporter", () => {
     for (const format of ["png", "pdf"] as const) {
-      expect(validateDocument({ format, name: "chat", html: "<p>ok</p>", markdown: "x".repeat(9 * 1024 * 1024) }).markdown).toBeUndefined()
+      expect(
+        validateDocument({ format, name: "chat", html: "<p>ok</p>", markdown: "x".repeat(9 * 1024 * 1024) }).markdown,
+      ).toBeUndefined()
     }
-    expect(validateDocument({ format: "markdown", name: "chat", markdown: "ok", html: "<".repeat(200_001) }).html).toBeUndefined()
+    expect(
+      validateDocument({ format: "markdown", name: "chat", markdown: "ok", html: "<".repeat(200_001) }).html,
+    ).toBeUndefined()
   })
   test("filename cannot supply traversal or an empty basename", () => {
     expect(documentName("../../bad\\name.png")).toBe("-..-bad-name.png")

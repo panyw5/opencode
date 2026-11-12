@@ -23,7 +23,9 @@ test("private credentials, precise contexts and account lock", async () => {
   await expect(storage.acquireLock("bot")).rejects.toBeInstanceOf(AccountLockedError)
   await release()
   await release()
-  await (await storage.acquireLock("bot"))()
+  await (
+    await storage.acquireLock("bot")
+  )()
 })
 test("stale login guard does not replace credentials", async () => {
   await using tmp = await tmpdir()

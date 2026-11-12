@@ -11,10 +11,7 @@ import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { MarkdownEditorField } from "@/components/markdown-editor-field"
 
-export function AgentsMdDialog(props: {
-  directory: string
-  onSaved?: () => void
-}): JSX.Element {
+export function AgentsMdDialog(props: { directory: string; onSaved?: () => void }): JSX.Element {
   const dialog = useDialog()
   const language = useLanguage()
   const platform = usePlatform()
@@ -129,9 +126,7 @@ export function AgentsMdDialog(props: {
 
           <div class="mt-4 flex shrink-0 items-center gap-2 border-t border-border-weak-base pt-4">
             <Show when={dirty()}>
-              <span class="text-12-regular text-text-weak">
-                {language.t("common.unsavedChanges")}
-              </span>
+              <span class="text-12-regular text-text-weak">{language.t("common.unsavedChanges")}</span>
             </Show>
             <div class="ml-auto flex items-center gap-2">
               <Tooltip placement="top" value={language.t("common.refresh")}>
@@ -143,19 +138,10 @@ export function AgentsMdDialog(props: {
                   aria-label={language.t("common.refresh")}
                 />
               </Tooltip>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => dialog.close()}
-              >
+              <Button type="button" variant="ghost" onClick={() => dialog.close()}>
                 {language.t("common.close")}
               </Button>
-              <Button
-                type="button"
-                variant="primary"
-                disabled={!dirty() || saving()}
-                onClick={() => void save()}
-              >
+              <Button type="button" variant="primary" disabled={!dirty() || saving()} onClick={() => void save()}>
                 {saving() ? language.t("common.saving") : language.t("common.save")}
               </Button>
             </div>
@@ -165,5 +151,3 @@ export function AgentsMdDialog(props: {
     </Dialog>
   )
 }
-
-

@@ -9,11 +9,7 @@ export function formatThinkingElapsed(seconds: number) {
   return { minutes, seconds: (remainder / 10).toFixed(1) } as const
 }
 
-export function hiddenReasoning(
-  msgs: AssistantMessage[],
-  parts: Record<string, Part[] | undefined>,
-  show: boolean,
-) {
+export function hiddenReasoning(msgs: AssistantMessage[], parts: Record<string, Part[] | undefined>, show: boolean) {
   if (show) return false
 
   return msgs.some((msg) =>

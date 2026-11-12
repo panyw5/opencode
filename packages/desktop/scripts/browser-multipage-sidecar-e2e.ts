@@ -69,7 +69,9 @@ try {
       previous = summary
     }
     if (observations.some((observation) => observation.finished && !observation.answered))
-      throw new Error("The agent finished without returning the live post-click heading; received message validation failed")
+      throw new Error(
+        "The agent finished without returning the live post-click heading; received message validation failed",
+      )
     if (observations.every((observation) => observation.answered)) {
       const views = await client.evaluate<Array<{ pageID?: string; partition: string; profileID?: string }>>(
         "window.api.browser.getState()",

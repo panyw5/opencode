@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import type { ExtensionInfo } from "@/extensions/types"
-import { catalogPick, extensionPick, extensionSelection, extensionSelectionKey, parseExtensionPick } from "./config-extensions"
+import {
+  catalogPick,
+  extensionPick,
+  extensionSelection,
+  extensionSelectionKey,
+  parseExtensionPick,
+} from "./config-extensions"
 
 const item = (id: string, settings = false): ExtensionInfo => ({
   id,
@@ -56,9 +62,7 @@ describe("extension configuration selection", () => {
   })
 
   test("migrates a catalog pick to the installed extension after install", () => {
-    expect(extensionSelection([item("local.wls-repl")], "catalog:local.wls-repl", [])).toBe(
-      "extension:local.wls-repl",
-    )
+    expect(extensionSelection([item("local.wls-repl")], "catalog:local.wls-repl", [])).toBe("extension:local.wls-repl")
     expect(extensionSelection([item("local.wls-repl")], "catalog:local.wls-repl", ["local.wls-repl"])).toBe(
       "extension:local.wls-repl",
     )

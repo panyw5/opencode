@@ -36,7 +36,9 @@ describe("Database.Client drizzle journal seed", () => {
           )
         `)
         sqlite.run("CREATE TABLE migration (id text PRIMARY KEY, time_completed integer NOT NULL)")
-        sqlite.run("CREATE TABLE __drizzle_migrations (id INTEGER PRIMARY KEY, hash text NOT NULL, created_at numeric, name text, applied_at TEXT)")
+        sqlite.run(
+          "CREATE TABLE __drizzle_migrations (id INTEGER PRIMARY KEY, hash text NOT NULL, created_at numeric, name text, applied_at TEXT)",
+        )
         const insert = sqlite.prepare("INSERT INTO migration (id, time_completed) VALUES (?, 1)")
         for (const name of migrationNames) insert.run(name)
         insert.run("20260511173437_session-metadata")
@@ -56,7 +58,9 @@ describe("Database.Client drizzle journal seed", () => {
         ;({ Database } = await import(`../../src/storage/db?seed=${Date.now()}`))
         Database.Client({ disableChannelDb: true, skipMigrations: false })
 
-        const rows = Database.Client().$client.query("SELECT name FROM __drizzle_migrations WHERE name IS NOT NULL").all() as {
+        const rows = Database.Client()
+          .$client.query("SELECT name FROM __drizzle_migrations WHERE name IS NOT NULL")
+          .all() as {
           name: string
         }[]
 

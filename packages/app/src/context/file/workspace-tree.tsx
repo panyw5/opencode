@@ -67,9 +67,5 @@ export function WorkspaceFileTreeProvider(props: ParentProps<{ identity: string 
     watcher.dispose()
     tree.reset()
   })
-  return (
-    <Context.Provider value={tree}>
-      {props.children}
-    </Context.Provider>
-  )
+  return <Context.Provider value={tree}>{props.children}</Context.Provider>
 }

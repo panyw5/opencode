@@ -62,14 +62,14 @@ This is a personal fork of **OpenCode Desktop** with extensive UI improvements a
 
 ### ⌨️ Added shortcuts
 
-| Shortcut        | Action            | Description                                  |
-| --------------- | ----------------- | -------------------------------------------- |
-| `Cmd+T`         | Project switcher  | Quickly switch between multiple projects     |
-| `Cmd+1...5`     | Quick session     | Jump to the 1st-5th session of the project    |
-| `Cmd+↑/↓`       | Jump user message | Move to the previous or next user message    |
-| `Cmd+.`         | Focus input       | Move focus to the prompt input box           |
-| `Cmd+Shift+;`   | Skills list       | Show the list of available skills in session |
-| `Cmd+;`         | Model list        | Show available models                        |
+| Shortcut      | Action            | Description                                  |
+| ------------- | ----------------- | -------------------------------------------- |
+| `Cmd+T`       | Project switcher  | Quickly switch between multiple projects     |
+| `Cmd+1...5`   | Quick session     | Jump to the 1st-5th session of the project   |
+| `Cmd+↑/↓`     | Jump user message | Move to the previous or next user message    |
+| `Cmd+.`       | Focus input       | Move focus to the prompt input box           |
+| `Cmd+Shift+;` | Skills list       | Show the list of available skills in session |
+| `Cmd+;`       | Model list        | Show available models                        |
 
 ### 🖥️ Terminal and editor integration
 

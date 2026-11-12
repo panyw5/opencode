@@ -23,12 +23,14 @@ Example:
 ### 1. Parse Input
 
 Extract from user input:
+
 - Command name: must be kebab-case (example: `review-pr`)
 - Description: one-sentence purpose
 
 ### 2. Analyze Requirements
 
 Classify the command intent:
+
 - Initialization
 - Pre-development check
 - Quality check
@@ -55,9 +57,11 @@ Short purpose.
 ## Steps
 
 ### 1. Step One
+
 Concrete action.
 
 ### 2. Step Two
+
 Concrete action.
 
 ## Output
@@ -93,24 +97,26 @@ Description:
 ## Content Quality Guidelines
 
 Good prompt traits:
+
 1. Clear and concise
 2. Actionable without extra interpretation
 3. Properly scoped
 4. Defines expected output when needed
 
 Avoid:
+
 1. Vague intent (example: "optimize code")
 2. Overly long instructions with mixed goals
 3. Duplicating existing prompt behavior without reason
 
 ## Naming Conventions
 
-| Prompt Type | Prefix | Example |
-|------------|--------|---------|
-| Session Start | `start` | `start` |
-| Pre-development | `before-` | `before-dev` |
-| Check | `check-` | `check` |
-| Record | `record-` | `record-session` |
-| Generate | `generate-` | `generate-api-doc` |
-| Update | `update-` | `update-changelog` |
-| Other | verb-first | `review-code`, `sync-data` |
+| Prompt Type     | Prefix      | Example                    |
+| --------------- | ----------- | -------------------------- |
+| Session Start   | `start`     | `start`                    |
+| Pre-development | `before-`   | `before-dev`               |
+| Check           | `check-`    | `check`                    |
+| Record          | `record-`   | `record-session`           |
+| Generate        | `generate-` | `generate-api-doc`         |
+| Update          | `update-`   | `update-changelog`         |
+| Other           | verb-first  | `review-code`, `sync-data` |

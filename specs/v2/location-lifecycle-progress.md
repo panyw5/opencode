@@ -15,7 +15,7 @@
   错误用 `Schema.TaggedErrorClass`，`yield* new XError(...)` 即 fail；`catchTags` 的 key 是完整 `_tag` 字符串（如 `"LocationLifecycle.LocationUnavailable"`）。
   **泛型 E 下 catchTags 会炸类型推导**：handler 参数被推成 `LocationUnavailable | Extract<E, ...>` 联合；用 `Effect.catchIf(isAdmissionError, ...)` + 类型谓词（instance-context.ts / location-lifecycle.ts `lease` 都是这么写的）。
   另外：**不要给 Effect.gen 的 generator 标返回类型**（如 `function* (): Effect<Outcome, unknown>`），它会约束每个 yield* 的类型；要统一返回类型就用显式标注的绑定 `const outcome: Outcome = yield* ...`。
-  `Effect.catchAllCause` 不存在；用 `Effect.exit` + `Exit.isFailure` 检查。`SynchronizedRef.set` 也不存在；用 `SynchronizedRef.modify(ref, () => [undefined, newState])` 设值。
+`Effect.catchAllCause`不存在；用`Effect.exit`+`Exit.isFailure` 检查。`SynchronizedRef.set`也不存在；用`SynchronizedRef.modify(ref, () => [undefined, newState])` 设值。
 - 测试规范：`testEffect(layer)`、`it.live` 真实时钟、`it.instance`（withTmpdirInstance，供 InstanceRef + TestInstance）、`tmpdirScoped({git:true})`、
   并发同步用 Deferred 不用 sleep；异步租约计数断言用 `pollWithTimeout`。
 - 层拓扑：大 `Layer.provide([...])` 列表内兄弟层互不注入，需求向外冒泡；同名 layer const（如 `AppFileSystem.defaultLayer`、`InstanceLayer.layer`）
@@ -74,6 +74,7 @@
 ### 待迁移的直接 `InstanceStore.load` 调用（延后到后续 PR）
 
 以下 4 处仍直接调 `InstanceStore.load`，未走 lifecycle 门禁。PR3 暂不处理（它们不在删除路径上）：
+
 - `worktree/index.ts:260`（`boot` 函数，创建新 worktree 后 bootstrap 实例）
 - `control-plane/workspace.ts:586`（workspace adapter 解析本地目录）
 - `event-v2-bridge.ts:53`（事件无 InstanceRef 时按目录加载实例）
@@ -210,12 +211,12 @@
 
 全部 4 处直接 `InstanceStore.load` 调用已通过 lifecycle 门禁迁移：
 
-| 位置 | 方式 | 提交 |
-|------|------|------|
-| `worktree/index.ts` boot | `LocationLifecycle.lease(Effect.void)` | `4787e39fb2` |
-| `event-v2-bridge.ts` provideEventLocation | `LocationLifecycle.lease` + `WorkspaceRef` | `4787e39fb2` |
+| 位置                                      | 方式                                                               | 提交         |
+| ----------------------------------------- | ------------------------------------------------------------------ | ------------ |
+| `worktree/index.ts` boot                  | `LocationLifecycle.lease(Effect.void)`                             | `4787e39fb2` |
+| `event-v2-bridge.ts` provideEventLocation | `LocationLifecycle.lease` + `WorkspaceRef`                         | `4787e39fb2` |
 | `control-plane/workspace.ts` adapter 解析 | `LocationLifecycle.load` + `provideService(InstanceStore.Service)` | `0598fa4638` |
-| `cli/effect-cmd.ts` handler | `lifecycle.provide` 包裹 handler | `0598fa4638` |
+| `cli/effect-cmd.ts` handler               | `lifecycle.provide` 包裹 handler                                   | `0598fa4638` |
 
 新增 `LocationLifecycle.load` helper：有服务时走 `provide`（返回 `InstanceContext`），无服务时回退 `InstanceStore.load`（裸测试）。
 
@@ -226,30 +227,30 @@
 
 **后端（11 项全过）**：
 
-| 功能 | 日志证据 |
-|------|---------|
-| HTTP 准入门禁 | `admission-request purpose=http-request` → `lease-acquired` → `runtime-started` → `lease-released`（0→1→0） |
-| worktree boot 走 lifecycle | `admission-request purpose=scheduled-task`（store.load 迁移生效） |
-| 空闲回收调度 | `idle-scheduled delayMs=120000`（租约归零即调度） |
-| 空闲回收精确触发 | 23:53:49 调度 → 23:55:49 恰好 120s 后 `runtime-disposed reason=idle` |
-| 删除围栏全流程 | `delete-request`(operationID=delop_...) → `delete-fenced`(generation 0→1) → `runtime-disposed reason=delete` → `delete-completed` |
-| delete 取消定时器 | `idle-cancelled reason=new-lease`（cancelIdleTimer 在 delete 中生效） |
-| DB 墓碑 | `lifecycle_state=deleted`, `generation=1`, `delete_operation_id` ✓, `time_deleted` ✓（sqlite3 直查 opencode.db） |
-| 文件系统移除 | worktree 目录已删除 |
-| 删除后轻量 404 | 已删目录返回 `DirectoryNotFound` 404（existsSafe 轻量路径，不触发完整准入） |
-| dispose 后再准入 | 空闲回收后重新请求 HTTP 200（runtime 可重启，generation 不变） |
-| 幂等删除 | 二次 delete → `delete-idempotent result=already-deleted` HTTP 200 |
+| 功能                       | 日志证据                                                                                                                           |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| HTTP 准入门禁              | `admission-request purpose=http-request` → `lease-acquired` → `runtime-started` → `lease-released`（0→1→0）                        |
+| worktree boot 走 lifecycle | `admission-request purpose=scheduled-task`（store.load 迁移生效）                                                                  |
+| 空闲回收调度               | `idle-scheduled delayMs=120000`（租约归零即调度）                                                                                  |
+| 空闲回收精确触发           | 23:53:49 调度 → 23:55:49 恰好 120s 后 `runtime-disposed reason=idle`                                                               |
+| 删除围栏全流程             | `delete-request`(operationID=delop\_...) → `delete-fenced`(generation 0→1) → `runtime-disposed reason=delete` → `delete-completed` |
+| delete 取消定时器          | `idle-cancelled reason=new-lease`（cancelIdleTimer 在 delete 中生效）                                                              |
+| DB 墓碑                    | `lifecycle_state=deleted`, `generation=1`, `delete_operation_id` ✓, `time_deleted` ✓（sqlite3 直查 opencode.db）                   |
+| 文件系统移除               | worktree 目录已删除                                                                                                                |
+| 删除后轻量 404             | 已删目录返回 `DirectoryNotFound` 404（existsSafe 轻量路径，不触发完整准入）                                                        |
+| dispose 后再准入           | 空闲回收后重新请求 HTTP 200（runtime 可重启，generation 不变）                                                                     |
+| 幂等删除                   | 二次 delete → `delete-idempotent result=already-deleted` HTTP 200                                                                  |
 
 **前端（5 项全过）**：验证方法：dev electron app（vite dev server 5173 实时加载最新源码），
 `performance.getEntriesByType("resource")` 找到 `/@fs/...` 模块 URL，curl fetch 运行中的 transformed bundle 检查代码内容：
 
-| 检查项 | 运行 bundle 证据 |
-|--------|-----------------|
-| child-store 不再调后端 dispose | `global-sync.tsx` bundle 中 `instance.dispose` 调用 = 0 处 |
-| 新驱逐日志生效 | `child store evicted` 存在 |
-| lastProject 复活已移除 | `layout.tsx` 中 `openProject(last, true)` = 0 处 |
-| 空列表分支直接 return | `if (list.length === 0) { return; }` |
-| focus 选择保留 | `openProject(next.worktree, true)` 存在（else 分支，非复活） |
+| 检查项                         | 运行 bundle 证据                                             |
+| ------------------------------ | ------------------------------------------------------------ |
+| child-store 不再调后端 dispose | `global-sync.tsx` bundle 中 `instance.dispose` 调用 = 0 处   |
+| 新驱逐日志生效                 | `child store evicted` 存在                                   |
+| lastProject 复活已移除         | `layout.tsx` 中 `openProject(last, true)` = 0 处             |
+| 空列表分支直接 return          | `if (list.length === 0) { return; }`                         |
+| focus 选择保留                 | `openProject(next.worktree, true)` 存在（else 分支，非复活） |
 
 ## 后续收尾
 
@@ -260,23 +261,23 @@
 
 ### Test Invariants 对照
 
-| # | 不变式 | 测试 | 说明 |
-|---|--------|------|------|
-| 1 | deleting/deleted 拒绝准入 | ✅ | "delete blocks admission" + "recoverDeleting keeps fence" |
-| 2 | 活跃租约阻止回收和删除 | ✅ | "LocationBusy" + "new lease cancels timer" |
-| 3 | 目录不在 disposer 完成前移除 | ✅ | "delete disposes before filesystem adapter" |
-| 4 | stale generation 不发布 | ✅ 实现 | provide 内 generation 检查（unreachable until delete） |
-| 5 | 并发共享 boot | ✅ | "concurrent admissions share one boot" |
-| 6 | 成功/失败/缺陷/中断释放租约 | ✅ | "releases lease on..." |
-| 7 | child-store 不影响 scheduled-task | ✅ 实现 | PR4 移除 client.instance.dispose() |
-| 8 | renderer detach 不影响其他 | ✅ 实现 | PR4 child-store 只清渲染器 |
-| 9 | scheduled-task 不对 deleting/deleted 调 discovery | ✅ 实现 | provide 拒绝→{status:skipped} |
-| 10 | 删除重试幂等 | ✅ | "idempotent" + "different operationID fails" |
-| 11 | 启动恢复不复活 deleting | ✅ | "keeps fence" + "finishes tombstone" |
-| 12 | unavailable 可恢复，deleted 不可隐式恢复 | ✅ | "unavailable recovers" + "deleted cannot recover" |
-| 13 | Session 历史可读 | ✅ 实现 | Session.listGlobal 直接读 DB |
-| 14 | workspace 缓存不能注册 Location | ✅ 实现 | child-store 只是缓存 |
-| 15 | server shutdown 释放 runtime | ✅ 实现 | layer finalizer + InstanceStore.disposeAll |
+| #   | 不变式                                            | 测试    | 说明                                                      |
+| --- | ------------------------------------------------- | ------- | --------------------------------------------------------- |
+| 1   | deleting/deleted 拒绝准入                         | ✅      | "delete blocks admission" + "recoverDeleting keeps fence" |
+| 2   | 活跃租约阻止回收和删除                            | ✅      | "LocationBusy" + "new lease cancels timer"                |
+| 3   | 目录不在 disposer 完成前移除                      | ✅      | "delete disposes before filesystem adapter"               |
+| 4   | stale generation 不发布                           | ✅ 实现 | provide 内 generation 检查（unreachable until delete）    |
+| 5   | 并发共享 boot                                     | ✅      | "concurrent admissions share one boot"                    |
+| 6   | 成功/失败/缺陷/中断释放租约                       | ✅      | "releases lease on..."                                    |
+| 7   | child-store 不影响 scheduled-task                 | ✅ 实现 | PR4 移除 client.instance.dispose()                        |
+| 8   | renderer detach 不影响其他                        | ✅ 实现 | PR4 child-store 只清渲染器                                |
+| 9   | scheduled-task 不对 deleting/deleted 调 discovery | ✅ 实现 | provide 拒绝→{status:skipped}                             |
+| 10  | 删除重试幂等                                      | ✅      | "idempotent" + "different operationID fails"              |
+| 11  | 启动恢复不复活 deleting                           | ✅      | "keeps fence" + "finishes tombstone"                      |
+| 12  | unavailable 可恢复，deleted 不可隐式恢复          | ✅      | "unavailable recovers" + "deleted cannot recover"         |
+| 13  | Session 历史可读                                  | ✅ 实现 | Session.listGlobal 直接读 DB                              |
+| 14  | workspace 缓存不能注册 Location                   | ✅ 实现 | child-store 只是缓存                                      |
+| 15  | server shutdown 释放 runtime                      | ✅ 实现 | layer finalizer + InstanceStore.disposeAll                |
 
 ## 验证过的关键事实
 

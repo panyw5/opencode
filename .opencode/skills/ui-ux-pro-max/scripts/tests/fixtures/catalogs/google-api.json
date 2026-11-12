@@ -28,9 +28,7 @@
       },
       "category": "sans-serif",
       "kind": "webfonts#webfont",
-      "axes": [
-        {"tag": "wght", "start": 100, "end": 900}
-      ]
+      "axes": [{ "tag": "wght", "start": 100, "end": 900 }]
     }
   ]
 }

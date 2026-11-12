@@ -224,7 +224,15 @@ export async function listConfigFiles(directory?: string | null): Promise<Config
   const configRoot = getConfigRoot()
   registerAllowedRoot(configRoot)
   for (const ext of ["jsonc", "json"]) {
-    files.push(await configFile(`global-opencode-${ext}`, `opencode.${ext}`, join(configRoot, `opencode.${ext}`), "global", "config"))
+    files.push(
+      await configFile(
+        `global-opencode-${ext}`,
+        `opencode.${ext}`,
+        join(configRoot, `opencode.${ext}`),
+        "global",
+        "config",
+      ),
+    )
   }
   files.push(await configFile("global-config-json", "config.json", join(configRoot, "config.json"), "global", "config"))
   files.push(await configFile("global-agents-md", "AGENTS.md", join(configRoot, "AGENTS.md"), "global", "agents"))
@@ -234,7 +242,15 @@ export async function listConfigFiles(directory?: string | null): Promise<Config
     registerAllowedRoot(root)
     registerAllowedRoot(join(root, ".opencode"))
     for (const ext of ["jsonc", "json"]) {
-      files.push(await configFile(`project-opencode-${ext}`, `opencode.${ext}`, join(root, `opencode.${ext}`), "project", "config"))
+      files.push(
+        await configFile(
+          `project-opencode-${ext}`,
+          `opencode.${ext}`,
+          join(root, `opencode.${ext}`),
+          "project",
+          "config",
+        ),
+      )
       files.push(
         await configFile(
           `project-dir-opencode-${ext}`,
@@ -253,14 +269,10 @@ export async function getConfigWorkspace(): Promise<ConfigWorkspace> {
   const configRoot = getConfigRoot()
   registerAllowedRoot(configRoot)
   const agents = await collectWorkspaceFiles([join(configRoot, "agent"), join(configRoot, "agents")], [".md", ".mdx"])
-  const plugins = await collectWorkspaceFiles([join(configRoot, "plugin"), join(configRoot, "plugins")], [
-    ".ts",
-    ".js",
-    ".mjs",
-    ".cjs",
-    ".mts",
-    ".cts",
-  ])
+  const plugins = await collectWorkspaceFiles(
+    [join(configRoot, "plugin"), join(configRoot, "plugins")],
+    [".ts", ".js", ".mjs", ".cjs", ".mts", ".cts"],
+  )
   return {
     configRoot,
     agentsRoot: join(configRoot, "agents"),
@@ -366,12 +378,14 @@ export async function detectOpenclawConfig(): Promise<OpenclawDetection> {
     found.push({ config: withDefaultOpenclawUrl(command.config), source: command.source, score: 90 })
   }
 
-  found.push({ config: { enabled: true, url: DEFAULT_OPENCLAW_GATEWAY_URL }, source: "default local gateway", score: 10 })
+  found.push({
+    config: { enabled: true, url: DEFAULT_OPENCLAW_GATEWAY_URL },
+    source: "default local gateway",
+    score: 10,
+  })
   logs.push(`Added default OpenClaw gateway candidate ${DEFAULT_OPENCLAW_GATEWAY_URL}.`)
 
-  const best = found
-    .filter((item) => !!item.config.url?.trim())
-    .sort((a, b) => b.score - a.score)[0]
+  const best = found.filter((item) => !!item.config.url?.trim()).sort((a, b) => b.score - a.score)[0]
   if (!best) {
     return { ok: false, logs: [...logs, "No OpenClaw gateway URL was detected."] }
   }
@@ -444,7 +458,15 @@ export async function bundledCliPath() {
     join(process.resourcesPath, "sidecars", cliName()),
     join(app.getAppPath(), "resources", "sidecars", cliName()),
     join(process.cwd(), "resources", "sidecars", cliName()),
-    join(process.cwd(), "..", "opencode", "dist", distName(), "bin", process.platform === "win32" ? "opencode.exe" : "opencode"),
+    join(
+      process.cwd(),
+      "..",
+      "opencode",
+      "dist",
+      distName(),
+      "bin",
+      process.platform === "win32" ? "opencode.exe" : "opencode",
+    ),
   ]
   for (const candidate of candidates) {
     if (await exists(candidate)) return candidate
@@ -459,15 +481,20 @@ function cliName() {
 
 function nativeTarget() {
   if (process.platform === "darwin") return process.arch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin"
-  if (process.platform === "win32") return process.arch === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc"
-  if (process.platform === "linux") return process.arch === "arm64" ? "aarch64-unknown-linux-gnu" : "x86_64-unknown-linux-gnu"
+  if (process.platform === "win32")
+    return process.arch === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc"
+  if (process.platform === "linux")
+    return process.arch === "arm64" ? "aarch64-unknown-linux-gnu" : "x86_64-unknown-linux-gnu"
   throw new Error(`Unsupported platform: ${process.platform}/${process.arch}`)
 }
 
 function distName() {
-  if (process.platform === "darwin") return process.arch === "arm64" ? "opencode-darwin-arm64" : "opencode-darwin-x64-baseline"
-  if (process.platform === "win32") return process.arch === "arm64" ? "opencode-windows-arm64" : "opencode-windows-x64-baseline"
-  if (process.platform === "linux") return process.arch === "arm64" ? "opencode-linux-arm64" : "opencode-linux-x64-baseline"
+  if (process.platform === "darwin")
+    return process.arch === "arm64" ? "opencode-darwin-arm64" : "opencode-darwin-x64-baseline"
+  if (process.platform === "win32")
+    return process.arch === "arm64" ? "opencode-windows-arm64" : "opencode-windows-x64-baseline"
+  if (process.platform === "linux")
+    return process.arch === "arm64" ? "opencode-linux-arm64" : "opencode-linux-x64-baseline"
   return "opencode"
 }
 
@@ -507,10 +534,7 @@ async function inspectLocalExtraAgent(
   }
 }
 
-async function inspectExtraAgentUpstream(
-  sourceUrl: string,
-  localCommit?: string,
-): Promise<Partial<ExtraAgentInfo>> {
+async function inspectExtraAgentUpstream(sourceUrl: string, localCommit?: string): Promise<Partial<ExtraAgentInfo>> {
   const repo = githubRepo(sourceUrl)
   if (!repo) return {}
 
@@ -522,8 +546,7 @@ async function inspectExtraAgentUpstream(
     .catch(() => undefined)
   const latestBranch = await githubDefaultBranch(repo).catch(() => undefined)
   const latestCommit = latestBranch ? await githubCommit(repo, latestBranch).catch(() => undefined) : undefined
-  const updateAvailable =
-    localCommit && latestCommit ? !sameCommit(localCommit, latestCommit) : undefined
+  const updateAvailable = localCommit && latestCommit ? !sameCommit(localCommit, latestCommit) : undefined
 
   return {
     latestBranch,
@@ -535,7 +558,9 @@ async function inspectExtraAgentUpstream(
 
 async function commandVersion(commands: string[]) {
   for (const command of commands) {
-    const result = await execFileAsync(command, ["--version"], { timeout: 3000, windowsHide: true }).catch(() => undefined)
+    const result = await execFileAsync(command, ["--version"], { timeout: 3000, windowsHide: true }).catch(
+      () => undefined,
+    )
     const text = result?.stdout?.trim() || result?.stderr?.trim()
     if (text) return text.split(/\r?\n/)[0]
   }
@@ -612,7 +637,9 @@ async function githubLatestReleaseFeed(repo: string) {
   const res = await fetch(`https://github.com/${repo}/releases.atom`, { signal: AbortSignal.timeout(5000) })
   if (!res.ok) throw new Error(`GitHub releases feed returned ${res.status}`)
   const text = await res.text()
-  return text.match(/<link rel="alternate" type="text\/html" href="https:\/\/github\.com\/[^"]+\/releases\/tag\/([^"]+)"/)?.[1]
+  return text.match(
+    /<link rel="alternate" type="text\/html" href="https:\/\/github\.com\/[^"]+\/releases\/tag\/([^"]+)"/,
+  )?.[1]
 }
 
 async function githubJson(url: string) {
@@ -680,10 +707,13 @@ function openclawConfigPaths() {
     roots.push(join(localAppData, "OpenClaw"))
     roots.push(join(localAppData, "openclaw"))
   }
-  return [...new Set(roots.filter((item): item is string => !!item).flatMap((root) => [
-    join(root, "openclaw.json"),
-    join(root, "config.json"),
-  ]))]
+  return [
+    ...new Set(
+      roots
+        .filter((item): item is string => !!item)
+        .flatMap((root) => [join(root, "openclaw.json"), join(root, "config.json")]),
+    ),
+  ]
 }
 
 async function detectOpenclawFromFile(file: string): Promise<OpenclawConfig | undefined> {

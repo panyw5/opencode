@@ -101,18 +101,15 @@ export function startBrowserSpike(win: BrowserWindow) {
   if (process.env.OPENCODE_SPIKE_PROBE === "1") {
     const pairsFile = join(spikeDir(), "probe-pairs.jsonl")
     const lastInput = { x: NaN, y: NaN, type: "", at: 0 }
-    view.webContents.on(
-      "input-event" as never,
-      (_e: unknown, input: { type: string; x: number; y: number }) => {
-        // Electron input-event type is "mouseMove" (CDP calls it mouseMoved)
-        if (["mouseMove", "mouseMoved", "mouseDown", "mouseUp"].includes(input.type)) {
-          lastInput.x = input.x
-          lastInput.y = input.y
-          lastInput.type = input.type
-          lastInput.at = Date.now()
-        }
-      },
-    )
+    view.webContents.on("input-event" as never, (_e: unknown, input: { type: string; x: number; y: number }) => {
+      // Electron input-event type is "mouseMove" (CDP calls it mouseMoved)
+      if (["mouseMove", "mouseMoved", "mouseDown", "mouseUp"].includes(input.type)) {
+        lastInput.x = input.x
+        lastInput.y = input.y
+        lastInput.type = input.type
+        lastInput.at = Date.now()
+      }
+    })
     const probeTimer = setInterval(() => {
       if (win.isDestroyed() || view.webContents.isDestroyed()) {
         clearInterval(probeTimer)
@@ -141,7 +138,7 @@ export function startBrowserSpike(win: BrowserWindow) {
 
   view.webContents.on("did-navigate", (_e, url) => log("nav", "did-navigate", { url }))
   view.webContents.on("did-fail-load", (_e, code, desc, url, isMain) =>
-    log("nav", "did-fail-load", { code, desc, url, isMain }, ),
+    log("nav", "did-fail-load", { code, desc, url, isMain }),
   )
   view.webContents.on("render-process-gone", (_e, details) => log("nav", "render-process-gone", { ...details }))
   view.webContents.setWindowOpenHandler((details) => {

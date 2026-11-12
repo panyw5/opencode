@@ -5,12 +5,12 @@
 
 ## Quick Reference
 
-| Element | Value |
-|---------|-------|
-| Primary Color | #2563EB |
-| Secondary Color | #8B5CF6 |
-| Primary Font | Inter |
-| Voice | Professional, Helpful, Clear |
+| Element         | Value                        |
+| --------------- | ---------------------------- |
+| Primary Color   | #2563EB                      |
+| Secondary Color | #8B5CF6                      |
+| Primary Font    | Inter                        |
+| Voice           | Professional, Helpful, Clear |
 
 ---
 
@@ -18,36 +18,36 @@
 
 ### Primary Colors
 
-| Name | Hex | RGB | Usage |
-|------|-----|-----|-------|
-| Primary Blue | #2563EB | rgb(37,99,235) | CTAs, headers, links |
+| Name         | Hex     | RGB            | Usage                  |
+| ------------ | ------- | -------------- | ---------------------- |
+| Primary Blue | #2563EB | rgb(37,99,235) | CTAs, headers, links   |
 | Primary Dark | #1D4ED8 | rgb(29,78,216) | Hover states, emphasis |
 
 ### Secondary Colors
 
-| Name | Hex | RGB | Usage |
-|------|-----|-----|-------|
-| Secondary Purple | #8B5CF6 | rgb(139,92,246) | Accents, highlights |
-| Accent Green | #10B981 | rgb(16,185,129) | Success, positive states |
+| Name             | Hex     | RGB             | Usage                    |
+| ---------------- | ------- | --------------- | ------------------------ |
+| Secondary Purple | #8B5CF6 | rgb(139,92,246) | Accents, highlights      |
+| Accent Green     | #10B981 | rgb(16,185,129) | Success, positive states |
 
 ### Neutral Palette
 
-| Name | Hex | RGB | Usage |
-|------|-----|-----|-------|
-| Background | #FFFFFF | rgb(255,255,255) | Page backgrounds |
-| Surface | #F9FAFB | rgb(249,250,251) | Cards, sections |
-| Text Primary | #111827 | rgb(17,24,39) | Headings, body text |
+| Name           | Hex     | RGB              | Usage                |
+| -------------- | ------- | ---------------- | -------------------- |
+| Background     | #FFFFFF | rgb(255,255,255) | Page backgrounds     |
+| Surface        | #F9FAFB | rgb(249,250,251) | Cards, sections      |
+| Text Primary   | #111827 | rgb(17,24,39)    | Headings, body text  |
 | Text Secondary | #6B7280 | rgb(107,114,128) | Captions, muted text |
-| Border | #E5E7EB | rgb(229,231,235) | Dividers, borders |
+| Border         | #E5E7EB | rgb(229,231,235) | Dividers, borders    |
 
 ### Semantic Colors
 
-| State | Hex | Usage |
-|-------|-----|-------|
+| State   | Hex     | Usage                           |
+| ------- | ------- | ------------------------------- |
 | Success | #22C55E | Positive actions, confirmations |
-| Warning | #F59E0B | Cautions, pending states |
-| Error | #EF4444 | Errors, destructive actions |
-| Info | #3B82F6 | Informational messages |
+| Warning | #F59E0B | Cautions, pending states        |
+| Error   | #EF4444 | Errors, destructive actions     |
+| Info    | #3B82F6 | Informational messages          |
 
 ### Accessibility
 
@@ -62,29 +62,29 @@
 ### Font Stack
 
 ```css
---font-heading: 'Inter', system-ui, -apple-system, sans-serif;
---font-body: 'Inter', system-ui, -apple-system, sans-serif;
---font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+--font-heading: "Inter", system-ui, -apple-system, sans-serif;
+--font-body: "Inter", system-ui, -apple-system, sans-serif;
+--font-mono: "JetBrains Mono", "Fira Code", monospace;
 ```
 
 ### Type Scale
 
-| Element | Size (Desktop) | Size (Mobile) | Weight | Line Height |
-|---------|----------------|---------------|--------|-------------|
-| H1 | 48px | 32px | 700 | 1.2 |
-| H2 | 36px | 28px | 600 | 1.25 |
-| H3 | 28px | 24px | 600 | 1.3 |
-| H4 | 24px | 20px | 600 | 1.35 |
-| Body | 16px | 16px | 400 | 1.5 |
-| Body Large | 18px | 18px | 400 | 1.6 |
-| Small | 14px | 14px | 400 | 1.5 |
-| Caption | 12px | 12px | 400 | 1.4 |
+| Element    | Size (Desktop) | Size (Mobile) | Weight | Line Height |
+| ---------- | -------------- | ------------- | ------ | ----------- |
+| H1         | 48px           | 32px          | 700    | 1.2         |
+| H2         | 36px           | 28px          | 600    | 1.25        |
+| H3         | 28px           | 24px          | 600    | 1.3         |
+| H4         | 24px           | 20px          | 600    | 1.35        |
+| Body       | 16px           | 16px          | 400    | 1.5         |
+| Body Large | 18px           | 18px          | 400    | 1.6         |
+| Small      | 14px           | 14px          | 400    | 1.5         |
+| Caption    | 12px           | 12px          | 400    | 1.4         |
 
 ### Font Loading
 
 ```html
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 ```
 
 ---
@@ -93,12 +93,12 @@
 
 ### Variants
 
-| Variant | File | Use Case |
-|---------|------|----------|
-| Full Horizontal | logo-full-horizontal.svg | Headers, documents |
-| Stacked | logo-stacked.svg | Square spaces |
-| Icon Only | logo-icon.svg | Favicons, small spaces |
-| Monochrome | logo-mono.svg | Limited color contexts |
+| Variant         | File                     | Use Case               |
+| --------------- | ------------------------ | ---------------------- |
+| Full Horizontal | logo-full-horizontal.svg | Headers, documents     |
+| Stacked         | logo-stacked.svg         | Square spaces          |
+| Icon Only       | logo-icon.svg            | Favicons, small spaces |
+| Monochrome      | logo-mono.svg            | Limited color contexts |
 
 ### Clear Space
 
@@ -106,12 +106,12 @@ Minimum clear space = height of the logo icon (mark)
 
 ### Minimum Size
 
-| Context | Minimum Width |
-|---------|---------------|
-| Digital - Full Logo | 120px |
-| Digital - Icon | 24px |
-| Print - Full Logo | 35mm |
-| Print - Icon | 10mm |
+| Context             | Minimum Width |
+| ------------------- | ------------- |
+| Digital - Full Logo | 120px         |
+| Digital - Icon      | 24px          |
+| Print - Full Logo   | 35mm          |
+| Print - Icon        | 10mm          |
 
 ### Don'ts
 
@@ -127,40 +127,40 @@ Minimum clear space = height of the logo icon (mark)
 
 ### Brand Personality
 
-| Trait | Description |
-|-------|-------------|
+| Trait            | Description                                      |
+| ---------------- | ------------------------------------------------ |
 | **Professional** | Expert knowledge, authoritative yet approachable |
-| **Helpful** | Solution-focused, actionable guidance |
-| **Clear** | Direct communication, jargon-free |
-| **Confident** | Assured without being arrogant |
+| **Helpful**      | Solution-focused, actionable guidance            |
+| **Clear**        | Direct communication, jargon-free                |
+| **Confident**    | Assured without being arrogant                   |
 
 ### Voice Chart
 
-| Trait | We Are | We Are Not |
-|-------|--------|------------|
-| Professional | Expert, knowledgeable | Stuffy, corporate |
-| Helpful | Supportive, empowering | Patronizing |
-| Clear | Direct, concise | Vague, wordy |
-| Confident | Assured, trustworthy | Arrogant, overselling |
+| Trait        | We Are                 | We Are Not            |
+| ------------ | ---------------------- | --------------------- |
+| Professional | Expert, knowledgeable  | Stuffy, corporate     |
+| Helpful      | Supportive, empowering | Patronizing           |
+| Clear        | Direct, concise        | Vague, wordy          |
+| Confident    | Assured, trustworthy   | Arrogant, overselling |
 
 ### Tone by Context
 
-| Context | Tone | Example |
-|---------|------|---------|
-| Marketing | Engaging, benefit-focused | "Create campaigns that convert." |
-| Documentation | Clear, instructional | "Run the command to start." |
-| Error messages | Calm, solution-focused | "Try refreshing the page." |
-| Success | Brief, celebratory | "Campaign published!" |
+| Context        | Tone                      | Example                          |
+| -------------- | ------------------------- | -------------------------------- |
+| Marketing      | Engaging, benefit-focused | "Create campaigns that convert." |
+| Documentation  | Clear, instructional      | "Run the command to start."      |
+| Error messages | Calm, solution-focused    | "Try refreshing the page."       |
+| Success        | Brief, celebratory        | "Campaign published!"            |
 
 ### Prohibited Terms
 
-| Avoid | Reason |
-|-------|--------|
-| Revolutionary | Overused |
-| Best-in-class | Vague claim |
-| Seamless | Overused |
-| Synergy | Corporate jargon |
-| Leverage | Use "use" instead |
+| Avoid         | Reason            |
+| ------------- | ----------------- |
+| Revolutionary | Overused          |
+| Best-in-class | Vague claim       |
+| Seamless      | Overused          |
+| Synergy       | Corporate jargon  |
+| Leverage      | Use "use" instead |
 
 ---
 
@@ -193,31 +193,31 @@ Minimum clear space = height of the logo icon (mark)
 
 ### Buttons
 
-| Type | Background | Text | Border Radius |
-|------|------------|------|---------------|
-| Primary | #2563EB | #FFFFFF | 8px |
-| Secondary | Transparent | #2563EB | 8px |
-| Tertiary | Transparent | #6B7280 | 8px |
+| Type      | Background  | Text    | Border Radius |
+| --------- | ----------- | ------- | ------------- |
+| Primary   | #2563EB     | #FFFFFF | 8px           |
+| Secondary | Transparent | #2563EB | 8px           |
+| Tertiary  | Transparent | #6B7280 | 8px           |
 
 ### Spacing Scale
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| xs | 4px | Tight spacing |
-| sm | 8px | Compact elements |
-| md | 16px | Standard spacing |
-| lg | 24px | Section spacing |
-| xl | 32px | Large gaps |
-| 2xl | 48px | Section dividers |
+| Token | Value | Usage            |
+| ----- | ----- | ---------------- |
+| xs    | 4px   | Tight spacing    |
+| sm    | 8px   | Compact elements |
+| md    | 16px  | Standard spacing |
+| lg    | 24px  | Section spacing  |
+| xl    | 32px  | Large gaps       |
+| 2xl   | 48px  | Section dividers |
 
 ### Border Radius
 
-| Element | Radius |
-|---------|--------|
-| Buttons | 8px |
-| Cards | 12px |
-| Inputs | 8px |
-| Modals | 16px |
+| Element    | Radius |
+| ---------- | ------ |
+| Buttons    | 8px    |
+| Cards      | 12px   |
+| Inputs     | 8px    |
+| Modals     | 16px   |
 | Pills/Tags | 9999px |
 
 ---
@@ -234,13 +234,13 @@ Always prepend to image generation prompts:
 
 ### Style Keywords
 
-| Category | Keywords |
-|----------|----------|
-| **Lighting** | {e.g., soft lighting, dramatic, natural} |
-| **Mood** | {e.g., professional, energetic, calm} |
+| Category        | Keywords                                  |
+| --------------- | ----------------------------------------- |
+| **Lighting**    | {e.g., soft lighting, dramatic, natural}  |
+| **Mood**        | {e.g., professional, energetic, calm}     |
 | **Composition** | {e.g., centered, rule of thirds, minimal} |
-| **Treatment** | {e.g., high contrast, muted, vibrant} |
-| **Aesthetic** | {e.g., modern, vintage, minimalist} |
+| **Treatment**   | {e.g., high contrast, muted, vibrant}     |
+| **Aesthetic**   | {e.g., modern, vintage, minimalist}       |
 
 ### Visual Mood Descriptors
 
@@ -250,18 +250,20 @@ Always prepend to image generation prompts:
 
 ### Visual Don'ts
 
-| Avoid | Reason |
-|-------|--------|
+| Avoid           | Reason            |
+| --------------- | ----------------- |
 | {Item to avoid} | {Why to avoid it} |
 
 ### Example Prompts
 
 **Hero Banner:**
+
 ```
 {Example prompt for hero banners}
 ```
 
 **Social Media Post:**
+
 ```
 {Example prompt for social graphics}
 ```
@@ -270,6 +272,6 @@ Always prepend to image generation prompts:
 
 ## Changelog
 
-| Version | Date | Changes |
-|---------|------|---------|
-| 1.0 | {DATE} | Initial guidelines |
+| Version | Date   | Changes            |
+| ------- | ------ | ------------------ |
+| 1.0     | {DATE} | Initial guidelines |

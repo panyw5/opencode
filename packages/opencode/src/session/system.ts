@@ -44,26 +44,24 @@ export const layer = Layer.effect(
           read: () =>
             !enabled || Permission.disabled(["skill"], rules).has("skill")
               ? Effect.succeed([])
-              : skill
-                  .available({ ...agent, permission: rules }, { refresh: true })
-                  .pipe(
-                    Effect.map((list) =>
-                      keep(
-                        list.flatMap((item) =>
-                          item.description === undefined
-                            ? []
-                            : [
-                                {
-                                  name: item.name,
-                                  description: item.description,
-                                  location:
-                                    item.location === "<built-in>" ? item.location : pathToFileURL(item.location).href,
-                                },
-                              ],
-                        ),
-                      ).toSorted((a, b) => a.name.localeCompare(b.name)),
-                    ),
+              : skill.available({ ...agent, permission: rules }, { refresh: true }).pipe(
+                  Effect.map((list) =>
+                    keep(
+                      list.flatMap((item) =>
+                        item.description === undefined
+                          ? []
+                          : [
+                              {
+                                name: item.name,
+                                description: item.description,
+                                location:
+                                  item.location === "<built-in>" ? item.location : pathToFileURL(item.location).href,
+                              },
+                            ],
+                      ),
+                    ).toSorted((a, b) => a.name.localeCompare(b.name)),
                   ),
+                ),
           keep,
           initial: InstructionGuidance.renderSkills,
           changed: InstructionGuidance.updateSkills,

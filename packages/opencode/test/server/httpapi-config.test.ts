@@ -134,7 +134,10 @@ describe("config HttpApi", () => {
               path.join(tmp.path, "config.json"),
               JSON.stringify({ provider: { inherited: { name: "Inherited" } } }),
             ),
-            Bun.write(path.join(tmp.path, "opencode.jsonc"), JSON.stringify({ $schema: "https://opencode.ai/config.json" })),
+            Bun.write(
+              path.join(tmp.path, "opencode.jsonc"),
+              JSON.stringify({ $schema: "https://opencode.ai/config.json" }),
+            ),
           ]),
         )
 
@@ -178,9 +181,7 @@ describe("config HttpApi", () => {
             }),
           ),
         )
-        yield* Effect.promise(() =>
-          Bun.write(path.join(tmp.path, "opencode.jsonc"), "{}"),
-        )
+        yield* Effect.promise(() => Bun.write(path.join(tmp.path, "opencode.jsonc"), "{}"))
 
         const response = yield* Effect.promise(() =>
           Promise.resolve(
@@ -201,9 +202,7 @@ describe("config HttpApi", () => {
         expect(JSON.parse(refreshBody)).toMatchObject({
           provider: { keep: { npm: "@ai-sdk/openai-compatible" } },
         })
-        const persistedPrimaryText = yield* Effect.promise(() =>
-          Bun.file(path.join(tmp.path, "opencode.jsonc")).text(),
-        )
+        const persistedPrimaryText = yield* Effect.promise(() => Bun.file(path.join(tmp.path, "opencode.jsonc")).text())
         const persistedLegacyText = yield* Effect.promise(() => Bun.file(path.join(tmp.path, "config.json")).text())
         const persistedPrimary = parse(persistedPrimaryText)
         const persistedLegacy = parse(persistedLegacyText)

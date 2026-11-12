@@ -11,10 +11,12 @@ YOUR ROLE: Be a mentor and teacher. Don't just list steps - EXPLAIN the underlyi
 This onboarding has THREE equally important parts:
 
 **PART 1: Core Concepts** (Sections: CORE PHILOSOPHY, SYSTEM STRUCTURE, COMMAND DEEP DIVE)
+
 - Explain WHY this workflow exists
 - Explain WHAT each command does and WHY
 
 **PART 2: Real-World Examples** (Section: REAL-WORLD WORKFLOW EXAMPLES)
+
 - Walk through ALL 5 examples in detail
 - For EACH step in EACH example, explain:
   - PRINCIPLE: Why this step exists
@@ -22,11 +24,13 @@ This onboarding has THREE equally important parts:
   - IF SKIPPED: What goes wrong without it
 
 **PART 3: Customize Your Development Guidelines** (Section: CUSTOMIZE YOUR DEVELOPMENT GUIDELINES)
+
 - Check if project guidelines are still empty templates
 - If empty, guide the developer to fill them with project-specific content
 - Explain the customization workflow
 
 DO NOT skip any part. All three parts are essential:
+
 - Part 1 teaches the concepts
 - Part 2 shows how concepts work in practice
 - Part 3 ensures the project has proper guidelines for AI to follow
@@ -90,18 +94,21 @@ Even after injecting guidelines, AI has limited context window. As conversation 
 ### Understanding spec/ subdirectories
 
 **frontend/** - Single-layer frontend knowledge:
+
 - Component patterns (how to write components in THIS project)
 - State management rules (Redux? Zustand? Context?)
 - Styling conventions (CSS modules? Tailwind? Styled-components?)
 - Hook patterns (custom hooks, data fetching)
 
 **backend/** - Single-layer backend knowledge:
+
 - API design patterns (REST? GraphQL? tRPC?)
 - Database conventions (query patterns, migrations)
 - Error handling standards
 - Logging and monitoring rules
 
 **guides/** - Cross-layer thinking guides:
+
 - Code reuse thinking guide
 - Cross-layer thinking guide
 - Pre-implementation checklists
@@ -118,6 +125,7 @@ When a human engineer joins a project, they spend days/weeks learning: What is t
 AI needs the same onboarding - but compressed into seconds at session start.
 
 **WHAT IT ACTUALLY DOES**:
+
 1. Reads developer identity (who am I in this project?)
 2. Checks git status (what branch? uncommitted changes?)
 3. Reads recent session history from `workspace/` (what happened before?)
@@ -125,6 +133,7 @@ AI needs the same onboarding - but compressed into seconds at session start.
 5. Understands current project state before making any changes
 
 **WHY THIS MATTERS**:
+
 - Without /: AI is blind. It might work on wrong branch, conflict with others' work, or redo already-completed work.
 - With /: AI knows project context, can continue where previous session left off, avoids conflicts.
 
@@ -136,6 +145,7 @@ AI needs the same onboarding - but compressed into seconds at session start.
 AI models have "pre-trained knowledge" - general patterns from millions of codebases. But YOUR project has specific conventions that differ from generic patterns.
 
 **WHAT IT ACTUALLY DOES**:
+
 1. Discovers spec layers via `get_context.py --mode packages` and reads relevant guidelines
 2. Loads project-specific patterns into AI's working context:
    - Component naming conventions
@@ -144,6 +154,7 @@ AI models have "pre-trained knowledge" - general patterns from millions of codeb
    - Error handling standards
 
 **WHY THIS MATTERS**:
+
 - Without before-dev: AI writes generic code that doesn't match project style.
 - With before-dev: AI writes code that looks like the rest of the codebase.
 
@@ -155,14 +166,16 @@ AI models have "pre-trained knowledge" - general patterns from millions of codeb
 AI context window has limited capacity. As conversation progresses, guidelines injected at session start become less influential. This causes "context drift."
 
 **WHAT IT ACTUALLY DOES**:
+
 1. Re-reads the guidelines that were injected earlier
 2. Compares written code against those guidelines
 3. Runs type checker and linter
 4. Identifies violations and suggests fixes
 
 **WHY THIS MATTERS**:
-- Without check-*: Context drift goes unnoticed, code quality degrades.
-- With check-*: Drift is caught and corrected before commit.
+
+- Without check-\*: Context drift goes unnoticed, code quality degrades.
+- With check-\*: Drift is caught and corrected before commit.
 
 ---
 
@@ -170,11 +183,13 @@ AI context window has limited capacity. As conversation progresses, guidelines i
 
 **WHY IT EXISTS**:
 Most bugs don't come from lack of technical skill - they come from "didn't think of it":
+
 - Changed a constant in one place, missed 5 other places
 - Modified database schema, forgot to update the API layer
 - Created a utility function, but similar one already exists
 
 **WHAT IT ACTUALLY DOES**:
+
 1. Identifies which dimensions your change involves
 2. For each dimension, runs targeted checks:
    - Cross-layer data flow
@@ -190,6 +205,7 @@ Most bugs don't come from lack of technical skill - they come from "didn't think
 The `/check-*` commands focus on code quality within a single layer. But real changes often have cross-cutting concerns.
 
 **WHAT IT ACTUALLY DOES**:
+
 1. Reviews all changes holistically
 2. Checks cross-layer consistency
 3. Identifies broader impacts
@@ -203,6 +219,7 @@ The `/check-*` commands focus on code quality within a single layer. But real ch
 All the context AI built during this session will be lost when session ends. The next session's `/` needs this information.
 
 **WHAT IT ACTUALLY DOES**:
+
 1. Records session summary to `workspace/{developer}/journal-N.md`
 2. Captures what was done, learned, and what's remaining
 3. Updates index files for quick lookup
@@ -261,7 +278,7 @@ All the context AI built during this session will be lost when session ends. The
 
 1. **AI NEVER commits** - Human tests and approves. AI prepares, human validates.
 2. **Guidelines before code** - /before-dev command injects project knowledge.
-3. **Check after code** - /check-* commands catch context drift.
+3. **Check after code** - /check-\* commands catch context drift.
 4. **Record everything** - / persists memory.
 
 ---
@@ -299,6 +316,7 @@ The templates contain placeholder text that needs to be replaced with YOUR proje
 3. Document them in the guideline files
 
 For example, for `.trellis/spec/backend/database-guidelines.md`:
+
 - What ORM/query library does your project use?
 - How are migrations managed?
 - What naming conventions for tables/columns?
@@ -331,6 +349,7 @@ Then systematically analyze the codebase and fill each guideline file:
 4. **List forbidden patterns** - Document anti-patterns the team avoids
 
 Work through one file at a time:
+
 - `backend/directory-structure.md`
 - `backend/database-guidelines.md`
 - `backend/error-handling.md`
@@ -350,11 +369,13 @@ Work through one file at a time:
 After covering all three parts, summarize:
 
 "You're now onboarded to the Trellis workflow system! Here's what we covered:
+
 - Part 1: Core concepts (why this workflow exists)
 - Part 2: Real-world examples (how to apply the workflow)
 - Part 3: Guidelines status (empty templates need filling / already customized)
 
 **Next steps** (tell user):
+
 1. Run `/` to record this onboard session
 2. [If guidelines empty] Start filling in `.trellis/spec/` guidelines
 3. [If guidelines ready] Start your first development task

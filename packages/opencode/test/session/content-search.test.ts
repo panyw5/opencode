@@ -103,13 +103,16 @@ describe("session content search index management", () => {
           state: "disabled",
           known: false,
         })
-        SessionContentSearch.upsert(Database.use((db) => db), {
-          id: "part_progress_1" as never,
-          messageID: "msg_progress_1" as never,
-          sessionID: session.id,
-          type: "text",
-          text: "first text",
-        })
+        SessionContentSearch.upsert(
+          Database.use((db) => db),
+          {
+            id: "part_progress_1" as never,
+            messageID: "msg_progress_1" as never,
+            sessionID: session.id,
+            type: "text",
+            text: "first text",
+          },
+        )
         expect(Database.use((db) => db.all(sql`SELECT * FROM session_content_fts`))).toHaveLength(0)
         expect(SessionContentSearch.search({ query: "first" }).results).toEqual([])
 
@@ -127,13 +130,16 @@ describe("session content search index management", () => {
           known: true,
         })
 
-        SessionContentSearch.upsert(Database.use((db) => db), {
-          id: "part_live" as never,
-          messageID: "msg_live" as never,
-          sessionID: session.id,
-          type: "text",
-          text: "live text",
-        })
+        SessionContentSearch.upsert(
+          Database.use((db) => db),
+          {
+            id: "part_live" as never,
+            messageID: "msg_live" as never,
+            sessionID: session.id,
+            type: "text",
+            text: "live text",
+          },
+        )
         // Live inserts bump indexed; total is the baseline from enable/rebuild.
         expect(Database.use((db) => SessionContentSearch.progress(db))).toMatchObject({
           enabled: true,

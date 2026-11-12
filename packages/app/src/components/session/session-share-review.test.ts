@@ -98,7 +98,7 @@ test("HTML preserves long code without collapse or remote resources", async () =
   expect(body).not.toContain("50px")
   expect(body).toContain("data:image/png;base64,AAAA")
   const html = await shareHTML(preview, "light")
-    expect(html).toContain("export-style-")
+  expect(html).toContain("export-style-")
   expect(html).not.toContain("<button")
 })
 

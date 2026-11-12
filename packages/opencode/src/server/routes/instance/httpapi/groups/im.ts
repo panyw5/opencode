@@ -48,16 +48,20 @@ export const MessageSchema = Schema.Struct({
   timeEvent: Schema.optional(Schema.Number),
   timeCreated: Schema.Number,
   metadata: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
-  attachments: Schema.optional(Schema.Array(Schema.Struct({
-    id: Schema.String,
-    kind: Schema.Literals(["image", "voice", "file", "video"]),
-    mime: Schema.String,
-    filename: Schema.optional(Schema.String),
-    size: Schema.Int,
-    sha256: Schema.optional(Schema.String),
-    status: Schema.Literals(["ready", "unavailable", "rejected"]),
-    reason: Schema.optional(Schema.String),
-  }))),
+  attachments: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        id: Schema.String,
+        kind: Schema.Literals(["image", "voice", "file", "video"]),
+        mime: Schema.String,
+        filename: Schema.optional(Schema.String),
+        size: Schema.Int,
+        sha256: Schema.optional(Schema.String),
+        status: Schema.Literals(["ready", "unavailable", "rejected"]),
+        reason: Schema.optional(Schema.String),
+      }),
+    ),
+  ),
 })
 
 export const MessagePageSchema = Schema.Struct({

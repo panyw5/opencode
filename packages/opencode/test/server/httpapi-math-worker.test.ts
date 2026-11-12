@@ -909,16 +909,14 @@ describe("Math worker HttpApi", () => {
             { headers },
           ),
         )
-        expect((yield* Effect.promise(() => body<Array<{ sessionID: string }>>(first))).map((row) => row.sessionID)).toEqual([
-          workers[0],
-        ])
+        expect(
+          (yield* Effect.promise(() => body<Array<{ sessionID: string }>>(first))).map((row) => row.sessionID),
+        ).toEqual([workers[0]])
         const all = yield* Effect.promise(() =>
           Server.Default().app.request(endpoint(SessionPaths.mathWorkers, { sessionID: parent.id }), { headers }),
         )
         expect(
-          (yield* Effect.promise(() => body<Array<{ sessionID: string }>>(all)))
-            .map((row) => row.sessionID)
-            .toSorted(),
+          (yield* Effect.promise(() => body<Array<{ sessionID: string }>>(all))).map((row) => row.sessionID).toSorted(),
         ).toEqual(workers.toSorted())
       }),
     { git: true, config: { formatter: false, lsp: false } },

@@ -839,7 +839,9 @@ function FloatingFileActions(props: { mount: () => HTMLElement | undefined; chil
     timer = setTimeout(() => {
       timer = undefined
       const rect = root?.getBoundingClientRect()
-      console.debug(`[file-actions] close-check x=${pointer?.x} y=${pointer?.y} rect=${rect?.x},${rect?.y},${rect?.width},${rect?.height} inside=${inside()} nativeHover=${root?.matches(":hover")}`)
+      console.debug(
+        `[file-actions] close-check x=${pointer?.x} y=${pointer?.y} rect=${rect?.x},${rect?.y},${rect?.width},${rect?.height} inside=${inside()} nativeHover=${root?.matches(":hover")}`,
+      )
       if (inside()) return
       update("hovered", false)
     }, 180)
@@ -854,7 +856,9 @@ function FloatingFileActions(props: { mount: () => HTMLElement | undefined; chil
       else leave()
     }
     const exit = (event: PointerEvent) => {
-      console.debug(`[file-actions] document-exit x=${event.clientX} y=${event.clientY} target=${(event.target as Element)?.nodeName} related=${(event.relatedTarget as Element)?.nodeName}`)
+      console.debug(
+        `[file-actions] document-exit x=${event.clientX} y=${event.clientY} target=${(event.target as Element)?.nodeName} related=${(event.relatedTarget as Element)?.nodeName}`,
+      )
       pointer = undefined
       leave()
     }
@@ -1248,61 +1252,62 @@ function TextViewer<T>(props: TextFileProps<T>) {
   }
 
   if (!md() && !svg()) {
-    const sourceBar = props.toolbar === false || !props.actionsMount ? undefined : (
-      <FloatingFileActions mount={props.actionsMount}>
-        <>
-          {props.openWith}
-          <Tooltip value={i18n.t("ui.file.maximize")} placement="bottom">
-            <IconButton
-              icon="expand"
-              variant="ghost"
-              class="h-8 w-8 rounded-md"
-              onClick={openMaximized}
-              aria-label={i18n.t("ui.file.maximize")}
-            />
-          </Tooltip>
-          <Show when={props.copyContent}>
-            {(copyContent) => (
-              <Tooltip value={i18n.t("ui.file.copyContent")} placement="bottom">
-                <IconButton
-                  icon={props.copyContentCopied ? "check" : "copy-content"}
-                  variant="ghost"
-                  class="h-8 w-8 rounded-md"
-                  onClick={copyContent()}
-                  aria-label={i18n.t("ui.file.copyContent")}
-                />
-              </Tooltip>
-            )}
-          </Show>
-          <Show when={props.copyPath}>
-            {(copyPath) => (
-              <Tooltip value={i18n.t("ui.file.copyPath")} placement="bottom">
-                <IconButton
-                  icon={props.copyPathCopied ? "check" : "copy"}
-                  variant="ghost"
-                  class="h-8 w-8 rounded-md"
-                  onClick={copyPath()}
-                  aria-label={i18n.t("ui.file.copyPath")}
-                />
-              </Tooltip>
-            )}
-          </Show>
-          <Show when={props.openFolder}>
-            {(openFolder) => (
-              <Tooltip value={i18n.t("ui.file.openFolder")} placement="bottom">
-                <IconButton
-                  icon="folder"
-                  variant="ghost"
-                  class="h-8 w-8 rounded-md"
-                  onClick={openFolder()}
-                  aria-label={i18n.t("ui.file.openFolder")}
-                />
-              </Tooltip>
-            )}
-          </Show>
-        </>
-      </FloatingFileActions>
-    )
+    const sourceBar =
+      props.toolbar === false || !props.actionsMount ? undefined : (
+        <FloatingFileActions mount={props.actionsMount}>
+          <>
+            {props.openWith}
+            <Tooltip value={i18n.t("ui.file.maximize")} placement="bottom">
+              <IconButton
+                icon="expand"
+                variant="ghost"
+                class="h-8 w-8 rounded-md"
+                onClick={openMaximized}
+                aria-label={i18n.t("ui.file.maximize")}
+              />
+            </Tooltip>
+            <Show when={props.copyContent}>
+              {(copyContent) => (
+                <Tooltip value={i18n.t("ui.file.copyContent")} placement="bottom">
+                  <IconButton
+                    icon={props.copyContentCopied ? "check" : "copy-content"}
+                    variant="ghost"
+                    class="h-8 w-8 rounded-md"
+                    onClick={copyContent()}
+                    aria-label={i18n.t("ui.file.copyContent")}
+                  />
+                </Tooltip>
+              )}
+            </Show>
+            <Show when={props.copyPath}>
+              {(copyPath) => (
+                <Tooltip value={i18n.t("ui.file.copyPath")} placement="bottom">
+                  <IconButton
+                    icon={props.copyPathCopied ? "check" : "copy"}
+                    variant="ghost"
+                    class="h-8 w-8 rounded-md"
+                    onClick={copyPath()}
+                    aria-label={i18n.t("ui.file.copyPath")}
+                  />
+                </Tooltip>
+              )}
+            </Show>
+            <Show when={props.openFolder}>
+              {(openFolder) => (
+                <Tooltip value={i18n.t("ui.file.openFolder")} placement="bottom">
+                  <IconButton
+                    icon="folder"
+                    variant="ghost"
+                    class="h-8 w-8 rounded-md"
+                    onClick={openFolder()}
+                    aria-label={i18n.t("ui.file.openFolder")}
+                  />
+                </Tooltip>
+              )}
+            </Show>
+          </>
+        </FloatingFileActions>
+      )
     return SourceViewer<T>({ ...props, head: sourceBar })
   }
 
@@ -1369,69 +1374,70 @@ function TextViewer<T>(props: TextFileProps<T>) {
     })
     onCleanup(() => control.register(null))
   })
-  const bar = props.toolbar === false || !props.actionsMount ? undefined : (
-    <FloatingFileActions mount={props.actionsMount}>
-      <>
-        {props.openWith}
-        <Tooltip value={i18n.t("ui.file.maximize")} placement="bottom">
-          <IconButton
-            icon="expand"
-            variant="ghost"
-            class="h-8 w-8 rounded-md"
-            onClick={openMaximized}
-            aria-label={i18n.t("ui.file.maximize")}
+  const bar =
+    props.toolbar === false || !props.actionsMount ? undefined : (
+      <FloatingFileActions mount={props.actionsMount}>
+        <>
+          {props.openWith}
+          <Tooltip value={i18n.t("ui.file.maximize")} placement="bottom">
+            <IconButton
+              icon="expand"
+              variant="ghost"
+              class="h-8 w-8 rounded-md"
+              onClick={openMaximized}
+              aria-label={i18n.t("ui.file.maximize")}
+            />
+          </Tooltip>
+          <Show when={props.copyContent}>
+            {(copyContent) => (
+              <Tooltip value={i18n.t("ui.file.copyContent")} placement="bottom">
+                <IconButton
+                  icon={props.copyContentCopied ? "check" : "copy-content"}
+                  variant="ghost"
+                  class="h-8 w-8 rounded-md"
+                  onClick={copyContent()}
+                  aria-label={i18n.t("ui.file.copyContent")}
+                />
+              </Tooltip>
+            )}
+          </Show>
+          <Show when={props.copyPath}>
+            {(copyPath) => (
+              <Tooltip value={i18n.t("ui.file.copyPath")} placement="bottom">
+                <IconButton
+                  icon={props.copyPathCopied ? "check" : "copy"}
+                  variant="ghost"
+                  class="h-8 w-8 rounded-md"
+                  onClick={copyPath()}
+                  aria-label={i18n.t("ui.file.copyPath")}
+                />
+              </Tooltip>
+            )}
+          </Show>
+          <Show when={props.openFolder}>
+            {(openFolder) => (
+              <Tooltip value={i18n.t("ui.file.openFolder")} placement="bottom">
+                <IconButton
+                  icon="folder"
+                  variant="ghost"
+                  class="h-8 w-8 rounded-md"
+                  onClick={openFolder()}
+                  aria-label={i18n.t("ui.file.openFolder")}
+                />
+              </Tooltip>
+            )}
+          </Show>
+          <RadioGroup
+            options={["preview", "source"] as const}
+            current={mode()}
+            size="small"
+            value={(value) => value}
+            label={(value) => i18n.t(value === "preview" ? "ui.file.preview" : "ui.file.source")}
+            onSelect={(value) => value && setMode(value)}
           />
-        </Tooltip>
-        <Show when={props.copyContent}>
-          {(copyContent) => (
-            <Tooltip value={i18n.t("ui.file.copyContent")} placement="bottom">
-              <IconButton
-                icon={props.copyContentCopied ? "check" : "copy-content"}
-                variant="ghost"
-                class="h-8 w-8 rounded-md"
-                onClick={copyContent()}
-                aria-label={i18n.t("ui.file.copyContent")}
-              />
-            </Tooltip>
-          )}
-        </Show>
-        <Show when={props.copyPath}>
-          {(copyPath) => (
-            <Tooltip value={i18n.t("ui.file.copyPath")} placement="bottom">
-              <IconButton
-                icon={props.copyPathCopied ? "check" : "copy"}
-                variant="ghost"
-                class="h-8 w-8 rounded-md"
-                onClick={copyPath()}
-                aria-label={i18n.t("ui.file.copyPath")}
-              />
-            </Tooltip>
-          )}
-        </Show>
-        <Show when={props.openFolder}>
-          {(openFolder) => (
-            <Tooltip value={i18n.t("ui.file.openFolder")} placement="bottom">
-              <IconButton
-                icon="folder"
-                variant="ghost"
-                class="h-8 w-8 rounded-md"
-                onClick={openFolder()}
-                aria-label={i18n.t("ui.file.openFolder")}
-              />
-            </Tooltip>
-          )}
-        </Show>
-        <RadioGroup
-          options={["preview", "source"] as const}
-          current={mode()}
-          size="small"
-          value={(value) => value}
-          label={(value) => i18n.t(value === "preview" ? "ui.file.preview" : "ui.file.source")}
-          onSelect={(value) => value && setMode(value)}
-        />
-      </>
-    </FloatingFileActions>
-  )
+        </>
+      </FloatingFileActions>
+    )
 
   createEffect(
     on(

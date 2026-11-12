@@ -86,7 +86,10 @@ describe("groupProjectTasksByWorktree", () => {
       worktrees: [main, "/Users/lelouch/apps/trellis-worktrees/port-subagent-features", mathMode],
     })
     expect(groups.find((group) => group.directory === mathMode)?.tasks.map((item) => item.id)).toEqual(["math"])
-    expect(groups.find((group) => group.directory === main)?.tasks.map((item) => item.id)).toEqual(["math", "main-only"])
+    expect(groups.find((group) => group.directory === main)?.tasks.map((item) => item.id)).toEqual([
+      "math",
+      "main-only",
+    ])
   })
 
   test("appends unknown session directories as extra blocks", () => {

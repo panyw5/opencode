@@ -59,8 +59,8 @@ const storage = await import("../../src/storage/db.ts")
 storage.Client.reset()
 const client = storage.Client({ disableChannelDb: true, skipMigrations: false })
 
-const postCounts = client
-  .$client.query(
+const postCounts = client.$client
+  .query(
     `
     SELECT
       (SELECT count(*) FROM session) AS session,
@@ -71,16 +71,14 @@ const postCounts = client
   )
   .get() as Record<string, number>
 
-const migrationCount = (
-  client.$client.query("SELECT count(*) AS c FROM migration").get() as { c: number }
-).c
+const migrationCount = (client.$client.query("SELECT count(*) AS c FROM migration").get() as { c: number }).c
 const drizzleCount = (
   client.$client.query("SELECT count(*) AS c FROM __drizzle_migrations WHERE name IS NOT NULL").get() as {
     c: number
   }
 ).c
-const forkIndexes = client
-  .$client.query(
+const forkIndexes = client.$client
+  .query(
     `
     SELECT name FROM sqlite_master
     WHERE type = 'index'
@@ -97,30 +95,22 @@ const forkIndexes = client
   .map((row) => (row as { name: string }).name)
 
 const tables = {
-  project_directory: !!(
-    client.$client.query("SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name='project_directory'").get() as
-      | { x: number }
-      | null
-  ),
-  credential: !!(
-    client.$client.query("SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name='credential'").get() as
-      | { x: number }
-      | null
-  ),
-  scheduled_task: !!(
-    client.$client.query("SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name='scheduled_task'").get() as
-      | { x: number }
-      | null
-  ),
-  session_content_fts: !!(
-    client.$client
-      .query("SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name='session_content_fts'")
-      .get() as { x: number } | null
-  ),
+  project_directory: !!(client.$client
+    .query("SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name='project_directory'")
+    .get() as { x: number } | null),
+  credential: !!(client.$client
+    .query("SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name='credential'")
+    .get() as { x: number } | null),
+  scheduled_task: !!(client.$client
+    .query("SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name='scheduled_task'")
+    .get() as { x: number } | null),
+  session_content_fts: !!(client.$client
+    .query("SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name='session_content_fts'")
+    .get() as { x: number } | null),
 }
 
-const permissionCols = client
-  .$client.query("PRAGMA table_info(permission)")
+const permissionCols = client.$client
+  .query("PRAGMA table_info(permission)")
   .all()
   .map((row) => (row as { name: string }).name)
 

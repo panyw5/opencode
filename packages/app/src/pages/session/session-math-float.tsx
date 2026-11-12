@@ -504,13 +504,13 @@ function SessionMathDialog(props: SessionMathFloatProps) {
                           </Tooltip>
                         </div>
                         <div class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-11-regular text-text-weak">
-                          <Show when={roundLabel(entry)}>
-                            {(round) => <span class="font-mono">{round()}</span>}
-                          </Show>
+                          <Show when={roundLabel(entry)}>{(round) => <span class="font-mono">{round()}</span>}</Show>
                           <Show when={compact(entry.tokens)}>
                             {(tokens) => <span>{language.t("session.mathSwarm.tokens", { tokens: tokens() })}</span>}
                           </Show>
-                          <span class={`ml-auto shrink-0 text-11-medium ${stateClass(entry)}`}>{stateLabel(entry)}</span>
+                          <span class={`ml-auto shrink-0 text-11-medium ${stateClass(entry)}`}>
+                            {stateLabel(entry)}
+                          </span>
                         </div>
                         <div class="mt-2 flex flex-wrap items-center justify-end gap-1">
                           <Show when={entry.restartable && !entry.stopRequested}>

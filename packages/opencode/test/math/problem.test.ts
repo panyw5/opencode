@@ -99,11 +99,17 @@ describe("math.problem", () => {
       expect(merged.map((entry: { name: string }) => entry.name).sort()).toEqual(["identities.md", "tables.csv"])
 
       writeFileSync(first, "# identities v2")
-      expect(() => stageReferences(root, [first], { allowedExternalRoots: [sources] })).toThrow(/already exists with different content/)
+      expect(() => stageReferences(root, [first], { allowedExternalRoots: [sources] })).toThrow(
+        /already exists with different content/,
+      )
 
-      expect(() => stageReferences(root, [path.join(sources, "missing.md")], { allowedExternalRoots: [sources] })).toThrow(/not found/)
+      expect(() =>
+        stageReferences(root, [path.join(sources, "missing.md")], { allowedExternalRoots: [sources] }),
+      ).toThrow(/not found/)
       mkdirSync(path.join(sources, "subdir"))
-      expect(() => stageReferences(root, [path.join(sources, "subdir")], { allowedExternalRoots: [sources] })).toThrow(/regular file/)
+      expect(() => stageReferences(root, [path.join(sources, "subdir")], { allowedExternalRoots: [sources] })).toThrow(
+        /regular file/,
+      )
     } finally {
       rmSync(root, { recursive: true, force: true })
       rmSync(sources, { recursive: true, force: true })

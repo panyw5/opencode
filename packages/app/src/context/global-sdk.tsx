@@ -326,9 +326,7 @@ export function GlobalSDKProvider(props: ParentProps) {
             attempt?.abort()
           }
           abort.signal.addEventListener("abort", onAbort)
-          console.info(
-            `[global-sdk] event stream connecting domain=${domain} attempt=${String(attemptID)} url=${url}`,
-          )
+          console.info(`[global-sdk] event stream connecting domain=${domain} attempt=${String(attemptID)} url=${url}`)
           try {
             const events = await eventSdk.global.event({
               signal: attempt.signal,

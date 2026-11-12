@@ -71,7 +71,13 @@ describe("getSessionContextMetrics", () => {
   test("skips trailing in-progress or aborted assistants with zero tokens", () => {
     const messages = [
       user("u1"),
-      assistant("a1", { input: 245784, output: 116, reasoning: 0, read: 0, write: 0, total: 245900 }, 0, "axonhub", "glm-5.2"),
+      assistant(
+        "a1",
+        { input: 245784, output: 116, reasoning: 0, read: 0, write: 0, total: 245900 },
+        0,
+        "axonhub",
+        "glm-5.2",
+      ),
       assistant("a2", { input: 0, output: 0, reasoning: 0, read: 0, write: 0 }, 0, "axonhub", "glm-5.2"),
     ]
     const providers = [
@@ -148,7 +154,10 @@ describe("getSessionContextMetrics", () => {
   })
 
   test("falls back to session model and referenced limit when tokens are missing", () => {
-    const messages = [user("u1"), assistant("a1", { input: 0, output: 0, reasoning: 0, read: 0, write: 0 }, 0, "axonhub", "deepseek-v4-flash-0731")]
+    const messages = [
+      user("u1"),
+      assistant("a1", { input: 0, output: 0, reasoning: 0, read: 0, write: 0 }, 0, "axonhub", "deepseek-v4-flash-0731"),
+    ]
     const providers = [
       {
         id: "axonhub",

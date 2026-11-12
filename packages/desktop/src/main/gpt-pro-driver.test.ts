@@ -15,10 +15,12 @@ test("account verification rejects page changes while the session request was pe
   let url = GPT_PRO_URL
   const driver = new GptProDriver({
     getState: () => [{ partition: GPT_PRO_PARTITION, url, epoch: 1 }],
-    cdp: () => ({ evaluate: async () => {
-      url = `${GPT_PRO_URL}auth/login`
-      return { phase: "authenticated", identity: "stale-user" }
-    } }),
+    cdp: () => ({
+      evaluate: async () => {
+        url = `${GPT_PRO_URL}auth/login`
+        return { phase: "authenticated", identity: "stale-user" }
+      },
+    }),
   } as never)
   await expect(driver.account()).rejects.toThrow("page_changed")
 })
@@ -26,7 +28,9 @@ test("account verification rejects page changes while the session request was pe
 test("a stopped redirect loop fails account verification before another request", async () => {
   const driver = new GptProDriver({
     getState: () => [{ partition: GPT_PRO_PARTITION, url: GPT_PRO_URL, epoch: 1, authRedirectLoop: true }],
-    cdp: () => { throw Error("must not read credentials for stopped loop") },
+    cdp: () => {
+      throw Error("must not read credentials for stopped loop")
+    },
   } as never)
   await expect(driver.account()).rejects.toThrow("page_changed")
 })
@@ -36,7 +40,11 @@ test("same-URL reload at the trusted click boundary cannot persist intent or sen
   const f = fixture({ beforeClickCommit: () => refresh() })
   refresh = f.refresh
   let committed = false
-  await expect(f.driver.submit(async () => () => { committed = true })).rejects.toThrow("page_changed")
+  await expect(
+    f.driver.submit(async () => () => {
+      committed = true
+    }),
+  ).rejects.toThrow("page_changed")
   expect(committed).toBe(false)
   expect(f.clicks).toEqual([])
 })
@@ -198,7 +206,9 @@ function fixture(
   const driver = new GptProDriver(browser as never, (line) => logs.push(line))
   return {
     driver,
-    refresh: () => { documentEpoch++ },
+    refresh: () => {
+      documentEpoch++
+    },
     page,
     clicks,
     logs,

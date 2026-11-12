@@ -113,11 +113,7 @@ function init() {
     // under a stable parent even after the nested caller is torn down.
     const ownerBound = opts?.ownerBound ?? previous?.ownerBound ?? false
     const rootOwner = ownerBound ? (previous?.ownerBound ? previous.owner : owner) : (previous?.owner ?? owner)
-    const lifetimeOwner = ownerBound
-      ? previous?.ownerBound
-        ? previous.lifetimeOwner
-        : owner
-      : owner
+    const lifetimeOwner = ownerBound ? (previous?.ownerBound ? previous.lifetimeOwner : owner) : owner
     const errorFallback =
       opts?.errorFallback ??
       ((error: unknown) => {

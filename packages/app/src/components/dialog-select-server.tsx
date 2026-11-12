@@ -795,9 +795,7 @@ export function DialogSelectServer() {
                               sshMutation.mutate({ action: "start", id: item.config.id })
                             }}
                           >
-                            {ready
-                              ? language.t("dialog.server.ssh.restart")
-                              : language.t("dialog.server.ssh.start")}
+                            {ready ? language.t("dialog.server.ssh.restart") : language.t("dialog.server.ssh.start")}
                           </Button>
                           <Show when={!ready}>
                             <Button
@@ -830,9 +828,7 @@ export function DialogSelectServer() {
                   }}
                 </For>
                 <Show when={(sshState()?.servers ?? []).length === 0}>
-                  <div class="px-3 py-3 text-14-regular text-text-weaker">
-                    {language.t("dialog.server.ssh.empty")}
-                  </div>
+                  <div class="px-3 py-3 text-14-regular text-text-weaker">{language.t("dialog.server.ssh.empty")}</div>
                 </Show>
               </div>
             </div>

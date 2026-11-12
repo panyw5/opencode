@@ -27,7 +27,10 @@ function findOnPath(name: string, env: NodeJS.ProcessEnv, platform: NodeJS.Platf
 /** A compiled opencode executable cannot execute `-e` as a JS runtime. */
 export function resolveChildRuntime(input: ChildRuntimeInput) {
   const platform = input.platform ?? process.platform
-  const executable = path.basename(input.execPath).toLowerCase().replace(/\.exe$/, "")
+  const executable = path
+    .basename(input.execPath)
+    .toLowerCase()
+    .replace(/\.exe$/, "")
   if (executable === "bun" || executable === "node") return input.execPath
 
   const override = input.env.OPENCODE_JS_RUNTIME?.trim()

@@ -438,8 +438,10 @@ export const dict = {
 
   "toast.file.loadFailed.title": "ไม่สามารถโหลดไฟล์",
   "toast.file.listFailed.title": "ไม่สามารถแสดงรายการไฟล์",
-  "toast.file.listFailed.openclaw": "OpenClaw does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
-  "toast.file.listFailed.generalagent": "GeneralAgent does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
+  "toast.file.listFailed.openclaw":
+    "OpenClaw does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
+  "toast.file.listFailed.generalagent":
+    "GeneralAgent does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
 
   "toast.context.noLineSelection.title": "ไม่มีการเลือกบรรทัด",
   "toast.context.noLineSelection.description": "เลือกช่วงบรรทัดในแท็บไฟล์ก่อน",

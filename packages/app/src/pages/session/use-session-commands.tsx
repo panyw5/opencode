@@ -574,7 +574,8 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         description: language.t("command.session.undo.description"),
         keywords: kw("command.session.undo", "command.session.undo.description"),
         slash: "undo",
-        disabled: !!info()?.external || !params.id || userMessages().length === 0 || sync.session.revert.pending(params.id),
+        disabled:
+          !!info()?.external || !params.id || userMessages().length === 0 || sync.session.revert.pending(params.id),
         onSelect: async () => {
           const sessionID = params.id
           if (!sessionID) return
@@ -601,7 +602,8 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         description: language.t("command.session.redo.description"),
         keywords: kw("command.session.redo", "command.session.redo.description"),
         slash: "redo",
-        disabled: !!info()?.external || !params.id || !info()?.revert?.messageID || sync.session.revert.pending(params.id),
+        disabled:
+          !!info()?.external || !params.id || !info()?.revert?.messageID || sync.session.revert.pending(params.id),
         onSelect: async () => {
           const sessionID = params.id
           if (!sessionID) return

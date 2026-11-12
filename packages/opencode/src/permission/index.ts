@@ -199,7 +199,11 @@ export const layer = Layer.effect(
         )
         const scoped = new Map(rows.map((row) => [row.id, row.data]))
         const legacy = Database.use((db) =>
-          db.select({ projectID: PermissionTable.project_id }).from(PermissionTable).where(eq(PermissionTable.project_id, ctx.project.id)).get(),
+          db
+            .select({ projectID: PermissionTable.project_id })
+            .from(PermissionTable)
+            .where(eq(PermissionTable.project_id, ctx.project.id))
+            .get(),
         )
         log.info("permission scopes loaded", {
           projectID: ctx.project.id,

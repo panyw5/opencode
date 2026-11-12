@@ -251,9 +251,7 @@ export function updateProjectMcpText(
       : ["type", "url", "headers", "codemode", ...(before.type === "local" ? ["command", "environment"] : [])]
   return controlled.reduce((text, key) => {
     const next =
-      key === "headers" || key === "environment"
-        ? declaredValue(raw[key], before[key], after[key])
-        : after[key]
+      key === "headers" || key === "environment" ? declaredValue(raw[key], before[key], after[key]) : after[key]
     if (same(before[key], next)) return text
     if ((key === "headers" || key === "environment") && same(before[key], after[key])) return text
     return patch(text, ["mcp", name, key], next)
@@ -275,7 +273,8 @@ export function changedProviderEntry(
     result[key] = after[key]
   }
   if (!same(before.env, after.env)) result.env = after.env ?? []
-  if (!same(before.models, after.models)) result.models = declaredValue(object(declared)?.models, before.models, after.models ?? {})
+  if (!same(before.models, after.models))
+    result.models = declaredValue(object(declared)?.models, before.models, after.models ?? {})
 
   const beforeOptions = object(before.options) ?? {}
   const afterOptions = object(after.options) ?? {}
@@ -286,19 +285,14 @@ export function changedProviderEntry(
     const afterValue = key === "headers" ? emptyMapAsUndefined(afterOptions[key]) : afterOptions[key]
     if (same(beforeValue, afterValue)) continue
     options[key] =
-      key === "headers"
-        ? declaredValue(declaredOptions[key], beforeValue, afterValue ?? {})
-        : (afterValue ?? "")
+      key === "headers" ? declaredValue(declaredOptions[key], beforeValue, afterValue ?? {}) : (afterValue ?? "")
   }
   if (apiKeyDirty) options.apiKey = afterOptions.apiKey ?? ""
   if (Object.keys(options).length > 0) result.options = options
   return Object.keys(result).length > 0 ? (result as ProviderEntry) : undefined
 }
 
-export function globalProviderPatch(
-  provider?: NonNullable<Config["provider"]>,
-  disabledProviders?: string[],
-): Config {
+export function globalProviderPatch(provider?: NonNullable<Config["provider"]>, disabledProviders?: string[]): Config {
   return {
     ...(provider && Object.keys(provider).length > 0 ? { provider } : {}),
     ...(disabledProviders ? { disabled_providers: disabledProviders } : {}),

@@ -17,7 +17,14 @@ export function SessionSelectionToolbar(props: {
   const language = useLanguage()
   const platform = usePlatform()
   const settings = useSettings()
-  const [state, setState] = createStore({ visible: false, measured: false, left: 0, top: 0, below: false, copied: false })
+  const [state, setState] = createStore({
+    visible: false,
+    measured: false,
+    left: 0,
+    top: 0,
+    below: false,
+    copied: false,
+  })
   let toolbar: HTMLDivElement | undefined
   let range: Range | undefined
   let dragging = false
@@ -68,7 +75,8 @@ export function SessionSelectionToolbar(props: {
     // 440x40 box is only used for the hidden mount layout, so the toolbar is
     // never painted at a mispositioned frame before jumping into place.
     const measured = !!toolbar && !!toolbarSize
-    if (!state.visible) console.debug(`[session-selection] toolbar shown length=${selectionLength} measured=${measured}`)
+    if (!state.visible)
+      console.debug(`[session-selection] toolbar shown length=${selectionLength} measured=${measured}`)
     const width = toolbarSize?.width || Math.min(440, window.innerWidth - 16)
     const height = toolbarSize?.height || 40
     const top = Math.max(bounds.top, rect.top)

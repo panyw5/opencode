@@ -62,12 +62,7 @@ describe("IM channel platform labels", () => {
   })
 
   test("labels a WeChat channel as WeChat instead of Discord or Feishu", () => {
-    const channel = findImChannelByDirectory(
-      "/config/channels/Root",
-      { Root: { type: "wechat" } },
-      "/config",
-      "/home",
-    )!
+    const channel = findImChannelByDirectory("/config/channels/Root", { Root: { type: "wechat" } }, "/config", "/home")!
     expect(channel.type).toBe("wechat")
     const key = imChannelMetaKey(channel.type)
     expect(en[key]).toBe("WeChat")
@@ -147,9 +142,7 @@ describe("new session directory", () => {
 })
 
 test("permission alerts use the direct session tab instead of an in-app toast", () => {
-  expect(
-    permissionAlertUsesToast({ sessionID: "child", sessions: [], openSessionIDs: ["child"] }),
-  ).toBe(false)
+  expect(permissionAlertUsesToast({ sessionID: "child", sessions: [], openSessionIDs: ["child"] })).toBe(false)
 })
 
 test("permission alerts use an open parent tab for child requests", () => {
@@ -301,9 +294,7 @@ describe("layout workspace helpers", () => {
 
   test("resolves per-channel work directory under opencode config", () => {
     const configDir = "/Users/me/.config/opencode"
-    expect(defaultChannelDirectory("work-feishu", configDir)).toBe(
-      "/Users/me/.config/opencode/channels/work-feishu",
-    )
+    expect(defaultChannelDirectory("work-feishu", configDir)).toBe("/Users/me/.config/opencode/channels/work-feishu")
     expect(expandHomePath("~/bots/feishu", "/Users/me")).toBe("/Users/me/bots/feishu")
     expect(resolveChannelDirectory("work-feishu", undefined, configDir, "/Users/me")).toBe(
       "/Users/me/.config/opencode/channels/work-feishu",
@@ -311,9 +302,7 @@ describe("layout workspace helpers", () => {
     expect(resolveChannelDirectory("work-feishu", "~/custom", configDir, "/Users/me")).toBe(
       "/Users/me/custom/work-feishu",
     )
-    expect(resolveChannelDirectory("work-feishu", "/abs/path", configDir, "/Users/me")).toBe(
-      "/abs/path/work-feishu",
-    )
+    expect(resolveChannelDirectory("work-feishu", "/abs/path", configDir, "/Users/me")).toBe("/abs/path/work-feishu")
     expect(resolveChannelDirectory("cc", "/Users/me/.config/opencode/channels", configDir, "/Users/me")).toBe(
       "/Users/me/.config/opencode/channels/cc",
     )
@@ -347,12 +336,7 @@ describe("layout workspace helpers", () => {
       disabled: { type: "feishu" as const, enabled: false },
     }
     expect(
-      findImChannelByDirectory(
-        "/Users/me/.config/opencode/channels/work-feishu",
-        channels,
-        configDir,
-        home,
-      ),
+      findImChannelByDirectory("/Users/me/.config/opencode/channels/work-feishu", channels, configDir, home),
     ).toEqual({
       name: "work-feishu",
       type: "feishu",
@@ -364,12 +348,7 @@ describe("layout workspace helpers", () => {
       directory: "/Users/me/bots/discord/custom-bot",
     })
     expect(
-      findImChannelByDirectory(
-        "/Users/me/.config/opencode/channels/disabled",
-        channels,
-        configDir,
-        home,
-      ),
+      findImChannelByDirectory("/Users/me/.config/opencode/channels/disabled", channels, configDir, home),
     ).toBeUndefined()
     expect(findImChannelByDirectory("/some/project", channels, configDir, home)).toBeUndefined()
   })

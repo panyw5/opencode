@@ -399,8 +399,10 @@ export const dict = {
   "toast.model.none.description": "قم بتوصيل موفر لتلخيص هذه الجلسة",
   "toast.file.loadFailed.title": "فشل تحميل الملف",
   "toast.file.listFailed.title": "فشل سرد الملفات",
-  "toast.file.listFailed.openclaw": "OpenClaw does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
-  "toast.file.listFailed.generalagent": "GeneralAgent does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
+  "toast.file.listFailed.openclaw":
+    "OpenClaw does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
+  "toast.file.listFailed.generalagent":
+    "GeneralAgent does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
   "toast.context.noLineSelection.title": "لا يوجد تحديد للأسطر",
   "toast.context.noLineSelection.description": "حدد نطاق أسطر في تبويب ملف أولاً.",
   "toast.session.share.copyFailed.title": "فشل نسخ عنوان URL إلى الحافظة",

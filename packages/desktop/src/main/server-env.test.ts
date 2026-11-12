@@ -71,7 +71,9 @@ describe("sidecar environment", () => {
     expect(paths.sidecarDataHome).toBe("D:\\stale")
     expect(paths.sidecarEnv.XDG_DATA_HOME).toBe(paths.sidecarDataHome)
     expect(paths.cacheHome).toBe("D:\\cache")
-    expect(paths.defaultWorkspaceCwd).toBe(join(resolve("C:\\Users\\Ada\\AppData\\Roaming\\ai.opencode.desktop"), "default-workspace"))
+    expect(paths.defaultWorkspaceCwd).toBe(
+      join(resolve("C:\\Users\\Ada\\AppData\\Roaming\\ai.opencode.desktop"), "default-workspace"),
+    )
   })
 
   test("preserves explicit Windows data and config homes so desktop matches the CLI", () => {

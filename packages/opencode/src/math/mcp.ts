@@ -97,9 +97,10 @@ export function verifierFromEnv(env: NodeJS.ProcessEnv = process.env): Verifier 
   if (env.OPENCODE_MATH_ROLE === "worker" && !env.OPENCODE_MATH_AUTHOR) {
     throw new Error("worker Math MCP requires OPENCODE_MATH_AUTHOR")
   }
-  const workerBootstrap = env.OPENCODE_MATH_ROLE === "worker" && env.OPENCODE_MATH_AUTHOR
-    ? resolveMathWorkerBootstrap(env.OPENCODE_MATH_AUTHOR, env.OPENCODE_MATH_PROJECT_DIR)
-    : undefined
+  const workerBootstrap =
+    env.OPENCODE_MATH_ROLE === "worker" && env.OPENCODE_MATH_AUTHOR
+      ? resolveMathWorkerBootstrap(env.OPENCODE_MATH_AUTHOR, env.OPENCODE_MATH_PROJECT_DIR)
+      : undefined
   const url = env.OPENCODE_MATH_VERIFY_URL
   if (url) return httpVerifier(url)
   const workspace = workerBootstrap?.problemDirectory ?? (env.OPENCODE_MATH_WORKSPACE || process.cwd())
@@ -128,9 +129,10 @@ export function verifierFromEnv(env: NodeJS.ProcessEnv = process.env): Verifier 
 }
 
 export function projectVerifierModel(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  const projectDir = env.OPENCODE_MATH_ROLE === "worker" && env.OPENCODE_MATH_AUTHOR
-    ? resolveMathWorkerBootstrap(env.OPENCODE_MATH_AUTHOR, env.OPENCODE_MATH_PROJECT_DIR).problemDirectory
-    : env.OPENCODE_MATH_PROJECT_DIR
+  const projectDir =
+    env.OPENCODE_MATH_ROLE === "worker" && env.OPENCODE_MATH_AUTHOR
+      ? resolveMathWorkerBootstrap(env.OPENCODE_MATH_AUTHOR, env.OPENCODE_MATH_PROJECT_DIR).problemDirectory
+      : env.OPENCODE_MATH_PROJECT_DIR
   if (!projectDir) return undefined
   return readSwarm(projectDir).verifierModel
 }
@@ -142,9 +144,13 @@ export function gatewayFromEnv(
   if (env.OPENCODE_MATH_ROLE === "worker" && !(overrides?.author ?? env.OPENCODE_MATH_AUTHOR)) {
     throw new Error("worker Math MCP requires a worker author session")
   }
-  const bootstrap = env.OPENCODE_MATH_ROLE === "worker" && (overrides?.author ?? env.OPENCODE_MATH_AUTHOR)
-    ? resolveMathWorkerBootstrap(overrides?.author ?? env.OPENCODE_MATH_AUTHOR!, overrides?.projectDir ?? env.OPENCODE_MATH_PROJECT_DIR)
-    : undefined
+  const bootstrap =
+    env.OPENCODE_MATH_ROLE === "worker" && (overrides?.author ?? env.OPENCODE_MATH_AUTHOR)
+      ? resolveMathWorkerBootstrap(
+          overrides?.author ?? env.OPENCODE_MATH_AUTHOR!,
+          overrides?.projectDir ?? env.OPENCODE_MATH_PROJECT_DIR,
+        )
+      : undefined
   const projectDir = bootstrap?.problemDirectory ?? overrides?.projectDir ?? env.OPENCODE_MATH_PROJECT_DIR
   if (!projectDir) throw new Error("OPENCODE_MATH_PROJECT_DIR is not set")
   return createGateway({

@@ -50,9 +50,12 @@ export function embeddedUI(disableEmbeddedWebUi: boolean) {
     import("opencode-web-ui.gen.ts").then((module) => module.default as Record<string, string>).catch(() => null))
 }
 
-export class EmbeddedWebUI extends Context.Service<EmbeddedWebUI, {
-  readonly manifest: Effect.Effect<Record<string, string> | null>
-}>()("@opencode/EmbeddedWebUI") {}
+export class EmbeddedWebUI extends Context.Service<
+  EmbeddedWebUI,
+  {
+    readonly manifest: Effect.Effect<Record<string, string> | null>
+  }
+>()("@opencode/EmbeddedWebUI") {}
 
 export const embeddedWebUILayer = Layer.effect(
   EmbeddedWebUI,
@@ -105,7 +108,7 @@ export function serveUIEffect(
   return Effect.gen(function* () {
     const embeddedWebUI = services.disableEmbeddedWebUi
       ? null
-      : yield* (services.embedded?.manifest ?? Effect.promise(() => embeddedUI(false)))
+      : yield* services.embedded?.manifest ?? Effect.promise(() => embeddedUI(false))
     const path = new URL(request.url, "http://localhost").pathname
 
     if (embeddedWebUI) return yield* serveEmbeddedUIEffect(path, services.fs, embeddedWebUI)

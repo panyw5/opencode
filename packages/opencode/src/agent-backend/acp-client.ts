@@ -288,8 +288,7 @@ export class AcpAgentClient {
     if (!connection || !this.sessionID) throw new Error("ACP client is not ready")
     if (!this.modes?.availableModes.some((item) => item.id === mode))
       throw new Error(`ACP agent does not advertise requested mode ${mode}`)
-    if (this.modes.currentModeId !== mode)
-      await connection.setSessionMode({ sessionId: this.sessionID, modeId: mode })
+    if (this.modes.currentModeId !== mode) await connection.setSessionMode({ sessionId: this.sessionID, modeId: mode })
     this.modes = { ...this.modes, currentModeId: mode }
     this.mode = mode
   }

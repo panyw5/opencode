@@ -1,8 +1,9 @@
-export function reconcileVerifierModelDraft(input: {
-  draft: string
-  persisted: string
-  nextPersisted: string
-}): { model: string; persistedModel: string; changed: boolean; preservedDraft: boolean } {
+export function reconcileVerifierModelDraft(input: { draft: string; persisted: string; nextPersisted: string }): {
+  model: string
+  persistedModel: string
+  changed: boolean
+  preservedDraft: boolean
+} {
   if (!input.nextPersisted || input.nextPersisted === input.persisted) {
     return {
       model: input.draft,
@@ -11,8 +12,7 @@ export function reconcileVerifierModelDraft(input: {
       preservedDraft: false,
     }
   }
-  const draftUnchanged =
-    !input.draft || input.draft === input.persisted || input.draft === input.nextPersisted
+  const draftUnchanged = !input.draft || input.draft === input.persisted || input.draft === input.nextPersisted
   return {
     model: draftUnchanged ? input.nextPersisted : input.draft,
     persistedModel: input.nextPersisted,

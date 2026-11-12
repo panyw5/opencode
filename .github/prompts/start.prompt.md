@@ -10,10 +10,10 @@ Initialize your AI development session and begin working on tasks.
 
 ## Operation Types
 
-| Marker | Meaning | Executor |
-|--------|---------|----------|
-| `[AI]` | Bash scripts or Task calls executed by AI | You (AI) |
-| `[USER]` | Slash commands executed by user | User |
+| Marker   | Meaning                                   | Executor |
+| -------- | ----------------------------------------- | -------- |
+| `[AI]`   | Bash scripts or Task calls executed by AI | You (AI) |
+| `[USER]` | Slash commands executed by user           | User     |
 
 ---
 
@@ -28,6 +28,7 @@ cat .trellis/workflow.md
 ```
 
 **Follow the instructions in workflow.md** - it contains:
+
 - Core principles (Read Before Write, Follow Standards, etc.)
 - File system structure
 - Development process
@@ -68,22 +69,24 @@ Report what you learned and ask: "What would you like to work on?"
 
 When user describes a task, classify it:
 
-| Type | Criteria | Workflow |
-|------|----------|----------|
-| **Question** | User asks about code, architecture, or how something works | Answer directly |
-| **Trivial Fix** | Typo fix, comment update, single-line change | Direct Edit |
-| **Simple Task** | Clear goal, 1-2 files, well-defined scope | Quick confirm �?Implement |
-| **Complex Task** | Vague goal, multiple files, architectural decisions | **Brainstorm �?Task Workflow** |
+| Type             | Criteria                                                   | Workflow                       |
+| ---------------- | ---------------------------------------------------------- | ------------------------------ |
+| **Question**     | User asks about code, architecture, or how something works | Answer directly                |
+| **Trivial Fix**  | Typo fix, comment update, single-line change               | Direct Edit                    |
+| **Simple Task**  | Clear goal, 1-2 files, well-defined scope                  | Quick confirm �?Implement      |
+| **Complex Task** | Vague goal, multiple files, architectural decisions        | **Brainstorm �?Task Workflow** |
 
 ### Classification Signals
 
 **Trivial/Simple indicators:**
+
 - User specifies exact file and change
 - "Fix the typo in X"
 - "Add field Y to component Z"
 - Clear acceptance criteria already stated
 
 **Complex indicators:**
+
 - "I want to add a feature for..."
 - "Can you help me improve..."
 - Mentions multiple areas or systems
@@ -145,18 +148,19 @@ See `/` for the full process. Summary:
 
 ### Key Brainstorm Principles
 
-| Principle | Description |
-|-----------|-------------|
+| Principle                  | Description                             |
+| -------------------------- | --------------------------------------- |
 | **One question at a time** | Never overwhelm with multiple questions |
-| **Update PRD immediately** | After each answer, update the document |
-| **Prefer multiple choice** | Easier for users to answer |
-| **YAGNI** | Challenge unnecessary complexity |
+| **Update PRD immediately** | After each answer, update the document  |
+| **Prefer multiple choice** | Easier for users to answer              |
+| **YAGNI**                  | Challenge unnecessary complexity        |
 
 ---
 
 ## Task Workflow (Development Tasks)
 
 **Why this workflow?**
+
 - Research Agent analyzes what code-spec files are needed
 - Code-spec files are configured in jsonl files
 - Implement Agent receives code-spec context via Hook injection
@@ -188,6 +192,7 @@ PRD and task directory already exist from brainstorm. Skip directly to Phase 2.
 **Step 1: Confirm Understanding** `[AI]`
 
 Quick confirm:
+
 - What is the goal?
 - What type of development? (frontend / backend / fullstack)
 - Any specific requirements or constraints?
@@ -206,17 +211,21 @@ Create `prd.md` in the task directory with:
 # <Task Title>
 
 ## Goal
+
 <What we're trying to achieve>
 
 ## Requirements
+
 - <Requirement 1>
 - <Requirement 2>
 
 ## Acceptance Criteria
+
 - [ ] <Criterion 1>
 - [ ] <Criterion 2>
 
 ## Technical Notes
+
 <Any technical decisions or constraints>
 ```
 
@@ -231,12 +240,14 @@ Create `prd.md` in the task directory with:
 If the task touches infra or cross-layer contracts, do not start implementation until code-spec depth is defined.
 
 Trigger this requirement when the change includes any of:
+
 - New or changed command/API signatures
 - Database schema or migration changes
 - Infra integrations (storage, queue, cache, secrets, env contracts)
 - Cross-layer payload transformations
 
 Must-have before proceeding:
+
 - [ ] Target code-spec files to update are identified
 - [ ] Concrete contract is defined (signature, fields, env keys)
 - [ ] Validation and error matrix is defined
@@ -358,34 +369,34 @@ If yes, resume from the appropriate step (usually Step 7 or 8).
 
 ### User Commands `[USER]`
 
-| Command | When to Use |
-|---------|-------------|
-| `/` | Begin a session (this command) |
-| `/` | Clarify vague requirements (called from start) |
-| `/` | Complex tasks needing isolated worktree |
-| `/` | Before committing changes |
-| `/` | After completing a task |
+| Command | When to Use                                    |
+| ------- | ---------------------------------------------- |
+| `/`     | Begin a session (this command)                 |
+| `/`     | Clarify vague requirements (called from start) |
+| `/`     | Complex tasks needing isolated worktree        |
+| `/`     | Before committing changes                      |
+| `/`     | After completing a task                        |
 
 ### AI Scripts `[AI]`
 
-| Script | Purpose |
-|--------|---------|
-| `python3 ./.trellis/scripts/get_context.py` | Get session context |
-| `python3 ./.trellis/scripts/task.py create` | Create task directory |
-| `python3 ./.trellis/scripts/task.py init-context` | Initialize jsonl files |
-| `python3 ./.trellis/scripts/task.py add-context` | Add code-spec/context file to jsonl |
-| `python3 ./.trellis/scripts/task.py start` | Set current task |
-| `python3 ./.trellis/scripts/task.py finish` | Clear current task |
-| `python3 ./.trellis/scripts/task.py archive` | Archive completed task |
+| Script                                            | Purpose                             |
+| ------------------------------------------------- | ----------------------------------- |
+| `python3 ./.trellis/scripts/get_context.py`       | Get session context                 |
+| `python3 ./.trellis/scripts/task.py create`       | Create task directory               |
+| `python3 ./.trellis/scripts/task.py init-context` | Initialize jsonl files              |
+| `python3 ./.trellis/scripts/task.py add-context`  | Add code-spec/context file to jsonl |
+| `python3 ./.trellis/scripts/task.py start`        | Set current task                    |
+| `python3 ./.trellis/scripts/task.py finish`       | Clear current task                  |
+| `python3 ./.trellis/scripts/task.py archive`      | Archive completed task              |
 
 ### Sub Agents `[AI]`
 
-| Agent | Purpose | Hook Injection |
-|-------|---------|----------------|
-| research | Analyze codebase | No (reads directly) |
-| implement | Write code | Yes (implement.jsonl) |
-| check | Review & fix | Yes (check.jsonl) |
-| debug | Fix specific issues | Yes (debug.jsonl) |
+| Agent     | Purpose             | Hook Injection        |
+| --------- | ------------------- | --------------------- |
+| research  | Analyze codebase    | No (reads directly)   |
+| implement | Write code          | Yes (implement.jsonl) |
+| check     | Review & fix        | Yes (check.jsonl)     |
+| debug     | Fix specific issues | Yes (debug.jsonl)     |
 
 ---
 

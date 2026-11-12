@@ -62,9 +62,7 @@ function fakeAdapter(bridge: BrowserBridge.Interface): FakeAdapter {
         sent.push(frame)
         if (frame.name === "state") {
           void Effect.runPromise(
-            bridge.handleFrame(
-              JSON.stringify({ type: "resp", id: frame.id, ok: true, result: { state: viewState } }),
-            ),
+            bridge.handleFrame(JSON.stringify({ type: "resp", id: frame.id, ok: true, result: { state: viewState } })),
           ).catch(() => undefined)
         }
       },
@@ -166,7 +164,10 @@ describe("tool.browser_*", () => {
         expect(result.metadata.nodes).toBe(2)
         expect((result as Tool.ExecuteResult).data).toMatchObject({
           url: viewState.url,
-          nodes: [{ uid: "n10", role: "textbox", name: "Email" }, { uid: "n11", role: "button", name: "Sign in" }],
+          nodes: [
+            { uid: "n10", role: "textbox", name: "Email" },
+            { uid: "n11", role: "button", name: "Sign in" },
+          ],
         })
       }),
     { git: true, config: { formatter: false, lsp: false } },
@@ -311,7 +312,10 @@ describe("tool.browser_*", () => {
         expect(result.metadata.errors).toBe(1)
         expect((result as Tool.ExecuteResult).data).toMatchObject({
           url: viewState.url,
-          entries: [{ level: "error", text: "boom" }, { level: "warn", text: "meh" }],
+          entries: [
+            { level: "error", text: "boom" },
+            { level: "warn", text: "meh" },
+          ],
         })
 
         // Incremental: nothing new since the last read.

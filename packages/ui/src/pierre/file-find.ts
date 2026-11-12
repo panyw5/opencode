@@ -101,7 +101,10 @@ export function triggerFileFind(action: "open" | "next" | "previous" = "open", q
     return true
   }
 
-  const host = hostForNode(document.activeElement) ?? (target && target.element() && isVisibleHost(target.element()!) ? target : undefined) ?? firstVisibleHost()
+  const host =
+    hostForNode(document.activeElement) ??
+    (target && target.element() && isVisibleHost(target.element()!) ? target : undefined) ??
+    firstVisibleHost()
   if (!host) return false
   host.open(query)
   return true

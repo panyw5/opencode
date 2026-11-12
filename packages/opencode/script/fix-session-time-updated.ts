@@ -12,9 +12,7 @@
  */
 import { Database as BunDatabase } from "bun:sqlite"
 
-const DB_PATH =
-  process.env.OPENCODE_DB ||
-  `${process.env.HOME}/.local/share/opencode/opencode.db`
+const DB_PATH = process.env.OPENCODE_DB || `${process.env.HOME}/.local/share/opencode/opencode.db`
 
 const db = new BunDatabase(DB_PATH)
 db.run("PRAGMA journal_mode = WAL")

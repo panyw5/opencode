@@ -53,21 +53,27 @@ describe("config source classification", () => {
   })
 
   test("classifies project skills across supported origins", () => {
-    expect(classifySkillSource("file:///Users/me/math-physics/.claude/skills/review/SKILL.md", projects)).toMatchObject({
-      scope: "project",
-      group: "project",
-      project: "Math and Physics",
-      root: "/Users/me/math-physics",
-      origin: ".claude",
-    })
-    expect(classifySkillSource("file:///Users/me/math-physics/.agents/skills/review/SKILL.md", projects)).toMatchObject({
-      scope: "project",
-      group: "project",
-      project: "Math and Physics",
-      root: "/Users/me/math-physics",
-      origin: ".agents",
-    })
-    expect(classifySkillSource("file:///Users/me/math-physics/.opencode/skills/review/SKILL.md", projects)).toMatchObject({
+    expect(classifySkillSource("file:///Users/me/math-physics/.claude/skills/review/SKILL.md", projects)).toMatchObject(
+      {
+        scope: "project",
+        group: "project",
+        project: "Math and Physics",
+        root: "/Users/me/math-physics",
+        origin: ".claude",
+      },
+    )
+    expect(classifySkillSource("file:///Users/me/math-physics/.agents/skills/review/SKILL.md", projects)).toMatchObject(
+      {
+        scope: "project",
+        group: "project",
+        project: "Math and Physics",
+        root: "/Users/me/math-physics",
+        origin: ".agents",
+      },
+    )
+    expect(
+      classifySkillSource("file:///Users/me/math-physics/.opencode/skills/review/SKILL.md", projects),
+    ).toMatchObject({
       scope: "project",
       group: "project",
       project: "Math and Physics",

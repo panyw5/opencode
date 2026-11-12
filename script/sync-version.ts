@@ -29,10 +29,7 @@ const scan = async (glob: string) =>
     list.filter((item) => !item.includes("/node_modules/") && !item.includes("/dist/")),
   )
 
-const files = [
-  ...(await scan("packages/**/package.json")),
-  ...(await scan("sdks/**/package.json")),
-]
+const files = [...(await scan("packages/**/package.json")), ...(await scan("sdks/**/package.json"))]
 
 for (const item of files) {
   const text = await Bun.file(item).text()

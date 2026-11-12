@@ -81,10 +81,7 @@ describe("plugin runtime config", () => {
       },
     })
 
-    const [left, right] = await Promise.all([
-      listAgents(a.path),
-      listAgents(b.path),
-    ])
+    const [left, right] = await Promise.all([listAgents(a.path), listAgents(b.path)])
 
     expect(left.some((item) => item.name === "Alpha Agent")).toBe(true)
     expect(left.some((item) => item.name === "Beta Agent")).toBe(false)

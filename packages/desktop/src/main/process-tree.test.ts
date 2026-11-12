@@ -45,10 +45,7 @@ describe("terminateProcessTree", () => {
 
   test("uses a regular termination signal outside Windows", async () => {
     const signals: Array<NodeJS.Signals | number | undefined> = []
-    await terminateProcessTree(
-      { pid: 1234, kill: (signal) => (signals.push(signal), true) },
-      { platform: "darwin" },
-    )
+    await terminateProcessTree({ pid: 1234, kill: (signal) => (signals.push(signal), true) }, { platform: "darwin" })
 
     expect(signals).toEqual(["SIGTERM"])
   })

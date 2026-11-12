@@ -60,7 +60,10 @@ export function flatten(glossary: unknown): Record<string, string> {
   const out: Record<string, string> = {}
   if (!glossary || typeof glossary !== "object") return out
   const rec = glossary as Record<string, unknown>
-  const terms = rec.terms && typeof rec.terms === "object" && !Array.isArray(rec.terms) ? (rec.terms as Record<string, unknown>) : rec
+  const terms =
+    rec.terms && typeof rec.terms === "object" && !Array.isArray(rec.terms)
+      ? (rec.terms as Record<string, unknown>)
+      : rec
   for (const [term, entry] of Object.entries(terms)) {
     if (term === "version" || term === "description" || term === "terms") continue
     if (entry && typeof entry === "object" && !Array.isArray(entry)) {

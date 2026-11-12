@@ -39,12 +39,7 @@ describe("extension settings", () => {
     const linked = await ExtensionRegistry.link(extension, undefined, registry)
     expect(linked.settings).toEqual({ apiKey: "", mode: "always", limit: 3, verbose: false })
 
-    const updated = await ExtensionRegistry.updateSettings(
-      id,
-      { apiKey: "sk-live-123", limit: 5 },
-      undefined,
-      registry,
-    )
+    const updated = await ExtensionRegistry.updateSettings(id, { apiKey: "sk-live-123", limit: 5 }, undefined, registry)
     expect(updated.settings).toEqual({ apiKey: SECRET_MASK, mode: "always", limit: 5, verbose: false })
     expect(updated.state).toBe("ready")
 

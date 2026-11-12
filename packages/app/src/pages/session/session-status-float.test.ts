@@ -9,11 +9,7 @@ describe("sessionStatusHistoryKey", () => {
   })
 
   test("changes with the current session or child set", () => {
-    expect(sessionStatusHistoryKey("parent-a", ["child"])).not.toBe(
-      sessionStatusHistoryKey("parent-b", ["child"]),
-    )
-    expect(sessionStatusHistoryKey("parent", ["child-a"])).not.toBe(
-      sessionStatusHistoryKey("parent", ["child-b"]),
-    )
+    expect(sessionStatusHistoryKey("parent-a", ["child"])).not.toBe(sessionStatusHistoryKey("parent-b", ["child"]))
+    expect(sessionStatusHistoryKey("parent", ["child-a"])).not.toBe(sessionStatusHistoryKey("parent", ["child-b"]))
   })
 })

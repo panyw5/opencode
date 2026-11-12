@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import type { CommandOption } from "@/context/command"
-import { COMMON_COMMAND_IDS, HOME_COMMAND_IDS, NEW_SESSION_COMMAND_IDS, pickCommandOptions } from "./dialog-select-file-utils"
+import {
+  COMMON_COMMAND_IDS,
+  HOME_COMMAND_IDS,
+  NEW_SESSION_COMMAND_IDS,
+  pickCommandOptions,
+} from "./dialog-select-file-utils"
 
 const command = (id: string): CommandOption => ({ id, title: id })
 

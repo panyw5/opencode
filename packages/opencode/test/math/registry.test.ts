@@ -26,9 +26,9 @@ describe("math.problem registry", () => {
         ownerDirectory: parent.directory,
         orchestratorSessionID: parent.id,
       })
-      const worker = yield* sessions.create({ title: "worker", agent: "math-worker", parentID: parent.id }).pipe(
-        Effect.provideService(InstanceRef, { ...(yield* InstanceRef), directory: projectDir }),
-      )
+      const worker = yield* sessions
+        .create({ title: "worker", agent: "math-worker", parentID: parent.id })
+        .pipe(Effect.provideService(InstanceRef, { ...(yield* InstanceRef), directory: projectDir }))
       registerProblemWorker({ parentSessionID: parent.id, workerSessionID: worker.id, problemID: "registry-problem" })
       registerProblemWorker({ parentSessionID: parent.id, workerSessionID: worker.id, problemID: "registry-problem" })
       expect(findByWorker(worker.id)).toMatchObject({ problemID: "registry-problem", workerSessionID: worker.id })
@@ -44,13 +44,20 @@ describe("math.problem registry", () => {
       const first = mathRoot(test.directory, "registry-a")
       const second = mathRoot(test.directory, "registry-b")
       for (const directory of [first, second]) {
-        ensureMathProblemIdentity({ directory, ownerProjectID: parent.projectID, ownerDirectory: parent.directory, orchestratorSessionID: parent.id })
+        ensureMathProblemIdentity({
+          directory,
+          ownerProjectID: parent.projectID,
+          ownerDirectory: parent.directory,
+          orchestratorSessionID: parent.id,
+        })
       }
-      const worker = yield* sessions.create({ title: "worker", agent: "math-worker", parentID: parent.id }).pipe(
-        Effect.provideService(InstanceRef, { ...(yield* InstanceRef), directory: first }),
-      )
+      const worker = yield* sessions
+        .create({ title: "worker", agent: "math-worker", parentID: parent.id })
+        .pipe(Effect.provideService(InstanceRef, { ...(yield* InstanceRef), directory: first }))
       registerProblemWorker({ parentSessionID: parent.id, workerSessionID: worker.id, problemID: "registry-a" })
-      expect(() => registerProblemWorker({ parentSessionID: parent.id, workerSessionID: worker.id, problemID: "registry-b" })).toThrow()
+      expect(() =>
+        registerProblemWorker({ parentSessionID: parent.id, workerSessionID: worker.id, problemID: "registry-b" }),
+      ).toThrow()
     }),
   )
 
@@ -67,7 +74,9 @@ describe("math.problem registry", () => {
         ownerDirectory: parent.directory,
         orchestratorSessionID: parent.id,
       })
-      expect(() => registerProblemWorker({ parentSessionID: parent.id, workerSessionID: worker.id, problemID: "forged" })).toThrow()
+      expect(() =>
+        registerProblemWorker({ parentSessionID: parent.id, workerSessionID: worker.id, problemID: "forged" }),
+      ).toThrow()
 
       const legacy = mathRoot(test.directory, "legacy-registry")
       ensureMathProblemIdentity({
@@ -84,13 +93,34 @@ describe("math.problem registry", () => {
 
   bunTest("applies the registry migration to a fresh SQLite database", () => {
     const db = new SQLiteDatabase(":memory:")
-    db.exec("CREATE TABLE project (id text PRIMARY KEY); CREATE TABLE project_location (id text PRIMARY KEY, project_id text); CREATE TABLE session (id text PRIMARY KEY, project_id text, location_id text);")
-    const migration = readFileSync(new URL("../../migration/20260925061154_math_problem_registry/migration.sql", import.meta.url), "utf8")
-    for (const statement of migration.split("--> statement-breakpoint").map((value) => value.trim()).filter(Boolean)) db.exec(statement)
-    expect(db.query("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('math_problem','math_problem_worker') ORDER BY name").all()).toHaveLength(2)
+    db.exec(
+      "CREATE TABLE project (id text PRIMARY KEY); CREATE TABLE project_location (id text PRIMARY KEY, project_id text); CREATE TABLE session (id text PRIMARY KEY, project_id text, location_id text);",
+    )
+    const migration = readFileSync(
+      new URL("../../migration/20260925061154_math_problem_registry/migration.sql", import.meta.url),
+      "utf8",
+    )
+    for (const statement of migration
+      .split("--> statement-breakpoint")
+      .map((value) => value.trim())
+      .filter(Boolean))
+      db.exec(statement)
+    expect(
+      db
+        .query(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('math_problem','math_problem_worker') ORDER BY name",
+        )
+        .all(),
+    ).toHaveLength(2)
     expect(db.query("PRAGMA foreign_key_list(math_problem_worker)").all()).toHaveLength(3)
-    db.exec("INSERT INTO project(id) VALUES ('p'); INSERT INTO session(id, project_id) VALUES ('parent','p'),('worker','p'); INSERT INTO math_problem(parent_session_id,problem_id,owner_project_id,orchestrator_session_id,time_created,time_updated) VALUES ('parent','x','p','parent',1,1); INSERT INTO math_problem_worker(parent_session_id,problem_id,worker_session_id) VALUES ('parent','x','worker');")
-    expect(() => db.exec("INSERT INTO math_problem_worker(parent_session_id,problem_id,worker_session_id) VALUES ('parent','y','worker')")).toThrow()
+    db.exec(
+      "INSERT INTO project(id) VALUES ('p'); INSERT INTO session(id, project_id) VALUES ('parent','p'),('worker','p'); INSERT INTO math_problem(parent_session_id,problem_id,owner_project_id,orchestrator_session_id,time_created,time_updated) VALUES ('parent','x','p','parent',1,1); INSERT INTO math_problem_worker(parent_session_id,problem_id,worker_session_id) VALUES ('parent','x','worker');",
+    )
+    expect(() =>
+      db.exec(
+        "INSERT INTO math_problem_worker(parent_session_id,problem_id,worker_session_id) VALUES ('parent','y','worker')",
+      ),
+    ).toThrow()
     db.close()
   })
 })

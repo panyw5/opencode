@@ -88,13 +88,16 @@ test("new session draft tab stays visible when switching sessions", async ({ pag
       await expect(draft).toBeVisible()
       await expect(draft).toHaveAttribute("data-active", "true")
 
-      await page.evaluate((href) => {
-        const anchor = document.createElement("a")
-        anchor.href = href
-        document.body.append(anchor)
-        anchor.click()
-        anchor.remove()
-      }, sessionPath(target.directory, target.id))
+      await page.evaluate(
+        (href) => {
+          const anchor = document.createElement("a")
+          anchor.href = href
+          document.body.append(anchor)
+          anchor.click()
+          anchor.remove()
+        },
+        sessionPath(target.directory, target.id),
+      )
       await expect(page).toHaveURL(new RegExp(`/session/${target.id}(?:[?#]|$)`))
       await expect(draft).toBeVisible()
       await expect(draft).not.toHaveAttribute("data-active", "true")
@@ -180,9 +183,7 @@ test("cold start reconciliation removes an archived persisted tab", async ({ pag
     await expect
       .poll(() => logs.some((entry) => entry.includes("reconcile committed")), { message: logs.join("\n") })
       .toBe(true)
-    await expect(
-      restoredPage.locator(`[data-component="session-tab"][data-session-id="${session.id}"]`),
-    ).toHaveCount(0)
+    await expect(restoredPage.locator(`[data-component="session-tab"][data-session-id="${session.id}"]`)).toHaveCount(0)
     await restoredPage.close()
   })
 })
@@ -214,17 +215,18 @@ test("cold start reconciliation removes a deleted persisted tab", async ({ page,
     })
     await restoredPage.goto(sessionPath(directory))
 
-    await expect
-      .poll(() => logs.some((entry) => entry.includes("status=404")), { message: logs.join("\n") })
-      .toBe(true)
-    await expect(
-      restoredPage.locator(`[data-component="session-tab"][data-session-id="${session.id}"]`),
-    ).toHaveCount(0)
+    await expect.poll(() => logs.some((entry) => entry.includes("status=404")), { message: logs.join("\n") }).toBe(true)
+    await expect(restoredPage.locator(`[data-component="session-tab"][data-session-id="${session.id}"]`)).toHaveCount(0)
     await restoredPage.close()
   })
 })
 
-test("cold start reconciliation retains a tab when verification fails", async ({ page, sdk, gotoSession, directory }) => {
+test("cold start reconciliation retains a tab when verification fails", async ({
+  page,
+  sdk,
+  gotoSession,
+  directory,
+}) => {
   await withSession(sdk, `e2e reconcile failure ${Date.now()}`, async (session) => {
     await gotoSession(session.id)
     await expect(page.locator(`[data-component="session-tab"][data-session-id="${session.id}"]`)).toBeVisible()

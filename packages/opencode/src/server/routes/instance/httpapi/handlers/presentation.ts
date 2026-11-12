@@ -10,11 +10,22 @@ import { InstanceHttpApi } from "../api"
 export const presentationHandlers = HttpApiBuilder.group(InstanceHttpApi, "presentation", (handlers) =>
   Effect.gen(function* () {
     const sessions = yield* Session.Service
-    const get = Effect.fn("PresentationHttpApi.get")(function* (ctx: { params: { sessionID: string; artifactID: string }; query: { variant?: "thumbnail" | "original" } }) {
+    const get = Effect.fn("PresentationHttpApi.get")(function* (ctx: {
+      params: { sessionID: string; artifactID: string }
+      query: { variant?: "thumbnail" | "original" }
+    }) {
       const instance = yield* InstanceState.context
-      const session = yield* sessions.get(ctx.params.sessionID as SessionID).pipe(Effect.catchTag("NotFoundError", () => Effect.fail(new HttpApiError.NotFound({}))))
+      const session = yield* sessions
+        .get(ctx.params.sessionID as SessionID)
+        .pipe(Effect.catchTag("NotFoundError", () => Effect.fail(new HttpApiError.NotFound({}))))
       if (session.directory !== instance.directory) return yield* new HttpApiError.NotFound({})
-      const result = yield* Effect.promise(() => readArtifact({ sessionID: ctx.params.sessionID, artifactID: ctx.params.artifactID, variant: ctx.query.variant }))
+      const result = yield* Effect.promise(() =>
+        readArtifact({
+          sessionID: ctx.params.sessionID,
+          artifactID: ctx.params.artifactID,
+          variant: ctx.query.variant,
+        }),
+      )
       if (!result) return yield* new HttpApiError.NotFound({})
       return HttpServerResponse.uint8Array(result.body, {
         contentType: result.mime,

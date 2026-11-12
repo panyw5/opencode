@@ -299,7 +299,6 @@ export async function registerViaQr(options?: {
   return creds
 }
 
-
 /** Encode a URL into an SVG QR data URL (vendored uqr). */
 export function qrSvgDataUrl(text: string, size = 200): string {
   const svg = renderSVG(text, { ecc: "M", border: 2, pixelSize: 4, whiteColor: "#ffffff", blackColor: "#000000" })

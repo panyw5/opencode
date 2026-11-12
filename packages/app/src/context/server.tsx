@@ -44,11 +44,7 @@ export function projectsKey(key: string) {
 }
 
 /** List/persist bucket for the project rail. Prefer the resolved connection key. */
-export function resolveProjectsListKey(input: {
-  active: string
-  currentKey?: string
-  currentIntegration?: string
-}) {
+export function resolveProjectsListKey(input: { active: string; currentKey?: string; currentIntegration?: string }) {
   if (isExtraAgentIntegration(input.currentIntegration)) return input.currentIntegration
   if (input.currentKey) return projectsKey(input.currentKey)
   return projectsKey(input.active)

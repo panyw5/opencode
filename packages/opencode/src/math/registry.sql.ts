@@ -37,7 +37,10 @@ export const MathProblemWorkerTable = sqliteTable(
   },
   (table) => [
     primaryKey({ columns: [table.parent_session_id, table.problem_id, table.worker_session_id] }),
-    foreignKey({ columns: [table.parent_session_id, table.problem_id], foreignColumns: [MathProblemTable.parent_session_id, MathProblemTable.problem_id] }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.parent_session_id, table.problem_id],
+      foreignColumns: [MathProblemTable.parent_session_id, MathProblemTable.problem_id],
+    }).onDelete("cascade"),
     foreignKey({ columns: [table.worker_session_id], foreignColumns: [SessionTable.id] }).onDelete("cascade"),
     uniqueIndex("math_problem_worker_session_idx").on(table.worker_session_id),
   ],

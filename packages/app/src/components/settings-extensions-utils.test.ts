@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { SECRET_MASK } from "@/extensions/api"
 import type { SettingDefinition } from "@/extensions/types"
-import { buildSettingsPatch, enumDraftOptions, initialDraft, initialDraftValue, secretConfigured } from "./settings-extensions-utils"
+import {
+  buildSettingsPatch,
+  enumDraftOptions,
+  initialDraft,
+  initialDraftValue,
+  secretConfigured,
+} from "./settings-extensions-utils"
 
 const stringDef: SettingDefinition = { type: "string", title: "Endpoint" }
 const numberDef: SettingDefinition = { type: "number", title: "Port" }
@@ -39,7 +45,9 @@ describe("buildSettingsPatch", () => {
   test("returns undefined when nothing changed", () => {
     const definitions = { host: stringDef, port: numberDef, on: booleanDef }
     const stored = { host: "http://localhost", port: 8080, on: true }
-    expect(buildSettingsPatch(definitions, stored, draft({ host: "http://localhost", port: "8080", on: true }), untouched)).toBeUndefined()
+    expect(
+      buildSettingsPatch(definitions, stored, draft({ host: "http://localhost", port: "8080", on: true }), untouched),
+    ).toBeUndefined()
     expect(buildSettingsPatch(definitions, stored, draft({}), untouched)).toBeUndefined()
   })
 
@@ -71,7 +79,12 @@ describe("buildSettingsPatch", () => {
 
   test("sends the raw typed enum value and null for not-set", () => {
     const definitions = { mode: enumDef, level: numericEnumDef }
-    const patch = buildSettingsPatch(definitions, { mode: "fast", level: 1 }, draft({ mode: "slow", level: "2" }), untouched)
+    const patch = buildSettingsPatch(
+      definitions,
+      { mode: "fast", level: 1 },
+      draft({ mode: "slow", level: "2" }),
+      untouched,
+    )
     expect(patch).toEqual({ mode: "slow", level: 2 })
     const cleared = buildSettingsPatch(definitions, { mode: "fast" }, draft({ mode: "", level: "1" }), untouched)
     expect(cleared).toEqual({ mode: null, level: 1 })
@@ -88,10 +101,16 @@ describe("buildSettingsPatch", () => {
   test("a touched secret sends its new value, or null when cleared", () => {
     const definitions = { token: secretDef }
     const touched = new Set(["token"])
-    expect(buildSettingsPatch(definitions, { token: SECRET_MASK }, draft({ token: "new" }), touched)).toEqual({ token: "new" })
-    expect(buildSettingsPatch(definitions, { token: SECRET_MASK }, draft({ token: "" }), touched)).toEqual({ token: null })
+    expect(buildSettingsPatch(definitions, { token: SECRET_MASK }, draft({ token: "new" }), touched)).toEqual({
+      token: "new",
+    })
+    expect(buildSettingsPatch(definitions, { token: SECRET_MASK }, draft({ token: "" }), touched)).toEqual({
+      token: null,
+    })
     // The mask is never echoed back to the server.
-    expect(buildSettingsPatch(definitions, { token: SECRET_MASK }, draft({ token: SECRET_MASK }), touched)).toBeUndefined()
+    expect(
+      buildSettingsPatch(definitions, { token: SECRET_MASK }, draft({ token: SECRET_MASK }), touched),
+    ).toBeUndefined()
   })
 
   test("touching a field without changing the value stays out of the patch", () => {

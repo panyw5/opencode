@@ -134,7 +134,8 @@ export namespace PluginLoader {
   async function scopedImportSpec(row: Resolved, origin: ConfigPlugin.Origin | undefined, scope: string | undefined) {
     if (!scope) return row.entry
     const entry = pathFromSpec(row.entry)
-    const root = row.source === "npm" && row.pkg ? findNodeModulesRoot(row.pkg) ?? row.pkg.dir : filePluginRoot(row, origin)
+    const root =
+      row.source === "npm" && row.pkg ? (findNodeModulesRoot(row.pkg) ?? row.pkg.dir) : filePluginRoot(row, origin)
     const relative = path.relative(root, entry)
     const key = Hash.fast([scope, row.source, row.target, row.entry].join("\0"))
     const scoped = path.join(Global.Path.tmp, "plugin-modules", key)
@@ -327,7 +328,15 @@ export namespace PluginLoader {
         if (!candidate || pluginSource(candidate.plan.spec) !== "file") continue
         deps ??= input.wait()
         await deps
-        out[i] = await attempt(candidate, input.kind, true, input.finish, input.missing, input.report, input.importScope)
+        out[i] = await attempt(
+          candidate,
+          input.kind,
+          true,
+          input.finish,
+          input.missing,
+          input.report,
+          input.importScope,
+        )
       }
     }
 

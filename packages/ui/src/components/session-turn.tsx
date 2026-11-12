@@ -489,9 +489,7 @@ export function SessionTurn(
     return hasReasoning ? "thinking" : "sending"
   })
   const thinkingStatusLabel = createMemo(() =>
-    i18n.t(
-      thinkingPhase() === "sending" ? "ui.sessionTurn.status.sending" : "ui.sessionTurn.status.thinking",
-    ),
+    i18n.t(thinkingPhase() === "sending" ? "ui.sessionTurn.status.sending" : "ui.sessionTurn.status.thinking"),
   )
 
   const autoScroll = createAutoScroll({
@@ -714,10 +712,7 @@ export function SessionTurn(
                 <Show when={showThinking()}>
                   <div data-slot="session-turn-thinking">
                     <Icon name="lightbulb" size="small" />
-                    <Show
-                      when={working()}
-                      fallback={<span>{i18n.t("ui.messagePart.reasoning.thought")}</span>}
-                    >
+                    <Show when={working()} fallback={<span>{i18n.t("ui.messagePart.reasoning.thought")}</span>}>
                       <span data-slot="session-turn-thinking-status">
                         <span
                           data-slot="session-turn-thinking-label"

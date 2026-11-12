@@ -161,4 +161,3 @@ POST <server-origin>/extension/example.release-demo/rpc/ping
 - 临时Basic API列表显示扩展enabled/ready，真实RPC返回上述version/message；server已停止，样例及临时registry仅保留在系统临时目录作为证据。
 - author＋真实resolver离线集成测试复跑 **30 pass / 0 fail（2文件，217断言）**，后者覆盖HTTPS语义的可信transport、自动摘要/v3确认/更新/retained，不等同公网请求。
 - 没有上传GitHub/npm，没有将占位URL当真实站点，没有运行公网descriptor→artifact正向安装。公网分发仍需作者先上传最终包、再发布稳定描述，然后用支持该功能的宿主新隔离环境验收。
-

@@ -13,11 +13,13 @@ function debug() {
   }
 }
 
-function log(_kind: string, _fields: Record<string, string | number | boolean | undefined>) {
-}
+function log(_kind: string, _fields: Record<string, string | number | boolean | undefined>) {}
 
-function stage(_name: string | undefined, _stage: string, _fields: Record<string, string | number | boolean | undefined>) {
-}
+function stage(
+  _name: string | undefined,
+  _stage: string,
+  _fields: Record<string, string | number | boolean | undefined>,
+) {}
 
 export type SelectProps<T> = Omit<ComponentProps<typeof Kobalte<T>>, "value" | "onSelect" | "children"> & {
   placeholder?: string

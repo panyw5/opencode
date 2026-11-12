@@ -52,7 +52,9 @@ async function waitForMessage(channelName: string, eventID: string) {
 async function waitForOwner(channelName: string) {
   const deadline = Date.now() + 5000
   while (Date.now() < deadline) {
-    const row = Database.use((db) => db.select().from(IMOwnerTable).where(eq(IMOwnerTable.channel_name, channelName)).get())
+    const row = Database.use((db) =>
+      db.select().from(IMOwnerTable).where(eq(IMOwnerTable.channel_name, channelName)).get(),
+    )
     if (row) return row
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
@@ -104,7 +106,13 @@ describe("QQ gateway inbound path", () => {
         }
         socket.send(JSON.stringify(event))
         socket.send(JSON.stringify(event))
-        socket.send(JSON.stringify({ ...event, s: 2, d: { ...event.d, id: "foreign-event", author: { user_openid: "foreign-user" } } }))
+        socket.send(
+          JSON.stringify({
+            ...event,
+            s: 2,
+            d: { ...event.d, id: "foreign-event", author: { user_openid: "foreign-user" } },
+          }),
+        )
       })
     })
 
@@ -138,8 +146,16 @@ describe("QQ gateway inbound path", () => {
       expect(row.conversation_id).toBe("private:allowed-user")
       expect(row.sender_id).toBe("allowed-user")
       const owner = await waitForOwner("qq-gateway-test")
-      expect(owner).toMatchObject({ platform: "qq", conversation_id: "private:allowed-user", sender_id: "allowed-user" })
-      expect(Database.use((db) => db.select().from(IMMessageTable).where(eq(IMMessageTable.channel_name, "qq-gateway-test")).all())).toHaveLength(1)
+      expect(owner).toMatchObject({
+        platform: "qq",
+        conversation_id: "private:allowed-user",
+        sender_id: "allowed-user",
+      })
+      expect(
+        Database.use((db) =>
+          db.select().from(IMMessageTable).where(eq(IMMessageTable.channel_name, "qq-gateway-test")).all(),
+        ),
+      ).toHaveLength(1)
       expect(posted).toEqual([])
     } finally {
       globalThis.fetch = originalFetch

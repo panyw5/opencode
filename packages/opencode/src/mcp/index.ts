@@ -683,7 +683,11 @@ export const layer = Layer.effect(
             for (const mcpTool of listed) {
               result[sanitize(clientName) + "_" + sanitize(mcpTool.name)] = {
                 ...convertMcpTool(mcpTool, client, timeout),
-                mcp: { server: clientName, name: mcpTool.name, codemode: s.codemode.get(clientName) ?? entry?.codemode !== false },
+                mcp: {
+                  server: clientName,
+                  name: mcpTool.name,
+                  codemode: s.codemode.get(clientName) ?? entry?.codemode !== false,
+                },
               }
             }
           }),

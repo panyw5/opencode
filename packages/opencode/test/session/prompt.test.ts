@@ -2171,20 +2171,22 @@ it.instance("ends strict json schema mode without materializing its tool after t
   }),
 )
 
-it.instance("an invalid subtask model stays local and the main agent can continue", () => Effect.gen(function* () {
-  const { llm } = yield* useServerConfig(providerCfg)
-  const prompt = yield* SessionPrompt.Service
-  const sessions = yield* Session.Service
-  const chat = yield* sessions.create({ title: "Local subtask failure" })
-  const msg = yield* user(chat.id, "Continue if the subtask cannot run")
-  yield* addSubtask(chat.id, msg.id, { ...ref, modelID: ModelID.make("missing-subtask-model") })
-  yield* llm.text("The subtask was unavailable; I continued independently.")
-  const result = yield* prompt.loop({ sessionID: chat.id })
-  expect(result.info.role).toBe("assistant")
-  if (result.info.role === "assistant") expect(result.info.error).toBeUndefined()
-  const all = (yield* sessions.messages({ sessionID: chat.id })).flatMap((message) => message.parts)
-  expect(all.some((part) => part.type === "tool" && part.tool === "task" && part.state.status === "error")).toBe(true)
-}))
+it.instance("an invalid subtask model stays local and the main agent can continue", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Local subtask failure" })
+    const msg = yield* user(chat.id, "Continue if the subtask cannot run")
+    yield* addSubtask(chat.id, msg.id, { ...ref, modelID: ModelID.make("missing-subtask-model") })
+    yield* llm.text("The subtask was unavailable; I continued independently.")
+    const result = yield* prompt.loop({ sessionID: chat.id })
+    expect(result.info.role).toBe("assistant")
+    if (result.info.role === "assistant") expect(result.info.error).toBeUndefined()
+    const all = (yield* sessions.messages({ sessionID: chat.id })).flatMap((message) => message.parts)
+    expect(all.some((part) => part.type === "tool" && part.tool === "task" && part.state.status === "error")).toBe(true)
+  }),
+)
 
 it.instance("failed subtask preserves metadata on error tool state", () =>
   Effect.gen(function* () {

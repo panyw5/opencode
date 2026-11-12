@@ -193,8 +193,7 @@ export const SettingsAssistant: Component = () => {
       return
     }
     const next = value && typeof value === "object" ? `${value.providerID}/${value.modelID}` : ""
-    const current =
-      typeof globalSync.data.config.small_model === "string" ? globalSync.data.config.small_model : ""
+    const current = typeof globalSync.data.config.small_model === "string" ? globalSync.data.config.small_model : ""
     console.debug(`[settings-assistant] small model selected next=${next || "auto"} current=${current || "auto"}`)
     if (next === current) return
 

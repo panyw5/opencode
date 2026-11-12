@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  buildTaskCardJson,
-  finalTextFromMessages,
-  stepFromAssistant,
-  stepsFromMessages,
-} from "./feishu-card"
+import { buildTaskCardJson, finalTextFromMessages, stepFromAssistant, stepsFromMessages } from "./feishu-card"
 
 describe("feishu task card", () => {
   test("builds schema 2.0 card with collapsible panels and final answer", () => {
@@ -35,9 +30,7 @@ describe("feishu task card", () => {
       { info: { role: "user" }, parts: [{ type: "text", text: "今天有什么新闻？" }] },
       {
         info: { role: "assistant", finish: "tool-calls" },
-        parts: [
-          { type: "tool", tool: "webfetch", state: { status: "completed", input: { url: "https://x" } } },
-        ],
+        parts: [{ type: "tool", tool: "webfetch", state: { status: "completed", input: { url: "https://x" } } }],
       },
       {
         info: { role: "assistant", finish: "tool-calls" },

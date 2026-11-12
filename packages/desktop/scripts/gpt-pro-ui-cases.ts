@@ -53,9 +53,7 @@ export function openCodeComposerTarget() {
     return false
   }
   const visible = (el: Element) =>
-    el.getClientRects().length > 0 &&
-    !hiddenStyle(el) &&
-    !el.closest('[inert],[hidden],[aria-hidden="true"]')
+    el.getClientRects().length > 0 && !hiddenStyle(el) && !el.closest('[inert],[hidden],[aria-hidden="true"]')
   const editors = [...document.querySelectorAll<HTMLElement>(editorSelector)].filter(visible)
   const globalInputs = [...document.querySelectorAll<HTMLInputElement>(inputSelector)]
   const result = {
@@ -65,14 +63,21 @@ export function openCodeComposerTarget() {
     editorCount: editors.length,
     composerCount: 0,
     globalInputCount: globalInputs.length,
-    eligibleGlobalInputCount: globalInputs.filter((input) =>
-      input.type === "file" &&
-      !input.disabled &&
-      input.getAttribute("aria-disabled") !== "true" &&
-      !input.parentElement?.closest('[inert],[hidden],[aria-hidden="true"]'),
+    eligibleGlobalInputCount: globalInputs.filter(
+      (input) =>
+        input.type === "file" &&
+        !input.disabled &&
+        input.getAttribute("aria-disabled") !== "true" &&
+        !input.parentElement?.closest('[inert],[hidden],[aria-hidden="true"]'),
     ).length,
     scopedInputCount: 0,
-    reason: "ok" as "ok" | "no-editor" | "ambiguous-editor" | "no-composer" | "no-scoped-input" | "ambiguous-scoped-input",
+    reason: "ok" as
+      | "ok"
+      | "no-editor"
+      | "ambiguous-editor"
+      | "no-composer"
+      | "no-scoped-input"
+      | "ambiguous-scoped-input",
   }
   if (!editors.length) {
     result.reason = "no-editor"
@@ -134,10 +139,12 @@ export async function activeInput(client: CdpClient): Promise<ActiveInput> {
   await client.call("DOM.enable")
   const document = await client.call<{ root?: { nodeId?: number } }>("DOM.getDocument", { depth: 0 })
   if (!document.root?.nodeId) throw new Error("Active OpenCode composer document could not be resolved")
-  const handle = (await client.call<{ result?: { objectId?: string } }>("Runtime.evaluate", {
-    expression: OPEN_CODE_COMPOSER_TARGET,
-    returnByValue: false,
-  })).result?.objectId
+  const handle = (
+    await client.call<{ result?: { objectId?: string } }>("Runtime.evaluate", {
+      expression: OPEN_CODE_COMPOSER_TARGET,
+      returnByValue: false,
+    })
+  ).result?.objectId
   if (!handle) throw new Error("Composer resolver returned no result")
   let inputHandle: string | undefined
   try {
@@ -154,10 +161,12 @@ export async function activeInput(client: CdpClient): Promise<ActiveInput> {
         `Active OpenCode composer file input unavailable: editors=${summary?.editorCount ?? -1} composers=${summary?.composerCount ?? -1} global=${summary?.globalInputCount ?? -1} eligible=${summary?.eligibleGlobalInputCount ?? -1} scoped=${summary?.scopedInputCount ?? -1} reason=${reason}`,
       )
     }
-    inputHandle = (await client.call<{ result?: { objectId?: string } }>("Runtime.callFunctionOn", {
-      objectId: handle,
-      functionDeclaration: "function() { return this.input }",
-    })).result?.objectId
+    inputHandle = (
+      await client.call<{ result?: { objectId?: string } }>("Runtime.callFunctionOn", {
+        objectId: handle,
+        functionDeclaration: "function() { return this.input }",
+      })
+    ).result?.objectId
     if (!inputHandle) throw new Error("Active composer file input disappeared")
     const nodeId = (await client.call<{ nodeId?: number }>("DOM.requestNode", { objectId: inputHandle })).nodeId
     if (!nodeId) throw new Error("Active composer file input could not be resolved")
@@ -246,8 +255,20 @@ async function clickElement(client: CdpClient, selector: string, scopeToComposer
   })()`)
   if ("error" in point) throw new Error(point.error)
   await client.call("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y, button: "none" })
-  await client.call("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", clickCount: 1 })
-  await client.call("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", clickCount: 1 })
+  await client.call("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: point.x,
+    y: point.y,
+    button: "left",
+    clickCount: 1,
+  })
+  await client.call("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x: point.x,
+    y: point.y,
+    button: "left",
+    clickCount: 1,
+  })
 }
 
 function fileChooserOpened(client: CdpClient, timeoutMs = 3000) {
@@ -296,7 +317,8 @@ async function attach(client: CdpClient, inputPaths: string[]) {
     if (!(await stat(file)).isFile()) throw new Error("Every attach path must name a regular file")
   }
   const before = await activeInput(client)
-  if (paths.length > 1 && !before.multiple) throw new Error("Current composer file input does not accept multiple files")
+  if (paths.length > 1 && !before.multiple)
+    throw new Error("Current composer file input does not accept multiple files")
 
   await client.call("Page.enable")
   await client.call("Page.setInterceptFileChooserDialog", { enabled: true })
@@ -396,8 +418,20 @@ async function mention(client: CdpClient, rawQuery: string) {
   }
   if (!point) throw new Error(`No visible mention-menu button matched queryLength=${query.length}`)
   await client.call("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y, button: "none" })
-  await client.call("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", clickCount: 1 })
-  await client.call("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", clickCount: 1 })
+  await client.call("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: point.x,
+    y: point.y,
+    button: "left",
+    clickCount: 1,
+  })
+  await client.call("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x: point.x,
+    y: point.y,
+    button: "left",
+    clickCount: 1,
+  })
   const tokenDeadline = Date.now() + 10000
   let selected: { type: "file" | "agent"; nameLength: number } | undefined
   while (Date.now() < tokenDeadline) {
@@ -416,7 +450,8 @@ async function mention(client: CdpClient, rawQuery: string) {
     if (selected) break
     await wait(100)
   }
-  if (!selected) throw new Error(`Mention candidate click did not produce a matching editor token; queryLength=${query.length}`)
+  if (!selected)
+    throw new Error(`Mention candidate click did not produce a matching editor token; queryLength=${query.length}`)
   return { selected: true, kind: selected.type, queryLength: query.length, tokenNameLength: selected.nameLength }
 }
 

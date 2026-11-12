@@ -30,6 +30,7 @@ Design banners across social, ads, web, and print formats. Generates multiple ar
 ### Step 1: Gather Requirements (AskUserQuestion)
 
 Collect via AskUserQuestion:
+
 1. **Purpose** — social cover, ad banner, website hero, print, or creative asset?
 2. **Platform/size** — which platform or custom dimensions?
 3. **Content** — headline, subtext, CTA, logo placement?
@@ -61,11 +62,13 @@ For each art direction option:
 2. **Generate visual elements** with `ai-artist` + `ai-multimodal` skills
 
    **a) Search prompt inspiration** (6000+ examples in ai-artist):
+
    ```bash
    python3 .claude/skills/ai-artist/scripts/search.py "<banner style keywords>"
    ```
 
    **b) Generate with Standard model** (fast, good for backgrounds/patterns):
+
    ```bash
    .claude/skills/.venv/bin/python3 .claude/skills/ai-multimodal/scripts/gemini_batch_process.py \
      --task generate --model gemini-2.5-flash-image \
@@ -74,6 +77,7 @@ For each art direction option:
    ```
 
    **c) Generate with Pro model** (4K, complex illustrations/hero visuals):
+
    ```bash
    .claude/skills/.venv/bin/python3 .claude/skills/ai-multimodal/scripts/gemini_batch_process.py \
      --task generate --model gemini-3-pro-image-preview \
@@ -122,6 +126,7 @@ After designing HTML banners, export each to PNG using `chrome-devtools` skill:
    ```
 
 **Output path convention** (per `assets-organizing` skill):
+
 ```
 assets/banners/{campaign}/
 ├── minimalist-1500x500.png
@@ -138,6 +143,7 @@ assets/banners/{campaign}/
 ### Step 5: Present Options & Iterate
 
 Present all exported images side-by-side. For each option show:
+
 - Art direction style name
 - Exported PNG preview (use `ai-multimodal` skill to display if needed)
 - Key design rationale
@@ -147,34 +153,34 @@ Iterate based on user feedback until approved.
 
 ## Banner Size Quick Reference
 
-| Platform | Type | Size (px) | Aspect Ratio |
-|----------|------|-----------|--------------|
-| Facebook | Cover | 820 × 312 | ~2.6:1 |
-| Twitter/X | Header | 1500 × 500 | 3:1 |
-| LinkedIn | Personal | 1584 × 396 | 4:1 |
-| YouTube | Channel art | 2560 × 1440 | 16:9 |
-| Instagram | Story | 1080 × 1920 | 9:16 |
-| Instagram | Post | 1080 × 1080 | 1:1 |
-| Google Ads | Med Rectangle | 300 × 250 | 6:5 |
-| Google Ads | Leaderboard | 728 × 90 | 8:1 |
-| Website | Hero | 1920 × 600-1080 | ~3:1 |
+| Platform   | Type          | Size (px)       | Aspect Ratio |
+| ---------- | ------------- | --------------- | ------------ |
+| Facebook   | Cover         | 820 × 312       | ~2.6:1       |
+| Twitter/X  | Header        | 1500 × 500      | 3:1          |
+| LinkedIn   | Personal      | 1584 × 396      | 4:1          |
+| YouTube    | Channel art   | 2560 × 1440     | 16:9         |
+| Instagram  | Story         | 1080 × 1920     | 9:16         |
+| Instagram  | Post          | 1080 × 1080     | 1:1          |
+| Google Ads | Med Rectangle | 300 × 250       | 6:5          |
+| Google Ads | Leaderboard   | 728 × 90        | 8:1          |
+| Website    | Hero          | 1920 × 600-1080 | ~3:1         |
 
 Full reference: `references/banner-sizes-and-styles.md`
 
 ## Art Direction Styles (Top 10)
 
-| Style | Best For | Key Elements |
-|-------|----------|--------------|
-| Minimalist | SaaS, tech | White space, 1-2 colors, clean type |
-| Bold Typography | Announcements | Oversized type as hero element |
-| Gradient | Modern brands | Mesh gradients, chromatic blends |
-| Photo-Based | Lifestyle, e-com | Full-bleed photo + text overlay |
-| Geometric | Tech, fintech | Shapes, grids, abstract patterns |
-| Retro/Vintage | F&B, craft | Distressed textures, muted colors |
-| Glassmorphism | SaaS, apps | Frosted glass, blur, glow borders |
-| Neon/Cyberpunk | Gaming, events | Dark bg, glowing neon accents |
-| Editorial | Media, luxury | Grid layouts, pull quotes |
-| 3D/Sculptural | Product, tech | Rendered objects, depth, shadows |
+| Style           | Best For         | Key Elements                        |
+| --------------- | ---------------- | ----------------------------------- |
+| Minimalist      | SaaS, tech       | White space, 1-2 colors, clean type |
+| Bold Typography | Announcements    | Oversized type as hero element      |
+| Gradient        | Modern brands    | Mesh gradients, chromatic blends    |
+| Photo-Based     | Lifestyle, e-com | Full-bleed photo + text overlay     |
+| Geometric       | Tech, fintech    | Shapes, grids, abstract patterns    |
+| Retro/Vintage   | F&B, craft       | Distressed textures, muted colors   |
+| Glassmorphism   | SaaS, apps       | Frosted glass, blur, glow borders   |
+| Neon/Cyberpunk  | Gaming, events   | Dark bg, glowing neon accents       |
+| Editorial       | Media, luxury    | Grid layouts, pull quotes           |
+| 3D/Sculptural   | Product, tech    | Rendered objects, depth, shadows    |
 
 Full 22 styles: `references/banner-sizes-and-styles.md`
 

@@ -107,10 +107,7 @@ function ensureCursor(db: TxOrDb, sessionID: SessionID) {
         .run()
       allocatedAdmittedSeq++
     }
-    if (
-      allocatedAdmittedSeq === existing.next_admitted_seq &&
-      nextPromotedSeq === existing.next_promoted_seq
-    )
+    if (allocatedAdmittedSeq === existing.next_admitted_seq && nextPromotedSeq === existing.next_promoted_seq)
       return existing
     const updated = {
       ...existing,

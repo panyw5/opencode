@@ -400,8 +400,10 @@ export const dict = {
   "toast.model.none.description": "Conecte um provedor para resumir esta sessão",
   "toast.file.loadFailed.title": "Falha ao carregar arquivo",
   "toast.file.listFailed.title": "Falha ao listar arquivos",
-  "toast.file.listFailed.openclaw": "OpenClaw does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
-  "toast.file.listFailed.generalagent": "GeneralAgent does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
+  "toast.file.listFailed.openclaw":
+    "OpenClaw does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
+  "toast.file.listFailed.generalagent":
+    "GeneralAgent does not expose the project file tree yet. You can keep chatting here, but browse files from a normal project.",
   "toast.context.noLineSelection.title": "Nenhuma seleção de linhas",
   "toast.context.noLineSelection.description": "Selecione primeiro um intervalo de linhas em uma aba de arquivo.",
   "toast.session.share.copyFailed.title": "Falha ao copiar URL para a área de transferência",

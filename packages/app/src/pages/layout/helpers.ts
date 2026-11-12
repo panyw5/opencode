@@ -15,7 +15,13 @@ export function workspacePathContext(input: {
 }): PathContext {
   // Remote server OS is intentionally unknown here. Treat it as POSIX so a
   // Windows desktop cannot rewrite or case-fold a remote drive-looking path.
-  const platform = !input.isLocal ? "linux" : input.os === "windows" ? "win32" : input.os === "macos" ? "darwin" : "linux"
+  const platform = !input.isLocal
+    ? "linux"
+    : input.os === "windows"
+      ? "win32"
+      : input.os === "macos"
+        ? "darwin"
+        : "linux"
   const virtual = !!input.directory && /^\/(openclaw|hermes|genericagent)(?:\/|$)/.test(input.directory)
   return {
     platform,
@@ -130,8 +136,7 @@ export function projectOwner<T extends ProjectOwnerInput>(directory: string | un
   const exact = projects.find((item) => workspaceKey(item.worktree) === key)
   if (exact) {
     const stale = projects.find(
-      (item) =>
-        workspaceKey(item.worktree) !== key && item.sandboxes?.some((sandbox) => workspaceKey(sandbox) === key),
+      (item) => workspaceKey(item.worktree) !== key && item.sandboxes?.some((sandbox) => workspaceKey(sandbox) === key),
     )
     if (stale) {
       console.debug("[layout] project owner ignored sandbox because worktree matched first", {
@@ -196,7 +201,8 @@ export const isInitialSessionLoad = (stores: SessionStore[]) =>
 
 export const sortedRootSessions = (store: SessionStore, now: number) => roots(store).sort(sortSessions(now))
 
-export const sortedProjectSessions = (stores: SessionStore[], now: number) => stores.flatMap(roots).sort(sortSessions(now))
+export const sortedProjectSessions = (stores: SessionStore[], now: number) =>
+  stores.flatMap(roots).sort(sortSessions(now))
 
 /** Filter sessions belonging to an IM channel (`title` prefix `[im:{name}]`). */
 export function filterImChannelSessions(list: Session[], channel: string | undefined | null): Session[] {
@@ -231,7 +237,10 @@ export function stripScheduledSessionTitle(title: string | undefined | null): st
 
 /** Sanitize channel name for default work-folder segment (mirrors server). */
 export function sanitizeChannelName(name: string): string {
-  const cleaned = name.trim().replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "")
+  const cleaned = name
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
   return cleaned || "channel"
 }
 
@@ -345,7 +354,10 @@ export function findImChannelByDirectory(
  * Mirrors extraAgentProject so resolveProject / sidebar treat the channel as
  * its own session list domain.
  */
-export function imChannelProject(name: string, directory: string): {
+export function imChannelProject(
+  name: string,
+  directory: string,
+): {
   id: string
   worktree: string
   name: string
@@ -363,8 +375,7 @@ export function imChannelProject(name: string, directory: string): {
   }
 }
 
-export const latestRootSession = (stores: SessionStore[], now: number) =>
-  sortedProjectSessions(stores, now)[0]
+export const latestRootSession = (stores: SessionStore[], now: number) => sortedProjectSessions(stores, now)[0]
 
 export const latestWorkspaceSession = (store: SessionStore, now: number) => latestRootSession([store], now)
 

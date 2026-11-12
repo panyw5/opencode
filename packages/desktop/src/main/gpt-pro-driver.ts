@@ -136,14 +136,23 @@ export class GptProDriver {
     const authentication = await getGptProSessionCoordinator(this.browser, this.profileID, this.log).verify(this.pageID)
     const current = this.state()
     if (current?.authRedirectLoop) throw new GptProOperationError("page_changed", GPT_PRO_REDIRECT_LOOP_DETAIL)
-    if (!state || !current || state.epoch !== current.epoch || state.documentEpoch !== current.documentEpoch || state.url !== current.url)
+    if (
+      !state ||
+      !current ||
+      state.epoch !== current.epoch ||
+      state.documentEpoch !== current.documentEpoch ||
+      state.url !== current.url
+    )
       throw new GptProOperationError(
         "page_changed",
         "The ChatGPT page changed during account verification. No message was dispatched.",
       )
     this.log(`driver authentication phase=${authentication.phase}; account and credentials omitted`)
     if (authentication.phase === "verification")
-      throw new GptProOperationError("verification", "Complete the human browser verification before continuing. No message was dispatched.")
+      throw new GptProOperationError(
+        "verification",
+        "Complete the human browser verification before continuing. No message was dispatched.",
+      )
     if (authentication.phase === "invalid")
       throw new GptProOperationError(
         authentication.detail ? "login_expired" : "login",
@@ -188,7 +197,10 @@ export class GptProDriver {
       try {
         const previous = this.answerCapture
         const known =
-          previous?.userID === options?.userID && previous?.epoch === state.epoch && previous?.documentEpoch === state.documentEpoch && previous?.url === state.url
+          previous?.userID === options?.userID &&
+          previous?.epoch === state.epoch &&
+          previous?.documentEpoch === state.documentEpoch &&
+          previous?.url === state.url
             ? previous
             : undefined
         const expression = options
@@ -226,7 +238,12 @@ export class GptProDriver {
         })
         if (attempt > 1) this.log(`driver page snapshot consistency restored attempt=${attempt}/3`)
         const latest = this.state()
-        if (!latest || latest.epoch !== state.epoch || latest.documentEpoch !== state.documentEpoch || latest.url !== imageEvidence.url)
+        if (
+          !latest ||
+          latest.epoch !== state.epoch ||
+          latest.documentEpoch !== state.documentEpoch ||
+          latest.url !== imageEvidence.url
+        )
           throw new Error("The consultation page changed during inspection; stale page evidence was discarded")
         if (options && page.capture) {
           const capture = page.capture
@@ -568,8 +585,17 @@ export class GptProDriver {
           const commit = await beforeDispatch?.()
           return () => {
             const current = this.state()
-            if (!lease || !current || lease.epoch !== current.epoch || lease.documentEpoch !== current.documentEpoch || lease.url !== current.url)
-              throw new GptProOperationError("page_changed", "The document changed before the trusted send boundary. Nothing was dispatched.")
+            if (
+              !lease ||
+              !current ||
+              lease.epoch !== current.epoch ||
+              lease.documentEpoch !== current.documentEpoch ||
+              lease.url !== current.url
+            )
+              throw new GptProOperationError(
+                "page_changed",
+                "The document changed before the trusted send boundary. Nothing was dispatched.",
+              )
             commit?.()
           }
         }

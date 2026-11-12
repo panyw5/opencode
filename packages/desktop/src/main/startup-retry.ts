@@ -26,7 +26,10 @@ export async function startWithPortRetry<T>(input: {
   }
 
   const detail = lastError instanceof Error ? lastError.message : String(lastError)
-  throw new Error(`${input.component} failed to start after ${attempts} attempt${attempts === 1 ? "" : "s"}: ${detail}`, {
-    cause: lastError,
-  })
+  throw new Error(
+    `${input.component} failed to start after ${attempts} attempt${attempts === 1 ? "" : "s"}: ${detail}`,
+    {
+      cause: lastError,
+    },
+  )
 }

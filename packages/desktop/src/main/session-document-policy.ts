@@ -16,11 +16,18 @@ export function validateDocument(value: unknown): DocumentInput {
     throw new Error("Invalid export width")
   if (input.theme !== undefined && input.theme !== "light" && input.theme !== "dark")
     throw new Error("Invalid export theme")
-  if (input.format === "markdown" && (typeof input.markdown !== "string" || Buffer.byteLength(input.markdown) > 8 * 1024 * 1024))
+  if (
+    input.format === "markdown" &&
+    (typeof input.markdown !== "string" || Buffer.byteLength(input.markdown) > 8 * 1024 * 1024)
+  )
     throw new Error("Markdown export exceeds the 8 MiB limit")
-  if (input.format !== "markdown" && (typeof input.html !== "string" || Buffer.byteLength(input.html) > 32 * 1024 * 1024))
+  if (
+    input.format !== "markdown" &&
+    (typeof input.html !== "string" || Buffer.byteLength(input.html) > 32 * 1024 * 1024)
+  )
     throw new Error("Export document exceeds the 32 MiB limit")
-  if (input.format !== "markdown" && input.html && (input.html.match(/</g)?.length ?? 0) > 200_000) throw new Error("Export document contains too many elements")
+  if (input.format !== "markdown" && input.html && (input.html.match(/</g)?.length ?? 0) > 200_000)
+    throw new Error("Export document contains too many elements")
   if (typeof (input.format === "markdown" ? input.markdown : input.html) !== "string")
     throw new Error("Missing export content")
   return {

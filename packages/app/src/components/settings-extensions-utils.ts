@@ -146,7 +146,10 @@ export function buildSettingsPatch(
 
 // Draft options for an enum setting: the declared choices plus a trailing
 // "not set" entry (translated by the caller) that maps to null when saved.
-export function enumDraftOptions(definition: SettingDefinition, unsetLabel: string): Array<{ value: string; label: string }> {
+export function enumDraftOptions(
+  definition: SettingDefinition,
+  unsetLabel: string,
+): Array<{ value: string; label: string }> {
   const options = (definition.enum ?? []).map((option) => ({ value: String(option), label: String(option) }))
   options.push({ value: "", label: unsetLabel })
   return options

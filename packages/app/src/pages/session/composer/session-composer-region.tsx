@@ -1229,26 +1229,31 @@ export function SessionComposerRegion(props: {
                   />
                 )}
               </Show>
-              <Show when={props.externalSession} fallback={<PromptInput
-                ref={props.inputRef}
-                newSessionWorktree={props.newSessionWorktree}
-                onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
-                edit={props.followup?.edit}
-                onEditLoaded={props.followup?.onEditLoaded}
-                shouldQueue={props.followup?.queue}
-                onQueue={props.followup?.onQueue}
-                canIntervene={() => !props.state.blocked()}
-                onAbort={async () => {
-                  props.followup?.onAbort()
-                  await props.onAbort?.()
-                }}
-                transformPromptText={props.transformPromptText}
-                onSubmit={props.onSubmit}
-                onSubmitFailed={props.onSubmitFailed}
-                onUserMessageCreated={props.onUserMessageCreated}
-                onSubmitted={props.onSubmitted}
-                onScrollToBottom={props.onScrollToBottom}
-              />}>
+              <Show
+                when={props.externalSession}
+                fallback={
+                  <PromptInput
+                    ref={props.inputRef}
+                    newSessionWorktree={props.newSessionWorktree}
+                    onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
+                    edit={props.followup?.edit}
+                    onEditLoaded={props.followup?.onEditLoaded}
+                    shouldQueue={props.followup?.queue}
+                    onQueue={props.followup?.onQueue}
+                    canIntervene={() => !props.state.blocked()}
+                    onAbort={async () => {
+                      props.followup?.onAbort()
+                      await props.onAbort?.()
+                    }}
+                    transformPromptText={props.transformPromptText}
+                    onSubmit={props.onSubmit}
+                    onSubmitFailed={props.onSubmitFailed}
+                    onUserMessageCreated={props.onUserMessageCreated}
+                    onSubmitted={props.onSubmitted}
+                    onScrollToBottom={props.onScrollToBottom}
+                  />
+                }
+              >
                 {(session) => <ExternalSessionComposer session={session()} />}
               </Show>
             </div>

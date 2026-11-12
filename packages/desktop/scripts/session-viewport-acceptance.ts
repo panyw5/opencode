@@ -250,8 +250,11 @@ async function main() {
       }
       const currentSnapshot = async () => {
         const next = await snapshot()
-        const unexpected = await cdp.evaluate<Array<{ phase: string; type: string; deltaY?: number }>>("(window.__viewportInputTrace?.unexpected ?? []).slice(-3)")
-        if (unexpected.length > 0) throw new Error(`input contaminated during ${unexpected[0]!.phase}: ${JSON.stringify(unexpected[0])}`)
+        const unexpected = await cdp.evaluate<Array<{ phase: string; type: string; deltaY?: number }>>(
+          "(window.__viewportInputTrace?.unexpected ?? []).slice(-3)",
+        )
+        if (unexpected.length > 0)
+          throw new Error(`input contaminated during ${unexpected[0]!.phase}: ${JSON.stringify(unexpected[0])}`)
         if (
           !next.mounted ||
           next.sessionID !== sessionID ||
@@ -264,7 +267,8 @@ async function main() {
         }
         return next
       }
-      const expectWheel = (deltaY: number) => cdp.evaluate(`window.__viewportInputTrace?.expectWheel?.(${String(deltaY)})`)
+      const expectWheel = (deltaY: number) =>
+        cdp.evaluate(`window.__viewportInputTrace?.expectWheel?.(${String(deltaY)})`)
       const record = async () => {
         const next = await currentSnapshot()
         snapshots.push(next)
@@ -291,7 +295,7 @@ async function main() {
         request(`/session/${sessionID}/prompt_async`, { model, agent: "build", parts: [{ type: "text", text }] })
       const baselineState = await backend()
       const baselineAssistantIDs = new Set(baselineState.assistantIDs)
-    await waitForMountedRoot()
+      await waitForMountedRoot()
 
       await prompt(
         "UI baseline seed. Return exactly 40 short numbered lines about a fictional observatory. Do not use tools.",
@@ -426,7 +430,7 @@ async function main() {
               followGeneration = returned.viewportGeneration
               returnButtonHidden = !returned.latestVisible
               await cdp.evaluate('window.__viewportInputTrace?.startPhase?.("main-follow")')
-              await cdp.evaluate("window.__viewportQAFrame?.start?.(\"main-follow\")")
+              await cdp.evaluate('window.__viewportQAFrame?.start?.("main-follow")')
               break
             }
             await sleep(4)
@@ -581,7 +585,13 @@ async function main() {
       const mainMovement = frameMovement(mainFrameSamples)
       const idleMovement = frameMovement(idleFrameSamples)
       const frameMovementDuringFollow = Math.max(mainMovement.maxStall, idleMovement.maxStall) < 8
-      const inputTrace = await cdp.evaluate<{ phase: string; issued: Array<{ phase: string; deltaY: number; at: number }>; unexpected: Array<{ phase: string; type: string; deltaY?: number; at: number; trusted: boolean }> }>("({ phase: window.__viewportInputTrace?.phase ?? \"unknown\", issued: (window.__viewportInputTrace?.issued ?? []).slice(-300), unexpected: (window.__viewportInputTrace?.unexpected ?? []).slice(-30) })")
+      const inputTrace = await cdp.evaluate<{
+        phase: string
+        issued: Array<{ phase: string; deltaY: number; at: number }>
+        unexpected: Array<{ phase: string; type: string; deltaY?: number; at: number; trusted: boolean }>
+      }>(
+        '({ phase: window.__viewportInputTrace?.phase ?? "unknown", issued: (window.__viewportInputTrace?.issued ?? []).slice(-300), unexpected: (window.__viewportInputTrace?.unexpected ?? []).slice(-30) })',
+      )
       const frameIdentity =
         frameFollowSamples.length > 0 &&
         frameFollowSamples.every(
@@ -596,8 +606,15 @@ async function main() {
       const frameButtonHidden = frameIdentity && frameFollowSamples.every((sample) => !sample.latestVisible)
       const frameGrowthButtonHidden =
         frameIdentity && frameGrowthSamples.length >= 3 && frameGrowthSamples.every((sample) => !sample.latestVisible)
-      const frameIdentityViolations = frameFollowSamples.filter((sample) => sample.rootSessionID !== sessionID || !sample.ownerSessionKey?.endsWith(`/${sessionID}`) || !sample.activeRoute?.endsWith(`/session/${sessionID}`)).length
-      const frameOwnerViolations = frameFollowSamples.filter((sample) => sample.viewportIntent !== "live" && sample.viewportIntent !== "following").length
+      const frameIdentityViolations = frameFollowSamples.filter(
+        (sample) =>
+          sample.rootSessionID !== sessionID ||
+          !sample.ownerSessionKey?.endsWith(`/${sessionID}`) ||
+          !sample.activeRoute?.endsWith(`/session/${sessionID}`),
+      ).length
+      const frameOwnerViolations = frameFollowSamples.filter(
+        (sample) => sample.viewportIntent !== "live" && sample.viewportIntent !== "following",
+      ).length
       const frameButtonViolations = frameFollowSamples.filter((sample) => sample.latestVisible).length
       const checks = {
         mountedCorrectSession: snapshots.some(

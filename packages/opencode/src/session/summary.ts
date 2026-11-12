@@ -404,11 +404,7 @@ export const layer = Layer.effect(
 )
 
 export const defaultLayer = Layer.suspend(() =>
-  layer.pipe(
-    Layer.provide(Session.defaultLayer),
-    Layer.provide(Storage.defaultLayer),
-    Layer.provide(Bus.layer),
-  ),
+  layer.pipe(Layer.provide(Session.defaultLayer), Layer.provide(Storage.defaultLayer), Layer.provide(Bus.layer)),
 )
 
 export const DiffInput = Schema.Struct({

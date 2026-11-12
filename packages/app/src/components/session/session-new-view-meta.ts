@@ -41,7 +41,8 @@ export function hermesMeta(list: Agent[] | undefined) {
     : []
 
   return {
-    version: typeof (raw as { version?: unknown }).version === "string" ? (raw as { version: string }).version : undefined,
+    version:
+      typeof (raw as { version?: unknown }).version === "string" ? (raw as { version: string }).version : undefined,
     upstream:
       typeof (raw as { upstream?: unknown }).upstream === "string" ? (raw as { upstream: string }).upstream : undefined,
     total: typeof (raw as { total?: unknown }).total === "number" ? (raw as { total: number }).total : 0,

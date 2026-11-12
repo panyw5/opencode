@@ -19,12 +19,7 @@ const bone = "background-color: color-mix(in oklch, var(--text-weak) 18%, transp
  */
 function ToolPartPlaceholder() {
   return (
-    <div
-      data-component="collapsible"
-      class="tool-collapsible"
-      data-tool-placeholder="true"
-      aria-hidden="true"
-    >
+    <div data-component="collapsible" class="tool-collapsible" data-tool-placeholder="true" aria-hidden="true">
       <div data-slot="collapsible-trigger" style={{ "pointer-events": "none" }}>
         <div
           data-slot="tool-skeleton"
@@ -53,7 +48,7 @@ function ToolPartPlaceholder() {
               display: "flex",
               "align-items": "center",
               gap: "8px",
-              "flex": "1 1 auto",
+              flex: "1 1 auto",
               "min-width": "0",
             }}
           >

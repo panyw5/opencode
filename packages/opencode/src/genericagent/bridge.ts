@@ -17,8 +17,7 @@ import { Effect, Stream } from "effect"
 import shimSource from "./python/bridge_shim.py" with { type: "text" }
 
 // Cursor encode/decode for pagination (mirrors packages/opencode/src/session/message-v2.ts)
-const cursorEncode = (input: { id: string; time: number }) =>
-  Buffer.from(JSON.stringify(input)).toString("base64url")
+const cursorEncode = (input: { id: string; time: number }) => Buffer.from(JSON.stringify(input)).toString("base64url")
 
 const cursorDecode = (input: string): { id: string; time: number } | undefined => {
   try {
@@ -27,8 +26,6 @@ const cursorDecode = (input: string): { id: string; time: number } | undefined =
     return undefined
   }
 }
-
-
 
 type Opts = {
   hostname: string
@@ -279,23 +276,20 @@ class ShimClient {
     }
 
     try {
-      this.proc = Bun.spawn(
-        [this.pythonExecutable, shimScript, "--ga-dir", this.genericAgentDir, "--port", "0"],
-        {
-          stdout: "pipe",
-          stderr: "pipe",
-          stdin: "ignore",
-          onExit: (_proc, exitCode, signalCode) => {
-            if (this.state.kind !== "stopped") {
-              const message = `GenericAgent shim exited (code=${exitCode ?? "?"} signal=${signalCode ?? "?"}) — ${
-                this.stderrTail.slice(-500) || this.stdoutTail.slice(-500) || "no output"
-              }`
-              log.error("shim exit", { exitCode, signalCode, stderr: this.stderrTail.slice(-500) })
-              this.state = { kind: "error", message }
-            }
-          },
+      this.proc = Bun.spawn([this.pythonExecutable, shimScript, "--ga-dir", this.genericAgentDir, "--port", "0"], {
+        stdout: "pipe",
+        stderr: "pipe",
+        stdin: "ignore",
+        onExit: (_proc, exitCode, signalCode) => {
+          if (this.state.kind !== "stopped") {
+            const message = `GenericAgent shim exited (code=${exitCode ?? "?"} signal=${signalCode ?? "?"}) — ${
+              this.stderrTail.slice(-500) || this.stdoutTail.slice(-500) || "no output"
+            }`
+            log.error("shim exit", { exitCode, signalCode, stderr: this.stderrTail.slice(-500) })
+            this.state = { kind: "error", message }
+          }
         },
-      )
+      })
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       this.state = { kind: "error", message: `Failed to spawn python: ${message}` }
@@ -348,8 +342,11 @@ class ShimClient {
       const timer = new Promise<{ value?: undefined; done: true; timedOut: true }>((resolve) =>
         setTimeout(() => resolve({ done: true, timedOut: true }), remaining),
       )
-      const result = (await Promise.race([stdoutReader.read(), timer])) as
-        | { value?: Uint8Array; done: boolean; timedOut?: boolean }
+      const result = (await Promise.race([stdoutReader.read(), timer])) as {
+        value?: Uint8Array
+        done: boolean
+        timedOut?: boolean
+      }
       if (result.timedOut) {
         this.state = { kind: "error", message: "shim boot timed out after 15s" }
         break
@@ -419,7 +416,8 @@ class ShimClient {
 
   async health(): Promise<{ ok: boolean; model?: string; error?: string }> {
     await this.readyPromise
-    if (this.state.kind !== "ready") return { ok: false, error: (this.state as { message?: string }).message ?? this.state.kind }
+    if (this.state.kind !== "ready")
+      return { ok: false, error: (this.state as { message?: string }).message ?? this.state.kind }
     try {
       const res = await fetch(`http://127.0.0.1:${this.state.port}/health`)
       return (await res.json()) as { ok: boolean; model?: string; error?: string }
@@ -491,7 +489,8 @@ class ShimClient {
 
   async selectLlm(index: number): Promise<{ ok: boolean; model?: string; error?: string }> {
     await this.readyPromise
-    if (this.state.kind !== "ready") return { ok: false, error: (this.state as { message?: string }).message ?? this.state.kind }
+    if (this.state.kind !== "ready")
+      return { ok: false, error: (this.state as { message?: string }).message ?? this.state.kind }
     try {
       const res = await fetch(`http://127.0.0.1:${this.state.port}/llm`, {
         method: "POST",
@@ -547,9 +546,7 @@ class ShimClient {
     }
   }
 
-  async restoreSession(
-    sessionId: string,
-  ): Promise<{ ok: boolean; message?: string; full?: boolean; error?: string }> {
+  async restoreSession(sessionId: string): Promise<{ ok: boolean; message?: string; full?: boolean; error?: string }> {
     await this.readyPromise
     if (this.state.kind !== "ready") {
       return { ok: false, error: (this.state as { message?: string }).message ?? this.state.kind }
@@ -584,11 +581,15 @@ class ShimClient {
     sessionID: string,
     query: string,
     cwd: string | undefined,
-    onEvent: (event:
-      | { type: "delta"; text: string }
-      | { type: "done"; text: string }
-      | { type: "error"; message: string }
-      | { type: "tool_use"; data: { type: string; tool: string; id: string; input?: any; output?: any; status?: string; metadata?: any } }
+    onEvent: (
+      event:
+        | { type: "delta"; text: string }
+        | { type: "done"; text: string }
+        | { type: "error"; message: string }
+        | {
+            type: "tool_use"
+            data: { type: string; tool: string; id: string; input?: any; output?: any; status?: string; metadata?: any }
+          },
     ) => void,
   ): Promise<void> {
     await this.readyPromise
@@ -709,8 +710,7 @@ function welcomeMessages(): Message[] {
     messageID: info.id,
     sessionID: "welcome",
     type: "text",
-    text:
-      "👋 GenericAgent is wired to your local Python runtime. Create a new conversation and start chatting — the agent will execute against its full tool loop.",
+    text: "👋 GenericAgent is wired to your local Python runtime. Create a new conversation and start chatting — the agent will execute against its full tool loop.",
   }
   return [{ info, parts: [part] }]
 }
@@ -736,7 +736,13 @@ function isDirectory(value: string) {
     .catch(() => false)
 }
 
-async function searchWorkspaceFiles(input: { cwd: string; query: string; dirs: boolean; type?: string; limit: number }) {
+async function searchWorkspaceFiles(input: {
+  cwd: string
+  query: string
+  dirs: boolean
+  type?: string
+  limit: number
+}) {
   if (!(await isDirectory(input.cwd))) return []
 
   const files: string[] = []
@@ -748,7 +754,10 @@ async function searchWorkspaceFiles(input: { cwd: string; query: string; dirs: b
     const matches = await AppRuntime.runPromise(
       Effect.gen(function* () {
         const rg = yield* Ripgrep.Service
-        return yield* rg.files({ cwd: input.cwd }).pipe(Stream.runCollect, Effect.map((chunk) => Array.from(chunk)))
+        return yield* rg.files({ cwd: input.cwd }).pipe(
+          Stream.runCollect,
+          Effect.map((chunk) => Array.from(chunk)),
+        )
       }),
     )
     for (const file of matches) {
@@ -823,7 +832,12 @@ function extractPromptIds(body: unknown): { messageID?: string; partID?: string 
   const parts = (body as { parts?: Array<{ id?: unknown; messageID?: unknown }> }).parts
   const firstPart = Array.isArray(parts) ? parts[0] : undefined
   return {
-    messageID: typeof messageID === "string" ? messageID : typeof firstPart?.messageID === "string" ? firstPart.messageID : undefined,
+    messageID:
+      typeof messageID === "string"
+        ? messageID
+        : typeof firstPart?.messageID === "string"
+          ? firstPart.messageID
+          : undefined,
     partID: typeof firstPart?.id === "string" ? firstPart.id : undefined,
   }
 }
@@ -841,7 +855,13 @@ function messagePath(cwd: string | undefined) {
   return { cwd: value, root: value }
 }
 
-function userMessage(sessionID: string, text: string, currentModelID: string, cwd: string | undefined, ids?: { messageID?: string; partID?: string }): Message {
+function userMessage(
+  sessionID: string,
+  text: string,
+  currentModelID: string,
+  cwd: string | undefined,
+  ids?: { messageID?: string; partID?: string },
+): Message {
   const messageID = ids?.messageID ?? Identifier.ascending("message")
   const partID = ids?.partID ?? Identifier.ascending("part")
   const info: MessageInfo = {
@@ -867,7 +887,12 @@ function userMessage(sessionID: string, text: string, currentModelID: string, cw
   return { info, parts: [part] }
 }
 
-function assistantMessage(sessionID: string, parentID: string, currentModelID: string, cwd: string | undefined): Message {
+function assistantMessage(
+  sessionID: string,
+  parentID: string,
+  currentModelID: string,
+  cwd: string | undefined,
+): Message {
   const info: MessageInfo = {
     id: Identifier.ascending("message"),
     sessionID,
@@ -904,7 +929,12 @@ function historySessionInfo(session: HistorySession): SessionInfo {
   }
 }
 
-function historyMessagesToBridge(sessionID: string, timestamp: number, items: HistoryMessage[], cwd?: string): Message[] {
+function historyMessagesToBridge(
+  sessionID: string,
+  timestamp: number,
+  items: HistoryMessage[],
+  cwd?: string,
+): Message[] {
   let lastUserMessageID: string | undefined
   return items.map((item) => {
     const messageID = Identifier.ascending("message")
@@ -975,7 +1005,9 @@ export namespace GenericAgentBridge {
         if (existing.time.updated !== info.time.updated || existing.title !== info.title) {
           sessions.set(info.id, info)
           const history = emitEvents ? await shim.getHistoryMessages(info.id) : undefined
-          const updatedMessages = history ? historyMessagesToBridge(info.id, info.time.updated, history, info.cwd) : undefined
+          const updatedMessages = history
+            ? historyMessagesToBridge(info.id, info.time.updated, history, info.cwd)
+            : undefined
           if (updatedMessages) messages.set(info.id, updatedMessages)
           if (!updatedMessages) messages.delete(info.id)
           updated++
@@ -1056,7 +1088,9 @@ export namespace GenericAgentBridge {
       .get("/global/health", async (c) => {
         const health = await shim.health()
         if (health.ok) return c.json({ healthy: true, version, model: health.model })
-        return c.json(new NamedError.Unknown({ message: health.error ?? "shim unavailable" }).toObject(), { status: 503 })
+        return c.json(new NamedError.Unknown({ message: health.error ?? "shim unavailable" }).toObject(), {
+          status: 503,
+        })
       })
       .get("/global/config", async (c) => {
         const llms = await shim.listLlms()
@@ -1191,7 +1225,12 @@ export namespace GenericAgentBridge {
         return c.json(all)
       })
       .post("/session", async (c) => {
-        const body = (await c.req.json().catch(() => ({}))) as { id?: string; title?: string; parentID?: string; cwd?: string }
+        const body = (await c.req.json().catch(() => ({}))) as {
+          id?: string
+          title?: string
+          parentID?: string
+          cwd?: string
+        }
         const id = body.id || Identifier.ascending("session")
         const cwd = resolveSessionCwd(id, extractCwd(body))
         const info: SessionInfo = {
@@ -1319,7 +1358,8 @@ export namespace GenericAgentBridge {
         const runtimeQuery = prompt.runtime
         const cwd = resolveSessionCwd(sessionID, extractCwd(body))
 
-        const requestedModelID = typeof (body as { modelID?: string }).modelID === "string" ? (body as { modelID: string }).modelID : undefined
+        const requestedModelID =
+          typeof (body as { modelID?: string }).modelID === "string" ? (body as { modelID: string }).modelID : undefined
         const requestedIndex = parseLlmIndex(requestedModelID)
         if (requestedIndex !== undefined) {
           const llms = await shim.listLlms()
@@ -1427,11 +1467,12 @@ export namespace GenericAgentBridge {
                   const toolPart = toolParts.get(toolData.id)
                   log.info("Updating tool part", { toolId: toolData.id, found: !!toolPart })
                   if (toolPart) {
-                    const outputStr = typeof toolData.output === "string"
-                      ? toolData.output
-                      : toolData.output != null
-                        ? JSON.stringify(toolData.output, null, 2)
-                        : ""
+                    const outputStr =
+                      typeof toolData.output === "string"
+                        ? toolData.output
+                        : toolData.output != null
+                          ? JSON.stringify(toolData.output, null, 2)
+                          : ""
                     toolPart.state = {
                       status: toolData.status === "error" ? ("error" as const) : ("completed" as const),
                       input: toolPart.state.input,
@@ -1478,7 +1519,11 @@ export namespace GenericAgentBridge {
                 emit({ type: "message.updated", properties: { info: assistant.info } })
                 const existing = sessions.get(sessionID)
                 if (existing && existing.title === "New Conversation") {
-                  const updated = { ...existing, title: displayQuery.slice(0, 60) || existing.title, time: { ...existing.time, updated: Date.now() } }
+                  const updated = {
+                    ...existing,
+                    title: displayQuery.slice(0, 60) || existing.title,
+                    time: { ...existing.time, updated: Date.now() },
+                  }
                   sessions.set(sessionID, updated)
                   emit({ type: "session.updated", properties: { info: updated } })
                 }

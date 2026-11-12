@@ -1,8 +1,4 @@
-export const todoState = (input: {
-  count: number
-  done: boolean
-  live: boolean
-}): "hide" | "open" | "close" => {
+export const todoState = (input: { count: number; done: boolean; live: boolean }): "hide" | "open" | "close" => {
   if (input.count === 0) return "hide"
   // Incomplete todos always keep the dock open so the user can track progress.
   if (!input.done) return "open"

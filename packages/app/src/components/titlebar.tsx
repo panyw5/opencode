@@ -48,8 +48,7 @@ export function Titlebar() {
   const command = useCommand()
   const language = useLanguage()
   type DictKey = keyof typeof enDict
-  const kw = (...keys: DictKey[]) =>
-    language.locale() === "en" ? undefined : keys.map((k) => enDict[k]).join(" ")
+  const kw = (...keys: DictKey[]) => (language.locale() === "en" ? undefined : keys.map((k) => enDict[k]).join(" "))
   const theme = useTheme()
   const navigate = useNavigate()
   const location = useLocation()

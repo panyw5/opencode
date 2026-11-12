@@ -415,8 +415,9 @@ export const layer = Layer.effect(
       const previousSummary = prior.at(-1)?.summary
       const visible = history.filter((_, index) => !hidden.has(index))
       const retainTurnId = midTurn
-        ? [...visible].reverse().find((msg) => msg.info.role === "user" && !msg.parts.some((p) => p.type === "compaction"))
-            ?.info.id
+        ? [...visible]
+            .reverse()
+            .find((msg) => msg.info.role === "user" && !msg.parts.some((p) => p.type === "compaction"))?.info.id
         : undefined
       const selected = yield* select({
         messages: visible,
@@ -543,7 +544,10 @@ export const layer = Layer.effect(
           processor.message.finish = "error"
           yield* session.updateMessage(processor.message)
           log.info("summary input cannot fit context limit", { shrinks })
-          yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: { name: "UnknownError", data: { message: overflowText } } })
+          yield* bus.publish(Session.Event.Error, {
+            sessionID: input.sessionID,
+            error: { name: "UnknownError", data: { message: overflowText } },
+          })
           return "stop"
         }
         shrinks++

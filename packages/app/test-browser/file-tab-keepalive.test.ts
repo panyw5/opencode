@@ -31,12 +31,7 @@ const isExtTab = (tab: string) => tab.startsWith("ext:")
 // own cleanup) and keeps its draft in local component state. The element
 // mirrors the keep-alive DOM contract: it stays mounted, hidden and inert
 // while its tab is not active.
-function FakeViewer(props: {
-  sessionKey: Accessor<string>
-  tab: string
-  active: Accessor<boolean>
-  log: ViewerLog
-}) {
+function FakeViewer(props: { sessionKey: Accessor<string>; tab: string; active: Accessor<boolean>; log: ViewerLog }) {
   const key = () => fileViewerTabKey(props.sessionKey(), props.tab)
   const [draft, setDraft] = createSignal(props.log.drafts.get(props.tab) ?? "original")
   props.log.setDraft.set(props.tab, setDraft)
@@ -106,15 +101,17 @@ function setup() {
   const log: ViewerLog = { mounts: new Map(), drafts: new Map(), saved: [], setDraft: new Map() }
   const host = document.createElement("div")
   document.body.append(host)
-  const dispose = render(() =>
-    createComponent(Harness, {
-      sessionKey,
-      fileActive,
-      activeTab,
-      openedTabs,
-      log,
-    }),
-  host)
+  const dispose = render(
+    () =>
+      createComponent(Harness, {
+        sessionKey,
+        fileActive,
+        activeTab,
+        openedTabs,
+        log,
+      }),
+    host,
+  )
   return {
     setFileActive,
     setSessionKey,

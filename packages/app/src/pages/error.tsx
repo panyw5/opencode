@@ -346,7 +346,12 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
             <Show
               when={store.version}
               fallback={
-                <Button size="large" variant="ghost" onClick={checkForUpdates} disabled={store.checking || store.acting}>
+                <Button
+                  size="large"
+                  variant="ghost"
+                  onClick={checkForUpdates}
+                  disabled={store.checking || store.acting}
+                >
                   {store.checking
                     ? language.t("error.page.action.checking")
                     : language.t("error.page.action.checkUpdates")}

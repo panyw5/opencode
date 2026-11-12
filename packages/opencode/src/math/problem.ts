@@ -142,7 +142,9 @@ export function stageReferences(
       stagedAt: new Date().toISOString(),
     })
   }
-  const merged = previous.filter((entry) => !staged.some((item) => item.name === entry.name && item.sha256 === entry.sha256))
+  const merged = previous.filter(
+    (entry) => !staged.some((item) => item.name === entry.name && item.sha256 === entry.sha256),
+  )
   writeFileSync(manifestPath, `${JSON.stringify([...merged, ...staged], null, 2)}\n`, "utf8")
   return { dir, staged }
 }

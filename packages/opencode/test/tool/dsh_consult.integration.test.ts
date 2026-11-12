@@ -82,36 +82,14 @@ describe("tool.dsh_consult dynamic config against the real dsh binary", () => {
       const second = path.join(dir, "second.yml")
       await writeFile(
         first,
-        [
-          "- id: llm-deepseek",
-          "  config:",
-          "    thinking: enabled",
-          "    reasoningEffort: low",
-          "",
-        ].join("\n"),
+        ["- id: llm-deepseek", "  config:", "    thinking: enabled", "    reasoningEffort: low", ""].join("\n"),
       )
-      await writeFile(
-        second,
-        [
-          "- id: llm-deepseek",
-          "  config:",
-          "    thinking: disabled",
-          "",
-        ].join("\n"),
-      )
+      await writeFile(second, ["- id: llm-deepseek", "  config:", "    thinking: disabled", ""].join("\n"))
 
       const args = buildDshExecArgs({ prompt: "hi", patch: [first, second] })
       expect(args.slice(2, 6)).toEqual(["--patch", first, "--patch", second])
 
-      const out = await runDsh([
-        "--profile",
-        "headless",
-        "--patch",
-        first,
-        "--patch",
-        second,
-        "--dump-config",
-      ])
+      const out = await runDsh(["--profile", "headless", "--patch", first, "--patch", second, "--dump-config"])
       expect(out.code).toBe(0)
       expect(out.stdout).toContain("thinking: disabled")
     } finally {

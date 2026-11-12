@@ -4,7 +4,16 @@ import { createServer } from "node:net"
 import { app } from "electron"
 import { checkHealth } from "../server"
 import { startWithPortRetry } from "../startup-retry"
-import { type SshCommandLine, type SshTarget, parseSshTarget, resolveRemoteOpencode, runSsh, shellEscape, sshArgs, summarize } from "./exec"
+import {
+  type SshCommandLine,
+  type SshTarget,
+  parseSshTarget,
+  resolveRemoteOpencode,
+  runSsh,
+  shellEscape,
+  sshArgs,
+  summarize,
+} from "./exec"
 
 export type SshSidecar = {
   listener: {
@@ -66,13 +75,7 @@ async function spawnSshSidecarOnPort(
   })
   const forward = spawn(
     "ssh",
-    sshArgs(target, null, [
-      "-o",
-      "ExitOnForwardFailure=yes",
-      "-N",
-      "-L",
-      `127.0.0.1:${port}:127.0.0.1:${port}`,
-    ]),
+    sshArgs(target, null, ["-o", "ExitOnForwardFailure=yes", "-N", "-L", `127.0.0.1:${port}:127.0.0.1:${port}`]),
     {
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -140,10 +143,7 @@ async function spawnSshSidecarOnPort(
   }, healthTimeoutMs)
 
   try {
-    await Promise.race([
-      pollHealth(() => checkHealth(url, password), startup.signal),
-      exit,
-    ])
+    await Promise.race([pollHealth(() => checkHealth(url, password), startup.signal), exit])
   } catch (error) {
     clearTimeout(timeout)
     startup.abort()
@@ -155,9 +155,7 @@ async function spawnSshSidecarOnPort(
       throw new Error(`SSH sidecar for ${target.raw}: ${summarize(message)}`)
     }
     if (/administratively prohibited/i.test(message)) {
-      throw new Error(
-        `${message}\nRemote sshd refuses TCP forwarding (AllowTcpForwarding) — enable it for this host`,
-      )
+      throw new Error(`${message}\nRemote sshd refuses TCP forwarding (AllowTcpForwarding) — enable it for this host`)
     }
     throw error
   }
@@ -222,7 +220,11 @@ function abortableDelay(duration: number, signal: AbortSignal) {
   })
 }
 
-function forwardLines(stream: NodeJS.ReadableStream, source: SshCommandLine["stream"], onLine: (line: SshCommandLine) => void) {
+function forwardLines(
+  stream: NodeJS.ReadableStream,
+  source: SshCommandLine["stream"],
+  onLine: (line: SshCommandLine) => void,
+) {
   let pending = ""
   stream.setEncoding("utf8")
   stream.on("data", (chunk: string) => {

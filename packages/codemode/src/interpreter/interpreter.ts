@@ -347,7 +347,10 @@ export class Interpreter<R> {
 
   appendLog(line: string): void {
     if (this.logLimitReached) return
-    if (this.maxLogBytes === undefined) { this.logs.push(line); return }
+    if (this.maxLogBytes === undefined) {
+      this.logs.push(line)
+      return
+    }
     const bytes = new TextEncoder().encode(line)
     const remaining = Math.max(0, this.maxLogBytes - this.logBytes)
     if (bytes.byteLength <= remaining) {

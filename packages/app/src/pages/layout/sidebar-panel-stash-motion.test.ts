@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { stashMotionGeometry } from "./sidebar-panel-stash-motion"
 
-const rect = (left: number, top: number, width: number, height: number) =>
-  ({ left, top, width, height }) as DOMRect
+const rect = (left: number, top: number, width: number, height: number) => ({ left, top, width, height }) as DOMRect
 
 describe("sidebar stash motion", () => {
   test("moves source center onto the stash button center", () => {

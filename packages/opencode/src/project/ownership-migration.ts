@@ -204,10 +204,7 @@ export function runDuplicateWorktreeOwnershipMigration(): Result {
             time_updated: sql`${SessionTable.time_updated}`,
           })
           .where(
-            and(
-              eq(SessionTable.project_id, source.id),
-              directorySqlEq(SessionTable.directory, location.directory),
-            ),
+            and(eq(SessionTable.project_id, source.id), directorySqlEq(SessionTable.directory, location.directory)),
           )
           .returning({ id: SessionTable.id })
           .all().length
@@ -230,10 +227,7 @@ export function runDuplicateWorktreeOwnershipMigration(): Result {
           .update(WorkspaceTable)
           .set({ project_id: target.id, location_id: location.id })
           .where(
-            and(
-              eq(WorkspaceTable.project_id, source.id),
-              directorySqlEq(WorkspaceTable.directory, location.directory),
-            ),
+            and(eq(WorkspaceTable.project_id, source.id), directorySqlEq(WorkspaceTable.directory, location.directory)),
           )
           .returning({ id: WorkspaceTable.id })
           .all().length

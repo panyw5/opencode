@@ -11,9 +11,7 @@ export function prefetchConfigPage() {
     })
     .catch((err: unknown) => {
       pending = undefined
-      console.info(
-        `[config-perf] prefetch failed err=${err instanceof Error ? err.message : String(err)}`,
-      )
+      console.info(`[config-perf] prefetch failed err=${err instanceof Error ? err.message : String(err)}`)
     })
   return pending
 }

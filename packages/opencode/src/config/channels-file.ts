@@ -36,8 +36,7 @@ export function parseChannelsText(text: string, source: string): ChannelsMap {
   const data = ConfigParse.jsonc(text, source)
   if (data === null || data === undefined) return {}
   // Allow accidental wrap `{ "channels": { ... } }` from hand edits.
-  const unwrapped =
-    isRecord(data) && isRecord(data.channels) && !("type" in data) ? data.channels : data
+  const unwrapped = isRecord(data) && isRecord(data.channels) && !("type" in data) ? data.channels : data
   return ConfigParse.schema(FileSchema, unwrapped, source) as ChannelsMap
 }
 

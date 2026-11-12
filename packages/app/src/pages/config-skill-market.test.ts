@@ -19,10 +19,7 @@ describe("skill market nested SKILL.md discovery", () => {
       { path: "skills/engineering", type: "tree" },
     ])
 
-    expect(paths).toEqual([
-      "skills/engineering/code-review/SKILL.md",
-      "skills/productivity/grill-me/SKILL.md",
-    ])
+    expect(paths).toEqual(["skills/engineering/code-review/SKILL.md", "skills/productivity/grill-me/SKILL.md"])
   })
 
   test("accepts jsdelivr name fields and strips a leading slash", () => {
@@ -139,10 +136,7 @@ describe("skill market index loading", () => {
 
     const result = await loadSkillMarketIndex({ repo: "mattpocock/skills" }, fetcher)
     expect(result.source).toBe("github")
-    expect(result.paths).toEqual([
-      "skills/engineering/code-review/SKILL.md",
-      "skills/productivity/grill-me/SKILL.md",
-    ])
+    expect(result.paths).toEqual(["skills/engineering/code-review/SKILL.md", "skills/productivity/grill-me/SKILL.md"])
   })
 
   test("probe rejects stale skill paths", async () => {

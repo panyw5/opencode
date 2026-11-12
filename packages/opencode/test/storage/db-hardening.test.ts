@@ -59,7 +59,9 @@ describe("Database.Client hardening", () => {
         const pragma = (name: string) =>
           (Database.Client().$client.query(`PRAGMA ${name}`).all()[0] as Record<string, unknown>)[name]
         // PRAGMA busy_timeout reports its value under a "timeout" column.
-        const busyTimeout = (Database.Client().$client.query("PRAGMA busy_timeout").all()[0] as Record<string, unknown>)["timeout"]
+        const busyTimeout = (
+          Database.Client().$client.query("PRAGMA busy_timeout").all()[0] as Record<string, unknown>
+        )["timeout"]
 
         expect(pragma("journal_mode")).toBe("wal")
         expect(busyTimeout).toBe(5000)
@@ -156,9 +158,7 @@ describe("Database.Client hardening", () => {
         expect(rows[0].time_updated).toBe(40)
 
         const rules = JSON.parse(rows[0].data) as { permission: string; pattern: string; action: string }[]
-        expect(
-          rules.sort((a, b) => a.permission.localeCompare(b.permission)),
-        ).toEqual([
+        expect(rules.sort((a, b) => a.permission.localeCompare(b.permission))).toEqual([
           { permission: "bash", pattern: "git *", action: "allow" },
           { permission: "edit", pattern: "*.ts", action: "allow" },
         ])

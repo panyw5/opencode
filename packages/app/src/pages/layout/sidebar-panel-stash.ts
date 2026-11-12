@@ -38,8 +38,7 @@ export function unstashRailEntry(list: StashedRailEntry[], id: string) {
 }
 
 /** Minimized sidebar panels dedup by kind + worktree, so trailing slashes collapse. */
-export const panelStashId = (kind: SidebarPanelKind, directory: string) =>
-  `panel:${kind}:${workspaceKey(directory)}`
+export const panelStashId = (kind: SidebarPanelKind, directory: string) => `panel:${kind}:${workspaceKey(directory)}`
 
 /** Scheduled task editors dedup by task ("new" = the create dialog) + worktree. */
 export const scheduledEditorStashId = (taskID: string | undefined, directory: string) =>

@@ -28,13 +28,7 @@ describe("queued user messages", () => {
 
   test("ignores a stale incomplete assistant after a newer turn completes", () => {
     expect(
-      queued([
-        user("u1", 1),
-        assistant("a1", "u1", 2),
-        user("u2", 3),
-        assistant("a2", "u2", 4, 5),
-        user("u3", 6),
-      ]),
+      queued([user("u1", 1), assistant("a1", "u1", 2), user("u2", 3), assistant("a2", "u2", 4, 5), user("u3", 6)]),
     ).toEqual([])
   })
 })

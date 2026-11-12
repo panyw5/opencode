@@ -12,8 +12,5 @@
       "@test/*": ["./test/*"]
     }
   },
-  "exclude": [
-    "test",
-    "src/effect/instance-context.ts"
-  ]
+  "exclude": ["test", "src/effect/instance-context.ts"]
 }

@@ -223,7 +223,12 @@ function pushCapsules(capsules: AgentPermissionCapsule[], seen: Set<string>, per
   capsules.push(makeCapsule(seen, permission, undefined, String(value)))
 }
 
-function makeCapsule(seen: Set<string>, permission: string, pattern: string | undefined, action: string): AgentPermissionCapsule {
+function makeCapsule(
+  seen: Set<string>,
+  permission: string,
+  pattern: string | undefined,
+  action: string,
+): AgentPermissionCapsule {
   const trimmedAction = action.trim()
   const normalizedPattern = pattern?.trim()
   const displayPattern = !normalizedPattern || normalizedPattern === "*" ? undefined : normalizedPattern
@@ -250,11 +255,7 @@ function parseYamlMap(block: string, minIndent: number): Record<string, unknown>
   return parseMapLines(lines, { index: 0 }, minIndent)
 }
 
-function parseMapLines(
-  lines: string[],
-  cursor: { index: number },
-  minIndent: number,
-): Record<string, unknown> {
+function parseMapLines(lines: string[], cursor: { index: number }, minIndent: number): Record<string, unknown> {
   const result: Record<string, unknown> = {}
   let mapIndent: number | undefined
 
@@ -331,12 +332,7 @@ function parseListLines(lines: string[], cursor: { index: number }, parentIndent
   return result
 }
 
-function parseBlockScalar(
-  lines: string[],
-  cursor: { index: number },
-  parentIndent: number,
-  style: "|" | ">",
-): string {
+function parseBlockScalar(lines: string[], cursor: { index: number }, parentIndent: number, style: "|" | ">"): string {
   const blockLines: string[] = []
   while (cursor.index < lines.length) {
     const line = lines[cursor.index]!
@@ -355,7 +351,9 @@ function parseBlockScalar(
   return cleanScalar(text)
 }
 
-function parseKeyedLine(trimmed: string):
+function parseKeyedLine(
+  trimmed: string,
+):
   | { key: string; hasValue: true; value: unknown; block?: undefined }
   | { key: string; hasValue: false; value?: undefined; block?: "|" | ">" }
   | undefined {

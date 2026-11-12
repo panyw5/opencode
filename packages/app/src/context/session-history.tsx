@@ -62,8 +62,7 @@ export const { use: useSessionHistory, provider: SessionHistoryProvider } = crea
       const detail = e.details
       if (!detail) return
       if (detail.type === "session.updated") {
-        const info = (detail.properties as { info?: { id?: string; time?: { archived?: number } } } | undefined)
-          ?.info
+        const info = (detail.properties as { info?: { id?: string; time?: { archived?: number } } } | undefined)?.info
         if (info?.id && info.time?.archived) remove(info.id)
         return
       }
@@ -86,4 +85,3 @@ export const { use: useSessionHistory, provider: SessionHistoryProvider } = crea
     }
   },
 })
-

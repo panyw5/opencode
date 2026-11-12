@@ -1,4 +1,5 @@
 # LOGGING
+
 - **FORBIDDEN**: NEVER print javascript object in console, print **strings** with what you need to debug
 
 # Desktop package notes
@@ -28,10 +29,10 @@ bun run --cwd packages/desktop package:linux # Linux
 
 ## 📦 Build artifacts
 
-| Type         | Path                                        |
-| ------------ | ------------------------------------------- |
-| **App**      | `packages/desktop/out/`                     |
-| **Package**  | `packages/desktop/dist/`                    |
+| Type        | Path                     |
+| ----------- | ------------------------ |
+| **App**     | `packages/desktop/out/`  |
+| **Package** | `packages/desktop/dist/` |
 
 ## ✅ Verify
 

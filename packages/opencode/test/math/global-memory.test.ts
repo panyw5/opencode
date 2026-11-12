@@ -31,8 +31,12 @@ describe("math.global-memory", () => {
       extra: { verdict: "correct", fact_id: "abc123" },
     })
 
-    await expect(gm.append({ kind: "conclusion", claim: "c", evidence: "", author: "w" })).rejects.toThrow("requires explicit evidence")
-    await expect(gm.append({ kind: "bogus_kind", claim: "c", evidence: "e", author: "w" })).rejects.toThrow("unknown kind")
+    await expect(gm.append({ kind: "conclusion", claim: "c", evidence: "", author: "w" })).rejects.toThrow(
+      "requires explicit evidence",
+    )
+    await expect(gm.append({ kind: "bogus_kind", claim: "c", evidence: "e", author: "w" })).rejects.toThrow(
+      "unknown kind",
+    )
     await expect(gm.setStatus("someid", "not-a-status")).rejects.toThrow("invalid status")
 
     const gid = await gm.append({

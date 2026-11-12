@@ -207,9 +207,7 @@ describe("Database.Client upstream migration path", () => {
       expect(completed).toContain("20260511173437_session-metadata")
       expect(completed).toContain("20260622202450_simplify_session_input")
       expect(completed).toContain("20260622170816_reset_v2_session_state")
-      expect(runs.some((run) => /CREATE INDEX IF NOT EXISTS session_project_parent_time_idx/.test(run.sql))).toBe(
-        true,
-      )
+      expect(runs.some((run) => /CREATE INDEX IF NOT EXISTS session_project_parent_time_idx/.test(run.sql))).toBe(true)
       expect(runs.some((run) => /DELETE\s+FROM\s+session\b/i.test(run.sql))).toBe(false)
     }),
   )
@@ -498,9 +496,7 @@ describe("Database.Client upstream migration path", () => {
           Database.Client().$client.query("SELECT count(*) AS c FROM session").all()[0] as { c: number }
         ).c
         const indexes = Database.Client()
-          .$client.query(
-            "SELECT name FROM sqlite_master WHERE type='index' AND name='session_project_parent_time_idx'",
-          )
+          .$client.query("SELECT name FROM sqlite_master WHERE type='index' AND name='session_project_parent_time_idx'")
           .all() as { name: string }[]
 
         expect(ids).toContain("20260528143649_session_list_indexes")

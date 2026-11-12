@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  parseAgentMarkdown,
-  upsertAgentMarkdownModel,
-  upsertAgentMarkdownVariant,
-} from "./config-agent-markdown"
+import { parseAgentMarkdown, upsertAgentMarkdownModel, upsertAgentMarkdownVariant } from "./config-agent-markdown"
 
 const coder = `---
 mode: subagent
@@ -54,9 +50,7 @@ permission:
 prompt
 `)
     expect(parsed.model).toBe("anthropic/claude-sonnet-4-6")
-    expect(
-      parsed.permissions.map((item) => [item.permission, item.pattern ?? "*", item.action]),
-    ).toEqual([
+    expect(parsed.permissions.map((item) => [item.permission, item.pattern ?? "*", item.action])).toEqual([
       ["edit", "*", "deny"],
       ["bash", "git *", "allow"],
       ["bash", "*", "ask"],

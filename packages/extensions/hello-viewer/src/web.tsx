@@ -130,7 +130,12 @@ function HelloViewer(props: FileViewerProps) {
           <Button size="small" variant="secondary" disabled={!rpcAvailable() || busy() !== undefined} onClick={echo}>
             Echo RPC
           </Button>
-          <Button size="small" variant="secondary" disabled={!rpcAvailable() || busy() !== undefined} onClick={childPing}>
+          <Button
+            size="small"
+            variant="secondary"
+            disabled={!rpcAvailable() || busy() !== undefined}
+            onClick={childPing}
+          >
             Child ping
           </Button>
           <Button size="small" variant="secondary" disabled={!rpcAvailable() || busy() !== undefined} onClick={greet}>
@@ -163,7 +168,9 @@ export default defineWebExtension({
     context.log.info("activating hello viewer")
     const offGreeting = context.events.on(GREETING_EVENT, (data) => {
       const payload = data && typeof data === "object" ? (data as { message?: unknown }) : undefined
-      appendLog(`event ${GREETING_EVENT}: ${typeof payload?.message === "string" ? payload.message : JSON.stringify(data)}`)
+      appendLog(
+        `event ${GREETING_EVENT}: ${typeof payload?.message === "string" ? payload.message : JSON.stringify(data)}`,
+      )
     })
     setBridge({ rpc: context.rpc, events: context.events })
 

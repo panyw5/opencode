@@ -52,11 +52,11 @@ describe("mergePermissionRefresh", () => {
     const kept = permission("b")
     const added = permission("c")
     const remote = permission("d", "other")
-    const result = mergePermissionRefresh(
-      { session: [removed, kept] },
-      { session: [kept, added] },
-      [removed, kept, remote],
-    )
+    const result = mergePermissionRefresh({ session: [removed, kept] }, { session: [kept, added] }, [
+      removed,
+      kept,
+      remote,
+    ])
 
     expect(result).toEqual({ session: [kept, added], other: [remote] })
   })

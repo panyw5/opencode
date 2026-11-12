@@ -199,10 +199,7 @@ export function absoluteFromProject(projectDirectory: string, relativePath: stri
   return path.isAbsolute(relativePath) ? relativePath : path.join(projectDirectory, relativePath)
 }
 
-export async function readDescriptionFile(
-  projectDirectory: string,
-  relativePath: string,
-): Promise<string | undefined> {
+export async function readDescriptionFile(projectDirectory: string, relativePath: string): Promise<string | undefined> {
   const abs = absoluteFromProject(projectDirectory, relativePath)
   if (!(await Filesystem.exists(abs))) return undefined
   return Filesystem.readText(abs)
@@ -292,7 +289,10 @@ export async function ensureDescriptionFile(input: {
   const stored = input.descriptionPath?.trim() ?? ""
 
   // Rows created before the rename point at (or only have) the legacy workspace.
-  if (stored === legacyPath || (!stored && (await Filesystem.exists(absoluteFromProject(input.projectDirectory, legacyPath))))) {
+  if (
+    stored === legacyPath ||
+    (!stored && (await Filesystem.exists(absoluteFromProject(input.projectDirectory, legacyPath))))
+  ) {
     const migrated = await migrateLegacyTaskWorkspace(input.projectDirectory, input.taskID)
     if (migrated !== undefined) {
       await input.persist?.({ descriptionPath: canonical, clearLegacy: true })

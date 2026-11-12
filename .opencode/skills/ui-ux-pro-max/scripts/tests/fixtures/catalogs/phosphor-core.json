@@ -12,7 +12,7 @@
   {
     "name": "arrow-left",
     "pascal_name": "ArrowLeft",
-    "alias": {"name": "back-arrow", "pascal_name": "BackArrow"},
+    "alias": { "name": "back-arrow", "pascal_name": "BackArrow" },
     "codepoint": 62000,
     "categories": ["arrows", "navigation", "arrows"],
     "figma_category": "arrows",

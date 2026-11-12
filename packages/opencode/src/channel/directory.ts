@@ -8,7 +8,10 @@ const log = Log.create({ service: "channel.directory" })
 
 /** Sanitize channel name for use as a folder segment. */
 export function sanitizeChannelName(name: string): string {
-  const cleaned = name.trim().replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "")
+  const cleaned = name
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
   return cleaned || "channel"
 }
 
@@ -31,10 +34,7 @@ export function expandHomePath(input: string, home = os.homedir()): string {
  * `{Global.Path.config}/channels/{channelName}`
  * e.g. `~/.config/opencode/channels/work-feishu`
  */
-export function defaultChannelDirectory(
-  channelName: string,
-  configDir = Global.Path.config,
-): string {
+export function defaultChannelDirectory(channelName: string, configDir = Global.Path.config): string {
   return path.join(configDir, "channels", sanitizeChannelName(channelName))
 }
 

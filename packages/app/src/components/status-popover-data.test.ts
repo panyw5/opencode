@@ -160,7 +160,9 @@ describe("status popover data", () => {
       "/Users/me/repo",
     )
 
-    expect(mcp("context7", { status: "connected" }, undefined, undefined, undefined, undefined, set, true, "repo")).toMatchObject({
+    expect(
+      mcp("context7", { status: "connected" }, undefined, undefined, undefined, undefined, set, true, "repo"),
+    ).toMatchObject({
       name: "context7",
       project: "repo",
     })

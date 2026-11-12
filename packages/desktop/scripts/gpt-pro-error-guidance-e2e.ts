@@ -101,7 +101,12 @@ try {
     await writeFile(join(output, name), Buffer.from(shot.data, "base64"))
   }
   await screenshot("desktop.png")
-  await client.call("Emulation.setDeviceMetricsOverride", { width: 420, height: 900, deviceScaleFactor: 1, mobile: false })
+  await client.call("Emulation.setDeviceMetricsOverride", {
+    width: 420,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  })
   await new Promise((resolve) => setTimeout(resolve, 300))
   await screenshot("narrow.png")
   await client.call("Emulation.clearDeviceMetricsOverride")

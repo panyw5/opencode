@@ -62,7 +62,7 @@ it.instance("persists writes before diagnostics and records formatter output sep
     expect(Exit.isFailure(exit)).toBe(true)
     expect(changes).toEqual([
       { tool: "write", file, before: null, after: "unformatted\n" },
-    { tool: "write", file, before: "unformatted\n", after: "formatted\n", source: "formatter" },
+      { tool: "write", file, before: "unformatted\n", after: "formatted\n", source: "formatter" },
     ])
     failDiagnostics = false
     formatAction = () => Effect.succeed(false)

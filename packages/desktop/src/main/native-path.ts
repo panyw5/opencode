@@ -25,11 +25,13 @@ export function configRoot(input: { env?: NodeJS.ProcessEnv; home?: string } = {
   return resolve(home, ".config", "opencode")
 }
 
-export function cliInstallDirectory(input: {
-  env?: NodeJS.ProcessEnv
-  home?: string
-  platform?: NodeJS.Platform
-} = {}) {
+export function cliInstallDirectory(
+  input: {
+    env?: NodeJS.ProcessEnv
+    home?: string
+    platform?: NodeJS.Platform
+  } = {},
+) {
   const env = input.env ?? process.env
   const home = input.home ?? homedir()
   if ((input.platform ?? process.platform) === "win32") {
@@ -44,8 +46,17 @@ export function attachmentExtension(input?: string): string {
   return extension
 }
 
-export function tempMarkdownAttachmentPath(directory: string, input: { id: string; now: Date; extension?: string }): string {
+export function tempMarkdownAttachmentPath(
+  directory: string,
+  input: { id: string; now: Date; extension?: string },
+): string {
   const root = resolveDesktopPath(directory)
   const stamp = input.now.toISOString().replace(/[:.]/g, "-")
-  return join(root, ".opencode", "tmp", "attachments", `prompt-${stamp}-${input.id}.${attachmentExtension(input.extension)}`)
+  return join(
+    root,
+    ".opencode",
+    "tmp",
+    "attachments",
+    `prompt-${stamp}-${input.id}.${attachmentExtension(input.extension)}`,
+  )
 }

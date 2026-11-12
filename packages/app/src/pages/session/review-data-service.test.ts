@@ -21,12 +21,14 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-function createService(overrides?: Partial<{
-  directory: () => string | undefined
-  enabled: () => boolean
-  visible: () => boolean
-  active: () => "git" | "branch" | undefined
-}>) {
+function createService(
+  overrides?: Partial<{
+    directory: () => string | undefined
+    enabled: () => boolean
+    visible: () => boolean
+    active: () => "git" | "branch" | undefined
+  }>,
+) {
   const calls: Array<{ mode: "git" | "branch" }> = []
   let gate = deferred<FileDiff[]>()
   const next = (mode: "git" | "branch") => {

@@ -70,7 +70,9 @@ export function OpenInApp(props: { path: string | undefined; logPrefix?: string 
         Promise.resolve(platform.checkAppExists?.(app.openWith))
           .then((value) => Boolean(value))
           .catch((error: unknown) => {
-            console.debug(`[${prefix()}] check-app-error app=${app.id} message=${error instanceof Error ? error.message : String(error)}`)
+            console.debug(
+              `[${prefix()}] check-app-error app=${app.id} message=${error instanceof Error ? error.message : String(error)}`,
+            )
             return false
           })
           .then((ok) => [app.id, ok] as const),
@@ -105,7 +107,9 @@ export function OpenInApp(props: { path: string | undefined; logPrefix?: string 
     Promise.resolve(task)
       .then(() => console.debug(`[${prefix()}] open-success app=${app} value=${value}`))
       .catch((error: unknown) => {
-        console.debug(`[${prefix()}] open-error app=${app} message=${error instanceof Error ? error.message : String(error)}`)
+        console.debug(
+          `[${prefix()}] open-error app=${app} message=${error instanceof Error ? error.message : String(error)}`,
+        )
         showToast({
           variant: "error",
           title: language.t("common.requestFailed"),
@@ -139,11 +143,17 @@ export function OpenInApp(props: { path: string | undefined; logPrefix?: string 
         <DropdownMenu.Portal>
           <DropdownMenu.Content class="[&_[data-slot=dropdown-menu-radio-item]]:pl-1">
             <DropdownMenu.Group>
-              <DropdownMenu.GroupLabel class="!px-1 !py-1">{language.t("session.header.openIn")}</DropdownMenu.GroupLabel>
+              <DropdownMenu.GroupLabel class="!px-1 !py-1">
+                {language.t("session.header.openIn")}
+              </DropdownMenu.GroupLabel>
               <DropdownMenu.RadioGroup class="mt-1" value={current().id}>
                 <For each={openOptions()}>
                   {(option) => (
-                    <DropdownMenu.RadioItem value={option.id} disabled={opening()} onSelect={() => openWithApp(option.id)}>
+                    <DropdownMenu.RadioItem
+                      value={option.id}
+                      disabled={opening()}
+                      onSelect={() => openWithApp(option.id)}
+                    >
                       <div class="flex size-5 shrink-0 items-center justify-center [&_[data-component=app-icon]]:size-5">
                         <AppIcon id={option.icon} />
                       </div>

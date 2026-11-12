@@ -154,7 +154,9 @@ describe("math.gateway", () => {
       verifier: missingVerifier(),
     })
     expect(gw.tools()).toEqual([])
-    await expect(gw.call("gm_add", { kind: "plan", claim: "x", evidence: "" })).rejects.toBeInstanceOf(ToolNotFoundError)
+    await expect(gw.call("gm_add", { kind: "plan", claim: "x", evidence: "" })).rejects.toBeInstanceOf(
+      ToolNotFoundError,
+    )
     await expect(gw.call("fact_submit", { statement: "s", proof: "p" })).rejects.toBeInstanceOf(ToolNotFoundError)
   })
 })

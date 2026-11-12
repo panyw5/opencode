@@ -104,7 +104,9 @@ export function groupProjectTasksByWorktree<T extends GroupableTask>(input: {
 
   return [
     ...worktrees
-      .filter((worktree, index) => worktrees.findIndex((item) => workspaceKey(item) === workspaceKey(worktree)) === index)
+      .filter(
+        (worktree, index) => worktrees.findIndex((item) => workspaceKey(item) === workspaceKey(worktree)) === index,
+      )
       .map((directory) => ({
         directory,
         tasks: buckets.get(workspaceKey(directory)) ?? [],

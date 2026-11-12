@@ -1165,7 +1165,6 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
   margin-left: auto;
 }
 
-
 [data-component="exa-tool-output"] {
   width: 100%;
   padding-top: 8px;
@@ -1957,11 +1956,7 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
       box-shadow 0.15s ease;
 
     &:hover:not([data-picked="true"]) {
-      background-color: color-mix(
-        in srgb,
-        var(--surface-interactive-weak) 40%,
-        var(--surface-interactive-base)
-      );
+      background-color: color-mix(in srgb, var(--surface-interactive-weak) 40%, var(--surface-interactive-base));
       border-color: var(--border-interactive-base);
     }
 

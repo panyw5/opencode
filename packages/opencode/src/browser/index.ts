@@ -240,7 +240,9 @@ export const layer = Layer.effect(
                     Schema.Struct({
                       stage: Schema.Literals(["open", "ready", "model", "compose", "submit", "track"]),
                       reason: Schema.String,
-                      humanAction: Schema.optional(Schema.Literals(["login", "verification", "secure_storage", "restore_account"])),
+                      humanAction: Schema.optional(
+                        Schema.Literals(["login", "verification", "secure_storage", "restore_account"]),
+                      ),
                     }),
                   ),
                 }),

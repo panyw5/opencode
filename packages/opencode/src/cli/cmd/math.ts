@@ -131,8 +131,8 @@ export const MathOwnershipCommand = effectCmd({
       worker.parentID !== parent.id ||
       worker.projectID !== parent.projectID ||
       record?.parentSessionID !== parent.id ||
-      !taskIsContained
-      || !workerDirectoryValid
+      !taskIsContained ||
+      !workerDirectoryValid
     ) {
       return yield* fail("MathProblem ownership evidence does not agree across project, sessions, and swarm roster")
     }
@@ -224,7 +224,8 @@ export const MathVerifyCommand = effectCmd({
       worker.agent !== "math-worker" ||
       worker.projectID !== identity.ownerProjectID ||
       worker.parentID !== identity.orchestratorSessionID ||
-      !workspace || path.resolve(workspace.problemDirectory) !== path.resolve(identity.directory)
+      !workspace ||
+      path.resolve(workspace.problemDirectory) !== path.resolve(identity.directory)
     ) {
       return yield* fail("math verifier parent must be a math-worker owned by the parent project")
     }
@@ -350,7 +351,10 @@ export const MathMcpCommand = cmd({
       throw new Error("worker math mcp requires --author/OPENCODE_MATH_AUTHOR")
     }
     if ((args.role || process.env.OPENCODE_MATH_ROLE) === "worker") {
-      const bootstrap = resolveMathWorkerBootstrap(author, args.projectDir ? path.resolve(process.cwd(), args.projectDir) : undefined)
+      const bootstrap = resolveMathWorkerBootstrap(
+        author,
+        args.projectDir ? path.resolve(process.cwd(), args.projectDir) : undefined,
+      )
       if (args.projectDir && path.resolve(process.cwd(), args.projectDir) !== bootstrap.problemDirectory) {
         throw new Error("math mcp --project-dir does not match the worker session workspace")
       }
@@ -440,9 +444,11 @@ export const MathWorkerCommand = effectCmd({
             typeof args["project-dir"] === "string" ? path.resolve(process.cwd(), args["project-dir"]) : undefined,
           )
         : undefined
-    const ownerProjectID = bootstrap?.ownerProjectID ?? (typeof args["owner-project"] === "string" ? args["owner-project"] : undefined)
+    const ownerProjectID =
+      bootstrap?.ownerProjectID ?? (typeof args["owner-project"] === "string" ? args["owner-project"] : undefined)
     const ownerDirectory =
-      bootstrap?.ownerDirectory ?? (typeof args["owner-dir"] === "string" ? path.resolve(process.cwd(), args["owner-dir"]) : undefined)
+      bootstrap?.ownerDirectory ??
+      (typeof args["owner-dir"] === "string" ? path.resolve(process.cwd(), args["owner-dir"]) : undefined)
     log.info("math worker startup context resolved", {
       sessionID: args.session,
       contextProjectID: ctx.project.id,
@@ -469,10 +475,9 @@ export const MathWorkerCommand = effectCmd({
       if (args.dir && path.resolve(process.cwd(), args.dir) !== bootstrap.runtimeDirectory)
         return yield* fail("legacy --dir does not match the session runtime directory")
     }
-    const projectDir = bootstrap?.problemDirectory ?? resolveMathProjectDir(
-      typeof args["project-dir"] === "string" ? args["project-dir"] : undefined,
-      ctx.directory,
-    )
+    const projectDir =
+      bootstrap?.problemDirectory ??
+      resolveMathProjectDir(typeof args["project-dir"] === "string" ? args["project-dir"] : undefined, ctx.directory)
     const identity = readMathProblemIdentity(projectDir)
     const ownership = checkMathWorkerOwnership({
       identity,
@@ -581,10 +586,19 @@ export const MathStartCommand = effectCmd({
 export const MathEnsureCommand = effectCmd({
   command: "ensure",
   describe: "restart a dead math-worker using the same session id",
-  directory: (args: { session: string; "project-dir"?: string; interval?: number; model?: string; variant?: string }) => resolveMathWorkerBootstrap(args.session).ownerDirectory,
-  runtimeDirectory: (args: { session: string; "project-dir"?: string; interval?: number; model?: string; variant?: string }) =>
-    resolveMathWorkerBootstrap(args.session, args["project-dir"] ? path.resolve(process.cwd(), args["project-dir"]) : undefined)
-      .problemDirectory,
+  directory: (args: { session: string; "project-dir"?: string; interval?: number; model?: string; variant?: string }) =>
+    resolveMathWorkerBootstrap(args.session).ownerDirectory,
+  runtimeDirectory: (args: {
+    session: string
+    "project-dir"?: string
+    interval?: number
+    model?: string
+    variant?: string
+  }) =>
+    resolveMathWorkerBootstrap(
+      args.session,
+      args["project-dir"] ? path.resolve(process.cwd(), args["project-dir"]) : undefined,
+    ).problemDirectory,
   builder: (yargs) =>
     yargs
       .option("session", { type: "string", demandOption: true, describe: "existing math-worker session id" })
@@ -622,8 +636,10 @@ export const MathStatusCommand = effectCmd({
     args.session ? resolveMathWorkerBootstrap(args.session).ownerDirectory : process.cwd(),
   runtimeDirectory: (args: { session?: string; "project-dir"?: string; parent?: string }) =>
     args.session
-      ? resolveMathWorkerBootstrap(args.session, args["project-dir"] ? path.resolve(process.cwd(), args["project-dir"]) : undefined)
-          .problemDirectory
+      ? resolveMathWorkerBootstrap(
+          args.session,
+          args["project-dir"] ? path.resolve(process.cwd(), args["project-dir"]) : undefined,
+        ).problemDirectory
       : undefined,
   builder: (yargs) =>
     yargs
@@ -650,10 +666,13 @@ export const MathStatusCommand = effectCmd({
 export const MathStopCommand = effectCmd({
   command: "stop",
   describe: "stop a math-worker process group (SIGTERM; --force uses SIGKILL)",
-  directory: (args: { session: string; "project-dir"?: string; force?: boolean }) => resolveMathWorkerBootstrap(args.session).ownerDirectory,
+  directory: (args: { session: string; "project-dir"?: string; force?: boolean }) =>
+    resolveMathWorkerBootstrap(args.session).ownerDirectory,
   runtimeDirectory: (args: { session: string; "project-dir"?: string; force?: boolean }) =>
-    resolveMathWorkerBootstrap(args.session, args["project-dir"] ? path.resolve(process.cwd(), args["project-dir"]) : undefined)
-      .problemDirectory,
+    resolveMathWorkerBootstrap(
+      args.session,
+      args["project-dir"] ? path.resolve(process.cwd(), args["project-dir"]) : undefined,
+    ).problemDirectory,
   builder: (yargs) =>
     yargs
       .option("session", { type: "string", demandOption: true, describe: "worker session id" })
