@@ -23,6 +23,8 @@ export type SessionTabsTarget =
 
 export type SessionTabsActivationResult = "navigated" | "superseded" | "failed"
 
+export type SessionTabsNavigationSource = "activate" | "close" | "lifecycle" | "directory"
+
 export function pickSessionTabsTarget(input: {
   tabs: SessionBarTab[]
   drafts: SessionBarDraft[]
@@ -87,7 +89,7 @@ export type SessionTabsPorts = {
   route(): SessionTabsRoute
   parentID(tab: SessionBarTab): string | undefined
   prepare(target: SessionTabsTarget): Promise<void>
-  navigate(target: SessionTabsTarget, options?: { replace?: boolean }): void
+  navigate(target: SessionTabsTarget, options?: { replace?: boolean; source?: SessionTabsNavigationSource }): void
   cool(tabs: SessionBarTab[]): void
   markViewed(id: string): void
   remember(directory: string, id: string, root?: string): void
@@ -175,7 +177,7 @@ const lifecycleReasonRank: Record<LifecycleTombstone["reason"], number> = {
 
 type NavigationIntent = {
   token: number
-  source: "activate" | "close" | "lifecycle" | "directory"
+  source: SessionTabsNavigationSource
   target: SessionTabsTarget
   origin: string
   closeToken?: number
@@ -385,7 +387,7 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
         console.debug(`[session-tabs] close transaction superseded token=${transaction.token}`)
         return false
       }
-      ports.navigate(target)
+      ports.navigate(target, { source: intent.source })
       console.debug(
         `[session-tabs] navigation intent navigated token=${intent.token} source=${intent.source} target=${targetKey(target)}`,
       )
@@ -453,7 +455,7 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
           console.debug(`[session-tabs] activation superseded token=${intent.token} target=${targetKey(target)}`)
           return "superseded"
         }
-        ports.navigate(target, options)
+        ports.navigate(target, { ...options, source: intent.source })
         const opened =
           target.type === "session" ? ensureOpen({ directory: target.directory, id: target.id }) : undefined
         console.debug(
@@ -709,7 +711,7 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
             )
             return
           }
-          ports.navigate(target)
+          ports.navigate(target, { source: intent.source })
           console.debug(
             `[session-tabs] navigation intent navigated token=${intent.token} source=${intent.source} target=${targetKey(target)}`,
           )
@@ -732,7 +734,7 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
           )
           return
         }
-        ports.navigate(plan.target)
+        ports.navigate(plan.target, { source: intent.source })
         console.debug(
           `[session-tabs] navigation intent navigated token=${intent.token} source=${intent.source} target=${targetKey(plan.target)}`,
         )
@@ -782,7 +784,7 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
           console.debug(`[session-tabs] directory navigation superseded token=${intent.token} directory=${directory}`)
           return
         }
-        ports.navigate(target)
+        ports.navigate(target, { source: intent.source })
         console.debug(
           `[session-tabs] navigation intent navigated token=${intent.token} source=${intent.source} target=${targetKey(target)}`,
         )

@@ -2503,7 +2503,28 @@ export default function Layout(props: ParentProps) {
     },
     prepare: prepareSessionTabsTarget,
     navigate(target, options) {
-      navigate(sessionTabsTargetHref(target), options)
+      const href = sessionTabsTargetHref(target)
+      if (
+        options?.source &&
+        options.source !== "activate" &&
+        target.type !== "home" &&
+        layout.sidebar.opened()
+      ) {
+        if (!sidebarProjectRoot()) {
+          const current = sidebarProject()?.root
+          if (current) setSidebarProjectRoot(current)
+        }
+        sidebarRouteSuppressed = {
+          directory: target.directory,
+          id: target.type === "session" ? target.id : undefined,
+        }
+        console.debug(
+          `[sidebar-project] route-sync suppress armed directory=${target.directory} id=${target.type === "session" ? target.id : "draft"} source=${options.source} root=${sidebarProjectRoot() ?? "none"}`,
+        )
+      } else {
+        sidebarRouteSuppressed = undefined
+      }
+      navigate(href, { replace: options?.replace })
     },
     cool(tabs) {
       const byDirectory = new Map<string, { directory: string; ids: string[] }>()
@@ -3536,6 +3557,13 @@ export default function Layout(props: ParentProps) {
   )
 
   let observedSidebarRoute = ""
+  // Automatic tab fallbacks (close/lifecycle/directory) should not yank the
+  // sidebar's project domain while the session list is open. The session-tabs
+  // navigate port records the fallback route here; the route observer consumes
+  // it once and skips the sidebar route-sync for that commit only. Matched on
+  // route params instead of the URL bar because the desktop app runs on a
+  // memory router where location.pathname never changes.
+  let sidebarRouteSuppressed: { directory: string; id?: string } | undefined
   const [sidebarRouteState, setSidebarRouteState] = createStore({
     pending: undefined as { marker: string; request: number } | undefined,
   })
@@ -3552,6 +3580,15 @@ export default function Layout(props: ParentProps) {
         const marker = JSON.stringify([slug, directory, sessionID])
         if (marker === observedSidebarRoute) return
         observedSidebarRoute = marker
+        if (sidebarRouteSuppressed) {
+          const suppressed = sidebarRouteSuppressed
+          sidebarRouteSuppressed = undefined
+          if (workspaceKey(directory) === workspaceKey(suppressed.directory) && sessionID === suppressed.id) {
+            setSidebarRouteState("pending", undefined)
+            console.debug(`[sidebar-project] route-sync suppressed marker=${marker}`)
+            return
+          }
+        }
         setSidebarRouteState("pending", { marker, request: sidebarDomainRequest })
 
         console.debug(`[sidebar-project] route-observed marker=${marker} request=${sidebarDomainRequest}`)

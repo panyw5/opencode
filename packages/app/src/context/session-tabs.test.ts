@@ -5,6 +5,7 @@ import {
   pickSessionTabsTarget,
   planSessionTabClose,
   sessionTabsTargetHref,
+  type SessionTabsNavigationSource,
   type SessionTabsRoute,
   type SessionTabsPorts,
   type SessionTabsTarget,
@@ -115,7 +116,7 @@ function harness(input?: {
   let failPrepare = false
   const prepareQueue: Promise<void>[] = []
   const targets: SessionTabsTarget[] = []
-  const navigationOptions: Array<{ replace?: boolean } | undefined> = []
+  const navigationOptions: Array<{ replace?: boolean; source?: SessionTabsNavigationSource } | undefined> = []
   const cooled: string[][] = []
   const viewed: string[] = []
   const remembered: string[] = []
@@ -662,7 +663,7 @@ describe("session tabs coordinator", () => {
     expect(await h.coordinator.activate({ type: "session", directory: "/repo", id: "one" }, { replace: true })).toBe(
       "navigated",
     )
-    expect(h.navigationOptions).toEqual([{ replace: true }])
+    expect(h.navigationOptions).toEqual([{ replace: true, source: "activate" }])
     h.dispose()
   })
 
