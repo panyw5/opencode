@@ -92,7 +92,6 @@
     "typecheck": "tsgo --noEmit",
     "test": "bun test test"
   },
-  "dependencies": {},
   "devDependencies": {
     "@opencode-ai/ui": "workspace:*",
     "@opencode-ai/extension-kit": "workspace:*",

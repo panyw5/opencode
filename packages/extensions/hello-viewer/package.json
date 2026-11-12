@@ -52,12 +52,10 @@
     "typecheck": "tsgo --noEmit",
     "test": "bun test test"
   },
-  "dependencies": {
-    "@opencode-ai/extension-kit": "workspace:*",
-    "@opencode-ai/plugin": "workspace:*"
-  },
   "devDependencies": {
     "@opencode-ai/ui": "workspace:*",
+    "@opencode-ai/extension-kit": "workspace:*",
+    "@opencode-ai/plugin": "workspace:*",
     "@tsconfig/node22": "catalog:",
     "@typescript/native-preview": "catalog:",
     "solid-js": "catalog:",
