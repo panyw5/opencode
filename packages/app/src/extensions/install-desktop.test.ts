@@ -17,7 +17,7 @@ const descriptorText = JSON.stringify({
   version: "1.18.64",
   artifact: { url: "https://github.com/example/release.tgz", sha256 },
 })
-function setup(useSecureDownload = false) {
+function setup(useSecureDownload = false, input: { hostVersion?: string; descriptor?: string } = {}) {
   const calls: Array<{ op: string; payload?: any }> = []
   let connection = {}
   let local = true
@@ -50,11 +50,17 @@ function setup(useSecureDownload = false) {
           return bytes
         }
       : undefined,
+    hostVersion: input.hostVersion === undefined ? undefined : () => input.hostVersion,
     fetch: (async (url: RequestInfo | URL) => {
       if (String(url) === releaseURL) {
         calls.push({ op: "descriptor" })
         afterDownload()
-        return new Response(descriptorText)
+        return new Response(input.descriptor ?? descriptorText)
+      }
+      if (String(url) === `${releaseURL}.sig`) {
+        calls.push({ op: "signature" })
+        afterDownload()
+        return new Response("sig-document")
       }
       calls.push({ op: "download" })
       afterDownload()
@@ -96,7 +102,7 @@ test("desktop uses its HTTPS-only transport for redirected release assets", asyn
   await app.operations.prepareInstallation({ kind: "install", source: { type: "release", url: releaseURL } })
   expect(app.secureDownloads()).toBe(1)
   expect(app.calls.some((c) => c.op === "download")).toBe(false)
-  expect(app.calls.map((c) => c.op)).toEqual(["descriptor", "stage", "prepare", "cleanup"])
+  expect(app.calls.map((c) => c.op)).toEqual(["descriptor", "signature", "stage", "prepare", "cleanup"])
 })
 
 test("desktop HTTPS update uses verified proxy download and IPC, retaining normal preview/commit", async () => {
@@ -152,10 +158,10 @@ test("desktop release retains its source and hands the original descriptor to pr
   const app = setup()
   const input = { kind: "install" as const, source: { type: "release" as const, url: releaseURL } }
   const prepared = await app.operations.prepareInstallation(input)
-  expect(app.calls.map((c) => c.op)).toEqual(["descriptor", "download", "stage", "prepare", "cleanup"])
+  expect(app.calls.map((c) => c.op)).toEqual(["descriptor", "signature", "download", "stage", "prepare", "cleanup"])
   expect(app.calls.find((c) => c.op === "prepare")?.payload).toEqual({
     request: input,
-    release: { url: releaseURL, descriptor: descriptorText, path: "/tmp/test-download.tgz" },
+    release: { url: releaseURL, descriptor: descriptorText, signature: "sig-document", path: "/tmp/test-download.tgz" },
   })
   await app.operations.commitInstallation(prepared, { acceptRegistryUpgrade: true })
   expect(app.calls.at(-1)?.payload.input.acceptRegistryUpgrade).toBe(true)
@@ -167,9 +173,24 @@ test("release-current uses the saved descriptor and preserves its update target"
   await app.operations.prepareInstallation(input)
   expect(app.calls.find((c) => c.op === "prepare")?.payload).toEqual({
     request: input,
-    release: { url: releaseURL, descriptor: descriptorText, path: "/tmp/test-download.tgz" },
+    release: { url: releaseURL, descriptor: descriptorText, signature: "sig-document", path: "/tmp/test-download.tgz" },
   })
   expect(app.calls.some((c) => c.op.startsWith("http:"))).toBe(false)
+})
+
+test("a release declaring an incompatible engines range never reaches artifact download", async () => {
+  const incompatible = JSON.stringify({
+    schemaVersion: 1,
+    id: "local.wls-repl",
+    version: "1.18.64",
+    engines: { opencode: ">=99.0.0" },
+    artifact: { url: "https://github.com/example/release.tgz", sha256 },
+  })
+  const app = setup(false, { hostVersion: "1.18.64", descriptor: incompatible })
+  await expect(
+    app.operations.prepareInstallation({ kind: "install", source: { type: "release", url: releaseURL } }),
+  ).rejects.toThrow(/requires opencode/)
+  expect(app.calls.map((c) => c.op)).toEqual(["descriptor", "signature"])
 })
 
 test("a connection change during descriptor fetch stops before artifact download", async () => {
@@ -178,5 +199,5 @@ test("a connection change during descriptor fetch stops before artifact download
   await expect(
     app.operations.prepareInstallation({ kind: "install", source: { type: "release", url: releaseURL } }),
   ).rejects.toThrow(/server changed/)
-  expect(app.calls.map((c) => c.op)).toEqual(["descriptor"])
+  expect(app.calls.map((c) => c.op)).toEqual(["descriptor", "signature"])
 })

@@ -132,6 +132,7 @@ export const dict = {
   "config.extensions.install.downloadHost": "安装包下载主机",
   "config.extensions.install.integrityMatched": "安装包校验通过，不代表安全认证。",
   "config.extensions.install.publisherUnsigned": "发布者身份未经数字签名认证。",
+  "config.extensions.install.publisherVerified": "此发布版本的发布者签名已验证。",
   "config.extensions.install.registryUpgradeWarning":
     "此操作将整个共享扩展注册表从 v2 升级到 v3，卸载扩展也不会降回。旧版 OpenCode 进程无法读取 v3。继续前请停止所有共享此注册表、扩展数据或缓存的旧进程。这是你的人工声明，应用无法验证这些进程是否已停止。",
   "config.extensions.install.acceptRegistryUpgrade":
@@ -197,6 +198,9 @@ export const dict = {
     "为 .wls 文件提供断点调试：在常驻 Wolfram 内核中运行、检视变量，并在 REPL 中求值表达式。需要本机安装 wolframscript；网络受限时可改为此处拖入下载好的 .tgz 归档安装。",
   "config.extensions.catalog.source": "安装来源",
   "config.extensions.catalog.notInstalled": "未安装",
+  "config.extensions.catalog.incompatibleBadge": "不兼容",
+  "config.extensions.catalog.incompatible": "需要 opencode {{range}}，当前版本为 {{version}}。",
+  "config.extensions.catalog.compatibilityUndeclared": "此发布未声明支持的 OpenCode 版本范围。",
   "config.extensions.catalog.conflictCleanup":
     "上次卸载的清理尚未完成（kernel 可能仍在运行）。请重启应用完成清理后再安装。",
   "config.extensions.catalog.flowDescriptor": "正在读取发布描述…",

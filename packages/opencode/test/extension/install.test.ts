@@ -123,7 +123,9 @@ describe("extension installation transactions", () => {
     expect(prepared.source).toMatchObject({ type: "release", artifact: "https://cdn.example.com/1.0.0.tgz" })
     const metadata = await readFile(path.join(context.root, "staging", prepared.operationId, "operation.json"), "utf8")
     expect(metadata).not.toContain("PRIVATE")
-    expect(JSON.stringify(prepared)).not.toContain("signature")
+    // The signed-URL query parameter must never leak; the signatureStatus
+    // field itself is a legitimate part of the preview shape.
+    expect(JSON.stringify(prepared)).not.toContain("signature=")
     expect((await Registry.snapshot(id, context.registry)).registryVersion).toBe(2)
     await expect(context.installer.commit(prepared.operationId, prepared.token)).rejects.toThrow(
       "explicit confirmation",
@@ -170,6 +172,63 @@ describe("extension installation transactions", () => {
     await expect(
       context.installer.prepare({ kind: "update", id, target: "release-current", version: "1.0.0" } as never),
     ).rejects.toThrow("one update target")
+  })
+
+  test("release descriptor engines gate the artifact download on an incompatible host", async () => {
+    const payload = await fixture()
+    let downloads = 0
+    const context = await setup({
+      opencodeVersion: "1.0.0",
+      resolveRelease: async (descriptor) => ({
+        descriptor,
+        id,
+        version: "1.0.0",
+        engines: { opencode: ">=2.0.0" },
+        artifact: { url: "https://example.com/package.tgz", sha256: sha(payload.bytes) },
+        descriptorSha256: "a".repeat(64),
+      }),
+      download: async () => {
+        downloads++
+        return payload.bytes
+      },
+    })
+    await expect(
+      context.installer.prepare({ kind: "install", source: { type: "release", url: "https://example.com/stable.json" } }),
+    ).rejects.toThrow("not compatible")
+    expect(downloads).toBe(0)
+    const compatible = await setup({
+      opencodeVersion: "1.18.0",
+      resolveRelease: async (descriptor) => ({
+        descriptor,
+        id,
+        version: "1.0.0",
+        engines: { opencode: ">=1.0.0" },
+        artifact: { url: "https://example.com/package.tgz", sha256: sha(payload.bytes) },
+        descriptorSha256: "a".repeat(64),
+      }),
+      download: async () => payload.bytes,
+    })
+    const prepared = await compatible.installer.prepare({
+      kind: "install",
+      source: { type: "release", url: "https://example.com/stable.json" },
+    })
+    expect(prepared.version).toBe("1.0.0")
+    // No engines declaration means unrestricted; the host check stays silent.
+    const undeclared = await setup({
+      opencodeVersion: "0.0.0",
+      resolveRelease: async (descriptor) => ({
+        descriptor,
+        id,
+        version: "1.0.0",
+        artifact: { url: "https://example.com/package.tgz", sha256: sha(payload.bytes) },
+        descriptorSha256: "a".repeat(64),
+      }),
+      download: async () => payload.bytes,
+    })
+    expect(
+      (await undeclared.installer.prepare({ kind: "install", source: { type: "release", url: "https://example.com/stable.json" } }))
+        .version,
+    ).toBe("1.0.0")
   })
 
   test("a registry format change invalidates a prepared operation on another extension", async () => {

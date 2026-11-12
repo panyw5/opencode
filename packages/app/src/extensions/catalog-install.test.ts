@@ -42,6 +42,14 @@ describe("release descriptor validation", () => {
       expect(() => parseReleaseDescriptor(value)).toThrow(/schema version 1/)
     }
   })
+  test("keeps an optional engines.opencode range and rejects malformed declarations", () => {
+    const parsed = parseReleaseDescriptor({ ...descriptor, engines: { opencode: ">=1.0.0" } })
+    expect(parsed.engines).toEqual({ opencode: ">=1.0.0" })
+    expect(parseReleaseDescriptor(descriptor).engines).toBeUndefined()
+    for (const engines of [{}, { opencode: 1 }, { opencode: "latest" }, { opencode: ">=1.0.0", node: ">=18" }, "x"]) {
+      expect(() => parseReleaseDescriptor({ ...descriptor, engines })).toThrow()
+    }
+  })
   test("rejects unsafe descriptor URLs before fetching", async () => {
     for (const url of [
       "http://example.com/stable.json",

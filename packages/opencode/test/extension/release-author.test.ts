@@ -114,6 +114,20 @@ describe("local extension release authoring CLI", () => {
     await absent(input.marker)
   }, 30_000)
 
+  test("copies a declared engines.opencode range into the descriptor and rejects invalid ranges", async () => {
+    const ok = await fixture([], { ...packageJSON, engines: { opencode: ">=1.18.0" } })
+    expect((await cli(args(ok))).code).toBe(0)
+    expect(JSON.parse(await readFile(ok.output, "utf8")).engines).toEqual({ opencode: ">=1.18.0" })
+    for (const engines of [{ opencode: "not-a-range" }, { opencode: 1 }, "all"]) {
+      const bad = await fixture([], { ...packageJSON, engines })
+      const result = await cli(args(bad))
+      expect(result.code).not.toBe(0)
+      await absent(bad.output)
+      await absent(bad.marker)
+    }
+    await absent(ok.marker)
+  }, 30_000)
+
   test("supports relative local paths and a matching optional package manifest", async () => {
     const input = await fixture()
     await writeFile(path.join(input.directory, "package.json"), JSON.stringify(packageJSON))

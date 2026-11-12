@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { createHash } from "node:crypto"
 import { requestJsonDocument, type DownloadAddress, type DownloadTransport } from "../../src/extension/download"
-import { normalizeReleaseUrl, parseReleaseDescriptor, resolveRelease } from "../../src/extension/release"
+import {
+  normalizeReleaseUrl,
+  parseReleaseDescriptor,
+  releaseCompatible,
+  resolveRelease,
+} from "../../src/extension/release"
 
 const url = "https://releases.example.test/viewer/stable.json"
 const artifact = "https://cdn.example.test/viewer-1.2.3.tgz?token=private-token"
@@ -272,6 +277,41 @@ describe("release descriptor parser", () => {
       }
     }
   })
+
+  test("keeps a declared engines.opencode range; absent stays absent", () => {
+    expect(parseReleaseDescriptor({ ...descriptor(), engines: { opencode: ">=1.0.0" } }).engines).toEqual({
+      opencode: ">=1.0.0",
+    })
+    expect(parseReleaseDescriptor(descriptor()).engines).toBeUndefined()
+  })
+
+  test.each([{}, { opencode: 1 }, { opencode: "" }, { opencode: "latest" }, { opencode: ">=1.0.0", node: ">=18" }, "1.0.0", []].map(
+    (value) => [value] as const,
+  ))("rejects malformed engines declarations (%#)", (engines) =>
+    expect(() => parseReleaseDescriptor({ ...descriptor(), engines })).toThrow(),
+  )
+})
+
+describe("release host compatibility", () => {
+  const release = (range?: string) => ({ engines: range === undefined ? undefined : { opencode: range } })
+
+  test("accepts host versions inside the declared range", () => {
+    for (const range of [">=1.0.0", "^1.18.0", "*", "1.x"]) {
+      expect(releaseCompatible(release(range), "1.18.64")).toBe(true)
+    }
+  })
+
+  test("rejects host versions outside the declared range", () => {
+    for (const range of [">=2.0.0", "<1.18.0", "^2.0.0"]) {
+      expect(releaseCompatible(release(range), "1.18.64")).toBe(false)
+    }
+  })
+
+  test("treats a missing range as unrestricted and unusable host versions as ungated", () => {
+    expect(releaseCompatible(release(), "1.18.64")).toBe(true)
+    expect(releaseCompatible(release(">=2.0.0"), "local")).toBe(true)
+    expect(releaseCompatible(release(">=2.0.0"), "0.0.0")).toBe(true)
+  })
 })
 
 describe("release resolver", () => {
@@ -295,6 +335,12 @@ describe("release resolver", () => {
       artifact: descriptor().artifact,
       descriptorSha256: "cd".repeat(32),
     })
+  })
+
+  test("propagates a declared engines range", async () => {
+    const f = transport({ bytes: Buffer.from(JSON.stringify({ ...descriptor(), engines: { opencode: ">=1.0.0" } })) })
+    const result = await resolveRelease(url, { transport: f.fetch, trustedKeys: [] })
+    expect(result.engines).toEqual({ opencode: ">=1.0.0" })
   })
 
   test("only requests the descriptor, never the artifact or extension code", async () => {

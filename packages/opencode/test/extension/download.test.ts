@@ -553,7 +553,7 @@ describe("extension JSON documents", () => {
       const bytes = Buffer.from(value)
       const f = document(bytes)
       const result = await requestJsonDocument(url, { transport: f.transport })
-      expect(result).toEqual({ value: { name: "café" }, sha256: hash(bytes) })
+      expect(result).toEqual({ value: { name: "café" }, sha256: hash(bytes), bytes })
       expect(f.requests[0]!.address).toBe(publicIP.address)
       hashes.add(result.sha256)
     }
@@ -590,6 +590,7 @@ describe("extension JSON documents", () => {
     expect(await requestJsonDocument(url, { maxBytes: 2, transport: f.transport })).toEqual({
       value: {},
       sha256: hash(bytes),
+      bytes,
     })
     await expect(requestJsonDocument(url, { maxBytes: 1, transport: f.transport })).rejects.toThrow("byte limit")
     const declared = document(bytes, { "content-length": String(64 * 1024 + 1) })

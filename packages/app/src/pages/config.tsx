@@ -161,7 +161,7 @@ import "./config-surfaces.css"
 import { useExtensionHost } from "@/extensions/host"
 import { pendingCatalogEntries } from "@/extensions/catalog"
 import { ExtensionArchiveDropTarget } from "./config-extension-archive-drop"
-import { ConfigExtensionCatalogDetail, ExtensionCardRow } from "./config-extension-catalog"
+import { CatalogEntryRow, ConfigExtensionCatalogDetail, ExtensionCardRow } from "./config-extension-catalog"
 import { ConfigExtensionDetail } from "./config-extension-detail"
 import { extensionRuntimeState } from "@/extensions/runtime-state"
 import { ConfigExtensionInstallActions } from "./config-extension-install-actions"
@@ -9538,12 +9538,9 @@ export default function ConfigPage() {
                           </For>
                           <For each={catalogEntries()}>
                             {(entry) => (
-                              <ExtensionCardRow
-                                rowId={entry.id}
+                              <CatalogEntryRow
+                                entry={entry}
                                 active={state.pick === catalogPick(entry.id)}
-                                title={entry.name}
-                                subtitle={entry.author}
-                                note={t("config.extensions.catalog.notInstalled")}
                                 onSelect={() => selectMiddlePick(catalogPick(entry.id))}
                               />
                             )}

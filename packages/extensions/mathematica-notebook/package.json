@@ -8,6 +8,9 @@
     "./web": "./dist/web/index.js",
     "./server": "./dist/server.js"
   },
+  "engines": {
+    "opencode": ">=1.18.0"
+  },
   "opencode": {
     "manifestVersion": 1,
     "id": "local.mathematica-notebook",

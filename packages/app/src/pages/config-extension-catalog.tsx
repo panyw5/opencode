@@ -5,7 +5,8 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Show, createSignal, onCleanup, onMount } from "solid-js"
 import { DialogInstallExtension } from "../components/dialog-install-extension"
 import { useLanguage } from "../context/language"
-import type { CatalogEntry } from "../extensions/catalog"
+import { usePlatform } from "../context/platform"
+import { catalogCompatibility, type CatalogEntry, type HostCompatibility } from "../extensions/catalog"
 import type { InstallationOperations } from "./install-actions-state"
 
 export interface ExtensionCardRowProps {
@@ -15,6 +16,8 @@ export interface ExtensionCardRowProps {
   subtitle: string
   note: string
   warn?: boolean
+  /** Greyed-out treatment for releases that cannot run on this host build. */
+  dimmed?: boolean
   active: boolean
   onSelect: () => void
 }
@@ -35,6 +38,7 @@ export function ExtensionCardRow(props: ExtensionCardRowProps) {
       classList={{
         "border-border-base bg-surface-base/40": props.active,
         "border-border-weak-base/80 hover:border-border-base": !props.active,
+        "opacity-60": !!props.dimmed,
       }}
       onClick={props.onSelect}
       onKeyDown={press}
@@ -74,6 +78,63 @@ export function ExtensionCardRow(props: ExtensionCardRowProps) {
   )
 }
 
+/**
+ * Descriptor-only compatibility probe shared by catalog rows and the detail
+ * view. Returns undefined while unknown so a failed fetch never blocks an
+ * entry the regular install flow would report on its own.
+ */
+function useCatalogCompatibility(entry: () => CatalogEntry) {
+  const platform = usePlatform()
+  const [compat, setCompat] = createSignal<HostCompatibility>()
+  let alive = true
+  onCleanup(() => {
+    alive = false
+  })
+  onMount(() => {
+    const id = entry().id
+    console.info(`[extension-catalog] compatibility check start id=${id}`)
+    void catalogCompatibility(entry().releaseUrl, platform.fetch ?? fetch, platform.version)
+      .then((value) => {
+        if (!alive) return
+        setCompat(value)
+        console.info(`[extension-catalog] compatibility check done id=${id} ok=${value.ok} declared=${value.declared}`)
+      })
+      .catch(() => {
+        console.warn(`[extension-catalog] compatibility check failed id=${id}`)
+      })
+  })
+  return compat
+}
+
+export interface CatalogEntryRowProps {
+  entry: CatalogEntry
+  active: boolean
+  onSelect: () => void
+}
+
+/** Catalog row that greys out releases incompatible with the running host build. */
+export function CatalogEntryRow(props: CatalogEntryRowProps) {
+  const language = useLanguage()
+  const compat = useCatalogCompatibility(() => props.entry)
+  const blocked = () => compat()?.ok === false
+  return (
+    <ExtensionCardRow
+      rowId={props.entry.id}
+      active={props.active}
+      title={props.entry.name}
+      subtitle={props.entry.author}
+      note={
+        blocked()
+          ? language.t("config.extensions.catalog.incompatibleBadge")
+          : language.t("config.extensions.catalog.notInstalled")
+      }
+      warn={blocked()}
+      dimmed={blocked()}
+      onSelect={props.onSelect}
+    />
+  )
+}
+
 export interface ConfigExtensionCatalogDetailProps {
   entry: CatalogEntry
   operations: InstallationOperations
@@ -88,6 +149,8 @@ export interface ConfigExtensionCatalogDetailProps {
 export function ConfigExtensionCatalogDetail(props: ConfigExtensionCatalogDetailProps) {
   const language = useLanguage()
   const dialog = useDialog()
+  const platform = usePlatform()
+  const compat = useCatalogCompatibility(() => props.entry)
   const [error, setError] = createSignal(false)
   const [busy, setBusy] = createSignal(false)
   let alive = true
@@ -99,8 +162,10 @@ export function ConfigExtensionCatalogDetail(props: ConfigExtensionCatalogDetail
       if (alive) setError(true)
     })
   })
+  // An incompatible release is greyed out and never reaches artifact download.
+  const blocked = () => compat()?.ok === false
   const start = async () => {
-    if (busy() || props.busy || props.enabled === false) return
+    if (busy() || props.busy || props.enabled === false || blocked()) return
     const connection = props.connection()
     setBusy(true)
     setError(false)
@@ -142,7 +207,7 @@ export function ConfigExtensionCatalogDetail(props: ConfigExtensionCatalogDetail
   }
   return (
     <div class="mx-auto flex w-full max-w-5xl flex-col gap-4" data-extension-catalog-detail={props.entry.id}>
-      <ExtensionCard>
+      <ExtensionCard class={blocked() ? "opacity-60" : ""}>
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="min-w-0 flex-1">
             <h2 class="break-words text-20-medium text-text-strong">{props.entry.name}</h2>
@@ -151,7 +216,7 @@ export function ConfigExtensionCatalogDetail(props: ConfigExtensionCatalogDetail
           <Button
             variant="primary"
             data-action="catalog-install"
-            disabled={busy() || props.busy || props.enabled === false || props.installed()}
+            disabled={busy() || props.busy || props.enabled === false || props.installed() || blocked()}
             onClick={() => void start()}
           >
             {language.t("config.extensions.catalog.install")}
@@ -160,6 +225,19 @@ export function ConfigExtensionCatalogDetail(props: ConfigExtensionCatalogDetail
         <p class="text-13-regular leading-relaxed text-text-base">
           {language.t("config.extensions.catalog.description")}
         </p>
+        <Show when={blocked()}>
+          <span role="alert" class="text-12-regular text-text-danger-base" data-extension-incompatible>
+            {language.t("config.extensions.catalog.incompatible", {
+              range: compat()?.range ?? "",
+              version: platform.version ?? "",
+            })}
+          </span>
+        </Show>
+        <Show when={compat()?.ok === true && compat()?.declared === false}>
+          <span class="text-12-regular text-text-weak">
+            {language.t("config.extensions.catalog.compatibilityUndeclared")}
+          </span>
+        </Show>
         <Show when={error()}>
           <span role="alert" class="text-12-regular text-text-danger-base">
             {language.t("config.extensions.install.failed")}

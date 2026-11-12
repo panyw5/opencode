@@ -50,6 +50,7 @@ export const dict = {
   "config.extensions.install.downloadHost": "安裝套件下載主機",
   "config.extensions.install.integrityMatched": "安裝套件校驗通過，不代表安全認證。",
   "config.extensions.install.publisherUnsigned": "發佈者身分未經數位簽章驗證。",
+  "config.extensions.install.publisherVerified": "此發佈版本的發佈者簽章已驗證。",
   "config.extensions.install.registryUpgradeWarning":
     "此操作將整個共用擴充功能登錄檔從 v2 升級至 v3，移除擴充功能也不會降回。舊版 OpenCode 程序無法讀取 v3。繼續前請停止所有共用此登錄檔、擴充功能資料或快取的舊程序。這是你的人工聲明，應用程式無法驗證這些程序是否已停止。",
   "config.extensions.install.acceptRegistryUpgrade":
@@ -115,6 +116,9 @@ export const dict = {
     "為 .wls 檔案提供斷點調試：在常駐 Wolfram 內核中運行、檢視變數，並在 REPL 中求值表達式。需要本機安裝 wolframscript；網路受限時可改為此處拖入下載好的 .tgz 歸檔安裝。",
   "config.extensions.catalog.source": "安裝來源",
   "config.extensions.catalog.notInstalled": "未安裝",
+  "config.extensions.catalog.incompatibleBadge": "不相容",
+  "config.extensions.catalog.incompatible": "需要 opencode {{range}}，目前版本為 {{version}}。",
+  "config.extensions.catalog.compatibilityUndeclared": "此發布未聲明支援的 OpenCode 版本範圍。",
   "config.extensions.catalog.conflictCleanup":
     "上次解除安裝的清理尚未完成（kernel 可能仍在運行）。請重啟應用完成清理後再安裝。",
   "config.extensions.catalog.flowDescriptor": "正在讀取發布描述…",

@@ -139,6 +139,7 @@ export const dict = {
   "config.extensions.install.integrityMatched":
     "Package SHA-256 matches the release descriptor. This is a content consistency check, not a safety certification.",
   "config.extensions.install.publisherUnsigned": "Publisher identity has not been verified by a digital signature.",
+  "config.extensions.install.publisherVerified": "Publisher signature verified for this release.",
   "config.extensions.install.registryUpgradeWarning":
     "This operation upgrades the entire shared extension registry from v2 to v3. Uninstalling does not downgrade it. Older OpenCode processes cannot read v3. Stop all older processes sharing this registry, extension data, or cache before continuing. This is your declaration; the app cannot verify that those processes have stopped.",
   "config.extensions.install.acceptRegistryUpgrade":
@@ -207,6 +208,10 @@ export const dict = {
     "Breakpoint debugging for .wls files: run in a persistent Wolfram kernel, inspect variables, and evaluate expressions in a REPL. Requires a local wolframscript; on restricted networks you can also drag a downloaded .tgz archive here to install.",
   "config.extensions.catalog.source": "Install source",
   "config.extensions.catalog.notInstalled": "Not installed",
+  "config.extensions.catalog.incompatibleBadge": "Incompatible",
+  "config.extensions.catalog.incompatible": "Requires opencode {{range}}, but this build is {{version}}.",
+  "config.extensions.catalog.compatibilityUndeclared":
+    "This release does not declare which OpenCode versions it supports.",
   "config.extensions.catalog.conflictCleanup":
     "Cleanup from the previous uninstall is still pending (its kernel may have been running). Restart the app to finish it, then install again.",
   "config.extensions.catalog.flowDescriptor": "Reading release descriptor…",
