@@ -171,6 +171,8 @@ const registryRow = {
   installId: Schema.optional(Schema.String),
   updatedAt: Schema.optional(Schema.Number),
   secretKeys: Schema.optional(Schema.Array(Schema.String)),
+  // Last accepted signed-descriptor sequence; release-current updates refuse regressions.
+  releaseSequence: Schema.optional(Schema.Number),
 }
 export const RegistryRow = Schema.Struct(registryRow).annotate({ identifier: "ExtensionRegistryRow" })
 export type RegistryRow = Types.DeepMutable<Schema.Schema.Type<typeof RegistryRow>>

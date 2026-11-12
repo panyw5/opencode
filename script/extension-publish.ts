@@ -10,10 +10,15 @@
  *   1. build the extension (skip with --no-build; dist must already exist)
  *   2. sync source + dist into <repo-dir>/<name>/ and commit + push
  *   3. npm pack --offline → <pkg>-<version>.tgz
- *   4. gh release create <name>-v<version> (fails if the tag exists with a
- *      different artifact sha256; bump the extension version first)
- *   5. script/extension-release.ts → <repo-dir>/<name>/stable.json
- *   6. commit + push the descriptor
+ *   4. gh release create <name>-v<version> (an existing tag with a different
+ *      artifact sha256 fails: bump the extension version; an identical artifact
+ *      is left untouched because released artifacts are immutable)
+ *   5. script/extension-release.ts → <repo-dir>/<name>/stable.json (+ .sig)
+ *      sequence = previous descriptor sequence + 1 (or 1 for a first release)
+ *   6. commit + push the descriptor and its detached signature
+ *
+ * OPENCODE_EXTENSION_SIGNING_KEY must hold the Ed25519 private key (PKCS8 PEM or
+ * base64 DER) for real publishes; --dry-run signs only when the key is present.
  *
  * --dry-run performs steps 1-3 and writes stable.json locally, without
  * committing, pushing or touching GitHub Releases.
@@ -39,6 +44,11 @@ Usage:
                 cloned automatically when missing)
   --no-build    skip "bun run build" in the extension directory
   --dry-run     build/sync/pack/descriptor only; no commits, push or release
+
+Environment:
+  OPENCODE_EXTENSION_SIGNING_KEY  Ed25519 private key (PKCS8 PEM or base64 DER)
+                                  required for real publishes; signs stable.json
+                                  into stable.json.sig without ever logging it
 `
 
 const EXCLUDE = new Set(["node_modules", ".git", "artifacts", ".DS_Store"])
@@ -117,6 +127,26 @@ async function publishedSha256(name: string, tag: string, asset: string) {
   }
 }
 
+/**
+ * Next monotonic sequence for the descriptor. Reads the previously committed
+ * stable.json before the source tree is synced over it; a first release starts
+ * at 1. A present but invalid counter refuses to guess: the rollback guard in
+ * the installer depends on this never moving backwards.
+ */
+function nextSequence(file: string) {
+  const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : undefined
+  if (!text) return 1
+  try {
+    const value = (JSON.parse(text) as { sequence?: unknown }).sequence
+    if (value === undefined) return 1
+    if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0)
+      throw new Error("not a non-negative integer")
+    return value + 1
+  } catch {
+    throw new Error(`Existing ${path.basename(file)} has an unreadable sequence; refusing to guess the next one`)
+  }
+}
+
 async function main() {
   const { positionals, values } = parseArgs({
     args: Bun.argv.slice(2),
@@ -136,6 +166,9 @@ async function main() {
   const name = positionals[0]
   if (!name) throw new Error("Missing extension directory name (see --help)")
   if (name.includes("/") || name.includes("..")) throw new Error("Extension name must be a single directory name")
+  const signing = process.env.OPENCODE_EXTENSION_SIGNING_KEY !== undefined
+  if (!values["dry-run"] && !signing)
+    throw new Error("OPENCODE_EXTENSION_SIGNING_KEY is required to publish a signed descriptor")
   const src = path.join(EXTENSIONS, name)
   if (!fs.statSync(src, { throwIfNoEntry: false })?.isDirectory())
     throw new Error(`No such extension: packages/extensions/${name}`)
@@ -175,6 +208,9 @@ async function main() {
 
   console.log("\n--- sync source ---")
   const dst = path.join(repoDir, name)
+  // The previous descriptor carries the monotonic sequence; read it before the
+  // sync wipes the committed tree.
+  const sequence = nextSequence(path.join(dst, "stable.json"))
   copyTree(src, dst)
 
   if (push) {
@@ -217,8 +253,7 @@ async function main() {
             `; local sha256 ${local}. Bump "version" in packages/extensions/${name}/package.json first.`,
         )
       }
-      console.log("published artifact sha256 matches; re-uploading identical archive")
-      await $`gh release upload ${tag} ${archive} --repo ${RELEASE_REPO} --clobber`
+      console.log("published artifact sha256 matches; skipping upload (release artifacts are immutable)")
     } else {
       await $`gh release create ${tag} ${archive} --repo ${RELEASE_REPO} --title ${title} --target main --notes ${`Extension ${tag}`}`
     }
@@ -226,8 +261,24 @@ async function main() {
 
   console.log("\n--- stable.json ---")
   const descriptor = path.join(dst, "stable.json")
+  const signature = `${descriptor}.sig`
   fs.rmSync(descriptor, { force: true })
-  await $`bun run ${path.join(ROOT, "script", "extension-release.ts")} --archive ${archive} --artifact-url ${artifactUrl} --output ${descriptor} --manifest ${path.join(dst, "package.json")}`
+  fs.rmSync(signature, { force: true })
+  if (!signing) console.log("warning: OPENCODE_EXTENSION_SIGNING_KEY not set; descriptor left unsigned (dry-run)")
+  const args = [
+    "--archive",
+    archive,
+    "--artifact-url",
+    artifactUrl,
+    "--output",
+    descriptor,
+    "--manifest",
+    path.join(dst, "package.json"),
+    "--sequence",
+    String(sequence),
+    ...(signing ? ["--signature", signature] : []),
+  ]
+  await $`bun run ${path.join(ROOT, "script", "extension-release.ts")} ${args}`
 
   if (push) {
     await $`git add -A`.cwd(repoDir)
