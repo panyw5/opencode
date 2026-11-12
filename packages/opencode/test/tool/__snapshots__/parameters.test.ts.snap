@@ -683,6 +683,21 @@ exports[`tool parameters JSON Schema (wire shape) dsh_consult 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
+    "additional_writable_roots": {
+      "description": "Additional absolute directories writable under workspace-write. Replaces the saved list; [] clears it for this consult. External directories require OpenCode approval.",
+      "items": {
+        "type": "string",
+      },
+      "type": "array",
+    },
+    "approval_policy": {
+      "description": "DSH approval policy. never rejects actions that require approval; it does not grant unrestricted access. Overrides the saved default.",
+      "enum": [
+        "ask",
+        "never",
+      ],
+      "type": "string",
+    },
     "patch": {
       "anyOf": [
         {
@@ -695,10 +710,14 @@ exports[`tool parameters JSON Schema (wire shape) dsh_consult 1`] = `
           "type": "array",
         },
       ],
-      "description": "Inline cordis.patch.yml YAML content (or a list of such). Each entry is written to a temp file and applied via \`dsh --patch <file>\` after the profile layer, so this consult can dynamically override model, tools, persona, presets, or other config rows at boot without touching ~/.dsh. Entries layer in the order given. A patch that fails to apply fails the consult with the dsh error.",
+      "description": "Inline cordis.patch.yml YAML content (or a list of such). Replaces the saved patches; [] or an empty string skips them. Each entry is materialized as a temp file and applied via dsh --patch in order, without editing the shared DSH profile. Config replaces the whole plugin config. Patch errors fail the consult.",
+    },
+    "permission_mode": {
+      "description": "DSH permission preset, e.g. read-only, workspace-write, or danger-full-access. Overrides the saved default for this consult.",
+      "type": "string",
     },
     "profile": {
-      "description": "dsh profile to boot (default "headless"). A profile is a named plugin composition; a custom profile changes which model adapters, tools, presets, and bundles mount for this consult. Must be a single token (no whitespace).",
+      "description": "dsh profile to boot. Overrides the saved default (otherwise "headless"). Custom profiles must provide a compatible one-shot headless runner.",
       "type": "string",
     },
     "prompt": {
@@ -706,11 +725,11 @@ exports[`tool parameters JSON Schema (wire shape) dsh_consult 1`] = `
       "type": "string",
     },
     "timeout_ms": {
-      "description": "Timeout in milliseconds (default 600000, max 1800000).",
+      "description": "Timeout in milliseconds. Overrides the user's default (otherwise 600000, max 1800000).",
       "type": "number",
     },
     "working_directory": {
-      "description": "Absolute directory dsh should run in. Defaults to the current project directory. Must stay inside an allowed workspace path.",
+      "description": "Absolute directory dsh should run in. Overrides the saved working directory; otherwise uses the current project. External directories require OpenCode approval.",
       "type": "string",
     },
   },
