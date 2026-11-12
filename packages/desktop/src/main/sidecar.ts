@@ -107,7 +107,7 @@ async function extensionArchive(command: Extract<SidecarCommand, { type: "extens
       prepare(request: InstallRequestLike): Promise<Record<string, unknown>>
       prepareRelease(
         request: InstallRequestLike,
-        release: { url: string; descriptor: string; path: string },
+        release: { url: string; descriptor: string; signature?: string; path: string },
       ): Promise<Record<string, unknown>>
       prepareArchive(request: InstallRequestLike, archive: { path: string }): Promise<Record<string, unknown>>
       commit(operationId: string, token: string, input?: Record<string, unknown>): Promise<unknown>
@@ -116,7 +116,7 @@ async function extensionArchive(command: Extract<SidecarCommand, { type: "extens
     }
     const payload = command.payload as {
       request?: InstallRequestLike
-      release?: { url: string; descriptor: string; path: string }
+      release?: { url: string; descriptor: string; signature?: string; path: string }
       archive?: { path: string; sha256: string }
       operationId?: string
       token?: string

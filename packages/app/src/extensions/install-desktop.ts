@@ -1,4 +1,5 @@
 import { fetchArtifact, fetchReleaseDocument } from "./catalog-install"
+import { hostCompatibility } from "./catalog"
 import { ExtensionInstallationError } from "./install-error"
 import { createLocalInstallationOperations } from "./install-local"
 import type { InstallationOperations, PreparedInstallation } from "../pages/install-actions-state"
@@ -19,6 +20,8 @@ export function createDesktopArchiveOperations(input: {
   releaseURL?(id: string): string | undefined
   download?(url: string): Promise<Uint8Array>
   fetch?: typeof fetch
+  /** Running host build version, used to gate a descriptor's declared engines range. */
+  hostVersion?(): string | undefined
 }): InstallationOperations {
   const local = createLocalInstallationOperations(input.bridge.invoke)
   const owners = new WeakMap<PreparedInstallation, InstallationOperations>()
@@ -41,6 +44,15 @@ export function createDesktopArchiveOperations(input: {
         `[extension-install] desktop download start kind=${request.kind} source=${url ? "release" : "archive"}`,
       )
       const release = url ? await fetchReleaseDocument(url, input.fetch) : undefined
+      if (release) {
+        const compat = hostCompatibility(release.descriptor.engines, input.hostVersion?.())
+        if (!compat.ok) {
+          console.warn(`[extension-install] release incompatible id=${release.descriptor.id} range=${compat.range ?? "?"}`)
+          throw new ExtensionInstallationError(
+            `Extension requires opencode ${compat.range}; this build is ${input.hostVersion?.() ?? "unknown"}`,
+          )
+        }
+      }
       if (!current()) throw new ExtensionInstallationError("Extension server changed during archive download")
       const artifact =
         release?.descriptor ??
@@ -66,7 +78,12 @@ export function createDesktopArchiveOperations(input: {
           ? await (async () => {
               const response = await input.bridge.invoke("prepare", {
                 request,
-                release: { url: release.url, descriptor: release.document, path: staged.value.path },
+                release: {
+                  url: release.url,
+                  descriptor: release.document,
+                  signature: release.signature,
+                  path: staged.value.path,
+                },
               })
               if (!response.ok) throw new Error(response.error.message)
               return response.value as PreparedInstallation

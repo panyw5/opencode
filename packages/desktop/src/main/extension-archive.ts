@@ -2,6 +2,12 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { ipcMain, net } from "electron"
+import {
+  MAX_ARCHIVE_BYTES,
+  MAX_DESCRIPTOR_BYTES,
+  MAX_SIGNATURE_BYTES,
+  isSha256Hex,
+} from "@opencode-ai/util/extension-release"
 import { downloadExtensionArchive } from "./extension-download"
 import { extensionArchiveDigest } from "./archive-digest"
 import type { LocalSidecarServer } from "./server"
@@ -13,7 +19,7 @@ export type ExtensionArchiveDeps = {
   server: () => ExtensionArchiveServer
 }
 
-const STAGED_MAX_BYTES = 100 * 1024 * 1024
+const STAGED_MAX_BYTES = MAX_ARCHIVE_BYTES
 const stagedFiles = new Set<string>()
 
 /**
@@ -48,7 +54,7 @@ export async function cleanupStagedArchive(path: string): Promise<void> {
 
 type ArchiveOpPayload = {
   request?: unknown
-  release?: { url?: unknown; descriptor?: unknown; path?: unknown }
+  release?: { url?: unknown; descriptor?: unknown; signature?: unknown; path?: unknown }
   archive?: { path?: unknown; sha256?: unknown }
   operationId?: unknown
   token?: unknown
@@ -174,7 +180,10 @@ export function registerExtensionArchiveIpcHandlers(deps: ExtensionArchiveDeps) 
             !release ||
             typeof release.url !== "string" ||
             typeof release.descriptor !== "string" ||
-            Buffer.byteLength(release.descriptor, "utf8") > 64 * 1024 ||
+            Buffer.byteLength(release.descriptor, "utf8") > MAX_DESCRIPTOR_BYTES ||
+            (release.signature !== undefined &&
+              (typeof release.signature !== "string" ||
+                Buffer.byteLength(release.signature, "utf8") > MAX_SIGNATURE_BYTES)) ||
             typeof release.path !== "string" ||
             !stagedFiles.has(release.path)
           ) {
@@ -182,8 +191,7 @@ export function registerExtensionArchiveIpcHandlers(deps: ExtensionArchiveDeps) 
           }
           const descriptor = JSON.parse(release.descriptor) as { artifact?: { sha256?: unknown } }
           const expected = descriptor?.artifact?.sha256
-          if (typeof expected !== "string" || !/^[a-f0-9]{64}$/i.test(expected))
-            throw new Error("Invalid release artifact SHA-256")
+          if (!isSha256Hex(expected)) throw new Error("Invalid release artifact SHA-256")
           const digest = await extensionArchiveDigest(release.path)
           if (digest.sha256 !== expected.toLowerCase())
             throw new Error("Archive digest does not match the release descriptor")
@@ -198,8 +206,7 @@ export function registerExtensionArchiveIpcHandlers(deps: ExtensionArchiveDeps) 
             !archive ||
             typeof archive.path !== "string" ||
             !stagedFiles.has(archive.path) ||
-            typeof archive.sha256 !== "string" ||
-            !/^[a-f0-9]{64}$/i.test(archive.sha256)
+            !isSha256Hex(archive.sha256)
           )
             throw new Error()
           const digest = await extensionArchiveDigest(archive.path)

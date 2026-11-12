@@ -4,8 +4,9 @@ import { constants } from "node:fs"
 import { open } from "node:fs/promises"
 import { request } from "node:https"
 import { isIP } from "node:net"
+import { MAX_ARCHIVE_BYTES, isSha256Hex } from "@opencode-ai/util/extension-release"
 
-const MAX_BYTES = 100 * 1024 * 1024
+const MAX_BYTES = MAX_ARCHIVE_BYTES
 const TIMEOUT_MS = 120_000
 const MAX_REDIRECTS = 3
 
@@ -266,8 +267,7 @@ async function readBytes(body: AsyncIterable<Uint8Array>, signal: AbortSignal, m
 type Digest = { algorithm: "sha256" | "sha384" | "sha512"; values: Buffer[] }
 
 function sha256(value: string): Digest {
-  if (typeof value !== "string" || !/^[\da-f]{64}$/i.test(value))
-    fail("integrity", "Extension archive requires a 64-character hexadecimal SHA-256")
+  if (!isSha256Hex(value)) fail("integrity", "Extension archive requires a 64-character hexadecimal SHA-256")
   return { algorithm: "sha256", values: [Buffer.from(value, "hex")] }
 }
 
@@ -400,13 +400,17 @@ export async function requestJson(url: string, options: RequestJsonOptions = {})
   return (await readJsonDocument(url, options)).value
 }
 
-/** Hash the exact HTTP entity bytes, not the parsed or reserialized JSON document. */
+/**
+ * Hash the exact HTTP entity bytes, not the parsed or reserialized JSON document.
+ * `bytes` carries the same entity so callers can verify detached signatures over
+ * the precise document that was parsed.
+ */
 export async function requestJsonDocument(
   url: string,
   options: RequestJsonOptions = {},
-): Promise<{ value: unknown; sha256: string }> {
+): Promise<{ value: unknown; sha256: string; bytes?: Uint8Array }> {
   const { value, bytes } = await readJsonDocument(url, options)
-  return { value, sha256: createHash("sha256").update(bytes).digest("hex") }
+  return { value, sha256: createHash("sha256").update(bytes).digest("hex"), bytes }
 }
 
 export async function readLocalArchive(input: {

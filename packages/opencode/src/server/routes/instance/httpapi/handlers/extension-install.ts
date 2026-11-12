@@ -27,7 +27,10 @@ function mapped(error: unknown) {
         return new ForbiddenError({ message: error.message })
       case "busy":
       case "conflict":
+      case "rollback_detected":
         return new ConflictError({ message: error.message })
+      case "signature_invalid":
+        return new UpstreamError({ message: error.message, service: "extensions" })
       case "expired":
         return new HttpApiError.Gone({})
       case "failed":

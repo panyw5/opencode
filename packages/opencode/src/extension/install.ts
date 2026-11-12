@@ -19,10 +19,19 @@ import {
   type DownloadOptions,
 } from "./download"
 import { Log } from "@opencode-ai/core/util/log"
+import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { resolveNpm, materializeNpm, validateNpmRoot, type PreparedNpm } from "./npm"
-import { normalizeReleaseUrl, parseReleaseDescriptor, resolveRelease } from "./release"
+import { normalizeReleaseUrl, parseReleaseDescriptor, releaseCompatible, resolveRelease } from "./release"
+import { MAX_DESCRIPTOR_BYTES, MAX_SIGNATURE_BYTES, isSha256Hex } from "@opencode-ai/util/extension-release"
+import {
+  SignatureError,
+  TRUSTED_KEYS,
+  trustedKeysFor,
+  verifyDescriptorSignature,
+  type TrustedKey,
+} from "./trust"
 
-const log = Log.create({ service: "extension-install" })
+const log = Log.create({ service: "extension" })
 const TTL = 10 * 60 * 1000
 const MAX_OPERATIONS = 4
 const TIMEOUT = 120_000
@@ -32,7 +41,7 @@ export type InstallSource =
   | { type: "archive"; url: string; sha256?: string }
   | { type: "local"; path: string; sha256?: string }
   | { type: "release"; url: string }
-export type StagedRelease = { url: string; descriptor: string; path: string }
+export type StagedRelease = { url: string; descriptor: string; path: string; signature?: string }
 export type InstallRequest =
   | { kind: "install"; source: InstallSource }
   | { kind: "update"; id: string; source: InstallSource; version?: never; target?: never }
@@ -57,6 +66,10 @@ export type InstallPreview = {
   permissionsRemoved: string[]
   contributes: Loaded["contributes"]
   source: Source
+  /** Release sources only: whether the descriptor signature verified against the pinned trust list. */
+  signatureStatus?: "verified" | "unsigned"
+  /** Last accepted publisher sequence; release-current updates must never move it backwards. */
+  releaseSequence?: number
   expectedRevision?: number
   expectedRegistryVersion?: number
   registryUpgrade?: { from: 2; to: 3 }
@@ -91,6 +104,10 @@ export type InstallerOptions = {
   readLocal?: typeof readLocalArchive
   resolveNpm?: typeof resolveNpm
   resolveRelease?: typeof resolveRelease
+  /** Trusted descriptor-signing key injection; requests never select verification keys. */
+  trustedKeys?: readonly TrustedKey[]
+  /** Host version for descriptor engines.opencode gating; defaults to the running installation. */
+  opencodeVersion?: string
   materializeNpm?: typeof materializeNpm
   extract?: typeof extractArchive
   now?: () => number
@@ -108,7 +125,15 @@ export type InstallerOptions = {
 export class InstallError extends Error {
   override readonly name = "ExtensionInstallError"
   constructor(
-    readonly code: "invalid" | "unauthorized" | "busy" | "expired" | "conflict" | "failed",
+    readonly code:
+      | "invalid"
+      | "unauthorized"
+      | "busy"
+      | "expired"
+      | "conflict"
+      | "failed"
+      | "signature_invalid"
+      | "rollback_detected",
     message: string,
   ) {
     super(message)
@@ -214,8 +239,7 @@ function requestSource(value: unknown): InstallSource {
     }
   }
   if (source.type !== "archive" && source.type !== "local") invalid("Unsupported extension source")
-  if (source.sha256 !== undefined && (typeof source.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(source.sha256)))
-    invalid("Invalid archive SHA-256")
+  if (source.sha256 !== undefined && !isSha256Hex(source.sha256)) invalid("Invalid archive SHA-256")
   const digest = typeof source.sha256 === "string" ? source.sha256.toLowerCase() : undefined
   if (source.type === "local") {
     if (typeof source.path !== "string" || !path.isAbsolute(source.path) || source.path.includes("\0"))
@@ -444,7 +468,7 @@ export function createInstaller(options: InstallerOptions = {}) {
         invalid("Invalid staged release request")
       if (
         typeof stagedRelease.descriptor === "string" &&
-        Buffer.byteLength(stagedRelease.descriptor, "utf8") > 64 * 1024
+        Buffer.byteLength(stagedRelease.descriptor, "utf8") > MAX_DESCRIPTOR_BYTES
       )
         invalid("Release descriptor exceeds the 64 KiB download limit")
       if (
@@ -453,6 +477,12 @@ export function createInstaller(options: InstallerOptions = {}) {
         !path.isAbsolute(stagedRelease.path)
       )
         invalid("Invalid staged release request")
+      if (
+        stagedRelease.signature !== undefined &&
+        (typeof stagedRelease.signature !== "string" ||
+          Buffer.byteLength(stagedRelease.signature, "utf8") > MAX_SIGNATURE_BYTES)
+      )
+        invalid("Invalid staged release signature")
     }
     if (closed) throw new InstallError("conflict", "Extension installer is closed")
     if (request.kind === "update" && ["source", "version", "target"].filter((key) => key in request).length !== 1)
@@ -570,6 +600,26 @@ export function createInstaller(options: InstallerOptions = {}) {
                 invalid("Release descriptor does not match schema version 1")
               }
               release = { ...descriptor, descriptor: source.url, descriptorSha256: hash(stagedRelease.descriptor) }
+              // A staged descriptor under a trusted origin must verify against
+              // the same detached signature the online resolver enforces.
+              const trusted = trustedKeysFor(source.url, options.trustedKeys ?? TRUSTED_KEYS)
+              if (trusted.length) {
+                if (typeof stagedRelease.signature !== "string")
+                  throw new InstallError(
+                    "signature_invalid",
+                    "Release descriptor signature is required for this source",
+                  )
+                const verified = verifyDescriptorSignature({
+                  url: source.url,
+                  descriptor: Buffer.from(stagedRelease.descriptor, "utf8"),
+                  document: stagedRelease.signature,
+                  keys: trusted,
+                })
+                release.signature = verified
+                log.info("release signature verified", { kind: request.kind, keyId: verified?.keyId })
+              }
+              if (!releaseCompatible(release, options.opencodeVersion ?? InstallationVersion))
+                invalid("Extension is not compatible with this OpenCode version")
               input = await (options.readLocal ?? readLocalArchive)({
                 file: stagedRelease.path,
                 sha256: descriptor.artifact.sha256,
@@ -581,13 +631,33 @@ export function createInstaller(options: InstallerOptions = {}) {
                 version: release.version,
               })
             } else {
-              release = await (options.resolveRelease ?? resolveRelease)(source.url, { signal })
+              release = await (options.resolveRelease ?? resolveRelease)(source.url, {
+                signal,
+                trustedKeys: options.trustedKeys,
+              })
+              // Descriptor declared engines.opencode gate: reject before the artifact download.
+              if (!releaseCompatible(release, options.opencodeVersion ?? InstallationVersion))
+                invalid("Extension is not compatible with this OpenCode version")
               input = await (options.download ?? downloadArchive)({
                 url: release.artifact.url,
                 sha256: release.artifact.sha256,
                 signal,
               })
             }
+            // The publisher sequence is signed inside the descriptor; a
+            // release-current update may never move it backwards. An identical
+            // sequence is idempotent and explicit-source previews are unaffected.
+            if (
+              request.kind === "update" &&
+              request.target === "release-current" &&
+              release.sequence !== undefined &&
+              previous!.releaseSequence !== undefined &&
+              release.sequence < previous!.releaseSequence
+            )
+              throw new InstallError(
+                "rollback_detected",
+                "The published release moved backwards; refusing a rolled-back descriptor",
+              )
           } else if (source.type === "npm") {
             op.npm = await (options.resolveNpm ?? resolveNpm)(source.spec, {
               transport: requestJson,
@@ -623,7 +693,7 @@ export function createInstaller(options: InstallerOptions = {}) {
           const candidate = path.join(stage, "package")
           await extract({ input, directory: candidate, signal, policy: source.type === "npm" ? "npm" : "archive" })
           if (op.npm) await validateNpmRoot(op.npm, candidate, signal)
-          op.manifest = await load(candidate)
+          op.manifest = await load(candidate, { opencodeVersion: options.opencodeVersion })
           const manifest = op.manifest
           if (op.npm && (manifest.name !== op.npm.name || manifest.version !== op.npm.version))
             invalid("npm candidate identity mismatch")
@@ -670,6 +740,12 @@ export function createInstaller(options: InstallerOptions = {}) {
             permissionsRemoved: before.filter((permission) => !permissions.includes(permission)),
             contributes: manifest.contributes,
             source: publicSource(source, op.npm, release),
+            ...(release
+              ? { signatureStatus: release.signature ? ("verified" as const) : ("unsigned" as const) }
+              : {}),
+            ...((release?.sequence ?? previous?.releaseSequence) === undefined
+              ? {}
+              : { releaseSequence: release?.sequence ?? previous?.releaseSequence }),
             expectedRevision: previous ? (previous.revision ?? 0) : undefined,
             expectedRegistryVersion: registryVersion,
             ...(release && registryVersion === 2 ? { registryUpgrade: { from: 2 as const, to: 3 as const } } : {}),
@@ -706,9 +782,11 @@ export function createInstaller(options: InstallerOptions = {}) {
         category:
           error instanceof ArchiveDownloadError
             ? "download"
-            : error instanceof InstallError
-              ? "installation"
-              : "internal",
+            : error instanceof SignatureError
+              ? "signature"
+              : error instanceof InstallError
+                ? "installation"
+                : "internal",
         code: error instanceof ArchiveDownloadError || error instanceof InstallError ? error.code : "unknown",
       })
       operations.delete(id)
@@ -716,6 +794,8 @@ export function createInstaller(options: InstallerOptions = {}) {
       if (error instanceof InstallError) throw error
       const gate = gateLocked(error)
       if (gate) throw gate
+      if (error instanceof SignatureError)
+        throw new InstallError("signature_invalid", "Release descriptor signature verification failed")
       if (error instanceof ArchiveDownloadError) {
         const message =
           error.code === "address"
@@ -832,6 +912,7 @@ export function createInstaller(options: InstallerOptions = {}) {
               enabled: op.previous?.enabled ?? input.enable ?? false,
               installedAt: now(),
               installId: preview.installId,
+              ...(preview.releaseSequence === undefined ? {} : { releaseSequence: preview.releaseSequence }),
             }
           }
           // Do not stop an existing runtime until candidate validation/materialization has succeeded.

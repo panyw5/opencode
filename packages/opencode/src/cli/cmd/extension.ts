@@ -19,6 +19,7 @@ import {
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ExtensionID, type Info, type Source } from "@/extension/schema"
 import { errorMessage } from "@/util/error"
+import { isSha256Hex } from "@opencode-ai/util/extension-release"
 
 function extensionID(value: unknown) {
   return Schema.decodeUnknownSync(ExtensionID)(String(value ?? "").trim())
@@ -103,12 +104,12 @@ export function extensionInstallSource(
   if (url?.protocol === "https:") {
     if (!/^https:\/\//i.test(value) || url.username || url.password || !/\.tgz$/i.test(url.pathname))
       throw new Error("A credential-free HTTPS .tgz URL is required")
-    if (sha256 !== undefined && !/^[a-f0-9]{64}$/i.test(sha256))
+    if (sha256 !== undefined && !isSha256Hex(sha256))
       throw new Error("--sha256 must contain 64 hexadecimal digits")
     return { type: "archive", url: value, ...(sha256 === undefined ? {} : { sha256: sha256.toLowerCase() }) }
   }
   if (/\.tgz$/i.test(value) && !/^\w+:/.test(value)) {
-    if (sha256 !== undefined && !/^[a-f0-9]{64}$/i.test(sha256))
+    if (sha256 !== undefined && !isSha256Hex(sha256))
       throw new Error("--sha256 must contain 64 hexadecimal digits")
     return {
       type: "local",
@@ -201,6 +202,8 @@ function installFailure(error: unknown) {
     expired: "Extension operation expired; prepare it again",
     conflict: "Extension changed or cannot be replaced safely; prepare again or restart the server",
     failed: "Extension installation failed; no registry change was confirmed",
+    signature_invalid: "Release descriptor signature verification failed; the publisher signature is missing or invalid",
+    rollback_detected: "The published release moved backwards; a rolled-back descriptor was refused",
   }
   return typeof code === "string" && Object.hasOwn(messages, code)
     ? messages[code]!

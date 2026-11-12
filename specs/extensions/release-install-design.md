@@ -98,6 +98,34 @@ JSON 必须满足严格结构校验；不解释任意命令、脚本、安装参
 
 v1 仅提供当前目标版本。没有远程版本列表，不支持按任意历史版本查询；如需固定内容，作者可以提供不再修改的版本描述地址，但其来源身份与可变 stable 地址不同，不能静默互换。
 
+### 3.3 分离签名与单调序列（已实现）
+
+**签名文件**：`stable.json` 旁放置 `stable.json.sig`，内容为 JSON 信封：
+
+```json
+{
+  "keyId": "ed25519-0123456789abcdef",
+  "signature": "<base64>"
+}
+```
+
+- `signature` 是 Ed25519 对 **stable.json 原始字节**（不做解析-重序列化）的分离签名，base64 编码、定长 64 字节；信封只允许 `keyId` 与 `signature` 两个字段，上限 4 KiB。
+- `keyId = "ed25519-" + sha256(SPKI DER)前16个十六进制字符`，由公钥推导，发布侧与宿主侧推导规则一致。
+- 宿主内置可信公钥列表 `{ keyId, publicKey, origins }`；`origins` 是规范化 HTTPS descriptor URL 前缀。可信来源的 descriptor 必须带有效签名：缺失、结构非法、keyId 不受信或验签失败一律以 `signature_invalid` 拒绝，且错误不携带签名/密钥/URL 内容。列表外来源保持原有未签名行为，预览与安装标记为 unsigned；多把 key 共存即轮换。
+- 私钥只从 `OPENCODE_EXTENSION_SIGNING_KEY` 环境变量读取（PKCS8 PEM 或 base64 DER），永不写仓库、日志或错误消息。
+- 桌面拖拽/暂存通道传输相同的 descriptor 原文 + `.sig` 文本，侧车执行同一验签，不以归档摘要代替发布者签名。
+
+**单调序列**：`stable.json` 可选字段 `sequence`（非负安全整数）随描述原文一起被签名。发布脚本每次发布取前序 `sequence + 1`，首发为 1。安装器在 `release-current` 更新时比较新描述与注册表 `releaseSequence`：
+
+| 新 sequence vs 已记录      | 行为                                       |
+| -------------------------- | ------------------------------------------ |
+| 更低                       | 拒绝，`rollback_detected`，注册表不变      |
+| 相同                       | 幂等通过（可再次提交同一版本）             |
+| 更高                       | 正常更新，提交后持久化新 sequence          |
+| 显式 source/version 预览   | 不经此门（允许有意降级）                   |
+
+`releaseSequence` 是 `RegistryRow` 的可选字段，注册表版本号不变。已发布 artifact 不可变：tag 已存在时比较 SHA-256，相同跳过上传，不同拒绝并要求提升版本。
+
 ## 4. 作者发布流程
 
 ```text

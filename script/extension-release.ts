@@ -5,18 +5,26 @@ import { lstat, mkdtemp, open, realpath, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { createHash } from "node:crypto"
 import { parseArgs } from "node:util"
+import semver from "semver"
 import { archiveLimits, extractArchive } from "../packages/opencode/src/extension/archive"
 import { load } from "../packages/opencode/src/extension/manifest"
 import { parseReleaseDescriptor } from "../packages/opencode/src/extension/release"
+import { signDescriptor } from "../packages/opencode/src/extension/trust"
+import { readPluginPackage } from "../packages/opencode/src/plugin/shared"
 
 const usage = `Generate a release descriptor from a local, prebuilt extension archive.
 
 Usage:
-  bun run script/extension-release.ts --archive <local.tgz> --artifact-url <https://...> --output <release.json> [--manifest <package.json>]
+  bun run script/extension-release.ts --archive <local.tgz> --artifact-url <https://...> --output <release.json> [--manifest <package.json>] [--sequence <n>] [--signature <release.json.sig>]
 
 Paths may be absolute or relative to the current directory. The output parent must
 already exist. Existing outputs are never overwritten; --force is not supported.
 This command does not fetch, upload, build, install, or execute extension code.
+
+--sequence writes the monotonically increasing publisher counter into the
+descriptor. --signature signs the exact emitted descriptor bytes with the Ed25519
+key in OPENCODE_EXTENSION_SIGNING_KEY (PKCS8 PEM or base64 DER; never logged) and
+writes the detached JSON signature envelope to the given path.
 `
 
 async function ordinaryParents(directory: string): Promise<void> {
@@ -79,6 +87,24 @@ function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
+/**
+ * Mirror the package's engines.opencode declaration into the descriptor. An
+ * absent declaration produces no engines field: consumers treat a missing
+ * range as unrestricted but may mark the release as undeclared. A declared but
+ * invalid range is an authoring error, so generation fails instead of
+ * publishing a meaningless constraint.
+ */
+function declaredEngines(json: Record<string, unknown>) {
+  const engines = json.engines
+  if (engines === undefined) return undefined
+  if (!record(engines)) throw new Error("package.json engines must be an object")
+  const range = engines.opencode
+  if (range === undefined) return undefined
+  if (typeof range !== "string" || semver.validRange(range) === null)
+    throw new Error("package.json engines.opencode must be a valid semver range")
+  return { opencode: range }
+}
+
 async function checkManifest(file: string, actual: { id: string; version: string; name: string }) {
   const bytes = await readOrdinary(file, 1024 * 1024, "Manifest")
   const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes))
@@ -98,6 +124,8 @@ async function main() {
       "artifact-url": { type: "string" },
       output: { type: "string" },
       manifest: { type: "string" },
+      sequence: { type: "string" },
+      signature: { type: "string" },
       help: { type: "boolean" },
     },
   })
@@ -111,6 +139,15 @@ async function main() {
   if (!archive.toLowerCase().endsWith(".tgz"))
     throw new Error("Archive must be a local .tgz file; ZIP is not supported")
   const url = artifactURL(values["artifact-url"])
+  const sequence =
+    values.sequence === undefined
+      ? undefined
+      : (() => {
+          const parsed = Number(values.sequence)
+          if (!Number.isSafeInteger(parsed) || parsed < 0)
+            throw new Error("--sequence must be a non-negative integer")
+          return parsed
+        })()
   const bytes = await readOrdinary(archive, archiveLimits.compressedBytes, "Archive")
   if (bytes[0] !== 0x1f || bytes[1] !== 0x8b || bytes[2] !== 8)
     throw new Error("Archive must contain a gzip-compressed .tgz; ZIP is not supported")
@@ -122,12 +159,17 @@ async function main() {
     // load reads JSON and entry bytes for validation/fingerprints; it does not import entries.
     const manifest = await load(directory)
     if (values.manifest) await checkManifest(path.resolve(values.manifest), manifest)
+    const pkg = await readPluginPackage(directory)
+    const engines = declaredEngines(pkg.json)
     const descriptor = parseReleaseDescriptor({
       schemaVersion: 1,
       id: manifest.id,
       version: manifest.version,
+      ...(engines === undefined ? {} : { engines }),
+      ...(sequence === undefined ? {} : { sequence }),
       artifact: { url, sha256: createHash("sha256").update(bytes).digest("hex") },
     })
+    const text = `${JSON.stringify(descriptor, null, 2)}\n`
     const output = path.resolve(values.output)
     await ordinaryParents(path.dirname(output))
     // Exclusive creation is the final gate, including for dangling links and directories.
@@ -137,11 +179,31 @@ async function main() {
       0o600,
     )
     try {
-      await file.writeFile(`${JSON.stringify(descriptor, null, 2)}\n`, "utf8")
+      await file.writeFile(text, "utf8")
     } finally {
       await file.close()
     }
     process.stdout.write(`Created release descriptor: ${output}\n`)
+    if (values.signature) {
+      // The private key comes only from the environment and is never printed.
+      const material = process.env.OPENCODE_EXTENSION_SIGNING_KEY
+      if (!material) throw new Error("--signature requires OPENCODE_EXTENSION_SIGNING_KEY")
+      // Sign the exact bytes just written so the detached signature matches byte for byte.
+      const signed = signDescriptor(new TextEncoder().encode(text), material)
+      const target = path.resolve(values.signature)
+      await ordinaryParents(path.dirname(target))
+      const envelope = await open(
+        target,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+        0o600,
+      )
+      try {
+        await envelope.writeFile(signed.document, "utf8")
+      } finally {
+        await envelope.close()
+      }
+      process.stdout.write(`Created detached signature: ${target}\n`)
+    }
   } finally {
     await rm(temporary, { recursive: true, force: true })
   }

@@ -13,6 +13,7 @@ import {
   installationDiagnosticKey,
 } from "../extensions/install-error"
 import { isKnownExtensionPermission } from "../extensions/permissions"
+import { isSha256Hex } from "@opencode-ai/util/extension-release"
 import {
   installationBlocked,
   installationDownloadHost,
@@ -177,7 +178,7 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
         if (current(ticket)) setState("localDigestError", "config.extensions.install.failed")
       })
   })
-  const digestReady = () => state.localDigest !== undefined && /^[a-f0-9]{64}$/i.test(state.localDigest)
+  const digestReady = () => state.localDigest !== undefined && isSha256Hex(state.localDigest)
 
   const current = (ticket: number) =>
     alive && !state.stale && serial === ticket && props.connection() === initialConnection
@@ -579,9 +580,17 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
                       <p>{t("config.extensions.install.integrityMatched")}</p>
                     </section>
                   </Show>
-                  <p role="alert" data-preview="trust" class="text-text-danger-base">
-                    {t("config.extensions.install.unverified")}
-                  </p>
+                  {prepared().source.type === "release" && prepared().signatureStatus === "verified" ? (
+                    <p data-preview="trust">{t("config.extensions.install.publisherVerified")}</p>
+                  ) : (
+                    <p role="alert" data-preview="trust" class="text-text-danger-base">
+                      {t(
+                        prepared().source.type === "release"
+                          ? "config.extensions.install.publisherUnsigned"
+                          : "config.extensions.install.unverified",
+                      )}
+                    </p>
+                  )}
                   <Show when={prepared().hasServer}>
                     <p>{t("config.extensions.install.serverWarning")}</p>
                   </Show>

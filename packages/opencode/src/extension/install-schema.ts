@@ -74,6 +74,8 @@ const preview = {
   permissionsRemoved: Schema.Array(Schema.String),
   contributes: Contributes,
   source: Source,
+  signatureStatus: Schema.optional(Schema.Literals(["verified", "unsigned"])),
+  releaseSequence: Schema.optional(Schema.Number),
   expectedRevision: Schema.optional(Schema.Number),
   expectedRegistryVersion: Schema.optional(Schema.Number),
   registryUpgrade: Schema.optional(Schema.Struct({ from: Schema.Literal(2), to: Schema.Literal(3) })),
