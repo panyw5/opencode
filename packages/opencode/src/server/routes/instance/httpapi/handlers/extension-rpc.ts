@@ -65,15 +65,11 @@ installExtensionRpcAdapter({ call: (call) => ExtensionRuntime.rpc(call) })
  * `{ name: "ExtensionRpcError", code }` shape) so the HTTP layer stays decoupled
  * from the runtime module's class identities.
  */
-const LOOKUP_ERROR_NAMES = new Set([
-  "ExtensionRpcMethodNotFoundError",
-  "ExtensionRpcNotFoundError",
-  "ExtensionNotFoundError",
-])
+const LOOKUP_ERROR_NAMES = new Set(["ExtensionRpcNotFoundError", "ExtensionNotFoundError"])
 
 function mapAdapterError(error: unknown): HttpApiError.NotFound | ExtensionRpcError | UnknownError {
   if (error instanceof Error && LOOKUP_ERROR_NAMES.has(error.name)) return new HttpApiError.NotFound({})
-  if (error instanceof Error && error.name === "ExtensionRpcHandlerError") {
+  if (error instanceof Error && error.name === "ExtensionRpcError") {
     const code = (error as { code?: unknown }).code
     return new ExtensionRpcError({
       code: typeof code === "string" ? code : "unknown",

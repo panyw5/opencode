@@ -87,10 +87,6 @@ export class ExtensionMutationError extends Error {
   }
 }
 
-// Aliases kept so HTTP layers can map errors without caring which side named them.
-export const ExtensionRpcMethodNotFoundError = ExtensionRpcNotFoundError
-export const ExtensionRpcHandlerError = ExtensionRpcError
-
 /**
  * Instance-level hooks contributed by an enabled extension. `id` is used by
  * Plugin.state as the `extension:<id>` hook entry id.

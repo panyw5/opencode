@@ -398,7 +398,7 @@ describe("extension rpc route", () => {
     await using tmp = await tmpdir()
     await linkTestExtension(tmp.path)
     const lookupFailure = Object.assign(new Error("Extension RPC method not found: test.extension.missing"), {
-      name: "ExtensionRpcMethodNotFoundError",
+      name: "ExtensionRpcNotFoundError",
       id: "test.extension",
       method: "missing",
     })
@@ -412,7 +412,7 @@ describe("extension rpc route", () => {
     await using tmp = await tmpdir()
     await linkTestExtension(tmp.path)
     const handlerFailure = Object.assign(new Error("kernel not running"), {
-      name: "ExtensionRpcHandlerError",
+      name: "ExtensionRpcError",
       code: "WOLFRAM_DOWN",
     })
     recordingAdapter(undefined, { impl: () => Promise.reject(handlerFailure) })

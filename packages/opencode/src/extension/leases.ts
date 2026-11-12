@@ -15,108 +15,106 @@ const references = new Map<string, Reference>()
 let driver: Promise<Driver | undefined> | undefined
 
 /** This is deliberately NOT core/util/flock: that utility evicts locks by heartbeat TTL. */
-export namespace ExtensionLeases {
-  export class LeaseError extends Error {
-    override readonly name = "ExtensionLeaseError"
-    constructor(
-      readonly code: "invalid" | "unsafe" | "busy",
-      message: string,
-      /** Set when the portable mkdir gate itself is held; only an explicit user unlock may clear it. */
-      readonly gate?: Namespace,
-    ) {
-      super(message)
-    }
+export class LeaseError extends Error {
+  override readonly name = "ExtensionLeaseError"
+  constructor(
+    readonly code: "invalid" | "unsafe" | "busy",
+    message: string,
+    /** Set when the portable mkdir gate itself is held; only an explicit user unlock may clear it. */
+    readonly gate?: Namespace,
+  ) {
+    super(message)
   }
-  export type UnlockReport = { removed: Namespace[]; recent: Namespace[]; untrusted: Namespace[] }
-  /**
-   * Explicit, user-confirmed recovery for gates abandoned by a killed process. Never called automatically:
-   * gates are held for milliseconds, so only gates older than `minAgeMs` are removed, and only when the
-   * directory identity is unchanged between inspection and removal.
-   */
-  export async function unlockStaleGates(registry: string, minAgeMs = 30_000): Promise<UnlockReport> {
-    const report: UnlockReport = { removed: [], recent: [], untrusted: [] }
-    for (const namespace of ["generation", "operation", "data"] as const) {
-      const { refs } = await refsFor(registry, namespace)
-      const gate = path.join(refs, ".gate")
-      let before: Stats
-      try {
-        before = await lstat(gate)
-      } catch (error) {
-        if (code(error) === "ENOENT") continue
-        throw error
-      }
-      if (!before.isDirectory() || before.isSymbolicLink()) {
-        report.untrusted.push(namespace)
-        continue
-      }
-      if (Date.now() - before.mtimeMs < minAgeMs) {
-        report.recent.push(namespace)
-        continue
-      }
-      const entries = await readdir(gate)
-      if (entries.some((entry) => entry !== "owner")) {
-        report.untrusted.push(namespace)
-        continue
-      }
-      // Atomic rename first: a concurrent unlocker or a fresh owner can never lose a newer gate silently.
-      const tombstone = path.join(refs, `.gate-stale-${randomUUID()}`)
-      await rename(gate, tombstone)
-      if (!same(before, await lstat(tombstone))) {
-        await rename(tombstone, gate).catch(() => {})
-        report.untrusted.push(namespace)
-        continue
-      }
-      await unlink(path.join(tombstone, "owner")).catch((error) => {
-        if (code(error) !== "ENOENT") throw error
-      })
-      await rmdir(tombstone)
-      report.removed.push(namespace)
-    }
-    return report
-  }
-
-  export type Lease = {
-    readonly proof: "flock" | "unsupported"
-    release(): Promise<void>
-    [Symbol.asyncDispose](): Promise<void>
-  }
-  export type ExclusiveResult<T> = { status: "collected"; value: T } | { status: "busy"; reason: string }
-  export type Inspection = { status: "idle" | "live"; leases: string[] } | { status: "busy"; reason: string }
-
-  /** registry is the registry JSON file, not its storage directory. */
-  export function acquire(registry: string, installId: string): Promise<Lease> {
-    return acquireReference(registry, "generation", installId)
-  }
-  export function acquireOperation(registry: string, operationId: string): Promise<Lease> {
-    return acquireReference(registry, "operation", operationId)
-  }
-  /** Data is shared by all registry overrides. The registry argument is not its storage identity. Pin before import. */
-  export function acquireData(registry: string, extensionId: string): Promise<Lease> {
-    return acquireReference(registry, "data", extensionId)
-  }
-  export function withExclusiveGeneration<T>(registry: string, id: string, fn: () => Promise<T>) {
-    return exclusive(registry, "generation", id, fn)
-  }
-  export function withExclusiveOperation<T>(registry: string, id: string, fn: () => Promise<T>) {
-    return exclusive(registry, "operation", id, fn)
-  }
-  export function withExclusiveData<T>(registry: string, id: string, fn: () => Promise<T>) {
-    return exclusive(registry, "data", id, fn)
-  }
-  /** An OS-lock proof, never an mtime/PID/heartbeat-based guess. Missing or untrusted proof is busy. */
-  export async function list(registry: string, id: string): Promise<Inspection> {
+}
+export type UnlockReport = { removed: Namespace[]; recent: Namespace[]; untrusted: Namespace[] }
+/**
+ * Explicit, user-confirmed recovery for gates abandoned by a killed process. Never called automatically:
+ * gates are held for milliseconds, so only gates older than `minAgeMs` are removed, and only when the
+ * directory identity is unchanged between inspection and removal.
+ */
+export async function unlockStaleGates(registry: string, minAgeMs = 30_000): Promise<UnlockReport> {
+  const report: UnlockReport = { removed: [], recent: [], untrusted: [] }
+  for (const namespace of ["generation", "operation", "data"] as const) {
+    const { refs } = await refsFor(registry, namespace)
+    const gate = path.join(refs, ".gate")
+    let before: Stats
     try {
-      const layout = await locations(registry, "generation", id)
-      return await gated(layout, false, () => inspect(layout))
+      before = await lstat(gate)
     } catch (error) {
-      return { status: "busy", reason: reason(error) }
+      if (code(error) === "ENOENT") continue
+      throw error
     }
+    if (!before.isDirectory() || before.isSymbolicLink()) {
+      report.untrusted.push(namespace)
+      continue
+    }
+    if (Date.now() - before.mtimeMs < minAgeMs) {
+      report.recent.push(namespace)
+      continue
+    }
+    const entries = await readdir(gate)
+    if (entries.some((entry) => entry !== "owner")) {
+      report.untrusted.push(namespace)
+      continue
+    }
+    // Atomic rename first: a concurrent unlocker or a fresh owner can never lose a newer gate silently.
+    const tombstone = path.join(refs, `.gate-stale-${randomUUID()}`)
+    await rename(gate, tombstone)
+    if (!same(before, await lstat(tombstone))) {
+      await rename(tombstone, gate).catch(() => {})
+      report.untrusted.push(namespace)
+      continue
+    }
+    await unlink(path.join(tombstone, "owner")).catch((error) => {
+      if (code(error) !== "ENOENT") throw error
+    })
+    await rmdir(tombstone)
+    report.removed.push(namespace)
+  }
+  return report
+}
+
+export type Lease = {
+  readonly proof: "flock" | "unsupported"
+  release(): Promise<void>
+  [Symbol.asyncDispose](): Promise<void>
+}
+export type ExclusiveResult<T> = { status: "collected"; value: T } | { status: "busy"; reason: string }
+export type Inspection = { status: "idle" | "live"; leases: string[] } | { status: "busy"; reason: string }
+
+/** registry is the registry JSON file, not its storage directory. */
+export function acquire(registry: string, installId: string): Promise<Lease> {
+  return acquireReference(registry, "generation", installId)
+}
+export function acquireOperation(registry: string, operationId: string): Promise<Lease> {
+  return acquireReference(registry, "operation", operationId)
+}
+/** Data is shared by all registry overrides. The registry argument is not its storage identity. Pin before import. */
+export function acquireData(registry: string, extensionId: string): Promise<Lease> {
+  return acquireReference(registry, "data", extensionId)
+}
+export function withExclusiveGeneration<T>(registry: string, id: string, fn: () => Promise<T>) {
+  return exclusive(registry, "generation", id, fn)
+}
+export function withExclusiveOperation<T>(registry: string, id: string, fn: () => Promise<T>) {
+  return exclusive(registry, "operation", id, fn)
+}
+export function withExclusiveData<T>(registry: string, id: string, fn: () => Promise<T>) {
+  return exclusive(registry, "data", id, fn)
+}
+/** An OS-lock proof, never an mtime/PID/heartbeat-based guess. Missing or untrusted proof is busy. */
+export async function list(registry: string, id: string): Promise<Inspection> {
+  try {
+    const layout = await locations(registry, "generation", id)
+    return await gated(layout, false, () => inspect(layout))
+  } catch (error) {
+    return { status: "busy", reason: reason(error) }
   }
 }
 
 type Layout = Awaited<ReturnType<typeof locations>>
 function fail(message: string): never {
-  throw new ExtensionLeases.LeaseError("unsafe", message)
+  throw new LeaseError("unsafe", message)
 }
 function reason(error: unknown) {
   return error instanceof Error ? error.message : "Untrusted extension lease state"
@@ -129,7 +127,7 @@ function same(a: Identity, b: Identity) {
 }
 function rootFor(registry: string) {
   if (typeof registry !== "string" || !registry || registry.includes("\0")) {
-    throw new ExtensionLeases.LeaseError("invalid", "Invalid extension registry path")
+    throw new LeaseError("invalid", "Invalid extension registry path")
   }
   // Match canonicalRegistryFile's existing-ancestor semantics, without importing configuration/global state.
   let parent = path.dirname(path.resolve(registry))
@@ -148,7 +146,7 @@ function rootFor(registry: string) {
 }
 async function locations(registry: string, namespace: Namespace, id: string) {
   if (typeof id !== "string" || (namespace === "data" ? id.length > 64 || !EXTENSION_ID.test(id) : !UUID.test(id))) {
-    throw new ExtensionLeases.LeaseError("invalid", "Invalid extension lease identity")
+    throw new LeaseError("invalid", "Invalid extension lease identity")
   }
   const { root, refs } = await refsFor(registry, namespace)
   return { root, refs, directory: path.join(refs, id), gate: path.join(refs, ".gate"), namespace, id }
@@ -206,7 +204,7 @@ async function gated<T>(layout: Layout, create: boolean, fn: () => Promise<T>): 
     }
   }
   if (!acquired)
-    throw new ExtensionLeases.LeaseError("busy", "Extension lease gate is busy (never TTL-reclaimed)", layout.namespace)
+    throw new LeaseError("busy", "Extension lease gate is busy (never TTL-reclaimed)", layout.namespace)
   // A crash at any point leaves a fail-closed gate. Only this owner's verified metadata is removed.
   const owned = await directory(layout.gate)
   const token = randomUUID()
@@ -360,7 +358,7 @@ async function initialize(layout: Layout) {
   }
   return await verifyMetadata(layout)
 }
-function lease(reference: Reference, key: string): ExtensionLeases.Lease {
+function lease(reference: Reference, key: string): Lease {
   let released: Promise<void> | undefined
   const release = () =>
     (released ??= (async () => {
@@ -372,19 +370,19 @@ function lease(reference: Reference, key: string): ExtensionLeases.Lease {
     })())
   return { proof: reference.proof, release, [Symbol.asyncDispose]: release }
 }
-async function acquireReference(registry: string, namespace: Namespace, id: string): Promise<ExtensionLeases.Lease> {
+async function acquireReference(registry: string, namespace: Namespace, id: string): Promise<Lease> {
   try {
     return await acquireReferenceUnsafe(registry, namespace, id)
   } catch (error) {
-    if (error instanceof ExtensionLeases.LeaseError) throw error
-    throw new ExtensionLeases.LeaseError("unsafe", reason(error))
+    if (error instanceof LeaseError) throw error
+    throw new LeaseError("unsafe", reason(error))
   }
 }
 async function acquireReferenceUnsafe(
   registry: string,
   namespace: Namespace,
   id: string,
-): Promise<ExtensionLeases.Lease> {
+): Promise<Lease> {
   const layout = await locations(registry, namespace, id)
   return gated(layout, true, async () => {
     // Creators acquire before mkdir/materialization. Readers must revalidate their package after acquiring.
@@ -415,7 +413,7 @@ async function acquireReferenceUnsafe(
     }
     try {
       if (native && !native.lock(handle.fd))
-        throw new ExtensionLeases.LeaseError("busy", "Extension process lease is busy")
+        throw new LeaseError("busy", "Extension process lease is busy")
       if (created) {
         await handle.writeFile(JSON.stringify({ ...metadata(layout), nonce, proof }))
         await handle.sync()
@@ -432,7 +430,7 @@ async function acquireReferenceUnsafe(
   })
 }
 
-async function inspect(layout: Layout): Promise<ExtensionLeases.Inspection> {
+async function inspect(layout: Layout): Promise<Inspection> {
   const owner = await verifyMetadata(layout)
   const entries = (await readdir(layout.directory)).filter((name) => name !== "owner.json").sort()
   if (
@@ -476,7 +474,7 @@ async function exclusive<T>(
   namespace: Namespace,
   id: string,
   fn: () => Promise<T>,
-): Promise<ExtensionLeases.ExclusiveResult<T>> {
+): Promise<ExclusiveResult<T>> {
   let entered = false
   try {
     const layout = await locations(registry, namespace, id)
@@ -496,3 +494,7 @@ async function exclusive<T>(
     return { status: "busy", reason: reason(error) }
   }
 }
+
+// Explicit ".ts": leases.test.ts spawns a real Node process importing this file, and Node's
+// native type stripping does not resolve extensionless specifiers.
+export * as ExtensionLeases from "./leases.ts"
