@@ -1505,7 +1505,7 @@ function QuickAssistantWindow(props: {
           <Show when={props.active}>{props.tabs()}</Show>
           <button
             type="button"
-            class="absolute -top-3.5 right-5 z-10 flex size-7 items-center justify-center rounded-full border border-border-weak-base bg-background-base/90 text-icon-weak shadow-xs-border transition hover:border-border-strong-base hover:bg-surface-base-hover hover:text-icon-base"
+            class="inset-control absolute -top-3.5 right-5 z-10 flex size-7 items-center justify-center rounded-full border border-border-weak-base bg-background-base/90 text-icon-weak shadow-xs-border transition hover:border-border-strong-base hover:bg-surface-base-hover hover:text-icon-base"
             aria-label={language.t(expanded() ? "common.restore" : "common.maximize")}
             title={language.t(expanded() ? "common.restore" : "common.maximize")}
             onClick={toggleMaximize}
@@ -1514,7 +1514,7 @@ function QuickAssistantWindow(props: {
           </button>
           <button
             type="button"
-            class="absolute -right-3.5 -top-3.5 z-10 flex size-7 items-center justify-center rounded-full border border-border-weak-base bg-background-base/90 text-icon-weak shadow-xs-border transition hover:border-border-strong-base hover:bg-surface-base-hover hover:text-icon-base"
+            class="inset-control absolute -right-3.5 -top-3.5 z-10 flex size-7 items-center justify-center rounded-full border border-border-weak-base bg-background-base/90 text-icon-weak shadow-xs-border transition hover:border-border-strong-base hover:bg-surface-base-hover hover:text-icon-base"
             data-action="quick-assistant-hide"
             aria-label={language.t("common.close")}
             title={language.t("common.close")}
@@ -1523,7 +1523,14 @@ function QuickAssistantWindow(props: {
             <Icon name="close" size="small" class="text-icon-weak" />
           </button>
           <div class="flex h-full min-h-0 flex-col rounded-[inherit]">
-            <QuickAssistantMessages scroll={scroll} fill list={list()} parts={data()?.part} busy={busy()} waiting={waiting()} />
+            <QuickAssistantMessages
+              scroll={scroll}
+              fill
+              list={list()}
+              parts={data()?.part}
+              busy={busy()}
+              waiting={waiting()}
+            />
             <QuickAssistantRequests
               client={globalSDK.createClient({ directory: root(), throwOnError: true })}
               permissions={permissions()}

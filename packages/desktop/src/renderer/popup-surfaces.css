@@ -10,7 +10,8 @@ html {
     [data-component="context-menu-content"],
     [data-component="context-menu-sub-content"],
     [data-component="select-content"],
-    [data-component="hover-card-content"]
+    [data-component="hover-card-content"],
+    .completion-menu
   ) {
     background: var(--surface-raised-stronger-non-alpha);
     backdrop-filter: none;

@@ -8,18 +8,18 @@
   --context-menu-item-inset: none;
   --context-menu-frosted-bg: light-dark(
     color-mix(in srgb, var(--background-stronger) 82%, transparent),
-    rgb(12 12 14 / 0.34)
+    color-mix(in srgb, var(--background-stronger) 70%, transparent)
   );
 
   min-width: 8rem;
   overflow: hidden;
-  border: 1px solid color-mix(in oklch, var(--border-strong-base) 88%, transparent);
   border-radius: var(--radius-xl);
+  border: 1px solid var(--border-weak-base);
   background-clip: padding-box;
   background-color: var(--context-menu-frosted-bg);
   backdrop-filter: blur(40px) saturate(150%);
   -webkit-backdrop-filter: blur(40px) saturate(150%);
-  padding: 8px;
+  padding: 6px;
   box-shadow:
     0 24px 56px rgba(0, 0, 0, 0.16),
     0 10px 24px rgba(0, 0, 0, 0.12),
@@ -32,7 +32,7 @@
     outline: none;
   }
 
-  animation: contextMenuContentHide var(--transition-duration) var(--transition-easing) forwards;
+  animation: contextMenuContentHide 0.15s ease-out forwards;
 
   @starting-style {
     animation: none;
@@ -40,7 +40,7 @@
 
   &[data-expanded] {
     pointer-events: auto;
-    animation: contextMenuContentShow var(--transition-duration) var(--transition-easing) forwards;
+    animation: contextMenuContentShow 0.15s ease-out forwards;
   }
 }
 
@@ -54,21 +54,18 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 12px;
-    border-radius: calc(var(--radius-md) - 2px);
+    padding: 6px 10px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     outline: none;
 
     font-family: var(--font-family-sans);
-    font-size: 14px;
+    font-size: var(--font-size-small);
     font-weight: var(--font-weight-medium);
     line-height: var(--line-height-large);
     letter-spacing: var(--letter-spacing-normal);
     color: var(--text-strong);
 
-    transition-property: background-color, color;
-    transition-duration: var(--transition-duration);
-    transition-timing-function: var(--transition-easing);
     user-select: none;
 
     &:is(:hover, [data-highlighted], [data-expanded], :active):not([data-disabled]) {
@@ -98,7 +95,7 @@
     width: 16px;
     height: 16px;
     position: absolute;
-    right: 12px;
+    right: 10px;
     top: 50%;
     transform: translateY(-50%);
   }
@@ -108,21 +105,21 @@
   }
 
   [data-slot="context-menu-item-description"] {
-    font-size: var(--font-size-small);
+    font-size: var(--font-size-x-small);
     color: var(--text-weak);
   }
 
   [data-slot="context-menu-separator"] {
     height: 1px;
-    margin: 8px -8px;
+    margin: 6px -6px;
     border-top-color: var(--border-weak-base);
   }
 
   [data-slot="context-menu-group-label"] {
     display: block;
-    padding: 8px 12px;
+    padding: 6px 10px;
     font-family: var(--font-family-sans);
-    font-size: var(--font-size-small);
+    font-size: var(--font-size-x-small);
     font-weight: var(--font-weight-medium);
     line-height: var(--line-height-large);
     letter-spacing: var(--letter-spacing-normal);
@@ -136,7 +133,7 @@
 
 html[data-platform="desktop"][data-os="windows"] [data-component="context-menu-content"],
 html[data-platform="desktop"][data-os="windows"] [data-component="context-menu-sub-content"] {
-  background-color: var(--surface-raised-stronger-non-alpha);
+  background-color: var(--background-stronger);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
@@ -147,27 +144,27 @@ html[data-platform="desktop"][data-os="windows"]
 html[data-platform="desktop"][data-os="windows"]
   [data-component="context-menu-sub-content"]
   [data-slot="context-menu-arrow"] {
-  fill: var(--surface-raised-stronger-non-alpha);
+  fill: var(--background-stronger);
 }
 
 @keyframes contextMenuContentShow {
   from {
     opacity: 0;
-    transform: scaleY(0.95);
+    transform: scale(0.96);
   }
   to {
     opacity: 1;
-    transform: scaleY(1);
+    transform: scale(1);
   }
 }
 
 @keyframes contextMenuContentHide {
   from {
     opacity: 1;
-    transform: scaleY(1);
+    transform: scale(1);
   }
   to {
     opacity: 0;
-    transform: scaleY(0.95);
+    transform: scale(0.96);
   }
 }

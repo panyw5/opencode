@@ -207,7 +207,7 @@ export function SessionProjectTaskMount(props: {
         }}
         class={
           variant() === "panel"
-            ? "flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-border-weak-base bg-background-base px-3 py-2 text-left text-13-regular text-text-strong transition-colors hover:bg-surface-base-hover"
+            ? "inset-control flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-border-weak-base bg-background-base px-3 py-2 text-left text-13-regular text-text-strong transition-colors hover:bg-surface-base-hover"
             : "inline-flex items-center gap-1 rounded-md border border-border-weak-base bg-surface-raised-base px-2 py-1 text-12-medium text-text-strong transition-colors hover:bg-surface-raised-base-hover data-[expanded]:bg-surface-raised-base-active"
         }
         classList={{

@@ -7,10 +7,7 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { ModelSelectorPopover, parseModelRef, useBoundModelState } from "@/components/dialog-select-model"
 import { useModels } from "@/context/models"
 import { useLanguage } from "@/context/language"
-import {
-  parseAgentMarkdown,
-  type AgentPermissionCapsule,
-} from "./config-agent-markdown"
+import { parseAgentMarkdown, type AgentPermissionCapsule } from "./config-agent-markdown"
 
 export function AgentMarkdownMeta(props: {
   text: string
@@ -85,7 +82,7 @@ export function AgentMarkdownMeta(props: {
                 disabled: props.busy,
                 "data-action": "agent-markdown-model",
                 class:
-                  "h-9 min-w-0 flex-1 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong hover:border-border-strong hover:bg-surface-base-hover",
+                  "inset-control h-9 min-w-0 flex-1 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong hover:border-border-strong hover:bg-surface-base-hover",
               }}
             >
               <div class="flex min-w-0 items-center gap-2">
@@ -108,7 +105,7 @@ export function AgentMarkdownMeta(props: {
                 onSelect={(x) => props.onVariantChange?.(x === "default" ? undefined : x)}
                 disabled={props.busy}
                 variant="ghost"
-                triggerClass="h-9 w-36 shrink-0 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong hover:border-border-strong hover:bg-surface-base-hover capitalize"
+                triggerClass="inset-control h-9 w-36 shrink-0 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong hover:border-border-strong hover:bg-surface-base-hover capitalize"
                 valueClass="truncate"
                 triggerProps={{
                   type: "button",
@@ -143,9 +140,7 @@ export function AgentMarkdownMeta(props: {
               <div class="text-12-regular text-text-weak">{language.t("config.agents.meta.permissions.empty")}</div>
             }
           >
-            <For each={permissions()}>
-              {(item) => <PermissionCapsule item={item} />}
-            </For>
+            <For each={permissions()}>{(item) => <PermissionCapsule item={item} />}</For>
           </Show>
         </div>
       </div>

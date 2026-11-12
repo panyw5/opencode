@@ -170,7 +170,11 @@ export function BuiltInAgentEditor(props: {
   function cyclePermission(key: string) {
     const entry = form.permission[key]
     const next = nextPermissionAction(typeof entry === "string" ? entry : undefined)
-    console.info("[config] builtin agent permission cycled", { name: props.name, permission: key, next: next ?? "default" })
+    console.info("[config] builtin agent permission cycled", {
+      name: props.name,
+      permission: key,
+      next: next ?? "default",
+    })
     setForm("permission", key, next)
   }
 
@@ -206,7 +210,11 @@ export function BuiltInAgentEditor(props: {
           </div>
           <div class="mt-1 text-12-regular text-text-weak">{t("config.agents.builtin.description")}</div>
         </div>
-        <SaveButton label={saving() ? t("config.agents.jsonc.saving") : t("common.save")} onClick={() => void save()} disabled={saving()} />
+        <SaveButton
+          label={saving() ? t("config.agents.jsonc.saving") : t("common.save")}
+          onClick={() => void save()}
+          disabled={saving()}
+        />
       </div>
       <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-5">
         <div class="mx-auto flex max-w-[920px] flex-col gap-6">
@@ -225,7 +233,7 @@ export function BuiltInAgentEditor(props: {
                     variant: "ghost",
                     "data-action": "builtin-agent-model",
                     class:
-                      "h-10 min-w-0 flex-1 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong hover:border-border-strong hover:bg-surface-base-hover",
+                      "inset-control h-10 min-w-0 flex-1 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong hover:border-border-strong hover:bg-surface-base-hover",
                   }}
                 >
                   <div class="flex min-w-0 items-center gap-2">
@@ -295,9 +303,7 @@ export function BuiltInAgentEditor(props: {
             <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto rounded-xl border border-border-weak-base bg-background-base p-4">
               <Show
                 when={prompt().trim()}
-                fallback={
-                  <div class="text-13-regular text-text-weak">{t("config.agents.builtin.prompt.empty")}</div>
-                }
+                fallback={<div class="text-13-regular text-text-weak">{t("config.agents.builtin.prompt.empty")}</div>}
               >
                 <Markdown text={prompt()} math="full" highlight="defer" />
               </Show>

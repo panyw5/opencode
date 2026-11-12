@@ -7,7 +7,7 @@ export const CONFIG_MIDDLE_ITEM_CLASS =
   "group relative flex w-full cursor-pointer items-start justify-between gap-4 overflow-hidden rounded-[16px] border px-4 py-4 text-left transition-colors duration-150 focus:outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-focus"
 export const CONFIG_MIDDLE_ITEM_ACTIVE_CLASS = "border-border-base bg-surface-base-active"
 export const CONFIG_MIDDLE_ITEM_INACTIVE_CLASS =
-  "border-border-weak-base bg-background-base hover:border-border-base hover:bg-surface-base-hover"
+  "inset-control border-border-weak-base bg-background-base hover:border-border-base hover:bg-surface-base-hover"
 
 type ProviderSdkBadge = ProviderChipProps
 

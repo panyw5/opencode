@@ -11,7 +11,10 @@
 
 @layer components {
   [data-component="list"].model-selector-list [data-slot="list-viewport"] {
-    gap: 2px;
+    /* Rows must stay contiguous: a gap shows the default cursor between
+       pointer-cursor items and flickers on hover. Group spacing comes from
+       the header's margin-top instead. */
+    gap: 0;
 
     /* Keep rows and tooltip wrappers from shrinking in the scroll container. */
     > * {
@@ -1217,8 +1220,7 @@
     color: var(--markdown-code);
   }
 
-  [data-component="button"].prompt-pick,
-  [data-component="select"].prompt-pick [data-slot="select-select-trigger"] {
+  [data-component="button"].prompt-pick {
     height: 28px;
     padding: 0 6px 0 8px;
     gap: 6px;
@@ -1231,24 +1233,11 @@
     letter-spacing: var(--letter-spacing-normal);
   }
 
-  [data-component="select"].prompt-pick [data-slot="select-select-trigger-value"] {
-    line-height: 20px;
-  }
-
-  [data-component="select"].prompt-agent [data-slot="select-select-trigger"] {
+  [data-slot="select-select-trigger"].prompt-agent {
     width: fit-content;
     min-width: 0;
     max-width: min(24rem, calc(100vw - 14rem));
     flex: 0 1 auto;
-  }
-
-  [data-component="select"].prompt-agent [data-slot="select-select-trigger-value"] {
-    min-width: 0;
-    flex: 0 1 auto;
-  }
-
-  [data-component="select-content"].prompt-pick {
-    padding: 6px;
   }
 
   [data-component="select-content"].prompt-agent {
@@ -1271,17 +1260,6 @@
     color: var(--syntax-type);
   }
 
-  [data-component="select-content"].prompt-agent [data-slot="select-select-item"] {
-    font-family: var(--font-family-sans);
-    font-size: var(--font-size-small);
-    font-style: normal;
-    font-weight: var(--font-weight-medium);
-    line-height: var(--line-height-large);
-    letter-spacing: var(--letter-spacing-normal);
-    padding: 6px 10px;
-    transition: none;
-  }
-
   [data-component="select-content"].prompt-agent [data-slot="select-select-content-list"] {
     max-height: min(24rem, calc(100vh - 24px));
   }
@@ -1290,81 +1268,14 @@
     max-height: 18rem;
   }
 
-  [data-component="select-content"].prompt-pick [data-slot="select-select-item"] {
-    padding: 6px 10px;
-    font-family: var(--font-family-sans);
-    font-size: var(--font-size-small);
-    font-style: normal;
-    font-weight: var(--font-weight-medium);
-    line-height: var(--line-height-large);
-    letter-spacing: var(--letter-spacing-normal);
-  }
-
   /* Status popover list item hover style */
   .status-list-item:not(.cursor-not-allowed):hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: color-mix(in srgb, var(--text-strong) 10%, transparent);
   }
 
   [data-component="getting-started"] {
     container-type: inline-size;
     container-name: getting-started;
-  }
-
-  [data-component="dropdown-menu-content"].desktop-app-menu,
-  [data-component="dropdown-menu-sub-content"].desktop-app-menu {
-    min-width: 160px;
-    padding: 2px;
-  }
-
-  [data-component="dropdown-menu-content"].desktop-app-menu {
-    width: 160px;
-  }
-
-  [data-component="dropdown-menu-sub-content"].desktop-app-menu {
-    width: max-content;
-    min-width: 240px;
-    max-width: min(320px, calc(100vw - 24px));
-  }
-
-  [data-component="dropdown-menu-content"].desktop-app-menu [data-slot="dropdown-menu-group-label"] {
-    display: flex;
-    align-items: center;
-    height: 28px;
-    padding: 0 12px;
-    font-size: var(--font-size-x-small);
-    font-weight: var(--font-weight-medium);
-    line-height: 1;
-    color: var(--text-weak);
-  }
-
-  [data-component="dropdown-menu-content"].desktop-app-menu [data-slot="dropdown-menu-item"],
-  [data-component="dropdown-menu-content"].desktop-app-menu [data-slot="dropdown-menu-sub-trigger"],
-  [data-component="dropdown-menu-sub-content"].desktop-app-menu [data-slot="dropdown-menu-item"],
-  [data-component="dropdown-menu-sub-content"].desktop-app-menu [data-slot="dropdown-menu-sub-trigger"] {
-    min-height: 28px;
-    padding: 0 12px;
-    gap: 8px;
-    font-weight: var(--font-weight-regular);
-    line-height: 1;
-  }
-
-  [data-component="dropdown-menu-content"].desktop-app-menu [data-slot="dropdown-menu-item-label"],
-  [data-component="dropdown-menu-sub-content"].desktop-app-menu [data-slot="dropdown-menu-item-label"] {
-    white-space: nowrap;
-  }
-
-  [data-slot="desktop-app-menu-keybind"] {
-    margin-left: auto;
-    color: var(--text-weak);
-    font-size: var(--font-size-x-small);
-    font-weight: var(--font-weight-regular);
-    white-space: nowrap;
-  }
-
-  [data-slot="desktop-app-menu-chevron"] {
-    display: flex;
-    margin-left: auto;
-    color: var(--icon-base);
   }
 
   [data-component="getting-started-actions"] {
@@ -1584,4 +1495,58 @@ html[data-platform="desktop"][data-color-scheme="dark"] [data-component="collaps
    shell — strip it here so the bell panel controls its own padding. */
 [data-component="popover-content"].notification-bell-popover-shell [data-slot="popover-body"] {
   padding: 0;
+}
+
+/* Input completion menus (slash commands, @ mentions, directory and session
+   reference pickers) share one surface + item language with the action menus. */
+.completion-menu {
+  --completion-menu-frosted-bg: light-dark(
+    color-mix(in srgb, var(--background-stronger) 82%, transparent),
+    color-mix(in srgb, var(--background-stronger) 70%, transparent)
+  );
+
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-weak-base);
+  background-clip: padding-box;
+  background-color: var(--completion-menu-frosted-bg);
+  backdrop-filter: blur(40px) saturate(150%);
+  -webkit-backdrop-filter: blur(40px) saturate(150%);
+  padding: 6px;
+  box-shadow:
+    0 24px 56px rgba(0, 0, 0, 0.16),
+    0 10px 24px rgba(0, 0, 0, 0.12),
+    0 4px 10px rgba(0, 0, 0, 0.08);
+}
+
+html[data-platform="desktop"][data-os="windows"] .completion-menu {
+  background-color: var(--background-stronger);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+[data-component="popover-content"].completion-menu-host [data-slot="popover-body"] {
+  padding: 6px;
+}
+
+[data-slot="completion-menu-item"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  text-align: left;
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-large);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--text-strong);
+
+  &:is(:hover, [data-active], [data-prompt-popover-active]) {
+    background: color-mix(in srgb, var(--text-strong) 10%, transparent);
+  }
 }

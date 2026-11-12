@@ -100,13 +100,13 @@ export function SessionPickerPopover(props: SessionPickerPopoverProps) {
         "aria-label": props.ariaLabel,
         "data-action": "prompt-session-history",
       }}
-      class="w-[420px] max-w-[calc(100vw-40px)]"
+      class="completion-menu-host w-[420px] max-w-[calc(100vw-40px)]"
     >
-      <div class="flex flex-col gap-3">
+      <div class="flex flex-col gap-2">
         <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">{props.headerText}</div>
         <input
           type="search"
-          class="w-full rounded-md border border-border-base px-2 py-1.5 text-13-regular bg-background-base text-text-strong"
+          class="w-full rounded-md border border-border-weak-base bg-surface-base px-2 py-1.5 text-13-regular text-text-strong"
           aria-label={language.t("prompt.session.search")}
           placeholder={language.t("prompt.session.search")}
           value={state.query}
@@ -125,12 +125,12 @@ export function SessionPickerPopover(props: SessionPickerPopoverProps) {
         <Show
           when={items().length > 0}
           fallback={
-            <div class="text-13-regular text-text-weak px-1 py-3">
+            <div class="text-12-regular text-text-weak px-2.5 py-1.5">
               {state.query ? language.t("prompt.session.noResults") : props.emptyText}
             </div>
           }
         >
-          <ul class="flex flex-col gap-0.5 -mx-1 max-h-72 overflow-y-auto">
+          <ul class="flex flex-col gap-0.5 max-h-72 overflow-y-auto">
             <For each={items()}>
               {(entry) => {
                 const projectName = () => getFilename(entry.directory) || entry.directory || "?"
@@ -140,14 +140,14 @@ export function SessionPickerPopover(props: SessionPickerPopoverProps) {
                   <li>
                     <button
                       type="button"
-                      class="w-full flex items-start gap-2 px-2 py-1.5 rounded-md text-left text-12-regular hover:bg-surface-hover focus:bg-surface-hover focus:outline-none"
+                      data-slot="completion-menu-item"
                       title={tooltip()}
                       disabled={!!state.loading}
                       onClick={() => choose(entry)}
                     >
-                      <Icon name="speech-bubble" size="small" class="mt-0.5 shrink-0 text-icon-weak" />
+                      <Icon name="speech-bubble" size="small" class="shrink-0 text-icon-weak" />
                       <div class="min-w-0 flex-1">
-                        <div class="truncate text-13-medium text-text-strong">{titleText()}</div>
+                        <div class="truncate">{titleText()}</div>
                         <div class="truncate text-12-regular text-text-weak">
                           {projectName()} · {relativeTime(entry.visitedAt, state.openedAt)}
                         </div>

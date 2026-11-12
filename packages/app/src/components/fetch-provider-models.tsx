@@ -134,7 +134,12 @@ export function FetchProviderModels(props: Props) {
           <span class="text-12-regular text-text-danger-base">{error()}</span>
         </Show>
       </div>
-      <TextField placeholder="搜索模型..." value={props.searchQuery} onChange={props.onSearchQueryChange} icon="search" />
+      <TextField
+        placeholder="搜索模型..."
+        value={props.searchQuery}
+        onChange={props.onSearchQueryChange}
+        icon="search"
+      />
       <Show when={models().length > 0}>
         <div class="flex flex-col gap-2">
           <div
@@ -152,7 +157,7 @@ export function FetchProviderModels(props: Props) {
                     class="inline-flex h-7 max-w-full items-center gap-1 rounded-full border px-2.5 text-12-medium transition-colors"
                     classList={{
                       "cursor-default border-border-weak-base bg-surface-secondary text-text-weak opacity-50": added(),
-                      "cursor-pointer border-border-base bg-background-base text-text-base hover:border-border-strong hover:bg-surface-base-hover":
+                      "inset-control cursor-pointer border-border-base bg-background-base text-text-base hover:border-border-strong hover:bg-surface-base-hover":
                         !added(),
                     }}
                     onClick={() => !added() && props.onAdd(model.id, model.name)}

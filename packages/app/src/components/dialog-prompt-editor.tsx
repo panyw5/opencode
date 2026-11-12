@@ -84,7 +84,9 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
   const fit = () => {
     if (!ref.box) return
     const min = 280
-    const max = maximized() ? Math.max(min, window.innerHeight - 170) : Math.max(min, Math.min(620, window.innerHeight - 230))
+    const max = maximized()
+      ? Math.max(min, window.innerHeight - 170)
+      : Math.max(min, Math.min(620, window.innerHeight - 230))
     ref.box.style.height = "0px"
     const next = Math.min(max, Math.max(min, ref.box.scrollHeight))
     ref.box.style.height = ""
@@ -348,26 +350,16 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
               ref={(el) => {
                 ref.menu = el
               }}
-              class="absolute z-20 min-h-10 w-[min(560px,calc(100%-16px))] overflow-auto no-scrollbar rounded-[12px] border border-white/10 p-2 shadow-[var(--shadow-lg-border-base)]"
+              class="completion-menu absolute z-20 min-h-10 w-[min(560px,calc(100%-16px))] overflow-auto no-scrollbar"
               classList={{ hidden: popover() !== "at" }}
               style={{
                 top: `${menu.top}px`,
                 left: `${menu.left}px`,
                 "max-height": `${menu.max}px`,
-                "background-color":
-                  platform.platform === "desktop"
-                    ? platform.os === "windows"
-                      ? "light-dark(#ffffff, var(--surface-raised-stronger-non-alpha))"
-                      : "light-dark(#ffffff, rgb(12 12 14 / 0.34))"
-                    : "rgb(12 12 14 / 0.34)",
-                "backdrop-filter":
-                  platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",
-                "-webkit-backdrop-filter":
-                  platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",
               }}
               onMouseDown={(event) => event.preventDefault()}
             >
-              <div classList={{ hidden: atFlat().length > 0 }} class="px-2 py-1 text-text-weak">
+              <div classList={{ hidden: atFlat().length > 0 }} class="px-2.5 py-1.5 text-12-regular text-text-weak">
                 {language.t("prompt.popover.emptyResults")}
               </div>
               <For each={shown()}>
@@ -379,8 +371,8 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
                   return (
                     <button
                       data-key={key}
-                      class="flex w-full items-center gap-x-2 rounded-md px-2 py-0.5"
-                      classList={{ "bg-surface-raised-base-active": atActive() === key }}
+                      data-slot="completion-menu-item"
+                      data-active={atActive() === key ? "" : undefined}
                       onClick={() => handleAtSelect(item)}
                       onMouseEnter={() => setAtActive(key)}
                     >
@@ -388,8 +380,8 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
                         node={{ path: item.path, type: item.path.endsWith("/") ? "directory" : "file" }}
                         class="size-4 shrink-0"
                       />
-                      <div class="min-w-0 flex items-center text-14-regular">
-                        <span class="min-w-0 truncate whitespace-nowrap text-text-weak">{dir}</span>
+                      <div class="min-w-0 flex items-center">
+                        <span class="min-w-0 truncate whitespace-nowrap text-12-regular text-text-weak">{dir}</span>
                         <span class="whitespace-nowrap text-text-strong">{file}</span>
                       </div>
                     </button>
@@ -438,7 +430,11 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
 
                   const nav = event.key === "ArrowUp" || event.key === "ArrowDown" || event.key === "Enter"
                   const ctrl =
-                    event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && (event.key === "n" || event.key === "p")
+                    event.ctrlKey &&
+                    !event.metaKey &&
+                    !event.altKey &&
+                    !event.shiftKey &&
+                    (event.key === "n" || event.key === "p")
                   if (nav || ctrl) {
                     atOnKeyDown(event)
                     event.preventDefault()

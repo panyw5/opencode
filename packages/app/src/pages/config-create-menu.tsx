@@ -3,7 +3,6 @@ import { Button } from "@opencode-ai/ui/button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { useLanguage } from "@/context/language"
-import "./config-create-menu.css"
 
 export function ConfigCreateMenu(props: {
   kind: "skill" | "command" | "mcp" | "agents-md"
@@ -35,7 +34,7 @@ export function ConfigCreateMenu(props: {
         variant="ghost"
         icon="folder-add-left"
         data-config-create={props.kind}
-        class="h-8 rounded-lg border border-border-weak-base bg-background-base px-2.5 pr-3 text-12-medium text-text-base shadow-none transition-colors hover:border-border-strong hover:bg-surface-base-hover active:border-border-base active:bg-surface-base-active focus-visible:border-border-strong focus-visible:bg-surface-base-hover disabled:border-border-weak-base disabled:bg-background-base disabled:text-text-weaker"
+        class="inset-control h-8 rounded-lg border border-border-weak-base bg-background-base px-2.5 pr-3 text-12-medium text-text-base shadow-none transition-colors hover:border-border-strong hover:bg-surface-base-hover active:border-border-base active:bg-surface-base-active focus-visible:border-border-strong focus-visible:bg-surface-base-hover disabled:border-border-weak-base disabled:bg-background-base disabled:text-text-weaker"
         disabled={props.disabled || (!props.globalRoot && props.projects.length === 0)}
       >
         {props.label}

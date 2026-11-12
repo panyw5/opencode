@@ -79,9 +79,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
           props.setPopoverRef(el)
         }}
         data-component="prompt-popover"
-        class="absolute inset-x-0 -top-2 -translate-y-full origin-bottom-left max-h-80 min-h-10
-                 overflow-hidden flex flex-col p-2 rounded-[12px]
-                 bg-surface-raised-stronger-non-alpha border border-border-weak-base/60 shadow-[var(--shadow-lg)]"
+        class="completion-menu absolute inset-x-0 -top-2 -translate-y-full origin-bottom-left max-h-80 min-h-10 overflow-hidden flex flex-col"
         onMouseDown={(e) => e.preventDefault()}
       >
         <Show when={props.popover === "at"}>
@@ -130,11 +128,11 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
           <Switch>
             <Match when={props.popover === "at"}>
               <Show when={props.atError}>
-                <div class="text-text-weak px-2 py-1">{props.t("prompt.at.loadFailed")}</div>
+                <div class="px-2.5 py-1.5 text-12-regular text-text-weak">{props.t("prompt.at.loadFailed")}</div>
               </Show>
               <Show
                 when={props.atFlat.length > 0}
-                fallback={<div class="text-text-weak px-2 py-1">{props.t("prompt.popover.emptyResults")}</div>}
+                fallback={<div class="px-2.5 py-1.5 text-12-regular text-text-weak">{props.t("prompt.popover.emptyResults")}</div>}
               >
                 <For each={props.atFlat}>
                   {(item) => {
@@ -145,14 +143,13 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                         <button
                           type="button"
                           data-prompt-popover-active={props.atActive === key ? "" : undefined}
-                          class="w-full flex items-center gap-x-2 rounded-md px-2 py-0.5 text-14-regular text-text-strong"
-                          classList={{ "bg-surface-raised-base-active": props.atActive === key }}
+                          data-slot="completion-menu-item"
                           onClick={() => props.onAtSelect(item)}
                           onMouseEnter={() => props.setAtActive(key)}
                         >
                           <Icon name="prompt" size="small" />
                           <span class="truncate">{item.name}</span>
-                          <span class="text-text-weak text-11-regular truncate">{item.id}</span>
+                          <span class="text-12-regular text-text-weak truncate">{item.id}</span>
                         </button>
                       )
                     }
@@ -162,13 +159,12 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                         <button
                           type="button"
                           data-prompt-popover-active={props.atActive === key ? "" : undefined}
-                          class="w-full flex items-center gap-x-2 rounded-md px-2 py-0.5"
-                          classList={{ "bg-surface-raised-base-active": props.atActive === key }}
+                          data-slot="completion-menu-item"
                           onClick={() => props.onAtSelect(item)}
                           onMouseEnter={() => props.setAtActive(key)}
                         >
                           <Icon name="prompt" size="small" class="text-icon-info-active shrink-0" />
-                          <span class="text-14-regular text-text-strong whitespace-nowrap">@{item.display}</span>
+                          <span class="whitespace-nowrap">@{item.display}</span>
                         </button>
                       )
                     }
@@ -178,12 +174,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                         <button
                           type="button"
                           data-prompt-popover-active={props.atActive === key ? "" : undefined}
-                          class="w-full flex items-center rounded-md"
-                          classList={{
-                            "bg-surface-raised-base-active": props.atActive === key,
-                            "gap-x-3 px-3 py-2": item.type === "consult",
-                            "gap-x-2 px-2 py-0.5": item.type === "agent",
-                          }}
+                          data-slot="completion-menu-item"
                           onClick={() => props.onAtSelect(item)}
                           onMouseEnter={() => props.setAtActive(key)}
                         >
@@ -192,7 +183,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                             fallback={
                               <>
                                 <Icon name="brain" size="small" class="text-icon-info-active shrink-0" />
-                                <span class="text-14-regular text-text-strong whitespace-nowrap">@{item.name}</span>
+                                <span class="whitespace-nowrap">@{item.name}</span>
                               </>
                             }
                           >
@@ -222,8 +213,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                       <button
                         type="button"
                         data-prompt-popover-active={props.atActive === key ? "" : undefined}
-                        class="w-full flex items-center gap-x-2 rounded-md px-2 py-0.5"
-                        classList={{ "bg-surface-raised-base-active": props.atActive === key }}
+                        data-slot="completion-menu-item"
                         onClick={() => props.onAtSelect(item)}
                         onMouseEnter={() => props.setAtActive(key)}
                       >
@@ -231,11 +221,11 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                           node={{ path: item.path, type: isDirectory ? "directory" : "file" }}
                           class="shrink-0 size-4"
                         />
-                        <div class="flex items-center gap-1.5 text-14-regular min-w-0">
+                        <div class="flex items-center gap-1.5 min-w-0">
                           <Show when={!isDirectory}>
-                            <span class="text-14-medium text-text-strong whitespace-nowrap">{filename}</span>
+                            <span class="text-text-strong whitespace-nowrap">{filename}</span>
                           </Show>
-                          <span class="text-text-weak whitespace-nowrap truncate min-w-0">{directory}</span>
+                          <span class="text-12-regular text-text-weak whitespace-nowrap truncate min-w-0">{directory}</span>
                         </div>
                       </button>
                     )
@@ -246,7 +236,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
             <Match when={props.popover === "slash"}>
               <Show
                 when={props.slashFlat.length > 0}
-                fallback={<div class="text-text-weak px-2 py-1">{props.t("prompt.popover.emptyCommands")}</div>}
+                fallback={<div class="px-2.5 py-1.5 text-12-regular text-text-weak">{props.t("prompt.popover.emptyCommands")}</div>}
               >
                 <For each={props.slashFlat}>
                   {(cmd) => (
@@ -254,17 +244,15 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                       type="button"
                       data-slash-id={cmd.id}
                       data-prompt-popover-active={props.slashActive === cmd.id ? "" : undefined}
-                      classList={{
-                        "w-full flex items-center justify-between gap-4 rounded-md px-2 py-1": true,
-                        "bg-surface-raised-base-hover": props.slashActive === cmd.id,
-                      }}
+                      data-slot="completion-menu-item"
+                      class="justify-between"
                       onClick={() => props.onSlashSelect(cmd)}
                       onMouseEnter={() => props.setSlashActive(cmd.id)}
                     >
                       <div class="flex items-center gap-2 min-w-0">
-                        <span class="text-14-regular text-text-strong whitespace-nowrap">/{cmd.trigger}</span>
+                        <span class="whitespace-nowrap">/{cmd.trigger}</span>
                         <Show when={cmd.description}>
-                          <span class="text-14-regular text-text-weak truncate">{cmd.description}</span>
+                          <span class="text-12-regular text-text-weak truncate">{cmd.description}</span>
                         </Show>
                       </div>
                       <div class="flex items-center gap-2 shrink-0">

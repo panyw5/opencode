@@ -10,7 +10,6 @@ import { paint as defaultPaint } from "@/components/prompt-input/expand"
 import { type AtOption } from "@/components/prompt-input/slash-popover"
 import { resolveAtMenuLeft } from "@/components/at-menu-position"
 import { useLanguage } from "@/context/language"
-import { usePlatform } from "@/context/platform"
 import { monoFontFamily, useSettings } from "@/context/settings"
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 
@@ -38,7 +37,6 @@ export function MarkdownEditorField(props: {
 }): JSX.Element {
   const settings = useSettings()
   const language = useLanguage()
-  const platform = usePlatform()
   const fileSearch = props.searchFilesAndDirectories ?? (async () => [])
   const [mode, setMode] = createSignal<MarkdownEditorMode>(props.defaultMode ?? "source")
   const [popover, setPopover] = createSignal<"at" | null>(null)
@@ -100,8 +98,7 @@ export function MarkdownEditorField(props: {
     onInput: atOnInput,
     onKeyDown: atOnKeyDown,
   } = useFilteredList<AtOption>({
-    items: async (query) =>
-      (await fileSearch(query)).map((path) => ({ type: "file" as const, path, display: path })),
+    items: async (query) => (await fileSearch(query)).map((path) => ({ type: "file" as const, path, display: path })),
     key: atKey,
     filterKeys: ["display"],
     onSelect: handleAtSelect,
@@ -269,7 +266,9 @@ export function MarkdownEditorField(props: {
     if (popover() !== "at" || !menuRef) return
     const key = atActive()
     if (!key) return
-    requestAnimationFrame(() => menuRef?.querySelector<HTMLElement>(`[data-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: "nearest" }))
+    requestAnimationFrame(() =>
+      menuRef?.querySelector<HTMLElement>(`[data-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: "nearest" }),
+    )
   })
 
   onCleanup(() => setPopover(null))
@@ -305,111 +304,103 @@ export function MarkdownEditorField(props: {
           when={previewMode()}
           fallback={
             <div class="relative min-h-0 flex-1 overflow-hidden">
-            <div
-              ref={(el) => {
-                menuRef = el
-              }}
-              class="absolute z-20 min-h-10 w-[min(560px,calc(100%-16px))] overflow-auto no-scrollbar rounded-[12px] border border-white/10 p-2 shadow-[var(--shadow-lg-border-base)]"
-              classList={{ hidden: popover() !== "at" }}
-              style={{
-                top: `${menu.top}px`,
-                left: `${menu.left}px`,
-                "max-height": `${menu.max}px`,
-                "background-color":
-                  platform.platform === "desktop"
-                    ? platform.os === "windows"
-                      ? "light-dark(#ffffff, var(--surface-raised-stronger-non-alpha))"
-                      : "light-dark(#ffffff, rgb(12 12 14 / 0.34))"
-                    : "rgb(12 12 14 / 0.34)",
-                "backdrop-filter":
-                  platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",
-              }}
-              onMouseDown={(event) => event.preventDefault()}
-            >
-              <div classList={{ hidden: atFlat().length > 0 }} class="px-2 py-1 text-text-weak">
-                {language.t("prompt.popover.emptyResults")}
-              </div>
-              <For each={shown()}>
-                {(item) => {
-                  if (item.type !== "file") return null
-                  const key = atKey(item)
-                  const dir = item.path.endsWith("/") ? item.path : getDirectory(item.path)
-                  const file = item.path.endsWith("/") ? "" : getFilename(item.path)
-                  return (
-                    <button
-                      type="button"
-                      data-key={key}
-                      class="flex w-full items-center gap-x-2 rounded-md px-2 py-0.5"
-                      classList={{ "bg-surface-raised-base-active": atActive() === key }}
-                      onClick={() => handleAtSelect(item)}
-                      onMouseEnter={() => setAtActive(key)}
-                    >
-                      <FileIcon
-                        node={{ path: item.path, type: item.path.endsWith("/") ? "directory" : "file" }}
-                        class="size-4 shrink-0"
-                      />
-                      <div class="min-w-0 flex items-center gap-1.5 text-14-regular">
-                        <span class="text-14-medium whitespace-nowrap text-text-strong">{file}</span>
-                        <span class="min-w-0 truncate whitespace-nowrap text-text-weak">{dir}</span>
-                      </div>
-                    </button>
-                  )
-                }}
-              </For>
-            </div>
-            <div
-              ref={(el) => {
-                back = el
-              }}
-              aria-hidden="true"
-              class="config-scrollbar pointer-events-none absolute inset-0 overflow-auto px-4 py-3 whitespace-pre-wrap break-words"
-              style={typography()}
-            >
-              <div class="min-h-full w-full" innerHTML={html()} />
-            </div>
-            <Show when={props.busy}>
-              <div class="pointer-events-none absolute left-4 top-3 z-10 text-12-regular text-text-weak">
-                {language.t("config.editor.loadingFile")}
-              </div>
-            </Show>
-            <textarea
-              ref={(el) => {
-                box = el
-              }}
-              autofocus={props.autofocus}
-              class="config-scrollbar absolute inset-0 size-full min-h-0 resize-none overflow-auto bg-transparent px-4 py-3 focus:outline-none"
-              style={{
-                ...typography(),
-                color: "transparent",
-                "-webkit-text-fill-color": "transparent",
-                "caret-color": "var(--text-strong)",
-              }}
-              spellcheck={false}
-              readOnly={!editable()}
-              value={props.text}
-              placeholder=""
-              onInput={(event) => {
-                props.onInput(event.currentTarget.value)
-                refreshAt()
-              }}
-              onScroll={() => {
-                sync()
-                if (popover() === "at") requestAnimationFrame(placeAtMenu)
-              }}
-              onClick={refreshAt}
-              onKeyUp={refreshAt}
-              onKeyDown={onKeyDown}
-              onBlur={() => window.setTimeout(() => setPopover(null), 120)}
-              onFocus={refreshAt}
-            />
-            <Show when={props.placeholder && props.text.length === 0}>
               <div
-                class="pointer-events-none absolute inset-x-0 top-0 px-4 py-3 whitespace-pre-wrap text-text-weak"
+                ref={(el) => {
+                  menuRef = el
+                }}
+                class="completion-menu absolute z-20 min-h-10 w-[min(560px,calc(100%-16px))] overflow-auto no-scrollbar"
+                classList={{ hidden: popover() !== "at" }}
+                style={{
+                  top: `${menu.top}px`,
+                  left: `${menu.left}px`,
+                  "max-height": `${menu.max}px`,
+                }}
+                onMouseDown={(event) => event.preventDefault()}
+              >
+                <div classList={{ hidden: atFlat().length > 0 }} class="px-2.5 py-1.5 text-12-regular text-text-weak">
+                  {language.t("prompt.popover.emptyResults")}
+                </div>
+                <For each={shown()}>
+                  {(item) => {
+                    if (item.type !== "file") return null
+                    const key = atKey(item)
+                    const dir = item.path.endsWith("/") ? item.path : getDirectory(item.path)
+                    const file = item.path.endsWith("/") ? "" : getFilename(item.path)
+                    return (
+                      <button
+                        type="button"
+                        data-key={key}
+                        data-slot="completion-menu-item"
+                        data-active={atActive() === key ? "" : undefined}
+                        onClick={() => handleAtSelect(item)}
+                        onMouseEnter={() => setAtActive(key)}
+                      >
+                        <FileIcon
+                          node={{ path: item.path, type: item.path.endsWith("/") ? "directory" : "file" }}
+                          class="size-4 shrink-0"
+                        />
+                        <div class="min-w-0 flex items-center gap-1.5">
+                          <span class="whitespace-nowrap text-text-strong">{file}</span>
+                          <span class="min-w-0 truncate whitespace-nowrap text-12-regular text-text-weak">{dir}</span>
+                        </div>
+                      </button>
+                    )
+                  }}
+                </For>
+              </div>
+              <div
+                ref={(el) => {
+                  back = el
+                }}
+                aria-hidden="true"
+                class="config-scrollbar pointer-events-none absolute inset-0 overflow-auto px-4 py-3 whitespace-pre-wrap break-words"
                 style={typography()}
               >
-                {props.placeholder}
+                <div class="min-h-full w-full" innerHTML={html()} />
               </div>
-            </Show>
+              <Show when={props.busy}>
+                <div class="pointer-events-none absolute left-4 top-3 z-10 text-12-regular text-text-weak">
+                  {language.t("config.editor.loadingFile")}
+                </div>
+              </Show>
+              <textarea
+                ref={(el) => {
+                  box = el
+                }}
+                autofocus={props.autofocus}
+                class="config-scrollbar absolute inset-0 size-full min-h-0 resize-none overflow-auto bg-transparent px-4 py-3 focus:outline-none"
+                style={{
+                  ...typography(),
+                  color: "transparent",
+                  "-webkit-text-fill-color": "transparent",
+                  "caret-color": "var(--text-strong)",
+                }}
+                spellcheck={false}
+                readOnly={!editable()}
+                value={props.text}
+                placeholder=""
+                onInput={(event) => {
+                  props.onInput(event.currentTarget.value)
+                  refreshAt()
+                }}
+                onScroll={() => {
+                  sync()
+                  if (popover() === "at") requestAnimationFrame(placeAtMenu)
+                }}
+                onClick={refreshAt}
+                onKeyUp={refreshAt}
+                onKeyDown={onKeyDown}
+                onBlur={() => window.setTimeout(() => setPopover(null), 120)}
+                onFocus={refreshAt}
+              />
+              <Show when={props.placeholder && props.text.length === 0}>
+                <div
+                  class="pointer-events-none absolute inset-x-0 top-0 px-4 py-3 whitespace-pre-wrap text-text-weak"
+                  style={typography()}
+                >
+                  {props.placeholder}
+                </div>
+              </Show>
             </div>
           }
         >
@@ -443,10 +434,7 @@ function MarkdownEditorModeToggle(props: {
       class="config-editor-mode-toggle"
       style={props.inline ? { position: "static", "pointer-events": "auto" } : undefined}
     >
-      <div
-        role="group"
-        class="config-editor-mode-toggle__group config-editor-mode-toggle__group--compact"
-      >
+      <div role="group" class="config-editor-mode-toggle__group config-editor-mode-toggle__group--compact">
         <button
           type="button"
           class="config-editor-mode-toggle__button"

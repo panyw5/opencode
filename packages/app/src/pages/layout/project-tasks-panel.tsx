@@ -796,7 +796,7 @@ export function ProjectTaskDetailDialog(props: {
                   class="rounded-full border px-3 py-1 text-12-medium transition-colors"
                   classList={{
                     "border-border-brand-base bg-surface-interactive-selected/40 text-text-strong": status() === value,
-                    "border-border-weak-base bg-background-base text-text-base hover:bg-surface-base-hover":
+                    "inset-control border-border-weak-base bg-background-base text-text-base hover:bg-surface-base-hover":
                       status() !== value,
                   }}
                   disabled={state.pending || state.loading}
@@ -905,7 +905,7 @@ export function ProjectTaskDetailDialog(props: {
               <div class="flex items-center gap-2">
                 <button
                   type="button"
-                  class="rounded-md border border-border-weak-base bg-background-base px-3 py-1.5 text-12-medium text-text-base transition-colors hover:bg-surface-base-hover disabled:cursor-not-allowed disabled:opacity-50"
+                  class="inset-control rounded-md border border-border-weak-base bg-background-base px-3 py-1.5 text-12-medium text-text-base transition-colors hover:bg-surface-base-hover disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={state.pending}
                   onClick={() => void saveAndPreview()}
                 >
@@ -936,7 +936,7 @@ export function ProjectTaskDetailDialog(props: {
                 <button
                   type="button"
                   data-action="project-task-new-session"
-                  class="inline-flex shrink-0 items-center gap-1 rounded-md border border-border-weak-base bg-background-base px-2 py-1 text-12-medium text-text-base transition-colors hover:bg-surface-base-hover disabled:cursor-not-allowed disabled:opacity-50"
+                  class="inset-control inline-flex shrink-0 items-center gap-1 rounded-md border border-border-weak-base bg-background-base px-2 py-1 text-12-medium text-text-base transition-colors hover:bg-surface-base-hover disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={state.pending || !props.directory || status() === "archived"}
                   onClick={newSession}
                 >

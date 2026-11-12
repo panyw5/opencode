@@ -180,7 +180,7 @@ export function SessionMathInitializeDialog(props: {
                 type: "button",
                 variant: "ghost",
                 class:
-                  "h-11 w-full justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong transition-colors hover:border-border-strong hover:bg-surface-base-hover",
+                  "inset-control h-11 w-full justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong transition-colors hover:border-border-strong hover:bg-surface-base-hover",
               }}
             >
               <div class="flex min-w-0 items-center gap-2">
@@ -210,7 +210,7 @@ export function SessionMathInitializeDialog(props: {
                 type: "button",
                 variant: "ghost",
                 class:
-                  "h-11 w-full justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong transition-colors hover:border-border-strong hover:bg-surface-base-hover",
+                  "inset-control h-11 w-full justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong transition-colors hover:border-border-strong hover:bg-surface-base-hover",
               }}
             >
               <div class="flex min-w-0 items-center gap-2">

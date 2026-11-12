@@ -83,7 +83,9 @@ await withCdp(async (cdp, target) => {
         await wait("keyboard highlight", () =>
           cdp.evaluate(`(() => {
           const item = document.querySelector('${menu} [data-highlighted]');
-          return !!item && getComputedStyle(item).boxShadow !== "none";
+          if (!item) return false;
+          const style = getComputedStyle(item);
+          return style.backgroundColor !== "rgba(0, 0, 0, 0)" && style.outlineStyle === "none";
         })()`),
         )
         log(`PASS keyboard highlight kind=${kind}`)
@@ -113,12 +115,12 @@ await withCdp(async (cdp, target) => {
           const item = document.querySelector(${JSON.stringify(hoverItem)});
           if (!item?.matches(":hover")) return false;
           const style = getComputedStyle(item);
-          return style.boxShadow !== "none" && style.backgroundColor !== "rgba(0, 0, 0, 0)";
+          return style.backgroundColor !== "rgba(0, 0, 0, 0)" && style.outlineStyle === "none";
         })()`),
         )
         const highlight = await cdp.evaluate<string>(`(() => {
           const style = getComputedStyle(document.querySelector(${JSON.stringify(hoverItem)}));
-          return "background=" + style.backgroundColor + " border=" + style.boxShadow;
+          return "background=" + style.backgroundColor + " outline=" + style.outlineStyle;
         })()`)
         log(`PASS mouse hover kind=${kind} ${highlight}`)
         if (kind === "skill" && scope === "global") {

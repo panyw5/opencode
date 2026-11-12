@@ -242,7 +242,7 @@ export function DirectoryInput(props: {
             role="listbox"
             aria-label={props.label}
             data-component="directory-completions"
-            class="z-50 max-h-72 overflow-y-auto rounded-xl border border-border-weak-base bg-surface-raised-base p-1.5 outline-none"
+            class="completion-menu z-50 max-h-72 overflow-y-auto outline-none"
             style={{ "max-height": "min(18rem, var(--kb-popper-content-available-height))" }}
             onOpenAutoFocus={(event) => event.preventDefault()}
             onCloseAutoFocus={(event) => event.preventDefault()}
@@ -289,18 +289,15 @@ export function DirectoryInput(props: {
                         type="button"
                         role="option"
                         aria-selected={state.highlighted === index()}
-                        class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-13-regular outline-none transition-colors"
-                        classList={{
-                          "bg-surface-base-active text-text-strong": state.highlighted === index(),
-                          "text-text-base hover:bg-surface-base-hover": state.highlighted !== index(),
-                        }}
+                        data-slot="completion-menu-item"
+                        data-active={state.highlighted === index() ? "" : undefined}
                         onPointerEnter={() => set("highlighted", index())}
                         onPointerDown={(event) => event.preventDefault()}
                         onClick={() => complete(entry)}
                       >
                         <FileIcon node={{ path: entry.path, type: "directory" }} class="size-4 shrink-0" />
                         <span class="min-w-0 flex-1 truncate font-mono">{entry.name}</span>
-                        <span class="text-11-regular text-text-weaker">Enter</span>
+                        <span class="text-12-regular text-text-weak">Enter</span>
                       </button>
                     )}
                   </For>

@@ -85,7 +85,7 @@ if (process.argv[2] === "--fixture") {
         await wait("MCP scope menu", () => cdp.evaluate('!!document.querySelector("[data-config-create-menu=mcp]")'))
         await wait("MCP keyboard highlight", () =>
           cdp.evaluate(
-            '(() => { const item = document.querySelector("[data-config-create-menu=mcp] [data-highlighted]"); return !!item && getComputedStyle(item).boxShadow !== "none" })()',
+            '(() => { const item = document.querySelector("[data-config-create-menu=mcp] [data-highlighted]"); if (!item) return false; const style = getComputedStyle(item); return style.backgroundColor !== "rgba(0, 0, 0, 0)" && style.outlineStyle === "none" })()',
           ),
         )
         const roots = await cdp.evaluate<string[]>(

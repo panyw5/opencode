@@ -38,10 +38,9 @@ test("mention menu keeps header chrome and renders colored advisor chips", async
     expect(header.querySelector('[role="status"]')?.textContent).toBe("prompt.at.loading")
     expect(container.querySelector('[data-prompt-popover-list] [role="status"]')).toBeNull()
     const surface = container.querySelector('[data-component="prompt-popover"]')!
-    expect(surface.className).toContain("border-border-weak-base/60")
-    expect(surface.className).toContain("shadow-[var(--shadow-lg)]")
+    expect(surface.className).toContain("completion-menu")
     expect(surface.className).not.toContain("border-white")
-    expect(surface.className).not.toContain("shadow-lg-border-base")
+    expect(surface.className).not.toContain("bg-surface-raised-stronger-non-alpha")
     const tabs = [...header.querySelectorAll('[role="tab"]')]
     expect(tabs).toHaveLength(5)
     for (const tab of tabs) {
@@ -89,9 +88,7 @@ test("mention menu keeps header chrome and renders colored advisor chips", async
         "bg-surface-secondary",
       ]
       for (const [index, icon] of ["openai", "openai", "anthropic", "xai", "deepseek", "synthetic"].entries()) {
-        expect(rows[index].className).toContain("px-3")
-        expect(rows[index].className).toContain("py-2")
-        expect(rows[index].className).toContain("gap-x-3")
+        expect(rows[index].getAttribute("data-slot")).toBe("completion-menu-item")
         const chip = rows[index].querySelector('[data-component="provider-chip"]')!
         expect(chip).not.toBeNull()
         expect(chip.getAttribute("data-tone")).toBe(tones[index])
@@ -108,7 +105,7 @@ test("mention menu keeps header chrome and renders colored advisor chips", async
       expect(rows[6].querySelector('[data-component="provider-icon"]')).toBeNull()
       expect(rows[6].querySelector('[data-component="provider-chip"]')).toBeNull()
       expect(rows[6].textContent).toBe("@build")
-      expect(rows[6].className).toContain("py-0.5")
+      expect(rows[6].getAttribute("data-slot")).toBe("completion-menu-item")
     }
 
     container.innerHTML = renderToString(() => PromptPopover({ ...props, popover: "slash" }))

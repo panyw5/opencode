@@ -271,15 +271,11 @@ html[data-theme="claude"][data-color-scheme="dark"] [data-component="dock-prompt
 
 /* File-link pills: replace the default purple accent with the Claude orange
    so they match the theme's warm dark palette. */
-html[data-theme="claude"][data-color-scheme="dark"]
-  [data-component="markdown"]
-  a[data-file-link] {
+html[data-theme="claude"][data-color-scheme="dark"] [data-component="markdown"] a[data-file-link] {
   --file-link-accent: #d97757;
 }
 
-html[data-theme="claude"][data-color-scheme="dark"]
-  [data-component="markdown"]
-  a[data-file-link]:hover {
+html[data-theme="claude"][data-color-scheme="dark"] [data-component="markdown"] a[data-file-link]:hover {
   color: #e8916f;
 }
 
@@ -290,6 +286,22 @@ html[data-theme="claude"][data-color-scheme="dark"]
   [data-component="injected-prompt"]
   [data-slot="injected-prompt-trigger"]:hover {
   background: var(--surface-base-hover);
+}
+
+/* Claude dark: the shell (#191918) rests darker than the canvas/float around it,
+   so inset-style controls on background-base must deepen on hover. The
+   canvas-family lift (surface-base-hover) crosses the surrounding tone and
+   melts into it instead of standing out. */
+html[data-theme="claude"][data-color-scheme="dark"] .inset-control:hover:not(:disabled),
+html[data-theme="claude"][data-color-scheme="dark"] .inset-control:focus:not(:disabled) {
+  background-color: var(--surface-inset-base);
+}
+
+html[data-theme="claude"][data-color-scheme="dark"] .inset-control:active:not(:disabled),
+html[data-theme="claude"][data-color-scheme="dark"] .inset-control[data-expanded],
+html[data-theme="claude"][data-color-scheme="dark"] .inset-control[data-expanded]:hover:not(:disabled),
+html[data-theme="claude"][data-color-scheme="dark"] .inset-control[data-expanded]:focus:not(:disabled) {
+  background-color: color-mix(in srgb, var(--surface-inset-base) 78%, black);
 }
 
 html[data-theme="claude"] [data-component="session-prompt-dock"] [data-action="prompt-attach"],

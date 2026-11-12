@@ -14,7 +14,8 @@ html[data-web-layout]
     [data-component="dropdown-menu-sub-content"],
     [data-component="popover-content"],
     [data-component="hover-card-content"],
-    [data-component="select-content"]
+    [data-component="select-content"],
+    .completion-menu
   ) {
   --dialog-frosted-bg: var(--surface-raised-stronger-non-alpha);
   --context-menu-frosted-bg: var(--surface-raised-stronger-non-alpha);
@@ -22,6 +23,7 @@ html[data-web-layout]
   --popover-frosted-bg: var(--surface-raised-stronger-non-alpha);
   --hover-card-frosted-bg: var(--surface-raised-stronger-non-alpha);
   --select-frosted-bg: var(--surface-raised-stronger-non-alpha);
+  --completion-menu-frosted-bg: var(--surface-raised-stronger-non-alpha);
   background-color: var(--surface-raised-stronger-non-alpha);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
