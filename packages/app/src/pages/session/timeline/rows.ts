@@ -186,6 +186,48 @@ function sameGroup(a: PartGroup, b: PartGroup) {
   )
 }
 
+type GptProToolPart = Extract<Part, { type: "tool" }>
+
+function gptProAction(part: GptProToolPart) {
+  const action = part.state.input.action
+  return typeof action === "string" && action ? action : "consult"
+}
+
+function gptProConsultationID(part: GptProToolPart) {
+  const metadata = part.state.status === "pending" ? undefined : part.state.metadata
+  const fromMetadata = metadata?.consultation_id
+  if (typeof fromMetadata === "string" && fromMetadata) return fromMetadata
+  const fromInput = part.state.input.consultation_id
+  return typeof fromInput === "string" && fromInput ? fromInput : undefined
+}
+
+// Every gpt_pro_consult card binds to its consultation job by id, so an
+// action=status poll for a job that already has a card renders the identical
+// live card again. Within a turn, drop a status part once the consultation has
+// a card-rendering part (consult/read/intervene/...) or an earlier visible
+// status poll. Errored status calls stay: their diagnostics are not mirrored
+// on the job card.
+function mergeGptProStatusPolls<T extends { part: Part }>(refs: T[]) {
+  const carded = new Set<string>()
+  for (const ref of refs) {
+    const part = ref.part
+    if (part.type !== "tool" || part.tool !== "gpt_pro_consult" || gptProAction(part) === "status") continue
+    const id = gptProConsultationID(part)
+    if (id) carded.add(id)
+  }
+  const shown = new Set<string>()
+  return refs.filter((ref) => {
+    const part = ref.part
+    if (part.type !== "tool" || part.tool !== "gpt_pro_consult" || gptProAction(part) !== "status") return true
+    if (part.state.status === "error") return true
+    const id = gptProConsultationID(part)
+    if (!id) return true
+    if (carded.has(id) || shown.has(id)) return false
+    shown.add(id)
+    return true
+  })
+}
+
 export namespace Timeline {
   export function expandToolRows(rows: TimelineRow.TimelineRow[], expanded: (key: string) => boolean) {
     return rows.flatMap((row): TimelineRow.TimelineRow[] => {
@@ -246,10 +288,12 @@ export namespace Timeline {
     const interrupted = interruptedMessageIndex !== -1
     const error = assistantMessages.find((m) => m.error && m.error.name !== "MessageAbortedError")?.error
 
-    const assistantPartRefs = assistantMessages.flatMap((message, messageIndex) =>
-      getMessageParts(message.id)
-        .filter((part) => renderable(part, showReasoning, showCustomHookParts))
-        .map((part) => ({ messageID: message.id, messageIndex, part })),
+    const assistantPartRefs = mergeGptProStatusPolls(
+      assistantMessages.flatMap((message, messageIndex) =>
+        getMessageParts(message.id)
+          .filter((part) => renderable(part, showReasoning, showCustomHookParts))
+          .map((part) => ({ messageID: message.id, messageIndex, part })),
+      ),
     )
     const assistantItems =
       interrupted && !compaction

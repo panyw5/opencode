@@ -199,6 +199,39 @@ const toolPart = (messageID: string, id: string, tool: string): ToolPart =>
     },
   }) as ToolPart
 
+const gptProPart = (
+  messageID: string,
+  id: string,
+  action: string,
+  cid = "gpt_1",
+  status: "completed" | "error" = "completed",
+): ToolPart =>
+  ({
+    id,
+    sessionID: "ses_test",
+    messageID,
+    type: "tool",
+    callID: `call_${id}`,
+    tool: "gpt_pro_consult",
+    state:
+      status === "error"
+        ? {
+            status,
+            input: { action, consultation_id: cid },
+            error: "failed",
+            metadata: { consultation_id: cid },
+            time: { start: 1, end: 2 },
+          }
+        : {
+            status,
+            input: { action, consultation_id: cid },
+            output: "ok",
+            title: "gpt_pro_consult",
+            metadata: { consultation_id: cid },
+            time: { start: 1, end: 2 },
+          },
+  }) as ToolPart
+
 const presentFilePart = (messageID: string, id = "tool-present"): ToolPart =>
   ({
     ...toolPart(messageID, id, "present_file"),
@@ -338,6 +371,59 @@ describe("constructMessageRows", () => {
     const parts = [textPart(user.id, "consult"), toolPart(assistant.id, "tool-gpt", "gpt_pro_consult")]
     const rows = construct(user, partsByID(parts), [assistant], 0, true, true, "idle", false)
     expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "AssistantPart"])
+  })
+
+  test("merges a status poll into the consult card for the same consultation", () => {
+    const user = userMessage("user-gpt-status")
+    const assistant = assistantMessage("assistant-gpt-status", user.id)
+    const parts = [
+      textPart(user.id, "consult"),
+      gptProPart(assistant.id, "gpt-consult", "consult"),
+      gptProPart(assistant.id, "gpt-status", "status"),
+    ]
+    const rows = construct(user, partsByID(parts), [assistant], 0, true, true, "idle", false)
+    expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "AssistantPart"])
+    const row = rows.at(-1)
+    expect(row?._tag === "AssistantPart" && row.group.type === "part" && row.group.ref.partID).toBe("gpt-consult")
+  })
+
+  test("keeps the first status card when the turn has no consult card", () => {
+    const user = userMessage("user-gpt-orphan")
+    const assistant = assistantMessage("assistant-gpt-orphan", user.id)
+    const parts = [
+      textPart(user.id, "wait"),
+      gptProPart(assistant.id, "gpt-status-1", "status"),
+      gptProPart(assistant.id, "gpt-status-2", "status"),
+    ]
+    const rows = construct(user, partsByID(parts), [assistant], 0, true, true, "idle", false)
+    const cards = rows.filter((row) => row._tag === "AssistantPart")
+    expect(cards).toHaveLength(1)
+    expect(cards[0].group.type === "part" && cards[0].group.ref.partID).toBe("gpt-status-1")
+  })
+
+  test("keeps an errored status call visible next to the consult card", () => {
+    const user = userMessage("user-gpt-error")
+    const assistant = assistantMessage("assistant-gpt-error", user.id)
+    const parts = [
+      textPart(user.id, "consult"),
+      gptProPart(assistant.id, "gpt-consult", "consult"),
+      gptProPart(assistant.id, "gpt-status", "status", "gpt_1", "error"),
+    ]
+    const rows = construct(user, partsByID(parts), [assistant], 0, true, true, "idle", false)
+    const cards = rows.filter((row) => row._tag === "AssistantPart")
+    expect(cards).toHaveLength(2)
+  })
+
+  test("does not merge status polls for a different consultation", () => {
+    const user = userMessage("user-gpt-two")
+    const assistant = assistantMessage("assistant-gpt-two", user.id)
+    const parts = [
+      textPart(user.id, "consult"),
+      gptProPart(assistant.id, "gpt-consult", "consult", "gpt_1"),
+      gptProPart(assistant.id, "gpt-status", "status", "gpt_2"),
+    ]
+    const rows = construct(user, partsByID(parts), [assistant], 0, true, true, "idle", false)
+    expect(rows.filter((row) => row._tag === "AssistantPart")).toHaveLength(2)
   })
 
   test("keeps present_diagram out of the collapsed tool group", () => {
