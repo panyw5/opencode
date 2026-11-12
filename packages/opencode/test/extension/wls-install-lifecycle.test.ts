@@ -18,14 +18,14 @@ import { ExtensionID } from "../../src/extension/schema"
 const archives = process.env.OPENCODE_WLS_ARCHIVES
 const cdp = process.env.OPENCODE_WLS_CDP === "1"
 const id = ExtensionID.make("local.wls-repl")
-const descriptorURL = "https://raw.githubusercontent.com/panyw5/opencode-wls/main/stable.json"
+const descriptorURL = "https://raw.githubusercontent.com/panyw5/open-extensions/main/wls-repl/stable.json"
 const descriptor = (version: string, sha256: string) =>
   JSON.stringify({
     schemaVersion: 1,
     id,
     version,
     artifact: {
-      url: `https://github.com/panyw5/opencode-wls/releases/download/v${version}/opencode-ai-wls-repl-extension-${version}.tgz`,
+      url: `https://github.com/panyw5/open-extensions/releases/download/wls-repl-v${version}/opencode-ai-wls-repl-extension-${version}.tgz`,
       sha256,
     },
   })
@@ -88,7 +88,7 @@ test.skipIf(!archives)(
       expect(update.version).toBe("1.18.64")
       expect(update.source).toMatchObject({
         type: "archive",
-        sha256: "004716ab52a77584c6ac8a984572bd45f73bb790889e859ed881cadc0cced288",
+        sha256: "973691186116df345353cc4fe2894d161cc4578f8d04630ab74fa4f65ad30d17",
       })
       // Preparing is non-destructive: the old kernel remains usable until confirmation.
       expect(await rpc("kernel.evalAwait", { code: "lifecycleValue" })).toMatchObject({ ok: true, text: "41" })

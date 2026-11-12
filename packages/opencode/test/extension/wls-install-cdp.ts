@@ -104,7 +104,7 @@ export async function confirmThroughRenderer(
     const source = `/@fs${path.resolve(import.meta.dir, "../../../app/src/components/dialog-install-extension.tsx")}?wls-ui=${Date.now()}`
     const helper = `/@fs${path.resolve(import.meta.dir, "../../../app/src/extensions/install-desktop.ts")}`
     const remote =
-      "https://github.com/panyw5/opencode-wls/releases/download/v1.18.64/opencode-ai-wls-repl-extension-1.18.64.tgz"
+      "https://github.com/panyw5/open-extensions/releases/download/wls-repl-v1.18.64/opencode-ai-wls-repl-extension-1.18.64.tgz"
     return await withCdp(async (client, target) => {
       expect(target.url.startsWith("http://localhost:")).toBe(true)
       try {
