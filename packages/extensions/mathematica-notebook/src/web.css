@@ -1,12 +1,17 @@
 .oc-nb {
   --oc-nb-gutter: 64px;
+  --oc-nb-fs: 1;
+  --oc-nb-ink: #3b3226;
+  --oc-nb-dim: #5c7284;
+  --oc-nb-line: #d9d4c8;
+  --oc-nb-accent: #b85629;
   --oc-nb-code-font: "JetBrainsMono Nerd Font Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
   position: absolute;
   inset: var(--oc-nb-surface-top, 0px) 0 0;
   min-height: 0;
   overflow: auto;
   overflow-anchor: none;
-  color: var(--text-base, #333);
+  color: var(--text-base, var(--oc-nb-ink));
   background: var(--background-base, #f5f4f0);
   font-family: var(--font-family-sans, sans-serif);
 }
@@ -21,7 +26,7 @@
 }
 .oc-nb-rich math {
   font-family: "STIX Two Math", "STIXGeneral", "Cambria Math", "Latin Modern Math", serif;
-  font-size: 17px;
+  font-size: calc(17px * var(--oc-nb-fs));
   width: max-content;
   min-width: 0;
   margin: 0;
@@ -36,10 +41,10 @@
 }
 .oc-nb-box-unknown {
   color: var(--text-weak, #8a6745);
-  font-size: 12px;
+  font-size: calc(12px * var(--oc-nb-fs));
 }
 .oc-nb-rich .oc-nb-opaque {
-  font-size: 11px;
+  font-size: calc(11px * var(--oc-nb-fs));
   opacity: 0.8;
 }
 .oc-nb-rich .oc-nb-opaque[open] {
@@ -51,13 +56,13 @@
   z-index: 2;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 10px;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--border-base, #ddd);
+  border-bottom: 1px solid var(--border-base, var(--oc-nb-line));
   background: var(--background-base, #f5f4f0);
   flex-wrap: wrap;
-  color: var(--text-base, #333);
+  color: var(--text-base, var(--oc-nb-ink));
   font-family: var(--font-family-sans, sans-serif);
 }
 .oc-nb-toolbar[data-hosted="true"] {
@@ -68,9 +73,34 @@
   border: 0;
   background: transparent;
 }
-.oc-nb-footnote {
-  font-size: 11px;
-  opacity: 0.65;
+.oc-nb-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.oc-nb-fontgroup {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--border-base, var(--oc-nb-line));
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--background-strong, #fff);
+}
+.oc-nb-fontgroup button {
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 4px 9px !important;
+  border-right: 1px solid var(--border-base, #e6e1d5) !important;
+}
+.oc-nb-fontgroup button:last-child {
+  border-right: 0 !important;
+}
+.oc-nb-fontvalue {
+  min-width: 46px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--oc-nb-dim);
 }
 .oc-nb-actions,
 .oc-nb-add {
@@ -82,12 +112,18 @@
 .oc-nb-toolbar button {
   font: inherit;
   font-size: 12px;
-  padding: 5px 10px;
-  border: 1px solid var(--border-base, #ccc);
-  border-radius: 4px;
+  line-height: 1.5;
+  padding: 4px 11px;
+  border: 1px solid var(--border-base, var(--oc-nb-line));
+  border-radius: 5px;
   cursor: pointer;
   background: var(--background-strong, #fff);
   color: inherit;
+}
+.oc-nb button:not(:disabled):hover,
+.oc-nb-toolbar button:not(:disabled):hover {
+  border-color: #c5bfae;
+  background: #f4f0e6;
 }
 .oc-nb button:disabled,
 .oc-nb-toolbar button:disabled {
@@ -97,14 +133,14 @@
 .oc-nb button:focus-visible,
 .oc-nb-toolbar button:focus-visible,
 .oc-nb textarea:focus-visible {
-  outline: 2px solid #b85629;
+  outline: 2px solid var(--oc-nb-accent);
   outline-offset: 2px;
 }
 .oc-nb-paper {
   width: 100%;
   box-sizing: border-box;
   margin: 0;
-  padding: 24px 12px 20px 0;
+  padding: 24px 20px 20px 0;
   min-height: 100%;
   background: var(--background-strong, #fff);
 }
@@ -115,11 +151,23 @@
   position: relative;
   display: grid;
   grid-template-columns: var(--oc-nb-gutter) minmax(0, 1fr);
-  padding: 14px 0;
+  padding: 14px 10px 14px 0;
+  border-right: 2px solid transparent;
+  transition: border-color 0.12s ease;
+}
+.oc-nb-cell[data-style="Input"],
+.oc-nb-cell[data-style="Code"] {
+  border-right-color: #e4dfd2;
+}
+.oc-nb-cell:hover {
+  border-right-color: #cfc8b6;
+}
+.oc-nb-cell:focus-within {
+  border-right-color: var(--oc-nb-accent);
 }
 .oc-nb-label,
 .oc-nb-out-label {
-  color: #748fa5;
+  color: var(--oc-nb-dim);
   font: 11px var(--oc-nb-code-font);
   padding: 8px 10px 0 0;
   text-align: right;
@@ -137,8 +185,6 @@
 }
 .oc-nb-content {
   min-width: 0;
-  border-right: 2px solid var(--border-base, #ddd);
-  padding-right: 12px;
 }
 .oc-nb textarea {
   display: block;
@@ -151,31 +197,31 @@
   padding: 6px 8px;
   background: transparent;
   color: inherit;
-  font: 14px/1.65 var(--oc-nb-code-font);
+  font: calc(14px * var(--oc-nb-fs)) / 1.65 var(--oc-nb-code-font);
   tab-size: 2;
 }
 .oc-nb textarea:hover,
 .oc-nb textarea:focus {
-  border-color: var(--border-base, #ddd);
+  border-color: var(--border-base, var(--oc-nb-line));
 }
 .oc-nb-cell[data-style="Title"] textarea {
   font:
-    32px/1.3 Georgia,
+    calc(32px * var(--oc-nb-fs)) / 1.3 Georgia,
     serif;
 }
 .oc-nb-cell[data-style="Section"] textarea {
   font:
-    24px/1.4 Georgia,
+    calc(24px * var(--oc-nb-fs)) / 1.4 Georgia,
     serif;
 }
 .oc-nb-cell[data-style="Subsection"] textarea {
   font:
-    20px/1.4 Georgia,
+    calc(20px * var(--oc-nb-fs)) / 1.4 Georgia,
     serif;
 }
 .oc-nb-cell[data-style="Text"] textarea {
   font:
-    15px/1.7 Georgia,
+    calc(15px * var(--oc-nb-fs)) / 1.7 Georgia,
     serif;
 }
 .oc-nb .oc-nb-label .oc-nb-run {
@@ -185,24 +231,30 @@
   font-size: 11px;
   line-height: 1.3;
   overflow-wrap: anywhere;
-  color: #b85629;
+  color: var(--oc-nb-accent);
 }
 .oc-nb-output {
   position: relative;
   margin: 12px 0 0;
   padding: 10px 8px;
-  border-top: 1px solid var(--border-base, #ddd);
+  border-top: 1px solid var(--border-base, var(--oc-nb-line));
 }
 .oc-nb-out-label {
+  position: absolute;
+  top: 10px;
+  left: calc(-1 * var(--oc-nb-gutter));
+  width: calc(var(--oc-nb-gutter) - 10px);
+  margin: 0;
+  padding: 3px 0 0;
+  line-height: 1.9;
   display: block;
-  text-align: left;
-  margin-bottom: 8px;
+  text-align: right;
 }
 .oc-nb pre {
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font: 13px/1.6 var(--oc-nb-code-font);
+  font: calc(13px * var(--oc-nb-fs)) / 1.6 var(--oc-nb-code-font);
 }
 .oc-nb-editor {
   position: relative;
@@ -214,7 +266,7 @@
   border: 1px solid transparent;
   border-radius: 3px;
   padding: 6px 8px;
-  font: 14px/1.65 var(--oc-nb-code-font);
+  font: calc(14px * var(--oc-nb-fs)) / 1.65 var(--oc-nb-code-font);
   font-variant-ligatures: none;
   letter-spacing: normal;
   white-space: pre-wrap;
@@ -228,18 +280,84 @@
   inset: 0;
   overflow: hidden;
   pointer-events: none;
-  color: var(--text-base, #333);
+  color: var(--text-base, var(--oc-nb-ink));
 }
 .oc-nb .oc-nb-editor.is-code textarea {
   position: relative;
   /* Plain-text fallback is opaque; only an actual highlight mirror hides glyphs. */
-  color: var(--text-base, #333);
+  color: var(--text-base, var(--oc-nb-ink));
   -webkit-text-fill-color: currentColor;
   caret-color: var(--text-strong, #888);
 }
 .oc-nb .oc-nb-editor.is-highlighted textarea {
   color: transparent;
   -webkit-text-fill-color: transparent;
+}
+/* Pretty display: rendered math owns the row height; the textarea stays on top
+   but invisible so clicks focus and typing still edits the raw source. */
+.oc-nb .oc-nb-editor.is-code.has-pretty textarea {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  resize: none;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: transparent;
+}
+.oc-nb-pretty {
+  position: relative;
+  box-sizing: border-box;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: var(--background-strong, #fff);
+  font: calc(14px * var(--oc-nb-fs)) / 1.65 var(--oc-nb-code-font);
+  font-variant-ligatures: none;
+  letter-spacing: normal;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  tab-size: 2;
+}
+.oc-nb-pl {
+  min-height: 1.65em;
+}
+.oc-nb-frac {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  vertical-align: middle;
+  margin: 0 0.12em;
+  line-height: 1.25;
+}
+.oc-nb-frac > .oc-nb-num {
+  padding: 0 0.3em;
+  border-bottom: 1px solid currentColor;
+}
+.oc-nb-frac > .oc-nb-den {
+  padding: 0 0.3em;
+}
+.oc-nb-exp {
+  display: inline-block;
+  font-size: 0.72em;
+  line-height: 1.2;
+  vertical-align: 0.62em;
+}
+.oc-nb-sub-i {
+  display: inline-block;
+  font-size: 0.72em;
+  line-height: 1.2;
+  vertical-align: -0.32em;
+}
+.oc-nb-sqrt {
+  white-space: nowrap;
+}
+.oc-nb-sqrt > .oc-nb-rad {
+  border-top: 1px solid currentColor;
+  padding: 0 0.15em;
 }
 .oc-nb [data-token="comment"] {
   color: var(--syntax-comment, #888);
@@ -278,12 +396,12 @@
 }
 .oc-nb-preview {
   padding: 8px;
-  border: 1px dashed var(--border-base, #ddd);
+  border: 1px dashed var(--border-base, var(--oc-nb-line));
   border-radius: 3px;
 }
 .oc-nb-preview .oc-nb-muted {
   margin: 0 0 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--oc-nb-fs));
   color: var(--text-weak, #777);
 }
 .oc-nb-preview pre {
@@ -301,7 +419,7 @@
 }
 .oc-nb-output details,
 .oc-nb-opaque {
-  font-size: 12px;
+  font-size: calc(12px * var(--oc-nb-fs));
   opacity: 0.8;
 }
 .oc-nb summary {
@@ -329,15 +447,17 @@
   padding: 20px 0 24px var(--oc-nb-gutter);
 }
 .oc-nb-footnote {
-  border-top: 1px solid var(--border-base, #ddd);
-  padding: 14px 12px;
+  font-size: 11px;
+  opacity: 0.65;
+  border-top: 1px solid var(--border-base, var(--oc-nb-line));
+  padding: 14px 12px 14px calc(var(--oc-nb-gutter) + 8px);
 }
 @media (max-width: 600px) {
   .oc-nb {
     --oc-nb-gutter: 52px;
   }
   .oc-nb-paper {
-    padding: 16px 8px 16px 0;
+    padding: 16px 12px 16px 0;
   }
   .oc-nb-toolbar {
     padding: 10px;

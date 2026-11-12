@@ -21,6 +21,8 @@ import {
 } from "./viewer"
 import "./web.css"
 import { RichCell } from "./box-view"
+import { namedCharacters } from "./named-chars"
+import { PrettyCode } from "./pretty-view"
 import { createPreviewScheduler } from "./preview-scheduler"
 import type { CellsResponse } from "./preview-protocol"
 
@@ -32,7 +34,7 @@ function CodeTokens(props: { value: string }) {
 }
 
 function TextPreview(props: { value: string; characters?: number; onLoad(): void }) {
-  const preview = createMemo(() => textPreview(props.value))
+  const preview = createMemo(() => namedCharacters(textPreview(props.value)))
   return (
     <div class="oc-nb-preview">
       <p class="oc-nb-muted">
@@ -51,7 +53,7 @@ function DeferredText(props: { value: string; full: boolean; onLoad(): void; pri
       fallback={<TextPreview value={props.value} onLoad={props.onLoad} />}
     >
       <pre classList={{ "oc-nb-printed": props.printed }}>
-        <CodeTokens value={props.value} />
+        <CodeTokens value={namedCharacters(props.value)} />
       </pre>
     </Show>
   )
@@ -62,6 +64,7 @@ function CellEditor(props: {
   value: string
   disabled: boolean
   highlight?: boolean
+  pretty?: boolean
   resize: EditorResizeQueue
   onComposition(active: boolean): void
   onInput(value: string): void
@@ -69,16 +72,63 @@ function CellEditor(props: {
   let field!: HTMLTextAreaElement
   let mirror: HTMLPreElement | undefined
   const [composing, setComposing] = createSignal(false)
+  // Fresh empty cells open directly in edit mode; populated cells render pretty.
+  const [editing, setEditing] = createSignal(!!props.pretty && props.value.trim() === "")
   const highlighted = createMemo(() => !!props.highlight && !composing() && canHighlightWolfram(props.value))
+  const prettyOn = () => !!props.pretty && !editing()
+  // The virtualizer may move the focused cell's DOM node when a height change
+  // remeasures the list; Chrome blurs the textarea on that move (relatedTarget
+  // stays null). A real user blur follows a pointerdown outside the editor, a
+  // relatedTarget switch (Tab), or an explicit Escape — everything else is
+  // transient and focus must be restored once the node settles.
+  let outsidePointerDown = 0
+  let exitOnce = false
+  let restoreTimer: ReturnType<typeof setTimeout> | undefined
+  const blurEditor = (event: FocusEvent) => {
+    if (exitOnce) {
+      exitOnce = false
+      setEditing(false)
+      return
+    }
+    if (event.relatedTarget) {
+      setEditing(false)
+      return
+    }
+    if (Date.now() - outsidePointerDown < 500) {
+      setEditing(false)
+      return
+    }
+    if (restoreTimer !== undefined) clearTimeout(restoreTimer)
+    restoreTimer = setTimeout(() => {
+      restoreTimer = undefined
+      if (
+        !field.isConnected ||
+        props.disabled ||
+        (document.activeElement !== document.body && document.activeElement !== document.documentElement)
+      )
+        return
+      field.focus({ preventScroll: true })
+    }, 0)
+  }
   const syncScroll = () => {
     if (!mirror || !field) return
     mirror.scrollTop = field.scrollTop
     mirror.scrollLeft = field.scrollLeft
   }
-  const resize = () => props.resize.schedule({ field, syncScroll })
+  const resize = () => {
+    if (prettyOn()) return
+    props.resize.schedule({ field, syncScroll })
+  }
   createEffect(() => {
     props.value
     highlighted()
+    if (prettyOn()) {
+      // The pretty view owns the height; release the managed textarea size.
+      props.resize.remove(field)
+      field.style.height = ""
+      syncScroll()
+      return
+    }
     resize()
   })
   onMount(() => {
@@ -90,16 +140,30 @@ function CellEditor(props: {
       resize()
     })
     observer.observe(field)
-    onCleanup(() => observer.disconnect())
+    const trackPointer = (event: PointerEvent) => {
+      outsidePointerDown = field.contains(event.target as Node) ? 0 : Date.now()
+    }
+    document.addEventListener("pointerdown", trackPointer, true)
+    onCleanup(() => {
+      observer.disconnect()
+      document.removeEventListener("pointerdown", trackPointer, true)
+      if (restoreTimer !== undefined) clearTimeout(restoreTimer)
+    })
   })
   onCleanup(() => props.resize.remove(field))
   return (
-    <div class="oc-nb-editor" classList={{ "is-code": props.highlight, "is-highlighted": highlighted() }}>
+    <div
+      class="oc-nb-editor"
+      classList={{ "is-code": props.highlight, "is-highlighted": highlighted(), "has-pretty": prettyOn() }}
+    >
       <Show when={highlighted()}>
         <pre ref={mirror} class="oc-nb-highlight" aria-hidden="true">
           <CodeTokens value={props.value} />
           {"​"}
         </pre>
+      </Show>
+      <Show when={prettyOn()}>
+        <PrettyCode value={props.value} />
       </Show>
       <textarea
         ref={field}
@@ -111,6 +175,14 @@ function CellEditor(props: {
         autocapitalize={props.highlight ? "off" : undefined}
         autocorrect={props.highlight ? "off" : undefined}
         onScroll={syncScroll}
+        onFocus={() => setEditing(true)}
+        onBlur={blurEditor}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            exitOnce = true
+            field.blur()
+          }
+        }}
         onCompositionStart={() => {
           props.onComposition(true)
           setComposing(true)
@@ -144,6 +216,7 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
   const [error, setError] = createSignal("")
   const [notice, setNotice] = createSignal("")
   const [dirty, setDirty] = createSignal(false)
+  const [fontScale, setFontScale] = createSignal(1)
   const [startMargin, setStartMargin] = createSignal(0)
   const [previewEpoch, setPreviewEpoch] = createSignal(0)
   let scroller!: HTMLElement
@@ -157,6 +230,19 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
   let runBatch = false
   const reloadGate = createReloadGate()
   const resize = createEditorResizeQueue((message) => props.context.log.debug(message))
+  const setFont = (value: number) => {
+    const next = Math.min(2.2, Math.max(0.7, Math.round(value * 100) / 100))
+    setFontScale(next)
+    try {
+      localStorage.setItem("oc-nb-font-scale", String(next))
+    } catch {}
+  }
+  onMount(() => {
+    try {
+      const stored = Number(localStorage.getItem("oc-nb-font-scale"))
+      if (stored >= 0.7 && stored <= 2.2) setFontScale(stored)
+    } catch {}
+  })
   const keepMounted = createMemo(() => pinnedCellPositions(document()?.cells ?? [], focused(), composing()))
   const loadFull = async (key: string) => {
     const index = key.startsWith("cell:") ? Number(key.slice(5)) : -1
@@ -426,6 +512,7 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
       class="oc-nb"
       data-notebook-path={props.file.absolutePath}
       aria-label="Mathematica Notebook"
+      style={{ "--oc-nb-fs": String(fontScale()) }}
     >
       <header ref={toolbar} class="oc-nb-toolbar" data-hosted={!!props.setToolbar} aria-label="Notebook actions">
         <div class="oc-nb-actions">
@@ -465,6 +552,27 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
           >
             {dirty() ? "Discard & reload" : "Reload"}
           </button>
+        </div>
+        <div class="oc-nb-side">
+          <div class="oc-nb-fontgroup" role="group" aria-label="Font size">
+            <button
+              aria-label="Decrease font size"
+              title="Decrease font size"
+              onClick={() => setFont(fontScale() - 0.1)}
+            >
+              A−
+            </button>
+            <button class="oc-nb-fontvalue" title="Reset font size" onClick={() => setFont(1)}>
+              {Math.round(fontScale() * 100)}%
+            </button>
+            <button
+              aria-label="Increase font size"
+              title="Increase font size"
+              onClick={() => setFont(fontScale() + 0.1)}
+            >
+              A+
+            </button>
+          </div>
           <button onClick={props.showSource}>Source</button>
         </div>
       </header>
@@ -557,6 +665,7 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
                         <CellEditor
                           label={`Cell ${cell.index + 1} (${cell.style})`}
                           disabled={busy()}
+                          pretty={cell.style === "Input" || cell.style === "Code"}
                           highlight={cell.style === "Input" || cell.style === "Code" || cell.style === "Output"}
                           value={cellText(cell, drafts())}
                           resize={resize}
