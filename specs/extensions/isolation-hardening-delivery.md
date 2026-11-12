@@ -52,7 +52,7 @@
 - App 完整 unit 初为2150 pass / 10 fail；补local.channel测试契约及IM纯逻辑测试导入边界后，最终 **2161 pass / 0 fail**。
 - 完整 browser 初为109 pass / 1 fail；更新tabs/Kobalte Select/布局契约，并修复CLI/Native RPC实际保存入口缺失后，最终 **110 pass / 0 fail**。保留了保存不触发ACP探测、来源pin、A-B-A与capability隔离等断言。
 - 设置组件业务修复通过独立Electron CDP实际点击：save=1、probe=0，patch为cli-json；截图 `/tmp/ext-followup-cli-save.png`。无真实服务器配置变更，保存使用注入fixture回调。
-- 独立进程原型新增10项监督状态回归全绿，unit现34/0、Electron7/0、typecheck通过；完整process仍48 pass / 1 skip / 1 fail，Bun控制管道异常未根治，真实红测保留。详见 [prototypes/README.md](./prototypes/README.md)。
+- 独立进程原型的Bun管道问题随后已定位并修复：兼容层Socket与原生Subprocess GC重复关闭同一个附加fd，误关复用后的新管道。独立原型改用原生Bun.spawn+原子CLOEXEC副本，保留原强断言；最终完整原型 **84 pass / 8 skip / 0 fail**，process连续三轮 **49 pass / 1 skip / 0 fail**，Electron **7/0**，typecheck通过；强制GC下Bun300轮/Node100轮0失败。仅macOS原型适配，不接生产、不升级全局Bun。详见 [prototypes/README.md](./prototypes/README.md)。
 - 早期 25ms 隔离测试预算在多文件组合时健康扩展偶发超时；测试默认改为150ms，行为断言不放宽，生产仍10秒。
 
 ## 实际后端与 Electron 验证

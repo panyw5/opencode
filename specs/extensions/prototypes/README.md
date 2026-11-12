@@ -41,7 +41,26 @@ bun run --cwd specs/extensions/prototypes test:electron
 
 `typecheck` 已通过；`test:unit` 为 `24 pass / 0 fail`（3 files，102 expect calls，167ms）。独立 Electron 探针实际运行 `7 pass / 0 fail`（2 files，33 expect calls，2.73s）。修改/新增配置通过 Prettier 检查。这不是产品 GUI 验收，也不证明 Windows/Linux ownership、完整进程树终止、PluginInput/Hooks 代理或持久化 lifecycle store 已实现。独立严格 typecheck 发现的可选 rejection code 已增加显式存在性检查；其余原型逻辑保持不变。
 
-### 后续诊断与监督记账修复
+### Bun 附加 FD 双重所有权根因与修复
+
+上述非全绿记录为历史诊断；本轮已定位并在独立原型修复，不接入生产、不升级全局Bun。
+
+**根因：** Bun1.3.9（cf6cdbbb）的 `node:child_process` 兼容层将原生Subprocess的额外fd直接交给 `net.connect({fd})`。Socket销毁关闭fd后，原生Subprocess的GC finalizer仍会再次关闭保存的同一数字；数字若已被新子进程复用，就误关新控制管道，产生EOF/EPIPE/ENOENT。固定源码：[child_process.ts](https://github.com/oven-sh/bun/blob/cf6cdbbb/src/js/node/child_process.ts) 的 `#getBunSpawnIo`、[subprocess.zig](https://github.com/oven-sh/bun/blob/cf6cdbbb/src/bun.js/api/bun/subprocess.zig) 的 `finalizeStreams`。
+
+**对照证据：** 旧兼容层最小probe100轮7–13失败；等待close无改善。保留旧child对象300轮0失败；Node宿主100轮0失败。已安装的Bun1.3.10也复现5/100，未将升级当作修复。
+
+**修复：** `execution-process-bun.ts` 用原生Bun.spawn持有原fd，通过Darwin `F_DUPFD_CLOEXEC` 复制独立fd交给流，每个对象只关闭自己拥有的句柄。`execution-fd.c` 用固定参数包装fcntl，避免arm64变参ABI错误；显式SHUT_WR保留主动release时worker收到EOF的语义，C库活到本地流关闭。Node宿主原路径不变，Bun/macOS适配以外平台仍未验证，不回退到已知双close路径。没有永久保留旧child对象。
+
+**最终验证：** 完整原型 **84 pass / 8 skip / 0 fail**（92 tests）；process连续三轮各 **49 pass / 1 skip / 0 fail**；Electron **7/0**；typecheck通过。新增GC+FD快速复用回归原实现红测，修复后300轮通过；另Bun宿主启动Node子进程100轮通过。disposeHang、control-pipe-loss、force-terminate及ownership原强断言均保留，没有新增skip或超时放宽。
+
+```sh
+bun run test:fd
+OPENCODE_EXTENSION_FD_ROUNDS=300 bun run test:fd
+```
+
+证据：`/tmp/ext-fd-complete.log`、`/tmp/ext-fd-verified-process{1,2,3}.log`、`/tmp/ext-fd-verified-electron.log`、`/tmp/ext-fd-repo-stress300.log`、`/tmp/ext-fd-stress-node100.log`。这些是macOS开发原型证据，不证明Linux/Windows支持、发行打包或完整进程树退出；原型仍未接生产。
+
+
 
 - 新增10项确定性控制测试：停止的 drain/dispose/exit 阶段出现 transport/protocol fatal、未收到 dispose ack 的提前退出、正常 ack→exit0。修前9 fail/1 pass，修后10/0；unit现 **34 pass / 0 fail**，typecheck通过，Electron仍 **7 pass / 0 fail**。
 - supervisor 不再只保存stop入口时的fatal；未ack异常根退出保留 `exited`，不把提前EOF伪装成 `disposeDeadline`。rootExited仍tree=unproven，不授权删除资源。

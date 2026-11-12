@@ -6,7 +6,9 @@ import { executionIdentity } from "./execution-fixture"
 const fixture = fileURLToPath(new URL("./fixtures/fd-owner.mjs", import.meta.url))
 
 test("recycling exited subprocesses cannot close a newer execution's control descriptors", async () => {
-  for (let round = 0; round < 60; round++) {
+  const rounds = Number(process.env.OPENCODE_EXTENSION_FD_ROUNDS ?? 60)
+  if (!Number.isSafeInteger(rounds) || rounds < 1 || rounds > 500) throw new RangeError("FD rounds must be 1–500")
+  for (let round = 0; round < rounds; round++) {
     const { identity } = executionIdentity()
     const diagnostics: string[] = []
     await using transport = await spawnExecutionProcess({
@@ -20,8 +22,13 @@ test("recycling exited subprocesses cannot close a newer execution's control des
     let ready!: () => void
     let replied!: () => void
     let failed!: (error: Error) => void
-    const hello = new Promise<void>((resolve, reject) => { ready = resolve; failed = reject })
-    const reply = new Promise<void>((resolve) => { replied = resolve })
+    const hello = new Promise<void>((resolve, reject) => {
+      ready = resolve
+      failed = reject
+    })
+    const reply = new Promise<void>((resolve) => {
+      replied = resolve
+    })
     const off = transport.subscribe((value) => {
       const event = value as { type: string }
       if (event.type === "hello") ready()
@@ -36,7 +43,12 @@ test("recycling exited subprocesses cannot close a newer execution's control des
       // Reclaim older subprocess wrappers while these newly allocated fds are live.
       Bun.gc(true)
       transport.send({ version: 1, identity, type: "drain" })
-      await Promise.race([reply, transport.exited.then(() => { throw new Error(`Control lost round=${round} ${diagnostics.join(" | ")}`) })])
+      await Promise.race([
+        reply,
+        transport.exited.then(() => {
+          throw new Error(`Control lost round=${round} ${diagnostics.join(" | ")}`)
+        }),
+      ])
       expect(await transport.exited).toEqual({ code: 0, signal: null })
       await transport.release()
       await transport.release()

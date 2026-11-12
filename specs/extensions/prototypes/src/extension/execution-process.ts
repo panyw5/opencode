@@ -150,7 +150,10 @@ export async function spawnExecutionProcess(options: {
   }
   let outcome: RootExit | undefined
   const exited = bunChild
-    ? bunChild.exited.then((exit) => { outcome = exit; return exit })
+    ? bunChild.exited.then((exit) => {
+        outcome = exit
+        return exit
+      })
     : new Promise<RootExit>((resolve) => {
         child!.once("exit", (code, signal) => {
           outcome = { code, signal: signal ?? null }
@@ -171,8 +174,12 @@ export async function spawnExecutionProcess(options: {
     if (failure) return
     failure = error
     diagnostic(error)
-    // A broken control channel cannot leave a loader alive behind a missing hello barrier.
-    if (!outcome && pid) terminate()
+    // Termination failure must not suppress the original channel failure.
+    try {
+      if (!outcome && pid) terminate()
+    } catch (cause) {
+      diagnostic(cause)
+    }
     failed?.(error)
   }
   child?.on("error", fail)
@@ -187,7 +194,17 @@ export async function spawnExecutionProcess(options: {
       receive = undefined
       failed = undefined
       queued.length = 0
-      await closeExecutionPipes(pipes, fail)
+      // Duplicates share the socket connection with native-owned originals.
+      // Half-close commands explicitly so release still delivers EOF to a live worker.
+      try {
+        if (bunChild && !outcome) bunChild.shutdown()
+      } finally {
+        try {
+          await closeExecutionPipes(pipes, fail)
+        } finally {
+          bunChild?.close()
+        }
+      }
     })())
   try {
     stage = `stdio child=${pid ?? "none"}`
@@ -197,6 +214,7 @@ export async function spawnExecutionProcess(options: {
         pipes.push(pipe)
         pipe.on("error", fail)
       }
+    if (bunChild?.failure) throw bunChild.failure
     if (failure) throw failure
     if (!(stdio[4] instanceof Readable) || !(stdio[3] instanceof Writable)) throw new ExecutionError("transport")
     input = stdio[4]
@@ -215,10 +233,11 @@ export async function spawnExecutionProcess(options: {
     const [stdout, stderr] = bunChild?.logs ?? [child!.stdout, child!.stderr]
     stdout?.on("data", (bytes: Buffer) => options.log("stdout", bytes.toString()))
     stderr?.on("data", (bytes: Buffer) => options.log("stderr", bytes.toString()))
-    if (child) await new Promise<void>((resolve, reject) => {
-      child.once("spawn", resolve)
-      child.once("error", reject)
-    })
+    if (child)
+      await new Promise<void>((resolve, reject) => {
+        child.once("spawn", resolve)
+        child.once("error", reject)
+      })
     if (failure) throw failure
     diagnostic()
   } catch (cause) {

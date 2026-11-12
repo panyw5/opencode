@@ -8,6 +8,7 @@
     "reuse-installed": "node ./scripts/reuse-installed.mjs",
     "test": "bun test --timeout 30000 ./test/extension",
     "test:unit": "bun test --timeout 30000 ./test/extension/lifecycle-state.test.ts ./test/extension/execution-control.test.ts ./test/extension/execution-worker.test.ts",
+    "test:fd": "bun test --timeout 30000 ./test/extension/execution-fd.test.ts",
     "test:process": "bun test --timeout 30000 ./test/extension/lifecycle-process.test.ts ./test/extension/ownership.test.ts ./test/extension/execution-supervisor.test.ts",
     "test:electron": "OPENCODE_EXTENSION_ELECTRON_PROBE=1 bun test --timeout 30000 ./test/extension/ownership-electron.test.ts ./test/extension/execution-electron.test.ts",
     "typecheck": "node ./node_modules/typescript/bin/tsc --project ./tsconfig.json --noEmit"
