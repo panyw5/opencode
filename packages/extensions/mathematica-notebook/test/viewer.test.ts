@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test"
 import {
+  applyOutline,
   cellText,
   createEditorResizeQueue,
   createReloadGate,
   draftEdits,
+  isFoldable,
   isLargeText,
   LARGE_CELL_CHARACTERS,
   listStartMargin,
@@ -11,6 +13,7 @@ import {
   PREVIEW_CHARACTERS,
   textPreview,
   viewerContent,
+  visibleCells,
   type ViewerCell,
 } from "../src/viewer"
 
@@ -48,6 +51,48 @@ test("large previews are display-only, saving and running always use original or
   expect(draftEdits({})).toEqual([])
   expect(cellText(giant, { 4: "" })).toBe("")
   expect(textPreview("small")).toBe("small")
+})
+
+test("folded group headers hide their descendants, transitively", () => {
+  const cells = [
+    { ...cell(0), style: "Chapter", group: true },
+    { ...cell(1), style: "Section", group: true, parent: 0 },
+    { ...cell(2), parent: 1 },
+    { ...cell(3), style: "Section", parent: 0 },
+    cell(4),
+  ]
+  expect(visibleCells(cells, {}).map((item) => item.index)).toEqual([0, 1, 2, 3, 4])
+  expect(visibleCells(cells, { 0: false }).map((item) => item.index)).toEqual([0, 1, 2, 3, 4])
+  expect(visibleCells(cells, { 0: true }).map((item) => item.index)).toEqual([0, 4])
+  expect(visibleCells(cells, { 1: true }).map((item) => item.index)).toEqual([0, 1, 3, 4])
+})
+
+test("the style fallback outlines ungrouped notebooks and only heads content", () => {
+  const cells = [
+    { ...cell(0), style: "Title" },
+    { ...cell(1), style: "Section" },
+    cell(2),
+    { ...cell(3), style: "Subsection" },
+    cell(4),
+    { ...cell(5), style: "Section" },
+  ]
+  const outlined = applyOutline(cells)
+  expect(outlined[0]).toMatchObject({ group: true })
+  expect(outlined[1]).toMatchObject({ parent: 0, group: true })
+  expect(outlined[2]).toMatchObject({ parent: 1 })
+  expect(outlined[3]).toMatchObject({ parent: 1, group: true })
+  expect(outlined[4]).toMatchObject({ parent: 3 })
+  expect(outlined[5]).toMatchObject({ parent: 0 })
+  // A trailing heading with no body gets no fold control.
+  expect(outlined[5].group).toBeUndefined()
+  expect(isFoldable(outlined[1])).toBe(true)
+  expect(isFoldable(outlined[5])).toBe(false)
+  // Once parsed or inferred grouping exists, the fallback never rewrites it.
+  expect(applyOutline(outlined)).toEqual(outlined)
+  const grouped = [{ ...cell(0), group: true }, { ...cell(1), parent: 0 }]
+  expect(applyOutline(grouped)).toEqual(grouped)
+  // Non-heading group headers (e.g. Input) are never foldable.
+  expect(isFoldable({ ...cell(0), group: true })).toBe(false)
 })
 
 test("focus and composition pin list positions, not notebook cell indexes", () => {

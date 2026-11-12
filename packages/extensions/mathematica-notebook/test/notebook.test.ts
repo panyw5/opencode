@@ -99,6 +99,53 @@ describe("non-evaluating notebook model", () => {
     ])
     expect(editNotebook(source, [])).toBe(source)
   })
+  test("group headers record parent links and serialized fold state", () => {
+    const source = `Notebook[{
+      Cell[CellGroupData[{
+        Cell["chapter", "Chapter"],
+        Cell[CellGroupData[{Cell["section", "Section"], Cell[BoxData["1+1"], "Input"]}, Closed]],
+        Cell[CellGroupData[{Cell[BoxData["2+2"], "Input"], Cell["4", "Output"]}]]
+      }, Open]],
+      Cell["loose", "Text"]
+    }]`
+    const cells = parseNotebook(source).cells
+    expect(cells.map((cell) => cell.style)).toEqual(["Chapter", "Section", "Input", "Input", "Output", "Text"])
+    expect(cells[0]).toMatchObject({ group: true })
+    expect(cells[0].parent).toBeUndefined()
+    expect(cells[0].closed).toBeUndefined()
+    expect(cells[1]).toMatchObject({ parent: 0, group: true, closed: true })
+    expect(cells[2]).toMatchObject({ parent: 1 })
+    expect(cells[3]).toMatchObject({ parent: 0, group: true })
+    expect(cells[3].closed).toBeUndefined()
+    expect(cells[4]).toMatchObject({ parent: 3 })
+    expect(cells[5].parent).toBeUndefined()
+  })
+  test("a group cell in the first member slot shares the inner header", () => {
+    const source = `Notebook[{
+      Cell[CellGroupData[{
+        Cell[CellGroupData[{Cell["section", "Section"], Cell["body", "Text"]}, Open]]
+      }, Closed]]
+    }]`
+    const cells = parseNotebook(source).cells
+    expect(cells.map((cell) => cell.style)).toEqual(["Section", "Text"])
+    expect(cells[0]).toMatchObject({ group: true, closed: true })
+    expect(cells[0].parent).toBeUndefined()
+    expect(cells[1]).toMatchObject({ parent: 0 })
+  })
+  test("partial visibility lists and empty groups never produce a self-parent", () => {
+    const source = `Notebook[{
+      Cell[CellGroupData[{
+        Cell["section", "Section"],
+        Cell[CellGroupData[{}]],
+        Cell["body", "Text"]
+      }, {1}]]
+    }]`
+    const cells = parseNotebook(source).cells
+    expect(cells.map((cell) => cell.style)).toEqual(["Section", "Text"])
+    expect(cells[0]).toMatchObject({ group: true, closed: true })
+    expect(cells[1]).toMatchObject({ parent: 0 })
+    expect(cells.every((cell) => cell.parent !== cell.index)).toBe(true)
+  })
   test("preparsed edits match the original API for edits, appends and invalid edits", () => {
     for (const source of [fixture, "(* prefix *) Notebook[{(* empty *)}] (* cache *)"]) {
       const notebook = parseNotebook(source)

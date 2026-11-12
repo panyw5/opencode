@@ -183,6 +183,28 @@
 .oc-nb-cell-label {
   max-width: 100%;
 }
+.oc-nb .oc-nb-fold {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--oc-nb-dim);
+  font-size: calc(16px * var(--oc-nb-fs));
+  line-height: 1;
+}
+.oc-nb .oc-nb-fold:not(:disabled):hover {
+  border: 0;
+  background: transparent;
+  color: var(--oc-nb-accent);
+}
+.oc-nb .oc-nb-folded {
+  margin-top: 4px;
+  padding: 1px 8px;
+  font-size: calc(17px * var(--oc-nb-fs));
+  line-height: 1.2;
+  color: var(--oc-nb-dim);
+}
 .oc-nb-content {
   min-width: 0;
 }

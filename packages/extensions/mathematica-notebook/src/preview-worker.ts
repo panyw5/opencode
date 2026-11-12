@@ -52,15 +52,20 @@ async function handle(method: string, path: string, input: CellsRequest, cancell
       snapshots.set(key, entry)
     }
     trim()
-    const cells = entry.notebook.cells.map(({ index, style, text, editable, runnable, start, end }) => ({
-      index,
-      style,
-      editable,
-      runnable,
-      text: editable ? text.slice(0, L.inlineText) : "",
-      characters: editable ? text.length : end - start,
-      deferred: editable && text.length > L.inlineText,
-    }))
+    const cells = entry.notebook.cells.map(
+      ({ index, style, text, editable, runnable, parent, group, closed, start, end }) => ({
+        index,
+        style,
+        editable,
+        runnable,
+        text: editable ? text.slice(0, L.inlineText) : "",
+        characters: editable ? text.length : end - start,
+        deferred: editable && text.length > L.inlineText,
+        ...(parent === undefined ? {} : { parent }),
+        ...(group === undefined ? {} : { group }),
+        ...(closed === undefined ? {} : { closed }),
+      }),
+    )
     return {
       result: { path, revision, cells },
       metrics: { hit, cells: cells.length, bytes: bytes.length, cacheBytes: retained + renderedBytes },

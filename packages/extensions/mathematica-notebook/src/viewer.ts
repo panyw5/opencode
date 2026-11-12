@@ -10,6 +10,12 @@ export type ViewerCell = {
   runnable: boolean
   characters?: number
   deferred?: boolean
+  // Index of the header cell of the enclosing CellGroupData, when grouped.
+  parent?: number
+  // This cell heads a group; folding it hides its descendants.
+  group?: boolean
+  // The group was serialized folded in the file (CellGroupData[..., Closed]).
+  closed?: boolean
 }
 export type ViewerDocument = {
   path: string
@@ -37,7 +43,7 @@ export function viewerContent(next: ViewerDocument): ViewerContent {
     path: next.path,
     revision: next.revision,
     // Project fields explicitly, even if an older server ignores view: true.
-    cells: next.cells.map(({ index, style, text, editable, runnable, characters, deferred }) => ({
+    cells: next.cells.map(({ index, style, text, editable, runnable, characters, deferred, parent, group, closed }) => ({
       index,
       style,
       text,
@@ -45,6 +51,9 @@ export function viewerContent(next: ViewerDocument): ViewerContent {
       runnable,
       ...(characters === undefined ? {} : { characters }),
       ...(deferred === undefined ? {} : { deferred }),
+      ...(parent === undefined ? {} : { parent }),
+      ...(group === undefined ? {} : { group }),
+      ...(closed === undefined ? {} : { closed }),
     })),
   }
 }
@@ -55,6 +64,53 @@ export function cellText(cell: ViewerCell, drafts: Record<number, string>) {
 
 export function draftEdits(drafts: Record<number, string>) {
   return Object.entries(drafts).map(([index, text]) => ({ index: Number(index), text }))
+}
+
+// Heading styles that may fold their group, ordered by outline rank. Styles
+// not listed (Input, Output, Text, Item...) never fold.
+const HEADING_RANK = new Map(
+  ["Title", "Subtitle", "Chapter", "Subchapter", "Section", "Subsection", "Subsubsection"].map(
+    (style, rank) => [style, rank] as const,
+  ),
+)
+export function isFoldable(cell: ViewerCell) {
+  return !!cell.group && HEADING_RANK.has(cell.style)
+}
+
+// Fallback for notebooks saved without CellGroupData: infer the outline from
+// style ranks so headings can still fold. Only runs when the parser recorded
+// no grouping at all.
+export function applyOutline(cells: readonly ViewerCell[]): ViewerCell[] {
+  if (cells.some((cell) => cell.group || cell.parent !== undefined)) return cells.slice()
+  const stack: { index: number; rank: number }[] = []
+  const outlined = cells.map((cell) => {
+    const rank = HEADING_RANK.get(cell.style)
+    if (rank !== undefined) while (stack.length && stack.at(-1)!.rank >= rank) stack.pop()
+    const parent = stack.at(-1)?.index
+    const next: ViewerCell = { ...cell, ...(parent === undefined ? {} : { parent }) }
+    if (rank !== undefined) stack.push({ index: cell.index, rank })
+    return next
+  })
+  // Only headings that actually head content get a fold control.
+  const headings = new Set(outlined.filter((cell) => cell.parent !== undefined).map((cell) => cell.parent!))
+  return outlined.map((cell) => (headings.has(cell.index) ? { ...cell, group: true } : cell))
+}
+
+// Group headers always precede their members, so a single pass suffices: a
+// cell is hidden when its group header is folded or itself hidden.
+export function visibleCells(cells: readonly ViewerCell[], folded: Record<number, boolean>): ViewerCell[] {
+  if (!Object.values(folded).some(Boolean)) return cells.slice()
+  const hidden = new Set<number>()
+  const result: ViewerCell[] = []
+  for (const cell of cells) {
+    const hide = cell.parent !== undefined && (hidden.has(cell.parent) || !!folded[cell.parent])
+    if (hide) {
+      hidden.add(cell.index)
+      continue
+    }
+    result.push(cell)
+  }
+  return result
 }
 
 export function pinnedCellPositions(cells: readonly ViewerCell[], focused?: number, composing?: number) {

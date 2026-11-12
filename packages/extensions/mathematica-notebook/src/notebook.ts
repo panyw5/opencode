@@ -10,6 +10,12 @@ export type Cell = {
   raw: string
   start: number
   end: number
+  // Index of the header cell of the immediately enclosing CellGroupData.
+  parent?: number
+  // This cell heads a CellGroupData; folding it hides its descendants.
+  group?: boolean
+  // The group was serialized folded (Closed or a partial visibility list).
+  closed?: boolean
 }
 export type Notebook = { cells: Cell[]; insertAt: number; empty: boolean }
 export type Edit = { index: number; text: string }
@@ -279,15 +285,30 @@ export function parseNotebook(source: string, options?: { preview?: boolean }): 
   const list = args(source, root, spans, 1)[0]
   if (list?.head !== "List") throw new Error("Notebook cells must be a list")
   const cells: Cell[] = []
-  const visit = (entry: Node) => {
-    if (entry.head !== "Cell") return
+  // Returns the index of the group's header: the first leaf cell produced by
+  // visiting its member list. Nested group cells share that header when they
+  // occupy the first member slot.
+  const visit = (entry: Node, parent?: number): number => {
+    if (entry.head !== "Cell") return -1
     const [first, styleNode] = args(source, entry, spans, 2)
     if (first?.head === "CellGroupData") {
-      const group = args(source, first, spans, 1)[0]
-      if (group) args(source, group, spans).forEach(visit)
-      return
+      const [members, state] = args(source, first, spans, 2)
+      const children = members ? args(source, members, spans) : []
+      // Open or a missing state leaves the group expanded; Closed or a
+      // visible-index list means the front end serialized it folded.
+      const closed = state !== undefined && source.slice(state.start, state.end) !== "Open"
+      let header = -1
+      for (const member of children) {
+        const leaf = visit(member, header === -1 ? parent : header)
+        if (header === -1) header = leaf
+      }
+      if (header >= 0) {
+        cells[header].group = true
+        if (closed) cells[header].closed = true
+      }
+      return header
     }
-    if (!first) return
+    if (!first) return -1
     const style = stringValue(source, styleNode) ?? "Text"
     let rendered: { text: string; safe: boolean }
     try {
@@ -299,7 +320,7 @@ export function parseNotebook(source: string, options?: { preview?: boolean }): 
         throw error
       rendered = { text: "", safe: false }
     }
-    cells.push({
+    const cell: Cell = {
       index: cells.length,
       style,
       text: rendered.text || (rendered.safe ? "" : source.slice(first.start, first.end)),
@@ -308,10 +329,13 @@ export function parseNotebook(source: string, options?: { preview?: boolean }): 
       raw: source.slice(entry.start, entry.end),
       start: first.start,
       end: first.end,
-    })
+    }
+    if (parent !== undefined) cell.parent = parent
+    cells.push(cell)
+    return cell.index
   }
   const entries = args(source, list, spans)
-  entries.forEach(visit)
+  entries.forEach((entry) => visit(entry))
   return { cells, insertAt: list.end - 1, empty: entries.length === 0 }
 }
 

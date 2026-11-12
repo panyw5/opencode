@@ -168,9 +168,17 @@ test("viewer read/save use slim DTOs while legacy read keeps raw text and offset
   expect(legacy.cells[1].start).toBeGreaterThan(0)
   const view = (await service.rpc!["notebook.read"]({ path, view: true }, ctx)) as ViewerDocument
   expect(view.revision).toBe(legacy.revision)
-  expect(view.cells[1]).toEqual({ index: 1, style: "Input", text: "a=6", editable: true, runnable: true })
+  expect(view.cells[1]).toEqual({ index: 1, style: "Input", text: "a=6", editable: true, runnable: true, group: true })
+  expect(view.cells[2]).toMatchObject({ parent: 1 })
+  const optional = new Set(["parent", "group", "closed"])
   for (const cell of view.cells)
-    expect(Object.keys(cell).sort()).toEqual(["editable", "index", "runnable", "style", "text"])
+    expect(Object.keys(cell).filter((key) => !optional.has(key)).sort()).toEqual([
+      "editable",
+      "index",
+      "runnable",
+      "style",
+      "text",
+    ])
   expect(logs.at(-1)?.data.cacheHits).toBe(1)
   expect(logs.at(-1)?.data.parseMs).toBe(0)
   expect(logs.at(-1)?.data.bytes).toBe(Buffer.byteLength(fixture))
@@ -187,7 +195,7 @@ test("viewer read/save use slim DTOs while legacy read keeps raw text and offset
   expect(disk).not.toContain("CacheID:")
   expect(saved.revision).toBe(sha(disk))
   expect(saved.cells[1].text).toBe("a=8")
-  expect(Object.keys(saved.cells[1]).sort()).toEqual(["editable", "index", "runnable", "style", "text"])
+  expect(Object.keys(saved.cells[1]).sort()).toEqual(["editable", "group", "index", "runnable", "style", "text"])
   expect(logs.at(-1)?.data.cacheHits).toBe(1)
   expect(logs.at(-1)?.data.cacheMisses).toBe(1)
   const after = (await service.rpc!["notebook.read"]({ path }, ctx)) as Document

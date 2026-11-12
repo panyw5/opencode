@@ -4,16 +4,19 @@ import { defineWebExtension, type ExtensionContext, type FileViewerProps } from 
 import type { Output } from "./kernel"
 import { canHighlightWolfram, tokenizeWolfram } from "./highlight"
 import {
+  applyOutline,
   cellText,
   createEditorResizeQueue,
   createReloadGate,
   draftEdits,
+  isFoldable,
   isLargeText,
   listStartMargin,
   pinnedCellPositions,
   textPreview,
   viewerContent,
   VIRTUAL_BUFFER_PX,
+  visibleCells,
   type EditorResizeQueue,
   type ViewerCell,
   type ViewerContent,
@@ -205,6 +208,7 @@ function CellEditor(props: {
 
 export function NotebookViewer(props: FileViewerProps & { context: ExtensionContext }) {
   const [document, setDocument] = createSignal<ViewerContent>()
+  const [folded, setFolded] = createSignal<Record<number, boolean>>({})
   const [drafts, setDrafts] = createSignal<Record<number, string>>({})
   const [outputs, setOutputs] = createSignal<Record<number, Output>>({})
   const [details, setDetails] = createSignal<Record<string, boolean>>({})
@@ -244,7 +248,38 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
       if (stored >= 0.7 && stored <= 2.2) setFontScale(stored)
     } catch {}
   })
-  const keepMounted = createMemo(() => pinnedCellPositions(document()?.cells ?? [], focused(), composing()))
+  // Outline folds only change display; drafts, outputs and evaluation always
+  // address the full cell list by index.
+  const cells = createMemo(() => applyOutline(document()?.cells ?? []))
+  const visible = createMemo(() => visibleCells(cells(), folded()))
+  const keepMounted = createMemo(() => pinnedCellPositions(visible(), focused(), composing()))
+  const foldKey = (path: string) => `oc-nb-fold:${path}`
+  const storedFolds = (path: string, revision: string) => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(foldKey(path)) ?? "null")
+      if (stored && stored.revision === revision && stored.folds && typeof stored.folds === "object")
+        return stored.folds as Record<number, boolean>
+    } catch {}
+  }
+  const persistFolds = (folds: Record<number, boolean>) => {
+    const revision = document()?.revision
+    try {
+      if (revision) localStorage.setItem(foldKey(props.file.absolutePath), JSON.stringify({ revision, folds }))
+    } catch {}
+  }
+  const toggleFold = (cell: ViewerCell) => {
+    const next = { ...folded(), [cell.index]: !folded()[cell.index] }
+    setFolded(next)
+    persistFolds(next)
+    const shown = visibleCells(cells(), next)
+    props.context.log.debug(
+      `notebook fold index=${cell.index} collapsed=${!!next[cell.index]} visible=${shown.length}/${cells().length}`,
+    )
+    if (next[cell.index] && focused() !== undefined && !shown.some((item) => item.index === focused())) {
+      setFocused(undefined)
+      ;(globalThis.document.activeElement as HTMLElement | null)?.blur()
+    }
+  }
   const loadFull = async (key: string) => {
     const index = key.startsWith("cell:") ? Number(key.slice(5)) : -1
     const current = document()
@@ -313,6 +348,7 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
     props.context.log.info(`notebook loaded path=${next.path} cells=${next.cells.length}`)
     const changed = document()?.revision !== next.revision || document()?.path !== next.path
     if (changed) previews.reset(next.revision)
+    const previousPath = document()?.path
     batch(() => {
       // Do not retain next.outputs inside document as well as in the live outputs signal.
       setDocument(viewerContent(next))
@@ -326,6 +362,12 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
       if (changed) {
         setDetails({})
         setFull({})
+        // Fold state comes from the file's serialized group flags, overlaid by
+        // stored user folds for this revision, or by the live folds after a
+        // save (same path, stable cell indexes).
+        const base: Record<number, boolean> = {}
+        for (const cell of next.cells) if (cell.closed) base[cell.index] = true
+        setFolded({ ...base, ...(storedFolds(next.path, next.revision) ?? (previousPath === next.path ? folded() : {})) })
       }
     })
     props.setDirty?.(false)
@@ -642,7 +684,7 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
             }
           >
             <Virtualizer
-              data={document()?.cells ?? []}
+              data={visible()}
               scrollRef={scroller}
               startMargin={startMargin()}
               bufferSize={VIRTUAL_BUFFER_PX}
@@ -659,10 +701,28 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
                     setFocused((current) => (current === cell.index ? undefined : current))
                   }}
                 >
-                  <aside class="oc-nb-label">
+                  <aside
+                    class="oc-nb-label"
+                    onDblClick={(event) => {
+                      if (!isFoldable(cell)) return
+                      event.preventDefault()
+                      toggleFold(cell)
+                    }}
+                  >
                     <span class="oc-nb-cell-label">
                       {cell.style === "Input" || cell.style === "Code" ? `In[${cell.index + 1}]:=` : cell.style}
                     </span>
+                    <Show when={isFoldable(cell)}>
+                      <button
+                        class="oc-nb-fold"
+                        aria-expanded={!folded()[cell.index]}
+                        aria-label={`${folded()[cell.index] ? "Expand" : "Fold"} ${cell.style} group`}
+                        title={folded()[cell.index] ? "Expand group" : "Fold group"}
+                        onClick={() => toggleFold(cell)}
+                      >
+                        {folded()[cell.index] ? "▸" : "▾"}
+                      </button>
+                    </Show>
                     <Show when={cell.runnable}>
                       <button
                         class="oc-nb-run"
@@ -725,6 +785,16 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
                           onInput={(value) => edit(cell, value)}
                         />
                       </Show>
+                    </Show>
+                    <Show when={folded()[cell.index]}>
+                      <button
+                        class="oc-nb-folded"
+                        aria-label={`Expand ${cell.style} group`}
+                        title="Expand group"
+                        onClick={() => toggleFold(cell)}
+                      >
+                        »
+                      </button>
                     </Show>
                     <Show when={outputs()[cell.index]}>
                       {(output) => (
