@@ -72,8 +72,13 @@ export const Contributes = Schema.Struct({
 }).annotate({ identifier: "ExtensionContributes" })
 export type Contributes = Types.DeepMutable<Schema.Schema.Type<typeof Contributes>>
 
+// The host implements exactly this web API version. Manifests may declare any
+// number so decoding succeeds; manifest.ts degrades unsupported versions
+// gracefully by skipping the web part instead of rejecting the extension.
+export const WEB_API_VERSION = 1
+
 export const Web = Schema.Struct({
-  apiVersion: Schema.Literal(1),
+  apiVersion: Schema.Number,
   styles: Schema.optional(Schema.Array(Schema.String)),
 }).annotate({ identifier: "ExtensionWebManifest" })
 export type Web = Types.DeepMutable<Schema.Schema.Type<typeof Web>>
@@ -257,6 +262,10 @@ export const Info = Schema.Struct({
   enabled: Schema.Boolean,
   state: State,
   error: Schema.optional(Schema.String),
+  // Stable machine-oriented warning codes, e.g. "web.apiVersion:2" when the
+  // declared web API version was dropped as unsupported. UI maps known codes
+  // to localized messages and shows unknown entries verbatim.
+  warnings: Schema.optional(Schema.Array(Schema.String)),
   activation: Schema.Array(Schema.String),
   contributes: Contributes,
   permissions: Schema.Array(Schema.String),

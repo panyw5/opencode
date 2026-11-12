@@ -11,6 +11,7 @@ import { useGlobalSDK } from "@/context/global-sdk"
 import { ConfigExtensionInstallActions } from "./config-extension-install-actions"
 import { ConfigExtensionSettings } from "./config-extension-settings"
 import { isKnownExtensionPermission } from "@/extensions/permissions"
+import { extensionWarningLabel } from "@/extensions/warnings"
 
 // The config page keys this detail by extension id.
 export function ConfigExtensionDetail(props: { item: ExtensionInfo }) {
@@ -38,6 +39,20 @@ export function ConfigExtensionDetail(props: { item: ExtensionInfo }) {
         connection={() => globalSDK.client}
         disabled={!host.enabled() || host.mutating(props.item.id) || form.dirty || form.saving}
       />
+      <Show when={props.item.warnings?.length}>
+        <ExtensionCard title={language.t("config.extensions.warnings.title")}>
+          <For each={props.item.warnings}>
+            {(warning) => {
+              const label = extensionWarningLabel(warning)
+              return (
+                <p class="text-13-regular text-text-base" data-extension-warning>
+                  {label ? language.t(label.key, label.params) : warning}
+                </p>
+              )
+            }}
+          </For>
+        </ExtensionCard>
+      </Show>
       <Show when={props.item.source}>
         {(source) => (
           <ExtensionCard title={language.t("config.extensions.install.source")}>

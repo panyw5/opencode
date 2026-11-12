@@ -237,6 +237,7 @@ export type ExtensionInfo = {
   enabled: boolean
   state: "ready" | "disabled" | "error" | "incompatible"
   error?: string
+  warnings?: Array<string>
   activation: Array<string>
   contributes: ExtensionContributes
   permissions: Array<string>

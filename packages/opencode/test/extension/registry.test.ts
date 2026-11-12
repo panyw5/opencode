@@ -32,6 +32,25 @@ describe("extension registry", () => {
     expect((await ExtensionRegistry.get(id, base, registry)).state).toBe("disabled")
   })
 
+  test("surfaces an unsupported web apiVersion as a warning without web info", async () => {
+    await using tmp = await tmpdir()
+    const extension = await extensionPackage(tmp.path, {
+      webApiVersion: 2,
+      activation: ["onStartup"],
+      fileViewers: null,
+      serverEntry: "dist/server.js",
+    })
+
+    const linked = await ExtensionRegistry.link(extension, base, registry)
+    expect(linked.state).toBe("ready")
+    expect(linked.web).toBeUndefined()
+    expect(linked.warnings).toEqual(["web.apiVersion:2"])
+
+    const [entry] = await ExtensionRegistry.list(base, registry)
+    expect(entry?.warnings).toEqual(["web.apiVersion:2"])
+    expect(entry?.web).toBeUndefined()
+  })
+
   test("isolates broken linked packages as error entries", async () => {
     await using tmp = await tmpdir()
     const extension = await extensionPackage(tmp.path)

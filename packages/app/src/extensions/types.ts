@@ -60,6 +60,9 @@ export type ExtensionInfo = {
   enabled: boolean
   state: "ready" | "disabled" | "error" | "incompatible"
   error?: string
+  // Stable machine-oriented warning codes from the server (for example
+  // "web.apiVersion:2" when the declared web API version was dropped).
+  warnings?: string[]
   activation: string[]
   // User-facing settings snapshot from the server. Secret values arrive as
   // `SECRET_MASK`; the plaintext never crosses the API boundary.

@@ -111,6 +111,66 @@ describe("extension manifest", () => {
     expect(manifest.serverFingerprint).toMatch(/^[a-f0-9]{40}$/)
   })
 
+  test("drops an unsupported web apiVersion but keeps the server part usable", async () => {
+    await using tmp = await tmpdir()
+    const warn = spyOn(Log.create({ service: "extension" }), "warn")
+    const skipped = () =>
+      warn.mock.calls.filter(([message]) => message === "extension web apiVersion is not supported; skipping web part")
+    try {
+      const root = await extensionPackage(tmp.path, {
+        id: "test.web-v2",
+        webApiVersion: 2,
+        activation: ["onStartup"],
+        fileViewers: null,
+        serverEntry: "dist/server.js",
+      })
+      const manifest = await load(root)
+      // The server part is unaffected; the web part degrades to "absent".
+      expect(manifest.serverEntry).toBe("dist/server.js")
+      expect(manifest.entry).toBeUndefined()
+      expect(manifest.styles).toEqual([])
+      expect(manifest.warnings).toEqual(["web.apiVersion:2"])
+      expect(skipped()).toEqual([
+        [
+          "extension web apiVersion is not supported; skipping web part",
+          { extension: "test.web-v2", apiVersion: 2 },
+        ],
+      ])
+
+      // A web-only package with an unsupported apiVersion still loads: the
+      // extension simply has no usable web part (it is flagged by warnings).
+      const webOnly = await extensionPackage(tmp.path, {
+        id: "test.web-only-v2",
+        webApiVersion: 2,
+        activation: ["onStartup"],
+        fileViewers: null,
+      })
+      const degraded = await load(webOnly)
+      expect(degraded.entry).toBeUndefined()
+      expect(degraded.serverEntry).toBeUndefined()
+      expect(degraded.warnings).toEqual(["web.apiVersion:2"])
+
+      // The supported version keeps the full web part and no warning.
+      const supported = await extensionPackage(tmp.path, {
+        id: "test.web-v1",
+        activation: ["onStartup"],
+        fileViewers: null,
+      })
+      const healthy = await load(supported)
+      expect(healthy.entry).toBe("index.js")
+      expect(healthy.warnings).toEqual([])
+
+      // manifestVersion stays a hard reject.
+      const bad = await extensionPackage(tmp.path, { id: "test.bad-version" })
+      const json = await Bun.file(path.join(bad, "package.json")).json()
+      json.opencode.manifestVersion = 2
+      await Bun.write(path.join(bad, "package.json"), JSON.stringify(json, null, 2))
+      await expect(load(bad)).rejects.toThrow()
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   test("warns on unknown permissions without blocking install", async () => {
     await using tmp = await tmpdir()
     // `service: "extension"` loggers are cached process-wide, so spying on the

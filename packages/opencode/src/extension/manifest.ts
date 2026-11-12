@@ -8,7 +8,7 @@ import { Hash } from "@/util/hash"
 import { Filesystem } from "@/util/filesystem"
 import { ConfigParse } from "@/config/parse"
 import { checkPluginCompatibility, extractExportValue, readPluginPackage, resolvePackageFile } from "@/plugin/shared"
-import { Manifest, PERMISSIONS, type Contributes, type ExtensionID } from "./schema"
+import { Manifest, PERMISSIONS, WEB_API_VERSION, type Contributes, type ExtensionID } from "./schema"
 
 const log = Log.create({ service: "extension" })
 
@@ -34,6 +34,8 @@ export type Loaded = {
   versionSegment: string
   webFingerprint: string
   serverFingerprint?: string
+  // Stable machine-oriented warning codes surfaced through Info.warnings.
+  warnings: string[]
 }
 
 async function ordinaryFile(file: string, label: string) {
@@ -185,11 +187,27 @@ export async function load(directory: string, options: { opencodeVersion?: strin
     throw new CompatibilityError(error instanceof Error ? error.message.replace(/^Plugin/, "Extension") : String(error))
   }
 
+  // Graceful degradation: an unsupported web apiVersion only discards the web
+  // part — the server part stays usable and a stable warning code is reported
+  // through Info.warnings. `manifestVersion` stays a hard reject via the
+  // schema literal.
+  const warnings: string[] = []
+  let webSkipped = false
+  if (manifest.web && manifest.web.apiVersion !== WEB_API_VERSION) {
+    webSkipped = true
+    warnings.push(`web.apiVersion:${manifest.web.apiVersion}`)
+    log.warn("extension web apiVersion is not supported; skipping web part", {
+      extension: manifest.id,
+      apiVersion: manifest.web.apiVersion,
+    })
+    manifest.web = undefined
+  }
+
   const webExported = packageExport(pkg.json, "./web")
   const serverExported = packageExport(pkg.json, "./server")
   if (!webExported && !serverExported)
     throw new Error('Extension package must expose exports["./web"] or exports["./server"]')
-  if (webExported && !manifest.web)
+  if (webExported && !manifest.web && !webSkipped)
     throw new Error('Extension manifest requires opencode.web when exports["./web"] is present')
   if (!webExported && manifest.web)
     throw new Error('Extension manifest declares opencode.web but the package does not expose exports["./web"]')
@@ -260,6 +278,7 @@ export async function load(directory: string, options: { opencodeVersion?: strin
     versionSegment,
     webFingerprint,
     serverFingerprint,
+    warnings,
   }
 }
 

@@ -193,6 +193,7 @@ function info(row: RegistryRow, manifest: Loaded, base: string): Info {
     activation: manifest.activation,
     contributes: manifest.contributes,
     permissions: manifest.permissions,
+    ...(manifest.warnings.length ? { warnings: manifest.warnings } : {}),
     settings: maskSettings(row, manifest),
     ...(manifest.entry
       ? {

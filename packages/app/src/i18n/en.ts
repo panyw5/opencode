@@ -2285,6 +2285,8 @@ export const dict = {
   "config.extensions.runtime.retry": "Retry",
   "config.extensions.runtime.retrying": "Retrying…",
   "config.extensions.runtime.failed": "Could not retry extension",
+  "config.extensions.warnings.title": "Warnings",
+  "config.extensions.warnings.webApiVersion": "The frontend part requires a newer OpenCode (web.apiVersion {{version}}).",
   "config.extensions.toggle.enable": "Enable",
   "config.extensions.toggle.disable": "Disable",
   "config.extensions.toggle.busy": "Updating…",

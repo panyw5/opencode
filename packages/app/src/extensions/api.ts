@@ -37,6 +37,11 @@ function normalize(input: SdkExtensionInfo, serverURL: string): ExtensionInfo {
     ...input,
     revision: typeof input.revision === "number" && Number.isFinite(input.revision) ? input.revision : undefined,
     contributes: input.contributes as ExtensionInfo["contributes"],
+    // Warning codes are server-owned strings; keep only real strings so a
+    // malformed payload cannot smuggle objects into the UI.
+    warnings: Array.isArray(input.warnings)
+      ? input.warnings.filter((warning): warning is string => typeof warning === "string")
+      : undefined,
     web: input.web
       ? {
           ...input.web,

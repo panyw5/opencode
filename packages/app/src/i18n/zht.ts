@@ -876,6 +876,8 @@ export const dict = {
   "config.extensions.runtime.retry": "重試",
   "config.extensions.runtime.retrying": "重試中…",
   "config.extensions.runtime.failed": "擴充功能重試失敗",
+  "config.extensions.warnings.title": "警告",
+  "config.extensions.warnings.webApiVersion": "前端部分需要較新版本的 OpenCode（web.apiVersion {{version}}）。",
   "config.extensions.toggle.enable": "啟用",
   "config.extensions.toggle.disable": "停用",
   "config.extensions.toggle.busy": "更新中…",

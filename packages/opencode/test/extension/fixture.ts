@@ -21,6 +21,7 @@ export async function extensionPackage(
     serverEntry?: string
     serverExport?: unknown | null
     webManifest?: boolean
+    webApiVersion?: number
     permissions?: string[] | null
   } = {},
 ) {
@@ -72,7 +73,7 @@ export async function extensionPackage(
           ...(input.icon ? { icon: `./${input.icon}` } : {}),
           ...(input.webManifest === false
             ? {}
-            : { web: { apiVersion: 1, styles: (input.styles ?? []).map((x) => `./${x}`) } }),
+            : { web: { apiVersion: input.webApiVersion ?? 1, styles: (input.styles ?? []).map((x) => `./${x}`) } }),
           ...(input.activation === null ? {} : { activation: input.activation ?? ["onFileViewer:hello"] }),
           ...(input.permissions ? { permissions: input.permissions } : {}),
           ...(Object.keys(contributes).length ? { contributes } : {}),
