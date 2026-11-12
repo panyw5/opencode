@@ -10,7 +10,8 @@
  *   1. build the extension (skip with --no-build; dist must already exist)
  *   2. sync source + dist into <repo-dir>/<name>/ and commit + push
  *   3. npm pack --offline → <pkg>-<version>.tgz
- *   4. gh release create <name>-v<version> (upload --clobber if the tag exists)
+ *   4. gh release create <name>-v<version> (fails if the tag exists with a
+ *      different artifact sha256; bump the extension version first)
  *   5. script/extension-release.ts → <repo-dir>/<name>/stable.json
  *   6. commit + push the descriptor
  *
@@ -18,6 +19,7 @@
  * committing, pushing or touching GitHub Releases.
  */
 import { $ } from "bun"
+import { createHash } from "node:crypto"
 import fs from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -80,6 +82,39 @@ Publishing is automated by \`script/extension-publish.ts\` in the opencode
 monorepo; do not hand-edit generated \`stable.json\` files.
 `,
   )
+}
+
+/**
+ * sha256 of the artifact currently published under <tag>, when determinable.
+ * Primary source is the release asset digest; falls back to the sha256 recorded
+ * in the published <name>/stable.json descriptor.
+ */
+async function publishedSha256(name: string, tag: string, asset: string) {
+  const release = await $`gh api ${`repos/${RELEASE_REPO}/releases/tags/${tag}`}`
+    .nothrow()
+    .quiet()
+    .text()
+  try {
+    const { assets } = JSON.parse(release) as { assets?: { name?: string; digest?: string }[] }
+    const digest = assets?.find((item) => item.name === asset)?.digest
+    if (digest?.startsWith("sha256:")) return digest.slice("sha256:".length)
+  } catch {
+    // fall through to the descriptor lookup
+  }
+  const file = await $`gh api ${`repos/${RELEASE_REPO}/contents/${name}/stable.json`}`
+    .nothrow()
+    .quiet()
+    .text()
+  try {
+    const { content, encoding } = JSON.parse(file) as { content?: string; encoding?: string }
+    if (encoding !== "base64" || !content) return undefined
+    const descriptor = JSON.parse(Buffer.from(content, "base64").toString("utf8")) as {
+      artifact?: { sha256?: string }
+    }
+    return descriptor.artifact?.sha256
+  } catch {
+    return undefined
+  }
 }
 
 async function main() {
@@ -171,6 +206,18 @@ async function main() {
     const exists =
       (await $`gh release view ${tag} --repo ${RELEASE_REPO} --json tagName`.nothrow().quiet()).exitCode === 0
     if (exists) {
+      const local = createHash("sha256").update(fs.readFileSync(archive)).digest("hex")
+      const published = await publishedSha256(name, tag, packed)
+      if (published !== local) {
+        throw new Error(
+          `${tag} is already published` +
+            (published
+              ? ` with a different artifact (sha256 ${published})`
+              : " and its artifact sha256 could not be determined") +
+            `; local sha256 ${local}. Bump "version" in packages/extensions/${name}/package.json first.`,
+        )
+      }
+      console.log("published artifact sha256 matches; re-uploading identical archive")
       await $`gh release upload ${tag} ${archive} --repo ${RELEASE_REPO} --clobber`
     } else {
       await $`gh release create ${tag} ${archive} --repo ${RELEASE_REPO} --title ${title} --target main --notes ${`Extension ${tag}`}`

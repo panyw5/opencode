@@ -26,7 +26,15 @@ if (!semver.valid(version)) {
 
 const scan = async (glob: string) =>
   Array.fromAsync(new Bun.Glob(glob).scan({ cwd: root, absolute: true })).then((list) =>
-    list.filter((item) => !item.includes("/node_modules/") && !item.includes("/dist/")),
+    list.filter(
+      (item) =>
+        !item.includes("/node_modules/") &&
+        !item.includes("/dist/") &&
+        // test fixtures pin their own versions (e.g. extension e2e lifecycle)
+        !item.includes("/test/") &&
+        // extensions keep their own semver, decoupled from the main VERSION
+        !item.includes("/packages/extensions/"),
+    ),
   )
 
 const files = [...(await scan("packages/**/package.json")), ...(await scan("sdks/**/package.json"))]
