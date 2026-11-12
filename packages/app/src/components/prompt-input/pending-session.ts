@@ -10,6 +10,11 @@ export type PendingSessionSubmission = {
   phase: "preparing" | "sending" | "failed"
   sessionID?: string
   sessionDirectory?: string
+  // True once the backend acknowledged the session (create returned real info).
+  // A failed entry without it means the session only exists as a local
+  // provisional record and "edit" must go back to a draft, not the session
+  // composer.
+  created?: boolean
   error?: string
   retry: () => void
   edit: () => void
@@ -19,6 +24,23 @@ const [entries, setEntries] = createStore<Record<string, PendingSessionSubmissio
 
 export const pendingSessionKey = (server: string, directory: string, draftID?: string) =>
   JSON.stringify([server, directory, draftID])
+
+// Sessions minted client-side but not yet created on the server. Loaders check
+// this so a premature GET (404 on a not-yet-created session) neither retries
+// nor evicts the provisional record.
+const creating = new Set<string>()
+const creatingKey = (directory: string, sessionID: string) => `${directory}\n${sessionID}`
+export const sessionCreating = {
+  mark(directory: string, sessionID: string) {
+    creating.add(creatingKey(directory, sessionID))
+  },
+  unmark(directory: string, sessionID: string) {
+    creating.delete(creatingKey(directory, sessionID))
+  },
+  has(directory: string, sessionID: string) {
+    return creating.has(creatingKey(directory, sessionID))
+  },
+}
 
 export const pendingSessionSubmissions = {
   entries,
@@ -41,10 +63,15 @@ export const pendingSessionSubmissions = {
     setEntries(key, { phase: "preparing", error: undefined })
     return true
   },
+  send(key: string) {
+    if (!entries[key]) return
+    console.debug(`[new-session-submit] send key=${key}`)
+    setEntries(key, { phase: "sending" })
+  },
   promote(key: string, directory: string, sessionID: string) {
     if (!entries[key]) return
     console.debug(`[new-session-submit] promote key=${key} session=${sessionID} directory=${directory}`)
-    setEntries(key, { sessionID, sessionDirectory: directory, phase: "sending", error: undefined })
+    setEntries(key, { sessionID, sessionDirectory: directory, phase: "sending", created: true, error: undefined })
   },
   fail(key: string, error: string) {
     if (!entries[key]) return

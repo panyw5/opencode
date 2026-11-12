@@ -41,6 +41,7 @@ import { usePermission } from "@/context/permission"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useSettings } from "@/context/settings"
 import { useSessionTabs } from "@/context/session-tabs"
+import { sessionCreating } from "@/components/prompt-input/pending-session"
 import {
   configTabReturnTarget,
   isConfigRoute,
@@ -242,9 +243,7 @@ export function SessionTabsBar() {
     if (!onSessionRoute()) return undefined
     if (params.id || !params.draftID) return undefined
     const directory = routeDir()
-    return drafts().find(
-      (draft) => draft.id === params.draftID && sameWorkspacePath(draft.directory, directory),
-    )
+    return drafts().find((draft) => draft.id === params.draftID && sameWorkspacePath(draft.directory, directory))
   })
   const visibleDrafts = createMemo(() => {
     const pending = promoting()
@@ -289,6 +288,14 @@ export function SessionTabsBar() {
       console.debug(`[session-tabs] persisted reconcile client ready directory=${directory} epoch=${epoch}`)
       const entries = await Promise.all(
         snapshot.map(async (tab) => {
+          // A client-minted session whose create request is still in flight
+          // legitimately 404s; probing it as "deleted" would evict the tab.
+          if (sessionCreating.has(tab.directory, tab.id)) {
+            console.debug(
+              `[session-tabs] persisted reconcile probe directory=${tab.directory} id=${tab.id} epoch=${epoch} status=pending-create`,
+            )
+            return { tab, state: "unknown" as const }
+          }
           try {
             const result = await client.session.get({ sessionID: tab.id })
             const value = result.data
@@ -1434,7 +1441,17 @@ function SessionTab(props: {
             <ContextMenu.ItemLabel>{language.t("session.editTitle")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
           <ContextMenu.Separator />
-          <ContextMenu.Item onSelect={() => dialog.show(() => <SessionShareDialog directory={props.tab.directory} sessionID={props.tab.id} title={session()?.title || props.tab.title || "Session"} />)}>
+          <ContextMenu.Item
+            onSelect={() =>
+              dialog.show(() => (
+                <SessionShareDialog
+                  directory={props.tab.directory}
+                  sessionID={props.tab.id}
+                  title={session()?.title || props.tab.title || "Session"}
+                />
+              ))
+            }
+          >
             <ContextMenu.Icon>
               <span class="flex shrink-0 text-icon-base">
                 <Icon name="share" size="small" />

@@ -37,7 +37,7 @@ import { setCursorPosition } from "@/components/prompt-input/editor-dom"
 import { promptLength } from "@/components/prompt-input/history"
 import { appendSelectionToPrompt } from "@/utils/selection-prompt"
 import { NewSessionView, SessionHeader } from "@/components/session"
-import { PendingSessionView } from "@/components/session/pending-session-view"
+import { PendingSessionBanner } from "@/components/session/pending-session-view"
 import { pendingSessionSubmissions } from "@/components/prompt-input/pending-session"
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
@@ -318,29 +318,9 @@ export default function Page() {
   })
   const centered = createMemo(() => isDesktop() && !desktopWidePanelOpen())
   const pendingSubmission = createMemo(() => pendingSessionSubmissions.get(sdk.url, sdk.directory, params))
-  createEffect(() => {
-    const entry = pendingSubmission()
-    if (!entry || entry.phase === "failed" || !params.id || params.id !== entry.sessionID) return
-    let frame: number
-    // Keep the preview above the real timeline until its message is actually
-    // painted, not just until the router has committed an empty session page.
-    const reveal = () => {
-      const timeline = root?.querySelector('[data-component="message-timeline"]')
-      const row = timeline?.querySelector(`[data-message-id="${entry.message.id}"] [data-component="user-message"]`)
-      const text = row?.querySelector('[data-slot="user-message-text"]')
-      const hasText = entry.parts.some(
-        (part) => part.type === "text" && !part.synthetic && !part.ignored && part.text.trim(),
-      )
-      if (row && (!hasText || text?.textContent?.trim())) {
-        console.debug(`[new-session-submit] timeline-ready session=${entry.sessionID} message=${entry.message.id}`)
-        pendingSessionSubmissions.finish(entry.key)
-        return
-      }
-      frame = requestAnimationFrame(reveal)
-    }
-    frame = requestAnimationFrame(reveal)
-    onCleanup(() => cancelAnimationFrame(frame))
-  })
+  // The pending banner bridges the gap between the route commit and the
+  // timeline's first settled paint: the virtualizer reports via onFirstLayout.
+  const [timelineLaidOut, setTimelineLaidOut] = createSignal(false)
 
   function normalizeTab(tab: string) {
     if (!tab.startsWith("file://")) return tab
@@ -783,6 +763,7 @@ export default function Page() {
   })
   // Draft readiness is not permission to mount a timeline during a route transition.
   const timelineKey = createMemo(() => (params.id && messagesReady() ? sessionKey() : undefined))
+  createEffect(on(timelineKey, () => setTimelineLaidOut(false)))
   const [sessionRenderState, setSessionRenderState] = createSignal(initialSessionRenderState)
   const optimisticSessionEntry = () => {
     const pending = layout.handoff.tabs()
@@ -3711,6 +3692,7 @@ export default function Page() {
                           if (scroller) scheduleScrollState(scroller)
                         }}
                         onViewportTurnChange={(id) => setRailActiveMessageId(() => id)}
+                        onFirstLayout={() => setTimelineLaidOut(true)}
                       />
                       <Show when={isDesktop() && userMessageEntries().length > 0}>
                         <SessionUserMessageRail
@@ -3740,7 +3722,7 @@ export default function Page() {
                 </Match>
               </Switch>
               <Show when={pendingSubmission()}>
-                {(entry) => <PendingSessionView submission={entry()} centered={centered()} />}
+                {(entry) => <PendingSessionBanner submission={entry()} ready={timelineLaidOut()} />}
               </Show>
             </div>
             {/* New sessions also need the task picker before their first message. */}

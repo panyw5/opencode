@@ -1260,6 +1260,37 @@ function LazyAction(props: { children: JSX.Element; size?: "small" | "normal" })
   )
 }
 
+const USER_MESSAGE_PREVIEW_LENGTH = 1000
+
+// Escape potential HTML tags that could break rendering, but preserve valid markdown syntax
+const escapeUserMessageHtmlTags = (str: string) =>
+  str.replace(/<(\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^>]*)??)>/g, "&lt;$1&gt;")
+
+// Preserve line breaks by converting them to <br> tags for proper rendering
+const preserveUserMessageLineBreaks = (str: string) => str.replace(/\n/g, "  \n")
+
+/**
+ * The exact (text, cacheKey) the user-bubble <Markdown> mounts with. Anything
+ * pre-rendering a not-yet-mounted user message (e.g. an optimistic first
+ * prompt) must warm this slot — sharing the helper keeps the two in lockstep.
+ */
+export function userMessageMarkdownInput(input: {
+  parts?: readonly { type: string; id: string; text?: string; synthetic?: boolean }[]
+  expanded?: boolean
+}): { text: string; cacheKey: string } | undefined {
+  const part = input.parts?.find((p) => p.type === "text" && !p.synthetic)
+  if (!part) return
+  const full = splitMathInitializationPrompt(part.text ?? "")?.problem ?? (part.text ?? "")
+  const shown =
+    !input.expanded && full.length > USER_MESSAGE_PREVIEW_LENGTH
+      ? full.slice(0, USER_MESSAGE_PREVIEW_LENGTH)
+      : full
+  return {
+    text: preserveUserMessageLineBreaks(escapeUserMessageHtmlTags(shown)),
+    cacheKey: input.expanded ? part.id : `${part.id}:preview`,
+  }
+}
+
 export function UserMessageDisplay(props: {
   message: UserMessage
   parts: PartType[]
@@ -1299,26 +1330,11 @@ export function UserMessageDisplay(props: {
     return splitMathInitializationPrompt(value)?.problem ?? value
   })
 
-  const MAX_PREVIEW_LENGTH = 1000
-  const isLongMessage = createMemo(() => text().length > MAX_PREVIEW_LENGTH)
+  const isLongMessage = createMemo(() => text().length > USER_MESSAGE_PREVIEW_LENGTH)
 
-  // Escape potential HTML tags that could break rendering, but preserve valid markdown syntax
-  const escapeHtmlTags = (str: string) => {
-    // Only escape tags that look like real HTML tags (alphanumeric tag names with optional attributes)
-    // This preserves comparison operators like < and > in normal text
-    return str.replace(/<(\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^>]*)??)>/g, "&lt;$1&gt;")
-  }
-
-  // Preserve line breaks by converting them to <br> tags for proper rendering
-  const preserveLineBreaks = (str: string) => {
-    return str.replace(/\n/g, "  \n") // Markdown requires 2 spaces before \n for line break
-  }
-
-  const displayText = createMemo(() => {
-    const fullText = text()
-    const textToDisplay = !isLongMessage() || expanded() ? fullText : fullText.slice(0, MAX_PREVIEW_LENGTH)
-    return preserveLineBreaks(escapeHtmlTags(textToDisplay))
-  })
+  const markdownInput = createMemo(() =>
+    userMessageMarkdownInput({ parts: props.parts, expanded: expanded() }),
+  )
 
   const skillTemplatePart = createMemo(() => skillText(props.parts))
   const sessionReferences = createMemo(() =>
@@ -1476,8 +1492,8 @@ export function UserMessageDisplay(props: {
                 </span>
               </Show>
               <Markdown
-                text={displayText()}
-                cacheKey={expanded() ? textPart()?.id : `${textPart()?.id}:preview`}
+                text={markdownInput()?.text ?? ""}
+                cacheKey={markdownInput()?.cacheKey}
                 instant
                 stage={props.markdownStage}
                 onStage={props.onMarkdownStage}

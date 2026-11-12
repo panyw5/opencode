@@ -8,6 +8,7 @@ import {
   loadSessionInfo,
   resolveSessionInfoCommit,
 } from "./session-info-load"
+import { sessionCreating } from "@/components/prompt-input/pending-session"
 import type { SessionControllerDeps } from "./session-service-types"
 
 export function createSessionInfoService(deps: SessionControllerDeps) {
@@ -22,6 +23,9 @@ export function createSessionInfoService(deps: SessionControllerDeps) {
     if (!deps.key(directory) || !sessionID || deps.isolated(directory)) return
     const cached = get(directory, sessionID)
     if (cached && !force) return cached
+    // A client-minted session that has not been created on the server yet must
+    // not hit session.get: the 404 would drop the provisional record.
+    if (sessionCreating.has(directory, sessionID)) return cached
 
     deps.pin(directory)
     const child = deps.child(directory)

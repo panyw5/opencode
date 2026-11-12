@@ -58,3 +58,7 @@ Obey the following rules at all times:
   - VERIFY RECEIVED MESSAGES YOURSELF
   - ADD LOGS YOURSELF
 - If the user provided a project path and a session id: **look up** the session database to understand the actual situation and identify the problem, BEFORE reading and modifying the codebase
+
+## dev:desktop backend caveat
+
+`bun run dev:desktop` predev copies the sidecar from `packages/opencode/dist/opencode-darwin-arm64/bin/opencode` — a PREBUILT binary, not source. Backend changes under `packages/opencode/src` are NOT picked up on restart; run `bun run script/build.ts` in packages/opencode first, then restart dev:desktop.

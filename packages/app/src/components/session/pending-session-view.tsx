@@ -1,34 +1,33 @@
-import { Show, onMount } from "solid-js"
-import { Message } from "@opencode-ai/ui/message-part"
+import { Show } from "solid-js"
+import { useParams } from "@solidjs/router"
 import { Button } from "@opencode-ai/ui/button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useLanguage } from "@/context/language"
 import type { PendingSessionSubmission } from "@/components/prompt-input/pending-session"
 
-export function PendingSessionView(props: { submission: PendingSessionSubmission; centered: boolean }) {
+// Slim, non-covering status for the first submission. The optimistic message
+// itself renders in the normal session timeline — this only surfaces the
+// phases the timeline cannot express: "preparing" (waiting on worktree
+// creation or markdown prewarm before the session route exists), "sending"
+// while still on the draft route (the router commit hands off to the
+// timeline's thinking row), and "failed" (retry/edit). On the session route
+// itself "sending" renders nothing — the timeline owns that state.
+export function PendingSessionBanner(props: { submission: PendingSessionSubmission; ready?: boolean }) {
   const language = useLanguage()
-  onMount(() => {
-    console.debug(`[new-session-submit] preview-mounted message=${props.submission.message.id}`)
-  })
+  const params = useParams()
+  // During "sending" the banner lives until the timeline's first settled
+  // layout — the route commit alone does not mean content can paint.
   return (
-    <div
-      data-component="pending-session"
-      data-message-id={props.submission.message.id}
-      data-phase={props.submission.phase}
-      class="absolute inset-0 z-10 overflow-y-auto bg-background-stronger"
-    >
+    <Show when={props.submission.phase !== "sending" || !params.id || !props.ready}>
       <div
-        classList={{
-          "min-w-0 w-full max-w-full": true,
-          "md:max-w-[var(--session-content-width)] md:mx-auto": props.centered,
-        }}
+        data-component="pending-session"
+        data-phase={props.submission.phase}
+        class="absolute top-3 inset-x-0 z-10 flex justify-center pointer-events-none"
       >
-        <div data-component="session-turn" class="min-w-0 w-full relative" style={{ height: "auto" }}>
-          <div class="w-full px-4 md:px-5">
-            <Message message={props.submission.message} parts={props.submission.parts} actions={{}} markdownEager />
-          </div>
-        </div>
-        <div class="flex items-center gap-2 px-4 md:px-5 pt-3 text-text-weak text-13-regular" role="status">
+        <div
+          class="pointer-events-auto flex items-center gap-2 rounded-md bg-background-stronger px-3 py-1.5 text-13-regular text-text-weak shadow-border"
+          role="status"
+        >
           <Show
             when={props.submission.phase !== "failed"}
             fallback={
@@ -45,13 +44,13 @@ export function PendingSessionView(props: { submission: PendingSessionSubmission
           >
             <Spinner class="size-4" />
             <span>
-              {language.t(
-                props.submission.phase === "sending" ? "ui.sessionTurn.status.sending" : "prompt.session.preparing",
-              )}
+              {props.submission.phase === "sending"
+                ? language.t("ui.sessionTurn.status.sending")
+                : language.t("prompt.session.preparing")}
             </span>
           </Show>
         </div>
       </div>
-    </div>
+    </Show>
   )
 }

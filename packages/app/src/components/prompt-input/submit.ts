@@ -1,5 +1,8 @@
 import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client"
 import { showToast } from "@opencode-ai/ui/toast"
+import { useMarked } from "@opencode-ai/ui/context/marked"
+import { prewarmMarkdown } from "@opencode-ai/ui/markdown"
+import { userMessageMarkdownInput } from "@opencode-ai/ui/message-part"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { useNavigate, useParams } from "@solidjs/router"
 import { batch, type Accessor } from "solid-js"
@@ -23,7 +26,7 @@ import { formatServerError } from "@/utils/server-errors"
 import { sessionHookControlCommand, sessionHookControlInput } from "@/pages/session/session-hook-controls"
 import { takePendingProjectTaskMount } from "@/components/session/pending-project-task-mount"
 import { setSessionStatusPending } from "@/context/global-sync/session-status-refresh"
-import { pendingSessionKey, pendingSessionSubmissions } from "./pending-session"
+import { pendingSessionKey, pendingSessionSubmissions, sessionCreating } from "./pending-session"
 
 type PendingPrompt = {
   abort: AbortController
@@ -452,6 +455,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const sessionTabs = useSessionTabs()
   const language = useLanguage()
   const params = useParams()
+  const marked = useMarked()
 
   const errorMessage = (err: unknown) => {
     if (err && typeof err === "object" && "data" in err) {
@@ -713,20 +717,47 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     let createdSession = input.info()
     let worktreePrepared = false
     let prepared: FollowupSendInput["prepared"]
+    let navigatedEarly = false
+    let deferredRun: Promise<unknown> | undefined
     const firstMessageID = isNewSession && mode === "normal" ? Identifier.ascending("message") : undefined
+    // Mint the session id up-front so the optimistic first message can render
+    // directly in the real session timeline — no draft-route preview overlay.
+    const firstSessionID = firstMessageID ? Identifier.descending("session") : undefined
+    // "create" is the only worktree choice whose directory is unknown until the
+    // async worktree.create resolves; everything else can enter the session
+    // route immediately.
+    const earlyDirectory = (() => {
+      if (!firstSessionID) return undefined
+      if (genericagent) return currentDirectory
+      if (worktreeSelection === "create") return undefined
+      return worktreeSelection === "main" ? rootDirectory : worktreeSelection
+    })()
+    if (earlyDirectory) {
+      sessionDirectory = earlyDirectory
+      if (genericagent && worktreeSelection !== "main" && worktreeSelection !== "create") {
+        sessionCwd = worktreeSelection
+      }
+      client =
+        sessionDirectory === currentDirectory
+          ? sdk.client
+          : sdk.createClient({ directory: sessionDirectory, throwOnError: true })
+      if (sessionDirectory !== currentDirectory) globalSync.child(sessionDirectory)
+      worktreePrepared = true
+      input.onNewSessionWorktreeReset?.()
+    }
     const preview = firstMessageID
       ? buildRequestParts({
           prompt: submittedPrompt,
           context: currentContext,
           images,
           text,
-          sessionID: submittedDraft?.id ?? firstMessageID,
+          sessionID: firstSessionID!,
           messageID: firstMessageID,
           sessionDirectory,
           gptProBackground,
         })
       : undefined
-    const early = !!preview && !!firstMessageID
+    const early = !!preview && !!firstMessageID && !!firstSessionID
     const resetEarly = () => {
       prompt.reset(submittedScope)
       removeContextItems(
@@ -743,14 +774,16 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         directory: currentDirectory,
         draftID: submittedDraft?.id ?? params.draftID,
         message: {
-          id: firstMessageID,
-          sessionID: submittedDraft?.id ?? firstMessageID,
+          id: firstMessageID!,
+          sessionID: firstSessionID!,
           role: "user",
           time: { created: Date.now() },
           agent: currentAgent.name,
           model: { providerID: currentModel.provider.id, modelID: currentModel.id, variant },
         },
         parts: preview.optimisticParts,
+        sessionID: earlyDirectory ? firstSessionID : undefined,
+        sessionDirectory: earlyDirectory ? sessionDirectory : undefined,
         phase: "preparing",
         retry: () => {
           void run(true)
@@ -758,6 +791,22 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         edit: () => {
           const entry = pendingSessionSubmissions.entries[submissionKey]
           if (entry?.phase !== "failed") return
+          if (entry.sessionID && !entry.created) {
+            // The session never reached the server: drop the provisional
+            // record and reopen the prompt on a fresh draft.
+            pendingSessionSubmissions.finish(submissionKey)
+            const dir = entry.sessionDirectory ?? currentDirectory
+            sessionCreating.unmark(dir, entry.sessionID)
+            sync.session.evict(entry.sessionID, dir)
+            const draft = sessionTabs.createDraft(dir, "menu")
+            const scope = { dir: base64Encode(dir), id: draft.id }
+            for (const item of currentContext) prompt.context.add(item, scope)
+            prompt.set(currentPrompt, input.promptLength(currentPrompt), scope)
+            input.resetInputUndo(currentPrompt, input.promptLength(currentPrompt))
+            input.setMode(mode)
+            navigate(`/${base64Encode(dir)}/session/new/${draft.id}`)
+            return
+          }
           const scope = entry.sessionID
             ? { dir: base64Encode(entry.sessionDirectory!), id: entry.sessionID }
             : submittedScope
@@ -769,6 +818,81 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         },
       })
       resetEarly()
+      if (earlyDirectory) {
+        // Warm the markdown cache first: the timeline's first paint must be
+        // the final render, not the instant raw-text fallback. During the
+        // bounded wait the draft route shows the slim "preparing" banner, then
+        // seed the message plus a provisional session record and enter the
+        // session route. One renderer, one lifecycle, no handoff.
+        const md = userMessageMarkdownInput({ parts: preview.optimisticParts, expanded: false })
+        const warm = md
+          ? prewarmMarkdown({
+              marked,
+              text: md.text,
+              cacheKey: md.cacheKey,
+              highlight: "defer",
+              timeoutMs: 600,
+            })
+          : Promise.resolve(false)
+        deferredRun = (async () => {
+          await warm
+          const now = Date.now()
+        sessionCreating.mark(sessionDirectory, firstSessionID!)
+        sync.session.created({
+          directory: sessionDirectory,
+          info: {
+            id: firstSessionID!,
+            slug: "",
+            directory: sessionDirectory,
+            projectID: sync.project?.id ?? "",
+            title: text.slice(0, 60),
+            version: "",
+            time: { created: now, updated: now },
+          },
+        })
+        if (sessionDirectory === currentDirectory) {
+          globalSync.session.status.set(sessionDirectory, firstSessionID!, { type: "busy" })
+          setSessionStatusPending(sessionDirectory, firstSessionID!, true, firstMessageID)
+        }
+        prepared = { ...preview, message: pendingSessionSubmissions.entries[submissionKey]!.message }
+        sync.session.optimistic.add({
+          directory: sessionDirectory,
+          sessionID: firstSessionID!,
+          message: prepared.message,
+          parts: prepared.optimisticParts,
+        })
+          batch(() => {
+            navigatedEarly = true
+            pendingSessionSubmissions.send(submissionKey)
+            if (!submittedDraft) {
+              sessionTabs.ensureOpen({ directory: sessionDirectory, id: firstSessionID! })
+              navigate(`/${base64Encode(sessionDirectory)}/session/${firstSessionID}`)
+              return
+            }
+          const active = !params.id && params.draftID === submittedDraft.id
+          if (active) {
+            layout.handoff.setTabs(
+              base64Encode(sessionDirectory),
+              firstSessionID!,
+              submittedDraft.id,
+              base64Encode(currentDirectory),
+            )
+          }
+          sessionTabs.promoteDraft(
+            { directory: sessionDirectory, id: firstSessionID! },
+            submittedDraft,
+            active
+              ? () => {
+                  pendingScopeReset?.()
+                  diagnose("draft-scope-reset", { sessionID: firstSessionID, draftID: submittedDraft.id })
+                }
+              : undefined,
+          )
+            if (active) navigate(`/${base64Encode(sessionDirectory)}/session/${firstSessionID}`)
+          })
+          diagnose("preview-seeded", { sessionID: firstSessionID, messageID: firstMessageID })
+        })()
+      }
       diagnose("preview-ready", { messageID: firstMessageID })
     }
 
@@ -861,6 +985,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
             parameters?: undefined,
             options?: {
               body?: {
+                id?: string
                 cwd?: string
                 channel?: { kind: "acp"; advisor: string; model?: string; mode?: string }
               }
@@ -868,6 +993,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           ) => Promise<{ data?: Session }>
           const channel = local.channel.current()
           const createBody = {
+            ...(early && firstSessionID ? { id: firstSessionID } : {}),
             ...(genericagent && sessionCwd ? { cwd: sessionCwd } : {}),
             ...(channel
               ? {
@@ -896,13 +1022,19 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           performance.measure("submit:session-create", "submit:session-create:start", "submit:session-create:end")
           diagnose("session-create-end", { sessionID: created?.id, directory: sessionDirectory })
           if (created) {
+            sessionCreating.unmark(sessionDirectory, created.id)
             sync.session.created({ directory: sessionDirectory, info: created })
             session = created
             createdSession = created
             if (shouldAutoAccept) permission.enableAutoAccept(session.id, sessionDirectory)
             local.session.promote(sessionDirectory, session.id)
             const sessionID = session.id
-            if (early && mode === "normal" && !sync.data.command.some((cmd) => text.split(" ")[0] === `/${cmd.name}`)) {
+            if (
+              early &&
+              mode === "normal" &&
+              !prepared &&
+              !sync.data.command.some((cmd) => text.split(" ")[0] === `/${cmd.name}`)
+            ) {
               const entry = pendingSessionSubmissions.entries[submissionKey]!
               prepared = {
                 ...buildRequestParts({
@@ -969,9 +1101,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
             }
 
             console.debug(
-              `[session-bar] draft transition start directory=${currentDirectory} sessionDirectory=${sessionDirectory} sessionID=${sessionID}`,
+              `[session-bar] draft transition start directory=${currentDirectory} sessionDirectory=${sessionDirectory} sessionID=${sessionID} earlyNav=${String(navigatedEarly)}`,
             )
             performance.mark("submit:navigate:start")
+            if (!navigatedEarly)
             batch(() => {
               // draftDir lets the tab bar and draft route mask the consumed draft
               // for the rest of the router transition (params.id stays stale until
@@ -1317,7 +1450,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
                 input.onSubmitFailed?.(session.id)
                 return
               }
-              if (early && !isCurrentSubmission()) pendingSessionSubmissions.finish(submissionKey)
+              if (early) pendingSessionSubmissions.finish(submissionKey)
               if (intervene && !stopping.has(session.id)) {
                 // Mirror flushQueued(): finalize the running assistant locally so the
                 // timeline does not show the interrupted turn as active until events
@@ -1356,8 +1489,25 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         return send(session)
       } catch (err) {
         if (!early) throw err
+        if (firstSessionID) sessionCreating.unmark(sessionDirectory, firstSessionID)
+        if (navigatedEarly && sessionDirectory === currentDirectory) {
+          setSessionStatusPending(sessionDirectory, firstSessionID, false, firstMessageID)
+          globalSync.session.status.set(sessionDirectory, firstSessionID, { type: "idle" })
+        }
         pendingSessionSubmissions.fail(submissionKey, errorMessage(err))
       }
+    }
+    // The early seed path defers `run` until the provisional session and
+    // optimistic message are committed; `run` is only referenced lazily so the
+    // declaration order does not matter.
+    if (deferredRun) {
+      return deferredRun.then(
+        () => run(),
+        (err) => {
+          pendingSessionSubmissions.fail(submissionKey, errorMessage(err))
+          throw err
+        },
+      )
     }
     return run()
   }

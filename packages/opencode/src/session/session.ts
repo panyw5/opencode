@@ -314,6 +314,7 @@ export type GlobalInfo = Types.DeepMutable<Schema.Schema.Type<typeof GlobalInfo>
 
 export const CreateInput = Schema.optional(
   Schema.Struct({
+    id: Schema.optional(SessionID),
     parentID: Schema.optional(SessionID),
     title: Schema.optional(Schema.String),
     agent: Schema.optional(Schema.String),
@@ -927,6 +928,16 @@ export const layer: Layer.Layer<
     }) {
       const ctx = yield* InstanceState.context
       const workspace = yield* InstanceState.workspaceID
+      if (input?.id) {
+        const id = input.id
+        // Client-minted IDs make create replayable: a retried request returns
+        // the session it already made instead of failing on the unique key.
+        const existing = yield* db((d) => d.select().from(SessionTable).where(eq(SessionTable.id, id)).get())
+        if (existing) {
+          log.info("create.idempotent-replay", { sessionID: id })
+          return fromRow(existing)
+        }
+      }
       return yield* createNext({
         id: input?.id,
         external: input?.external,

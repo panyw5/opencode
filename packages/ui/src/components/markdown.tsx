@@ -631,6 +631,58 @@ export function markdownCacheMode(input: {
   ].join(":")
 }
 
+/**
+ * Renders `text` through the full pipeline into `markdownHtmlCache` under the
+ * exact slot a future <Markdown> mount will query. Callers that know a message
+ * is about to mount (e.g. an optimistic first prompt) use this so the
+ * component's synchronous cache read in `initialValue` finds finished HTML.
+ *
+ * `text`/`cacheKey` must be the values the target component will receive
+ * (post-transform text, e.g. userMessageMarkdownInput), `math`/`highlight` the
+ * same options — a mismatch lands the render under a different cache slot.
+ *
+ * Resolves in at most `timeoutMs`; the background render still finishes and
+ * populates the cache when the caller stops waiting.
+ */
+export function prewarmMarkdown(input: {
+  marked: MarkedApi
+  text: string
+  cacheKey: string
+  math?: "full" | "defer"
+  highlight?: "full" | "defer"
+  timeoutMs?: number
+}): Promise<boolean> {
+  const normalized = prepareMarkdownSource(input.text, false)
+  const hash = checksum(normalized)
+  if (!hash) return Promise.resolve(false)
+  const math = input.math ?? "full"
+  const slot = `${markdownRendererScope(input.marked)}:${markdownCacheMode({
+    highlight: input.highlight,
+    math,
+  })}:full:${input.cacheKey}`
+  if (cache.get(slot, hash, normalized) !== undefined) return Promise.resolve(true)
+  const ticket = cache.begin(slot, hash, normalized)
+  const done = (async () => {
+    try {
+      const parsed =
+        math === "defer" && input.marked.parseNoMath
+          ? await input.marked.parseNoMath(normalized)
+          : await input.marked.parse(normalized)
+      return cache.set(slot, hash, sanitize(parsed), { ticket, source: normalized })
+    } catch (error) {
+      console.debug(
+        `[markdown-prewarm] failed key=${input.cacheKey} error=${error instanceof Error ? error.message : String(error)}`,
+      )
+      return false
+    }
+  })()
+  cache.track(slot, done)
+  return Promise.race([
+    done,
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), input.timeoutMs ?? 150)),
+  ])
+}
+
 function wrapCodeBlocks(container: HTMLElement) {
   for (const block of Array.from(container.querySelectorAll("pre"))) {
     const parent = block.parentElement
@@ -1014,6 +1066,22 @@ export function Markdown(
           })
           return { html: hit, fallback: false }
         }
+        // A prewarm for this exact slot may still be in flight — join it rather
+        // than racing a duplicate parse (the mount already painted empty).
+        const inFlight = cache.pending(key)
+        if (inFlight) {
+          await inFlight.catch(() => {})
+          const joined = cache.get(key, input.hash, input.normalized)
+          if (joined !== undefined) {
+            mark("cache-hit", {
+              key: input.cacheKey ?? input.key,
+              mode: input.mode,
+              math: input.math,
+              text: input.markdown.length,
+            })
+            return { html: joined, fallback: false }
+          }
+        }
       }
 
       const ticket = key && input.hash ? cache.begin(key, input.hash, input.normalized) : undefined
@@ -1076,7 +1144,25 @@ export function Markdown(
       }
       return { html: safe, fallback: rendered.fallback }
     },
-    { initialValue: { html: isServer || local.instant ? fallback(local.text) : "", fallback: false } },
+    {
+      initialValue: (() => {
+        // A warm cache makes the first commit the final render. Resolving the
+        // resource one tick later would still have painted the raw fallback
+        // for a frame — the first-frame flash this is meant to avoid.
+        const input = untrack(src)
+        if (input) {
+          const key = input.cacheKey ?? input.key
+          if (key && input.hash) {
+            const hit = cache.get(key, input.hash, input.normalized)
+            if (hit !== undefined) return { html: hit, fallback: false }
+            // A prewarm is still rendering this slot — paint empty and let the
+            // resource join it rather than flashing the raw source for a frame.
+            if (cache.pending(key)) return { html: "", fallback: false }
+          }
+        }
+        return { html: isServer || local.instant ? fallback(local.text) : "", fallback: false }
+      })(),
+    },
   )
 
   let cancelCopySetup: (() => void) | undefined

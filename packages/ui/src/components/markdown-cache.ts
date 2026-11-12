@@ -15,8 +15,22 @@ export function markdownRendererScope(renderer: object) {
 export class MarkdownHtmlCache {
   protected entries = new Map<string, Entry>()
   private latest = new Map<string, { source: string; ticket: number }>()
+  private inflight = new Map<string, Promise<unknown>>()
   private sequence = 0
   constructor(private limit = 200) {}
+
+  // Registers an in-flight render for `key` so a component mounting mid-render
+  // can join it instead of painting a raw-text fallback first.
+  track(key: string, promise: Promise<unknown>) {
+    this.inflight.set(key, promise)
+    void promise.finally(() => {
+      if (this.inflight.get(key) === promise) this.inflight.delete(key)
+    })
+  }
+
+  pending(key: string) {
+    return this.inflight.get(key)
+  }
 
   begin(key: string, hash: string, source = hash) {
     const ticket = ++this.sequence

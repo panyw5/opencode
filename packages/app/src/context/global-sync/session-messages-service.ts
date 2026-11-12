@@ -3,6 +3,7 @@ import { retry } from "@opencode-ai/core/util/retry"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { batch } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
+import { sessionCreating } from "@/components/prompt-input/pending-session"
 import { markSessionProfile } from "@/utils/session-profile"
 import { createFreshRequestQueue } from "@/utils/fresh-request-queue"
 import { setSessionPrefetch } from "./session-prefetch"
@@ -206,6 +207,15 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
       )
     }
     const child = deps.child(directory)
+    if (sessionCreating.has(directory, input.sessionID)) {
+      // The session only exists as a client-minted provisional record; a page
+      // fetch would 404. SSE/state snapshots reconcile once create lands.
+      return Promise.resolve({
+        committed: false,
+        count: child[0].message[input.sessionID]?.length ?? 0,
+        complete: false,
+      })
+    }
     const directoryRevision = deps.revision(directory)
     const eventRevision = rev(directory, input.sessionID)
     const discardMark = discardRevision.get(key) ?? 0

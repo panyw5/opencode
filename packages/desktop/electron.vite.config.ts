@@ -91,6 +91,12 @@ const require = __cjs_mod__.createRequire(import.meta.url);
           "@opentunnel/client",
           "@opentunnel/protocol",
           "effect",
+          // electron-dl (via electron-context-menu) is ESM and does
+          // `import { BrowserWindow } from "electron"`, which resolves to the
+          // npm stub (a path string, no exports) when externalized. Bundling
+          // keeps its electron import on the Electron builtin.
+          "electron-context-menu",
+          "electron-dl",
         ],
       },
     },

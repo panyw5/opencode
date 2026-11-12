@@ -381,6 +381,7 @@ export function MessageTimeline(props: {
   onCopyDiffFilePath?: (file: string) => void
   canRevealDiffFile?: () => boolean
   onSelectionToPrompt: (text: string) => void
+  onFirstLayout?: () => void
 }) {
   const sync = useSync()
   const settings = useSettings()
@@ -625,6 +626,9 @@ export function MessageTimeline(props: {
         if (Math.abs(next - current) < 0.5) continue
         virtualizer.resizeItem(measurement.index, next)
       }
+      // The first observer frame committed the measured positions — estimated
+      // offsets are gone, so the virtual content may be painted.
+      settleFirstLayout()
     })
   }
 
@@ -800,6 +804,21 @@ export function MessageTimeline(props: {
   let navigationResetAt = 0
   let measurementBatchPending = false
   let measurementPassQueued = false
+  // Rows first paint at their estimated offsets; the initial measurement batch
+  // corrects them a frame later (visible as a one-frame jump, e.g. the
+  // "sending" status row snapping upward on a fresh session). Keep the virtual
+  // content hidden until that first correction has committed.
+  const [firstLayoutSettled, setFirstLayoutSettled] = createSignal(false)
+  const settleFirstLayout = () => {
+    if (firstLayoutSettled()) return
+    setFirstLayoutSettled(true)
+    props.onFirstLayout?.()
+  }
+  // Safety: never leave the timeline hidden if a measurement batch never
+  // resolves (e.g. a row path that bypasses the ResizeObserver pipeline).
+  setTimeout(() => {
+    if (mounted) settleFirstLayout()
+  }, 500)
   const queueMeasurementPass = () => {
     if (!measurementBatchPending || measurementPassQueued) return
     measurementPassQueued = true
@@ -2559,7 +2578,12 @@ export function MessageTimeline(props: {
             virtualContent = element
           }}
           data-timeline-virtual-content
-          style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative", width: "100%" }}
+          style={{
+            height: `${virtualizer.getTotalSize()}px`,
+            position: "relative",
+            width: "100%",
+            visibility: firstLayoutSettled() ? undefined : "hidden",
+          }}
         >
           <For each={virtualRowKeys()}>{(rowKey) => <VirtualTimelineRow rowKey={rowKey} />}</For>
           <Show when={timelineRows().length > 0}>
