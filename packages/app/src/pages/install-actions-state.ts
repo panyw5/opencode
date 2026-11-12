@@ -31,7 +31,7 @@ export interface PreparedInstallation {
   permissionsAdded: string[]
   permissionsRemoved: string[]
   contributes: Omit<ExtensionInfo["contributes"], "fileViewers" | "settings"> & {
-    fileViewers?: Array<Omit<FileViewerContribution, "priority"> & { priority?: number }>
+    fileViewers?: FileViewerContribution[]
     settings?: Record<string, unknown>
   }
   source: NonNullable<ExtensionInfo["source"]>

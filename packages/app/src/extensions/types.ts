@@ -4,7 +4,7 @@ export type FileViewerContribution = {
   extensions?: string[]
   filenames?: string[]
   mime?: string[]
-  priority?: number | string
+  priority?: number
   mode?: "replace" | "preview"
   content?: "text" | "self"
 }

@@ -1,3 +1,4 @@
+import { isExtensionID } from "./id"
 import { ExtensionInstallationError } from "./install-error"
 
 export type ReleaseDescriptor = {
@@ -44,8 +45,7 @@ export function parseReleaseDescriptor(value: unknown): ReleaseDescriptor {
     !exact(value, ["schemaVersion", "id", "version", "artifact"]) ||
     value.schemaVersion !== 1 ||
     typeof value.id !== "string" ||
-    value.id.length > 64 ||
-    !/^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$/.test(value.id) ||
+    !isExtensionID(value.id) ||
     typeof value.version !== "string" ||
     !value.version ||
     !exact(value.artifact, ["url", "sha256"]) ||

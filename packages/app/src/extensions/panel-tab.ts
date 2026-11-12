@@ -1,10 +1,10 @@
 // Extension panel tabs live next to `file://` tabs in the session side panel.
 // Tab value: `ext://<extensionID>/<panelID>`, with optional `?key=<value>` for
 // multi-instance panels; any other query params seed the panel state.
+import { isExtensionID } from "./id"
+
 export const EXTENSION_TAB_PREFIX = "ext://"
 
-const EXTENSION_ID = /^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$/
-const EXTENSION_ID_MAX = 64
 const PANEL_ID = /^[a-z0-9._-]+$/
 const KEY_PARAM = "key"
 
@@ -15,9 +15,7 @@ export type ExtensionPanelTab = {
   state: Record<string, string>
 }
 
-export function isExtensionID(value: string) {
-  return value.length <= EXTENSION_ID_MAX && EXTENSION_ID.test(value)
-}
+export { isExtensionID }
 
 export function isExtensionPanelTab(tab: string) {
   return tab.startsWith(EXTENSION_TAB_PREFIX)
