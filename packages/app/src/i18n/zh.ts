@@ -167,6 +167,8 @@ export const dict = {
   "config.extensions.install.permissions": "声明权限",
   "config.extensions.install.permissionsAdded": "新增权限",
   "config.extensions.install.permissionsRemoved": "移除权限",
+  "config.extensions.install.permissionUnknown": "未知权限",
+  "config.extensions.install.permissionsNote": "权限为扩展自述，当前版本不做运行时限制。",
   "config.extensions.install.none": "无",
   "config.extensions.install.contributes": "贡献点",
   "config.extensions.install.fileViewers": "文件查看器",

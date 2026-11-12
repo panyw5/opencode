@@ -21,6 +21,7 @@ export async function extensionPackage(
     serverEntry?: string
     serverExport?: unknown | null
     webManifest?: boolean
+    permissions?: string[] | null
   } = {},
 ) {
   const root = path.join(dir, input.id?.replaceAll(".", "-") ?? "extension")
@@ -73,6 +74,7 @@ export async function extensionPackage(
             ? {}
             : { web: { apiVersion: 1, styles: (input.styles ?? []).map((x) => `./${x}`) } }),
           ...(input.activation === null ? {} : { activation: input.activation ?? ["onFileViewer:hello"] }),
+          ...(input.permissions ? { permissions: input.permissions } : {}),
           ...(Object.keys(contributes).length ? { contributes } : {}),
         },
       },

@@ -12,6 +12,7 @@ import {
   installationDiagnosticCategory,
   installationDiagnosticKey,
 } from "../extensions/install-error"
+import { isKnownExtensionPermission } from "../extensions/permissions"
 import {
   installationBlocked,
   installationDownloadHost,
@@ -357,11 +358,22 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
     cancelOwned()
     setState({ phase: "edit", prepared: undefined, error: undefined })
   }
+  // Only permission lists use this helper today: entries outside the declared
+  // vocabulary are tolerated and flagged instead of rejected.
   const list = (title: InstallationTranslationKey, values: string[]) => (
     <ExtensionCard title={t(title)}>
       <Show when={values.length} fallback={<p>{t("config.extensions.install.none")}</p>}>
         <ul class="list-disc pl-5">
-          <For each={values}>{(value) => <li class="break-all">{value}</li>}</For>
+          <For each={values}>
+            {(value) => (
+              <li class="break-all">
+                {value}
+                <Show when={!isKnownExtensionPermission(value)}>
+                  <span class="text-text-weak">{` (${t("config.extensions.install.permissionUnknown")})`}</span>
+                </Show>
+              </li>
+            )}
+          </For>
         </ul>
       </Show>
     </ExtensionCard>
@@ -584,6 +596,9 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
                   <Show when={prepared().kind === "update" && prepared().permissionsRemoved.length > 0}>
                     {list("config.extensions.install.permissionsRemoved", prepared().permissionsRemoved)}
                   </Show>
+                  <p data-preview="permissions-note" class="text-12-regular text-text-weak">
+                    {t("config.extensions.install.permissionsNote")}
+                  </p>
                 </div>
                 <div data-preview="contributes">
                   <ExtensionCard title={t("config.extensions.install.contributes")}>

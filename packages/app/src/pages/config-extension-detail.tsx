@@ -10,6 +10,7 @@ import { ConfigExtensionActions } from "./config-extension-actions"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { ConfigExtensionInstallActions } from "./config-extension-install-actions"
 import { ConfigExtensionSettings } from "./config-extension-settings"
+import { isKnownExtensionPermission } from "@/extensions/permissions"
 
 // The config page keys this detail by extension id.
 export function ConfigExtensionDetail(props: { item: ExtensionInfo }) {
@@ -55,10 +56,14 @@ export function ConfigExtensionDetail(props: { item: ExtensionInfo }) {
                 {(permission) => (
                   <li class="break-all rounded-md bg-surface-secondary px-2 py-1 font-mono text-12-regular text-text-base">
                     {permission}
+                    <Show when={!isKnownExtensionPermission(permission)}>
+                      <span class="text-text-weak">{` (${language.t("config.extensions.install.permissionUnknown")})`}</span>
+                    </Show>
                   </li>
                 )}
               </For>
             </ul>
+            <p class="text-12-regular text-text-weak">{language.t("config.extensions.install.permissionsNote")}</p>
           </Show>
         </ExtensionCard>
         <ExtensionCard title={language.t("config.extensions.install.contributes")}>

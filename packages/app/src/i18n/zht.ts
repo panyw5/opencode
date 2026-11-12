@@ -85,6 +85,8 @@ export const dict = {
   "config.extensions.install.permissions": "宣告權限",
   "config.extensions.install.permissionsAdded": "新增權限",
   "config.extensions.install.permissionsRemoved": "移除權限",
+  "config.extensions.install.permissionUnknown": "未知權限",
+  "config.extensions.install.permissionsNote": "權限為擴充功能自述，目前版本不做執行時限制。",
   "config.extensions.install.none": "無",
   "config.extensions.install.contributes": "貢獻項目",
   "config.extensions.install.fileViewers": "檔案檢視器",

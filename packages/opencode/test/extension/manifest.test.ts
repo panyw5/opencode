@@ -5,6 +5,7 @@ import * as Log from "@opencode-ai/core/util/log"
 import { tmpdir } from "../fixture/fixture"
 import { extensionPackage } from "./fixture"
 import { CompatibilityError, load } from "../../src/extension/manifest"
+import { PERMISSIONS } from "../../src/extension/schema"
 
 describe("extension manifest", () => {
   test("loads a valid web extension and computes safe relative assets", async () => {
@@ -108,6 +109,41 @@ describe("extension manifest", () => {
     expect(manifest.versionSegment).toMatch(/^1\.2\.3-[a-f0-9]{12}$/)
     expect(manifest.webFingerprint).toMatch(/^[a-f0-9]{40}$/)
     expect(manifest.serverFingerprint).toMatch(/^[a-f0-9]{40}$/)
+  })
+
+  test("warns on unknown permissions without blocking install", async () => {
+    await using tmp = await tmpdir()
+    // `service: "extension"` loggers are cached process-wide, so spying on the
+    // shared instance observes manifest.ts's calls regardless of import order.
+    const warn = spyOn(Log.create({ service: "extension" }), "warn")
+    const unknown = () =>
+      warn.mock.calls.filter(([message]) => message === "extension declares an unknown permission")
+    try {
+      const root = await extensionPackage(tmp.path, {
+        id: "test.unknown-permission",
+        activation: ["onStartup"],
+        fileViewers: null,
+        permissions: ["fs:read", "unknown:thing", "unknown:thing"],
+      })
+      const manifest = await load(root)
+      expect(manifest.permissions).toEqual(["fs:read", "unknown:thing"])
+      expect(unknown()).toEqual([
+        ["extension declares an unknown permission", { extension: "test.unknown-permission", permission: "unknown:thing" }],
+      ])
+
+      // Every vocabulary entry is accepted silently.
+      warn.mockClear()
+      const known = await extensionPackage(tmp.path, {
+        id: "test.known-permission",
+        activation: ["onStartup"],
+        fileViewers: null,
+        permissions: [...PERMISSIONS],
+      })
+      expect((await load(known)).permissions).toEqual([...PERMISSIONS])
+      expect(unknown()).toEqual([])
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   test("requires at least one web or server entry", async () => {
@@ -275,6 +311,7 @@ describe("extension manifest", () => {
     })
     await expect(load(duplicateRenderer)).rejects.toThrow("duplicate tool renderer")
   })
+
   test("logs info (not an error) for contributions without activation events", async () => {
     await using tmp = await tmpdir()
     const info = spyOn(Log.create({ service: "extension" }), "info")

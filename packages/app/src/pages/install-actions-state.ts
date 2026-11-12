@@ -285,6 +285,8 @@ export const installationTranslationKeys = [
   "config.extensions.install.permissions",
   "config.extensions.install.permissionsAdded",
   "config.extensions.install.permissionsRemoved",
+  "config.extensions.install.permissionUnknown",
+  "config.extensions.install.permissionsNote",
   "config.extensions.install.none",
   "config.extensions.install.contributes",
   "config.extensions.install.fileViewers",

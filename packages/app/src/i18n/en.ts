@@ -175,6 +175,9 @@ export const dict = {
   "config.extensions.install.permissions": "Declared permissions",
   "config.extensions.install.permissionsAdded": "Added permissions",
   "config.extensions.install.permissionsRemoved": "Removed permissions",
+  "config.extensions.install.permissionUnknown": "unknown permission",
+  "config.extensions.install.permissionsNote":
+    "Permissions are self-declared by the extension; this version does not enforce them at runtime.",
   "config.extensions.install.none": "None",
   "config.extensions.install.contributes": "Contributions",
   "config.extensions.install.fileViewers": "File viewers",

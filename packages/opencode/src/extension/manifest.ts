@@ -8,7 +8,7 @@ import { Hash } from "@/util/hash"
 import { Filesystem } from "@/util/filesystem"
 import { ConfigParse } from "@/config/parse"
 import { checkPluginCompatibility, extractExportValue, readPluginPackage, resolvePackageFile } from "@/plugin/shared"
-import { Manifest, type Contributes, type ExtensionID } from "./schema"
+import { Manifest, PERMISSIONS, type Contributes, type ExtensionID } from "./schema"
 
 const log = Log.create({ service: "extension" })
 
@@ -59,6 +59,17 @@ function packageExport(json: Record<string, unknown>, key: string) {
 
 function unique(values: string[]) {
   return Array.from(new Set(values))
+}
+
+const KNOWN_PERMISSIONS: ReadonlySet<string> = new Set(PERMISSIONS)
+
+// Declared permissions are self-reported. Unknown values are tolerated for
+// forward compatibility: warn here, mark them in the UI, never block install.
+function warnUnknownPermissions(manifest: Manifest) {
+  for (const permission of unique(manifest.permissions ?? [])) {
+    if (!KNOWN_PERMISSIONS.has(permission))
+      log.warn("extension declares an unknown permission", { extension: manifest.id, permission })
+  }
 }
 
 async function contentFingerprint(root: string, files: string[]) {
@@ -166,6 +177,7 @@ export async function load(directory: string, options: { opencodeVersion?: strin
   if (!raw) throw new Error("Extension package is missing opencode manifest")
   const manifest = ConfigParse.schema(Manifest, raw, pkg.pkg)
   validateContributions(manifest)
+  warnUnknownPermissions(manifest)
 
   try {
     await checkPluginCompatibility(dir, options.opencodeVersion ?? InstallationVersion, pkg)

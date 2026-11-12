@@ -78,6 +78,14 @@ export const Web = Schema.Struct({
 }).annotate({ identifier: "ExtensionWebManifest" })
 export type Web = Types.DeepMutable<Schema.Schema.Type<typeof Web>>
 
+// Declared capabilities are self-reported by the extension and only drive UI
+// display today. Unknown entries stay valid for forward compatibility:
+// manifest.ts logs a warning and the UI marks them as unknown. Coarse runtime
+// enforcement for `tools` and `process:spawn` arrives with process isolation
+// (see specs/extensions/remediation-plan.md, T5.9/T5.6).
+export const PERMISSIONS = ["fs:read", "fs:write", "process:spawn", "network", "tools", "settings:secret"] as const
+export type Permission = (typeof PERMISSIONS)[number]
+
 export const Manifest = Schema.Struct({
   manifestVersion: Schema.Literal(1),
   id: ExtensionID,
