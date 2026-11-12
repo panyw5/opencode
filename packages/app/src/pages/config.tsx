@@ -113,6 +113,7 @@ import {
 import { fetchSkillMarketFile, loadSkillMarketIndex } from "./config-skill-market"
 import { SectionButton } from "./config-section-button"
 import { ConfigCreateMenu } from "./config-create-menu"
+import { findImChannelByDirectory } from "./layout/helpers"
 import { ServerConnection, useServer } from "@/context/server"
 import { extraAgentById, extraAgents, mainDomain } from "@/pages/layout/extra-agents"
 import {
@@ -4702,9 +4703,22 @@ export default function ConfigPage() {
       )
       .join("\x1e"),
   )
-  const createProjects = createMemo(() =>
-    opened().map((project) => ({ root: project.worktree, label: project.name ?? name(project.worktree) })),
-  )
+  const createProjects = createMemo(() => {
+    const channels = globalSync.data.config.channels
+    const configDir = globalSync.data.path.config || ""
+    const home = globalSync.data.path.home || ""
+    const result = layout.projects
+      .rail()
+      .filter(
+        (project) => file(project.worktree) && !findImChannelByDirectory(project.worktree, channels, configDir, home),
+      )
+      .map((project) => ({ root: project.worktree, label: project.name ?? name(project.worktree) }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+    console.debug(
+      `[config-create] loaded-projects=${result.map((item) => item.root).join("|") || "none"} rail=${layout.projects.rail().length}`,
+    )
+    return result
+  })
   const projectScanSection = createMemo(() =>
     state.section === "agents-md" ||
     state.section === "agents" ||
