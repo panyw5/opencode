@@ -114,7 +114,7 @@ export class BrowserCdp {
   private domEnabled = false
   private consoleEnabled = false
   private networkEnabled = false
-  private viewportQueue: Promise<void> = Promise.resolve()
+  private commandQueue: Promise<void> = Promise.resolve()
   private responseListeners = new Set<(response: { origin: string; path: string; status: number }) => void>()
 
   constructor(
@@ -145,46 +145,17 @@ export class BrowserCdp {
     log("attach", "debugger attached", { webContentsId: this.wc.id })
   }
 
-  /** Set Chromium's layout viewport independently of the native view bounds. */
-  async setViewport(width: number, height: number) {
-    if (!Number.isSafeInteger(width) || width < 1 || !Number.isSafeInteger(height) || height < 1)
-      throw new Error("Browser viewport dimensions must be positive integers")
-    const apply = this.viewportQueue.then(async () => {
-      await this.ensureAttached()
-      await this.dbg.sendCommand("Emulation.setDeviceMetricsOverride", {
-        width,
-        height,
-        deviceScaleFactor: 1,
-        mobile: false,
-      })
-      await this.dbg.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: true })
-      log(
-        "viewport",
-        `device metrics and page focus emulation applied width=${width} height=${height} webContentsId=${this.wc.id}`,
-      )
-    })
-    this.viewportQueue = apply.catch(() => {})
-    await apply
-  }
-
-  /** Return the page to native view-bounds-driven layout. */
-  async clearViewportEmulation() {
-    const apply = this.viewportQueue.then(async () => {
-      await this.ensureAttached()
-      await this.dbg.sendCommand("Emulation.clearDeviceMetricsOverride")
-      log("viewport", `device metrics override cleared webContentsId=${this.wc.id}`)
-    })
-    this.viewportQueue = apply.catch(() => {})
-    await apply
-  }
-
+  /** Make the page believe it is focused — the only page override automation
+   * still needs. Layout always follows native view bounds; device-metrics
+   * emulation was removed because it raced bounds-driven layout and produced
+   * inconsistent DPI across screenshots. */
   async setFocusEmulation(enabled: boolean) {
-    const apply = this.viewportQueue.then(async () => {
+    const apply = this.commandQueue.then(async () => {
       await this.ensureAttached()
       await this.dbg.sendCommand("Emulation.setFocusEmulationEnabled", { enabled })
       log("focus-emulation", `page focus emulation enabled=${enabled} webContentsId=${this.wc.id}`)
     })
-    this.viewportQueue = apply.catch(() => {})
+    this.commandQueue = apply.catch(() => {})
     await apply
   }
 

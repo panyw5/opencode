@@ -59,10 +59,9 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
     active: BROWSER_PARTITION,
     address: "",
     presentation: 0,
-    navigating: {} as Record<string, { id: number; url: string } | undefined>,
+    navigating: {} as Record<string, { id: number; url: string; stale?: boolean } | undefined>,
   })
   const closed = new Map<string, number>()
-  const pending = new Map<string, { id: number; url: string }>()
   const stops: (() => void)[] = []
   let disposed = false
   let started = false
@@ -80,8 +79,10 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
         agent: isAgentView(view),
       }))
   const stale = (next: BrowserViewState) => next.epoch <= (closed.get(browserPageID(next)) ?? -1)
-  const syncAddress = () =>
-    setState("address", displayUrl(pending.get(state.active)?.url ?? state.views[state.active]?.url ?? ""))
+  const syncAddress = () => {
+    const nav = state.navigating[state.active]
+    setState("address", displayUrl(nav && !nav.stale ? nav.url : (state.views[state.active]?.url ?? "")))
+  }
   const reconcile = () => {
     if (state.views[state.active]) return
     setState("active", pickFallback(tabs(), state.active))
@@ -97,9 +98,12 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
       setState("views", pageID, normalized)
       reconcile()
       if (pageID !== state.active) return
-      const nav = pending.get(pageID)
+      const nav = state.navigating[pageID]
+      // The request record outlives the address override: once the page state
+      // catches up (done loading or reached the target URL), the address falls
+      // back to the real URL while loading still tracks the request itself.
       if (nav && next.loading && next.url !== nav.url) return
-      if (nav) pending.delete(pageID)
+      if (nav && !nav.stale) setState("navigating", pageID, { ...nav, stale: true })
       syncAddress()
     })
     // Background state updates never claim the user's dock or native display.
@@ -122,7 +126,6 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
       return
     }
     closed.set(partition, Math.max(epoch, closed.get(partition) ?? -1))
-    pending.delete(partition)
     const list = tabs()
     const fallback = pickFallback(list, partition)
     const becameEmpty = list.length === 1 && list[0].partition === partition
@@ -152,7 +155,6 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
   const navigate = (partition: string, url: string, reload = false) => {
     if (!api || disposed) return
     const id = ++sequence
-    pending.set(partition, { id, url })
     // Show loading while the bridge is still waiting for native navigation events.
     setState("navigating", partition, { id, url })
     syncAddress()
@@ -162,15 +164,13 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
     const request = reload ? api.navigate(partition, "reload").then(() => undefined) : api.open(partition, url)
     void request
       .then((next) => {
-        if (disposed || pending.get(partition)?.id !== id) return
-        pending.delete(partition)
+        if (disposed || state.navigating[partition]?.id !== id) return
         if (next && !stale(next)) record(next)
         syncAddress()
         console.debug(`[browser-tabs] navigation settled partition=${partition} request=${id}`)
       })
       .catch((error) => {
         if (disposed || state.navigating[partition]?.id !== id) return
-        pending.delete(partition)
         console.warn(`[browser-tabs] navigation failed partition=${partition} request=${id} error=${String(error)}`)
       })
       .finally(() => {
@@ -260,7 +260,6 @@ export function createBrowserTabs(input: { api?: WindowBrowserApi; reveal: () =>
     dispose() {
       disposed = true
       for (const stop of stops.splice(0)) stop()
-      pending.clear()
       console.debug("[browser-tabs] disposed")
     },
   }

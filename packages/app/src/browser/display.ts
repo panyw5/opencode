@@ -29,7 +29,7 @@ export function createBrowserDisplay(input: {
   const sync = () => {
     if (disposed || lease === undefined || !input.api) return
     const snapshot = input.read()
-    const pageID = snapshot.pageID === undefined ? snapshot.partition : snapshot.pageID
+    const pageID = snapshot.pageID ?? null
     // While covered, geometry and nested overlay changes do not alter the
     // native hit region. Capture once rather than every layout-animation frame.
     const next = JSON.stringify(snapshot.overlay ? { pageID, overlay: true } : { ...snapshot, pageID })
@@ -41,23 +41,15 @@ export function createBrowserDisplay(input: {
     const version = ++revision
     const submit = () => {
       if (disposed || version !== revision) return
-      const frame =
-        snapshot.pageID === undefined
-          ? snapshot.overlay
-            ? { partition: null, bounds: null }
-            : { partition: pageID, bounds: snapshot.bounds }
-          : snapshot.overlay
-            ? { pageID: null, partition: null, bounds: null }
-            : { pageID, partition: pageID, bounds: snapshot.bounds }
-      const framePageID = "pageID" in frame ? frame.pageID : frame.partition
-      console.debug(`[browser-display] submit lease=${lease} revision=${version} pageID=${framePageID ?? "none"}`)
+      const frame = snapshot.overlay ? { pageID: null, bounds: null } : { pageID, bounds: snapshot.bounds }
+      console.debug(`[browser-display] submit lease=${lease} revision=${version} pageID=${frame.pageID ?? "none"}`)
       void input
         .api!.updateDisplay({
           lease: lease!,
           revision: version,
-          ...("pageID" in frame ? { pageID: frame.pageID } : {}),
+          pageID: frame.pageID,
           protectedPageID: pageID,
-          partition: frame.partition,
+          partition: frame.pageID,
           bounds: frame.bounds,
         })
         .then((accepted) => {

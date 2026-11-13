@@ -16,7 +16,6 @@ import type {
   WindowConfig,
   WslConfig,
 } from "../preload/types"
-import type { BrowserBounds } from "../preload/types"
 import { browserController } from "./browser"
 import { GptProProbe } from "./gpt-pro-probe"
 import { GptProLoginServer } from "./gpt-pro-login-server"
@@ -350,17 +349,13 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("browser-open", (_event: IpcMainInvokeEvent, pageID: string, url: string) =>
     browserController.open(pageID, url),
   )
-  ipcMain.handle("browser-acquire-display", () => browserController.acquireDisplay())
+  ipcMain.handle("browser-acquire-display", (event: IpcMainInvokeEvent) =>
+    browserController.acquireDisplay(BrowserWindow.fromWebContents(event.sender) ?? undefined),
+  )
   ipcMain.handle("browser-display-state", () => browserController.getDisplayState())
   ipcMain.handle("browser-capture-preview", (_event, pageID: string) => browserController.capturePreview(pageID))
   ipcMain.handle("browser-update-display", (_event, frame) => browserController.updateDisplay(frame))
   ipcMain.handle("browser-release-display", (_event, lease: number) => browserController.releaseDisplay(lease))
-  ipcMain.handle("browser-set-bounds", (_event: IpcMainInvokeEvent, pageID: string, bounds: BrowserBounds | null) =>
-    browserController.setBounds(pageID, bounds),
-  )
-  ipcMain.handle("browser-set-visible", (_event: IpcMainInvokeEvent, pageID: string, visible: boolean) =>
-    browserController.setVisible(pageID, visible),
-  )
   ipcMain.handle("browser-close", (_event: IpcMainInvokeEvent, pageID: string) => browserController.close(pageID))
   ipcMain.handle(
     "browser-navigate",

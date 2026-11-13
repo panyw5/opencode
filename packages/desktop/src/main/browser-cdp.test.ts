@@ -188,20 +188,6 @@ function fixture(
 }
 
 describe("CDP file attachment", () => {
-  test("applies an explicit non-mobile layout viewport without focusing the page", async () => {
-    const f = fixture()
-    await f.browser.setViewport(1280, 800)
-    const metrics = f.calls.find((call) => call.method === "Emulation.setDeviceMetricsOverride")
-    expect(metrics?.params).toEqual({ width: 1280, height: 800, deviceScaleFactor: 1, mobile: false })
-    const metricsIndex = f.calls.findIndex((call) => call.method === "Emulation.setDeviceMetricsOverride")
-    const focusEmulationIndex = f.calls.findIndex((call) => call.method === "Emulation.setFocusEmulationEnabled")
-    expect(focusEmulationIndex).toBe(metricsIndex + 1)
-    expect(f.calls[focusEmulationIndex].params).toEqual({ enabled: true })
-    expect(f.calls.findIndex((call) => call.method === "Runtime.enable")).toBeLessThan(metricsIndex)
-    expect(f.focusCount()).toBe(0)
-    await expect(f.browser.setViewport(0, 800)).rejects.toThrow("positive integers")
-  })
-
   test("clicks the exact resolver button only after stable backend identity and hit tests", async () => {
     const f = fixture({ resolvedBackendNodeIds: [31, 31] })
     let prepared = 0

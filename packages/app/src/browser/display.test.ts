@@ -12,7 +12,7 @@ describe("native browser display", () => {
     const order: string[] = []
     let paint!: () => void
     let shown = 0
-    let snapshot: BrowserDisplaySnapshot = { partition: "first", bounds: { x: 10, y: 20, width: 400, height: 600 } }
+    let snapshot: BrowserDisplaySnapshot = { pageID: "first", partition: "first", bounds: { x: 10, y: 20, width: 400, height: 600 } }
     const api = {
       acquireDisplay: async () => 7,
       capturePreview: async (partition: string) => {
@@ -48,13 +48,13 @@ describe("native browser display", () => {
     paint()
     await flush()
     expect(order).toEqual(["display:first", "capture:first", "preview:first:preview", "display:null"])
-    expect(frames[1]).toEqual({ lease: 7, revision: 2, protectedPageID: "first", partition: null, bounds: null })
+    expect(frames[1]).toEqual({ lease: 7, revision: 2, pageID: null, protectedPageID: "first", partition: null, bounds: null })
     display.sync()
     expect(shown).toBe(1)
     snapshot = { ...snapshot, overlay: undefined }
     display.sync()
     await flush()
-    expect(frames[2].partition).toBe("first")
+    expect(frames[2].pageID).toBe("first")
     expect(shown).toBe(2)
     display.dispose()
   })
@@ -64,7 +64,7 @@ describe("native browser display", () => {
       const frames: BrowserDisplayFrame[] = []
       let finish!: (image: string) => void
       let previews = 0
-      let snapshot: BrowserDisplaySnapshot = { partition: "first", bounds: { x: 10, y: 20, width: 400, height: 600 } }
+      let snapshot: BrowserDisplaySnapshot = { pageID: "first", partition: "first", bounds: { x: 10, y: 20, width: 400, height: 600 } }
       const api = {
         acquireDisplay: async () => 7,
         capturePreview: () =>
@@ -90,7 +90,7 @@ describe("native browser display", () => {
       display.sync()
       if (dispose) display.dispose()
       else {
-        snapshot = { ...snapshot, overlay: undefined, partition: "second" }
+        snapshot = { ...snapshot, overlay: undefined, pageID: "second", partition: "second" }
         display.sync()
       }
       finish("preview")
@@ -115,12 +115,12 @@ describe("native browser display", () => {
         },
         releaseDisplay: async () => {},
       },
-      read: () => ({ partition: "first", bounds: { x: 0, y: 0, width: 400, height: 600 }, overlay: "dialog" }),
+      read: () => ({ pageID: "first", partition: "first", bounds: { x: 0, y: 0, width: 400, height: 600 }, overlay: "dialog" }),
     })
     display.start()
     await flush()
     await flush()
-    expect(frames).toEqual([{ lease: 7, revision: 1, protectedPageID: "first", partition: null, bounds: null }])
+    expect(frames).toEqual([{ lease: 7, revision: 1, pageID: null, protectedPageID: "first", partition: null, bounds: null }])
     display.dispose()
   })
 
@@ -136,17 +136,17 @@ describe("native browser display", () => {
         },
         releaseDisplay: async () => {},
       },
-      read: () => ({ partition: "first", bounds: { x: 0, y: 0, width: 400, height: 600 }, overlay: "dialog" }),
+      read: () => ({ pageID: "first", partition: "first", bounds: { x: 0, y: 0, width: 400, height: 600 }, overlay: "dialog" }),
     })
     display.start()
     await new Promise((resolve) => setTimeout(resolve, 1550))
-    expect(frames).toEqual([{ lease: 7, revision: 1, protectedPageID: "first", partition: null, bounds: null }])
+    expect(frames).toEqual([{ lease: 7, revision: 1, pageID: null, protectedPageID: "first", partition: null, bounds: null }])
     display.dispose()
   })
   test("one display path handles tab switching, modal blocking and release", async () => {
     const frames: BrowserDisplayFrame[] = []
     const released: number[] = []
-    let snapshot: BrowserDisplaySnapshot = { partition: "first", bounds: { x: 10, y: 20, width: 400, height: 600 } }
+    let snapshot: BrowserDisplaySnapshot = { pageID: "first", partition: "first", bounds: { x: 10, y: 20, width: 400, height: 600 } }
     const api = {
       acquireDisplay: async () => 7,
       updateDisplay: async (frame: BrowserDisplayFrame) => {
@@ -160,14 +160,14 @@ describe("native browser display", () => {
     const display = createBrowserDisplay({ api, read: () => snapshot })
     display.start()
     await flush()
-    snapshot = { ...snapshot, partition: "second" }
+    snapshot = { ...snapshot, pageID: "second", partition: "second" }
     display.sync()
-    snapshot = { partition: null, bounds: null }
+    snapshot = { pageID: null, partition: null, bounds: null }
     display.sync()
     expect(frames.map((frame) => frame.partition)).toEqual(["first", "second", null])
     expect(frames.map((frame) => frame.revision)).toEqual([1, 2, 3])
     display.dispose()
-    snapshot = { partition: "first", bounds: { x: 10, y: 20, width: 400, height: 600 } }
+    snapshot = { pageID: "first", partition: "first", bounds: { x: 10, y: 20, width: 400, height: 600 } }
     display.sync()
     expect(frames).toHaveLength(3)
     expect(released).toEqual([7])
@@ -215,7 +215,7 @@ describe("native browser display", () => {
         released.push(lease)
       },
     } as WindowBrowserApi
-    const display = createBrowserDisplay({ api, read: () => ({ partition: null, bounds: null }) })
+    const display = createBrowserDisplay({ api, read: () => ({ pageID: null, partition: null, bounds: null }) })
     display.start()
     display.dispose()
     resolve(9)

@@ -31,6 +31,11 @@ export type BrowserDisplayState = {
   lease: number
   revision: number
   protectedPageID?: string
+  /** Effective protection set: visible ∪ selected ∪ pendingPresentation. */
+  protectedPageIDs?: string[]
+  selectedPageID?: string
+  pendingPresentationPageID?: string
+  visiblePageID?: string
   views: { pageID?: string; profileID?: string; partition: string; visible: boolean; bounds: BrowserBounds }[]
 }
 export type WindowBrowserApi = {
@@ -43,8 +48,6 @@ export type WindowBrowserApi = {
   acknowledgePresentation: (id: number) => Promise<void>
   onPresented: (cb: (request: BrowserPresentation) => void) => () => void
   open: (pageID: string, url: string) => Promise<BrowserViewState | undefined>
-  setBounds: (pageID: string, bounds: BrowserBounds | null) => Promise<void>
-  setVisible: (pageID: string, visible: boolean) => Promise<void>
   close: (pageID: string) => Promise<void>
   navigate: (pageID: string, action: "back" | "forward" | "reload") => Promise<void>
   setShared: (pageID: string, shared: boolean) => Promise<void>

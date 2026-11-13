@@ -25,7 +25,6 @@ function fixture() {
   let closed = (_partition: string, _epoch: number) => {}
   let reveals = 0
   let empties = 0
-  let legacyCalls = 0
   const snapshot = deferred<BrowserViewState[]>()
   const navigations: ReturnType<typeof deferred<BrowserViewState | undefined>>[] = []
   const reloads: { partition: string; action: string; request: ReturnType<typeof deferred<void>> }[] = []
@@ -55,12 +54,6 @@ function fixture() {
       navigations.push(request)
       return request.promise
     },
-    setVisible: async () => {
-      legacyCalls++
-    },
-    setBounds: async () => {
-      legacyCalls++
-    },
     close: async () => {},
     navigate: (partition, action) => {
       const request = deferred<void>()
@@ -89,7 +82,6 @@ function fixture() {
     close: (partition: string, epoch: number) => closed(partition, epoch),
     reveals: () => reveals,
     empties: () => empties,
-    legacyCalls: () => legacyCalls,
   }
 }
 const flush = async () => {
@@ -303,7 +295,6 @@ describe("shared browser tabs", () => {
     f.navigations[0].resolve(view(first))
     await flush()
     expect(f.service.active()).toBe(second)
-    expect(f.legacyCalls()).toBe(0)
     f.service.dispose()
   })
   test("closing chooses a neighboring tab before removal and blocks stale events", async () => {
@@ -332,7 +323,6 @@ describe("shared browser tabs", () => {
     f.present({ id: 1, state: view("agent-browser-late") })
     await flush()
     expect(f.reveals()).toBe(0)
-    expect(f.legacyCalls()).toBe(0)
     expect(f.service.tabs()).toHaveLength(1)
     expect(f.service.tabs()[0].state?.epoch).toBe(0)
   })

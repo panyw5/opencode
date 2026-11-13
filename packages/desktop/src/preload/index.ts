@@ -99,8 +99,6 @@ const api: ElectronAPI = {
       return () => ipcRenderer.removeListener("browser-presented", handler)
     },
     open: (pageID, url) => ipcRenderer.invoke("browser-open", pageID, url),
-    setBounds: (pageID, bounds) => ipcRenderer.invoke("browser-set-bounds", pageID, bounds),
-    setVisible: (pageID, visible) => ipcRenderer.invoke("browser-set-visible", pageID, visible),
     close: (pageID) => ipcRenderer.invoke("browser-close", pageID),
     navigate: (pageID, action) => ipcRenderer.invoke("browser-navigate", pageID, action),
     setShared: (pageID, shared) => ipcRenderer.invoke("browser-set-shared", pageID, shared),

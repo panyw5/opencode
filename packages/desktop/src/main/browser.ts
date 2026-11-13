@@ -1,6 +1,6 @@
 import { homedir } from "node:os"
 import { pathToFileURL } from "node:url"
-import { BrowserWindow, session, WebContentsView, type Rectangle } from "electron"
+import { BrowserWindow, nativeImage, session, WebContentsView, type Rectangle } from "electron"
 import { write as writeLog } from "./logging"
 import { BrowserCdp, type BrowserNavigationReason } from "./browser-cdp"
 import type { BrowserDisplayFrame } from "@opencode-ai/app/browser/types"
@@ -25,8 +25,18 @@ export const agentPartition = (sessionID: string) => `agent-browser-${sessionID}
 const BROWSER_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
-const HIDDEN_VIEW_BOUNDS = { x: -32000, y: 0, width: 1, height: 1 }
-const AUTOMATION_VIEWPORT = { width: 1280, height: 800 }
+const DEFAULT_VIEWPORT = { width: 1280, height: 800 }
+// Hidden views park with a 1px column inside the window's left edge. A fully
+// offscreen rect never receives a layout viewport — measured live 2026-11-13:
+// innerWidth stays 0 for a never-shown view and Page.captureScreenshot starves
+// even for previously shown pages reparked at x=-32000. The sliver keeps
+// layout live while remaining effectively invisible, and flipping setVisible
+// is all a transient screenshot needs to produce frames.
+const parkedBounds = (bounds?: Rectangle): Rectangle => {
+  const width = bounds?.width ?? DEFAULT_VIEWPORT.width
+  const height = bounds?.height ?? DEFAULT_VIEWPORT.height
+  return { x: 1 - width, y: 0, width, height }
+}
 
 // Local file support: anything with a scheme (http:, file:, about:, ...) passes
 // through untouched; bare absolute paths and ~-prefixed paths are converted to
@@ -83,13 +93,17 @@ type ViewEntry = {
   documentEpoch?: number
   navigationReason?: BrowserNavigationReason
   pendingNavigationReason?: BrowserNavigationReason
-  /** True while a CDP device-metrics override drives the page layout. Set for
-   * automation pages at bootstrap; cleared once the page is shown so native
-   * bounds drive layout live — user-visible resizes cost zero CDP calls. */
-  emulationActive?: boolean
-  /** A clear-emulation CDP call is in flight; frames must not re-fire it. */
-  emulationClearing?: boolean
+  /** Transient visibility requested by captureScreenshot for a hidden page.
+   * reconcile() turns it into setVisible(true) on the parked sliver rect. */
+  transientShow?: boolean
+  /** Last rect/visibility actually pushed to the native view. Display frames
+   * arrive per animation step; re-sending identical geometry causes flicker. */
+  appliedBounds?: { x: number; y: number; width: number; height: number }
+  appliedVisible?: boolean
 }
+
+const sameProtection = (a: Set<string>, b: Set<string>) =>
+  a.size === b.size && [...a].every((pageID) => b.has(pageID))
 
 type ControllerEvents = {
   onViewState?: (state: ViewState) => void
@@ -115,6 +129,7 @@ export class BrowserController {
   private displayRevision = -1
   private protectedPageID?: string
   private pendingPresentationPageID?: string
+  private pendingPresentationTimer: NodeJS.Timeout | undefined
   private presentation?: BrowserPresentation
   private presentationSequence = 0
   private presentationListeners = new Set<(request: BrowserPresentation) => void>()
@@ -153,11 +168,19 @@ export class BrowserController {
     }
   }
 
+  /** The protected set is computed from three sources — visible, selected and
+   * pending presentation — so every consumer sees the same truth. */
+  private protectedPageIDs() {
+    const protectedPages = new Set<string>()
+    for (const [pageID, entry] of this.views)
+      if (entry.visible || entry.transientShow) protectedPages.add(pageID)
+    if (this.protectedPageID) protectedPages.add(this.protectedPageID)
+    if (this.pendingPresentationPageID) protectedPages.add(this.pendingPresentationPageID)
+    return protectedPages
+  }
+
   isPageProtected(pageID: string) {
-    const entry = this.views.get(pageID)
-    return Boolean(
-      entry && (entry.visible || this.protectedPageID === pageID || this.pendingPresentationPageID === pageID),
-    )
+    return this.protectedPageIDs().has(pageID)
   }
 
   listConsultationPages() {
@@ -226,7 +249,7 @@ export class BrowserController {
         if (replaced) entry.visible = false
         win.contentView.addChildView(entry.view)
         entry.win = win
-        this.applyBounds(partition)
+        this.reconcile(partition)
       } catch (error) {
         log("attach", "failed to re-attach view", { partition, error: String(error) })
       }
@@ -299,8 +322,11 @@ export class BrowserController {
     // Agent partitions stay hidden (no panel bounds) — disable background
     // throttling so CDP screenshots/AX snapshots still get fresh frames.
     view.webContents.setBackgroundThrottling(false)
-    view.setVisible(false)
-    view.setBounds(HIDDEN_VIEW_BOUNDS)
+    // Do NOT set bounds/visibility before attach: a view parked while detached
+    // never receives a layout viewport (innerWidth stays 0) and re-applying the
+    // same rect after attach does not recover it — the Chromium widget dedups
+    // the unchanged rect. The initial park must go through reconcile() once the
+    // view is in a window (bounds first, then setVisible(false)).
     view.webContents.setWindowOpenHandler((details) => {
       // Never let pages pop real windows; report the URL back to the agent layer instead.
       log("window-open", "denied", { pageID, profileID, url: details.url })
@@ -370,6 +396,7 @@ export class BrowserController {
       entry.win = this.owner
     }
     this.views.set(pageID, entry)
+    if (entry.win) this.reconcile(pageID)
     log(
       "create",
       `page created pageID=${pageID} profileID=${profileID} epoch=${epoch} kind=${identity.kind ?? "unspecified"} owner=${identity.owner ? `${identity.owner.directory ?? ""}/${identity.owner.sessionID ?? ""}` : "none"} attached=${Boolean(this.owner && !this.owner.isDestroyed())}`,
@@ -456,60 +483,46 @@ export class BrowserController {
     const redirectBlocked = entry.navigationGuard?.blocked
     entry.navigationGuard?.reset()
     entry.lastActivity = Date.now()
-    const epoch = this.epochs.get(pageID) ?? 0
-    if (this.isAutomationPage(entry)) {
-      const currentURL = entry.view.webContents.getURL()
-      if (!currentURL || currentURL === "about:blank") {
-        log("viewport", `pageID=${pageID} epoch=${epoch} outcome=bootstrap-start`)
-        await entry.cdp.navigate("about:blank")
-      }
-      // Read geometry after the blank bootstrap: display acquisition may have
-      // supplied a more recent visible size while that navigation settled.
-      const width = entry.bounds?.width ?? AUTOMATION_VIEWPORT.width
-      const height = entry.bounds?.height ?? AUTOMATION_VIEWPORT.height
-      await entry.cdp.setViewport(width, height)
-      entry.emulationActive = true
-      if (this.views.get(pageID) !== entry || (this.epochs.get(pageID) ?? 0) !== epoch)
-        throw new Error(`Browser page ${pageID} changed while setting its viewport`)
-      log("viewport", `pageID=${pageID} epoch=${epoch} width=${width} height=${height} outcome=ready`)
-    }
-    this.applyBounds(pageID)
     if (redirectBlocked || target !== entry.view.webContents.getURL()) {
       await entry.cdp.navigate(target, reason).catch((error) => {
         log("open", "navigate failed", { pageID, profileID, url: target, error: String(error) })
         throw error
       })
     }
-    this.applyBounds(pageID)
+    if (this.isAutomationPage(entry)) {
+      // Focus emulation is the only page override automation still needs:
+      // layout always follows native bounds (parked sliver when hidden).
+      await entry.cdp.setFocusEmulation(true).catch((error) => {
+        log("focus-emulation", `pageID=${pageID} enabled=true outcome=failed error=${String(error)}`)
+      })
+    }
     return this.viewState(pageID)
   }
 
-  setBounds(partition: string, bounds: Rectangle | null) {
-    if (this.displayLease) {
-      log("display", `ignored legacy bounds partition=${partition} lease=${this.displayLease}`)
-      return
-    }
-    const entry = this.views.get(partition)
-    if (!entry) return
-    if (bounds && JSON.stringify(bounds) !== JSON.stringify(entry.bounds))
-      log("bounds", `partition=${partition} x=${bounds.x} y=${bounds.y} width=${bounds.width} height=${bounds.height}`)
-    entry.bounds = bounds ?? undefined
-    this.applyBounds(partition)
-  }
-
-  private applyBounds(partition: string) {
+  /** The single funnel for every native rect/visibility change: all callers
+   * only mutate the desired state (visible, bounds, transientShow) and then
+   * reconcile, so no code path can bypass the parking/dedup rules. */
+  private reconcile(partition: string) {
     const entry = this.views.get(partition)
     if (!entry) return
     const bounds = entry.bounds
-    const shouldShow = entry.visible && Boolean(bounds)
-    // On macOS a hidden native view can still intercept mouse input at its old bounds.
-    // Keep its requested bounds separately and park the actual view offscreen while hidden.
-    // Automation pages retain a useful viewport size for responsive layout and CDP hit tests.
-    const automation = this.isAutomationPage(entry)
-    const parked = automation
-      ? { x: HIDDEN_VIEW_BOUNDS.x, y: 0, width: bounds?.width ?? 1280, height: bounds?.height ?? 800 }
-      : HIDDEN_VIEW_BOUNDS
-    const actual = shouldShow && bounds ? bounds : parked
+    const shouldShow = (entry.visible && Boolean(bounds)) || entry.transientShow === true
+    // On macOS a hidden native view can still intercept mouse input at its old
+    // bounds, so hidden views keep their requested size parked offscreen with a
+    // 1px column inside the window edge. The sliver preserves the layout
+    // viewport (see parkedBounds) while intercepting almost no input.
+    const parked = parkedBounds(bounds)
+    const actual = entry.visible && bounds ? bounds : parked
+    if (
+      entry.appliedVisible === shouldShow &&
+      entry.appliedBounds?.x === actual.x &&
+      entry.appliedBounds.y === actual.y &&
+      entry.appliedBounds.width === actual.width &&
+      entry.appliedBounds.height === actual.height
+    )
+      return
+    entry.appliedVisible = shouldShow
+    entry.appliedBounds = actual
     entry.view.setBounds(actual)
     entry.view.setVisible(shouldShow)
     log(
@@ -526,12 +539,18 @@ export class BrowserController {
     )
   }
 
-  acquireDisplay() {
+  /** Display leases belong to the owner window: a second window's panel (or a
+   * stray caller) must not silently steal the lease and blank every view. */
+  acquireDisplay(win?: BrowserWindow) {
+    if (this.owner && win && win !== this.owner && !this.owner.isDestroyed()) {
+      log("display", `acquire rejected: not the browser owner lease=${this.displayLease}`)
+      throw new Error("browser display is owned by another window")
+    }
     this.displayLease = ++this.displaySequence
     this.displayRevision = -1
     for (const [partition, entry] of this.views) {
       entry.visible = false
-      this.applyBounds(partition)
+      this.reconcile(partition)
     }
     log("display", `acquired lease=${this.displayLease}`)
     return this.displayLease
@@ -546,10 +565,17 @@ export class BrowserController {
   }
 
   getDisplayState() {
+    const visiblePageID = [...this.views].find(([, entry]) => entry.visible)?.[0]
     return {
       lease: this.displayLease,
       revision: this.displayRevision,
       protectedPageID: this.pendingPresentationPageID ?? this.protectedPageID,
+      // Protection is visible ∪ selected ∪ pendingPresentation — all three
+      // sources are exposed so diagnostics can see the complete state.
+      protectedPageIDs: [...this.protectedPageIDs()],
+      selectedPageID: this.protectedPageID,
+      pendingPresentationPageID: this.pendingPresentationPageID,
+      visiblePageID,
       views: [...this.views]
         .filter(([, entry]) => !entry.view.webContents.isDestroyed())
         .map(([pageID, entry]) => ({
@@ -596,7 +622,7 @@ export class BrowserController {
       )
       return false
     }
-    const pageID = frame.pageID === undefined ? frame.partition : frame.pageID
+    const pageID = frame.pageID ?? null
     const bounds = frame.bounds
     if (
       (pageID !== null && typeof pageID !== "string") ||
@@ -613,65 +639,61 @@ export class BrowserController {
       return false
     }
     this.displayRevision = frame.revision
-    const previousProtectedPageID = this.protectedPageID ?? this.pendingPresentationPageID
+    const protectionBefore = this.protectedPageIDs()
     const selected = frame.protectedPageID === undefined ? pageID : frame.protectedPageID
     this.protectedPageID = selected ?? undefined
     if (this.pendingPresentationPageID && this.pendingPresentationPageID === this.protectedPageID)
-      this.pendingPresentationPageID = undefined
-    const protectionChanged = previousProtectedPageID !== (this.protectedPageID ?? this.pendingPresentationPageID)
-    // One transaction owns every native hit region. Hidden tabs retain their requested geometry.
+      this.setPendingPresentation()
+    // One transaction owns every native hit region. Hidden tabs retain their
+    // requested geometry. The target is shown in the same pass — parking it
+    // first and restoring it afterwards makes every resize frame flicker.
     for (const [partition, entry] of this.views) {
       const visible = partition === pageID && !!bounds
-      entry.visible = false
+      entry.visible = visible
       if (visible) entry.bounds = bounds!
-      this.applyBounds(partition)
+      this.reconcile(partition)
     }
-    const target = pageID ? this.views.get(pageID) : undefined
-    if (target && bounds && this.isAutomationPage(target)) {
-      // Native bounds drive layout while visible — show immediately instead
-      // of hiding the page behind a serialized CDP resize. Device-metrics
-      // emulation only matters for never-shown bootstrap pages; it is cleared
-      // once, off the visibility path, so resize frames cost zero CDP calls.
-      target.visible = true
-      if (target.emulationActive && !target.emulationClearing) {
-        target.emulationClearing = true
-        const epoch = this.epochs.get(pageID!) ?? 0
-        void target.cdp
-          .clearViewportEmulation()
-          .then(() => {
-            if (this.views.get(pageID!) === target) target.emulationActive = false
-            log("viewport", `pageID=${pageID} epoch=${epoch} outcome=native-layout`)
-          })
-          .catch((error) =>
-            log("viewport", `pageID=${pageID} epoch=${epoch} outcome=clear-failed error=${String(error)}`),
-          )
-          .finally(() => {
-            target.emulationClearing = false
-          })
-      }
-    } else if (target && bounds) {
-      target.visible = true
-    }
-    if (pageID) this.applyBounds(pageID)
     log(
       "display",
       `applied lease=${frame.lease} revision=${frame.revision} pageID=${pageID ?? "none"} visible=${!!bounds}`,
     )
-    if (protectionChanged) this.emitProtectionChanged()
+    if (!sameProtection(protectionBefore, this.protectedPageIDs())) this.emitProtectionChanged()
     return !pageID || this.views.has(pageID)
   }
 
   releaseDisplay(lease: number) {
     if (lease !== this.displayLease) return
+    const protectionBefore = this.protectedPageIDs()
     for (const [partition, entry] of this.views) {
       entry.visible = false
-      this.applyBounds(partition)
+      this.reconcile(partition)
     }
     this.displayLease = 0
-    const protectionChanged = this.protectedPageID !== undefined
     this.protectedPageID = undefined
-    if (protectionChanged) this.emitProtectionChanged()
+    if (!sameProtection(protectionBefore, this.protectedPageIDs())) this.emitProtectionChanged()
     log("display", `released lease=${lease}`)
+  }
+
+  // A pending presentation protects its page until a display frame confirms
+  // it. If that frame never arrives (e.g. no window alive), the protection
+  // must still expire instead of pinning the page forever.
+  private static readonly PENDING_PRESENTATION_TTL_MS = 30_000
+
+  private setPendingPresentation(pageID?: string) {
+    if (this.pendingPresentationTimer) {
+      clearTimeout(this.pendingPresentationTimer)
+      this.pendingPresentationTimer = undefined
+    }
+    this.pendingPresentationPageID = pageID
+    if (!pageID) return
+    this.pendingPresentationTimer = setTimeout(() => {
+      this.pendingPresentationTimer = undefined
+      if (!this.pendingPresentationPageID) return
+      log("present", `pending presentation protection expired pageID=${this.pendingPresentationPageID}`)
+      this.pendingPresentationPageID = undefined
+      this.emitProtectionChanged()
+    }, BrowserController.PENDING_PRESENTATION_TTL_MS)
+    this.pendingPresentationTimer.unref?.()
   }
 
   /** Request the existing sidebar, retaining the request across route changes. */
@@ -681,9 +703,9 @@ export class BrowserController {
     this.touch(partition)
     const request = { id: ++this.presentationSequence, state }
     this.presentation = request
-    const protectionChanged = this.pendingPresentationPageID !== partition
-    this.pendingPresentationPageID = partition
-    if (protectionChanged) this.emitProtectionChanged()
+    const protectionBefore = this.protectedPageIDs()
+    this.setPendingPresentation(partition)
+    if (!sameProtection(protectionBefore, this.protectedPageIDs())) this.emitProtectionChanged()
     log("present", `sidebar requested partition=${partition} request=${request.id} epoch=${state.epoch}`)
     for (const listener of this.presentationListeners) {
       try {
@@ -711,36 +733,6 @@ export class BrowserController {
     this.presentation = undefined
   }
 
-  setVisible(partition: string, visible: boolean) {
-    if (this.displayLease) {
-      log("display", `ignored legacy visibility partition=${partition} visible=${visible} lease=${this.displayLease}`)
-      return
-    }
-    // No ensure-create here: this is called from the renderer visibility
-    // effect for every known tab, and silently creating a view nobody
-    // navigates used to be the footgun behind zombie tabs. View creation is
-    // converged on open() — the only entry point that comes with a URL.
-    const entry = this.views.get(partition)
-    if (!entry) {
-      if (visible) log("visible", "ignored for unknown partition", { partition, visible })
-      return
-    }
-    if (visible) {
-      for (const [other, view] of this.views) {
-        if (other === partition) continue
-        view.visible = false
-        this.applyBounds(other)
-      }
-    }
-    entry.visible = visible
-    this.applyBounds(partition)
-    log("visible", visible ? "shown" : "hidden", { partition })
-    const previous = this.protectedPageID
-    if (visible) this.protectedPageID = partition
-    else if (this.protectedPageID === partition) this.protectedPageID = undefined
-    if (previous !== this.protectedPageID) this.emitProtectionChanged()
-  }
-
   setShared(partition: string, shared: boolean) {
     const entry = this.views.get(partition)
     if (!entry) return
@@ -749,27 +741,43 @@ export class BrowserController {
   }
 
   /** Screenshot a view, working around the hidden-view frame starvation:
-   * Page.captureScreenshot never resolves for a view that has never painted
-   * (agent partitions stay hidden) because the compositor has no frames to
-   * hand out — background throttling off is not enough. Park the view
-   * offscreen and visible for the capture, then restore. (Live finding
-   * 2026-09-29: agent screenshot timed out after 30s on a hidden view.) */
+   * Page.captureScreenshot never resolves for a view whose rect lies fully
+   * outside the window — the compositor has no frames to hand out. Hidden
+   * views already park on a 1px sliver inside the window edge, so flipping
+   * the transient flag and reconciling is all it takes to produce frames at
+   * the parked layout size. (Live finding 2026-11-13: a transient show at
+   * x=-32000 still hangs; a 1px onscreen sliver captures fine.) */
   async captureScreenshot(partition: string, fullPage: boolean) {
     const entry = this.views.get(partition)
     if (!entry) throw new Error(`no browser view for partition ${partition}`)
     this.touch(partition)
     const win = entry.win && !entry.win.isDestroyed() ? entry.win : undefined
-    if (entry.visible || !win) return entry.cdp.screenshot(fullPage)
-    entry.view.setBounds({ x: -32000, y: 0, width: 1280, height: 800 })
-    entry.view.setVisible(true)
-    log("screenshot", "transient offscreen show", { partition })
+    if (entry.visible || !win) return this.scaleScreenshot(await entry.cdp.screenshot(fullPage), entry)
+    entry.transientShow = true
+    this.reconcile(partition)
+    log("screenshot", "transient parked show", { partition })
     try {
       // give the compositor a beat to start producing frames
       await new Promise((resolve) => setTimeout(resolve, 150))
-      return await entry.cdp.screenshot(fullPage)
+      return this.scaleScreenshot(await entry.cdp.screenshot(fullPage), entry)
     } finally {
-      this.applyBounds(partition)
+      entry.transientShow = false
+      this.reconcile(partition)
     }
+  }
+
+  /** Page.captureScreenshot returns physical pixels (CSS px × device scale
+   * factor). Downscale to the layout viewport so screenshots are a uniform
+   * 1x regardless of the display's DPI — smaller for agents to read. */
+  private scaleScreenshot(data: string, entry: ViewEntry) {
+    const image = nativeImage.createFromBuffer(Buffer.from(data, "base64"))
+    if (image.isEmpty()) return data
+    const width = image.getSize().width
+    const cssWidth = entry.appliedBounds?.width ?? entry.bounds?.width ?? DEFAULT_VIEWPORT.width
+    if (!Number.isSafeInteger(width) || width <= cssWidth || cssWidth < 1) return data
+    const scaled = image.resize({ width: cssWidth, quality: "good" })
+    log("screenshot", `scaled width=${width} cssWidth=${cssWidth}`)
+    return scaled.toPNG().toString("base64")
   }
 
   close(partition: string, reason = "close") {
@@ -801,7 +809,7 @@ export class BrowserController {
     if (this.presentation?.state.partition === partition) this.presentation = undefined
     const wasProtected = this.protectedPageID === partition || this.pendingPresentationPageID === partition
     if (this.protectedPageID === partition) this.protectedPageID = undefined
-    if (this.pendingPresentationPageID === partition) this.pendingPresentationPageID = undefined
+    if (this.pendingPresentationPageID === partition) this.setPendingPresentation()
     const epoch = this.epochs.get(partition) ?? 0
     log("teardown", reason, { partition, epoch })
     for (const listener of this.viewClosedListeners) {
@@ -850,7 +858,9 @@ export class BrowserController {
   dispose() {
     for (const partition of [...this.views.keys()]) this.teardown(partition, "dispose")
     if (this.reapTimer) clearInterval(this.reapTimer)
+    if (this.pendingPresentationTimer) clearTimeout(this.pendingPresentationTimer)
     this.reapTimer = undefined
+    this.pendingPresentationTimer = undefined
   }
 }
 
