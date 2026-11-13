@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test"
+import { existsSync, readFileSync } from "node:fs"
+import { controlFdSourceFile } from "../../../src/extension/host-process/transport-bun.ts"
 import { spawnWorkerTransport } from "../../../src/extension/host-process/transport.ts"
 import { fdOwnerFixture, testIdentity } from "./fixture.ts"
 
@@ -59,3 +61,17 @@ run("recycling exited subprocesses cannot close a newer worker's control descrip
     }
   }
 }, 30_000)
+
+// The FFI source must live on the real filesystem: inside a compiled binary
+// `import.meta.url` resolves to `/$bunfs/…`, which Bun's patched fs accepts
+// but the embedded compiler cannot open (T5.4 packaging regression).
+test("controlFdSourceFile materializes the embedded source on the real filesystem", () => {
+  const file = controlFdSourceFile()
+  expect(file.includes("$bunfs")).toBe(false)
+  expect(existsSync(file)).toBe(true)
+  const source = readFileSync(file, "utf8")
+  expect(source).toContain("duplicate_control_fd")
+  expect(source).toContain("F_DUPFD_CLOEXEC")
+  // Idempotent across calls.
+  expect(controlFdSourceFile()).toBe(file)
+})

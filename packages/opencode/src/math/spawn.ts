@@ -104,6 +104,19 @@ export type SelfArgvRuntime = {
   argv: string[]
   env: NodeJS.ProcessEnv
   electron: boolean
+  /** Runtime flags that must precede the entry script (`--conditions=browser`, …). */
+  execArgv?: string[]
+}
+
+/**
+ * Bun-compiled binaries synthesize argv[1] as a path inside the embedded
+ * virtual filesystem (`/$bunfs/root/<name>` on POSIX, `B:\~BUN\root\` on
+ * Windows). It is not a real entry script — re-execing it as one would push a
+ * bunfs path in front of the subcommand and the intercepted `extension-host`
+ * check would never see it (T5.4).
+ */
+function isEmbeddedEntry(script: string): boolean {
+  return /[/\\](?:\$bunfs|~bun)[/\\]/i.test(script)
 }
 
 /** Resolve a re-exec command for a source CLI, compiled binary, or Electron sidecar. */
@@ -113,7 +126,7 @@ export function resolveSelfArgv(subcommand: string[], runtime: SelfArgvRuntime):
 
   const exec = runtime.execPath
   const script = runtime.argv[1]
-  if (script) {
+  if (script && !isEmbeddedEntry(script)) {
     const base = path.basename(script)
     if (
       base === "index.ts" ||
@@ -121,7 +134,10 @@ export function resolveSelfArgv(subcommand: string[], runtime: SelfArgvRuntime):
       base === "opencode" ||
       script.includes(`${path.sep}src${path.sep}index.`)
     ) {
-      return [exec, script, ...subcommand]
+      // Runtime flags (--conditions=browser in dev, Node type-stripping flags)
+      // belong before the entry script so the worker resolves modules the same
+      // way the parent does (process-isolation-design.md Q2).
+      return [exec, ...(runtime.execArgv ?? []), script, ...subcommand]
     }
   }
   if (runtime.electron) {
@@ -137,6 +153,7 @@ export function selfArgv(subcommand: string[]): string[] {
     argv: process.argv,
     env: process.env,
     electron: "electron" in process.versions,
+    execArgv: process.execArgv,
   })
   log.info("self argv resolved", {
     executable: result[0],

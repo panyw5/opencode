@@ -52,6 +52,59 @@ describe("math.spawn", () => {
     ).toThrow("OPENCODE_CLI_PATH")
   })
 
+  test("compiled binary synthesizes a bunfs argv[1] that must not be re-execed as a script", () => {
+    // Bun --compile fills argv[1] with `/$bunfs/root/opencode`; basename
+    // `opencode` alone would satisfy the script branch and push the bunfs
+    // path ahead of the subcommand (T5.4 regression).
+    expect(
+      resolveSelfArgv(["extension-host", "--identity", "x"], {
+        execPath: "/usr/local/bin/opencode",
+        argv: ["bun", "/$bunfs/root/opencode"],
+        env: {},
+        electron: false,
+      }),
+    ).toEqual(["/usr/local/bin/opencode", "extension-host", "--identity", "x"])
+    expect(
+      resolveSelfArgv(["extension-host"], {
+        execPath: "C:\\tools\\opencode.exe",
+        argv: ["bun", "B:\\~BUN\\root\\opencode"],
+        env: {},
+        electron: false,
+      }),
+    ).toEqual(["C:\\tools\\opencode.exe", "extension-host"])
+  })
+
+  test("source script re-exec carries runtime flags so the worker resolves modules identically", () => {
+    expect(
+      resolveSelfArgv(["extension-host", "--identity", "x"], {
+        execPath: "/usr/bin/bun",
+        argv: ["/usr/bin/bun", "/repo/packages/opencode/src/index.ts", "serve"],
+        env: {},
+        electron: false,
+        execArgv: ["--conditions=browser"],
+      }),
+    ).toEqual([
+      "/usr/bin/bun",
+      "--conditions=browser",
+      "/repo/packages/opencode/src/index.ts",
+      "extension-host",
+      "--identity",
+      "x",
+    ])
+  })
+
+  test("OPENCODE_CLI_PATH override bypasses execArgv and the script branch", () => {
+    expect(
+      resolveSelfArgv(["extension-host"], {
+        execPath: "/usr/bin/bun",
+        argv: ["/usr/bin/bun", "/repo/packages/opencode/src/index.ts"],
+        env: { OPENCODE_CLI_PATH: "/opt/opencode/bin/opencode" },
+        electron: false,
+        execArgv: ["--conditions=browser"],
+      }),
+    ).toEqual(["/opt/opencode/bin/opencode", "extension-host"])
+  })
+
   test("detached sleep survives unref and is killable by process group", async () => {
     await using tmp = await tmpdir()
     const logFile = path.join(tmp.path, "sleep.log")

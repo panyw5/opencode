@@ -1,8 +1,15 @@
+import { createHash } from "node:crypto"
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { connect } from "node:net"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import { Readable } from "node:stream"
-import { fileURLToPath } from "node:url"
 import { getSystemErrorName } from "node:util"
 import { killWorkerTree } from "./transport.ts"
+// The C source travels inside the binary: `with { type: "text" }` is inlined
+// by Bun at bundle time, so the compiled sidecar can still feed `cc` a real
+// file (bunfs paths like `/$bunfs/root/…` are not visible to the compiler).
+import controlFdSource from "./control-fd.c" with { type: "text" }
 
 export type OwnedWorkerChild = {
   readonly pid: number
@@ -23,6 +30,33 @@ export type OwnedWorkerChild = {
  * instead; the subprocess keeps the originals. Bun-only module — the host
  * transport loads it dynamically and never on other runtimes.
  */
+/**
+ * Write the embedded `control-fd.c` to a content-addressed real path that
+ * `cc` can open. In a compiled binary `import.meta.url` resolves inside
+ * `/$bunfs/` — `existsSync` sees it through Bun's patched fs, but the FFI
+ * compiler cannot (verified T5.4), so the source must be materialized.
+ * Same-content writes race harmlessly through a unique tmp file + rename.
+ */
+export function controlFdSourceFile(): string {
+  const digest = createHash("sha256").update(controlFdSource).digest("hex").slice(0, 16)
+  const dir = path.join(tmpdir(), "opencode-extension-host")
+  const file = path.join(dir, `control-fd-${digest}.c`)
+  if (existsSync(file) && readFileSync(file, "utf8") === controlFdSource) return file
+  mkdirSync(dir, { recursive: true })
+  const staging = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
+  writeFileSync(staging, controlFdSource)
+  try {
+    renameSync(staging, file)
+  } catch {
+    try {
+      writeFileSync(file, controlFdSource)
+    } catch {
+      // Another writer owns the file; the digest already guarantees content.
+    }
+  }
+  return file
+}
+
 export async function spawnBunWorker(options: {
   executable: string
   args: string[]
@@ -34,7 +68,7 @@ export async function spawnBunWorker(options: {
   // Darwin arm64 passes fcntl's variadic argument on the stack. A fixed FFI
   // signature is not ABI-compatible; compile a tiny fixed-argument C wrapper.
   const library = cc({
-    source: fileURLToPath(new URL("./control-fd.c", import.meta.url)),
+    source: controlFdSourceFile(),
     symbols: {
       duplicate_control_fd: { args: ["i32"], returns: "i32" },
       close_control_fd: { args: ["i32"], returns: "i32" },

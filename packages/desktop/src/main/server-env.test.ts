@@ -37,6 +37,23 @@ describe("sidecar environment", () => {
     expect(env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS).toBe("true")
   })
 
+  test("forwards OPENCODE_CLI_PATH so extension workers re-exec the bundled CLI", () => {
+    // resolveSelfArgv in the sidecar fails closed under Electron without this
+    // variable; the whole env is inherited so it must survive verbatim (T5.4).
+    const env = createSidecarEnv({
+      cwd: "/tmp/workspace",
+      paths: resolveDesktopStartupPaths({ userDataPath: "/tmp/opencode-user-data", platform: "darwin" }),
+      platform: "darwin",
+      env: {
+        OPENCODE_CLI_PATH: "/Applications/OpenCode.app/Contents/Resources/sidecars/opencode-cli",
+      },
+    })
+
+    expect(env.OPENCODE_CLI_PATH).toBe(
+      "/Applications/OpenCode.app/Contents/Resources/sidecars/opencode-cli",
+    )
+  })
+
   test("does not override an explicit BACKGROUND_SUBAGENTS env", () => {
     const env = createSidecarEnv({
       cwd: "/tmp/workspace",

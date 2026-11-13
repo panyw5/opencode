@@ -350,6 +350,10 @@ export async function spawnHostWorker(deps: HostWorkerDeps): Promise<HostWorker>
         argv: process.argv,
         env: process.env,
         electron: "electron" in process.versions,
+        // Source-mode dev launches carry `--conditions=browser` et al. in
+        // execArgv; the worker must inherit them so module resolution matches
+        // the host (process-isolation-design.md Q2).
+        execArgv: process.execArgv,
       })
   const executable = template[0]!
   const args = (identity: unknown) =>
