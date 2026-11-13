@@ -1,6 +1,7 @@
 import * as Log from "@opencode-ai/core/util/log"
 import type { ExtensionHooks, ExtensionService, ServerExtension } from "@opencode-ai/extension-kit/server"
 import type { Loaded } from "../manifest"
+import type { HostWorker } from "./host-worker"
 
 const log = Log.create({ service: "extension" })
 
@@ -16,6 +17,9 @@ export type Entry = {
   source?: string
   service?: ExtensionService
   activating?: Promise<ExtensionService | undefined>
+  /** Process-isolated backend: the entry loads through a supervised worker. */
+  isolated?: boolean
+  worker?: HostWorker
   settings: Record<string, unknown>
   settingsListeners: Set<SettingsListener>
   serverUrl?: URL
@@ -57,11 +61,11 @@ export type Slot = {
   error?: string
   version?: string
   failure?: {
-    phase: "import" | "activate" | "dispose" | "quiesce" | "server" | "timeout" | "timer" | "tool"
+    phase: "import" | "activate" | "dispose" | "quiesce" | "server" | "timeout" | "timer" | "tool" | "worker"
     message: string
     at: number
   }
-  transientError?: { phase: "server" | "timer" | "tool"; message: string; at: number }
+  transientError?: { phase: "server" | "timer" | "tool" | "worker"; message: string; at: number }
 }
 
 export function phaseOf(slot: Slot) {
@@ -81,8 +85,8 @@ type Transition =
   | { type: "disposal.failed"; error: string }
   | { type: "entry.set"; entry: Entry }
   | { type: "activate.ready"; entry: Entry; service: ExtensionService }
-  | { type: "entry.error"; entry: Entry; phase: "import" | "activate" | "timeout"; error: string }
-  | { type: "runtime.error"; phase: "server" | "timer" | "tool"; error: string }
+  | { type: "entry.error"; entry: Entry; phase: "import" | "activate" | "timeout" | "worker"; error: string }
+  | { type: "runtime.error"; phase: "server" | "timer" | "tool" | "worker"; error: string }
   | { type: "server.ready" }
   | { type: "entry.drop" }
   | { type: "load.set"; loading: Promise<Entry | undefined> }
@@ -182,7 +186,10 @@ export class SlotStore {
         slot.failure = slot.transientError
         break
       case "server.ready":
-        if (slot.transientError?.phase === "server") slot.transientError = undefined
+        // A successful server instance (or a restarted worker) clears the
+        // transient runtime failure; sticky entry/failure facts remain.
+        if (slot.transientError?.phase === "server" || slot.transientError?.phase === "worker")
+          slot.transientError = undefined
         break
       case "entry.drop":
         slot.entry = undefined

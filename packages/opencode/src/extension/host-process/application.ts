@@ -481,7 +481,10 @@ export async function loadExtensionApplication(
     } catch (cause) {
       const rpc = duckRpcError(cause)
       if (rpc) return { status: "error", code: rpc.code, message: rpc.message }
-      throw cause
+      // Raw handler throws keep their message across the boundary so the host
+      // surfaces the same failure text the inline backend would (matrix parity:
+      // `fail.raw` must still read "raw boom" under process isolation).
+      return { status: "error", code: "extension_error", message: message(cause) }
     }
   }
 
@@ -601,6 +604,14 @@ export async function loadExtensionApplication(
   }
   service = (activated ?? {}) as ExtensionService
   stderr("activate-ok")
+  // The host learns the module surface over the control channel: it builds
+  // proxy maps from these descriptors, so a missing rpc method fails at the
+  // admission layer exactly like the inline runtime.
+  fire("module.shape", {
+    server: typeof extensionModule.server === "function",
+    rpc: Object.keys(service?.rpc ?? {}),
+    dispose: typeof service?.dispose === "function",
+  })
 
   return {
     async request(method, value, signal) {

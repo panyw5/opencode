@@ -8,7 +8,15 @@ import { Hash } from "@/util/hash"
 import { Filesystem } from "@/util/filesystem"
 import { ConfigParse } from "@/config/parse"
 import { checkPluginCompatibility, extractExportValue, readPluginPackage, resolvePackageFile } from "@/plugin/shared"
-import { Manifest, PERMISSIONS, WEB_API_VERSION, type Contributes, type ExtensionID } from "./schema"
+import {
+  Manifest,
+  PERMISSIONS,
+  SERVER_API_VERSION,
+  WEB_API_VERSION,
+  type Contributes,
+  type ExtensionID,
+  type IsolationMode,
+} from "./schema"
 
 const log = Log.create({ service: "extension" })
 
@@ -34,6 +42,12 @@ export type Loaded = {
   versionSegment: string
   webFingerprint: string
   serverFingerprint?: string
+  /**
+   * Declared server execution backend from `opencode.server.isolation`.
+   * Undefined means the manifest said nothing — the runtime resolves the
+   * `inline` default and any environment override.
+   */
+  isolation?: IsolationMode
   // Stable machine-oriented warning codes surfaced through Info.warnings.
   warnings: string[]
 }
@@ -203,9 +217,24 @@ export async function load(directory: string, options: { opencodeVersion?: strin
     manifest.web = undefined
   }
 
+  // Same Q10 contract for the server half: an unknown apiVersion drops the
+  // whole server contribution — entry, isolation declaration and fingerprint —
+  // while the web part stays usable and a stable warning code is reported.
+  let serverSkipped = false
+  if (manifest.server && manifest.server.apiVersion !== undefined && manifest.server.apiVersion !== SERVER_API_VERSION) {
+    serverSkipped = true
+    warnings.push(`server.apiVersion:${manifest.server.apiVersion}`)
+    log.warn("extension server apiVersion is not supported; skipping server part", {
+      extension: manifest.id,
+      apiVersion: manifest.server.apiVersion,
+    })
+    manifest.server = undefined
+  }
+
   const webExported = packageExport(pkg.json, "./web")
   const serverExported = packageExport(pkg.json, "./server")
-  if (!webExported && !serverExported)
+  const serverPart = serverSkipped ? undefined : serverExported
+  if (!webExported && !serverPart)
     throw new Error('Extension package must expose exports["./web"] or exports["./server"]')
   if (webExported && !manifest.web && !webSkipped)
     throw new Error('Extension manifest requires opencode.web when exports["./web"] is present')
@@ -242,8 +271,8 @@ export async function load(directory: string, options: { opencodeVersion?: strin
 
   let serverEntry: string | undefined
   let serverEntryAbsolute: string | undefined
-  if (serverExported) {
-    serverEntryAbsolute = resolvePackageFile(manifest.id, serverExported, "server", pkg)
+  if (serverPart) {
+    serverEntryAbsolute = resolvePackageFile(manifest.id, serverPart, "server", pkg)
     await ordinaryFile(serverEntryAbsolute, "server entry")
     serverEntry = path.relative(dir, serverEntryAbsolute).replaceAll("\\", "/")
   }
@@ -278,6 +307,7 @@ export async function load(directory: string, options: { opencodeVersion?: strin
     versionSegment,
     webFingerprint,
     serverFingerprint,
+    ...(serverPart ? { isolation: manifest.server?.isolation } : {}),
     warnings,
   }
 }

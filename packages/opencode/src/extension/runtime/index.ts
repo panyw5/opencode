@@ -5,6 +5,7 @@ import type { PluginInput } from "@opencode-ai/plugin"
 import type {
   ExtensionHooks,
   ExtensionHost,
+  ExtensionPluginInput,
   ExtensionService,
   RpcHandler,
   ServerExtension,
@@ -22,6 +23,9 @@ import { SlotStore, emptyEntry, type Entry } from "./slot"
 import { createHookOwner } from "./hooks"
 import { makeTimerScope } from "./timers"
 import { makeProcessScope } from "./process"
+import { spawnHostWorker } from "./host-worker"
+import type { RootExit } from "../host-process/transport"
+import type { SupervisorLimits } from "../host-process/supervisor"
 
 const log = Log.create({ service: "extension" })
 
@@ -167,6 +171,25 @@ let emitWindowMs = EMIT_WINDOW_MS
 const PROCESS_KILL_GRACE_MS = 3_000
 let processKillGraceMs = PROCESS_KILL_GRACE_MS
 
+// Process-isolation ceilings (remediation T5.3). `requestTimeoutMs` bounds a
+// wedged worker's RPC so the sidecar never hangs forever; restart backoff and
+// the host→worker proc stream credit mirror the supervisor/design §3.3.
+const WORKER_REQUEST_MS = 30_000
+const PROC_CREDIT_BYTES = 256 * 1024
+let workerRequestMs = WORKER_REQUEST_MS
+let workerLimits: Partial<SupervisorLimits> | undefined
+let procCreditBytes = Number(process.env.OPENCODE_EXT_PROC_CREDIT) > 0 ? Number(process.env.OPENCODE_EXT_PROC_CREDIT) : PROC_CREDIT_BYTES
+
+/**
+ * Effective server isolation backend. The environment kill-switch forces the
+ * historical inline backend for every extension while process isolation rolls
+ * out (design §8); manifests that declare nothing stay inline by default.
+ */
+function isolationOf(manifest: Loaded): "inline" | "process" {
+  if (process.env.OPENCODE_EXTENSION_ISOLATION === "inline") return "inline"
+  return manifest.isolation ?? "inline"
+}
+
 class ExtensionPhaseTimeoutError extends Error {
   constructor(phase: "activation" | "server", timeoutMs: number) {
     super(`${phase} timed out after ${timeoutMs}ms`)
@@ -293,6 +316,45 @@ function emitLimiter(id: string) {
   return limiter
 }
 
+/**
+ * Token-bucketed `extension.event` fan-out shared by the inline host object
+ * and the worker's `host.emit` notification — identical budgets both ways.
+ */
+function emitExtensionEvent(id: string, name: string, data: unknown, directory: string | undefined, started: number) {
+  const limiter = emitLimiter(id)
+  const now = Date.now()
+  limiter.tokens = Math.min(emitBurst, limiter.tokens + ((now - limiter.updatedAt) * emitRatePerSecond) / 1000)
+  limiter.updatedAt = now
+  if (limiter.tokens < 1) {
+    limiter.dropped++
+    if (!limiter.flush) {
+      limiter.flush = setTimeout(() => {
+        limiter.flush = undefined
+        const dropped = limiter.dropped
+        limiter.dropped = 0
+        log.warn("extension emit rate limit dropped events", {
+          extension: id,
+          phase: "emit",
+          gen: generationOf(id),
+          epoch: slots.get(id).epoch ?? 0,
+          elapsedMs: Date.now() - started,
+          dropped,
+        })
+      }, emitWindowMs)
+      limiter.flush.unref?.()
+    }
+    return
+  }
+  limiter.tokens -= 1
+  GlobalBus.emit("event", {
+    directory: directory ?? "global",
+    payload: {
+      type: "extension.event",
+      properties: { id, name, data },
+    },
+  })
+}
+
 function disposeResources(entry: Entry | undefined) {
   if (!entry) return
   for (const dispose of [...entry.resources]) dispose()
@@ -384,38 +446,7 @@ function createHost(entry: Entry, manifest: Loaded, serverUrl: URL | undefined) 
       return processes.spawn(command, args, options)
     },
     emit(name, data, options) {
-      const limiter = emitLimiter(id)
-      const now = Date.now()
-      limiter.tokens = Math.min(emitBurst, limiter.tokens + ((now - limiter.updatedAt) * emitRatePerSecond) / 1000)
-      limiter.updatedAt = now
-      if (limiter.tokens < 1) {
-        limiter.dropped++
-        if (!limiter.flush) {
-          limiter.flush = setTimeout(() => {
-            limiter.flush = undefined
-            const dropped = limiter.dropped
-            limiter.dropped = 0
-            log.warn("extension emit rate limit dropped events", {
-              extension: id,
-              phase: "emit",
-              gen: generationOf(id),
-              epoch: slots.get(id).epoch ?? 0,
-              elapsedMs: Date.now() - started,
-              dropped,
-            })
-          }, emitWindowMs)
-          limiter.flush.unref?.()
-        }
-        return
-      }
-      limiter.tokens -= 1
-      GlobalBus.emit("event", {
-        directory: options?.directory ?? "global",
-        payload: {
-          type: "extension.event",
-          properties: { id, name, data },
-        },
-      })
+      emitExtensionEvent(id, name, data, options?.directory, started)
     },
     log: {
       debug(message, extra) {
@@ -514,6 +545,92 @@ function recordDisposalFailure(id: string, error: unknown) {
   slots.transition(id, { type: "disposal.failed", error: error instanceof Error ? error.message : String(error) })
 }
 
+/**
+ * Stops the entry's supervised worker, waiting for the observed root exit —
+ * signal delivery alone never satisfies teardown (design §5). `unknown` means
+ * exit could not be proven and the caller must apply the blocked/needsRestart
+ * semantics, matching the inline failed-disposal contract.
+ */
+async function stopWorker(entry: Entry | undefined): Promise<"rootExited" | "unknown" | undefined> {
+  const worker = entry?.worker
+  if (!entry || !worker) return
+  entry.worker = undefined
+  // worker.stop() is internally bounded: drain → dispose → observed root exit
+  // with per-phase deadlines from the supervisor limits.
+  const result = await worker.stop()
+  return result.status
+}
+
+/**
+ * A supervised worker died unexpectedly (not through stop). The dead
+ * generation's instance hooks are unusable — new directories re-establish via
+ * instanceHooks after restart — and the transient worker error is published so
+ * the UI sees the crash; `server.ready` on restart clears it.
+ */
+function workerCrashed(entry: Entry, exit: RootExit) {
+  const id = entry.id
+  const epoch = slots.get(id).epoch ?? 0
+  entry.instances.clear()
+  const message = `Extension host process crashed: ${exit.signal ? `signal ${exit.signal}` : `exit ${exit.code ?? "unknown"}`}`
+  slots.transition(id, { type: "runtime.error", phase: "worker", error: message })
+  log.error("extension worker crashed", {
+    extension: id,
+    runtime: "process",
+    phase: "worker",
+    gen: generationOf(id),
+    epoch,
+    code: exit.code,
+    signal: exit.signal,
+  })
+  publishError(ExtensionID.make(id), entry.manifest?.version ?? "unknown", message)
+}
+
+/** A restarted worker finished hello/init/ready — rebuild hook/RPC caches. */
+function workerRestarted(entry: Entry) {
+  const id = entry.id
+  log.info("extension worker restarted", {
+    extension: id,
+    runtime: "process",
+    phase: "worker",
+    gen: generationOf(id),
+    epoch: slots.get(id).epoch ?? 0,
+  })
+  slots.transition(id, { type: "server.ready" })
+  void invalidateHooks()
+}
+
+/**
+ * The restart budget is exhausted: the extension stays in the sticky error
+ * state until an explicit retry, mirroring a sticky activation failure.
+ */
+function workerExhausted(entry: Entry, manifest: Loaded, exit: RootExit | undefined) {
+  const id = entry.id
+  const message = `Extension host process restart budget exhausted${
+    exit ? `: ${exit.signal ? `signal ${exit.signal}` : `exit ${exit.code ?? "unknown"}`}` : ""
+  }`
+  entry.instances.clear()
+  if (!gated(id) && slots.get(id).entry === entry) {
+    slots.transition(id, { type: "entry.error", entry, phase: "worker", error: message })
+    publishError(manifest.id, manifest.version, message)
+  }
+}
+
+/** Worker-reported internal failures (timers today) mirror the inline path. */
+function workerRuntimeError(entry: Entry, manifest: Loaded, phase: string, message: string) {
+  const id = entry.id
+  const mapped = phase === "timer" || phase === "server" || phase === "tool" ? phase : "worker"
+  slots.transition(id, { type: "runtime.error", phase: mapped, error: message })
+  log.error("extension worker runtime error", {
+    extension: id,
+    runtime: "process",
+    phase: mapped,
+    gen: generationOf(id),
+    epoch: slots.get(id).epoch ?? 0,
+    error: message,
+  })
+  publishError(manifest.id, manifest.version, message)
+}
+
 function markBlocked(id: string, error?: unknown, elapsedMs = 0) {
   const first = !slots.get(id).blocked
   slots.transition(id, {
@@ -596,8 +713,13 @@ async function quiesce(
   for (const request of slots.get(id).requests ?? []) request.abort(new Error(`Extension mutation: ${id}`))
   // Existing instance finalizers belong to Plugin/Instance invalidation. Do
   // not invoke them a second time; their completion is observed below.
+  let workerUnknown = false
   const stopped = (async () => {
     await disposeService(id, entry?.service, options.timeoutMs)
+    // A process worker's stop covers service/instance disposal and waits for
+    // the observed root exit; `unknown` maps onto the same blocked semantic
+    // as an incomplete inline teardown.
+    if ((await stopWorker(entry)) === "unknown") workerUnknown = true
     // Tasks can create late disposal tasks while settling, so drain to idle,
     // rather than waiting on only the first snapshot.
     while (slots.get(id).pending?.size) await Promise.allSettled([...slots.get(id).pending!])
@@ -610,7 +732,7 @@ async function quiesce(
       }),
       options.timeoutMs,
     )
-    if (!complete || slots.get(id).failedDisposal || slots.get(id).hooks?.size)
+    if (!complete || workerUnknown || slots.get(id).failedDisposal || slots.get(id).hooks?.size)
       markBlocked(id, undefined, Date.now() - started)
     return { stopped: complete && !slots.get(id).blocked, needsRestart: slots.get(id).blocked }
   } catch (error) {
@@ -646,6 +768,19 @@ async function importEntry(manifest: Loaded, source: string): Promise<Entry> {
   entry.manifest = manifest
   entry.fingerprint = manifest.serverFingerprint
   entry.source = source
+  if (isolationOf(manifest) === "process") {
+    entry.isolated = true
+    // Marker module: describe() reports the declared server surface while the
+    // real module only exists inside the worker — it is imported lazily by
+    // the worker when ensureService spawns it, so a bad server entry surfaces
+    // as an activation error there, exactly like the inline import path.
+    entry.module = {
+      id: manifest.id,
+      activate: async () => ({}),
+      server: (async () => ({})) as ServerExtension["server"],
+    }
+    return entry
+  }
   try {
     const module = await importer(source, manifest.serverFingerprint, { id: manifest.id, dir: manifest.dir })
     if (!module || typeof module !== "object")
@@ -787,6 +922,93 @@ async function ensureService(entry: Entry, manifest: Loaded, serverUrl: URL | un
   const started = Date.now()
   const epoch = slots.get(id).epoch ?? 0
   const detail = () => ({ extension: id, phase: "activate", gen, epoch, elapsedMs: Date.now() - started })
+
+  if (entry.isolated) {
+    log.debug("extension worker spawn start", detail())
+    // Spawn + readiness are tracked so strict stop still observes an in-flight
+    // worker; the bounded join below is what callers see.
+    const activation = track(
+      id,
+      Promise.resolve().then(async () => {
+        const worker = await spawnHostWorker({
+          entry,
+          manifest,
+          registry: registryFile(),
+          installation: `${manifest.dir}@${manifest.serverFingerprint ?? "none"}`,
+          gen,
+          epoch,
+          dataDir: dataDir(id),
+          cacheDir: cacheDir(id),
+          serverUrl,
+          available: () => !gated(id) && generationOf(id) === gen && slots.get(id).entry === entry,
+          emit: (name, data, directory) => emitExtensionEvent(id, name, data, directory, started),
+          crashed: (exit) => workerCrashed(entry, exit),
+          restarted: () => workerRestarted(entry),
+          exhausted: (exit) => workerExhausted(entry, manifest, exit),
+          runtimeError: (phase, message) => workerRuntimeError(entry, manifest, phase, message),
+          errors: {
+            aborted: (method) => new ExtensionRpcAbortedError(id, method),
+            notFound: (method) => new ExtensionRpcNotFoundError(id, method),
+            rpc: (code, message) => new ExtensionRpcError(code, message),
+          },
+          limits: () => ({ readinessMs: activateTimeoutMs, ...workerLimits }),
+          killGraceMs: () => processKillGraceMs,
+          procCreditBytes: () => procCreditBytes,
+          requestTimeoutMs: () => workerRequestMs,
+        })
+        if (gated(id) || generationOf(id) !== gen || slots.get(id).entry !== entry) {
+          await worker.stop()
+          log.debug("extension late worker disposed", detail())
+          return undefined
+        }
+        entry.worker = worker
+        // The worker imported + activated the module; module.shape rode the
+        // control channel ahead of `ready`, so the proxy map mirrors what the
+        // extension actually exported (T2.1 parity with the inline shape).
+        const shape = await worker.ready()
+        const service: ExtensionService = {
+          rpc: Object.fromEntries(
+            shape.rpc.map((method) => [method, (input: unknown, ctx: { directory?: string; signal: AbortSignal }) =>
+              worker.serviceRpc(method, input, ctx),
+            ]),
+          ),
+        }
+        if (gated(id) || generationOf(id) !== gen || slots.get(id).entry !== entry) {
+          entry.worker = undefined
+          await worker.stop()
+          log.debug("extension late worker disposed", detail())
+          return undefined
+        }
+        slots.transition(id, { type: "activate.ready", entry, service })
+        log.debug("extension worker ready", detail())
+        return service
+      }),
+    )
+    const bounded = phaseDeadline(activation, "activation", activateTimeoutMs)
+      .catch((error) => {
+        log.error(
+          error instanceof ExtensionPhaseTimeoutError ? "extension worker spawn timeout" : "extension worker spawn failed",
+          { ...detail(), error },
+        )
+        if (!gated(id) && generationOf(id) === gen && slots.get(id).entry === entry) {
+          slots.transition(id, {
+            type: "entry.error",
+            entry,
+            phase: error instanceof ExtensionPhaseTimeoutError ? "timeout" : "activate",
+            error: error instanceof Error ? error.message : String(error),
+          })
+          if (error instanceof ExtensionPhaseTimeoutError) invalidate(id)
+          publishError(manifest.id, manifest.version, error)
+        }
+        return undefined
+      })
+      .finally(() => {
+        if (entry.activating === bounded) entry.activating = undefined
+      })
+    entry.activating = bounded
+    return bounded
+  }
+
   log.debug("extension activate start", detail())
   // Track the original work, not the deadline: strict stop must still observe
   // a hung activation and any disposal it creates after callers have returned.
@@ -852,49 +1074,70 @@ async function callServerInternal(entry: Entry, manifest: Loaded, input: PluginI
   const epoch = slots.get(id).epoch ?? 0
   const started = Date.now()
   const detail = () => ({ extension: id, phase: "server", gen, epoch, elapsedMs: Date.now() - started })
-  const host = createHost(entry, manifest, input.serverUrl)
-  const extensionInput = { ...input, extension: Object.assign(host.host, { service: entry.service }) }
+  const isolated = entry.isolated === true
+  const worker = isolated ? entry.worker : undefined
+  if (isolated && !worker) return
+  const host = isolated ? undefined : createHost(entry, manifest, input.serverUrl)
+  const extensionInput = host
+    ? ({ ...input, extension: Object.assign(host.host, { service: entry.service }) } as ExtensionPluginInput)
+    : undefined
   // A deadline belongs to this instance call, not the process generation. One
   // directory timing out must not invalidate another directory's healthy hooks.
   let expired = false
   log.debug("extension server start", detail())
+  // Worker-bound instance.start also rides an abort controller so disable/
+  // reload and the per-call deadline both reach the worker's cancel channel.
+  const request = new AbortController()
+  const instanceSignal = AbortSignal.any([request.signal, AbortSignal.timeout(serverTimeoutMs)])
   const task = track(
     id,
-    Promise.resolve().then(async () => {
-      const hooks = ((await server(extensionInput)) ?? {}) as ExtensionHooks
-      if (expired || gated(id) || generationOf(id) !== gen || slots.get(id).entry !== entry) {
-        host.dispose()
-        await disposeHooks(id, hooks)
-        log.debug("extension late server hooks disposed", detail())
-        return
-      }
-      const directory = input.directory
-      bindHooks(id, gen, hooks)
-      const original = hooks.dispose
-      const finalize = () => {
-        host.dispose()
-        return original?.call(hooks)
-      }
-      hookOwner.setFinalizer(hooks, finalize)
-      // The instance owns the finalizer; keep runtime tracking in sync without
-      // disposing externally owned hooks a second time during process stop.
-      hooks.dispose = async () => {
-        if (entry.instances.get(directory) === hooks) entry.instances.delete(directory)
-        host.dispose()
-        await finalizeHooks(id, hooks, finalize)
-      }
-      slots.get(id).hooks.add(hooks)
-      entry.instances.set(directory, hooks)
-      slots.transition(id, { type: "server.ready" })
-      log.debug("extension server ok", detail())
-      return hooks
-    }),
+    Promise.resolve()
+      .then(async () => {
+        if (isolated) {
+          entry.requests.add(request)
+          slots.get(id).requests.add(request)
+        }
+        const hooks = isolated
+          ? await worker!.instanceStart(input, instanceSignal)
+          : (((await server(extensionInput!)) ?? {}) as ExtensionHooks)
+        if (expired || gated(id) || generationOf(id) !== gen || slots.get(id).entry !== entry) {
+          host?.dispose()
+          await disposeHooks(id, hooks)
+          log.debug("extension late server hooks disposed", detail())
+          return
+        }
+        const directory = input.directory
+        bindHooks(id, gen, hooks)
+        const original = hooks.dispose
+        const finalize = () => {
+          host?.dispose()
+          return original?.call(hooks)
+        }
+        hookOwner.setFinalizer(hooks, finalize)
+        // The instance owns the finalizer; keep runtime tracking in sync without
+        // disposing externally owned hooks a second time during process stop.
+        hooks.dispose = async () => {
+          if (entry.instances.get(directory) === hooks) entry.instances.delete(directory)
+          host?.dispose()
+          await finalizeHooks(id, hooks, finalize)
+        }
+        slots.get(id).hooks.add(hooks)
+        entry.instances.set(directory, hooks)
+        slots.transition(id, { type: "server.ready" })
+        log.debug("extension server ok", detail())
+        return hooks
+      })
+      .finally(() => {
+        entry.requests.delete(request)
+        slots.get(id).requests.delete(request)
+      }),
   )
   try {
     return await phaseDeadline(task, "server", serverTimeoutMs)
   } catch (error) {
     expired = true
-    host.dispose()
+    request.abort(error instanceof Error ? error : new Error(`Extension server timeout: ${id}`))
+    host?.dispose()
     if (!gated(id) && generationOf(id) === gen && slots.get(id).entry === entry) {
       slots.transition(id, {
         type: "runtime.error",
@@ -1103,7 +1346,9 @@ async function disable(id: string, options: { timeoutMs?: number } = {}) {
   entry.settingsListeners.clear()
   entry.instances.clear()
   await disposeService(id, entry.service, options.timeoutMs)
-  // Wait for spawned processes' observed exits, not just signal delivery.
+  // Wait for the worker's observed root exit and for spawned processes'
+  // observed exits — signal delivery alone proves nothing either way.
+  if ((await stopWorker(entry)) === "unknown") markBlocked(id)
   await withTimeout(drainProcessKills(entry), options.timeoutMs)
 }
 
@@ -1124,6 +1369,7 @@ async function reload(id: string, options: { timeoutMs?: number } = {}) {
   entry?.settingsListeners.clear()
   entry?.instances.clear()
   await disposeService(id, entry?.service, options.timeoutMs)
+  if ((await stopWorker(entry)) === "unknown") markBlocked(id)
   await withTimeout(drainProcessKills(entry), options.timeoutMs)
 }
 
@@ -1151,6 +1397,9 @@ async function notifySettings(id: string, next: Record<string, unknown>) {
       log.error("extension settings listener failed", { extension: id, error })
     }
   }
+  // Worker-side listeners live in the worker; the resolved snapshot crosses
+  // the same way the init payload carried it (settings.changed notify).
+  entry.worker?.settingsChanged(resolved)
 }
 
 /**
@@ -1238,12 +1487,20 @@ export const ExtensionRuntime = {
       emitBurst?: number
       emitWindowMs?: number
       killGraceMs?: number
+      workerRequestMs?: number
+      procCreditBytes?: number
     }) {
       rpcConcurrencyLimit = next?.rpcConcurrency ?? RPC_CONCURRENCY_LIMIT
       emitRatePerSecond = next?.emitRatePerSecond ?? EMIT_RATE_PER_SECOND
       emitBurst = next?.emitBurst ?? EMIT_BURST
       emitWindowMs = next?.emitWindowMs ?? EMIT_WINDOW_MS
       processKillGraceMs = next?.killGraceMs ?? PROCESS_KILL_GRACE_MS
+      workerRequestMs = next?.workerRequestMs ?? WORKER_REQUEST_MS
+      procCreditBytes = next?.procCreditBytes ?? PROC_CREDIT_BYTES
+    },
+    /** Per-spawn supervisor overrides (readiness/backoff/deadlines) for tests. */
+    setWorkerLimits(next?: Partial<SupervisorLimits>) {
+      workerLimits = next
     },
     async reset() {
       clearTimeout(staleHooksTimer)
@@ -1256,6 +1513,9 @@ export const ExtensionRuntime = {
       emitBurst = EMIT_BURST
       emitWindowMs = EMIT_WINDOW_MS
       processKillGraceMs = PROCESS_KILL_GRACE_MS
+      workerRequestMs = WORKER_REQUEST_MS
+      workerLimits = undefined
+      procCreditBytes = PROC_CREDIT_BYTES
       for (const limiter of emitLimiters.values()) if (limiter.flush) clearTimeout(limiter.flush)
       emitLimiters.clear()
       await disposeAll({ timeoutMs: 100 })

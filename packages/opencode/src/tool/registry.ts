@@ -27,6 +27,7 @@ import { InvalidTool } from "./invalid"
 import { SkillTool } from "./skill"
 import * as Tool from "./tool"
 import { Config } from "@/config/config"
+import type { JSONSchema7 } from "@ai-sdk/provider"
 import { type ToolContext as PluginToolContext, type ToolDefinition } from "@opencode-ai/plugin"
 import { pluginArgsZodObject, toolArgsJsonSchema } from "@/plugin/tool-schema"
 import { Schema } from "effect"
@@ -307,14 +308,21 @@ export const layer: Layer.Layer<
         // the model two same-named tools.
         const taken = new Map<string, string>(Object.keys(infos).map((id) => [id, "builtin"]))
 
-        function fromPlugin(id: string, def: ToolDefinition, extension?: { id: string; tool: string }): Tool.Def {
+        function fromPlugin(
+          id: string,
+          def: ToolDefinition & { parameters?: unknown },
+          extension?: { id: string; tool: string },
+        ): Tool.Def {
           // Plugin tools still expose Zod args publicly; keep that compatibility
           // boxed at the registry boundary and give the LLM the original JSON Schema.
           // Normalize missing args to `{}` once — pre-1.14.49 the code was
           // `z.object(def.args)` and Zod silently tolerated undefined (#27451, #27630).
           const args = def.args ?? {}
           const zodParams = pluginArgsZodObject(args)
-          const jsonSchema = toolArgsJsonSchema(args)
+          // Process-isolated tools carry the worker-computed JSON Schema on
+          // `parameters` (toolArgsJsonSchema output already); forwarding it
+          // verbatim keeps the model-visible schema byte-identical (T5.3).
+          const jsonSchema = (def.parameters as JSONSchema7 | undefined) ?? toolArgsJsonSchema(args)
           const parameters = zodParams
             ? Schema.declare<unknown>((u): u is unknown => zodParams.safeParse(u).success)
             : Schema.Unknown

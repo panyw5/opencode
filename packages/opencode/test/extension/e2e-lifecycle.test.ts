@@ -139,12 +139,22 @@ test("e2e lifecycle fixture refuses data access without the isolated test preloa
   }
 })
 
+// `bun test` cannot re-exec the test file as the extension-host entrypoint, so
+// process-isolated workers are pointed at the CLI (same override as the
+// lifecycle matrix).
+process.env.OPENCODE_EXTENSION_HOST_ARGV = JSON.stringify([
+  process.execPath,
+  path.join(import.meta.dir, "../../src/index.ts"),
+  "extension-host",
+])
+
 const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex")
 
 /** Packs the on-disk fixture into an npm-layout tgz pinned at `version`. */
-async function pack(root: string, version: string) {
+async function pack(root: string, version: string, isolation?: "inline" | "process") {
   const manifest = JSON.parse(await readFile(path.join(FIXTURE_DIR, "package.json"), "utf8"))
   manifest.version = version
+  if (isolation) manifest.opencode.server = { isolation }
   const server = await readFile(path.join(FIXTURE_DIR, "server.js"))
   const archive = tar.pack()
   const chunks: Buffer[] = []
@@ -164,7 +174,7 @@ async function pack(root: string, version: string) {
 
 type Seen = { id: string; name: string; data: unknown }
 
-async function setup() {
+async function setup(isolation?: "inline" | "process") {
   assertTestStorage()
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "oc-e2e-ext-")))
   const registry = path.join(root, "registry.json")
@@ -183,7 +193,7 @@ async function setup() {
     registry,
     service,
     seen,
-    source: (version: string) => pack(root, version),
+    source: (version: string) => pack(root, version, isolation),
     dataFile: path.join(Global.Path.data, "extensions", "data", id, "e2e.txt"),
     async teardown() {
       GlobalBus.off("event", listener)
@@ -198,6 +208,12 @@ async function setup() {
         await rm(root, { recursive: true, force: true })
         // Global.Path.tmp is shared across test processes; remove our copies.
         await rm(path.join(Global.Path.tmp, "extension-modules", id), { recursive: true, force: true })
+        // Non-purge uninstall retains the data dir and a source-ownership
+        // record; the next parameterization (a different server fingerprint)
+        // must not trip the foreign-data fence.
+        await rm(path.join(Global.Path.data, "extensions", "data", id), { recursive: true, force: true })
+        await rm(path.join(Global.Path.data, "extensions", "data-ownership", `${id}.json`), { force: true })
+        await rm(path.join(Global.Path.cache, "extensions", id), { recursive: true, force: true })
       }
     },
   }
@@ -222,11 +238,15 @@ function alive(pid: number) {
   }
 }
 
+// The same lifecycle must hold on both backends: inline keeps the in-process
+// semantics while process isolation drives the identical sequence through the
+// extension-host worker (T5.3).
+for (const isolation of ["inline", "process"] as const) {
 it.instance(
-  "extension lifecycle: install → rpc → tool → emit → disable → enable → update → uninstall",
+  `extension lifecycle [${isolation}]: install → rpc → tool → emit → disable → enable → update → uninstall`,
   () =>
     Effect.gen(function* () {
-      const env = yield* Effect.promise(setup)
+      const env = yield* Effect.promise(() => setup(isolation))
       try {
         const { service, seen } = env
         const test = yield* TestInstance
@@ -334,3 +354,4 @@ it.instance(
     }),
   120_000,
 )
+}

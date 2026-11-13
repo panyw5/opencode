@@ -90,6 +90,11 @@ export default {
         },
         "child.start": async () => {
           const child = startChild(state, host)
+          // Under process isolation the pid arrives over the control channel
+          // after the host.spawn round-trip; inline resolves it synchronously.
+          for (let i = 0; i < 500 && child.pid === undefined; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 10))
+          }
           return { running: true, pid: child.pid ?? -1 }
         },
         "child.pid": async () => ({ pid: state.child?.pid ?? null }),

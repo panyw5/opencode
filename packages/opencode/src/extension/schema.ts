@@ -83,6 +83,25 @@ export const Web = Schema.Struct({
 }).annotate({ identifier: "ExtensionWebManifest" })
 export type Web = Types.DeepMutable<Schema.Schema.Type<typeof Web>>
 
+export const SERVER_API_VERSION = 1
+
+/**
+ * Server half of the manifest (remediation T5.3). `isolation` selects the
+ * execution backend: the default `inline` keeps the historical in-process
+ * behavior, `process` routes the server entry through a supervised
+ * `extension-host` worker process. `apiVersion` gates the server surface the
+ * same way `web.apiVersion` gates the web surface (decision Q10): an unknown
+ * version drops the whole server part with a stable warning code.
+ */
+export const Server = Schema.Struct({
+  isolation: Schema.optional(Schema.Literals(["inline", "process"])),
+  // Omitted means the current version — extensions opt into isolation without
+  // having to restate the API level (extension-kit types it optional too).
+  apiVersion: Schema.optional(Schema.Number),
+}).annotate({ identifier: "ExtensionServerManifest" })
+export type Server = Types.DeepMutable<Schema.Schema.Type<typeof Server>>
+export type IsolationMode = "inline" | "process"
+
 // Declared capabilities are self-reported by the extension and only drive UI
 // display today. Unknown entries stay valid for forward compatibility:
 // manifest.ts logs a warning and the UI marks them as unknown. Coarse runtime
@@ -98,6 +117,7 @@ export const Manifest = Schema.Struct({
   description: Schema.optional(Schema.String),
   icon: Schema.optional(Schema.String),
   web: Schema.optional(Web),
+  server: Schema.optional(Server),
   activation: Schema.optional(Schema.Array(Activation)),
   contributes: Schema.optional(Contributes),
   permissions: Schema.optional(Schema.Array(Schema.String)),

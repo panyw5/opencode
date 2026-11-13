@@ -20,6 +20,8 @@ export async function extensionPackage(
     webExport?: unknown | null
     serverEntry?: string
     serverExport?: unknown | null
+    isolation?: "inline" | "process"
+    serverApiVersion?: number
     webManifest?: boolean
     webApiVersion?: number
     permissions?: string[] | null
@@ -74,6 +76,14 @@ export async function extensionPackage(
           ...(input.webManifest === false
             ? {}
             : { web: { apiVersion: input.webApiVersion ?? 1, styles: (input.styles ?? []).map((x) => `./${x}`) } }),
+          ...(input.serverEntry && (input.isolation !== undefined || input.serverApiVersion !== undefined)
+            ? {
+                server: {
+                  ...(input.isolation !== undefined ? { isolation: input.isolation } : {}),
+                  ...(input.serverApiVersion !== undefined ? { apiVersion: input.serverApiVersion } : {}),
+                },
+              }
+            : {}),
           ...(input.activation === null ? {} : { activation: input.activation ?? ["onFileViewer:hello"] }),
           ...(input.permissions ? { permissions: input.permissions } : {}),
           ...(Object.keys(contributes).length ? { contributes } : {}),
