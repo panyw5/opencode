@@ -154,6 +154,7 @@ export function formatInstallPreview(preview: InstallPreview, enable = false, pu
     `Permissions removed: ${preview.permissionsRemoved.map(text).join(", ") || "none"}`,
   ]
   if (preview.versionChange) lines.push(`Version change: ${preview.versionChange}`)
+  if (preview.warnings?.length) lines.push(`Warnings: ${preview.warnings.map(text).join(", ")}`)
   if (preview.registryUpgrade)
     lines.push(
       `Registry upgrade: ${preview.registryUpgrade.from} -> ${preview.registryUpgrade.to} (affects the entire registry).`,

@@ -116,6 +116,8 @@ if (process.env.OPENCODE_EXTENSION_SERVICE_CHILD !== "1") {
           id: "test.svc",
           displayName: "Test Service",
           activation: ["onStartup"],
+          // T5.8: the default backend is now process; pin inline explicitly.
+          server: { isolation: "inline" },
         },
       }),
     )

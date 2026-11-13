@@ -107,11 +107,13 @@ export type ExtensionHooks = Hooks & {
 }
 
 /**
- * How the host runs an extension's server entry. `"inline"` executes inside
- * the sidecar (current default, kept for local `path`-source development);
- * `"process"` runs the entry in a dedicated `extension-host` worker process
- * whose host API surface is proxied over the control protocol — failure
- * isolation and API-level restriction, not a security sandbox.
+ * How the host runs an extension's server entry. `"process"` (the default)
+ * runs the entry in a dedicated `extension-host` worker process whose host
+ * API surface is proxied over the control protocol — failure isolation and
+ * API-level restriction, not a security sandbox. `"inline"` executes inside
+ * the sidecar and is reserved for local `path`-source development installs;
+ * managed sources that still declare it keep running inline for rollback
+ * compatibility but surface a warning.
  */
 export type IsolationMode = "process" | "inline"
 
@@ -120,7 +122,7 @@ export type IsolationMode = "process" | "inline"
  * host enforces the mode; this type documents the contract for authors.
  */
 export type ServerIsolationManifest = {
-  /** Worker isolation mode; absent means the host default (`"inline"` during the transition). */
+  /** Worker isolation mode; absent means the host default (`"process"`). */
   isolation?: IsolationMode
   /** Server-side API contract version; currently always 1. */
   apiVersion?: number

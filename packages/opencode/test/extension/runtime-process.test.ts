@@ -54,6 +54,8 @@ beforeEach(async () => {
   const dir = await extensionPackage(temp.path, {
     id,
     serverEntry: "dist/server.js",
+    // T5.8: undeclared defaults to process; this suite exercises the inline backend.
+    isolation: "inline",
     webExport: null,
     webManifest: false,
     fileViewers: null,

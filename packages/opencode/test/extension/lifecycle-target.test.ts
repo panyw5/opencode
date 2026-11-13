@@ -54,6 +54,7 @@ async function setup() {
           manifestVersion: 1,
           id,
           displayName: "Lifecycle target fixture",
+          server: { isolation: "inline" },
           contributes: { settings: { apiKey: { type: "string", title: "Key", secret: true } } },
         },
       }),

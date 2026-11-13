@@ -19,7 +19,7 @@ import { ExtensionLeases } from "../leases"
 import { provisionData } from "../data"
 import { assertDevelopmentDirectory, ownedGeneration } from "../paths"
 import { publishError, publish as publishStatus } from "../event"
-import { ExtensionID, type Info, type RegistryRow, type ServerInfo } from "../schema"
+import { ExtensionID, type Info, type RegistryRow, type ServerInfo, type Source } from "../schema"
 import type { Loaded } from "../manifest"
 import { defaultImporter, type Importer } from "./module-cache"
 import { SlotStore, emptyEntry, type Entry } from "./slot"
@@ -252,13 +252,15 @@ function makeService(options: Options): Interface {
   const procCreditBytes = () => options.procCreditBytes ?? (Number(process.env.OPENCODE_EXT_PROC_CREDIT) > 0 ? Number(process.env.OPENCODE_EXT_PROC_CREDIT) : PROC_CREDIT_BYTES)
 
   /**
-   * Effective server isolation backend. The environment kill-switch forces the
-   * historical inline backend for every extension while process isolation rolls
-   * out (design §8); manifests that declare nothing stay inline by default.
+   * Effective server isolation backend. Undeclared manifests run `process`
+   * (T5.8/D8: `inline` survives only as an explicit declaration on local `path`
+   * development installs). The environment kill-switch still forces the
+   * historical inline backend for every extension as the global rollback
+   * (design §10).
    */
   function isolationOf(manifest: Loaded): "inline" | "process" {
     if (process.env.OPENCODE_EXTENSION_ISOLATION === "inline") return "inline"
-    return manifest.isolation ?? "inline"
+    return manifest.isolation ?? "process"
   }
 
   class ExtensionPhaseTimeoutError extends Error {
@@ -834,11 +836,21 @@ function makeService(options: Options): Interface {
     return path.resolve(manifest.dir, manifest.serverEntry)
   }
 
-  async function importEntry(manifest: Loaded, source: string): Promise<Entry> {
+  async function importEntry(manifest: Loaded, source: string, sourceType: Source["type"]): Promise<Entry> {
     const entry = emptyEntry(manifest.id, {})
     entry.manifest = manifest
     entry.fingerprint = manifest.serverFingerprint
     entry.source = source
+    // A managed (non-path) install declaring `inline` still runs inline — it is
+    // the documented rollback path — but the declaration is development-only,
+    // so warn once per entry load and surface `server.isolation:inline` via
+    // Info.warnings/install previews (design §7, T5.8).
+    if (manifest.isolation === "inline" && sourceType !== "path") {
+      log.warn("extension declares inline isolation outside a path install", {
+        extension: manifest.id,
+        source: sourceType,
+      })
+    }
     if (isolationOf(manifest) === "process") {
       entry.isolated = true
       // Marker module: describe() reports the declared server surface while the
@@ -956,7 +968,7 @@ function makeService(options: Options): Interface {
         if (!available()) return
         await provisionData({ id, name: row.name, source: row.source, dataSource: row.dataSource })
         if (!available()) return
-        const entry = await importEntry(manifest, source)
+        const entry = await importEntry(manifest, source, row.source.type)
         // Re-read so a settings update landing during the import is not lost.
         const stored = await currentSettings(id, row, registry)
         entry.settings = resolveSettings(manifest, stored)

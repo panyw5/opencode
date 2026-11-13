@@ -18,7 +18,12 @@ afterEach(async () => {
 })
 const id = ExtensionID.make("test.extension")
 const sha = (input: Uint8Array) => createHash("sha256").update(input).digest("hex")
-async function fixture(version = "1.0.0", extra: Record<string, string> = {}, permissions: string[] = []) {
+async function fixture(
+  version = "1.0.0",
+  extra: Record<string, string> = {},
+  permissions: string[] = [],
+  manifest: Record<string, unknown> = {},
+) {
   const pkg = {
     name: "test-extension",
     version,
@@ -30,6 +35,7 @@ async function fixture(version = "1.0.0", extra: Record<string, string> = {}, pe
       web: { apiVersion: 1 },
       permissions,
       contributes: { settings: { apiKey: { type: "string", title: "Key", secret: true } } },
+      ...manifest,
     },
   }
   const pack = tar.pack()
@@ -55,8 +61,13 @@ async function setup(options: InstallerOptions = {}) {
   const registry = path.join(root, "registry.json")
   const installer = createInstaller({ registry, ...options })
   installers.push(installer)
-  async function archive(version = "1.0.0", extra: Record<string, string> = {}, permissions: string[] = []) {
-    const { bytes } = await fixture(version, extra, permissions)
+  async function archive(
+    version = "1.0.0",
+    extra: Record<string, string> = {},
+    permissions: string[] = [],
+    manifest: Record<string, unknown> = {},
+  ) {
+    const { bytes } = await fixture(version, extra, permissions, manifest)
     const file = path.join(root, `fixture-${version}.tgz`)
     await writeFile(file, bytes)
     return { type: "local" as const, path: file, sha256: sha(bytes) }
@@ -265,6 +276,20 @@ describe("extension installation transactions", () => {
     expect(JSON.stringify(await context.installer.status(prepared.operationId, prepared.token))).not.toContain(
       prepared.token,
     )
+  })
+
+  test("prepare surfaces a declared inline backend on a managed source as a stable warning (T5.8)", async () => {
+    const context = await setup()
+    const prepared = await context.installer.prepare({
+      kind: "install",
+      source: await context.archive("1.0.0", {}, [], { server: { isolation: "inline" } }),
+    })
+    expect(prepared.warnings).toEqual(["server.isolation:inline"])
+
+    // Undeclared manifests produce no preview warnings — they resolve to the
+    // process default, not the inline rollback path.
+    const plain = await context.installer.prepare({ kind: "install", source: await context.archive("1.0.1") })
+    expect(plain.warnings).toBeUndefined()
   })
 
   test("all methods authenticate capabilities; no secret settings in preview/status", async () => {

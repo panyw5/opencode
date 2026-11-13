@@ -59,7 +59,14 @@ async function setup(sharedID?: ExtensionID) {
         version,
         type: "module",
         exports: { "./server": "./server.js" },
-        opencode: { manifestVersion: 1, id: fixtureID, displayName: "Install service fixture" },
+        opencode: {
+          manifestVersion: 1,
+          id: fixtureID,
+          displayName: "Install service fixture",
+          // T5.8: undeclared now defaults to process; this suite exercises the
+          // managed-install rollback path on the inline backend (design §10).
+          server: { isolation: "inline" },
+        },
       }),
     )
     pack.entry(

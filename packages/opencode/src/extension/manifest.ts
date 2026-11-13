@@ -16,12 +16,26 @@ import {
   type Contributes,
   type ExtensionID,
   type IsolationMode,
+  type Source,
 } from "./schema"
 
 const log = Log.create({ service: "extension" })
 
 export class CompatibilityError extends Error {
   override readonly name = "ExtensionCompatibilityError"
+}
+
+/**
+ * Stable warning code (design §7, remediation T5.8): `isolation: "inline"` is
+ * honored for local `path` development installs only. A managed (non-path)
+ * source that still declares inline keeps running on the inline backend — it
+ * is the documented rollback path (design §10) — but the declaration is
+ * surfaced through `Info.warnings`/install previews so it can converge.
+ */
+export const ISOLATION_INLINE_WARNING = "server.isolation:inline"
+
+export function inlineIsolationWarning(source: Source["type"], manifest: Pick<Loaded, "isolation">) {
+  return source !== "path" && manifest.isolation === "inline" ? ISOLATION_INLINE_WARNING : undefined
 }
 
 export type Loaded = {
@@ -45,7 +59,7 @@ export type Loaded = {
   /**
    * Declared server execution backend from `opencode.server.isolation`.
    * Undefined means the manifest said nothing — the runtime resolves the
-   * `inline` default and any environment override.
+   * `process` default and any environment override.
    */
   isolation?: IsolationMode
   // Stable machine-oriented warning codes surfaced through Info.warnings.

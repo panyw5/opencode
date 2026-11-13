@@ -1,5 +1,6 @@
 import { isSha256Hex } from "@opencode-ai/util/extension-release"
 import type { ExtensionInfo, FileViewerContribution } from "../extensions/types"
+import type { extensionWarningLabel } from "../extensions/warnings"
 
 type WireNumber = number | "NaN" | "Infinity" | "-Infinity"
 
@@ -42,6 +43,8 @@ export interface PreparedInstallation {
   expectedRegistryVersion?: WireNumber
   registryUpgrade?: { from: 2; to: 3 }
   hasServer: boolean
+  /** Stable warning codes from the approved manifest (same contract as ExtensionInfo.warnings). */
+  warnings?: string[]
   enable: boolean
   installId?: string
   token: string
@@ -345,4 +348,11 @@ export const installationTranslationKeys = [
   "config.extensions.install.releaseHint",
 ] as const
 export type InstallationTranslationKey = (typeof installationTranslationKeys)[number]
-export type InstallationLanguage = { t: (key: InstallationTranslationKey) => string }
+/** Warning-label keys the install dialog may resolve through extensionWarningLabel. */
+export type InstallationWarningKey = NonNullable<ReturnType<typeof extensionWarningLabel>>["key"]
+export type InstallationLanguage = {
+  t: (
+    key: InstallationTranslationKey | InstallationWarningKey,
+    params?: Record<string, string | number | boolean>,
+  ) => string
+}

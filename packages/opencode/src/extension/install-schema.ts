@@ -80,6 +80,9 @@ const preview = {
   expectedRegistryVersion: Schema.optional(Schema.Number),
   registryUpgrade: Schema.optional(Schema.Struct({ from: Schema.Literal(2), to: Schema.Literal(3) })),
   hasServer: Schema.Boolean,
+  // Stable machine-oriented warning codes from the approved manifest, same
+  // contract as ExtensionInfo.warnings (e.g. "server.isolation:inline").
+  warnings: Schema.optional(Schema.Array(Schema.String)),
   enable: Schema.Boolean,
   installId: Schema.optional(Schema.String),
 }

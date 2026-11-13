@@ -87,11 +87,12 @@ export const SERVER_API_VERSION = 1
 
 /**
  * Server half of the manifest (remediation T5.3). `isolation` selects the
- * execution backend: the default `inline` keeps the historical in-process
- * behavior, `process` routes the server entry through a supervised
- * `extension-host` worker process. `apiVersion` gates the server surface the
- * same way `web.apiVersion` gates the web surface (decision Q10): an unknown
- * version drops the whole server part with a stable warning code.
+ * execution backend: the default `process` routes the server entry through a
+ * supervised `extension-host` worker process (T5.8), while `inline` keeps the
+ * historical in-process behavior for local `path` development installs (D8).
+ * `apiVersion` gates the server surface the same way `web.apiVersion` gates
+ * the web surface (decision Q10): an unknown version drops the whole server
+ * part with a stable warning code.
  */
 export const Server = Schema.Struct({
   isolation: Schema.optional(Schema.Literals(["inline", "process"])),

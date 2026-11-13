@@ -246,6 +246,9 @@ describe("extension rpc route", () => {
       fileViewers: null,
       activation: null,
       serverEntry: "dist/server.js",
+      // T5.8: undeclared defaults to the process backend; this suite exercises
+      // the inline RPC surface, so pin inline explicitly.
+      isolation: "inline",
     })
     await Bun.write(
       path.join(root, "dist/server.js"),

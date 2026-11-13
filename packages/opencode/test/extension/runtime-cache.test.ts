@@ -42,7 +42,13 @@ async function installFixture() {
       version: "1.0.0",
       type: "module",
       exports: { "./server": "./server.js" },
-      opencode: { manifestVersion: 1, id: "test.cache", displayName: "Cache", activation: ["onStartup"] },
+      opencode: {
+        manifestVersion: 1,
+        id: "test.cache",
+        displayName: "Cache",
+        activation: ["onStartup"],
+        server: { isolation: "inline" },
+      },
     }),
   )
   await Bun.write(

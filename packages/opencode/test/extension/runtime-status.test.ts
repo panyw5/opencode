@@ -28,7 +28,13 @@ beforeEach(async () => {
       version: "1.0.0",
       type: "module",
       exports: { "./server": "./server.js" },
-      opencode: { manifestVersion: 1, id: "test.status", displayName: "Runtime status", activation: ["onStartup"] },
+      opencode: {
+        manifestVersion: 1,
+        id: "test.status",
+        displayName: "Runtime status",
+        activation: ["onStartup"],
+        server: { isolation: "inline" },
+      },
     }),
   )
   await Bun.write(

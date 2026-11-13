@@ -4,7 +4,7 @@ import { cp, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, writeF
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto"
 import semver from "semver"
 import * as Registry from "./registry"
-import { load, type Loaded } from "./manifest"
+import { inlineIsolationWarning, load, type Loaded } from "./manifest"
 import { ID_PATTERN, type ExtensionID, type RegistryRow, type OperationReceipt, type Source } from "./schema"
 import { extensionPaths, generationPath, privateDirectory, canonicalRegistryFile } from "./paths"
 import { ExtensionLeases } from "./leases"
@@ -74,6 +74,8 @@ export type InstallPreview = {
   expectedRegistryVersion?: number
   registryUpgrade?: { from: 2; to: 3 }
   hasServer: boolean
+  /** Stable warning codes carried over from the approved manifest plus source-derived ones (e.g. `server.isolation:inline`). */
+  warnings?: string[]
   enable: boolean
   installId?: string
 }
@@ -716,6 +718,18 @@ export function createInstaller(options: InstallerOptions = {}) {
           op.tree = await treeDigest(candidate, signal)
           const permissions = manifest.permissions
           const before = old?.permissions ?? []
+          const pub = publicSource(source, op.npm, release)
+          // Managed sources (never `path` here) may still declare `inline` —
+          // the declaration is advisory, never silently dropped (design §7).
+          const warnings = [...manifest.warnings]
+          const isolation = inlineIsolationWarning(pub.type, manifest)
+          if (isolation) {
+            warnings.push(isolation)
+            log.warn("extension declares inline isolation outside a path install", {
+              extension: manifest.id,
+              source: pub.type,
+            })
+          }
           op.preview = {
             operationId: id,
             expiresAt: op.expiresAt,
@@ -739,7 +753,8 @@ export function createInstaller(options: InstallerOptions = {}) {
             permissionsAdded: permissions.filter((permission) => !before.includes(permission)),
             permissionsRemoved: before.filter((permission) => !permissions.includes(permission)),
             contributes: manifest.contributes,
-            source: publicSource(source, op.npm, release),
+            source: pub,
+            ...(warnings.length ? { warnings } : {}),
             ...(release
               ? { signatureStatus: release.signature ? ("verified" as const) : ("unsigned" as const) }
               : {}),

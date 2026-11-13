@@ -32,7 +32,11 @@ afterEach(async () => {
 
 test("runtime errors remain visible without disabling healthy web contributions", async () => {
   await using tmp = await tmpdir()
-  const root = await extensionPackage(tmp.path, { serverEntry: "dist/server.js" })
+  const root = await extensionPackage(tmp.path, {
+    serverEntry: "dist/server.js",
+    // T5.8: undeclared defaults to process; these assertions are inline-backend errors.
+    isolation: "inline",
+  })
   await Bun.write(
     path.join(root, "dist/server.js"),
     'export default { activate() { throw new Error("broken activation") } }',
@@ -58,7 +62,7 @@ test("runtime errors remain visible without disabling healthy web contributions"
 
 test("retry clears a sticky error and invalidates hook caches", async () => {
   await using tmp = await tmpdir()
-  const root = await extensionPackage(tmp.path, { serverEntry: "dist/server.js" })
+  const root = await extensionPackage(tmp.path, { serverEntry: "dist/server.js", isolation: "inline" })
   await Bun.write(path.join(root, "dist/server.js"), 'export default { activate() { throw new Error("retry me") } }')
   const item = await ExtensionRegistry.link(root)
   await ExtensionRuntime.rpc({ id: item.id, method: "ping" }).catch(() => undefined)
@@ -93,7 +97,7 @@ test("generated SDK invokes the retry endpoint and preserves runtime metadata", 
 
 test("retry rejects unknown, disabled, mutating and blocked extensions", async () => {
   await using tmp = await tmpdir()
-  const root = await extensionPackage(tmp.path, { serverEntry: "dist/server.js" })
+  const root = await extensionPackage(tmp.path, { serverEntry: "dist/server.js", isolation: "inline" })
   const item = await ExtensionRegistry.link(root)
   const retryURL = `/global/extension/${item.id}/retry`
   expect((await request("/global/extension/test.missing/retry", "POST")).status).toBe(404)

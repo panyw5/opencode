@@ -3,6 +3,9 @@ import path from "node:path"
 import { existsSync } from "node:fs"
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { ExtensionRuntime, type Options } from "../../src/extension/runtime"
+import { ExtensionRegistry } from "../../src/extension/registry"
+import { ExtensionID } from "../../src/extension/schema"
+import { Log } from "@opencode-ai/core/util/log"
 
 /**
  * Runtime-level coverage for the process-isolation backend (T5.3): real OS
@@ -77,23 +80,23 @@ const dataDir = () =>
     id,
   )
 
-async function writePackage() {
-  const dir = path.join(root, "ext")
+async function writePackageFor(extId: string, isolation?: "inline" | "process") {
+  const dir = path.join(root, `ext-${extId}`)
   await mkdir(path.join(dir, "dist"), { recursive: true })
-  await writeFile(path.join(dir, "dist", "server.js"), SERVER.replaceAll("__ID__", id))
+  await writeFile(path.join(dir, "dist", "server.js"), SERVER.replaceAll("__ID__", extId))
   await writeFile(
     path.join(dir, "package.json"),
     JSON.stringify(
       {
-        name: id,
+        name: extId,
         version: "1.0.0",
         type: "module",
         exports: { "./server": "./dist/server.js" },
         opencode: {
           manifestVersion: 1,
-          id,
+          id: extId,
           displayName: "Process Mode",
-          server: { isolation: "process" },
+          ...(isolation === undefined ? {} : { server: { isolation } }),
         },
       },
       null,
@@ -103,14 +106,16 @@ async function writePackage() {
   return dir
 }
 
-async function link(dir: string) {
+const writePackage = () => writePackageFor(id, "process")
+
+async function link(dir: string, extId = id, source?: Record<string, unknown>) {
   const store = (await Bun.file(registry)
     .json()
     .catch(() => ({ version: 1, extensions: {} }))) as { version: number; extensions: Record<string, unknown> }
-  store.extensions[id] = {
-    name: id,
+  store.extensions[extId] = {
+    name: extId,
     version: "1.0.0",
-    source: { type: "path", path: dir },
+    source: source ?? { type: "path", path: dir },
     dir,
     enabled: true,
     installedAt: Date.now(),
@@ -131,6 +136,9 @@ async function poll<T>(fn: () => Promise<T | undefined>, message: string, timeou
 
 const rpc = (method: string, input: Record<string, unknown> = {}, signal?: AbortSignal) =>
   rt.rpc({ id, method, input, signal }) as Promise<Record<string, unknown>>
+
+const rpcFor = (extId: string, method: string, input: Record<string, unknown> = {}) =>
+  rt.rpc({ id: extId, method, input }) as Promise<Record<string, unknown>>
 
 const alive = (pid: number) => {
   try {
@@ -242,6 +250,46 @@ describe("extension runtime process mode", () => {
       ),
     )
     expect(third.gen).toBeGreaterThanOrEqual(3)
+  }, 20_000)
+
+  test("an undeclared manifest defaults to the process backend (T5.8)", async () => {
+    const extId = "test.pmode-default"
+    const pkg = await writePackageFor(extId)
+    await link(pkg, extId)
+    const { pid } = await rpcFor(extId, "echo")
+    // Inline executes inside this test process; a distinct pid proves the
+    // undeclared manifest resolved to a real worker (D8 default switch).
+    expect(pid).not.toBe(process.pid)
+  }, 20_000)
+
+  test("a managed install declaring inline stays inline, warns and reports the stable code (T5.8)", async () => {
+    const extId = "test.pmode-inline"
+    const pkg = await writePackageFor(extId, "inline")
+    await link(pkg, extId, {
+      type: "archive",
+      location: "https://example.com/fixture.tgz",
+      sha256: "a".repeat(64),
+    })
+    const { pid } = await rpcFor(extId, "echo")
+    // Design §7/§10: the declaration is the documented rollback path — the
+    // backend keeps honoring it (same pid = in-process) while warning.
+    expect(pid).toBe(process.pid)
+    const info = await ExtensionRegistry.get(ExtensionID.make(extId))
+    expect(info.warnings).toEqual(["server.isolation:inline"])
+    await poll(async () => {
+      const text = await readFile(Log.file(), "utf8").catch(() => "")
+      return text.includes("declares inline isolation") && text.includes(extId) ? true : undefined
+    }, "inline-isolation warning was not written to the dev log")
+  }, 20_000)
+
+  test("a path install declaring inline runs inline without the managed-source warning", async () => {
+    const extId = "test.pmode-path-inline"
+    const pkg = await writePackageFor(extId, "inline")
+    await link(pkg, extId)
+    const { pid } = await rpcFor(extId, "echo")
+    expect(pid).toBe(process.pid)
+    const info = await ExtensionRegistry.get(ExtensionID.make(extId))
+    expect(info.warnings ?? []).toEqual([])
   }, 20_000)
 })
 

@@ -51,6 +51,52 @@ describe("extension registry", () => {
     expect(entry?.web).toBeUndefined()
   })
 
+  test("surfaces server.isolation:inline for managed sources declaring inline (T5.8)", async () => {
+    await using tmp = await tmpdir()
+    const extension = await extensionPackage(tmp.path, {
+      id: "test.managed-inline",
+      fileViewers: null,
+      activation: ["onStartup"],
+      serverEntry: "dist/server.js",
+      isolation: "inline",
+    })
+    await Bun.write(
+      registry,
+      JSON.stringify({
+        version: 2,
+        revision: 0,
+        extensions: {
+          "test.managed-inline": {
+            name: "test-managed-inline",
+            version: "1.2.3",
+            source: { type: "archive", location: "https://example.com/managed.tgz", sha256: "a".repeat(64) },
+            dir: extension,
+            enabled: true,
+            installedAt: 1,
+          },
+        },
+      }),
+    )
+
+    const item = await ExtensionRegistry.get(ExtensionID.make("test.managed-inline"), base, registry)
+    expect(item.warnings).toEqual(["server.isolation:inline"])
+    const [listed] = await ExtensionRegistry.list(base, registry)
+    expect(listed?.warnings).toEqual(["server.isolation:inline"])
+  })
+
+  test("a path source declaring inline earns no managed-source warning (T5.8)", async () => {
+    await using tmp = await tmpdir()
+    const extension = await extensionPackage(tmp.path, {
+      fileViewers: null,
+      activation: ["onStartup"],
+      serverEntry: "dist/server.js",
+      isolation: "inline",
+    })
+
+    const linked = await ExtensionRegistry.link(extension, base, registry)
+    expect(linked.warnings).toBeUndefined()
+  })
+
   test("isolates broken linked packages as error entries", async () => {
     await using tmp = await tmpdir()
     const extension = await extensionPackage(tmp.path)

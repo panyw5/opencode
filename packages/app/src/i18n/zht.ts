@@ -878,6 +878,8 @@ export const dict = {
   "config.extensions.runtime.failed": "擴充功能重試失敗",
   "config.extensions.warnings.title": "警告",
   "config.extensions.warnings.webApiVersion": "前端部分需要較新版本的 OpenCode（web.apiVersion {{version}}）。",
+  "config.extensions.warnings.serverApiVersion": "伺服器部分需要較新版本的 OpenCode（server.apiVersion {{version}}）。",
+  "config.extensions.warnings.inlineIsolation": "伺服器部分宣告了 inline 隔離，該後端僅用於本機開發安裝。目前仍在處理程序內執行；封裝的擴充功能應改用 process 隔離。",
   "config.extensions.toggle.enable": "啟用",
   "config.extensions.toggle.disable": "停用",
   "config.extensions.toggle.busy": "更新中…",

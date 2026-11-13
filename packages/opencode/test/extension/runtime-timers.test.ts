@@ -47,6 +47,7 @@ beforeEach(async () => {
   const dir = await extensionPackage(temp.path, {
     id,
     serverEntry: "dist/server.js",
+    isolation: "inline",
     webExport: null,
     webManifest: false,
     fileViewers: null,

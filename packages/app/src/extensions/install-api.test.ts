@@ -160,6 +160,18 @@ describe("extension installation API", () => {
     expect(client.prepare).toHaveBeenCalledWith({ extensionPrepareInput: request }, { redirect: "error" })
   })
 
+  test("preserves manifest warning codes on the prepared preview", async () => {
+    // T5.8: `server.isolation:inline` and future codes ride the preview so the
+    // dialog can warn before the user commits (same contract as Info.warnings).
+    const data: PreparedInstallation = { ...prepared(), warnings: ["server.isolation:inline"] }
+    const { api } = setup(() => ({ data }))
+    const preparedResult = await api.prepare({
+      kind: "install",
+      source: { type: "npm", spec: "@example/viewer@2.0.0" },
+    })
+    expect(preparedResult.warnings).toEqual(["server.isolation:inline"])
+  })
+
   test("preserves release prepare, fixed-current update, and v3 preview fields", async () => {
     const data: PreparedInstallation = {
       ...prepared(),

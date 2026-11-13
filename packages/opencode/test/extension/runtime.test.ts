@@ -174,6 +174,9 @@ async function writeServerPackage(id: string, source: string) {
           id,
           displayName: "Test Extension",
           activation: ["onStartup"],
+          // T5.8: undeclared now defaults to the process backend; this suite is
+          // the inline-backend regression net, so pin inline explicitly.
+          server: { isolation: "inline" },
         },
       },
       null,
@@ -1603,12 +1606,16 @@ export default {
             id: "test.deps",
             displayName: "Test Deps",
             activation: ["onStartup"],
+            server: { isolation: "inline" },
           },
         },
         null,
         2,
       ),
     )
+    // The fingerprint changes whenever this fixture's manifest or entry is
+    // edited; clear stale copies from previous runs before asserting.
+    await resetModuleCopies("test.deps")
     await link("test.deps", dir)
 
     // rpc() alone drives import + activation through the module copy.
@@ -1726,6 +1733,7 @@ export default {
           id: "test.settings",
           displayName: "Test Settings",
           activation: ["onStartup"],
+          server: { isolation: "inline" },
           contributes: {
             settings: {
               mode: { type: "string", title: "Mode", default: "auto" },

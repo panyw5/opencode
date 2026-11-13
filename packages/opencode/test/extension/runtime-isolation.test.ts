@@ -61,7 +61,13 @@ async function fixture(id: string, module: ServerExtension) {
       version: "1.0.0",
       type: "module",
       exports: { "./server": "./server.js" },
-      opencode: { manifestVersion: 1, id, displayName: id, activation: ["onStartup"] },
+      opencode: {
+        manifestVersion: 1,
+        id,
+        displayName: id,
+        activation: ["onStartup"],
+        server: { isolation: "inline" },
+      },
     }),
   )
   await Bun.write(path.join(dir, "server.js"), "export default {}")

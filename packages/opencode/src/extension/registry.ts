@@ -7,7 +7,7 @@ import { Filesystem } from "@/util/filesystem"
 import { Flock } from "@opencode-ai/core/util/flock"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Global } from "@opencode-ai/core/global"
-import { load, CompatibilityError, type Loaded } from "./manifest"
+import { inlineIsolationWarning, load, CompatibilityError, type Loaded } from "./manifest"
 import { publish, publishError } from "./event"
 import { assertDevelopmentDirectory, canonicalRegistryFile, generationPath, ownedGeneration } from "./paths"
 import {
@@ -178,6 +178,12 @@ function maskSettings(row: RegistryRow, manifest: Loaded): Record<string, unknow
 
 function info(row: RegistryRow, manifest: Loaded, base: string): Info {
   const enabled = row.enabled
+  // Declared `inline` is only intended for local `path` development installs
+  // (D8); a managed source carrying the declaration gets the stable warning
+  // code while the runtime keeps honoring it (design §7, T5.8).
+  const warnings = [...manifest.warnings]
+  const isolation = inlineIsolationWarning(row.source.type, manifest)
+  if (isolation) warnings.push(isolation)
   return {
     id: manifest.id,
     name: manifest.name,
@@ -193,7 +199,7 @@ function info(row: RegistryRow, manifest: Loaded, base: string): Info {
     activation: manifest.activation,
     contributes: manifest.contributes,
     permissions: manifest.permissions,
-    ...(manifest.warnings.length ? { warnings: manifest.warnings } : {}),
+    ...(warnings.length ? { warnings } : {}),
     settings: maskSettings(row, manifest),
     ...(manifest.entry
       ? {

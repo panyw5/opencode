@@ -13,6 +13,7 @@ import {
   installationDiagnosticKey,
 } from "../extensions/install-error"
 import { isKnownExtensionPermission } from "../extensions/permissions"
+import { extensionWarningLabel } from "../extensions/warnings"
 import { isSha256Hex } from "@opencode-ai/util/extension-release"
 import {
   installationBlocked,
@@ -28,6 +29,7 @@ import {
   type InstallationOperations,
   type InstallationResult,
   type InstallationTranslationKey,
+  type InstallationWarningKey,
   type PreparedInstallation,
 } from "../pages/install-actions-state"
 
@@ -94,7 +96,8 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
   const initialConnection = props.connection()
   const intentIdentity = () => JSON.stringify(props.intent)
   const initialIntent = intentIdentity()
-  const t = (key: InstallationTranslationKey) => props.language.t(key)
+  const t = (key: InstallationTranslationKey | InstallationWarningKey, params?: Record<string, string | number | boolean>) =>
+    props.language.t(key, params)
   const sourceOptions = createMemo(() => [
     { value: "release", label: t("config.extensions.install.release") },
     { value: "npm", label: t("config.extensions.install.npm") },
@@ -596,6 +599,20 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
                   </Show>
                 </ExtensionCard>
               </div>
+              <Show when={prepared().warnings?.length}>
+                <div data-preview="warnings" class="flex flex-col gap-1">
+                  <For each={prepared().warnings}>
+                    {(warning) => {
+                      const label = extensionWarningLabel(warning)
+                      return (
+                        <p role="status" class="break-all">
+                          {label ? t(label.key, label.params) : warning}
+                        </p>
+                      )
+                    }}
+                  </For>
+                </div>
+              </Show>
               <div class="grid grid-cols-1 items-start gap-4 sm:grid-cols-2" data-preview="capabilities">
                 <div data-preview="permissions" class="grid grid-cols-1 gap-3">
                   {list("config.extensions.install.permissions", prepared().permissions)}
