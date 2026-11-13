@@ -18,7 +18,6 @@ export const dict: Record<string, string> = {
   "ui.tool.gptPro.state.history": "History",
   "ui.tool.gptPro.state.operationFailed":
     "This operation could not be confirmed. Consultation status is shown separately.",
-  "ui.tool.gptPro.state.historical": "Recorded at the time of this tool call, not current status",
   "ui.tool.gptPro.attachments": "Consultation attachments",
   "ui.tool.gptPro.attachment.pending": "Pending",
   "ui.tool.gptPro.attachment.uploading": "Uploading",

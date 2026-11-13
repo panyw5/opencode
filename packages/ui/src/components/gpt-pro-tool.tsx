@@ -12,17 +12,13 @@ import { gptProMarkdown } from "./gpt-pro-markdown"
 import { Markdown } from "./markdown"
 import { useI18n } from "../context/i18n"
 import { GptProErrorNotice } from "./gpt-pro-error-notice"
-import { gptProDiagnostic, type GptProIssueCode } from "@opencode-ai/util/gpt-pro-error"
+import { gptProDiagnostic } from "@opencode-ai/util/gpt-pro-error"
 import { gptProCapabilities, type GptProHistoricalSnapshot } from "@opencode-ai/util/gpt-pro-state"
 import { gptProStateStore, useGptProConsultation } from "./gpt-pro-state"
 
 const AttachmentPreviewDialog = lazy(() =>
   import("./gpt-pro-attachment-preview").then((module) => ({ default: module.AttachmentPreviewDialog })),
 )
-const GptProResultPreviewDialog = lazy(() =>
-  import("./gpt-pro-result-preview").then((module) => ({ default: module.GptProResultPreviewDialog })),
-)
-
 type Props = {
   client?: GptProAPI
   status?: string
@@ -202,20 +198,9 @@ export function GptProTool(props: Props) {
     historyOpen: !api() && !!id(),
     history: { loading: false, result: undefined as GptProCachedResult | undefined, error: "" },
     preview: { open: false, loading: false, error: "", file: undefined as AttachmentPreviewData | undefined },
-    result: {
-      open: false,
-      loading: false,
-      opening: false,
-      error: "",
-      errorCode: undefined as GptProIssueCode | undefined,
-      originalURL: undefined as string | undefined,
-      jobID: undefined as string | undefined,
-      result: undefined as GptProCachedResult | undefined,
-    },
   })
   const previewJobID = resolvedID
   let previewRequest = 0
-  let resultRequest = 0
   let historyRequest = 0
   const recorded = createMemo(() => {
     const jobID = id()
@@ -233,6 +218,17 @@ export function GptProTool(props: Props) {
     const value = historical().phase
     return value && HISTORICAL_PHASES.has(value) ? t(`ui.tool.gptPro.phase.${value}`) : value
   }
+  const inFlight = () => ["queued", "preparing", "sending", "generating"].includes(phase())
+  const historyToggle = () => historyOnly() || !inFlight() || !!recordedText() || !!historicalDiagnostic()
+  const historicalDiagnostic = () =>
+    gptProDiagnostic(
+      props.error ??
+        props.metadata.error ??
+        historicalAttachments()
+          .filter((item) => item.error)
+          .map((item) => item.error)
+          .join("\n"),
+    )
   createEffect(() => {
     if (!state.historyOpen || state.history.loading || state.history.result || recordedText()) return
     const client = api()
@@ -279,7 +275,6 @@ export function GptProTool(props: Props) {
       `[gpt-pro-tool] tool cleanup job=${id() ?? "unknown"} previewOpen=${state.preview.open} previewLoading=${state.preview.loading}`,
     )
     previewRequest++
-    resultRequest++
     historyRequest++
   })
   const phase = () => execution()?.phase ?? archive()?.phase ?? (historyOnly() ? (historical().phase ?? "") : "")
@@ -346,89 +341,16 @@ export function GptProTool(props: Props) {
     const client = api()
     const jobID = resolvedID()
     if (!client || !jobID) return
-    const request = ++resultRequest
     set({ busy: true, error: "" })
-    set("result", {
-      open: false,
-      loading: false,
-      opening: false,
-      error: "",
-      originalURL: execution()?.url ?? archive()?.url,
-      jobID,
-      result: undefined,
-    })
-    console.debug(`[gpt-pro-tool] resolving View action id=${jobID}`)
+    console.debug(`[gpt-pro-tool] view conversation page id=${jobID}`)
     try {
-      const resolution = await resolveGptProView(client, jobID, props.output)
-      if (request !== resultRequest) return
-      if (resolution.kind === "cached") {
-        console.debug(
-          `[gpt-pro-tool] cached result ready id=${resolution.result.id} source=${resolution.result.source}`,
-        )
-        set("busy", false)
-        set("result", {
-          open: true,
-          loading: false,
-          opening: false,
-          error: "",
-          originalURL: resolution.result.url || undefined,
-          jobID: resolution.result.id,
-          result: resolution.result,
-        })
-        return
-      }
-      if (resolution.kind === "unavailable") {
-        console.debug(`[gpt-pro-tool] cached result unavailable id=${resolution.id}`)
-        set("busy", false)
-        set("result", {
-          open: true,
-          loading: false,
-          opening: false,
-          error: resolution.error || t("ui.tool.gptPro.resultUnavailable"),
-          errorCode: resolution.errorCode,
-          originalURL: resolution.url || execution()?.url || archive()?.url || undefined,
-          jobID: resolution.id,
-          result: undefined,
-        })
-        return
-      }
-      set("result", {
-        open: false,
-        loading: false,
-        opening: false,
-        error: "",
-        originalURL: undefined,
-        jobID: undefined,
-        result: undefined,
-      })
-      await handoffGptPro(client, resolution.job.id)
-      set("busy", false)
+      await handoffGptPro(client, jobID)
     } catch (error) {
-      if (request !== resultRequest) return
-      set("busy", false)
+      console.warn(`[gpt-pro-tool] view conversation page failed id=${jobID} error=${String(error)}`)
       set("error", String(error))
-      set("result", {
-        open: false,
-        loading: false,
-        opening: false,
-        error: "",
-        originalURL: undefined,
-        jobID: undefined,
-        result: undefined,
-      })
+    } finally {
+      set("busy", false)
     }
-  }
-  const closeResult = () => {
-    resultRequest++
-    set("result", {
-      open: false,
-      loading: false,
-      opening: false,
-      error: "",
-      originalURL: undefined,
-      jobID: undefined,
-      result: undefined,
-    })
   }
   const previewAttachment = async (attachment: AttachmentView) => {
     const client = api()
@@ -591,17 +513,19 @@ export function GptProTool(props: Props) {
                   {t("ui.tool.gptPro.stop")}
                 </Button>
               </Show>
-              <Button
-                size="small"
-                variant="ghost"
-                data-testid="gpt-pro-history-toggle"
-                onClick={(event: MouseEvent) => {
-                  event.stopPropagation()
-                  set("historyOpen", !state.historyOpen)
-                }}
-              >
-                {t("ui.tool.gptPro.state.history")}
-              </Button>
+              <Show when={historyToggle()}>
+                <Button
+                  size="small"
+                  variant="ghost"
+                  data-testid="gpt-pro-history-toggle"
+                  onClick={(event: MouseEvent) => {
+                    event.stopPropagation()
+                    set("historyOpen", !state.historyOpen)
+                  }}
+                >
+                  {t("ui.tool.gptPro.state.history")}
+                </Button>
+              </Show>
             </span>
           </div>
         }
@@ -674,16 +598,6 @@ export function GptProTool(props: Props) {
           <AttachmentPreviewDialog state={state.preview} onClose={closePreview} />
         </Show>
       </Suspense>
-      <Suspense fallback={null}>
-        <Show when={state.result.open}>
-          <GptProResultPreviewDialog
-            state={state.result}
-            client={api()!}
-            jobID={state.result.jobID}
-            onClose={closeResult}
-          />
-        </Show>
-      </Suspense>
       <Show when={state.error}>
         <section data-testid="gpt-pro-operation-error" class="text-12-regular text-text-weak">
           <div>{t("ui.tool.gptPro.state.operationFailed")}</div>
@@ -708,14 +622,14 @@ export function GptProTool(props: Props) {
       </Show>
       <Show when={state.historyOpen}>
         <section data-testid="gpt-pro-historical-record" class="p-3 text-12-regular text-text-weak">
-          <div class="flex items-center gap-2">
-            <span>
-              {t("ui.tool.gptPro.state.historical")}: {historicalPhaseLabel()}
-            </span>
-            <Show when={state.history.loading}>
-              <Spinner />
-            </Show>
-          </div>
+          <Show when={!historyText() && (historicalPhaseLabel() || state.history.loading)}>
+            <div class="flex items-center gap-2">
+              <span>{historicalPhaseLabel()}</span>
+              <Show when={state.history.loading}>
+                <Spinner />
+              </Show>
+            </div>
+          </Show>
           <Show when={!historyOnly() && historicalAttachments().length}>
             <div>
               {historicalAttachments()
@@ -757,16 +671,12 @@ export function GptProTool(props: Props) {
           <Show when={state.history.error}>
             <GptProErrorNotice error={state.history.error} />
           </Show>
-          <pre class="whitespace-pre-wrap break-words" data-testid="gpt-pro-historical-error">
-            {gptProDiagnostic(
-              props.error ??
-                props.metadata.error ??
-                historicalAttachments()
-                  .filter((item) => item.error)
-                  .map((item) => item.error)
-                  .join("\n"),
-            )}
-          </pre>
+          <Show when={historicalDiagnostic()}>
+            <details data-testid="gpt-pro-historical-error">
+              <summary class="cursor-pointer">{t("ui.tool.gptPro.error.details")}</summary>
+              <pre class="whitespace-pre-wrap break-words">{historicalDiagnostic()}</pre>
+            </details>
+          </Show>
         </section>
       </Show>
     </div>

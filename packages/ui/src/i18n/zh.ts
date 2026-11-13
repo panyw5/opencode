@@ -20,7 +20,6 @@ export const dict = {
   "ui.tool.gptPro.state.archive": "归档结果 · 只读",
   "ui.tool.gptPro.state.history": "历史记录",
   "ui.tool.gptPro.state.operationFailed": "本次操作未成功确认，咨询状态以最新查询为准。",
-  "ui.tool.gptPro.state.historical": "本次工具调用当时的记录，非当前状态",
   "ui.tool.gptPro.attachments": "咨询附件",
   "ui.tool.gptPro.attachment.pending": "等待中",
   "ui.tool.gptPro.attachment.uploading": "上传中",
