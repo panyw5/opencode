@@ -62,15 +62,34 @@
 - `b05bf9fde5`：`engines.opencode` prerelease 修复——dev 构建版本（`1.18.64-local.*`）永不满足 semver 范围导致开发态安装必败；`checkPluginCompatibility`、`releaseCompatible` 统一经 `satisfiesHostRange` 比较基版本（用户决策：忽略 prerelease）。
 - open-extensions 仓库 `5282246`（本地未推送）：按 T3.3 待删清单 `git rm` 两个扩展的镜像源码/dist/test/.turbo 与根 `.DS_Store`，README 改为纯分发仓定位，`.gitignore` 补 `.turbo/`。
 
+### Phase 5 server 进程隔离
+
+| 任务 | 提交 | 摘要 | 遗留 |
+|---|---|---|---|
+| T5.0 | 设计稿 | `process-isolation-design.md` 已确认（§12 十项决策按推荐） | linux/win Bun extra-fd 未验证（Q8 风险项） |
+| T5.1 | `9d8d8a7e74` | host-process protocol/transport/supervisor（Bun/Node 双路径全绿） | sidecar 打包需携带 `control-fd.c`（T5.4 已解决）；Electron probe 未迁移（无原型可迁） |
+| T5.2 | `2ef2a676ef` | worker 入口 + 代理 host 全矩阵 + `extension-host` 子命令 | notify 超容量丢帧需宿主限速；spawn ENOENT 仅 error 需补 exit |
+| T5.3 | `dfd9b14bf7` | runtime 后端分叉 `isolation` + 崩溃重启 + 双后端 matrix | `opencode serve` 启动崩 `parseModels`（仓库既有问题） |
+| T5.4 | `0a43ea6960` | desktop 打包修复（bunfs argv、control-fd.c 物化两回归）+ CDP/孤儿实测 | worker stderr 呈 ERROR 级（外观） |
+| T5.5 | `6969dfd2e1` | 三扩展 `isolation:"process"` + wls-repl pid 异步修复；sidecar/CDP 全绿 | `ctx.ask` 真实弹窗未端到端；冷启动 ~0.75s、RPC p95 +~80% |
+| T5.6 | `9421ee7088` | `tools`/`process:spawn` 宿主强制执行；Node `--permission` 评估否决 | worker 内 `child_process` 仍可裸调（API 级限制非沙箱） |
+| T5.7 | `19d79e5eda` | runtime 收编 `ExtensionRuntime.Service`（模块级可变状态 24→0） | `install-service.ts` 模块级 Map 未收（超范围） |
+| T5.8 | `165e6c0546` | 缺省 `process`；非 path 来源 inline 警告链（日志+Info.warnings+UI） | sidecar 未重建验证（dev 实例在用） |
+
+### Phase 7 文档收尾
+
+| 任务 | 提交 | 摘要 | 遗留 |
+|---|---|---|---|
+| T7.1 | `6ac7b52463` | progress.md 状态清单化、lifecycle 合并归档、design 决策块 | `lifecycle-supervisor.md` 内两处 archive 断链待修 |
+| T7.2 | `cb2db7a305` | extension-kit 完整作者 README + hello-viewer 示例 README | `isolation-authoring.md` 末段仍为"同进程模型"旧文 |
+
 ## 进行中
 
-- **T5.0 进程隔离设计确认**：`process-isolation-design.md` 已产出并标记"已确认"（2026-11-13，§12 全部按推荐采纳）；`remediation-plan.md` 尚无实施记录/提交 hash。
-- **T7.1 规范文档整理**：本任务（progress.md 状态清单化、lifecycle 文档合并、design.md 已确认决策更新）进行中。
+- 无（整改计划全部 30 项任务已完成）。
 
 ## 未开始
 
-- **Phase 5 server 进程隔离**（严格串行，T5.0 确认后推进）：T5.1 协议与 supervisor 生产化 → T5.2 worker 入口与 API 代理 → T5.3 运行时接入 → T5.4 Desktop 集成与打包 → T5.5 三扩展迁移 `isolation: "process"` → T5.6 权限粗粒度执行 → T5.7 运行时 Effect 化重构 → T5.8 默认值切换。（2026-11-13 观察：工作区存在未跟踪的 `packages/opencode/src/extension/host-process/` stub——`protocol.ts`/`control-fd.c`，无对应实施记录，疑似 T5.1 起草中。）
-- **T7.2 作者文档**：extension-kit README + hello-viewer 官方示例指针。
+- 无。
 
 ## 已放弃
 
@@ -83,3 +102,9 @@
 - **需 push 后才能验证**：T6.3 fork dispatch；open-extensions `5282246` 未推送。
 - **文档/UI 一致性**：`env.d.ts` 死声明（T1.6）；`layout.tsx` `prune()` 未 evict 面板状态（T1.5）。
 - **发布流程**：hello-viewer dist 陈旧（T4.1）；mathematica-notebook 下次发布需人工升版（T1.3）；`npm pack` 中断恢复（T4.2）。
+
+### Fork CI 验证（T6.3）
+
+- 首轮 dispatch（run `43370925502`）10 个 job 全部 queued 不调度——`blacksmith-4vcpu-ubuntu-2404` 在本 fork 无 runner（历史同类 workflow 均 cancelled）。`1ec086df6c` 切换为 `ubuntu-latest`（workflow 本就 fork 限定）。
+- `6b0eab251a` 修复 CI 暴露的两个环境差异：linux 下 `spawnBunWorker` darwin 门槛（`bun:ffi` cc 需 libc 头文件，linux/arm64 容器验证可行）与 npm<11 `npm pack` 运行 `prepare`（npm#7850，staging 副本剥离生命周期钩子，node:22/npm10 验证）。
+- run `43375140162`：**10/10 job 全绿**（opencode/app/desktop/extension-kit/util/wolfram-lang/三扩展/verify-pack）。
