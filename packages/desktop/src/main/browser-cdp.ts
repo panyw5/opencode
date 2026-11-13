@@ -167,6 +167,17 @@ export class BrowserCdp {
     await apply
   }
 
+  /** Return the page to native view-bounds-driven layout. */
+  async clearViewportEmulation() {
+    const apply = this.viewportQueue.then(async () => {
+      await this.ensureAttached()
+      await this.dbg.sendCommand("Emulation.clearDeviceMetricsOverride")
+      log("viewport", `device metrics override cleared webContentsId=${this.wc.id}`)
+    })
+    this.viewportQueue = apply.catch(() => {})
+    await apply
+  }
+
   async setFocusEmulation(enabled: boolean) {
     const apply = this.viewportQueue.then(async () => {
       await this.ensureAttached()

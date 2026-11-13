@@ -83,6 +83,12 @@ type ViewEntry = {
   documentEpoch?: number
   navigationReason?: BrowserNavigationReason
   pendingNavigationReason?: BrowserNavigationReason
+  /** True while a CDP device-metrics override drives the page layout. Set for
+   * automation pages at bootstrap; cleared once the page is shown so native
+   * bounds drive layout live — user-visible resizes cost zero CDP calls. */
+  emulationActive?: boolean
+  /** A clear-emulation CDP call is in flight; frames must not re-fire it. */
+  emulationClearing?: boolean
 }
 
 type ControllerEvents = {
@@ -462,6 +468,7 @@ export class BrowserController {
       const width = entry.bounds?.width ?? AUTOMATION_VIEWPORT.width
       const height = entry.bounds?.height ?? AUTOMATION_VIEWPORT.height
       await entry.cdp.setViewport(width, height)
+      entry.emulationActive = true
       if (this.views.get(pageID) !== entry || (this.epochs.get(pageID) ?? 0) !== epoch)
         throw new Error(`Browser page ${pageID} changed while setting its viewport`)
       log("viewport", `pageID=${pageID} epoch=${epoch} width=${width} height=${height} outcome=ready`)
@@ -612,7 +619,6 @@ export class BrowserController {
     if (this.pendingPresentationPageID && this.pendingPresentationPageID === this.protectedPageID)
       this.pendingPresentationPageID = undefined
     const protectionChanged = previousProtectedPageID !== (this.protectedPageID ?? this.pendingPresentationPageID)
-    const previous = [...this.views].map(([id, entry]) => ({ id, entry, visible: entry.visible, bounds: entry.bounds }))
     // One transaction owns every native hit region. Hidden tabs retain their requested geometry.
     for (const [partition, entry] of this.views) {
       const visible = partition === pageID && !!bounds
@@ -622,49 +628,27 @@ export class BrowserController {
     }
     const target = pageID ? this.views.get(pageID) : undefined
     if (target && bounds && this.isAutomationPage(target)) {
-      const epoch = this.epochs.get(pageID!) ?? 0
-      log(
-        "viewport",
-        `pageID=${pageID} epoch=${epoch} width=${bounds.width} height=${bounds.height} outcome=resize-start`,
-      )
-      try {
-        await target.cdp.setViewport(bounds.width, bounds.height)
-      } catch (error) {
-        log(
-          "viewport",
-          `pageID=${pageID} epoch=${epoch} width=${bounds.width} height=${bounds.height} outcome=resize-failed error=${String(error)}`,
-        )
-        if (
-          this.views.get(pageID!) === target &&
-          this.displayLease === frame.lease &&
-          this.displayRevision === frame.revision
-        ) {
-          for (const prior of previous) {
-            if (this.views.get(prior.id) !== prior.entry) continue
-            prior.entry.visible = prior.visible
-            prior.entry.bounds = prior.bounds
-            this.applyBounds(prior.id)
-          }
-          log(
-            "display",
-            `restored prior native presentation after viewport failure pageID=${pageID} revision=${frame.revision}`,
-          )
-        }
-        return false
-      }
-      if (
-        this.views.get(pageID!) !== target ||
-        (this.epochs.get(pageID!) ?? 0) !== epoch ||
-        this.displayLease !== frame.lease ||
-        this.displayRevision !== frame.revision
-      ) {
-        log(
-          "viewport",
-          `pageID=${pageID} epoch=${epoch} width=${bounds.width} height=${bounds.height} outcome=stale-after-resize`,
-        )
-        return false
-      }
+      // Native bounds drive layout while visible — show immediately instead
+      // of hiding the page behind a serialized CDP resize. Device-metrics
+      // emulation only matters for never-shown bootstrap pages; it is cleared
+      // once, off the visibility path, so resize frames cost zero CDP calls.
       target.visible = true
+      if (target.emulationActive && !target.emulationClearing) {
+        target.emulationClearing = true
+        const epoch = this.epochs.get(pageID!) ?? 0
+        void target.cdp
+          .clearViewportEmulation()
+          .then(() => {
+            if (this.views.get(pageID!) === target) target.emulationActive = false
+            log("viewport", `pageID=${pageID} epoch=${epoch} outcome=native-layout`)
+          })
+          .catch((error) =>
+            log("viewport", `pageID=${pageID} epoch=${epoch} outcome=clear-failed error=${String(error)}`),
+          )
+          .finally(() => {
+            target.emulationClearing = false
+          })
+      }
     } else if (target && bounds) {
       target.visible = true
     }

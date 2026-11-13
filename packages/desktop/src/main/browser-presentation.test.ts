@@ -81,6 +81,9 @@ mock.module("./browser-cdp", () => ({
     setViewport = async (width: number, height: number) => {
       this.operations.push(`viewport:${width}x${height}`)
     }
+    clearViewportEmulation = async () => {
+      this.operations.push("viewport-clear")
+    }
     setFocusEmulation = async (enabled: boolean) => {
       this.operations.push(`focus-emulation:${enabled}`)
     }
@@ -338,8 +341,10 @@ describe("sidebar browser presentation", () => {
     expect(children.map((view) => view.visible)).toEqual([false, true])
     expect(children[0].bounds).toEqual({ x: -32000, y: 0, width: 1280, height: 800 })
     expect(children[1].bounds).toEqual({ x: 0, y: 0, width: 500, height: 500 })
+    // Shown pages switch to native bounds-driven layout: the bootstrap
+    // emulation is cleared once instead of resized per display frame.
     expect((controller.cdp("consult:two") as never as { operations: string[] }).operations).toContain(
-      "viewport:500x500",
+      "viewport-clear",
     )
     expect(
       await controller.updateDisplay({
@@ -419,7 +424,7 @@ describe("sidebar browser presentation", () => {
     controller.dispose()
   })
 
-  test("does not reveal a recreated page after an older generation's viewport resize", async () => {
+  test("shows automation pages immediately and clears bootstrap emulation once", async () => {
     const controller = new BrowserController()
     const children: FakeView[] = []
     controller.attachWindow({
@@ -427,34 +432,28 @@ describe("sidebar browser presentation", () => {
       contentView: { addChildView: (view: FakeView) => children.push(view), removeChildView: () => {} },
     } as never)
     const profileID = "persist:consult-gpt-pro"
-    await controller.openPage("consult:viewport-race", profileID, "https://chatgpt.com/", { kind: "consultation" })
-    const oldCdp = controller.cdp("consult:viewport-race") as unknown as {
-      setViewport: (width: number, height: number) => Promise<void>
-    }
-    let started!: () => void
-    const resizeStarted = new Promise<void>((resolve) => (started = resolve))
-    let finish!: () => void
-    const blockedResize = new Promise<void>((resolve) => (finish = resolve))
-    oldCdp.setViewport = async () => {
-      started()
-      await blockedResize
-    }
+    await controller.openPage("consult:viewport-live", profileID, "https://chatgpt.com/", { kind: "consultation" })
+    const cdp = controller.cdp("consult:viewport-live") as unknown as { operations: string[] }
+    const bootstrap = cdp.operations.length
     const lease = controller.acquireDisplay()
-    const pendingDisplay = controller.updateDisplay({
-      lease,
-      revision: 1,
-      pageID: "consult:viewport-race",
-      partition: profileID,
-      bounds: { x: 0, y: 0, width: 900, height: 700 },
-    })
-    await resizeStarted
-    controller.close("consult:viewport-race")
-    await controller.openPage("consult:viewport-race", profileID, "https://chatgpt.com/", { kind: "consultation" })
-    finish()
-    expect(await pendingDisplay).toBe(false)
-    expect(children[0].closed).toBe(true)
-    expect(children[1].visible).toBe(false)
-    expect(children[1].bounds).toEqual({ x: -32000, y: 0, width: 1280, height: 800 })
+    // A burst of display frames (panel drag/animation) must never queue
+    // per-frame CDP viewport resizes: bounds-driven layout is live and only
+    // the one-time emulation clear leaves the visibility path.
+    for (let revision = 1; revision <= 5; revision++) {
+      expect(
+        await controller.updateDisplay({
+          lease,
+          revision,
+          pageID: "consult:viewport-live",
+          partition: profileID,
+          bounds: { x: 0, y: 0, width: 400 + revision * 50, height: 700 },
+        }),
+      ).toBe(true)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(children[0].visible).toBe(true)
+    expect(children[0].bounds).toEqual({ x: 0, y: 0, width: 650, height: 700 })
+    expect(cdp.operations.slice(bootstrap)).toEqual(["viewport-clear"])
     controller.dispose()
   })
 
@@ -554,7 +553,7 @@ describe("sidebar browser presentation", () => {
     controller.dispose()
   })
 
-  test("restores the previous native presentation when a viewport resize fails", async () => {
+  test("a failed emulation clear keeps the page visible and retries on the next frame", async () => {
     const controller = new BrowserController()
     const children: FakeView[] = []
     controller.attachWindow({
@@ -562,35 +561,43 @@ describe("sidebar browser presentation", () => {
       contentView: { addChildView: (view: FakeView) => children.push(view), removeChildView: () => {} },
     } as never)
     const profileID = "persist:consult-gpt-pro"
-    await controller.openPage("consult:resize-fail", profileID, "https://chatgpt.com/", { kind: "consultation" })
+    await controller.openPage("consult:clear-fail", profileID, "https://chatgpt.com/", { kind: "consultation" })
+    const cdp = controller.cdp("consult:clear-fail") as unknown as {
+      clearViewportEmulation: () => Promise<void>
+      operations: string[]
+    }
+    let fail = true
+    cdp.clearViewportEmulation = async () => {
+      if (fail) throw new Error("simulated clear failure")
+      cdp.operations.push("viewport-clear")
+    }
     const lease = controller.acquireDisplay()
-    const originalBounds = { x: 10, y: 20, width: 500, height: 700 }
     expect(
       await controller.updateDisplay({
         lease,
         revision: 1,
-        pageID: "consult:resize-fail",
+        pageID: "consult:clear-fail",
         partition: profileID,
-        bounds: originalBounds,
+        bounds: { x: 10, y: 20, width: 500, height: 700 },
       }),
     ).toBe(true)
-    const cdp = controller.cdp("consult:resize-fail") as unknown as {
-      setViewport: (width: number, height: number) => Promise<void>
-    }
-    cdp.setViewport = async () => {
-      throw new Error("simulated viewport failure")
-    }
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    // The page stays visible even while the clear is still pending/failed —
+    // visibility no longer waits on any CDP round trip.
+    expect(children[0].visible).toBe(true)
+    fail = false
     expect(
       await controller.updateDisplay({
         lease,
         revision: 2,
-        pageID: "consult:resize-fail",
+        pageID: "consult:clear-fail",
         partition: profileID,
         bounds: { x: 30, y: 40, width: 900, height: 800 },
       }),
-    ).toBe(false)
+    ).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, 0))
     expect(children[0].visible).toBe(true)
-    expect(children[0].bounds).toEqual(originalBounds)
+    expect(children[0].bounds).toEqual({ x: 30, y: 40, width: 900, height: 800 })
     controller.dispose()
   })
 })
