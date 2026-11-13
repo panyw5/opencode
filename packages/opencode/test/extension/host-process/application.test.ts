@@ -186,7 +186,7 @@ for (const [runtime, executable] of [
 ] as const) {
   // Bun extra-fd adaptation is verified on Darwin only (Q8); the Node path is
   // kept under the same gate so both run the same coverage matrix.
-  const run = test.skipIf(!executable || process.platform !== "darwin")
+  const run = test.skipIf(!executable || process.platform === "win32")
   const launch = (identity: RuntimeIdentity, events: ReturnType<typeof trace>) =>
     spawnWorkerTransport({
       executable: executable!,
@@ -594,7 +594,7 @@ for (const [runtime, executable] of [
 // the CLI module graph — a Node worker only ever loads host-process modules,
 // which stay alias-free (the worker-extension.mjs matrix above).
 const bun = Bun.which("bun")
-const cli = test.skipIf(!bun || process.platform !== "darwin")
+const cli = test.skipIf(!bun || process.platform === "win32")
 
 cli("cli: src/index.ts extension-host serves the real worker end-to-end", async () => {
   const identity = testIdentity()

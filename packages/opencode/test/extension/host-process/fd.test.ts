@@ -6,7 +6,7 @@ import { fdOwnerFixture, testIdentity } from "./fixture.ts"
 
 // Regression for the Bun extra-fd double-close: a GC'd native Subprocess must
 // not close an fd number a newer worker already owns (Darwin adapter only).
-const run = test.skipIf(!process.versions.bun || process.platform !== "darwin")
+const run = test.skipIf(!process.versions.bun || process.platform === "win32")
 
 run("recycling exited subprocesses cannot close a newer worker's control descriptors", async () => {
   const rounds = Number(process.env.OPENCODE_HOST_PROCESS_FD_ROUNDS ?? 60)

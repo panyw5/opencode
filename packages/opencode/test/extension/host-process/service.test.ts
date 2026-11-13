@@ -8,7 +8,7 @@ import { outcome, pidAlive, testFence, testLimits, trace, workerFixture } from "
 const it = testEffect(HostProcessSupervisor.layer)
 
 const executable = Bun.which("bun") ?? Bun.which("node")
-const run = executable && process.platform === "darwin" ? it.live : it.live.skip
+const run = executable && process.platform !== "win32" ? it.live : it.live.skip
 
 function input(over: Partial<SpawnInput> = {}): SpawnInput {
   const fence = testFence()

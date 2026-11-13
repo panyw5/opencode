@@ -1,10 +1,10 @@
 import { execFile } from "node:child_process"
 import { constants } from "node:fs"
-import { copyFile, lstat, mkdir, mkdtemp, open, realpath, rm } from "node:fs/promises"
+import { copyFile, cp, lstat, mkdir, mkdtemp, open, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { isIP } from "node:net"
 import { tmpdir } from "node:os"
-import { dirname, join, resolve } from "node:path"
+import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { parseArgs, promisify } from "node:util"
 
@@ -213,13 +213,33 @@ export async function release(options = {}) {
     await config.close()
     const globalConfig = await open(join(temporary, "global-npmrc"), "wx")
     await globalConfig.close()
+    // npm < 11 runs prepare during pack even with --ignore-scripts; the flag
+    // only covers pack-time lifecycle scripts from npm 11. Stage a copy with
+    // those hooks removed so package scripts never execute, on any npm.
+    const stage = join(temporary, "stage")
+    await cp(cwd, stage, { recursive: true })
+    for (const name of ["node_modules", ".git", "artifacts"]) await rm(join(stage, name), { recursive: true, force: true })
+    if (destination) {
+      const inside = relative(cwd, destination)
+      if (inside && !inside.startsWith("..") && !isAbsolute(inside))
+        await rm(join(stage, inside), { force: true })
+    }
+    const stagedManifestPath = join(stage, "package.json")
+    const stagedManifest = JSON.parse(await readFile(stagedManifestPath, "utf8"))
+    if (stagedManifest && typeof stagedManifest === "object" && stagedManifest.scripts) {
+      for (const hook of ["prepublish", "prepublishOnly", "prepublishMany", "prepare", "prepack", "postpack"])
+        delete stagedManifest.scripts[hook]
+      if (!Object.keys(stagedManifest.scripts).length) delete stagedManifest.scripts
+    }
+    const stagedBytes = Buffer.from(`${JSON.stringify(stagedManifest, null, 2)}\n`)
+    await writeFile(stagedManifestPath, stagedBytes)
     let stdout
     try {
       ;({ stdout } = await execute(
         process.execPath,
         [npm, "pack", "--ignore-scripts", "--offline", "--json", "--pack-destination", pack],
         {
-          cwd,
+          cwd: stage,
           env: {
             ...process.env,
             npm_config_cache: join(temporary, "cache"),
@@ -239,7 +259,10 @@ export async function release(options = {}) {
     } catch {
       fail("npm pack failed; no release files were created")
     } finally {
-      if (!(await bytes(pkgPath, 1024 * 1024)).equals(snapshot))
+      if (
+        !(await bytes(pkgPath, 1024 * 1024)).equals(snapshot) ||
+        !(await bytes(stagedManifestPath, 1024 * 1024)).equals(stagedBytes)
+      )
         fail("package.json changed during npm pack; release aborted")
     }
     const info = packed(stdout, pkg, filename)

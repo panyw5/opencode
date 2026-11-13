@@ -62,8 +62,9 @@ export async function spawnBunWorker(options: {
   args: string[]
   env?: NodeJS.ProcessEnv
 }): Promise<OwnedWorkerChild> {
-  if (process.platform !== "darwin")
-    throw new Error("Bun host-process control descriptors are only validated on macOS")
+  // Validated on macOS and Linux; Windows has no fd-based extra-stdio channel.
+  if (process.platform === "win32")
+    throw new Error("Bun host-process control descriptors are unsupported on Windows")
   const { cc } = await import("bun:ffi")
   // Darwin arm64 passes fcntl's variadic argument on the stack. A fixed FFI
   // signature is not ABI-compatible; compile a tiny fixed-argument C wrapper.
@@ -98,14 +99,15 @@ export async function spawnBunWorker(options: {
       env: options.env ?? process.env,
       // Independent process group so a forced stop can reap descendants that
       // bypassed host.spawn, matching the Node child_process detached path.
-      // This module is Darwin-only, so detached is unconditional here.
+      // Windows is rejected above, so detached is unconditional here.
       detached: true,
       windowsHide: true,
     })
     for (const index of [4, 3]) {
       const original = child.stdio[index]
       if (typeof original !== "number" || original < 0) throw new Error("Missing worker control descriptor")
-      // Darwin F_DUPFD_CLOEXEC=67: atomically prevent inheritance by other spawns.
+      // F_DUPFD_CLOEXEC resolves in the C wrapper: atomically prevent
+      // inheritance by other spawns.
       const duplicate = library.symbols.duplicate_control_fd(original)
       if (duplicate < 0)
         throw new Error(

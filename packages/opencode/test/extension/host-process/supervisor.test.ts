@@ -12,7 +12,7 @@ for (const [runtime, executable] of [
 ] as const) {
   // Bun extra-fd adaptation is verified on Darwin only (Q8); the Node path is
   // kept under the same gate to run both paths on the same coverage matrix.
-  const run = test.skipIf(!executable || process.platform !== "darwin")
+  const run = test.skipIf(!executable || process.platform === "win32")
   const launch = (
     identity: RuntimeIdentity,
     behavior: string,
