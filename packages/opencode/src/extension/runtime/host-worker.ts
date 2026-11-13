@@ -245,8 +245,23 @@ export async function spawnHostWorker(deps: HostWorkerDeps): Promise<HostWorker>
   async function onHostCall(method: string, value: Schema.Json): Promise<Schema.Json> {
     const input = value === null || value === undefined ? {} : record(value, `${method} value`)
     switch (method) {
-      case "host.spawn":
+      case "host.spawn": {
+        // Permission gate (T5.6, design §6): spawn admission lives host-side
+        // so a worker can only mint processes through this checked channel.
+        // This is an API-level limit, not a sandbox — raw child_process
+        // inside the worker is still reachable (design §6 boundary note).
+        if (!deps.manifest.permissions.includes("process:spawn")) {
+          log.warn("extension host.spawn denied: permission not declared", {
+            ...detail("permission"),
+            permission: "process:spawn",
+          })
+          throw new HostProcessError({
+            code: "denied",
+            detail: `Extension ${id} must declare the "process:spawn" permission to use host.spawn`,
+          })
+        }
         return spawnHosted(input)
+      }
       case "proc.stdin-end": {
         const proc = hosted(input)
         proc?.proc.stdin?.end()
@@ -523,7 +538,20 @@ export async function spawnHostWorker(deps: HostWorkerDeps): Promise<HostWorker>
         signal,
       )
       const body = record(value, "instance.start result")
-      const tools = Array.isArray(body.tools) ? (body.tools as ToolDescriptor[]) : []
+      const reported = Array.isArray(body.tools) ? (body.tools as ToolDescriptor[]) : []
+      // Permission gate (T5.6, design §6): the worker reports descriptors but
+      // only the host can register them into hooks.tool — ToolRegistry lives
+      // on this side of the channel, so a worker cannot bypass the check.
+      // Undeclared tools are dropped with a warning; the instance keeps its
+      // rpc/event/dispose hooks and the extension is not faulted.
+      if (reported.length && !deps.manifest.permissions.includes("tools")) {
+        log.warn("extension tools denied: permission not declared", {
+          ...detail("permission"),
+          permission: "tools",
+          count: reported.length,
+        })
+      }
+      const tools = deps.manifest.permissions.includes("tools") ? reported : []
       const rpc = Array.isArray(body.rpc) ? body.rpc.filter((m): m is string => typeof m === "string") : []
       const directory = input.directory
       const hooks: ExtensionHooks = {}

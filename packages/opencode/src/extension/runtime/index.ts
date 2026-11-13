@@ -440,9 +440,10 @@ function createHost(entry: Entry, manifest: Loaded, serverUrl: URL | undefined) 
     setTimeout: timers.setTimeout,
     setInterval: timers.setInterval,
     spawn(command, args, options) {
-      // Permission checkpoint (remediation T5.6): the manifest's
-      // "process:spawn" permission is enforced here once permissions are
-      // executed at runtime; declarations are informational only for now.
+      // Permission checkpoint (remediation T5.6, design §6): "process:spawn"
+      // is enforced for the process backend at the host-side host.call
+      // admission in host-worker.ts; the inline backend keeps
+      // declaration-only semantics (D3), so no check runs here.
       return processes.spawn(command, args, options)
     },
     emit(name, data, options) {

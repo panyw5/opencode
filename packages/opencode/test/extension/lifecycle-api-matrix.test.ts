@@ -334,6 +334,9 @@ async function writePackage(id: string, source: string, isolation: "inline" | "p
           displayName: "Matrix Extension",
           activation: ["onStartup"],
           contributes: { settings: { theme: { type: "string", title: "Theme", default: "light" } } },
+          // The fixture exercises tools and host.spawn; the process backend
+          // enforces both declarations (T5.6), inline ignores them (D3).
+          permissions: ["tools", "process:spawn"],
           server: { isolation },
         },
       },

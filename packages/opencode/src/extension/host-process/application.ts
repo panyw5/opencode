@@ -307,6 +307,10 @@ export async function loadExtensionApplication(
       ready: deferred<void>(),
       proc: undefined as unknown as ProxyRegistration["proc"],
     }
+    // A denied/failed host.spawn rejects `ready` before stdin/kill consumers
+    // attach; observe it so the gating promise is never an unhandled
+    // rejection (which is fatal under Node's default --unhandled-rejections).
+    void registration.ready.promise.catch(() => {})
     const stream = (piped: boolean, pending: Buffer[]) => {
       if (!piped) return null
       const readable = new Readable({
@@ -384,9 +388,9 @@ export async function loadExtensionApplication(
     const env = options.env
       ? Object.fromEntries(Object.entries(options.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
       : null
-    // Permission checkpoint (T5.6): the host-side host.call admission will
-    // reject spawn requests with "denied" when the manifest lacks
-    // "process:spawn"; the rejection surfaces here as an onError + exit.
+    // Permission checkpoint (T5.6): the host-side host.call admission rejects
+    // spawn requests with "denied" when the manifest lacks "process:spawn";
+    // the rejection surfaces here as an onError + exit.
     void host.call("host.spawn", { command, args, env, cwd: options.cwd ?? null, stdio: [...stdio] }).then(
       (value) => {
         const result = record(value, "host.spawn result")
@@ -524,7 +528,7 @@ export async function loadExtensionApplication(
     const tools = new Map<string, ToolDefinition>()
     const descriptors: { name: string; description: string; parameters: unknown }[] = []
     // Permission checkpoint (T5.6): the host validates the declared "tools"
-    // permission against this descriptor before registering proxy tools;
+    // permission against these descriptors before registering proxy tools;
     // a worker cannot bypass that gate because ToolRegistry lives host-side.
     for (const [name, definition] of Object.entries(hooks.tool ?? {})) {
       const candidate = definition as ToolDefinition

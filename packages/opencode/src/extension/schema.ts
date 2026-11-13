@@ -102,11 +102,11 @@ export const Server = Schema.Struct({
 export type Server = Types.DeepMutable<Schema.Schema.Type<typeof Server>>
 export type IsolationMode = "inline" | "process"
 
-// Declared capabilities are self-reported by the extension and only drive UI
-// display today. Unknown entries stay valid for forward compatibility:
-// manifest.ts logs a warning and the UI marks them as unknown. Coarse runtime
-// enforcement for `tools` and `process:spawn` arrives with process isolation
-// (see specs/extensions/remediation-plan.md, T5.9/T5.6).
+// Declared capabilities are self-reported by the extension. Unknown entries
+// stay valid for forward compatibility: manifest.ts logs a warning and the
+// UI marks them as unknown. Under process isolation the host coarsely
+// enforces `tools` and `process:spawn` (T5.6, design §6); every other entry —
+// and the inline backend — stays declaration-only.
 export const PERMISSIONS = ["fs:read", "fs:write", "process:spawn", "network", "tools", "settings:secret"] as const
 export type Permission = (typeof PERMISSIONS)[number]
 

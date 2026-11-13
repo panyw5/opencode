@@ -86,7 +86,8 @@
       }
     },
     "permissions": [
-      "process:spawn"
+      "process:spawn",
+      "tools"
     ]
   },
   "scripts": {
