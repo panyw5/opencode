@@ -69,6 +69,16 @@ process.on("uncaughtException", (e) => {
 })
 
 const args = hideBin(process.argv)
+
+// The `extension-host` worker entrypoint bypasses yargs entirely: the global
+// middleware would run Log.init, Heap.start, env injection and the sqlite
+// JsonMigration check in a process that must stay a dumb worker
+// (specs/extensions/process-isolation-design.md §1.2).
+if (args[0] === "extension-host") {
+  const { runExtensionHost } = await import("./extension/host-process/entry.ts")
+  process.exit(await runExtensionHost(args.slice(1)))
+}
+
 const processMetadata = ensureProcessMetadata("main")
 
 function show(out: string) {

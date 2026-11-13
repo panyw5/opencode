@@ -246,7 +246,11 @@ export async function serveWorker(options: {
               cause instanceof HostProcessError && (knownRejections as readonly string[]).includes(cause.code)
                 ? (cause.code as RejectionCode)
                 : "requestFailed",
-              cause instanceof Error ? cause.message : String(cause),
+              cause instanceof HostProcessError
+                ? (cause.detail ?? cause.message)
+                : cause instanceof Error
+                  ? cause.message
+                  : String(cause),
             )
           },
         )

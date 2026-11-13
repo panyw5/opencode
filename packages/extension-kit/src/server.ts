@@ -107,6 +107,26 @@ export type ExtensionHooks = Hooks & {
 }
 
 /**
+ * How the host runs an extension's server entry. `"inline"` executes inside
+ * the sidecar (current default, kept for local `path`-source development);
+ * `"process"` runs the entry in a dedicated `extension-host` worker process
+ * whose host API surface is proxied over the control protocol — failure
+ * isolation and API-level restriction, not a security sandbox.
+ */
+export type IsolationMode = "process" | "inline"
+
+/**
+ * Shape of the manifest's `opencode.server` block. Declarative only — the
+ * host enforces the mode; this type documents the contract for authors.
+ */
+export type ServerIsolationManifest = {
+  /** Worker isolation mode; absent means the host default (`"inline"` during the transition). */
+  isolation?: IsolationMode
+  /** Server-side API contract version; currently always 1. */
+  apiVersion?: number
+}
+
+/**
  * The default export shape of an extension server entry.
  */
 export type ServerExtension = {
