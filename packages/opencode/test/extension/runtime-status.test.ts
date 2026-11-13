@@ -3,14 +3,19 @@ import path from "node:path"
 import type { PluginInput } from "@opencode-ai/plugin"
 import type { ServerExtension } from "@opencode-ai/extension-kit/server"
 import { GlobalBus } from "../../src/bus/global"
-import { ExtensionRuntime, ExtensionMutationError } from "../../src/extension/runtime"
+import { ExtensionRuntime, ExtensionMutationError, type Options } from "../../src/extension/runtime"
 import { tmpdir } from "../fixture/fixture"
+
+let options: Options
+let rt: ReturnType<typeof ExtensionRuntime.make>
 
 let temp: Awaited<ReturnType<typeof tmpdir>>
 let previousRegistry: string | undefined
 let module: ServerExtension
 
 beforeEach(async () => {
+    options = {}
+    rt = ExtensionRuntime.make(options)
   temp = await tmpdir()
   previousRegistry = process.env.OPENCODE_EXTENSION_REGISTRY_FILE
   process.env.OPENCODE_EXTENSION_REGISTRY_FILE = path.join(temp.path, "registry.json")
@@ -43,11 +48,11 @@ beforeEach(async () => {
     }),
   )
   module = { activate: async () => ({ rpc: { ping: () => "ok" } }) }
-  ExtensionRuntime.testing.setImporter(async () => module)
+  options.importer = (async () => module)
 })
 
 afterEach(async () => {
-  await ExtensionRuntime.testing.reset()
+  await rt.testing.reset()
   if (previousRegistry === undefined) delete process.env.OPENCODE_EXTENSION_REGISTRY_FILE
   else process.env.OPENCODE_EXTENSION_REGISTRY_FILE = previousRegistry
   await temp[Symbol.asyncDispose]()
@@ -55,7 +60,7 @@ afterEach(async () => {
 
 describe("extension runtime status and retry", () => {
   test("describes idle, loading, ready and sticky activation error", async () => {
-    expect(ExtensionRuntime.describe("test.status")).toEqual({
+    expect(rt.describe("test.status")).toEqual({
       hasService: false,
       hasInstanceHooks: false,
       runtime: "idle",
@@ -72,20 +77,20 @@ describe("extension runtime status and retry", () => {
         throw new Error("status activation failed")
       },
     }
-    const call = ExtensionRuntime.rpc({ id: "test.status", method: "ping" }).catch(() => {})
+    const call = rt.rpc({ id: "test.status", method: "ping" }).catch(() => {})
     await starting
-    expect(ExtensionRuntime.describe("test.status")).toMatchObject({ runtime: "loading", needsRestart: false })
+    expect(rt.describe("test.status")).toMatchObject({ runtime: "loading", needsRestart: false })
     release()
     await call
-    expect(ExtensionRuntime.describe("test.status")).toMatchObject({
+    expect(rt.describe("test.status")).toMatchObject({
       runtime: "error",
       error: "status activation failed",
       needsRestart: false,
     })
-    await ExtensionRuntime.reload("test.status")
+    await rt.reload("test.status")
     module = { activate: async () => ({ rpc: { ping: () => "ok" } }) }
-    expect(await ExtensionRuntime.rpc({ id: "test.status", method: "ping" })).toBe("ok")
-    expect(ExtensionRuntime.describe("test.status")).toMatchObject({
+    expect(await rt.rpc({ id: "test.status", method: "ping" })).toBe("ok")
+    expect(rt.describe("test.status")).toMatchObject({
       runtime: "ready",
       hasService: true,
       needsRestart: false,
@@ -101,20 +106,20 @@ describe("extension runtime status and retry", () => {
         },
       }),
     }
-    await ExtensionRuntime.rpc({ id: "test.status", method: "ping" })
+    await rt.rpc({ id: "test.status", method: "ping" })
     const statuses: any[] = []
     const listener = (event: any) => {
       if (event.payload.type === "extension.status") statuses.push(event.payload.properties)
     }
     GlobalBus.on("event", listener)
     try {
-      const release = ExtensionRuntime.beginMutation("test.status")
-      expect(await ExtensionRuntime.quiesce("test.status", { timeoutMs: 100 })).toEqual({
+      const release = rt.beginMutation("test.status")
+      expect(await rt.quiesce("test.status", { timeoutMs: 100 })).toEqual({
         stopped: false,
         needsRestart: true,
       })
       release()
-      expect(ExtensionRuntime.describe("test.status")).toMatchObject({
+      expect(rt.describe("test.status")).toMatchObject({
         runtime: "blocked",
         error: "dispose status boom",
         needsRestart: true,
@@ -126,9 +131,9 @@ describe("extension runtime status and retry", () => {
         state: "blocked",
         error: "dispose status boom",
       })
-      expect(() => ExtensionRuntime.retry("test.status")).toThrow(ExtensionMutationError)
-      await ExtensionRuntime.reload("test.status")
-      expect(ExtensionRuntime.describe("test.status")).toMatchObject({
+      expect(() => rt.retry("test.status")).toThrow(ExtensionMutationError)
+      await rt.reload("test.status")
+      expect(rt.describe("test.status")).toMatchObject({
         runtime: "blocked",
         error: "dispose status boom",
         needsRestart: true,
@@ -139,7 +144,7 @@ describe("extension runtime status and retry", () => {
   })
 
   test("a directory server timeout stays visible but is not a sticky activation error", async () => {
-    ExtensionRuntime.testing.setTimeouts({ serverMs: 40 })
+    Object.assign(options, { serverMs: 40 })
     let finish!: (value: {}) => void
     const late = new Promise<{}>((resolve) => {
       finish = resolve
@@ -155,17 +160,17 @@ describe("extension runtime status and retry", () => {
         experimental_workspace: { register() {} },
       }) as unknown as PluginInput
     try {
-      expect(await ExtensionRuntime.instanceHooks(input("slow"))).toEqual([])
-      expect(ExtensionRuntime.describe("test.status")).toMatchObject({
+      expect(await rt.instanceHooks(input("slow"))).toEqual([])
+      expect(rt.describe("test.status")).toMatchObject({
         runtime: "error",
         hasService: true,
         needsRestart: false,
         error: "server timed out after 40ms",
       })
-      const next = await ExtensionRuntime.instanceHooks(input("healthy"))
+      const next = await rt.instanceHooks(input("healthy"))
       expect(next).toHaveLength(1)
-      expect(ExtensionRuntime.describe("test.status")).toMatchObject({ runtime: "ready", needsRestart: false })
-      expect(ExtensionRuntime.describe("test.status").error).toBeUndefined()
+      expect(rt.describe("test.status")).toMatchObject({ runtime: "ready", needsRestart: false })
+      expect(rt.describe("test.status").error).toBeUndefined()
       await next[0]!.hooks.dispose?.()
     } finally {
       finish({})
@@ -178,20 +183,20 @@ describe("extension runtime status and retry", () => {
         throw new Error("recoverable")
       },
     }
-    await ExtensionRuntime.rpc({ id: "test.status", method: "ping" }).catch(() => {})
+    await rt.rpc({ id: "test.status", method: "ping" }).catch(() => {})
     let invalidations = 0
-    const unregister = ExtensionRuntime.registerCacheInvalidator("plugin", async () => {
+    const unregister = rt.registerCacheInvalidator("plugin", async () => {
       invalidations++
     })
     try {
-      const release = ExtensionRuntime.beginMutation("test.status")
-      expect(() => ExtensionRuntime.retry("test.status")).toThrow(ExtensionMutationError)
+      const release = rt.beginMutation("test.status")
+      expect(() => rt.retry("test.status")).toThrow(ExtensionMutationError)
       release()
-      await ExtensionRuntime.retry("test.status")
+      await rt.retry("test.status")
       expect(invalidations).toBe(1)
-      expect(ExtensionRuntime.describe("test.status")).toMatchObject({ runtime: "idle", needsRestart: false })
+      expect(rt.describe("test.status")).toMatchObject({ runtime: "idle", needsRestart: false })
       module = { activate: async () => ({ rpc: { ping: () => "recovered" } }) }
-      expect(await ExtensionRuntime.rpc({ id: "test.status", method: "ping" })).toBe("recovered")
+      expect(await rt.rpc({ id: "test.status", method: "ping" })).toBe("recovered")
     } finally {
       unregister()
     }

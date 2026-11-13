@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, test } from "bun:test"
 import path from "node:path"
 import { existsSync } from "node:fs"
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
-import { ExtensionRuntime } from "../../src/extension/runtime"
+import { ExtensionRuntime, type Options } from "../../src/extension/runtime"
 
 /**
  * Runtime-level coverage for the process-isolation backend (T5.3): real OS
@@ -11,6 +11,9 @@ import { ExtensionRuntime } from "../../src/extension/runtime"
  * recovery through retry. The protocol/supervisor-level equivalents live in
  * test/extension/host-process/*; these tests pin the host-runtime wiring.
  */
+
+let options: Options
+let rt: ReturnType<typeof ExtensionRuntime.make>
 
 const root = await mkdtemp(path.join(process.env.TMPDIR ?? "/tmp", "oc-ext-pmode-"))
 const registry = path.join(root, "registry.json")
@@ -127,7 +130,7 @@ async function poll<T>(fn: () => Promise<T | undefined>, message: string, timeou
 }
 
 const rpc = (method: string, input: Record<string, unknown> = {}, signal?: AbortSignal) =>
-  ExtensionRuntime.rpc({ id, method, input, signal }) as Promise<Record<string, unknown>>
+  rt.rpc({ id, method, input, signal }) as Promise<Record<string, unknown>>
 
 const alive = (pid: number) => {
   try {
@@ -142,10 +145,12 @@ const dir = await writePackage()
 
 describe("extension runtime process mode", () => {
   beforeEach(async () => {
-    await ExtensionRuntime.testing.reset()
+    options = {}
+    rt = ExtensionRuntime.make(options)
+    await rt.testing.reset()
     process.env.OPENCODE_EXTENSION_REGISTRY_FILE = registry
     await link(dir)
-    ExtensionRuntime.testing.setWorkerLimits({ restartBackoffMs: [50, 100, 200] })
+    options.workerLimits = ({ restartBackoffMs: [50, 100, 200] })
   })
 
   test("a crashed worker restarts automatically with fresh state and a new pid", async () => {
@@ -162,7 +167,7 @@ describe("extension runtime process mode", () => {
     // Fresh activate: generation marker advanced, per-process state reset.
     expect(second.gen).toBe(2)
     expect(second.count).toBe(0)
-    expect(ExtensionRuntime.describe(id).runtime).toBe("ready")
+    expect(rt.describe(id).runtime).toBe("ready")
   }, 20_000)
 
   test("an in-flight request rejects when the worker crashes", async () => {
@@ -203,13 +208,13 @@ describe("extension runtime process mode", () => {
   test("disable quiesces the worker and observes its OS exit", async () => {
     const { pid } = await rpc("echo")
     expect(alive(pid as number)).toBe(true)
-    await ExtensionRuntime.disable(id)
+    await rt.disable(id)
     await poll(async () => (alive(pid as number) ? undefined : true), `worker pid ${pid} still alive after disable`)
-    expect(ExtensionRuntime.describe(id).runtime).toBe("idle")
+    expect(rt.describe(id).runtime).toBe("idle")
   }, 20_000)
 
   test("a crash loop exhausts the restart budget into a sticky error; retry recovers", async () => {
-    ExtensionRuntime.testing.setWorkerLimits({ restartBackoffMs: [50] })
+    options.workerLimits = ({ restartBackoffMs: [50] })
     const first = await rpc("echo")
     await rpc("die").catch(() => {})
     // One restart attempt fits inside the [50] skeleton.
@@ -223,11 +228,11 @@ describe("extension runtime process mode", () => {
     // The second crash exceeds the budget: sticky entry error, no more restarts.
     await rpc("die").catch(() => {})
     await poll(
-      async () => (ExtensionRuntime.describe(id).runtime === "error" ? true : undefined),
+      async () => (rt.describe(id).runtime === "error" ? true : undefined),
       "restart budget was not exhausted into a sticky error",
     )
     await expect(rpc("echo")).rejects.toThrow()
-    const third = await ExtensionRuntime.retry(id).then(() =>
+    const third = await rt.retry(id).then(() =>
       poll(
         () =>
           rpc("echo", { message: "c" })
@@ -241,7 +246,7 @@ describe("extension runtime process mode", () => {
 })
 
 afterAll(async () => {
-  await ExtensionRuntime.testing.reset()
+  await rt?.testing.reset()
   delete process.env.OPENCODE_EXTENSION_REGISTRY_FILE
   await rm(root, { recursive: true, force: true })
 })

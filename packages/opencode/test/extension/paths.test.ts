@@ -11,7 +11,7 @@ import {
 } from "../../src/extension/paths"
 import { generationOwnership } from "../../src/extension/cleanup"
 import { ExtensionRegistry } from "../../src/extension/registry"
-import { ExtensionRuntime } from "../../src/extension/runtime"
+import { ExtensionRuntime, type Options } from "../../src/extension/runtime"
 import { ExtensionID } from "../../src/extension/schema"
 import { extensionPackage } from "./fixture"
 import type { RegistryRow } from "../../src/extension/schema"
@@ -116,15 +116,17 @@ test("managed copies cannot be newly linked or loaded through another registry's
   const previous = process.env.OPENCODE_EXTENSION_REGISTRY_FILE
   let imported = false
   process.env.OPENCODE_EXTENSION_REGISTRY_FILE = registryB
-  ExtensionRuntime.testing.setImporter(async () => {
+  const options: Options = {}
+  options.importer = (async () => {
     imported = true
     return { activate: async () => ({ rpc: { ping: () => "wrong" } }) }
   })
+  const rt = ExtensionRuntime.make(options)
   try {
-    await expect(ExtensionRuntime.rpc({ id, method: "ping" })).rejects.toThrow("Managed extension copies")
+    await expect(rt.rpc({ id, method: "ping" })).rejects.toThrow("Managed extension copies")
     expect(imported).toBe(false)
   } finally {
-    await ExtensionRuntime.testing.reset()
+    await rt.testing.reset()
     if (previous === undefined) delete process.env.OPENCODE_EXTENSION_REGISTRY_FILE
     else process.env.OPENCODE_EXTENSION_REGISTRY_FILE = previous
   }

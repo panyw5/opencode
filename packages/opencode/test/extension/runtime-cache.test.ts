@@ -5,7 +5,7 @@ import type { PluginInput } from "@opencode-ai/plugin"
 import { InstanceState } from "../../src/effect/instance-state"
 import { InstanceRef } from "../../src/effect/instance-ref"
 import type { InstanceContext } from "../../src/project/instance-context"
-import { ExtensionRuntime, type InstanceHookEntry } from "../../src/extension/runtime"
+import { ExtensionRuntime, type InstanceHookEntry, type Options } from "../../src/extension/runtime"
 import { tmpdir } from "../fixture/fixture"
 
 function deferred<T = void>() {
@@ -13,6 +13,9 @@ function deferred<T = void>() {
   const promise = new Promise<T>((done) => (resolve = done))
   return { promise, resolve }
 }
+
+let options: Options
+let rt: ReturnType<typeof ExtensionRuntime.make>
 
 let temp: Awaited<ReturnType<typeof tmpdir>>
 let previousRegistry: string | undefined
@@ -61,11 +64,13 @@ async function installFixture() {
 }
 
 beforeEach(async () => {
+    options = {}
+    rt = ExtensionRuntime.make(options)
   temp = await tmpdir()
   previousRegistry = process.env.OPENCODE_EXTENSION_REGISTRY_FILE
   process.env.OPENCODE_EXTENSION_REGISTRY_FILE = path.join(temp.path, "registry.json")
   await Bun.write(process.env.OPENCODE_EXTENSION_REGISTRY_FILE, JSON.stringify({ version: 1, extensions: {} }))
-  ExtensionRuntime.testing.setImporter(async () => ({
+  options.importer = (async () => ({
     activate: async () => ({}),
     server: async () => ({ tool: { example: { description: "cache", args: {}, execute: async () => "healthy" } } }),
   }))
@@ -73,7 +78,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   for (const release of releases.splice(0)) release()
-  await ExtensionRuntime.testing.reset()
+  await rt.testing.reset()
   if (previousRegistry === undefined) delete process.env.OPENCODE_EXTENSION_REGISTRY_FILE
   else process.env.OPENCODE_EXTENSION_REGISTRY_FILE = previousRegistry
   await temp[Symbol.asyncDispose]()
@@ -84,7 +89,7 @@ function caches(options: { afterPlugin?: (entries: InstanceHookEntry[]) => Promi
     const plugin = yield* InstanceState.make(() =>
       Effect.acquireRelease(
         Effect.promise(async () => {
-          const entries = await ExtensionRuntime.instanceHooks(input())
+          const entries = await rt.instanceHooks(input())
           await options.afterPlugin?.(entries)
           return entries
         }),
@@ -124,13 +129,13 @@ describe("real two-level InstanceState extension cache races", () => {
             },
           })
           const invalidated = deferred()
-          const offTool = ExtensionRuntime.registerCacheInvalidator("tool", state.invalidateTool)
-          const offPlugin = ExtensionRuntime.registerCacheInvalidator("plugin", async () => {
+          const offTool = rt.registerCacheInvalidator("tool", state.invalidateTool)
+          const offPlugin = rt.registerCacheInvalidator("plugin", async () => {
             await state.invalidatePlugin()
             invalidated.resolve()
           })
           releases.push(offTool, offPlugin)
-          const release = ExtensionRuntime.beginMutation("test.cache")
+          const release = rt.beginMutation("test.cache")
           releases.push(release)
           const building = state.get()
           yield* Effect.promise(() => pluginReturned.promise)
@@ -154,15 +159,15 @@ describe("real two-level InstanceState extension cache races", () => {
           const state = yield* caches()
           const first = yield* Effect.promise(state.get)
           expect(first.map((entry) => entry.id)).toEqual(["test.cache"])
-          const offTool = ExtensionRuntime.registerCacheInvalidator("tool", async () => {
+          const offTool = rt.registerCacheInvalidator("tool", async () => {
             await state.invalidateTool()
             // Rebuild while Plugin still contains the old generation.
             await state.get()
           })
-          const offPlugin = ExtensionRuntime.registerCacheInvalidator("plugin", state.invalidatePlugin)
+          const offPlugin = rt.registerCacheInvalidator("plugin", state.invalidatePlugin)
           releases.push(offTool, offPlugin)
-          yield* Effect.promise(() => ExtensionRuntime.reload("test.cache"))
-          yield* Effect.promise(() => ExtensionRuntime.invalidateHooks())
+          yield* Effect.promise(() => rt.reload("test.cache"))
+          yield* Effect.promise(() => rt.invalidateHooks())
           const next = yield* Effect.promise(state.get)
           expect(next[0]!.hooks).not.toBe(first[0]!.hooks)
           const value = yield* Effect.promise(() => next[0]!.hooks.tool!.example!.execute({}, {} as never))
@@ -177,13 +182,13 @@ describe("real two-level InstanceState extension cache races", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const state = yield* caches()
-          const offTool = ExtensionRuntime.registerCacheInvalidator("tool", state.invalidateTool)
-          const offPlugin = ExtensionRuntime.registerCacheInvalidator("plugin", state.invalidatePlugin)
+          const offTool = rt.registerCacheInvalidator("tool", state.invalidateTool)
+          const offPlugin = rt.registerCacheInvalidator("plugin", state.invalidatePlugin)
           releases.push(offTool, offPlugin)
-          const release = ExtensionRuntime.beginMutation("test.cache")
+          const release = rt.beginMutation("test.cache")
           releases.push(release)
           // Installer pre-stop invalidation happens before a concurrent cache build.
-          yield* Effect.promise(() => ExtensionRuntime.invalidateHooks())
+          yield* Effect.promise(() => rt.invalidateHooks())
           expect(yield* Effect.promise(state.get)).toEqual([])
           yield* Effect.promise(installFixture)
           release()
@@ -211,21 +216,21 @@ describe("real two-level InstanceState extension cache races", () => {
           expect((yield* Effect.promise(state.get)).map((entry) => entry.id)).toEqual(["test.cache"])
           let tools = 0
           let plugins = 0
-          const offTool = ExtensionRuntime.registerCacheInvalidator("tool", async () => {
+          const offTool = rt.registerCacheInvalidator("tool", async () => {
             await state.invalidateTool()
             if (++tools === 2) {
               tailReached.resolve()
               await tailGate.promise
             }
           })
-          const offPlugin = ExtensionRuntime.registerCacheInvalidator("plugin", async () => {
+          const offPlugin = rt.registerCacheInvalidator("plugin", async () => {
             plugins++
             await state.invalidatePlugin()
           })
           releases.push(offTool, offPlugin)
-          const first = ExtensionRuntime.invalidateHooks()
+          const first = rt.invalidateHooks()
           yield* Effect.promise(() => tailReached.promise)
-          const release = ExtensionRuntime.beginMutation("test.cache")
+          const release = rt.beginMutation("test.cache")
           releases.push(release)
           expect(yield* Effect.promise(state.get)).toEqual([])
           release()
@@ -233,7 +238,7 @@ describe("real two-level InstanceState extension cache races", () => {
           const releasedTurn = deferred()
           setTimeout(() => releasedTurn.resolve(), 0)
           yield* Effect.promise(() => releasedTurn.promise)
-          const afterRelease = ExtensionRuntime.invalidateHooks()
+          const afterRelease = rt.invalidateHooks()
           tailGate.resolve()
           yield* Effect.promise(() => Promise.all([first, afterRelease]))
           const next = yield* Effect.promise(state.get)

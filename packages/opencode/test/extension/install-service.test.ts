@@ -46,7 +46,7 @@ async function setup(sharedID?: ExtensionID) {
   const registry = path.join(root, "registry.json")
   process.env.OPENCODE_EXTENSION_REGISTRY_FILE = registry
   const file = path.join(root, "extension.tgz")
-  async function source(version: string) {
+  async function source(version: string, body?: string) {
     const pack = tar.pack()
     const chunks: Buffer[] = []
     const read = (async () => {
@@ -64,7 +64,8 @@ async function setup(sharedID?: ExtensionID) {
     )
     pack.entry(
       { name: "package/server.js" },
-      `export default { id: ${JSON.stringify(fixtureID)}, async activate() { return { rpc: { version: () => ${JSON.stringify(version)} }, dispose() {} } } }`,
+      body ??
+        `export default { id: ${JSON.stringify(fixtureID)}, async activate() { return { rpc: { version: () => ${JSON.stringify(version)} }, dispose() {} } } }`,
     )
     pack.finalize()
     await read
@@ -93,11 +94,13 @@ test("production installation coordinator fences replacement and routes RPC to t
 
 test("first installation invalidates an actual InstanceState cache built before the new row existed", async () => {
   const f = await setup()
-  const prepared = await f.installer.prepare({ kind: "install", source: await f.source("1.0.0") })
-  ExtensionRuntime.testing.setImporter(async () => ({
-    activate: async () => ({}),
-    server: async () => ({ tool: { example: { description: "example", args: {}, execute: async () => "new" } } }),
-  }))
+  const prepared = await f.installer.prepare({
+    kind: "install",
+    source: await f.source(
+      "1.0.0",
+      `export default { id: ${JSON.stringify(f.id)}, async activate() { return {} }, async server() { return { tool: { example: { description: "example", args: {}, execute: async () => "new" } } } } }`,
+    ),
+  })
   const input = { directory: f.root, worktree: f.root, serverUrl: new URL("http://127.0.0.1") } as PluginInput
   const context = { directory: f.root, directoryKey: f.root } as InstanceContext
   await Effect.runPromise(
@@ -167,21 +170,21 @@ test("an old registry observer cannot quiesce the current registry's same-id run
   await old.installer.commit(oldPrepare.operationId, oldPrepare.token)
   releases.push(await observeInstallations())
   const current = await setup(old.id)
-  const prepared = await current.installer.prepare({ kind: "install", source: await current.source("2.0.0") })
+  const prepared = await current.installer.prepare({
+    kind: "install",
+    source: await current.source(
+      "2.0.0",
+      `export default { id: ${JSON.stringify(current.id)}, async activate() { return { rpc: { version: async () => "current" }, async dispose() { globalThis.__installServiceObserverDisposals = (globalThis.__installServiceObserverDisposals ?? 0) + 1 } } } }`,
+    ),
+  })
   await current.installer.commit(prepared.operationId, prepared.token, { enable: true })
-  let disposed = 0
-  ExtensionRuntime.testing.setImporter(async () => ({
-    activate: async () => ({
-      rpc: { version: async () => "current" },
-      dispose: async () => {
-        disposed++
-      },
-    }),
-  }))
+  const globals = globalThis as Record<string, number | undefined>
+  globals.__installServiceObserverDisposals = 0
+  const disposed = () => globals.__installServiceObserverDisposals ?? 0
   expect(await ExtensionRuntime.rpc({ id, method: "version" })).toBe("current")
   await writeFile(old.registry, JSON.stringify({ version: 2, revision: 2, extensions: {} }))
   await new Promise((resolve) => setTimeout(resolve, 1300))
-  expect(disposed).toBe(0)
+  expect(disposed()).toBe(0)
   expect(await ExtensionRuntime.rpc({ id, method: "version" })).toBe("current")
 })
 
@@ -266,23 +269,20 @@ test("external link and enable writes refresh production development-watch targe
 test("the observer does not stop a locally coordinated generation a second time", async () => {
   const f = await setup()
   releases.push(await observeInstallations())
-  const first = await f.installer.prepare({ kind: "install", source: await f.source("1.0.0") })
+  const first = await f.installer.prepare({
+    kind: "install",
+    source: await f.source(
+      "1.0.0",
+      `export default { id: ${JSON.stringify(f.id)}, async activate() { return { rpc: { version: () => "active" }, dispose() { globalThis.__installServiceDisposals = (globalThis.__installServiceDisposals ?? 0) + 1 } } } }`,
+    ),
+  })
   await f.installer.commit(first.operationId, first.token, { enable: true })
-  let disposals = 0
-  ExtensionRuntime.testing.setImporter(async () => ({
-    id,
-    async activate() {
-      return {
-        rpc: { version: () => "active" },
-        dispose() {
-          disposals++
-        },
-      }
-    },
-  }))
+  const globals = globalThis as Record<string, number | undefined>
+  globals.__installServiceDisposals = 0
+  const disposals = () => globals.__installServiceDisposals ?? 0
   expect(await ExtensionRuntime.rpc({ id, method: "version" })).toBe("active")
   await new Promise((resolve) => setTimeout(resolve, 1300))
-  expect(disposals).toBe(0)
+  expect(disposals()).toBe(0)
   expect(await ExtensionRuntime.rpc({ id, method: "version" })).toBe("active")
 })
 

@@ -2,10 +2,13 @@ import { afterEach, beforeEach, expect, test } from "bun:test"
 import path from "node:path"
 import type { PluginInput } from "@opencode-ai/plugin"
 import type { ExtensionHooks, ExtensionHost, ExtensionService } from "@opencode-ai/extension-kit/server"
-import { ExtensionRuntime } from "../../src/extension/runtime"
+import { ExtensionRuntime, type Options } from "../../src/extension/runtime"
 import { ExtensionRegistry } from "../../src/extension/registry"
 import { extensionPackage } from "./fixture"
 import { tmpdir } from "../fixture/fixture"
+
+let options: Options
+let rt: ReturnType<typeof ExtensionRuntime.make>
 
 let temp: Awaited<ReturnType<typeof tmpdir>>
 let previous: string | undefined
@@ -30,11 +33,13 @@ function input(name: string): PluginInput {
   } as unknown as PluginInput
 }
 async function load(name: string) {
-  const entries = await ExtensionRuntime.instanceHooks(input(name))
+  const entries = await rt.instanceHooks(input(name))
   owned.push(...entries.map((entry) => entry.hooks))
   return entries
 }
 beforeEach(async () => {
+    options = {}
+    rt = ExtensionRuntime.make(options)
   temp = await tmpdir()
   previous = process.env.OPENCODE_EXTENSION_REGISTRY_FILE
   process.env.OPENCODE_EXTENSION_REGISTRY_FILE = path.join(temp.path, "registry.json")
@@ -52,7 +57,7 @@ beforeEach(async () => {
 afterEach(async () => {
   for (const release of releases.splice(0)) release()
   for (const hooks of owned.splice(0)) await hooks.dispose?.()
-  await ExtensionRuntime.testing.reset()
+  await rt.testing.reset()
   if (previous === undefined) delete process.env.OPENCODE_EXTENSION_REGISTRY_FILE
   else process.env.OPENCODE_EXTENSION_REGISTRY_FILE = previous
   await temp[Symbol.asyncDispose]()
@@ -63,7 +68,7 @@ test("instance timers stop with their hooks without clearing the process or sibl
   const siblingTick = deferred()
   let processHost!: ExtensionHost
   let firstHost!: ExtensionHost
-  ExtensionRuntime.testing.setImporter(async () => ({
+  options.importer = (async () => ({
     id,
     activate: async (host) => {
       processHost = host
@@ -92,18 +97,18 @@ test.each(["disable", "reload", "quiesce"] as const)(
   async (action) => {
     let ticks = 0
     let host!: ExtensionHost
-    ExtensionRuntime.testing.setImporter(async () => ({
+    options.importer = (async () => ({
       id,
       activate: async (value) => {
         host = value
         return {}
       },
     }))
-    await ExtensionRuntime.rpc({ id, method: "missing" }).catch(() => {})
+    await rt.rpc({ id, method: "missing" }).catch(() => {})
     host.setTimeout(() => {
       ticks++
     }, 0)
-    await ExtensionRuntime[action](id)
+    await rt[action](id)
     await new Promise<void>((resolve) => setTimeout(resolve, 20))
     expect(ticks).toBe(0)
     host.setTimeout(() => {
@@ -116,7 +121,7 @@ test.each(["disable", "reload", "quiesce"] as const)(
 
 test("activation failure revokes timers before their first tick", async () => {
   let ticks = 0
-  ExtensionRuntime.testing.setImporter(async () => ({
+  options.importer = (async () => ({
     id,
     activate: async (host) => {
       host.setTimeout(() => {
@@ -125,10 +130,10 @@ test("activation failure revokes timers before their first tick", async () => {
       throw new Error("activation failed")
     },
   }))
-  await ExtensionRuntime.rpc({ id, method: "missing" }).catch(() => {})
+  await rt.rpc({ id, method: "missing" }).catch(() => {})
   await new Promise<void>((resolve) => setTimeout(resolve, 20))
   expect(ticks).toBe(0)
-  expect(ExtensionRuntime.describe(id).runtime).toBe("error")
+  expect(rt.describe(id).runtime).toBe("error")
 })
 
 test("a timed-out activation cannot schedule more timers through a retained host", async () => {
@@ -136,8 +141,8 @@ test("a timed-out activation cannot schedule more timers through a retained host
   releases.push(() => gate.resolve({}))
   let host!: ExtensionHost
   let ticks = 0
-  ExtensionRuntime.testing.setTimeouts({ activateMs: 30 })
-  ExtensionRuntime.testing.setImporter(async () => ({
+  Object.assign(options, { activateMs: 30 })
+  options.importer = (async () => ({
     id,
     activate: async (value) => {
       host = value
@@ -157,7 +162,7 @@ test("timer promises remain tracked after disposal until quiesce drains them", a
   const started = deferred()
   const gate = deferred()
   releases.push(() => gate.resolve())
-  ExtensionRuntime.testing.setImporter(async () => ({
+  options.importer = (async () => ({
     id,
     activate: async (host) => {
       host.setTimeout(async () => {
@@ -167,10 +172,10 @@ test("timer promises remain tracked after disposal until quiesce drains them", a
       return {}
     },
   }))
-  await ExtensionRuntime.rpc({ id, method: "missing" }).catch(() => {})
+  await rt.rpc({ id, method: "missing" }).catch(() => {})
   await started.promise
   let stopped = false
-  const stopping = ExtensionRuntime.quiesce(id, { timeoutMs: 1000 }).then((result) => {
+  const stopping = rt.quiesce(id, { timeoutMs: 1000 }).then((result) => {
     stopped = true
     return result
   })

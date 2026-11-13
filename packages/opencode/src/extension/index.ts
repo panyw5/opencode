@@ -49,16 +49,16 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Ex
 // shared state the remaining scopes still use. Layers built in pure/disabled
 // mode never touch the runtime and therefore never clean up state they do
 // not own.
-let leases = 0
+const lifecycle = { leases: 0 }
 
 function acquireLease(watcher: Watcher) {
-  leases++
+  lifecycle.leases++
   let released = false
   return async () => {
     if (released) return
     released = true
-    leases--
-    if (leases > 0) return
+    lifecycle.leases--
+    if (lifecycle.leases > 0) return
     // Last scope out performs the shutdown cleanup.
     await ExtensionRuntime.disposeAll()
     await watcher.stop()

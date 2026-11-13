@@ -106,13 +106,10 @@ test("retry rejects unknown, disabled, mutating and blocked extensions", async (
   } finally {
     release()
   }
-  ExtensionRuntime.testing.setImporter(async () => ({
-    activate: async () => ({
-      dispose: () => {
-        throw new Error("cannot dispose")
-      },
-    }),
-  }))
+  await Bun.write(
+    path.join(root, "dist/server.js"),
+    'export default { async activate() { return { dispose() { throw new Error("cannot dispose") } } } }',
+  )
   await ExtensionRuntime.rpc({ id: item.id, method: "ping" }).catch(() => undefined)
   expect(await ExtensionRuntime.quiesce(item.id)).toEqual({ stopped: false, needsRestart: true })
   expect((await request(retryURL, "POST")).status).toBe(409)

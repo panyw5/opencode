@@ -5,10 +5,13 @@
 import { afterEach, beforeEach, expect, test } from "bun:test"
 import path from "node:path"
 import type { ExtensionHost, ManagedProcess } from "@opencode-ai/extension-kit/server"
-import { ExtensionRuntime } from "../../src/extension/runtime"
+import { ExtensionRuntime, type Options } from "../../src/extension/runtime"
 import { ExtensionRegistry } from "../../src/extension/registry"
 import { extensionPackage } from "./fixture"
 import { tmpdir } from "../fixture/fixture"
+
+let options: Options
+let rt: ReturnType<typeof ExtensionRuntime.make>
 
 let temp: Awaited<ReturnType<typeof tmpdir>>
 let previous: string | undefined
@@ -38,10 +41,12 @@ async function until(condition: () => boolean, timeoutMs = 5_000): Promise<void>
 
 /** Activates the extension's process service; the unknown method is irrelevant. */
 async function activate() {
-  await ExtensionRuntime.rpc({ id, method: "missing" }).catch(() => {})
+  await rt.rpc({ id, method: "missing" }).catch(() => {})
 }
 
 beforeEach(async () => {
+    options = {}
+    rt = ExtensionRuntime.make(options)
   temp = await tmpdir()
   previous = process.env.OPENCODE_EXTENSION_REGISTRY_FILE
   process.env.OPENCODE_EXTENSION_REGISTRY_FILE = path.join(temp.path, "registry.json")
@@ -58,7 +63,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  await ExtensionRuntime.testing.reset()
+  await rt.testing.reset()
   if (previous === undefined) delete process.env.OPENCODE_EXTENSION_REGISTRY_FILE
   else process.env.OPENCODE_EXTENSION_REGISTRY_FILE = previous
   await temp[Symbol.asyncDispose]()
@@ -66,7 +71,7 @@ afterEach(async () => {
 
 test("disable terminates a spawned child process and observes its exit", async () => {
   let spawned: ManagedProcess | undefined
-  ExtensionRuntime.testing.setImporter(async () => ({
+  options.importer = (async () => ({
     id,
     activate: async (host: ExtensionHost) => {
       spawned = host.spawn(process.execPath, ["-e", SLEEPER])
@@ -77,14 +82,14 @@ test("disable terminates a spawned child process and observes its exit", async (
   const child = spawned!
   expect(child.pid).toBeGreaterThan(0)
   expect(alive(child.pid)).toBe(true)
-  await ExtensionRuntime.disable(id)
+  await rt.disable(id)
   expect(child.exited).toBe(true)
   expect(alive(child.pid)).toBe(false)
 })
 
 test.each(["disable", "reload", "quiesce"] as const)("%s reaps spawned children", async (action) => {
   let spawned: ManagedProcess | undefined
-  ExtensionRuntime.testing.setImporter(async () => ({
+  options.importer = (async () => ({
     id,
     activate: async (host: ExtensionHost) => {
       spawned = host.spawn(process.execPath, ["-e", SLEEPER])
@@ -93,14 +98,14 @@ test.each(["disable", "reload", "quiesce"] as const)("%s reaps spawned children"
   }))
   await activate()
   const pid = spawned!.pid
-  await ExtensionRuntime[action](id, { timeoutMs: 5_000 })
+  await rt[action](id, { timeoutMs: 5_000 })
   expect(alive(pid)).toBe(false)
 })
 
 test("a child ignoring SIGTERM is escalated to SIGKILL after the configured grace period", async () => {
-  ExtensionRuntime.testing.setLimits({ killGraceMs: 100 })
+  Object.assign(options, { killGraceMs: 100 })
   let spawned: ManagedProcess | undefined
-  ExtensionRuntime.testing.setImporter(async () => ({
+  options.importer = (async () => ({
     id,
     activate: async (host: ExtensionHost) => {
       spawned = host.spawn(process.execPath, ["-e", TERM_PROOF])
@@ -109,7 +114,7 @@ test("a child ignoring SIGTERM is escalated to SIGKILL after the configured grac
   }))
   await activate()
   const started = Date.now()
-  await ExtensionRuntime.disable(id)
+  await rt.disable(id)
   // The child can only be dead via the SIGKILL escalation, so the override
   // proves effective when teardown lands well under the 3s default grace.
   expect(Date.now() - started).toBeLessThan(2_000)
@@ -127,7 +132,7 @@ test("process-group teardown also reaps grandchildren", async () => {
     ${SLEEPER}
   `
   let spawned: ManagedProcess | undefined
-  ExtensionRuntime.testing.setImporter(async () => ({
+  options.importer = (async () => ({
     id,
     activate: async (host: ExtensionHost) => {
       spawned = host.spawn(process.execPath, ["-e", parent])
@@ -144,7 +149,7 @@ test("process-group teardown also reaps grandchildren", async () => {
   await until(() => grandchildPid > 0)
   expect(alive(child.pid)).toBe(true)
   expect(alive(grandchildPid)).toBe(true)
-  await ExtensionRuntime.disable(id)
+  await rt.disable(id)
   expect(alive(child.pid)).toBe(false)
   await until(() => !alive(grandchildPid))
 })
@@ -152,7 +157,7 @@ test("process-group teardown also reaps grandchildren", async () => {
 test("ManagedProcess.kill terminates the child and spawn on a disposed host throws", async () => {
   let host!: ExtensionHost
   let spawned: ManagedProcess | undefined
-  ExtensionRuntime.testing.setImporter(async () => ({
+  options.importer = (async () => ({
     id,
     activate: async (value: ExtensionHost) => {
       host = value
@@ -167,6 +172,6 @@ test("ManagedProcess.kill terminates the child and spawn on a disposed host thro
   await exited
   expect(child.exited).toBe(true)
   expect(child.exitCode).toBeNull()
-  await ExtensionRuntime.disable(id)
+  await rt.disable(id)
   expect(() => host.spawn(process.execPath, ["-e", SLEEPER])).toThrow(/disposed/)
 })

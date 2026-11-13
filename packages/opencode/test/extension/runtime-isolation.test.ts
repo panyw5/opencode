@@ -4,7 +4,7 @@ import type { PluginInput } from "@opencode-ai/plugin"
 import type { ExtensionHooks, ExtensionService, ServerExtension } from "@opencode-ai/extension-kit/server"
 import { GlobalBus } from "../../src/bus/global"
 import { ExtensionLeases } from "../../src/extension/leases"
-import { ExtensionRuntime } from "../../src/extension/runtime"
+import { ExtensionRuntime, type Options } from "../../src/extension/runtime"
 import { tmpdir } from "../fixture/fixture"
 
 function deferred<T = void>() {
@@ -25,6 +25,9 @@ async function bounded<T>(promise: Promise<T>): Promise<T | "deadline exceeded">
   }
 }
 
+let options: Options
+let rt: ReturnType<typeof ExtensionRuntime.make>
+
 let temp: Awaited<ReturnType<typeof tmpdir>>
 let previousRegistry: string | undefined
 const modules = new Map<string, ServerExtension>()
@@ -44,7 +47,7 @@ function input(name: string): PluginInput {
 }
 
 async function hooks(name: string) {
-  const result = await ExtensionRuntime.instanceHooks(input(name))
+  const result = await rt.instanceHooks(input(name))
   owned.push(...result.map((entry) => entry.hooks))
   return result
 }
@@ -79,17 +82,19 @@ async function fixture(id: string, module: ServerExtension) {
 }
 
 beforeEach(async () => {
+    options = {}
+    rt = ExtensionRuntime.make(options)
   temp = await tmpdir()
   previousRegistry = process.env.OPENCODE_EXTENSION_REGISTRY_FILE
   process.env.OPENCODE_EXTENSION_REGISTRY_FILE = path.join(temp.path, "registry.json")
-  ExtensionRuntime.testing.setImporter(async (_source, _fingerprint, context) => modules.get(context.id)!)
-  ExtensionRuntime.testing.setTimeouts({ activateMs: 150, serverMs: 150 })
+  options.importer = (async (_source, _fingerprint, context) => modules.get(context.id)!)
+  Object.assign(options, { activateMs: 150, serverMs: 150 })
 })
 
 afterEach(async () => {
   for (const release of cleanup.splice(0)) release()
   for (const entry of owned.splice(0)) await entry.dispose?.()
-  await ExtensionRuntime.testing.reset()
+  await rt.testing.reset()
   modules.clear()
   if (previousRegistry === undefined) delete process.env.OPENCODE_EXTENSION_REGISTRY_FILE
   else process.env.OPENCODE_EXTENSION_REGISTRY_FILE = previousRegistry
@@ -135,7 +140,7 @@ describe("cross-extension isolation", () => {
     expect(activations).toBe(1)
     expect(statuses.filter((event) => event.id === "test.a" && event.state === "error")).toHaveLength(1)
     expect(statuses.find((event) => event.id === "test.a")?.error).toContain("activation timed out after 150ms")
-    expect(ExtensionRuntime.describe("test.a")?.hasService).toBe(false)
+    expect(rt.describe("test.a")?.hasService).toBe(false)
     expect((await hooks("sticky")).map((entry) => entry.id)).toEqual(["test.b"])
     expect(activations).toBe(1)
   })
@@ -155,10 +160,10 @@ describe("cross-extension isolation", () => {
     const building = hooks("first")
     await started.promise
     expect(await bounded(building)).toEqual([])
-    const release = ExtensionRuntime.beginMutation("test.a")
+    const release = rt.beginMutation("test.a")
     cleanup.push(release)
     let stopped = false
-    const stopping = ExtensionRuntime.quiesce("test.a", { timeoutMs: 250 }).then((result) => {
+    const stopping = rt.quiesce("test.a", { timeoutMs: 250 }).then((result) => {
       stopped = true
       return result
     })
@@ -173,7 +178,7 @@ describe("cross-extension isolation", () => {
     expect(await stopping).toEqual({ stopped: true, needsRestart: false })
     await disposed.promise
     expect(disposals).toBe(1)
-    expect(ExtensionRuntime.describe("test.a")).toEqual({
+    expect(rt.describe("test.a")).toEqual({
       hasService: false,
       hasInstanceHooks: false,
       runtime: "idle",
@@ -200,17 +205,17 @@ describe("cross-extension isolation", () => {
     expect(slow).not.toBe("deadline exceeded")
     if (slow === "deadline exceeded") return
     expect(slow.map((entry) => entry.id)).toEqual(["test.b"])
-    expect(ExtensionRuntime.describe("test.a")?.hasService).toBe(true)
+    expect(rt.describe("test.a")?.hasService).toBe(true)
     await expect(healthy[0]!.hooks.event!({} as never)).resolves.toBeUndefined()
     expect((await hooks("retry")).map((entry) => entry.id)).toEqual(["test.a", "test.b"])
     expect(activations).toBe(1)
     gate.resolve({ dispose: () => disposed.resolve() })
     expect(await bounded(disposed.promise)).not.toBe("deadline exceeded")
-    expect(await ExtensionRuntime.quiesce("test.a", { timeoutMs: 25 })).toEqual({ stopped: false, needsRestart: true })
+    expect(await rt.quiesce("test.a", { timeoutMs: 25 })).toEqual({ stopped: false, needsRestart: true })
   })
 
   test("collects independent server jobs concurrently but preserves registry order", async () => {
-    ExtensionRuntime.testing.setTimeouts({ activateMs: 1000, serverMs: 1000 })
+    Object.assign(options, { activateMs: 1000, serverMs: 1000 })
     const gate = deferred()
     cleanup.push(() => gate.resolve())
     const second = deferred()
@@ -239,9 +244,9 @@ describe("cross-extension isolation", () => {
     cleanup.push(() => gate.resolve())
     await fixture("test.a", { activate: async () => ({ dispose: () => gate.promise }) })
     await fixture("test.b", { activate: async () => ({}), server: async () => ({}) })
-    await ExtensionRuntime.rpc({ id: "test.a", method: "missing" }).catch(() => {})
-    const release = ExtensionRuntime.beginMutation("test.a")
-    expect(await ExtensionRuntime.quiesce("test.a", { timeoutMs: 5 })).toEqual({ stopped: false, needsRestart: true })
+    await rt.rpc({ id: "test.a", method: "missing" }).catch(() => {})
+    const release = rt.beginMutation("test.a")
+    expect(await rt.quiesce("test.a", { timeoutMs: 5 })).toEqual({ stopped: false, needsRestart: true })
     release()
     expect((await hooks("blocked")).map((entry) => entry.id)).toEqual(["test.b"])
   })
@@ -252,12 +257,12 @@ describe("cross-extension isolation", () => {
     let invalidations = 0
     const invalidated = deferred()
     cleanup.push(
-      ExtensionRuntime.registerCacheInvalidator("plugin", async () => {
+      rt.registerCacheInvalidator("plugin", async () => {
         invalidations++
         invalidated.resolve()
       }),
     )
-    const release = ExtensionRuntime.beginMutation("test.a")
+    const release = rt.beginMutation("test.a")
     cleanup.push(release)
     expect((await hooks("fenced")).map((entry) => entry.id)).toEqual(["test.b"])
     // This delay is the negative assertion: repeated invalidation must not spin.
@@ -298,7 +303,7 @@ describe("cross-extension isolation", () => {
     const invalidated = deferred()
     let invalidatedAfterDelivery = false
     cleanup.push(
-      ExtensionRuntime.registerCacheInvalidator("plugin", async () => {
+      rt.registerCacheInvalidator("plugin", async () => {
         invalidatedAfterDelivery = delivered
         invalidated.resolve()
       }),
@@ -308,7 +313,7 @@ describe("cross-extension isolation", () => {
       return result
     })
     await Promise.all([aReady.promise, bStarted.promise])
-    const release = ExtensionRuntime.beginMutation("test.a")
+    const release = rt.beginMutation("test.a")
     release()
     bGate.resolve()
     expect((await building).map((entry) => entry.id)).toEqual(["test.b"])
@@ -321,11 +326,11 @@ describe("cross-extension isolation", () => {
     let badImports = 0
     await fixture("test.a", { activate: async () => ({}), server: async () => ({}) })
     await fixture("test.b", { activate: async () => ({}), server: async () => ({}) })
-    ExtensionRuntime.testing.setImporter(async (_source, _fingerprint, context) => {
+    options.importer = (async (_source, _fingerprint, context) => {
       if (context.id === "test.a") badImports++
       return modules.get(context.id)!
     })
-    ExtensionRuntime.testing.setLeaseDriver({
+    options.leases = ({
       acquire: ExtensionLeases.acquire,
       acquireData: async (registry, id) => {
         if (id === "test.a") throw new ExtensionLeases.LeaseError("busy", "fixture lease busy")
