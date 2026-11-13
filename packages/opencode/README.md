@@ -16,7 +16,7 @@ This project was created using `bun init` in bun v1.2.12. [Bun](https://bun.sh) 
 
 ## Extension lifecycle development
 
-The lifecycle rebuild is not enabled in the production installer. Its [plan](../../specs/extensions/lifecycle-rebuild-plan.md), [ownership status](../../specs/extensions/lifecycle-ownership.md), and [execution supervisor status](../../specs/extensions/lifecycle-supervisor.md) distinguish validated behavior from platform, durability, and migration blockers.
+The lifecycle rebuild is not enabled in the production installer. Its [current state](../../specs/extensions/lifecycle.md), [plan](../../specs/extensions/archive/lifecycle-rebuild-plan.md), [ownership status](../../specs/extensions/archive/lifecycle-ownership.md), and [execution supervisor status](../../specs/extensions/lifecycle-supervisor.md) distinguish validated behavior from platform, durability, and migration blockers.
 
 Run descriptor-ownership and process tests from this directory:
 

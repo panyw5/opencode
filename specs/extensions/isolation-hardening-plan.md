@@ -152,7 +152,7 @@ const slots = new Map<string, Slot>()
 - **决策点 D3**：
   - (a) 提交原型，作为"阶段 0/1 基础设施"继续推进到 RuntimeSupervisor 接入；
   - (b) 移到 `specs/extensions/prototypes/` 或单独分支，主线暂不保留。
-- 建议 (a)，但需满足：单独一个 PR、只包含测试和文档、README 标明"未接入生产"；并在 `lifecycle-rebuild-plan.md` 中把本计划的 A/B 阶段登记为前置项。
+- 建议 (a)，但需满足：单独一个 PR、只包含测试和文档、README 标明"未接入生产"；并在 `archive/lifecycle-rebuild-plan.md` 中把本计划的 A/B 阶段登记为前置项。
 
 ### C2. sidecar 崩溃面（P7）
 

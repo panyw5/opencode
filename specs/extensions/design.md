@@ -4,7 +4,7 @@
 
 状态：架构设计与分阶段范围说明。P0/P1/P2 核心、P3a 安装管理、发布地址安装和首个 `.wls` 调试 REPL 已有实现与本地提交；完整市场、Notebook 及最终集成/发布验收未完成。本文能力描述不是逐项实现或验收证明。
 
-状态核对（2026-11-03）：当前分支 HEAD `6faed064da`；release 来源、自动摘要、显式 registry v3、模板、wls-repl 与桌面拖拽已随 `6216969c38` 提交，后续目录安装和重装修复也已提交。当前交付状态以 `specs/extensions/delivery.md` 为入口，阶段历史见 `progress.md`、`p3a-tasks.md`、`release-install-tasks.md` 与 `wls-repl-tasks.md`；本文旧分发章节不作为最新状态或完整交付证明。发布地址协议补充见 `specs/extensions/release-install-design.md`。
+状态核对（2026-11-03）：当前分支 HEAD `6faed064da`；release 来源、自动摘要、显式 registry v3、模板、wls-repl 与桌面拖拽已随 `6216969c38` 提交，后续目录安装和重装修复也已提交。当前交付状态以 `specs/extensions/delivery.md` 为入口，阶段历史见 `progress-log.md`、`p3a-tasks.md`、`release-install-tasks.md` 与 `wls-repl-tasks.md`；本文旧分发章节不作为最新状态或完整交付证明。发布地址协议补充见 `specs/extensions/release-install-design.md`。
 
 项目路径：`/Users/lelouch/apps/opencode`
 
@@ -14,6 +14,14 @@
 
 - 前端信任模型：**安装即信任，同进程运行**。扩展前端代码与 app 运行在同一个 JS 上下文中，不做 iframe 沙箱。
 - 扩展由 server 统一管理，UI 从 server 获取清单和资源。
+
+整改已确认的决策（remediation-plan D1–D9，2026-11-12 起实施）：
+
+- **分发信任模型**：`stable.json` 描述符做 Ed25519 分离签名（`stable.json.sig` 为 `{keyId, signature}` JSON 信封，签原始字节）。宿主内置 `{keyId, publicKey, origins}` 可信公钥列表：描述符 URL 落在可信 origin 内必须验签（失败 `signature_invalid` 拒绝安装），不在列表内的来源标记"未签名来源"并保持原安装行为。`keyId` 支持多把公钥轮换；私钥仅经 `OPENCODE_EXTENSION_SIGNING_KEY` 注入。
+- **签名描述符内容**：`sequence` 单调递增并纳入签名载荷，`release-current` 更新时序列回退拒绝（`rollback_detected`，显式降级预览不受影响）；`source.commit` 记录发布时的 monorepo 提交用于溯源；`engines` 写入扩展 `package.json` 的 `engines.opencode` 兼容范围，目录展示先判兼容（不兼容标灰），不必下载产物。
+- **server 隔离模式**（D7/D8）：manifest 声明 `server.isolation: "process" | "inline"`，过渡期默认 `inline`；之后新安装默认 `process`（每扩展一个宿主进程），`"inline"` 仅允许本地 `path` 来源的开发调试，生产安装一律 `process`。进程隔离是生命周期与崩溃隔离，不是安全沙箱。
+- **权限语义**（D3）：`opencode.permissions` 为固定词表 `fs:read`、`fs:write`、`process:spawn`、`network`、`tools`、`settings:secret`；当前版本**声明不强制**——词表外条目只打 warn 日志并在 UI 标为"未知权限"，不阻止安装；安装预览与详情页注明"声明，不强制"。进程隔离落地后（Phase 5 / T5.6）才对 `tools` 和 `process:spawn` 做粗粒度执行（API 级限制，如实标注不是安全沙箱）。
+- 其余：工具名命名空间 `<extName>_<tool>`（`extName` 取 id 末段、`-`→`_`，D1）；激活事件仅 `onStartup` 有运行时语义、其余为声明性提示、贡献点被用到即隐式激活（D2）；`open-extensions` 仓库仅放分发内容（`stable.json` + 签名 + README，D5）；扩展独立 semver、与主版本解耦（D9）。
 
 ## 1. 目标与边界
 
@@ -203,7 +211,7 @@ web 部分和 server 部分都是可选的，但至少要有一个。
 | web 资源根目录                            | `./web` 入口所在的目录；资源路由只提供该目录内的文件；`styles`、`icon` 必须在其中                                                    |
 | `opencode.activation`                     | 省略时等价于 `["onStartup"]`；语义见 §7.4：仅 `onStartup` 有运行时含义，其余事件是声明性提示                                          |
 | `opencode.contributes.*[].id`             | 在扩展内唯一；全局 ID 为 `<extensionID>:<id>`；命令的全局 ID 为 `ext.<extensionID>.<id>`                                             |
-| `opencode.permissions`                    | 只用于展示：`process:spawn`、`fs:read`、`fs:write`、`network`、`tools`（向 LLM 暴露工具）                                            |
+| `opencode.permissions`                    | 固定词表：`fs:read`、`fs:write`、`process:spawn`、`network`、`tools`（向 LLM 暴露工具）、`settings:secret`；**声明不强制**，词表外条目不阻止安装、UI 标"未知权限"；执行路线见 §12 |
 
 manifest 中的静态文本（`displayName`、`title` 等）首个版本只支持单一语言，本地化放到后续版本。
 

@@ -83,4 +83,4 @@ P0/P1 已完成；P2 核心实现已提交。P3a、发布安装及 P4 首个业�
 
 保留边界：扩展与宿主同进程，无沙箱/逐项权限强制隔离；secret 本地明文存储（0600，API 掩码）；registry v3 不自动降级，人工旧进程停机确认不是存活证明；缺安全证明的旧包/数据不自动删除。项目级安装、自动更新、自定义设置页、运行时 i18n、跨会话草稿持久化与完整 Notebook 不在本次交付声明内。
 
-详细证据：`progress.md`、`p2-delivery.md`、`p3a-tasks.md`、`release-install-tasks.md`、`wls-repl-tasks.md`。各文档带日期的旧结论只适用于当时基线；当前状态优先以本文及其明确更正为准。
+详细证据：`progress-log.md`、`p2-delivery.md`、`p3a-tasks.md`、`release-install-tasks.md`、`wls-repl-tasks.md`。各文档带日期的旧结论只适用于当时基线；当前状态优先以本文及其明确更正为准。

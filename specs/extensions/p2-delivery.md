@@ -225,7 +225,7 @@ NEW specs/extensions/p2-delivery.md
 - 最终二进制 `1.18.49-claude-extensions-p2-design.202610041109` 已完成内嵌 Web 核心实机复验：真实外部文件监控刷新时 mount=1、草稿保留、text/revision 更新、原保存 handler 写盘；raw/RPC/SSE/并发 child ping、停用清理/恢复、token-only/CSP/反向鉴权通过；服务与浏览器已清理。
 - 最终产物 Electron/Vite GUI 完整矩阵未重跑，不以内嵌证据替代。
 
-完整验收细节与历史失败见 `progress.md`；开放后续范围见 `p2-tasks.md`。
+完整验收细节与历史失败见 `progress-log.md`；开放后续范围见 `p2-tasks.md`。
 
 ## 7. 必须保留的限制
 
