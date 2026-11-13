@@ -34,6 +34,7 @@ There are several opencode instances:
   bun packages/desktop/scripts/cdp.ts click 'New session'
   bun packages/desktop/scripts/cdp.ts screenshot /tmp/opencode-cdp.png
   ```
+- TRAP: never call `window.api.browser.acquireDisplay()` / `updateDisplay()` / `releaseDisplay()` over CDP. The renderer's browser panel owns a display lease; acquiring steals it and releasing zeroes it, so every subsequent frontend frame is rejected as stale and web pages navigate but never show. Verify with `getDisplayState()`/`getState()`/`capturePreview()` or browser.log instead. Recovery if poisoned: `location.reload()`.
 
 ## Keybinds are user-configurable — never assume source defaults
 

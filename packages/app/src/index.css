@@ -453,20 +453,19 @@
       background-color 140ms ease,
       border-color 140ms ease,
       color 140ms ease,
-      box-shadow 140ms ease,
-      transform 100ms ease;
-  }
-
-  [data-component="session-tab-permission-capsule"] [data-component="button"][data-variant="primary"] {
-    box-shadow: 0 2px 8px color-mix(in srgb, var(--text-strong) 24%, transparent);
+      box-shadow 140ms ease;
   }
 
   [data-component="session-tab-permission-capsule"]
-    [data-component="button"][data-variant="primary"]:hover:not(:disabled),
+    [data-component="button"][data-variant="primary"]:hover:not(:disabled) {
+    transform: none;
+    box-shadow: none;
+  }
+
   [data-component="session-tab-permission-capsule"]
     [data-component="button"][data-variant="primary"]:focus-visible:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px color-mix(in srgb, var(--text-strong) 38%, transparent);
+    transform: none;
+    box-shadow: var(--shadow-xs-border-focus);
   }
 
   [data-component="session-tab-permission-capsule"]
@@ -476,13 +475,6 @@
     border-color: color-mix(in srgb, var(--border-strong-base) 72%, transparent);
     background-color: color-mix(in srgb, var(--surface-base-hover) 88%, var(--surface-warning-base));
     color: var(--text-strong);
-    transform: translateY(-1px);
-    box-shadow: 0 3px 8px color-mix(in srgb, black 14%, transparent);
-  }
-
-  [data-component="session-tab-permission-capsule"] [data-component="button"]:active:not(:disabled) {
-    transform: translateY(1px) scale(0.96);
-    box-shadow: none;
   }
 
   [data-component="session-tab-permission-capsule"][data-positioned="true"][data-state="open"] {

@@ -79,8 +79,12 @@ export function AgentBackendSettings(props: {
   const cliType = () => (props.advisor === "pi" ? "native-rpc" : "cli-json")
   const acpInstalled = createMemo(() => (recipe()?.installed.length ?? 0) > 0 || active()?.type === "acp")
   const tabs = createMemo(() => [
-    { value: cliType(), label: props.advisor === "pi" ? "Native RPC" : "CLI", installed: props.cliInstalled === true },
-    { value: "acp", label: "ACP", installed: acpInstalled() },
+    {
+      value: cliType(),
+      label: props.advisor === "pi" ? t("agentBackend.transportRpc") : t("agentBackend.transportCli"),
+      installed: props.cliInstalled === true,
+    },
+    { value: "acp", label: t("agentBackend.transportAcp"), installed: acpInstalled() },
   ])
   let tablistRef: HTMLDivElement | undefined
   const onTablistKeyDown = (event: KeyboardEvent) => {
@@ -152,6 +156,14 @@ export function AgentBackendSettings(props: {
     if (!state.version && recommended) setState("version", recommended)
   })
   const backendKey = createMemo(() => backendSignature(props.config.agent_backends?.[props.advisor], props.advisor))
+  const pendingActivation = createMemo(() => {
+    if (state.type !== "acp") return false
+    try {
+      return backendSignature(draft(), props.advisor) !== backendKey()
+    } catch {
+      return false
+    }
+  })
   let submitted: { advisor: AdvisorID; client: OpencodeClient; signature: string } | undefined
   const perform = async (name: string, fn: (signal: AbortSignal, current: () => boolean) => Promise<void>) => {
     if (state.busy) return
@@ -305,7 +317,7 @@ export function AgentBackendSettings(props: {
         ref={tablistRef}
         role="tablist"
         aria-label={t("agentBackend.transport")}
-        class="relative grid w-full max-w-[300px] grid-cols-2 rounded-full border border-border-weak-base bg-surface-secondary/70 p-1"
+        class="relative grid w-full max-w-[460px] grid-cols-2 rounded-full border border-border-weak-base bg-surface-secondary/70 p-1"
         onKeyDown={onTablistKeyDown}
       >
         <span
@@ -409,7 +421,13 @@ export function AgentBackendSettings(props: {
           </AgentSettingsCard>
           <Show when={state.type === "acp"}>
             <Show when={managedMode()}>
-              <AgentSettingsCard title={t("agentSettings.adapter")} size="compact">
+              <AgentSettingsCard
+                title={t("agentSettings.adapter")}
+                badge={
+                  pendingActivation() && active()?.type !== "acp" ? t("agentBackend.notEnabledBadge") : undefined
+                }
+                size="compact"
+              >
                 <label for={versionID} class="block text-12-medium text-text-base">
                   {t("agentBackend.version")}
                 </label>
@@ -496,6 +514,11 @@ export function AgentBackendSettings(props: {
             </Show>
           </Show>
         </AgentSettingsGrid>
+        <Show when={pendingActivation()}>
+          <p class="text-12-regular text-text-warning-base" role="status">
+            {active()?.type === "acp" ? t("agentBackend.unsavedChanges") : t("agentBackend.notEnabled")}
+          </p>
+        </Show>
         <Show when={state.type === "acp"}>
           <AgentSettingsCard size="wide">
             <AgentSettingsDetails title={t("agentBackend.advanced")}>

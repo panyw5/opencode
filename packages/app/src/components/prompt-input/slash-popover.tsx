@@ -80,7 +80,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
         }}
         data-component="prompt-popover"
         data-prompt-popover-kind={props.popover}
-        class="completion-menu absolute inset-x-0 -top-2 -translate-y-full origin-bottom-left max-h-80 min-h-10 overflow-hidden flex flex-col"
+        class="completion-menu absolute inset-x-0 -top-2 -translate-y-full origin-bottom-left max-h-[min(28rem,calc(100vh-12rem))] min-h-10 overflow-hidden flex flex-col"
         onMouseDown={(e) => e.preventDefault()}
       >
         <Show when={props.popover === "at"}>
