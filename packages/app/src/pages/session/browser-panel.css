@@ -181,6 +181,18 @@
   pointer-events: none;
 }
 
+.browser-address-agent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--surface-brand-base);
+  background: color-mix(in srgb, var(--surface-brand-base) 26%, transparent);
+}
+
 .browser-address-input {
   width: 100%;
   min-width: 0;

@@ -567,6 +567,7 @@ export const dict = {
   "session.panel.collapse": "Collapse panel",
   "panel.browser.closeTab": "Close tab",
   "panel.browser.agentTab": "Agent",
+  "panel.browser.agentControl": "Controlled by the agent",
   "panel.browser.back": "Back",
   "panel.browser.forward": "Forward",
   "panel.browser.reload": "Reload",

@@ -297,6 +297,11 @@ export function BrowserPanel(props: { class?: string }) {
           autocomplete="off"
           class="browser-address-input"
         />
+        <Show when={activeAgent()}>
+          <span class="browser-address-agent" title={language.t("panel.browser.agentControl")}>
+            <Icon name="robot" size="small" />
+          </span>
+        </Show>
       </div>
       <Show when={showGptProLogin()}>
         <IconButton

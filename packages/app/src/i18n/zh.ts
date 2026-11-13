@@ -564,6 +564,7 @@ export const dict = {
   "session.panel.collapse": "收起侧边面板",
   "panel.browser.closeTab": "关闭标签页",
   "panel.browser.agentTab": "Agent",
+  "panel.browser.agentControl": "由 agent 控制",
   "panel.browser.back": "后退",
   "panel.browser.forward": "前进",
   "panel.browser.reload": "重新加载",
