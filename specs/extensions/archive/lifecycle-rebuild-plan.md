@@ -1,6 +1,8 @@
 # 扩展系统生命周期重构实施计划
 
-状态：**阶段 0/1 实验原型已迁入 `specs/extensions/prototypes/`，生产生命周期尚未切换。** 后续生产接入以前置完成 [isolation-hardening-plan.md](./isolation-hardening-plan.md) 的 A/B 为条件；原型完整进程测试仍有失败，当前证据见其 README，不能用历史绿灯替代本轮验收。
+> 已被 `../lifecycle.md` 取代（2026-11-13）。本文仅作历史参考，不再更新。
+
+状态：**阶段 0/1 实验原型已迁入 `specs/extensions/prototypes/`，生产生命周期尚未切换。** 后续生产接入以前置完成 [isolation-hardening-plan.md](../isolation-hardening-plan.md) 的 A/B 为条件；原型完整进程测试仍有失败，当前证据见其 README，不能用历史绿灯替代本轮验收。
 
 依据：[生命周期事实审计与目标契约](./lifecycle-rebuild.md)。代码核对基线：`abc63ce659`。本计划不修改原审计，不恢复 archive → release 来源兼容补丁，不操作真实用户 registry，不授权提交、推送或发布。
 
@@ -126,7 +128,7 @@ source 只控制当前候选与更新渠道；更换更新渠道仍需明确授�
 
 - [x] P0.1 逐项盘点 `schema.ts`、`paths.ts`、`data.ts`、`registry.ts`、`runtime.ts` 和前端 scope：包、import cache、数据、缓存、设置/secret、staging、trash、lease、日志、注册项、进程及项目级实例；清单见[阶段 0 记录](./lifecycle-foundation.md#2-资源归属清单)。
 - [ ] P0.2 每类资源写明创建者、归属键、位置、所有使用者、撤销方法、删除权限和最终验证方式；尤其记录目前全局 data/cache 按 extension ID 命名而非 registry 隔离的情况。
-- [ ] P0.3 固定身份类型、状态转换、存储原子提交方案、幂等语义、预览授权和版本升级规则；以状态转换表与持久化样例形成实现输入。品牌身份及实验性准入快照已实现，完整 registry/operation schema 和 durable 提交尚缺，见[执行实例记录](./lifecycle-supervisor.md)。
+- [ ] P0.3 固定身份类型、状态转换、存储原子提交方案、幂等语义、预览授权和版本升级规则；以状态转换表与持久化样例形成实现输入。品牌身份及实验性准入快照已实现，完整 registry/operation schema 和 durable 提交尚缺，见[执行实例记录](../lifecycle-supervisor.md)。
 - [ ] P0.4 决定前端保证：本次保证托管 UI/注册/token 撤销；若产品要求任意前端 JS 物理停止，必须增加可销毁 realm 的实施阶段，并在交付前完成，不得靠清 scope 声称消灭任意 timer。
 - [ ] P0.5 建立真实进程测试夹具：常驻 timer、挂起 RPC、迟到注册、dispose 抛错/超时、子进程和孙进程、忽略停止信号、父宿主突然死亡。
 - [ ] P0.6 建立当前实现会失败的后置条件测试：同进程卸载清理、跨来源干净重装、明确 conflict 保留原因、重启继续 trash、更新失败恢复 A。
@@ -334,6 +336,6 @@ source 只控制当前候选与更新渠道；更换更新渠道仍需明确授�
 
 ## 8. 当前执行状态与下一步
 
-阶段 0 已加入资源清单、API transfer 矩阵、目标契约测试以及品牌身份/准入模型；存储沿用单一原子 registry 快照。阶段 1 的[描述符提供者](./lifecycle-ownership.md)与[单执行根监督](./lifecycle-supervisor.md)已在 macOS Node/Bun/Electron 验证，包括真实收发、取消、启动/停止失败、外部终止和引用保持。模块未接入安装器，未迁移用户数据、未执行 WLS 重构验收。
+阶段 0 已加入资源清单、API transfer 矩阵、目标契约测试以及品牌身份/准入模型；存储沿用单一原子 registry 快照。阶段 1 的[描述符提供者](./lifecycle-ownership.md)与[单执行根监督](../lifecycle-supervisor.md)已在 macOS Node/Bun/Electron 验证，包括真实收发、取消、启动/停止失败、外部终止和引用保持。模块未接入安装器，未迁移用户数据、未执行 WLS 重构验收。
 
 下一步实现 durable admission/owner/operation 提交与崩溃恢复，将当前纯状态转换接入 Store；补齐 supervisor 死亡后的执行实例接管、完整受管进程树、多宿主协调、Linux/Windows 和原生依赖交付。已有根退出和 JSON 往返证据不能替代这些门槛，前置条件未通过前不推进真实资源清理。

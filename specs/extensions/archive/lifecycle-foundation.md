@@ -1,5 +1,7 @@
 # 生命周期重构：阶段 0 基础与执行记录
 
+> 已被 `../lifecycle.md` 取代（2026-11-13）。本文仅作历史参考，不再更新。
+
 状态：**阶段 0 部分实施；生产生命周期没有切换。进程原型已迁入独立的 `specs/extensions/prototypes/`，当前原型完整测试非全绿，见其 README；下文为历史证据。**
 
 入口：[实施计划](./lifecycle-rebuild-plan.md)；目标与事实来源：[审计](./lifecycle-rebuild.md)。实现基线 `abc63ce659`，本阶段内容为 API 清单、测试夹具和目标后置条件测试。不使用测试 teardown 释放 pin 的结果证明生产卸载成功。后续描述符所有权及实际 Electron utility 证据见[阶段 1 记录](./lifecycle-ownership.md)。

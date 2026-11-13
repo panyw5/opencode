@@ -1,6 +1,8 @@
 # 生命周期重构：描述符所有权与 Electron 验证
 
-状态：**已迁入 `specs/extensions/prototypes/` 的独立实验，生产安装器没有接入，仅 macOS 有验证。** 原型完整进程套件当前非全绿，历史通过记录不覆盖新运行，见[当前证据](./prototypes/README.md#验证与已知边界)。生产接入以前置完成隔离加固 A/B 为条件。
+> 已被 `../lifecycle.md` 取代（2026-11-13）。本文仅作历史参考，不再更新。
+
+状态：**已迁入 `specs/extensions/prototypes/` 的独立实验，生产安装器没有接入，仅 macOS 有验证。** 原型完整进程套件当前非全绿，历史通过记录不覆盖新运行，见[当前证据](../prototypes/README.md#验证与已知边界)。生产接入以前置完成隔离加固 A/B 为条件。
 
 入口：[实施计划](./lifecycle-rebuild-plan.md)；资源与 API 清单：[阶段 0](./lifecycle-foundation.md)；目标依据：[审计](./lifecycle-rebuild.md)。本阶段不删除旧 lease、gate、retained 或真实用户扩展数据。
 
@@ -75,7 +77,7 @@ Node/Electron 显式选择并加载固定包的 NAPI binary；包入口的 runti
 
 Electron 的 utilityProcess.kill() 在实测中可能产生 exit code 0；代码 0 不能单独证明扩展做过正常 dispose。强杀回归使用 SIGKILL 和实际重获锁来验证 OS 资源释放，不把退出码当作完整进程树证明。
 
-所有权探针本身不是完整 RuntimeSupervisor。后续[执行实例增量](./lifecycle-supervisor.md)已有内部 JSON 请求准入/排空和单根监督，但受管子孙进程树、旧 owner 接管和全部 Hooks 代理仍未完成；utility exit 不能代替任意子进程退出证明。
+所有权探针本身不是完整 RuntimeSupervisor。后续[执行实例增量](../lifecycle-supervisor.md)已有内部 JSON 请求准入/排空和单根监督，但受管子孙进程树、旧 owner 接管和全部 Hooks 代理仍未完成；utility exit 不能代替任意子进程退出证明。
 
 ## 4. 验证命令与范围
 
@@ -101,7 +103,7 @@ Linux/Windows、签名/asar/发布版原生依赖交付、真实 WLS 更新卸�
 
 ## 5. 下一步门槛
 
-1. 将[执行根监督与准入模型](./lifecycle-supervisor.md)接入 durable Store，完成全部读者登记、epoch 提交与可恢复接管。
+1. 将[执行根监督与准入模型](../lifecycle-supervisor.md)接入 durable Store，完成全部读者登记、epoch 提交与可恢复接管。
 2. 实现并实测 Linux/Bun 与 Node 的同协议锁，以及 Windows 锁/ACL/Job Object；前置证据不齐不启用生产写入器。
 3. 在 Node/Electron 构建与打包中交付所需 prebuilds，验证签名、asar 外加载和支持的 CPU/运行时；源码探针链接依赖不能替代这一项。
 4. 只有完整监督与 Store/cleanup executor 连通后，替换旧 leases/pins 和 installer 编排；旧格式数据与证明文件仍走显式迁移。
