@@ -409,11 +409,19 @@ export function createWlsService(host: ExtensionHost, deps: WlsServiceDeps = {})
     }
     kernels.set(path, kernel)
     attach(kernel)
-    if (kernel.handle.pid !== undefined) {
+    // Under `isolation: "process"` the spawn handshake resolves `pid`
+    // asynchronously; poll briefly so the stale-kernel record still lands.
+    // Inline mode reports the pid synchronously and exits on the first tick.
+    void (async () => {
+      const deadline = now() + 5_000
+      while (kernel.handle.pid === undefined && !kernel.exited && now() < deadline) {
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, 25))
+      }
+      if (kernel.handle.pid === undefined || kernel.exited) return
       const records = readKernelRecords(recordsFile).filter((record) => record.ctlPath !== kernel.ctlPath)
       records.push({ kernelPid: kernel.handle.pid, hostPid: process.pid, ctlPath: kernel.ctlPath })
       writeKernelRecords(recordsFile, records)
-    }
+    })()
     return kernel
   }
 

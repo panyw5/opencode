@@ -23,6 +23,10 @@
         "./dist/web/index.css"
       ]
     },
+    "server": {
+      "isolation": "process",
+      "apiVersion": 1
+    },
     "activation": [
       "onFileViewer:hello"
     ],
