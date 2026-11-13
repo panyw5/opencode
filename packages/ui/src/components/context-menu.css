@@ -60,7 +60,7 @@
     outline: none;
 
     font-family: var(--font-family-sans);
-    font-size: var(--font-size-small);
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-medium);
     line-height: var(--line-height-large);
     letter-spacing: var(--letter-spacing-normal);
@@ -105,7 +105,7 @@
   }
 
   [data-slot="context-menu-item-description"] {
-    font-size: var(--font-size-x-small);
+    font-size: var(--font-size-small);
     color: var(--text-weak);
   }
 
@@ -119,7 +119,7 @@
     display: block;
     padding: 6px 10px;
     font-family: var(--font-family-sans);
-    font-size: var(--font-size-x-small);
+    font-size: var(--font-size-small);
     font-weight: var(--font-weight-medium);
     line-height: var(--line-height-large);
     letter-spacing: var(--letter-spacing-normal);

@@ -1550,3 +1550,10 @@ html[data-platform="desktop"][data-os="windows"] .completion-menu {
     background: color-mix(in srgb, var(--text-strong) 10%, transparent);
   }
 }
+
+/* The @ picker lists destinations (files, sessions, agents) rather than
+   command completions — keep its text a step larger than the shared
+   completion-menu items and scale with the user's appearance.fontSize. */
+[data-component="prompt-popover"][data-prompt-popover-kind="at"] [data-slot="completion-menu-item"] {
+  font-size: var(--font-size-base);
+}

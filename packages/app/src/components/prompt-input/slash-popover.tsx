@@ -79,6 +79,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
           props.setPopoverRef(el)
         }}
         data-component="prompt-popover"
+        data-prompt-popover-kind={props.popover}
         class="completion-menu absolute inset-x-0 -top-2 -translate-y-full origin-bottom-left max-h-80 min-h-10 overflow-hidden flex flex-col"
         onMouseDown={(e) => e.preventDefault()}
       >
@@ -196,7 +197,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                             />
                           </Show>
                           <Show when={item.type === "consult"}>
-                            <span class="text-11-regular text-text-subtle px-1.5 py-0.5 bg-surface-base rounded shrink-0">
+                            <span class="text-12-regular text-text-subtle px-1.5 py-0.5 bg-surface-base rounded shrink-0">
                               {props.t("prompt.at.badge.consult")}
                             </span>
                           </Show>
