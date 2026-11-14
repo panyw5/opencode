@@ -68,6 +68,7 @@ function CellEditor(props: {
   disabled: boolean
   highlight?: boolean
   pretty?: boolean
+  wrap: boolean
   resize: EditorResizeQueue
   onComposition(active: boolean): void
   onInput(value: string): void
@@ -174,6 +175,7 @@ function CellEditor(props: {
         value={props.value}
         disabled={props.disabled}
         rows={1}
+        wrap={props.wrap ? "soft" : "off"}
         spellcheck={props.highlight ? false : undefined}
         autocapitalize={props.highlight ? "off" : undefined}
         autocorrect={props.highlight ? "off" : undefined}
@@ -221,6 +223,9 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
   const [notice, setNotice] = createSignal("")
   const [dirty, setDirty] = createSignal(false)
   const [fontScale, setFontScale] = createSignal(1)
+  const [lineSpacing, setLineSpacing] = createSignal(1)
+  const [wordWrap, setWordWrap] = createSignal(true)
+  const [formatOpen, setFormatOpen] = createSignal(false)
   const [startMargin, setStartMargin] = createSignal(0)
   // Raw box source loaded for editing cells whose content is not safe text.
   const [rawSources, setRawSources] = createSignal<Record<number, string>>({})
@@ -242,11 +247,41 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
       localStorage.setItem("oc-nb-font-scale", String(next))
     } catch {}
   }
+  const setSpacing = (value: number) => {
+    const next = Math.min(1.5, Math.max(0.8, Math.round(value * 100) / 100))
+    setLineSpacing(next)
+    try {
+      localStorage.setItem("oc-nb-line-height", String(next))
+    } catch {}
+  }
+  const setWrap = (value: boolean) => {
+    setWordWrap(value)
+    try {
+      localStorage.setItem("oc-nb-wrap", value ? "1" : "0")
+    } catch {}
+  }
+  let formatRef: HTMLDivElement | undefined
   onMount(() => {
     try {
       const stored = Number(localStorage.getItem("oc-nb-font-scale"))
       if (stored >= 0.7 && stored <= 2.2) setFontScale(stored)
+      const spacing = Number(localStorage.getItem("oc-nb-line-height"))
+      if (spacing >= 0.8 && spacing <= 1.5) setLineSpacing(spacing)
+      const wrap = localStorage.getItem("oc-nb-wrap")
+      if (wrap === "0" || wrap === "1") setWordWrap(wrap === "1")
     } catch {}
+    const dismiss = (event: PointerEvent) => {
+      if (formatRef && !formatRef.contains(event.target as Node)) setFormatOpen(false)
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFormatOpen(false)
+    }
+    globalThis.document.addEventListener("pointerdown", dismiss, true)
+    globalThis.document.addEventListener("keydown", escape)
+    onCleanup(() => {
+      globalThis.document.removeEventListener("pointerdown", dismiss, true)
+      globalThis.document.removeEventListener("keydown", escape)
+    })
   })
   // Outline folds only change display; drafts, outputs and evaluation always
   // address the full cell list by index.
@@ -597,7 +632,8 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
       class="oc-nb"
       data-notebook-path={props.file.absolutePath}
       aria-label="Mathematica Notebook"
-      style={{ "--oc-nb-fs": String(fontScale()) }}
+      data-wrap={wordWrap() ? "on" : "off"}
+      style={{ "--oc-nb-fs": String(fontScale()), "--oc-nb-lh": String(lineSpacing()) }}
     >
       <header ref={toolbar} class="oc-nb-toolbar" data-hosted={!!props.setToolbar} aria-label="Notebook actions">
         <div class="oc-nb-actions">
@@ -639,24 +675,82 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
           </button>
         </div>
         <div class="oc-nb-side">
-          <div class="oc-nb-fontgroup" role="group" aria-label="Font size">
+          <div class="oc-nb-format" ref={formatRef}>
             <button
-              aria-label="Decrease font size"
-              title="Decrease font size"
-              onClick={() => setFont(fontScale() - 0.1)}
+              aria-label="Format"
+              title="Format"
+              aria-expanded={formatOpen()}
+              data-action="format-menu"
+              onClick={() => setFormatOpen((open) => !open)}
             >
-              A−
+              Aa
             </button>
-            <button class="oc-nb-fontvalue" title="Reset font size" onClick={() => setFont(1)}>
-              {Math.round(fontScale() * 100)}%
-            </button>
-            <button
-              aria-label="Increase font size"
-              title="Increase font size"
-              onClick={() => setFont(fontScale() + 0.1)}
-            >
-              A+
-            </button>
+            <Show when={formatOpen()}>
+              <div class="oc-nb-format-menu" role="menu" aria-label="Format">
+                <div class="oc-nb-format-row">
+                  <span class="oc-nb-format-label">Font size</span>
+                  <div class="oc-nb-fontgroup" role="group" aria-label="Font size">
+                    <button
+                      aria-label="Decrease font size"
+                      title="Decrease font size"
+                      onClick={() => setFont(fontScale() - 0.1)}
+                    >
+                      A−
+                    </button>
+                    <button class="oc-nb-fontvalue" title="Reset font size" onClick={() => setFont(1)}>
+                      {Math.round(fontScale() * 100)}%
+                    </button>
+                    <button
+                      aria-label="Increase font size"
+                      title="Increase font size"
+                      onClick={() => setFont(fontScale() + 0.1)}
+                    >
+                      A+
+                    </button>
+                  </div>
+                </div>
+                <div class="oc-nb-format-row">
+                  <span class="oc-nb-format-label">Line spacing</span>
+                  <div class="oc-nb-fontgroup" role="group" aria-label="Line spacing">
+                    <button
+                      aria-label="Decrease line spacing"
+                      title="Decrease line spacing"
+                      onClick={() => setSpacing(lineSpacing() - 0.05)}
+                    >
+                      −
+                    </button>
+                    <button
+                      class="oc-nb-fontvalue"
+                      title="Reset line spacing"
+                      onClick={() => setSpacing(1)}
+                    >
+                      {Math.round(lineSpacing() * 100)}%
+                    </button>
+                    <button
+                      aria-label="Increase line spacing"
+                      title="Increase line spacing"
+                      onClick={() => setSpacing(lineSpacing() + 0.05)}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                <div class="oc-nb-format-row">
+                  <span class="oc-nb-format-label">Word wrap</span>
+                  <button
+                    type="button"
+                    class="oc-nb-switch"
+                    role="switch"
+                    aria-checked={wordWrap()}
+                    title="Word wrap"
+                    data-action="toggle-wrap"
+                    onClick={() => setWrap(!wordWrap())}
+                  >
+                    <span class="oc-nb-switch-knob" />
+                  </button>
+                </div>
+              </div>
+            </Show>
           </div>
           <button onClick={props.showSource}>Source</button>
         </div>
@@ -773,6 +867,7 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
                         <CellEditor
                           label={`Cell ${cell.index + 1} (${cell.style})`}
                           disabled={busy()}
+                          wrap={wordWrap()}
                           pretty={cell.editable && (cell.style === "Input" || cell.style === "Code")}
                           highlight={cell.style === "Input" || cell.style === "Code" || cell.style === "Output"}
                           value={cellText(cell, drafts())}

@@ -6,12 +6,13 @@ import {
   type ExtensionService,
 } from "@opencode-ai/extension-kit/server"
 import { tool } from "@opencode-ai/plugin/tool"
+import { formatWolfram } from "@opencode-ai/wolfram-lang"
 import { spawnSync } from "node:child_process"
 import { createInterface } from "node:readline"
-import { appendFile, mkdtemp, rm } from "node:fs/promises"
+import { appendFile, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { extname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { randomUUID } from "node:crypto"
 
@@ -581,6 +582,26 @@ export function createWlsService(host: ExtensionHost, deps: WlsServiceDeps = {})
         if (!kernel || kernel.exited) throw rpcError("kernel_died", "kernel is not running")
         await pingKernel(kernel)
         return { ok: true, pid: kernel.handle.pid ?? undefined }
+      },
+
+      /**
+       * Beautifies a .wls file in place and returns the formatted text, so
+       * the viewer can refresh without waiting for the file watcher.
+       */
+      "source.format": async (input) => {
+        const path = asPath(input)
+        if (extname(path).toLowerCase() !== ".wls") {
+          throw rpcError("invalid_path", "a .wls file path is required")
+        }
+        const source = await readFile(path, "utf8")
+        const text = formatWolfram(source)
+        if (text === source) return { path, text, changed: false }
+        // Atomic replace: a truncated mid-write file must never be observed.
+        const temp = `${path}.${randomUUID()}.tmp`
+        await writeFile(temp, text, "utf8")
+        await rename(temp, path)
+        host.log.info("wls-repl source formatted", { path })
+        return { path, text, changed: true }
       },
 
       /**

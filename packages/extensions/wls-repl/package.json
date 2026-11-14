@@ -82,6 +82,12 @@
           "title": "font size",
           "description": "File preview font size in pixels.",
           "default": 12.5
+        },
+        "lineSpacing": {
+          "type": "number",
+          "title": "line spacing",
+          "description": "Line height ratio in the file preview.",
+          "default": 1.6
         }
       }
     },

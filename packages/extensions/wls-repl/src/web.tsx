@@ -11,7 +11,9 @@ const MESSAGE_EVENT = `${EXTENSION_ID}/message`
 const DEFAULT_FONT_SIZE = 12.5
 const MIN_FONT_SIZE = 9
 const MAX_FONT_SIZE = 24
-const LINE_HEIGHT_RATIO = 1.6
+const DEFAULT_LINE_SPACING = 1.6
+const MIN_LINE_SPACING = 1.0
+const MAX_LINE_SPACING = 2.5
 
 type Bridge = {
   rpc?: ExtensionContext["rpc"]
@@ -95,7 +97,15 @@ export function WlsViewer(props: FileViewerProps) {
     const value = bridge().settings?.get<number>("fontSize")()
     return typeof value === "number" && value >= MIN_FONT_SIZE && value <= MAX_FONT_SIZE ? value : DEFAULT_FONT_SIZE
   })
-  const lineHeight = createMemo(() => Math.max(10, Math.round(fontSize() * LINE_HEIGHT_RATIO)))
+  const lineSpacing = createMemo(() => {
+    const value = bridge().settings?.get<number>("lineSpacing")()
+    return typeof value === "number" && value >= MIN_LINE_SPACING && value <= MAX_LINE_SPACING
+      ? value
+      : DEFAULT_LINE_SPACING
+  })
+  const lineHeight = createMemo(() => Math.max(10, Math.round(fontSize() * lineSpacing())))
+  const [formatOpen, setFormatOpen] = createSignal(false)
+  let formatRef: HTMLDivElement | undefined
   const lines = createMemo(() => codeText().split("\n"))
   const virtual = createMemo(() => lines().length > VIRTUAL_THRESHOLD)
   const columns = createMemo(() => (virtual() ? maxColumns(lines()) : 0))
@@ -140,6 +150,21 @@ export function WlsViewer(props: FileViewerProps) {
     observer.observe(codeRef)
     setViewportHeight(codeRef.clientHeight)
     onCleanup(() => observer.disconnect())
+  })
+
+  onMount(() => {
+    const dismiss = (event: PointerEvent) => {
+      if (formatRef && !formatRef.contains(event.target as Node)) setFormatOpen(false)
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFormatOpen(false)
+    }
+    document.addEventListener("pointerdown", dismiss, true)
+    document.addEventListener("keydown", escape)
+    onCleanup(() => {
+      document.removeEventListener("pointerdown", dismiss, true)
+      document.removeEventListener("keydown", escape)
+    })
   })
 
   createEffect(() => {
@@ -255,6 +280,14 @@ export function WlsViewer(props: FileViewerProps) {
 
   const stop = async () => {
     await call("kernel.stop", { path: filePath() })
+  }
+
+  const beautify = async () => {
+    const result = await call<{ text: string; changed: boolean }>("source.format", { path: filePath() })
+    if (result && typeof result.text === "string") {
+      setCodeText(result.text)
+      append("info", result.changed ? t().beautified : t().beautifyUnchanged)
+    }
   }
 
   const submitInput = async () => {
@@ -426,36 +459,105 @@ export function WlsViewer(props: FileViewerProps) {
           <Button size="small" variant="ghost" onClick={props.showSource}>
             {t().source}
           </Button>
-          <Button
-            size="small"
-            variant={wordWrap() ? "secondary" : "ghost"}
-            title={t().wordWrap}
-            data-action="toggle-wrap"
-            onClick={() => setSetting({ wordWrap: !wordWrap() })}
-          >
-            {t().wordWrap}
-          </Button>
-          <span class="oc-wls-font-controls">
+          <div class="oc-wls-format" ref={formatRef}>
             <Button
               size="small"
-              variant="ghost"
-              title={t().fontDecrease}
-              disabled={fontSize() <= MIN_FONT_SIZE}
-              onClick={() => setSetting({ fontSize: Math.max(MIN_FONT_SIZE, fontSize() - 1) })}
+              variant={formatOpen() ? "secondary" : "ghost"}
+              title={t().format}
+              aria-label={t().format}
+              aria-expanded={formatOpen()}
+              data-action="format-menu"
+              onClick={() => setFormatOpen((open) => !open)}
             >
-              A−
+              Aa
             </Button>
-            <span class="oc-wls-font-size">{fontSize()}</span>
-            <Button
-              size="small"
-              variant="ghost"
-              title={t().fontIncrease}
-              disabled={fontSize() >= MAX_FONT_SIZE}
-              onClick={() => setSetting({ fontSize: Math.min(MAX_FONT_SIZE, fontSize() + 1) })}
-            >
-              A+
-            </Button>
-          </span>
+            <Show when={formatOpen()}>
+              <div class="oc-wls-format-menu" role="menu" aria-label={t().format}>
+                <div class="oc-wls-format-row">
+                  <span class="oc-wls-format-label">{t().fontSize}</span>
+                  <span class="oc-wls-font-controls">
+                    <Button
+                      size="small"
+                      variant="ghost"
+                      title={t().fontDecrease}
+                      disabled={fontSize() <= MIN_FONT_SIZE}
+                      onClick={() => setSetting({ fontSize: Math.max(MIN_FONT_SIZE, fontSize() - 1) })}
+                    >
+                      A−
+                    </Button>
+                    <span class="oc-wls-font-size">{fontSize()}</span>
+                    <Button
+                      size="small"
+                      variant="ghost"
+                      title={t().fontIncrease}
+                      disabled={fontSize() >= MAX_FONT_SIZE}
+                      onClick={() => setSetting({ fontSize: Math.min(MAX_FONT_SIZE, fontSize() + 1) })}
+                    >
+                      A+
+                    </Button>
+                  </span>
+                </div>
+                <div class="oc-wls-format-row">
+                  <span class="oc-wls-format-label">{t().lineSpacing}</span>
+                  <span class="oc-wls-font-controls">
+                    <Button
+                      size="small"
+                      variant="ghost"
+                      title={t().spacingDecrease}
+                      disabled={lineSpacing() <= MIN_LINE_SPACING}
+                      onClick={() =>
+                        setSetting({
+                          lineSpacing: Math.max(MIN_LINE_SPACING, Math.round(lineSpacing() * 10 - 1) / 10),
+                        })
+                      }
+                    >
+                      −
+                    </Button>
+                    <span class="oc-wls-font-size">{lineSpacing().toFixed(1)}</span>
+                    <Button
+                      size="small"
+                      variant="ghost"
+                      title={t().spacingIncrease}
+                      disabled={lineSpacing() >= MAX_LINE_SPACING}
+                      onClick={() =>
+                        setSetting({
+                          lineSpacing: Math.min(MAX_LINE_SPACING, Math.round(lineSpacing() * 10 + 1) / 10),
+                        })
+                      }
+                    >
+                      +
+                    </Button>
+                  </span>
+                </div>
+                <div class="oc-wls-format-row">
+                  <span class="oc-wls-format-label">{t().wordWrap}</span>
+                  <button
+                    type="button"
+                    class="oc-wls-switch"
+                    role="switch"
+                    aria-checked={wordWrap()}
+                    title={t().wordWrap}
+                    data-action="toggle-wrap"
+                    onClick={() => setSetting({ wordWrap: !wordWrap() })}
+                  >
+                    <span class="oc-wls-switch-knob" />
+                  </button>
+                </div>
+                <div class="oc-wls-format-row">
+                  <span class="oc-wls-format-label">{t().beautify}</span>
+                  <Button
+                    size="small"
+                    variant="secondary"
+                    disabled={busy()}
+                    data-action="beautify"
+                    onClick={() => void beautify()}
+                  >
+                    {t().beautify}
+                  </Button>
+                </div>
+              </div>
+            </Show>
+          </div>
         </div>
       </header>
 
@@ -465,7 +567,11 @@ export function WlsViewer(props: FileViewerProps) {
           ref={codeRef}
           data-virtual={virtual()}
           data-wrap={wordWrap() ? "on" : "off"}
-          style={{ "--wls-font-size": `${fontSize()}px`, "--wls-line-height": `${lineHeight()}px` }}
+          style={{
+            "--wls-font-size": `${fontSize()}px`,
+            "--wls-line-height": `${lineHeight()}px`,
+            "--wls-line-ratio": String(lineSpacing()),
+          }}
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         >
           <div

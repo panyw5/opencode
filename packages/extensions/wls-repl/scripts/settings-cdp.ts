@@ -47,10 +47,14 @@ await withCdp(async (client, target) => {
     await frame();
     const code = root.querySelector('.oc-wls-code');
     const lineText = () => root.querySelector('.oc-wls-line-text');
+    const menuButton = () => root.querySelector('[data-action="format-menu"]');
     const wrapButton = () => root.querySelector('[data-action="toggle-wrap"]');
     const sizeLabel = () => root.querySelector('.oc-wls-font-size');
     const fontButtons = () => [...root.querySelectorAll('.oc-wls-font-controls button')];
     const check = (ok, message) => { if (!ok) throw new Error(message); };
+    check(!!menuButton(), 'format menu button missing');
+    menuButton().click();
+    await frame();
     check(!!wrapButton(), 'word wrap toggle missing');
     check(code.dataset.wrap === 'on', 'wrap should default on');
     check(getComputedStyle(lineText()).whiteSpace === 'pre-wrap', 'wrap on must use pre-wrap');

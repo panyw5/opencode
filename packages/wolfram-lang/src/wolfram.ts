@@ -176,3 +176,5 @@ export function tokenizeWolfram(source: string): WolframToken[] {
   if (fallback >= 0) tokens.push({ kind: "plain", text: source.slice(fallback) })
   return tokens
 }
+
+export { formatWolfram, type FormatOptions } from "./format"
