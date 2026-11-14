@@ -162,9 +162,10 @@ export const SettingsGeneral: Component<{ hideHeading?: boolean }> = (props) => 
     })
   })
 
-  const [updater, setUpdater] = createStore<{ state: UpdaterState; busy: boolean }>({
+  const [updater, setUpdater] = createStore<{ state: UpdaterState; busy: boolean; installing: boolean }>({
     state: { status: "idle" },
     busy: false,
+    installing: false,
   })
   onMount(() => {
     if (!platform.getUpdaterState || !platform.onUpdaterStateChanged) return
@@ -175,6 +176,10 @@ export const SettingsGeneral: Component<{ hideHeading?: boolean }> = (props) => 
       console.debug(`[settings-updater] state status=${state.status}`)
       setUpdater("state", state)
       if (state.status === "downloading") setUpdater("busy", false)
+      if (state.status === "installing") setUpdater("installing", true)
+      if (state.status === "ready" || state.status === "error" || state.status === "idle") {
+        setUpdater("installing", false)
+      }
     })
     void platform
       .getUpdaterState()
@@ -189,8 +194,9 @@ export const SettingsGeneral: Component<{ hideHeading?: boolean }> = (props) => 
   })
 
   const updateAction = async (action: "pause" | "resume" | "cancel" | "install") => {
-    if (updater.busy) return
+    if (updater.busy || updater.installing) return
     setUpdater("busy", true)
+    if (action === "install") setUpdater("installing", true)
     console.debug(`[settings-updater] action started action=${action}`)
     try {
       if (action === "pause") await platform.pauseUpdate?.()
@@ -199,6 +205,7 @@ export const SettingsGeneral: Component<{ hideHeading?: boolean }> = (props) => 
       if (action === "install") await platform.updateAndRestart?.()
       console.debug(`[settings-updater] action completed action=${action}`)
     } catch (error) {
+      if (action === "install") setUpdater("installing", false)
       console.error(`[settings-updater] action failed action=${action} message=${String(error)}`)
       showToast({ title: language.t("common.requestFailed"), description: String(error) })
     } finally {
@@ -839,11 +846,13 @@ export const SettingsGeneral: Component<{ hideHeading?: boolean }> = (props) => 
                 size="small"
                 variant="primary"
                 data-action="settings-update-install"
-                disabled={updater.busy || ready().status === "installing" || !platform.updateAndRestart}
+                disabled={
+                  updater.busy || updater.installing || ready().status === "installing" || !platform.updateAndRestart
+                }
                 onClick={() => void updateAction("install")}
               >
                 {language.t(
-                  ready().status === "installing"
+                  updater.installing || ready().status === "installing"
                     ? "settings.updates.action.installing"
                     : "toast.update.action.installRestart",
                 )}

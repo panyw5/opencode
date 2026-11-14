@@ -381,7 +381,28 @@ describe("createUpdaterController", () => {
       const states = collectStates(ctrl)
       await ctrl.install()
       expect(callOrder).toEqual(["stop", "quitAndInstall"])
-      expect(states.map((s) => s.status)).toEqual(["ready", "installing", "ready"])
+      expect(states.map((s) => s.status)).toEqual(["ready", "installing"])
+    })
+
+    test("restores ready state when quitAndInstall throws", async () => {
+      const ctrl = createUpdaterController({
+        enabled: true,
+        currentVersion: "1.0.0",
+        backend: createMockBackend({
+          checkForUpdates: async () => ({
+            isUpdateAvailable: true,
+            updateInfo: { version: "1.1.0" },
+          }),
+          quitAndInstall: () => {
+            throw new Error("quit failed")
+          },
+        }),
+        persistence: createMockPersistence(),
+        stop: async () => {},
+      })
+      await ctrl.check()
+      await expect(ctrl.install()).rejects.toThrow("quit failed")
+      expect(ctrl.getState().status).toBe("ready")
     })
 
     test("restores ready state when stop fails", async () => {

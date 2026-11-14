@@ -198,7 +198,6 @@ export function createUpdaterController(input: {
         .then(() => {
           input.backend.quitAndInstall()
           input.log?.(`updater install requested version=${version}`)
-          transition({ status: "ready", version })
         })
         .catch((error) => {
           input.log?.(`updater install failed message=${error instanceof Error ? error.message : String(error)}`)
