@@ -37,9 +37,12 @@ html[data-theme="chatgpt"][data-color-scheme="dark"] {
   }
 
   /* Selection persists after the pointer leaves; hover and press remain separate. */
+  /* .session-file-tab-trigger is excluded: file-preview tabs mimic browser
+     tabs — the active tab shares the preview surface color, so the generic
+     interactive fill and inset ring must not restyle it. */
   & [data-component="session-tab"],
-  & [data-component="tabs"] [data-slot="tabs-trigger-wrapper"],
-  & #session-side-panel [data-component="tabs"] [data-slot="tabs-trigger-wrapper"],
+  & [data-component="tabs"] [data-slot="tabs-trigger-wrapper"]:not(.session-file-tab-trigger),
+  & #session-side-panel [data-component="tabs"] [data-slot="tabs-trigger-wrapper"]:not(.session-file-tab-trigger),
   & [data-component="list"] [data-slot="list-item"],
   & :is([data-component="button"], [data-component="icon-button"])[data-variant="ghost"],
   & [data-slot="select-select-item"],

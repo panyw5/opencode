@@ -782,11 +782,11 @@
     background-color: var(--surface-brand-hover);
   }
 
-  /* "+" (open file) in the file preview tab bar. Default background matches the
-     tabs-list ::after strip (--background-base) so it reads as part of the empty
-     track and stays visually distinct from the file-preview tab pills. */
+  /* "+" (open file) in the file preview tab bar: transparent at rest on the
+     recessed strip, feedback only on hover/press — like a browser's new-tab
+     button. */
   [data-component="icon-button"].file-preview-open-button[data-variant="ghost"] {
-    background-color: var(--background-base);
+    background-color: transparent;
     transition:
       background-color 140ms ease-out,
       color 140ms ease-out;
@@ -894,21 +894,6 @@
   [data-component="prompt-stop-after-tool-spin"] {
     transform-origin: center;
     animation: prompt-stop-after-tool-spin 0.8s linear infinite;
-  }
-
-  [data-component="project-icon-loading"] [data-slot="sheen"] {
-    background: linear-gradient(
-      110deg,
-      transparent 0%,
-      transparent 34%,
-      rgba(255, 255, 255, 0.08) 44%,
-      rgba(255, 255, 255, 0.28) 50%,
-      rgba(255, 255, 255, 0.08) 56%,
-      transparent 66%,
-      transparent 100%
-    );
-    transform: translateX(-140%);
-    animation: sidebar-session-loading-sheen 1.8s linear infinite;
   }
 
   [data-action="project-switch"] {

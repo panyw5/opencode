@@ -42,7 +42,6 @@ import { sessionPermissionRequest } from "../session/composer/session-request-tr
 import { working } from "../session/session-working"
 import {
   hasProjectPermissions,
-  isInitialSessionLoad,
   isScheduledSessionTitle,
   stripScheduledSessionTitle,
   workingSessionTreeIDs,
@@ -130,9 +129,7 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
   const notification = useNotification()
   const permission = usePermission()
   const dirs = createMemo(() => [props.project.worktree, ...(props.project.sandboxes ?? [])])
-  const stores = createMemo(() => dirs().map((directory) => globalSync.child(directory, { bootstrap: false })[0]))
   const loaded = createMemo(() => dirs().some((directory) => globalSync.loaded(directory)))
-  const loadingSessions = createMemo(() => isInitialSessionLoad(stores()))
   const hasActiveSession = createMemo(() =>
     dirs().some((directory) => {
       const [store] = globalSync.child(directory, { bootstrap: false })
@@ -211,7 +208,6 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
     <div
       data-slot="project-icon"
       data-loaded={loaded() ? "true" : "false"}
-      data-component={loadingSessions() ? "project-icon-loading" : undefined}
       class={`relative size-8 shrink-0 ${props.class ?? ""}`}
     >
       <div data-slot="project-avatar-clip" class="size-full rounded-full overflow-clip">
@@ -233,9 +229,6 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
           class="size-full rounded-full"
         />
       </div>
-      <Show when={loadingSessions()}>
-        <div data-slot="sheen" class="pointer-events-none absolute inset-0 z-[5]" />
-      </Show>
       <Show when={hasActiveSession()}>
         <div
           data-component="project-activity-badge"

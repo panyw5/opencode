@@ -141,13 +141,18 @@
 
     [data-slot="tabs-list"] {
       height: var(--tabs-bar-height);
-      padding-left: 0;
-      padding-right: 0;
-      --tabs-review-gap: 0px;
+      padding: 8px 6px 0;
+      --tabs-review-gap: 4px;
       --tabs-review-fade: 0px;
+      /* Mirror --browser-strip: the track is a 6% text-weak wash over the
+         preview surface, so it reads as a distinct strip in every theme.
+         The code viewer paints its surface with --surface-base
+         (editor.background in the OpenCode pierre theme), so the active tab
+         and the strip derive from it to stay seamless across themes. */
+      --file-tab-surface: var(--surface-base);
+      --file-tab-strip: color-mix(in srgb, var(--text-weak) 6%, var(--file-tab-surface));
       gap: var(--tabs-review-gap);
-      background-color: var(--background-stronger);
-      border-bottom: 1px solid var(--border-weaker-base);
+      background-color: var(--file-tab-strip);
 
       &::after {
         display: none;
@@ -155,7 +160,7 @@
 
       > .sticky {
         border-bottom: none;
-        background-color: var(--background-stronger);
+        background-color: var(--file-tab-strip);
 
         &::before {
           content: "";
@@ -165,7 +170,7 @@
           left: calc(var(--tabs-review-fade) * -1);
           width: var(--tabs-review-fade);
           pointer-events: none;
-          background: linear-gradient(90deg, transparent, var(--background-stronger));
+          background: linear-gradient(90deg, transparent, var(--file-tab-strip));
         }
       }
     }
@@ -214,7 +219,8 @@
 
       &.session-file-tab-trigger {
         height: 100%;
-        border-radius: var(--tabs-compact-pill-radius);
+        border: none;
+        border-radius: 12px 12px 0 0;
 
         /* No active-tab underline for file preview tabs */
         &::after {
@@ -284,6 +290,12 @@
           opacity: 1;
           transform: scaleX(1);
         }
+      }
+
+      /* Active file-preview tab merges into the preview surface below: same
+         fill, no border, so it reads as one piece like a browser tab. */
+      &.session-file-tab-trigger:has([data-selected]) {
+        background-color: var(--file-tab-surface);
       }
 
       &:hover:not(:disabled):not(:has([data-selected])) {
@@ -714,6 +726,19 @@
   bottom: 0;
   height: 1px;
   background-color: var(--text-strong);
+}
+
+[data-component="tabs-drag-preview"][data-scope="file"]::before {
+  top: 8px;
+  bottom: 0;
+  height: auto;
+  border: none;
+  border-radius: 12px 12px 0 0;
+  background-color: var(--surface-base);
+}
+
+[data-component="tabs-drag-preview"][data-scope="file"]::after {
+  display: none;
 }
 
 [data-component="tabs-drag-preview"] > * {
