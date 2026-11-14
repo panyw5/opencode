@@ -30,5 +30,5 @@ if (result.exitCode !== 0 && baseline && process.platform === "win32") {
   process.exit(result.exitCode)
 }
 
-await $`bun script/build-node.ts`.cwd("../opencode")
+await $`bun script/build-node.ts`.cwd("../opencode").env({ ...Bun.env, OPENCODE_CHANNEL: channel })
 await copyBinaryToSidecarFolder(windowsify(`../opencode/dist/${binary}/bin/opencode`), sidecarConfig.rustTarget)

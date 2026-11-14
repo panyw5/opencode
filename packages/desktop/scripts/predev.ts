@@ -1,8 +1,10 @@
 import { $ } from "bun"
-import { getCurrentSidecar, windowsify, copyBinaryToSidecarFolder } from "./utils"
+import { getCurrentSidecar, windowsify, copyBinaryToSidecarFolder, resolveChannel } from "./utils"
 
-await $`bun ./scripts/copy-icons.ts ${process.env.OPENCODE_CHANNEL ?? "dev"}`
-await $`bun ./scripts/build-remote-web.ts`
+const channel = resolveChannel()
+const env = { ...Bun.env, OPENCODE_CHANNEL: channel }
+
+await $`bun ./scripts/copy-icons.ts ${channel}`.env(env)
 
 const RUST_TARGET = Bun.env.RUST_TARGET
 
@@ -14,7 +16,7 @@ async function build(baseline: boolean) {
   const cmd = baseline
     ? $`bun run build --single --baseline --skip-install --skip-embed-web-ui`
     : $`bun run build --single --skip-install --skip-embed-web-ui`
-  return cmd.cwd("../opencode").nothrow()
+  return cmd.cwd("../opencode").env(env).nothrow()
 }
 
 await $`bun ../../script/sync-version.ts`
@@ -22,6 +24,17 @@ await $`bun ../../script/sync-version.ts`
 function fallbackBinary(name: string) {
   return name.replace("-baseline", "")
 }
+
+// The remote web bundle does not touch packages/opencode/dist, so it can run
+// concurrently with the sidecar + node builds below instead of serializing
+// ~20s of vite work in front of them.
+const remoteWeb = (async () => {
+  if (Bun.env.SKIP_REMOTE_WEB === "1") {
+    console.log("predev: SKIP_REMOTE_WEB=1, skipping remote web build")
+    return null
+  }
+  return $`bun ./scripts/build-remote-web.ts`.env(env).nothrow()
+})()
 
 let binary = sidecarConfig.ocBinary
 console.log(`predev: target sidecar binary is ${binary}`)
@@ -54,7 +67,10 @@ if (!shouldBuildBaseline) {
   if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
-await $`bun script/build-node.ts`.cwd("../opencode").env({ ...Bun.env, OPENCODE_CHANNEL: "local" })
+await $`bun script/build-node.ts`.cwd("../opencode").env(env)
+
+const web = await remoteWeb
+if (web && web.exitCode !== 0) process.exit(web.exitCode)
 
 const binaryPath = windowsify(`../opencode/dist/${binary}/bin/opencode`)
 

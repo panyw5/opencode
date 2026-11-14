@@ -2,7 +2,14 @@ import { sentryVitePlugin } from "@sentry/vite-plugin"
 import { defineConfig } from "electron-vite"
 import appPlugin from "@opencode-ai/app/vite"
 import * as fs from "node:fs/promises"
+import { existsSync } from "node:fs"
 import path from "node:path"
+
+// Terminals hosted inside an Electron app (VS Code/Cursor/Devin, …) leak
+// ELECTRON_RUN_AS_NODE=1 into child env, which makes electron-vite spawn the
+// Electron binary in pure-Node mode — the main bundle then dies on
+// `import { BrowserWindow } from "electron"`. Strip it for spawned processes.
+delete process.env.ELECTRON_RUN_AS_NODE
 
 const OPENCODE_SERVER_DIST = path.resolve(import.meta.dirname, "../opencode/dist/node")
 
@@ -111,6 +118,20 @@ const require = __cjs_mod__.createRequire(import.meta.url);
       {
         name: "opencode:virtual-server-module",
         enforce: "pre",
+        buildStart() {
+          // Fail fast: the server bundle is produced by `bun script/build-node.ts`
+          // in packages/opencode (normally via the desktop predev/prebuild hooks).
+          // Without this check the failure surfaces ~15s later inside writeBundle
+          // as a cryptic ENOENT on the dist/node directory.
+          const entry = path.join(OPENCODE_SERVER_DIST, "node.js")
+          if (!existsSync(entry)) {
+            this.error(
+              `opencode server bundle missing: ${entry}\n` +
+                `Run \`bun script/build-node.ts\` in packages/opencode, or use ` +
+                `\`bun run dev\`/\`bun run build\` so the predev/prebuild hooks generate it.`,
+            )
+          }
+        },
         resolveId(id) {
           if (id === "virtual:opencode-server") return path.join(OPENCODE_SERVER_DIST, "node.js")
         },

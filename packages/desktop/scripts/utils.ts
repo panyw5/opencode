@@ -1,4 +1,6 @@
 import { $ } from "bun"
+import { createHash } from "node:crypto"
+import { createReadStream } from "node:fs"
 
 export type Channel = "dev" | "beta" | "prod"
 
@@ -58,9 +60,31 @@ export function getCurrentSidecar(target = RUST_TARGET ?? nativeTarget()) {
   return binaryConfig
 }
 
+async function sha256File(p: string) {
+  return new Promise<string>((resolve, reject) => {
+    const hash = createHash("sha256")
+    createReadStream(p)
+      .on("data", (chunk) => hash.update(chunk))
+      .on("error", reject)
+      .on("end", () => resolve(hash.digest("hex")))
+  })
+}
+
 export async function copyBinaryToSidecarFolder(source: string, target = RUST_TARGET ?? nativeTarget()) {
   await $`mkdir -p resources/sidecars`
   const resourceDest = windowsify(`resources/sidecars/opencode-cli-${target}`)
+  // codesign rewrites the binary after copying, so the dest hash never matches
+  // the source hash — record the source hash in a stamp file instead and skip
+  // the copy + resign when nothing changed.
+  const stamp = `${resourceDest}.sha256`
+  const srcHash = await sha256File(source)
+  const stamped = await Bun.file(stamp)
+    .text()
+    .catch(() => "")
+  if (stamped.trim() === srcHash && (await Bun.file(resourceDest).exists())) {
+    console.log(`Sidecar binary unchanged (sha256 ${srcHash.slice(0, 12)}…), skipping copy`)
+    return
+  }
   await $`cp ${source} ${resourceDest}`
   if (process.platform === "win32" && process.env.GITHUB_ACTIONS === "true") {
     await $`pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ../../script/sign-windows.ps1 ${resourceDest}`
@@ -68,6 +92,7 @@ export async function copyBinaryToSidecarFolder(source: string, target = RUST_TA
   if (process.platform === "darwin") {
     await $`codesign --force --sign - ${resourceDest}`
   }
+  await Bun.write(stamp, `${srcHash}\n`)
 
   console.log(`Copied ${source} to ${resourceDest}`)
 }

@@ -4,6 +4,7 @@ import { Script } from "@opencode-ai/script"
 import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
+import { acquireBuildLock, publishDir } from "./build-utils.ts"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -43,22 +44,36 @@ const migrations = await Promise.all(
 )
 console.log(`Loaded ${migrations.length} migrations`)
 
-await Bun.build({
-  target: "node",
-  entrypoints: ["./src/node.ts", "./src/photon-worker.ts"],
-  outdir: "./dist/node",
-  format: "esm",
-  sourcemap: "linked",
-  external: ["jsonc-parser", "@lydell/node-pty"],
-  define: {
-    OPENCODE_MIGRATIONS: JSON.stringify(migrations),
-    OPENCODE_MODELS_DEV: generated.modelsData,
-    OPENCODE_VERSION: `'${Script.version}'`,
-    OPENCODE_CHANNEL: `'${Script.channel}'`,
-  },
-  files: {
-    "opencode-web-ui.gen.ts": "",
-  },
-})
+// Serialize with build.ts and publish atomically: the desktop electron-vite
+// build reads dist/node at bundle time, so it must never observe a partial
+// tree — and must never be erased by a concurrent platform build.
+const release = await acquireBuildLock("build-node")
+try {
+  const staging = path.join(dir, "dist/.stg/node")
+  await fs.promises.rm(path.join(dir, "dist/.stg"), { recursive: true, force: true })
+  await fs.promises.mkdir(staging, { recursive: true })
+
+  await Bun.build({
+    target: "node",
+    entrypoints: ["./src/node.ts", "./src/photon-worker.ts"],
+    outdir: staging,
+    format: "esm",
+    sourcemap: "linked",
+    external: ["jsonc-parser", "@lydell/node-pty"],
+    define: {
+      OPENCODE_MIGRATIONS: JSON.stringify(migrations),
+      OPENCODE_MODELS_DEV: generated.modelsData,
+      OPENCODE_VERSION: `'${Script.version}'`,
+      OPENCODE_CHANNEL: `'${Script.channel}'`,
+    },
+    files: {
+      "opencode-web-ui.gen.ts": "",
+    },
+  })
+
+  await publishDir(staging, path.join(dir, "dist/node"))
+} finally {
+  await release()
+}
 
 console.log("Build complete")

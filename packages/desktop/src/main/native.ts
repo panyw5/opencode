@@ -454,20 +454,19 @@ export async function getExtraAgentInfo(
 }
 
 export async function bundledCliPath() {
-  const candidates = [
+  const exe = process.platform === "win32" ? "opencode.exe" : "opencode"
+  // app.getAppPath() is packages/desktop under electron-vite dev; process.cwd()
+  // is wherever the Electron binary was spawned from, which is unreliable.
+  const devDist = join(app.getAppPath(), "..", "opencode", "dist", distName(), "bin", exe)
+  const sidecars = [
     join(process.resourcesPath, "sidecars", cliName()),
     join(app.getAppPath(), "resources", "sidecars", cliName()),
     join(process.cwd(), "resources", "sidecars", cliName()),
-    join(
-      process.cwd(),
-      "..",
-      "opencode",
-      "dist",
-      distName(),
-      "bin",
-      process.platform === "win32" ? "opencode.exe" : "opencode",
-    ),
   ]
+  // In dev the freshest binary lives in packages/opencode/dist; the copied
+  // resources/sidecars artifact is only refreshed by predev and would shadow
+  // newer manual builds. Packaged builds only have the resourcesPath copy.
+  const candidates = app.isPackaged ? sidecars : [devDist, ...sidecars]
   for (const candidate of candidates) {
     if (await exists(candidate)) return candidate
   }

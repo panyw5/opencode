@@ -1,4 +1,5 @@
 import path from "path"
+import fs from "fs"
 import { fileURLToPath } from "url"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -9,12 +10,57 @@ process.chdir(dir)
 
 const modelsUrl = process.env.OPENCODE_MODELS_URL || "https://models.dev"
 const snapshot = path.join(dir, "src/provider/models-snapshot.js")
+const cacheFile = path.resolve(dir, "../../node_modules/.cache/opencode/models-dev-api.json")
+const CACHE_TTL_MS = 10 * 60 * 1000
+
+function readCache() {
+  try {
+    const cached = JSON.parse(fs.readFileSync(cacheFile, "utf8")) as { url?: string; at?: number; data?: string }
+    if (cached.url !== modelsUrl || typeof cached.at !== "number" || typeof cached.data !== "string") return
+    if (Date.now() - cached.at > CACHE_TTL_MS) return
+    return cached.data
+  } catch {
+    return
+  }
+}
+
+function writeCache(data: string) {
+  try {
+    fs.mkdirSync(path.dirname(cacheFile), { recursive: true })
+    fs.writeFileSync(cacheFile, JSON.stringify({ url: modelsUrl, at: Date.now(), data }))
+  } catch (err) {
+    console.warn("models.dev cache write failed (non-fatal)", err)
+  }
+}
+
+async function fetchModels() {
+  const timeout = Number(process.env.OPENCODE_MODELS_TIMEOUT_MS ?? "12000")
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(new Error("models fetch timeout")), timeout)
+  const start = Date.now()
+  try {
+    const res = await fetch(`${modelsUrl}/api.json`, { signal: ctrl.signal })
+    const text = await res.text()
+    console.log(`models.dev: fetched in ${Date.now() - start}ms`)
+    return text
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 async function loadModelsData() {
   if (process.env.MODELS_DEV_API_JSON) return Bun.file(process.env.MODELS_DEV_API_JSON).text()
 
+  const cached = readCache()
+  if (cached) {
+    console.log("Loaded models.dev snapshot (disk cache)")
+    return cached
+  }
+
   try {
-    return await fetch(`${modelsUrl}/api.json`).then((x) => x.text())
+    const text = await fetchModels()
+    writeCache(text)
+    return text
   } catch (err) {
     console.warn("Failed to fetch models.dev, using cached snapshot", err)
     return Bun.file(snapshot)
