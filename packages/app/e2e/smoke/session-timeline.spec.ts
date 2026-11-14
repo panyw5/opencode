@@ -401,7 +401,7 @@ async function timelineState(page: Page) {
 }
 
 function timelineScroller(page: Page) {
-  return page.locator(".scroll-view__viewport", { has: page.locator("[data-timeline-row]") })
+  return page.locator('[data-slot="scroll-view-viewport"]', { has: page.locator("[data-timeline-row]") })
 }
 
 async function pointAtTimeline(page: Page) {
@@ -414,7 +414,7 @@ async function scrollTimelineUp(page: Page, before: SmokeState) {
   return page.evaluate(
     (prev) =>
       new Promise<boolean>((resolve) => {
-        const scroller = [...document.querySelectorAll<HTMLElement>(".scroll-view__viewport")].find((el) =>
+        const scroller = [...document.querySelectorAll<HTMLElement>('[data-slot="scroll-view-viewport"]')].find((el) =>
           el.querySelector("[data-timeline-row], [data-session-title]"),
         )
         if (!scroller) {

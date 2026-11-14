@@ -85,7 +85,7 @@ async function expand(page: Parameters<typeof test>[0]["page"]) {
 async function waitMark(page: Parameters<typeof test>[0]["page"], file: string, mark: string) {
   await page.waitForFunction(
     ({ file, mark }) => {
-      const view = document.querySelector('[data-slot="session-review-scroll"] .scroll-view__viewport')
+      const view = document.querySelector('[data-slot="session-review-scroll"] [data-slot="scroll-view-viewport"]')
       if (!(view instanceof HTMLElement)) return false
 
       const head = Array.from(view.querySelectorAll("h3")).find(
@@ -106,7 +106,7 @@ async function waitMark(page: Parameters<typeof test>[0]["page"], file: string, 
 
 async function spot(page: Parameters<typeof test>[0]["page"], file: string) {
   return page.evaluate((file) => {
-    const view = document.querySelector('[data-slot="session-review-scroll"] .scroll-view__viewport')
+    const view = document.querySelector('[data-slot="session-review-scroll"] [data-slot="scroll-view-viewport"]')
     if (!(view instanceof HTMLElement)) return null
 
     const row = Array.from(view.querySelectorAll("h3")).find(
@@ -149,7 +149,7 @@ async function comment(page: Parameters<typeof test>[0]["page"], file: string, n
 
 async function overflow(page: Parameters<typeof test>[0]["page"], file: string) {
   const row = page.locator(`[data-file="${file}"]`).first()
-  const view = page.locator('[data-slot="session-review-scroll"] .scroll-view__viewport').first()
+  const view = page.locator('[data-slot="session-review-scroll"] [data-slot="scroll-view-viewport"]').first()
   const pop = row.locator('[data-slot="line-comment-popover"][data-inline-body]').first()
   const tools = row.locator('[data-slot="line-comment-tools"]').first()
 
@@ -213,7 +213,7 @@ async function fileComment(page: Parameters<typeof test>[0]["page"], note: strin
 
 async function fileOverflow(page: Parameters<typeof test>[0]["page"]) {
   const viewer = page.locator('[data-component="file"][data-mode="text"]').first()
-  const view = page.locator('[role="tabpanel"] .scroll-view__viewport').first()
+  const view = page.locator('[role="tabpanel"] [data-slot="scroll-view-viewport"]').first()
   const pop = viewer.locator('[data-slot="line-comment-popover"][data-inline-body]').first()
   const tools = viewer.locator('[data-slot="line-comment-tools"]').first()
 
@@ -376,7 +376,7 @@ test("review keeps scroll position after a live diff update", async ({ page, wit
       await expect(tab).toBeVisible()
       await tab.click()
 
-      const view = page.locator('[data-slot="session-review-scroll"] .scroll-view__viewport').first()
+      const view = page.locator('[data-slot="session-review-scroll"] [data-slot="scroll-view-viewport"]').first()
       await expect(view).toBeVisible()
       const heads = page.getByRole("heading", { level: 3 }).filter({ hasText: /^review-scroll-/ })
       await expect(heads).toHaveCount(list.length, {
