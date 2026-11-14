@@ -9,6 +9,9 @@ import { which } from "@/util/which"
 import { adapterCatalog, type AdapterRecipe, type ManagedAdvisor } from "./catalog"
 
 const log = Log.create({ service: "agent-backend.install" })
+const LOCK_POLL_MS = 50
+const LOCK_OWNER_GRACE_MS = 5000
+const ACQUIRE_LOCK_WAIT_MS = 5 * 60 * 1000
 export class AgentInstallError extends Error {
   constructor(
     readonly kind: "invalid" | "busy" | "dependency" | "integrity",
@@ -107,28 +110,40 @@ export class AgentInstallManager {
     return { node, npm: /\.(?:m?js)$/i.test(npmEntry) ? [node, npmEntry] : [npmEntry] }
   }
 
-  private async lock<T>(advisor: string, task: () => Promise<T>): Promise<T> {
+  private async lock<T>(advisor: string, task: () => Promise<T>, waitMs = 0): Promise<T> {
     const directory = path.join(this.root, "locks", advisor)
     await fs.mkdir(path.dirname(directory), { recursive: true })
-    try {
-      await fs.mkdir(directory)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
-      const owner = await fs
-        .readFile(path.join(directory, "owner.json"), "utf8")
-        .then(JSON.parse)
-        .catch(() => undefined)
-      let alive = true
-      if (owner?.pid) {
-        try {
-          process.kill(owner.pid, 0)
-        } catch (error) {
-          alive = (error as NodeJS.ErrnoException).code !== "ESRCH"
+    const deadline = Date.now() + waitMs
+    for (;;) {
+      try {
+        await fs.mkdir(directory)
+        break
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+        const owner = await fs
+          .readFile(path.join(directory, "owner.json"), "utf8")
+          .then(JSON.parse)
+          .catch(() => undefined)
+        let alive = true
+        if (owner?.pid) {
+          try {
+            process.kill(owner.pid, 0)
+          } catch (error) {
+            alive = (error as NodeJS.ErrnoException).code !== "ESRCH"
+          }
+        } else {
+          const stat = await fs.stat(directory).catch(() => undefined)
+          if (!stat) continue
+          alive = Date.now() - stat.mtimeMs < LOCK_OWNER_GRACE_MS
         }
+        if (alive) {
+          if (Date.now() >= deadline)
+            throw new AgentInstallError("busy", "Another adapter operation is running; wait for it to finish")
+          await new Promise((resolve) => setTimeout(resolve, LOCK_POLL_MS))
+          continue
+        }
+        await fs.rm(directory, { recursive: true, force: true })
       }
-      if (alive) throw new AgentInstallError("busy", "Another adapter operation is running; wait for it to finish")
-      await fs.rm(directory, { recursive: true, force: true })
-      return this.lock(advisor, task)
     }
     try {
       await fs.writeFile(path.join(directory, "owner.json"), JSON.stringify({ pid: process.pid }))
@@ -312,14 +327,18 @@ export class AgentInstallManager {
   }
 
   async acquire(advisor: string, version: string) {
-    return this.lock(advisor, async () => {
-      const command = await this.resolve(advisor, version)
-      const directory = path.join(this.root, "leases", advisor, version)
-      await fs.mkdir(directory, { recursive: true })
-      const file = path.join(directory, `${process.pid}-${randomUUID()}.json`)
-      await fs.writeFile(file, JSON.stringify({ pid: process.pid }))
-      return { command, release: () => fs.rm(file, { force: true }) }
-    })
+    return this.lock(
+      advisor,
+      async () => {
+        const command = await this.resolve(advisor, version)
+        const directory = path.join(this.root, "leases", advisor, version)
+        await fs.mkdir(directory, { recursive: true })
+        const file = path.join(directory, `${process.pid}-${randomUUID()}.json`)
+        await fs.writeFile(file, JSON.stringify({ pid: process.pid }))
+        return { command, release: () => fs.rm(file, { force: true }) }
+      },
+      ACQUIRE_LOCK_WAIT_MS,
+    )
   }
 }
 

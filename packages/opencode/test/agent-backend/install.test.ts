@@ -258,4 +258,52 @@ describe("reviewed ACP installation store", () => {
       await operation
     }
   })
+
+  test("acquire waits for a lock held by another operation instead of failing busy", async () => {
+    await using tmp = await tmpdir()
+    let started!: () => void
+    const ready = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    let proceed!: () => void
+    const gate = new Promise<void>((resolve) => {
+      proceed = resolve
+    })
+    const first = new AgentInstallManager(
+      tmp.path,
+      [recipe],
+      async (args, cwd, signal) => {
+        if (!args.includes("--version") && args.at(-1)!.endsWith("@2.0.0")) {
+          started()
+          await gate
+        }
+        return fakeRunner([])(args, cwd, signal)
+      },
+      binaries,
+    )
+    await first.commit(
+      first.prepare({ advisor: "claude", version: "1.0.0", action: "install" }).token,
+      AbortSignal.timeout(5000),
+    )
+    const second = new AgentInstallManager(tmp.path, [recipe], fakeRunner([]), binaries)
+    const operation = first.commit(
+      first.prepare({ advisor: "claude", version: "2.0.0", action: "install" }).token,
+      AbortSignal.timeout(5000),
+    )
+    await ready
+    try {
+      const pending = second.acquire("claude", "1.0.0")
+      const blocked = await Promise.race([
+        pending.then(() => "acquired"),
+        new Promise((resolve) => setTimeout(() => resolve("blocked"), 200)),
+      ])
+      expect(blocked).toBe("blocked")
+      proceed()
+      const lease = await pending
+      await lease.release()
+    } finally {
+      proceed()
+      await operation
+    }
+  })
 })

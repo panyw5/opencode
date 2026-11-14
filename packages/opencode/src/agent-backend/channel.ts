@@ -1,4 +1,4 @@
-import { Cause, Context, Effect, Exit, Fiber, Layer, Option, Semaphore } from "effect"
+import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Option, Semaphore } from "effect"
 import type { RequestPermissionRequest, RequestPermissionResponse } from "@agentclientprotocol/sdk"
 import * as Log from "@opencode-ai/core/util/log"
 import { Config } from "@/config/config"
@@ -47,13 +47,22 @@ type Entry = {
   timer?: ReturnType<typeof setTimeout>
   abort?: AbortController
   release?: () => Promise<void>
-  /** In-flight ACP startup; concurrent callers wait instead of reading a half-initialized client. */
-  ready?: Promise<void>
   busy: boolean
   lastUsed: number
 }
 
-type State = { entries: Map<string, Entry> }
+/** In-flight channel spawn; concurrent callers join it instead of spawning a second client. */
+type Pending = {
+  settled: Deferred.Deferred<Entry, unknown>
+  abort: AbortController
+}
+
+type State = {
+  /** Fully started channel processes; an entry only exists while its client is usable. */
+  entries: Map<string, Entry>
+  /** In-flight spawn attempts keyed by session id. */
+  pending: Map<string, Pending>
+}
 
 export interface Interface {
   readonly prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts>
@@ -77,14 +86,17 @@ export const layer = Layer.effect(
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("SessionChannel.state")(function* () {
-        const current: State = { entries: new Map() }
+        const current: State = { entries: new Map(), pending: new Map() }
         yield* Effect.addFinalizer(() =>
-          Effect.promise(async () => {
+          Effect.gen(function* () {
+            for (const pending of current.pending.values()) pending.abort.abort()
+            for (const pending of current.pending.values()) yield* Effect.exit(Deferred.await(pending.settled))
+            current.pending.clear()
             for (const entry of current.entries.values()) {
               entry.abort?.abort()
               if (entry.timer) clearTimeout(entry.timer)
-              await entry.client.stop().catch(() => {})
-              await entry.release?.().catch(() => {})
+              yield* Effect.promise(() => entry.client.stop().catch(() => {}))
+              if (entry.release) yield* Effect.promise(() => entry.release!().catch(() => {}))
             }
             current.entries.clear()
           }),
@@ -175,19 +187,47 @@ export const layer = Layer.effect(
       channel: SessionChannelInfo,
       info: Config.Info,
     ) {
-      const existing = current.entries.get(session.id)
-      if (existing) {
-        if (existing.ready) {
-          const outcome = yield* Effect.exit(Effect.promise(() => existing.ready!))
-          if (Exit.isSuccess(outcome)) return existing
-        } else if (existing.client.alive) {
-          return existing
+      for (;;) {
+        // Nothing between these reads and the pending.set below may yield,
+        // so the check-and-set is atomic per session.
+        const pending = current.pending.get(session.id)
+        const entry = current.entries.get(session.id)
+        if (pending) {
+          const joined = yield* Effect.exit(Deferred.await(pending.settled))
+          if (Exit.isSuccess(joined)) return joined.value
+          const error = Cause.squash(joined.cause)
+          throw error instanceof Error ? error : new Error(String(error))
         }
-        log.warn(`replacing dead channel session=${session.id} advisor=${existing.advisor}`)
-        current.entries.delete(session.id)
-        yield* stopEntry(existing)
+        if (entry) {
+          if (entry.client.alive) return entry
+          log.warn(`replacing dead channel session=${session.id} advisor=${entry.advisor}`)
+          current.entries.delete(session.id)
+          yield* stopEntry(entry)
+          continue
+        }
+        const record: Pending = { settled: Deferred.makeUnsafe(), abort: new AbortController() }
+        current.pending.set(session.id, record)
+        const outcome = yield* Effect.exit(
+          spawn(current, session, channel, info, record.abort.signal).pipe(
+            Effect.onExit((result) =>
+              Effect.gen(function* () {
+                current.pending.delete(session.id)
+                yield* Deferred.done(record.settled, result)
+              }),
+            ),
+          ),
+        )
+        return yield* outcome
       }
+    })
 
+    const spawn = Effect.fn("SessionChannel.spawn")(function* (
+      current: State,
+      session: Session.Info,
+      channel: SessionChannelInfo,
+      info: Config.Info,
+      signal: AbortSignal,
+    ) {
       const selection = info.agent_backends?.[channel.advisor]
       if (!selection || selection.type !== "acp")
         throw new Error(
@@ -206,7 +246,6 @@ export const layer = Layer.effect(
         ...(channel.mode ? { mode: channel.mode } : {}),
       }
 
-      let entry: Entry | undefined
       const holder: { entry?: Entry } = {}
       const client = new AcpAgentClient({
         config: acpConfig,
@@ -242,7 +281,7 @@ export const layer = Layer.effect(
         },
       })
 
-      entry = {
+      const entry: Entry = {
         advisor: channel.advisor,
         client,
         semaphore: Semaphore.makeUnsafe(1),
@@ -254,18 +293,17 @@ export const layer = Layer.effect(
         release: lease ? () => lease.release() : undefined,
       }
       holder.entry = entry
-      current.entries.set(session.id, entry)
       log.info(
         `spawn session=${session.id} advisor=${channel.advisor} cwd=${session.directory} managed=${Boolean(managed)} resume=${channel.acpSessionID ?? "none"}`,
       )
 
       const started = Date.now()
-      const starting = client.start(new AbortController().signal, { resumeSessionID: channel.acpSessionID })
-      entry.ready = starting
-      const result = yield* Effect.exit(Effect.promise(() => starting))
-      entry.ready = undefined
+      const result = yield* Effect.exit(
+        Effect.promise((interrupted) =>
+          client.start(AbortSignal.any([interrupted, signal]), { resumeSessionID: channel.acpSessionID }),
+        ),
+      )
       if (Exit.isFailure(result)) {
-        current.entries.delete(session.id)
         yield* stopEntry(entry)
         const error = Cause.squash(result.cause)
         if (error instanceof AcpAuthenticationRequired)
@@ -283,6 +321,7 @@ export const layer = Layer.effect(
           channel: { ...channel, acpSessionID: client.sessionID },
         })
       }
+      current.entries.set(session.id, entry)
       yield* enforceLimit(current, session.id, info)
       return entry
     })
@@ -450,6 +489,11 @@ export const layer = Layer.effect(
 
     const cancel = Effect.fn("SessionChannel.cancel")(function* (sessionID: SessionID) {
       const current = yield* InstanceState.get(state)
+      const pending = current.pending.get(sessionID)
+      if (pending) {
+        log.info(`cancel pending spawn session=${sessionID}`)
+        pending.abort.abort()
+      }
       const entry = current.entries.get(sessionID)
       if (!entry) return
       log.info(`cancel session=${sessionID} advisor=${entry.advisor}`)
@@ -496,6 +540,11 @@ export const layer = Layer.effect(
 
     const dispose = Effect.fn("SessionChannel.dispose")(function* (sessionID: SessionID) {
       const current = yield* InstanceState.get(state)
+      const pending = current.pending.get(sessionID)
+      if (pending) {
+        pending.abort.abort()
+        yield* Effect.exit(Deferred.await(pending.settled))
+      }
       const entry = current.entries.get(sessionID)
       if (!entry) return
       log.info(`dispose session=${sessionID} advisor=${entry.advisor}`)
