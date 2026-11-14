@@ -30,6 +30,11 @@ const en = {
   beautifyUnchanged: "Already formatted",
   fontDecrease: "Decrease font size",
   fontIncrease: "Increase font size",
+  copy: "Copy",
+  copyPath: "Copy file path",
+  referenceInPrompt: "Reference in prompt",
+  addBreakpoint: "Add breakpoint",
+  removeBreakpoint: "Remove breakpoint",
 }
 type Messages = Record<keyof typeof en, string>
 const zh: Messages = {
@@ -64,6 +69,11 @@ const zh: Messages = {
   beautifyUnchanged: "代码无需美化",
   fontDecrease: "减小字号",
   fontIncrease: "增大字号",
+  copy: "复制",
+  copyPath: "复制文件路径",
+  referenceInPrompt: "在提示词中引用",
+  addBreakpoint: "添加断点",
+  removeBreakpoint: "移除断点",
 }
 const zht: Messages = {
   run: "執行",
@@ -97,6 +107,11 @@ const zht: Messages = {
   beautifyUnchanged: "程式碼無需美化",
   fontDecrease: "縮小字級",
   fontIncrease: "放大字級",
+  copy: "複製",
+  copyPath: "複製檔案路徑",
+  referenceInPrompt: "在提示詞中引用",
+  addBreakpoint: "新增中斷點",
+  removeBreakpoint: "移除中斷點",
 }
 const ja: Messages = {
   run: "実行",
@@ -130,6 +145,11 @@ const ja: Messages = {
   beautifyUnchanged: "すでに整形済みです",
   fontDecrease: "フォントサイズを縮小",
   fontIncrease: "フォントサイズを拡大",
+  copy: "コピー",
+  copyPath: "ファイルパスをコピー",
+  referenceInPrompt: "プロンプトで参照",
+  addBreakpoint: "ブレークポイントを追加",
+  removeBreakpoint: "ブレークポイントを削除",
 }
 
 const ko: Messages = {
@@ -164,6 +184,11 @@ const ko: Messages = {
   beautifyUnchanged: "이미 정리된 코드입니다",
   fontDecrease: "글꼴 크기 줄이기",
   fontIncrease: "글꼴 크기 늘리기",
+  copy: "복사",
+  copyPath: "파일 경로 복사",
+  referenceInPrompt: "프롬프트에서 참조",
+  addBreakpoint: "중단점 추가",
+  removeBreakpoint: "중단점 제거",
 }
 const de: Messages = {
   run: "Ausführen",
@@ -197,6 +222,11 @@ const de: Messages = {
   beautifyUnchanged: "Bereits formatiert",
   fontDecrease: "Schrift verkleinern",
   fontIncrease: "Schrift vergrößern",
+  copy: "Kopieren",
+  copyPath: "Dateipfad kopieren",
+  referenceInPrompt: "Im Prompt referenzieren",
+  addBreakpoint: "Haltepunkt hinzufügen",
+  removeBreakpoint: "Haltepunkt entfernen",
 }
 const es: Messages = {
   run: "Ejecutar",
@@ -230,6 +260,11 @@ const es: Messages = {
   beautifyUnchanged: "Ya está formateado",
   fontDecrease: "Reducir tamaño de fuente",
   fontIncrease: "Aumentar tamaño de fuente",
+  copy: "Copiar",
+  copyPath: "Copiar ruta del archivo",
+  referenceInPrompt: "Referenciar en el prompt",
+  addBreakpoint: "Añadir punto de interrupción",
+  removeBreakpoint: "Quitar punto de interrupción",
 }
 const fr: Messages = {
   run: "Exécuter",
@@ -263,6 +298,11 @@ const fr: Messages = {
   beautifyUnchanged: "Déjà formaté",
   fontDecrease: "Réduire la taille de police",
   fontIncrease: "Augmenter la taille de police",
+  copy: "Copier",
+  copyPath: "Copier le chemin du fichier",
+  referenceInPrompt: "Référencer dans le prompt",
+  addBreakpoint: "Ajouter un point d'arrêt",
+  removeBreakpoint: "Supprimer le point d'arrêt",
 }
 const da: Messages = {
   run: "Kør",
@@ -296,6 +336,11 @@ const da: Messages = {
   beautifyUnchanged: "Allerede formateret",
   fontDecrease: "Formindsk skriftstørrelse",
   fontIncrease: "Forøg skriftstørrelse",
+  copy: "Kopiér",
+  copyPath: "Kopiér filsti",
+  referenceInPrompt: "Referér i prompt",
+  addBreakpoint: "Tilføj breakpoint",
+  removeBreakpoint: "Fjern breakpoint",
 }
 const pl: Messages = {
   run: "Uruchom",
@@ -329,6 +374,11 @@ const pl: Messages = {
   beautifyUnchanged: "Już sformatowany",
   fontDecrease: "Zmniejsz rozmiar czcionki",
   fontIncrease: "Zwiększ rozmiar czcionki",
+  copy: "Kopiuj",
+  copyPath: "Kopiuj ścieżkę pliku",
+  referenceInPrompt: "Odwołaj w prompcie",
+  addBreakpoint: "Dodaj punkt przerwania",
+  removeBreakpoint: "Usuń punkt przerwania",
 }
 const ru: Messages = {
   run: "Выполнить",
@@ -362,6 +412,11 @@ const ru: Messages = {
   beautifyUnchanged: "Уже отформатирован",
   fontDecrease: "Уменьшить размер шрифта",
   fontIncrease: "Увеличить размер шрифта",
+  copy: "Копировать",
+  copyPath: "Копировать путь к файлу",
+  referenceInPrompt: "Сослаться в промпте",
+  addBreakpoint: "Добавить точку останова",
+  removeBreakpoint: "Удалить точку останова",
 }
 const ar: Messages = {
   run: "تشغيل",
@@ -395,6 +450,11 @@ const ar: Messages = {
   beautifyUnchanged: "منسَّق بالفعل",
   fontDecrease: "تصغير حجم الخط",
   fontIncrease: "تكبير حجم الخط",
+  copy: "نسخ",
+  copyPath: "نسخ مسار الملف",
+  referenceInPrompt: "مرجع في الموجّه",
+  addBreakpoint: "إضافة نقطة توقف",
+  removeBreakpoint: "إزالة نقطة التوقف",
 }
 const no: Messages = {
   run: "Kjør",
@@ -428,6 +488,11 @@ const no: Messages = {
   beautifyUnchanged: "Allerede formatert",
   fontDecrease: "Reduser skriftstørrelse",
   fontIncrease: "Øk skriftstørrelse",
+  copy: "Kopier",
+  copyPath: "Kopier filsti",
+  referenceInPrompt: "Referer i prompt",
+  addBreakpoint: "Legg til stoppunkt",
+  removeBreakpoint: "Fjern stoppunkt",
 }
 const br: Messages = {
   run: "Executar",
@@ -461,6 +526,11 @@ const br: Messages = {
   beautifyUnchanged: "Já está formatado",
   fontDecrease: "Diminuir fonte",
   fontIncrease: "Aumentar fonte",
+  copy: "Copiar",
+  copyPath: "Copiar caminho do arquivo",
+  referenceInPrompt: "Referenciar no prompt",
+  addBreakpoint: "Adicionar breakpoint",
+  removeBreakpoint: "Remover breakpoint",
 }
 const th: Messages = {
   run: "เรียกใช้",
@@ -494,6 +564,11 @@ const th: Messages = {
   beautifyUnchanged: "จัดรูปแบบอยู่แล้ว",
   fontDecrease: "ลดขนาดตัวอักษร",
   fontIncrease: "เพิ่มขนาดตัวอักษร",
+  copy: "คัดลอก",
+  copyPath: "คัดลอกเส้นทางไฟล์",
+  referenceInPrompt: "อ้างอิงในพรอมป์",
+  addBreakpoint: "เพิ่มเบรกพอยต์",
+  removeBreakpoint: "ลบเบรกพอยต์",
 }
 const bs: Messages = {
   run: "Pokreni",
@@ -527,6 +602,11 @@ const bs: Messages = {
   beautifyUnchanged: "Već ulijepšen",
   fontDecrease: "Smanji veličinu fonta",
   fontIncrease: "Povećaj veličinu fonta",
+  copy: "Kopiraj",
+  copyPath: "Kopiraj putanju datoteke",
+  referenceInPrompt: "Referenciraj u promptu",
+  addBreakpoint: "Dodaj tačku prekida",
+  removeBreakpoint: "Ukloni tačku prekida",
 }
 const tr: Messages = {
   run: "Çalıştır",
@@ -560,6 +640,11 @@ const tr: Messages = {
   beautifyUnchanged: "Zaten biçimli",
   fontDecrease: "Yazı boyutunu küçült",
   fontIncrease: "Yazı boyutunu büyüt",
+  copy: "Kopyala",
+  copyPath: "Dosya yolunu kopyala",
+  referenceInPrompt: "Promptta referans ver",
+  addBreakpoint: "Kesme noktası ekle",
+  removeBreakpoint: "Kesme noktasını kaldır",
 }
 
 const dict: Record<string, Messages> = { en, zh, zht, ko, de, es, fr, da, ja, pl, ru, ar, no, br, th, bs, tr }

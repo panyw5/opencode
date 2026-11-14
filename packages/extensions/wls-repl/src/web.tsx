@@ -8,6 +8,9 @@ import { VIRTUAL_THRESHOLD, centeredScrollTop, maxColumns, visibleRange } from "
 
 const EXTENSION_ID = "local.wls-repl"
 const MESSAGE_EVENT = `${EXTENSION_ID}/message`
+// Handled by the host session page (use-session-commands.tsx); adds the file
+// (and optional line range) to the prompt context.
+const PROMPT_CONTEXT_EVENT = "opencode:prompt-context-add"
 const DEFAULT_FONT_SIZE = 12.5
 const MIN_FONT_SIZE = 9
 const MAX_FONT_SIZE = 24
@@ -155,9 +158,13 @@ export function WlsViewer(props: FileViewerProps) {
   onMount(() => {
     const dismiss = (event: PointerEvent) => {
       if (formatRef && !formatRef.contains(event.target as Node)) setFormatOpen(false)
+      if (menuRef && !menuRef.contains(event.target as Node)) setMenuPos(null)
     }
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setFormatOpen(false)
+      if (event.key === "Escape") {
+        setFormatOpen(false)
+        setMenuPos(null)
+      }
     }
     document.addEventListener("pointerdown", dismiss, true)
     document.addEventListener("keydown", escape)
@@ -219,6 +226,95 @@ export function WlsViewer(props: FileViewerProps) {
 
   const toggleBreakpoint = (line: number) => {
     setBreakpoints((prev) => (prev.includes(line) ? prev.filter((value) => value !== line) : [...prev, line]))
+  }
+
+  type MenuTarget = {
+    line?: number
+    selection?: { start: number; end: number }
+    selectedText: string
+  }
+  const [menuTarget, setMenuTarget] = createSignal<MenuTarget>()
+  const [menuPos, setMenuPos] = createSignal<{ x: number; y: number } | null>(null)
+  let menuRef: HTMLDivElement | undefined
+
+  const lineOfNode = (node: Node | null): number | undefined => {
+    const element = node instanceof Element ? node : node?.parentElement
+    const parsed = Number.parseInt(element?.closest?.("[data-line]")?.getAttribute("data-line") ?? "", 10)
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+
+  const captureMenuTarget = (event: MouseEvent) => {
+    event.preventDefault()
+    const selection = window.getSelection()
+    let selectedText = ""
+    let range: { start: number; end: number } | undefined
+    if (
+      selection &&
+      !selection.isCollapsed &&
+      codeRef?.contains(selection.anchorNode) &&
+      codeRef?.contains(selection.focusNode)
+    ) {
+      selectedText = selection.toString()
+      const anchor = lineOfNode(selection.anchorNode)
+      const focus = lineOfNode(selection.focusNode)
+      if (anchor !== undefined && focus !== undefined && anchor !== focus) {
+        range = { start: Math.min(anchor, focus), end: Math.max(anchor, focus) }
+      }
+    }
+    setMenuTarget({ line: lineOfNode(event.target as Node), selection: range, selectedText })
+    // Keep the fixed-position menu inside the viewport.
+    setMenuPos({
+      x: Math.min(event.clientX, Math.max(0, window.innerWidth - 200)),
+      y: Math.min(event.clientY, Math.max(0, window.innerHeight - 180)),
+    })
+  }
+
+  const runMenuAction = (action: () => unknown) => {
+    setMenuPos(null)
+    void action()
+  }
+
+  const copyMenuText = async () => {
+    const target = menuTarget()
+    const text = target?.selectedText || (target?.line !== undefined ? (lines()[target.line - 1] ?? "") : "")
+    if (!text) return
+    await navigator.clipboard.writeText(text)
+    bridge().log?.info(`wls viewer copied ${JSON.stringify({ path: filePath(), chars: text.length })}`)
+  }
+
+  const copyMenuPath = async () => {
+    const target = props.file.absolutePath || props.file.path
+    if (!target) return
+    await navigator.clipboard.writeText(target)
+    bridge().log?.info(`wls viewer copied path ${JSON.stringify({ path: target })}`)
+  }
+
+  const referenceInPrompt = () => {
+    const target = menuTarget()
+    const range =
+      target?.selection ?? (target?.line !== undefined ? { start: target.line, end: target.line } : undefined)
+    if (!range) return
+    const preview = lines()
+      .slice(range.start - 1, range.end)
+      .join("\n")
+    window.dispatchEvent(
+      new CustomEvent(PROMPT_CONTEXT_EVENT, {
+        detail: {
+          directory: props.file.directory,
+          path: props.file.path ?? props.file.absolutePath,
+          selection: { startLine: range.start, endLine: range.end },
+          preview,
+        },
+      }),
+    )
+    bridge().log?.info(
+      `wls viewer prompt reference ${JSON.stringify({ path: filePath(), start: range.start, end: range.end })}`,
+    )
+  }
+
+  const toggleMenuBreakpoint = () => {
+    const line = menuTarget()?.line
+    if (line !== undefined) toggleBreakpoint(line)
   }
 
   const call = async <T,>(method: string, input: Record<string, unknown>): Promise<T | undefined> => {
@@ -395,7 +491,9 @@ export function WlsViewer(props: FileViewerProps) {
     void bridge()
       .settings?.update(patch)
       .catch((error: unknown) =>
-        bridge().log?.warn(`wls viewer settings update failed: ${error instanceof Error ? error.message : String(error)}`),
+        bridge().log?.warn(
+          `wls viewer settings update failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
       )
   }
 
@@ -565,6 +663,7 @@ export function WlsViewer(props: FileViewerProps) {
         <div
           class="oc-wls-code"
           ref={codeRef}
+          onContextMenu={captureMenuTarget}
           data-virtual={virtual()}
           data-wrap={wordWrap() ? "on" : "off"}
           style={{
@@ -574,44 +673,50 @@ export function WlsViewer(props: FileViewerProps) {
           }}
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         >
-          <div
-            class="oc-wls-code-window"
-            style={
-              virtual()
-                ? {
-                    "padding-top": `${range().start * lineHeight()}px`,
-                    "padding-bottom": `${(lines().length - range().end) * lineHeight()}px`,
-                    "min-width": `calc(${columns()}ch + 64px)`,
-                  }
-                : undefined
-            }
-          >
-            <Index each={visibleLines()}>
-              {(row) => {
-                const number = () => row().number
-                return (
-                  <div class="oc-wls-line" data-line={number()} classList={{ "is-paused": pausedLine() === number() }}>
-                    <button
-                      type="button"
-                      class="oc-wls-gutter"
-                      classList={{ "has-breakpoint": breakpoints().includes(number()) }}
-                      title={t().breakpoint}
-                      onClick={() => toggleBreakpoint(number())}
-                    >
-                      <span class="oc-wls-line-number">{number()}</span>
-                      <span class="oc-wls-bp-dot" />
-                    </button>
-                    <pre class="oc-wls-line-text">
-                      <Show when={row().text !== ""} fallback=" ">
-                        <For each={row().tokens}>{(token) => <span data-token={token.kind}>{token.text}</span>}</For>
-                      </Show>
-                    </pre>
-                  </div>
-                )
-              }}
-            </Index>
-          </div>
-        </div>
+              <div
+                class="oc-wls-code-window"
+                style={
+                  virtual()
+                    ? {
+                        "padding-top": `${range().start * lineHeight()}px`,
+                        "padding-bottom": `${(lines().length - range().end) * lineHeight()}px`,
+                        "min-width": `calc(${columns()}ch + 64px)`,
+                      }
+                    : undefined
+                }
+              >
+                <Index each={visibleLines()}>
+                  {(row) => {
+                    const number = () => row().number
+                    return (
+                      <div
+                        class="oc-wls-line"
+                        data-line={number()}
+                        classList={{ "is-paused": pausedLine() === number() }}
+                      >
+                        <button
+                          type="button"
+                          class="oc-wls-gutter"
+                          classList={{ "has-breakpoint": breakpoints().includes(number()) }}
+                          title={t().breakpoint}
+                          onClick={() => toggleBreakpoint(number())}
+                        >
+                          <span class="oc-wls-line-number">{number()}</span>
+                          <span class="oc-wls-bp-dot" />
+                        </button>
+                        <pre class="oc-wls-line-text">
+                          <Show when={row().text !== ""} fallback=" ">
+                            <For each={row().tokens}>
+                              {(token) => <span data-token={token.kind}>{token.text}</span>}
+                            </For>
+                          </Show>
+                        </pre>
+                      </div>
+                    )
+                  }}
+                </Index>
+              </div>
+            </div>
 
         <Show when={isPaused()}>
           <aside class="oc-wls-variables">
@@ -631,6 +736,60 @@ export function WlsViewer(props: FileViewerProps) {
           </aside>
         </Show>
       </div>
+
+      <Show when={menuPos()}>
+        {(pos) => (
+          <div
+            class="oc-wls-context-menu"
+            ref={menuRef}
+            role="menu"
+            style={{ left: `${pos().x}px`, top: `${pos().y}px` }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              class="oc-wls-context-item"
+              data-action="wls-copy"
+              disabled={!menuTarget()?.selectedText && menuTarget()?.line === undefined}
+              onClick={() => runMenuAction(copyMenuText)}
+            >
+              {t().copy}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              class="oc-wls-context-item"
+              data-action="wls-copy-path"
+              onClick={() => runMenuAction(copyMenuPath)}
+            >
+              {t().copyPath}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              class="oc-wls-context-item"
+              data-action="wls-reference"
+              disabled={!menuTarget()?.selection && menuTarget()?.line === undefined}
+              onClick={() => runMenuAction(referenceInPrompt)}
+            >
+              {t().referenceInPrompt}
+            </button>
+            <div class="oc-wls-context-sep" role="separator" />
+            <button
+              type="button"
+              role="menuitem"
+              class="oc-wls-context-item"
+              data-action="wls-breakpoint"
+              disabled={menuTarget()?.line === undefined}
+              onClick={() => runMenuAction(toggleMenuBreakpoint)}
+            >
+              {menuTarget()?.line !== undefined && breakpoints().includes(menuTarget()!.line!)
+                ? t().removeBreakpoint
+                : t().addBreakpoint}
+            </button>
+          </div>
+        )}
+      </Show>
 
       <footer class="oc-wls-console">
         <div class="oc-wls-console-entries" ref={consoleRef}>

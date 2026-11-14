@@ -1,4 +1,5 @@
 import { useNavigate } from "@solidjs/router"
+import { onCleanup, onMount } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { useCommand, type CommandOption, type CommandSource } from "@/context/command"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -32,6 +33,7 @@ import { compareMessages, resolveMessage } from "@/utils/message-order"
 import { dict as enDict } from "@/i18n/en"
 import { SESSION_HOOK_CONTROL_COMMANDS, sessionHookControlInput } from "./session-hook-controls"
 import { resolveNewSessionDirectory, shouldPreferSidebarForNewSession } from "@/pages/layout/helpers"
+import { PROMPT_CONTEXT_REQUEST_EVENT, type PromptContextRequest } from "@/pages/session/prompt-context-request"
 
 export type SessionCommandContext = {
   navigateMessageByOffset: (offset: number) => void
@@ -118,6 +120,39 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     const preview = selectionPreview(path, selection)
     prompt.context.add({ type: "file", path, selection, preview })
   }
+
+  // File viewers (including extension viewers like WLS) request prompt
+  // references through a window event — they have no access to this scope.
+  onMount(() => {
+    const onRequest = (event: Event) => {
+      const detail = (event as CustomEvent<PromptContextRequest>).detail
+      if (!detail || typeof detail.path !== "string" || detail.path === "") return
+      if (detail.directory !== undefined && detail.directory !== sdk.directory) return
+      const normalized = file.normalize(detail.path)
+      if (!normalized) {
+        console.warn(`[prompt-context] rejected path=${detail.path}`)
+        return
+      }
+      const range = detail.selection
+      if (range && range.startLine > 0 && range.endLine >= range.startLine) {
+        const selection = selectionFromLines({ start: range.startLine, end: range.endLine })
+        prompt.context.add({
+          type: "file",
+          path: normalized,
+          selection,
+          preview: typeof detail.preview === "string" ? detail.preview : selectionPreview(normalized, selection),
+        })
+        console.debug(
+          `[prompt-context] added selection session=${params.id ?? "none"} path=${normalized} lines=${selection.startLine}-${selection.endLine}`,
+        )
+        return
+      }
+      prompt.context.add({ type: "file", path: normalized })
+      console.debug(`[prompt-context] added file session=${params.id ?? "none"} path=${normalized}`)
+    }
+    window.addEventListener(PROMPT_CONTEXT_REQUEST_EVENT, onRequest)
+    onCleanup(() => window.removeEventListener(PROMPT_CONTEXT_REQUEST_EVENT, onRequest))
+  })
 
   const canAddSelectionContext = () => {
     const tab = activeFileTab()
