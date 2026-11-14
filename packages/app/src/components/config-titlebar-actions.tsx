@@ -4,6 +4,7 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { createMemo, onMount, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useLanguage } from "@/context/language"
+import { browserApi } from "@/browser/types"
 
 export function ConfigTitlebarActions() {
   const language = useLanguage()
@@ -61,6 +62,17 @@ export function ConfigTitlebarActions() {
               >
                 <Icon size="normal" name="terminal" />
               </Button>
+
+              <Show when={browserApi()}>
+                <Button
+                  variant="ghost"
+                  class="titlebar-icon w-8 h-8 p-0 box-border shrink-0 disabled:!cursor-default"
+                  disabled
+                  aria-label={language.t("command.browser.toggle")}
+                >
+                  <Icon size="normal" name="globe" />
+                </Button>
+              </Show>
 
               <div class="hidden md:flex items-center gap-1 shrink-0">
                 <Button
