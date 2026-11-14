@@ -143,19 +143,17 @@ export const SessionQuestionDock: Component<{
   const measure = () => {
     if (!root) return
 
-    const scroller = document.querySelector(".scroll-view__viewport")
-    const head = scroller instanceof HTMLElement ? scroller.firstElementChild : undefined
-    const top =
-      head instanceof HTMLElement && head.classList.contains("sticky") ? head.getBoundingClientRect().bottom : 0
+    const dock = root.closest('[data-component="session-prompt-dock"]')
+    if (!(dock instanceof HTMLElement)) return
+
+    const panel = dock.closest('[data-slot="session-main-panel"]')
+    const top = panel instanceof HTMLElement ? panel.getBoundingClientRect().top : 0
     if (!top) {
       if (!max) return
       max = ""
       root.style.removeProperty("--question-prompt-max-height")
       return
     }
-
-    const dock = root.closest('[data-component="session-prompt-dock"]')
-    if (!(dock instanceof HTMLElement)) return
 
     const dockBottom = dock.getBoundingClientRect().bottom
     const below = Math.max(0, dockBottom - root.getBoundingClientRect().bottom)
@@ -245,10 +243,10 @@ export const SessionQuestionDock: Component<{
     window.addEventListener("resize", update)
 
     const dock = root?.closest('[data-component="session-prompt-dock"]')
-    const scroller = document.querySelector(".scroll-view__viewport")
+    const panel = dock instanceof HTMLElement ? dock.closest('[data-slot="session-main-panel"]') : undefined
     const observer = new ResizeObserver(update)
     if (dock instanceof HTMLElement) observer.observe(dock)
-    if (scroller instanceof HTMLElement) observer.observe(scroller)
+    if (panel instanceof HTMLElement) observer.observe(panel)
 
     // Keyboard navigation
     const handleKeyDown = (e: KeyboardEvent) => {

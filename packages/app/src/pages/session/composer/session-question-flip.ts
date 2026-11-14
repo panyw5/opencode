@@ -52,7 +52,7 @@ function viewportOf(element: HTMLElement | null): QuestionFlipViewport | undefin
 }
 
 function currentViewport(): HTMLElement | null {
-  const element = document.querySelector(".scroll-view__viewport")
+  const element = document.querySelector('[data-component="message-timeline"] [data-slot="scroll-view-viewport"]')
   return element instanceof HTMLElement ? element : null
 }
 

@@ -1397,6 +1397,22 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
   width: 100%;
 }
 
+/* The content/footer panels are plain structural wrappers in the dock's column
+   flex. The content panel must be a min-height:0 flex container so an oversized
+   option list can shrink and scroll internally; the footer panel (submit row)
+   must never shrink or get pushed out of view. */
+[data-component="dock-prompt"] {
+  [data-slot="dock-prompt-content-panel"] {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  [data-slot="dock-prompt-footer-panel"] {
+    flex-shrink: 0;
+  }
+}
+
 [data-component="dock-prompt"][data-kind="permission"] {
   position: relative;
   display: flex;
