@@ -88,7 +88,13 @@ export function ChannelToggles(props: {
               size="large"
               variant="ghost"
               class="rounded-full border transition-colors"
-              style={{ height: "40px", "padding-inline": "16px", "font-size": "15px", gap: "8px" }}
+              style={{
+                height: "40px",
+                "padding-inline": "16px",
+                "font-size": "15px",
+                gap: "8px",
+                "border-radius": "9999px",
+              }}
               classList={{
                 "border-border-weak-base bg-surface-base-active text-text-strong": active,
                 "border-transparent text-text-weak hover:bg-surface-base-hover hover:text-text-strong": !active,

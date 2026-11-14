@@ -37,6 +37,7 @@ export interface AgentPart extends PartBase {
 export interface ImPart extends PartBase {
   type: "im"
   channelName?: string
+  platform?: string
   botName?: string
 }
 
@@ -106,7 +107,12 @@ function isPartEqual(partA: ContentPart, partB: ContentPart) {
     case "agent":
       return partB.type === "agent" && partA.name === partB.name
     case "im":
-      return partB.type === "im" && partA.channelName === partB.channelName && partA.botName === partB.botName
+      return (
+        partB.type === "im" &&
+        partA.channelName === partB.channelName &&
+        partA.platform === partB.platform &&
+        partA.botName === partB.botName
+      )
     case "skill":
       return partB.type === "skill" && partA.name === partB.name
     case "session":

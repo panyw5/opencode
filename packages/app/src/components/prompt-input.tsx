@@ -49,6 +49,7 @@ import { useTheme } from "@opencode-ai/ui/theme/context"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ModelSelectorPopover } from "@/components/dialog-select-model"
 import { ChannelBadge, ChannelModelSelect, ChannelToggles, readyChannels } from "@/components/session-channel-picker"
+import { createChannelBrandIconElement } from "@/components/channel-brand-icon"
 import { DialogSelectModelUnpaid } from "@/components/dialog-select-model-unpaid"
 import { useProviders } from "@/hooks/use-providers"
 import { useCommand } from "@/context/command"
@@ -1158,7 +1159,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       display: item.display,
     })),
   )
-  const [imChannels, setImChannels] = createSignal<Array<{ channelName: string; botName?: string }>>([])
+  const [imChannels, setImChannels] = createSignal<Array<{ channelName: string; platform?: string; botName?: string }>>(
+    [],
+  )
   createEffect(() => {
     if (platform.remoteMode) {
       console.info("[prompt-im] channels load skipped reason=remote-mode")
@@ -1177,6 +1180,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         setImChannels(
           channels.map((channel) => ({
             channelName: channel.channelName,
+            platform: channel.platform,
             botName: channel.recipient?.name || channel.platform,
           })),
         )
@@ -1196,6 +1200,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return channels.map((channel) => ({
       type: "im" as const,
       channelName: channel.channelName,
+      platform: channel.platform,
       botName: channel.botName,
       display: channel.botName ? `${channel.channelName} · ${channel.botName}` : channel.channelName,
     }))
@@ -1357,6 +1362,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         type: "im",
         content: `@${option.display}`,
         channelName: option.channelName,
+        platform: option.platform,
         botName: option.botName,
         start: 0,
         end: 0,
@@ -1528,29 +1534,19 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (part.type === "im") {
       pill.dataset.content = part.content
       if (part.channelName) pill.dataset.channelName = part.channelName
+      if (part.platform) pill.dataset.platform = part.platform
       if (part.botName) pill.dataset.botName = part.botName
       pill.className =
-        "inline-flex items-center gap-1 rounded-full border border-border-weak-base bg-surface-raised-base px-2 text-syntax-property"
-      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg")
-      icon.setAttribute("viewBox", "0 0 20 20")
-      icon.setAttribute("width", "14")
-      icon.setAttribute("height", "14")
-      icon.setAttribute("fill", "none")
-      icon.setAttribute("stroke", "currentColor")
-      icon.setAttribute("stroke-width", "1.5")
-      icon.setAttribute("aria-hidden", "true")
-      const shape = document.createElementNS("http://www.w3.org/2000/svg", "path")
-      shape.setAttribute("d", "M3 4.5h14v10H8l-5 2v-12z")
-      shape.setAttribute("stroke-linejoin", "round")
-      icon.append(shape)
+        "inline-flex items-center gap-1 rounded-full border border-border-weak-base bg-surface-raised-base px-2 align-middle text-syntax-property"
+      const icon = createChannelBrandIconElement(part.platform)
       const label = document.createElement("span")
-      label.textContent = part.channelName ? `${part.channelName}${part.botName ? ` · ${part.botName}` : ""}` : "IM"
+      label.textContent = part.channelName || "IM"
       pill.append(icon, label)
     } else if (part.type === "skill") {
       pill.dataset.name = part.name
       pill.dataset.content = part.content
       pill.className =
-        "inline-flex items-center gap-1 rounded-full border border-border-weak-base bg-surface-raised-base px-2 text-syntax-keyword"
+        "inline-flex items-center gap-1 rounded-full border border-border-weak-base bg-surface-raised-base px-2 align-middle text-syntax-keyword"
       pill.textContent = language.t("prompt.skill.pill", { name: part.name })
     } else {
       pill.textContent = part.content
@@ -1757,6 +1753,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         type: "im",
         content,
         channelName: im.dataset.channelName,
+        platform: im.dataset.platform,
         botName: im.dataset.botName,
         start: position,
         end: position + content.length,
@@ -2704,160 +2701,164 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       data-prompt-scope={JSON.stringify([sdk.directory, params.id ?? params.draftID])}
       class="relative size-full _max-h-[320px] flex flex-col gap-0"
     >
-      <PromptPopover
-        popover={store.popover}
-        setPopoverRef={(el) => (popoverRef = el)}
-        atFlat={atFlat()}
-        atCategory={atSources.category}
-        setAtCategory={changeAtCategory}
-        atLoading={atSources.loading}
-        atError={atSources.error}
-        atActive={atActive() ?? undefined}
-        atKey={atKey}
-        setAtActive={setAtActive}
-        onAtSelect={handleAtSelect}
-        slashFlat={slashFlat()}
-        slashActive={slashActive() ?? undefined}
-        setSlashActive={setSlashActive}
-        onSlashSelect={handleSlashSelect}
-        commandKeybind={command.keybind}
-        t={(key) => language.t(key as Parameters<typeof language.t>[0])}
-      />
       <Show when={!read()}>
         <Show when={!hideChannelSelector() && channelChoices().length > 0 && !params.id}>
           <div data-slot="prompt-channels-row" class="flex justify-center px-3 pb-1.5">
             <ChannelToggles options={channelChoices()} current={currentChannel()} onSelect={setChannel} />
           </div>
         </Show>
-        <DockShellForm
-          id={formID}
-          onSubmit={handleSubmit}
-          data-slot="prompt-shell"
-          style={glass()}
-          classList={{
-            "group/prompt-input": true,
-            "prompt-shell-shadow": true,
-            "border-icon-info-active border-dashed": store.draggingType !== null,
-            [props.class ?? ""]: !!props.class,
-          }}
-        >
-          <PromptDragOverlay
-            type={store.draggingType}
-            label={language.t(
-              store.draggingType === "@mention" ? "prompt.dropzone.file.label" : "prompt.dropzone.label",
-            )}
-          />
-          <PromptContextItems
-            items={contextItems()}
-            active={(item) => {
-              const active = comments.active()
-              return !!item.commentID && item.commentID === active?.id && item.path === active?.file
-            }}
-            openComment={openComment}
-            remove={(item) => {
-              if (item.type === "session") {
-                const prev = prompt.current()
-                const next = removeInlineSessionReference(prev, item, prompt.cursor() ?? promptLength(prev))
-                if (!isPromptEqual(prev, next.prompt)) {
-                  syncInputUndo(next.prompt, next.cursor, prev)
-                  prompt.set(next.prompt, next.cursor)
-                }
-                for (const context of prompt.context.items()) {
-                  if (
-                    context.type !== "session" ||
-                    context.sessionID !== item.sessionID ||
-                    context.directory !== item.directory
-                  )
-                    continue
-                  prompt.context.remove(context.key)
-                }
-                console.debug(`[session-reference] card removed session=${item.sessionID} directory=${item.directory}`)
-                return
-              }
-              if (item.type === "file" && item.commentID) comments.remove(item.path, item.commentID)
-              prompt.context.remove(item.key)
-            }}
+        <div class="relative">
+          <PromptPopover
+            popover={store.popover}
+            setPopoverRef={(el) => (popoverRef = el)}
+            atFlat={atFlat()}
+            atCategory={atSources.category}
+            setAtCategory={changeAtCategory}
+            atLoading={atSources.loading}
+            atError={atSources.error}
+            atActive={atActive() ?? undefined}
+            atKey={atKey}
+            setAtActive={setAtActive}
+            onAtSelect={handleAtSelect}
+            slashFlat={slashFlat()}
+            slashActive={slashActive() ?? undefined}
+            setSlashActive={setSlashActive}
+            onSlashSelect={handleSlashSelect}
+            commandKeybind={command.keybind}
             t={(key) => language.t(key as Parameters<typeof language.t>[0])}
           />
-          <PromptImageAttachments
-            attachments={imageAttachments()}
-            onOpen={(attachment) => dialog.showForOwner(() => <PromptImagePreview attachment={attachment} />)}
-            onRemove={removeAttachment}
-            removeLabel={language.t("prompt.attachment.remove")}
-          />
-          <div
-            class="relative"
-            onMouseDown={(e) => {
-              const target = e.target
-              if (!(target instanceof HTMLElement)) return
-              if (
-                target.closest(
-                  '[data-action="prompt-attach"], [data-action="prompt-markdown-attachment"], [data-action="prompt-expand"], [data-action="prompt-submit"]',
-                )
-              ) {
-                return
-              }
-              editorRef?.focus()
+          <DockShellForm
+            id={formID}
+            onSubmit={handleSubmit}
+            data-slot="prompt-shell"
+            style={glass()}
+            classList={{
+              "group/prompt-input": true,
+              "prompt-shell-shadow": true,
+              "border-icon-info-active border-dashed": store.draggingType !== null,
+              [props.class ?? ""]: !!props.class,
             }}
           >
+            <PromptDragOverlay
+              type={store.draggingType}
+              label={language.t(
+                store.draggingType === "@mention" ? "prompt.dropzone.file.label" : "prompt.dropzone.label",
+              )}
+            />
+            <PromptContextItems
+              items={contextItems()}
+              active={(item) => {
+                const active = comments.active()
+                return !!item.commentID && item.commentID === active?.id && item.path === active?.file
+              }}
+              openComment={openComment}
+              remove={(item) => {
+                if (item.type === "session") {
+                  const prev = prompt.current()
+                  const next = removeInlineSessionReference(prev, item, prompt.cursor() ?? promptLength(prev))
+                  if (!isPromptEqual(prev, next.prompt)) {
+                    syncInputUndo(next.prompt, next.cursor, prev)
+                    prompt.set(next.prompt, next.cursor)
+                  }
+                  for (const context of prompt.context.items()) {
+                    if (
+                      context.type !== "session" ||
+                      context.sessionID !== item.sessionID ||
+                      context.directory !== item.directory
+                    )
+                      continue
+                    prompt.context.remove(context.key)
+                  }
+                  console.debug(
+                    `[session-reference] card removed session=${item.sessionID} directory=${item.directory}`,
+                  )
+                  return
+                }
+                if (item.type === "file" && item.commentID) comments.remove(item.path, item.commentID)
+                prompt.context.remove(item.key)
+              }}
+              t={(key) => language.t(key as Parameters<typeof language.t>[0])}
+            />
+            <PromptImageAttachments
+              attachments={imageAttachments()}
+              onOpen={(attachment) => dialog.showForOwner(() => <PromptImagePreview attachment={attachment} />)}
+              onRemove={removeAttachment}
+              removeLabel={language.t("prompt.attachment.remove")}
+            />
             <div
-              data-slot="prompt-editor-scroll"
-              class="relative max-h-[280px] overflow-y-auto no-scrollbar"
-              ref={(el) => (scrollRef = el)}
+              class="relative"
+              onMouseDown={(e) => {
+                const target = e.target
+                if (!(target instanceof HTMLElement)) return
+                if (
+                  target.closest(
+                    '[data-action="prompt-attach"], [data-action="prompt-markdown-attachment"], [data-action="prompt-expand"], [data-action="prompt-submit"]',
+                  )
+                ) {
+                  return
+                }
+                editorRef?.focus()
+              }}
             >
               <div
-                data-component="prompt-input"
-                ref={(el) => {
-                  editorRef = el
-                  mirror.input = false
-                  setStore("editor", el)
-                  console.debug("[prompt-editor-sync] editor mounted")
-                  onCleanup(() => {
-                    if (store.editor !== el) return
-                    setStore("editor", undefined)
-                    console.debug("[prompt-editor-sync] editor unmounted")
-                  })
-                  props.ref?.(el)
-                }}
-                role="textbox"
-                aria-multiline="true"
-                aria-label={placeholder()}
-                contenteditable="true"
-                autocapitalize="off"
-                autocorrect="off"
-                spellcheck={false}
-                onInput={handleInput}
-                onPaste={handlePaste}
-                onCompositionStart={handleCompositionStart}
-                onCompositionEnd={handleCompositionEnd}
-                onBlur={handleBlur}
-                onKeyDown={handleKeyDown}
-                classList={{
-                  "select-text": true,
-                  "w-full min-h-[96px] px-4 pt-3 pb-3 text-14-regular text-text-strong focus:outline-none whitespace-pre-wrap": true,
-                  "[&_[data-type=file]]:text-syntax-property": true,
-                  "[&_[data-type=agent]]:text-syntax-type": true,
-                  "[&_[data-type=im]]:text-syntax-property": true,
-                  "[&_[data-type=skill]]:text-syntax-keyword": true,
-                  "[&_[data-type=session]]:text-syntax-property": true,
-                  "font-mono!": !compactComposer(),
-                }}
-              />
-              <Show keyed when={!prompt.dirty() ? placeholder() : undefined}>
-                {(text) => (
-                  <div
-                    data-slot="prompt-placeholder"
-                    data-typing={placeholderTyping() || undefined}
-                    class="absolute top-0 inset-x-0 px-4 pt-3 pb-3 text-14-regular pointer-events-none whitespace-nowrap truncate"
-                    classList={{ "font-mono!": store.mode === "shell" }}
-                  >
-                    <span data-slot="prompt-placeholder-text">{animatedPlaceholder() || "\u00A0"}</span>
-                  </div>
-                )}
-              </Show>
+                data-slot="prompt-editor-scroll"
+                class="relative max-h-[280px] overflow-y-auto no-scrollbar"
+                ref={(el) => (scrollRef = el)}
+              >
+                <div
+                  data-component="prompt-input"
+                  ref={(el) => {
+                    editorRef = el
+                    mirror.input = false
+                    setStore("editor", el)
+                    console.debug("[prompt-editor-sync] editor mounted")
+                    onCleanup(() => {
+                      if (store.editor !== el) return
+                      setStore("editor", undefined)
+                      console.debug("[prompt-editor-sync] editor unmounted")
+                    })
+                    props.ref?.(el)
+                  }}
+                  role="textbox"
+                  aria-multiline="true"
+                  aria-label={placeholder()}
+                  contenteditable="true"
+                  autocapitalize="off"
+                  autocorrect="off"
+                  spellcheck={false}
+                  onInput={handleInput}
+                  onPaste={handlePaste}
+                  onCompositionStart={handleCompositionStart}
+                  onCompositionEnd={handleCompositionEnd}
+                  onBlur={handleBlur}
+                  onKeyDown={handleKeyDown}
+                  classList={{
+                    "select-text": true,
+                    "w-full min-h-[96px] px-4 pt-3 pb-3 text-14-regular text-text-strong focus:outline-none whitespace-pre-wrap": true,
+                    "[&_[data-type=file]]:text-syntax-property": true,
+                    "[&_[data-type=agent]]:text-syntax-type": true,
+                    "[&_[data-type=im]]:text-syntax-property": true,
+                    "[&_[data-type=skill]]:text-syntax-keyword": true,
+                    "[&_[data-type=session]]:text-syntax-property": true,
+                    "font-mono!": !compactComposer(),
+                  }}
+                />
+                <Show keyed when={!prompt.dirty() ? placeholder() : undefined}>
+                  {(text) => (
+                    <div
+                      data-slot="prompt-placeholder"
+                      data-typing={placeholderTyping() || undefined}
+                      class="absolute top-0 inset-x-0 px-4 pt-3 pb-3 text-14-regular pointer-events-none whitespace-nowrap truncate"
+                      classList={{ "font-mono!": store.mode === "shell" }}
+                    >
+                      <span data-slot="prompt-placeholder-text">{animatedPlaceholder() || "\u00A0"}</span>
+                    </div>
+                  )}
+                </Show>
+              </div>
             </div>
-          </div>
-        </DockShellForm>
+          </DockShellForm>
+        </div>
       </Show>
       <Show when={store.mode === "normal" || store.mode === "shell"}>
         <DockTray attach="top">

@@ -2,6 +2,7 @@ import { Component, createEffect, For, Match, onCleanup, Show, Switch } from "so
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { ProviderChip, type ProviderChipProps } from "../provider-chip"
+import { ChannelBrandIcon } from "../channel-brand-icon"
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 import { atCategories, type AtCategory, type AtReference } from "./at-references"
 
@@ -14,7 +15,7 @@ const consultChips: Record<string, Pick<ProviderChipProps, "icon" | "tone">> = {
 }
 
 export type AtOption =
-  | { type: "im"; display: string; channelName?: string; botName?: string }
+  | { type: "im"; display: string; channelName?: string; platform?: string; botName?: string }
   | { type: "agent"; name: string; display: string }
   | { type: "consult"; id: string; name: string; display: string }
   | { type: "file"; path: string; display: string; content?: string; recent?: boolean }
@@ -164,8 +165,8 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                           onClick={() => props.onAtSelect(item)}
                           onMouseEnter={() => props.setAtActive(key)}
                         >
-                          <Icon name="prompt" size="small" class="text-icon-info-active shrink-0" />
-                          <span class="whitespace-nowrap">@{item.display}</span>
+                          <ChannelBrandIcon platform={item.platform ?? ""} size={18} />
+                          <span class="whitespace-nowrap">@{item.channelName || item.display}</span>
                         </button>
                       )
                     }
