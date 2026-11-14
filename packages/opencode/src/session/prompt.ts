@@ -52,7 +52,6 @@ import { BackgroundShell } from "@/background/shell"
 import { PromptTemplate } from "./prompt-template"
 import { BackgroundGptPro, notificationKind as gptProNotificationKind } from "@/background/gpt-pro"
 import { Browser } from "@/browser"
-import { GptProNotificationReceived } from "@/browser/events"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Truncate } from "@/tool/truncate"
 import { Image } from "@/image/image"
@@ -2833,24 +2832,6 @@ export const layer = Layer.effect(
       backgroundProSubscriptions.add(ctx.directory)
       backgroundPro.registerDrain((sessionID) => requestDrain(sessionID))
       yield* elog.info("background Pro notification subscription started", { directory: ctx.directory })
-      const received = yield* Scope.provide(scope)(bus.subscribe(GptProNotificationReceived))
-      yield* Stream.runForEach(received, (event) =>
-        backgroundPro.receive(event.properties).pipe(
-          Effect.flatMap((result) =>
-            Effect.gen(function* () {
-              if (result.ack) yield* backgroundPro.acknowledge(event.properties.id).pipe(Effect.ignore)
-              if (result.wake) yield* requestDrain(result.wake).pipe(Effect.forkIn(scope, { startImmediately: true }))
-            }),
-          ),
-          Effect.catch((error) =>
-            elog.warn("background Pro push notification failed", {
-              directory: ctx.directory,
-              eventID: event.properties.id,
-              error: String(error),
-            }),
-          ),
-        ),
-      ).pipe(Effect.forkIn(scope, { startImmediately: true }))
       const poll = Effect.gen(function* () {
         while (true) {
           yield* backgroundPro.poll().pipe(

@@ -4,8 +4,8 @@ import { Session } from "@/session/session"
 import { SessionID, MessageID } from "@/session/schema"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionInput } from "@/session/input"
-import { Database, eq, sql } from "@/storage/db"
-import { SessionTable, SessionInputTable } from "@/session/session.sql"
+import { Database, eq } from "@/storage/db"
+import { SessionTable } from "@/session/session.sql"
 import * as EffectLogger from "@opencode-ai/core/effect/logger"
 import { Browser } from "@/browser"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -85,7 +85,6 @@ export interface Interface {
   readonly acknowledge: (eventID: string) => Effect.Effect<void, Browser.BrowserError>
   readonly poll: () => Effect.Effect<void>
   readonly registerDrain: (drain: (sessionID: SessionID) => Effect.Effect<void>) => void
-  readonly pendingOwners: () => Effect.Effect<Array<{ sessionID: SessionID; directory: string }>>
   readonly suppress: (sessionID: SessionID, paused: boolean, wake?: boolean) => Effect.Effect<void>
   readonly suppressed: (sessionID: SessionID) => Effect.Effect<boolean>
 }
@@ -132,12 +131,15 @@ export const layer = Layer.effect(
     const receive = Effect.fn("BackgroundGptPro.receive")(function* (event: GptProNotification) {
       const directory = AppFileSystem.resolve((yield* InstanceState.context).directory)
       const separator = event.owner.lastIndexOf("\n")
-      if (
-        separator < 0 ||
-        event.owner.slice(0, separator) !== directory ||
-        !event.id.startsWith(event.consultationID + ":notification:")
-      ) {
-        yield* log.warn("notification owner or event key mismatch", { eventID: event.id, directory })
+      if (separator < 0 || !event.id.startsWith(event.consultationID + ":notification:")) {
+        // Structurally undeliverable — acknowledging drops it from the desktop
+        // outbox instead of letting it be re-offered forever.
+        yield* log.warn("notification key malformed", { eventID: event.id, directory })
+        return { ack: true }
+      }
+      if (event.owner.slice(0, separator) !== directory) {
+        // Belongs to another directory's instance; leave it for that instance's poll.
+        yield* log.warn("notification owner mismatch", { eventID: event.id, directory })
         return { ack: false }
       }
       const sessionID = SessionID.make(event.owner.slice(separator + 1))
@@ -193,23 +195,15 @@ export const layer = Layer.effect(
       })
       return { ack: true, wake: !parent.value.time.archived && !(yield* suppressed(sessionID)) ? sessionID : undefined }
     })
-    const pendingOwners = () =>
-      Effect.sync(() =>
-        Database.use((db) =>
-          db
-            .selectDistinct({ sessionID: SessionTable.id, directory: SessionTable.directory })
-            .from(SessionInputTable)
-            .innerJoin(SessionTable, eq(SessionInputTable.session_id, SessionTable.id))
-            .where(sql`json_extract(${SessionInputTable.prompt}, '$.metadata.kind') = ${notificationKind}`)
-            .all(),
-        ),
-      )
     const poll = Effect.fn("BackgroundGptPro.poll")(function* () {
       const { directory } = yield* InstanceState.context
       const events = yield* browser.gptProNotifications(directory).pipe(
         Effect.catch((error) =>
           Effect.sync(() => {
-            log.warn("notification poll failed", { directory, error: String(error) })
+            // A missing bridge just means the desktop client is disconnected —
+            // polling resumes delivery once it reconnects, so stay quiet.
+            if (!(error instanceof Browser.NotConnectedError))
+              log.warn("notification poll failed", { directory, error: String(error) })
             return [] as GptProNotification[]
           }),
         ),
@@ -246,7 +240,6 @@ export const layer = Layer.effect(
       registerDrain: (handler) => {
         drain = handler
       },
-      pendingOwners,
       suppress,
       suppressed,
     })

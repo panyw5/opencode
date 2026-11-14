@@ -47,11 +47,10 @@ export class BridgeClient {
       ),
     )
     this.controller.events.onConsole = (entry) => this.sendEvent("browser.console", entry)
-    const timer = setInterval(() => {
-      if (this.ws?.readyState !== WebSocket.OPEN) return
-      for (const event of getGptProController().notifications()) this.sendEvent("gpt-pro.notification", event)
-    }, 2000)
-    this.unsubs.push(() => clearInterval(timer))
+    // Notifications are pulled per-directory by the server's poll loop
+    // ("gpt-pro-notifications" command). Blindly pushing the whole outbox here
+    // only ever reached the bridge's single instance bus, so foreign-directory
+    // events could never be consumed or acked — they looped forever.
     void this.connectLoop(generation, 0)
   }
 

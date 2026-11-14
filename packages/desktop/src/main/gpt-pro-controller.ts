@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { createHash } from "node:crypto"
-import { constants } from "node:fs"
+import { constants, existsSync } from "node:fs"
 import { lstat, mkdir, open, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import {
@@ -29,6 +29,11 @@ import {
 import { collectGptProNotification } from "./gpt-pro-notifications"
 import { gptProArchivedResult, type GptProStateResponse, type GptProStateEvent } from "@opencode-ai/util/gpt-pro-state"
 import { GptProStateFeed } from "./gpt-pro-state-feed"
+
+// Notifications are wake-up hints for the owning opencode instance, not durable
+// results — those live in the job body. Anything that can never be delivered
+// would otherwise pin the outbox (and the job row) forever.
+const NOTIFICATION_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 export type GptProDriverAPI = {
   open(url?: string, fresh?: boolean): Promise<void>
@@ -268,6 +273,7 @@ export class GptProController {
       // Recover unannounced terminal states once, not on every bridge poll.
       this.notify(job, false)
     }
+    this.pruneUndeliverableNotifications(Date.now(), true)
     this.log(
       `notification index ready active=${this.notificationCandidates.size} pending=${this.notificationOutbox.size} history=${this.jobs.length}`,
     )
@@ -681,6 +687,7 @@ export class GptProController {
   }
   notifications(directory?: string) {
     if (this.storageFault) return []
+    this.pruneUndeliverableNotifications(Date.now(), false)
     for (const job of this.notificationCandidates) this.notify(job)
     return Array.from(this.notificationOutbox)
       .filter(
@@ -712,6 +719,29 @@ export class GptProController {
     if (!changed) return
     this.save()
     this.log(`background notifications acknowledged directory=${directory} count=${ids.length}`)
+  }
+  private pruneUndeliverableNotifications(now: number, checkOwnerDirectory: boolean) {
+    let evicted = 0
+    for (const job of this.notificationOutbox) {
+      const events = job.notifications
+      if (!events?.length) continue
+      const separator = job.owner.lastIndexOf("\n")
+      const routable = separator > 0
+      const ownerMissing =
+        routable && checkOwnerDirectory && !existsSync(job.owner.slice(0, separator))
+      const next = events.filter(
+        (event) => routable && !ownerMissing && now - event.at <= NOTIFICATION_TTL_MS,
+      )
+      if (next.length === events.length) continue
+      evicted += events.length - next.length
+      job.notifications = next.length ? next : undefined
+      this.trackNotifications(job)
+    }
+    if (!evicted) return
+    this.save()
+    this.log(
+      `undeliverable notifications evicted count=${evicted} ownerCheck=${checkOwnerDirectory} pending=${this.notificationOutbox.size}`,
+    )
   }
   private trackNotifications(job: GptProJob) {
     const active = job.phase === "generating" && (job.background || !!(job.recovery && job.owner.includes("\n")))

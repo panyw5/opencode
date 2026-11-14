@@ -194,6 +194,41 @@ describe("background Pro inbox delivery", () => {
       )
     }),
   )
+  it.instance("acknowledges structurally undeliverable events instead of retrying them forever", () =>
+    Effect.gen(function* () {
+      const service = yield* BackgroundGptPro.Service
+      const sessions = yield* Session.Service
+      const inbox = yield* SessionInput.Service
+      const { directory } = yield* InstanceState.context
+      const parent = yield* sessions.create({ title: "Malformed Pro test" })
+      const consultationID = `gpt_${parent.id}`
+      acknowledgements[directory] = []
+      const base: GptProNotification = {
+        id: `${consultationID}:notification:1`,
+        consultationID,
+        owner: `${directory}\n${parent.id}`,
+        phase: "completed",
+        revision: 1,
+        at: 1,
+        url: "https://chatgpt.com/c/test",
+        kind: "completed",
+        format: "snapshot",
+        text: "Final",
+        truncated: false,
+      }
+      // No directory separator in owner — nothing can ever route this event.
+      expect(yield* service.receive({ ...base, id: `${consultationID}:notification:no-owner`, owner: "anonymous" }))
+        .toMatchObject({ ack: true })
+      // Event id does not match its consultation id — permanently malformed.
+      expect(yield* service.receive({ ...base, id: "other:notification:1" })).toMatchObject({ ack: true })
+      expect(yield* inbox.pending(parent.id)).toHaveLength(0)
+      // A poll carrying such events must drop them through the outbox ack path.
+      events[directory] = [{ ...base, owner: "anonymous" }]
+      yield* service.poll()
+      expect(acknowledgements[directory]).toEqual([[events[directory][0].id]])
+      events[directory] = []
+    }),
+  )
   it.instance("rejects another directory's event and does not wake an archived session", () =>
     Effect.gen(function* () {
       const service = yield* BackgroundGptPro.Service
