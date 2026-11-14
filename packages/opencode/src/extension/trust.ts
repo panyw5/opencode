@@ -30,6 +30,13 @@ export const TRUSTED_KEYS: readonly TrustedKey[] = [
     publicKey: "MCowBQYDK2VwAyEAhEXjTYkeVC4fm94fF8gsIpc5LCuWCdXir3hr1N3vMhY=",
     origins: ["https://raw.githubusercontent.com/panyw5/open-extensions/"],
   },
+  {
+    // Rotated in after the original private key was lost before any signed
+    // descriptor was published; stable.json.sig envelopes carry this keyId.
+    keyId: "ed25519-f523f6e60d76e402",
+    publicKey: "MCowBQYDK2VwAyEAbNjQV7IyZ0UtVvcp7BFXxocUA1EpnmHXMxTlyZlAVrU=",
+    origins: ["https://raw.githubusercontent.com/panyw5/open-extensions/"],
+  },
 ]
 
 /** Keys whose origins cover the (already normalized) descriptor URL. */
