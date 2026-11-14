@@ -347,6 +347,8 @@ export const layer = Layer.effect(
 
     const scan = Effect.fn("File.scan")(function* () {
       const ctx = yield* InstanceState.context
+      const started = Date.now()
+      log.info("scan started", { directory: ctx.directory })
       if (ctx.directory === path.parse(ctx.directory).root) return
       const isGlobalHome = ctx.directory === Global.Path.home && ctx.project.id === "global"
       const next: Entry = { files: [], dirs: [] }
@@ -397,6 +399,12 @@ export const layer = Layer.effect(
 
       const s = yield* InstanceState.get(state)
       s.cache = next
+      log.info("scan completed", {
+        directory: ctx.directory,
+        files: next.files.length,
+        dirs: next.dirs.length,
+        durationMs: Date.now() - started,
+      })
     })
 
     let cachedScan = yield* Effect.cached(scan().pipe(Effect.catchCause(() => Effect.void)))
@@ -615,6 +623,8 @@ export const layer = Layer.effect(
       dirs?: boolean
       type?: "file" | "directory"
     }) {
+      const started = Date.now()
+      log.info("search started", { query: input.query, directory: (yield* InstanceState.context).directory })
       yield* ensure()
       const { cache } = yield* InstanceState.get(state)
 
@@ -636,7 +646,7 @@ export const layer = Layer.effect(
       const sorted = fuzzysort.go(query, items, { limit: searchLimit }).map((item) => item.target)
       const output = kind === "directory" ? sortHiddenLast(sorted, preferHidden).slice(0, limit) : sorted
 
-      log.info("search", { query, kind, results: output.length })
+      log.info("search", { query, kind, results: output.length, durationMs: Date.now() - started })
       return output
     })
 

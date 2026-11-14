@@ -8,7 +8,7 @@ import { SessionContentSearchProgressTable } from "./content-search.sql"
 import type { MessageV2 } from "./message-v2"
 import type { PartID } from "./schema"
 
-const pageSize = 500
+const pageSize = 50
 const defaultLimit = 30
 const maxLimit = 100
 const log = Log.create({ service: "session.content-search" })
@@ -244,16 +244,32 @@ function active(row: ProgressRow | undefined, generation: number) {
 
 export function writeBackfillBatch(db: TxOrDb, generation: number, parts: BackfillPart[]) {
   const row = readProgressRow(db)
-  if (!active(row, generation)) return progress(db)
+  if (!active(row, generation) || parts.length === 0) return progress(db)
+
+  const started = Date.now()
+  // part_id is UNINDEXED in FTS5. Scan once per batch, then delete by rowid,
+  // rather than scanning the entire growing index twice for every part.
+  const existing = db.all(sql`
+    SELECT rowid AS rowID, part_id AS partID FROM session_content_fts
+    WHERE part_id IN (${sql.join(
+      parts.map((part) => sql`${part.id}`),
+      sql`, `,
+    )})
+  `) as { rowID: number; partID: string }[]
+  const indexed = new Set(existing.map((part) => part.partID))
+  log.info("session-content-search:backfill-lookup-completed", {
+    batchSize: parts.length,
+    existing: existing.length,
+    durationMs: Date.now() - started,
+  })
+  for (const part of existing) {
+    db.run(sql`DELETE FROM session_content_fts WHERE rowid = ${part.rowID}`)
+  }
 
   let added = 0
   for (const part of parts) {
     const text = searchableText(part.data)
-    const existed =
-      (db.all(sql`SELECT 1 AS ok FROM session_content_fts WHERE part_id = ${part.id} LIMIT 1`)[0] as
-        | { ok: number }
-        | undefined) !== undefined
-    db.run(sql`DELETE FROM session_content_fts WHERE part_id = ${part.id}`)
+    const existed = indexed.has(part.id)
     if (!text) {
       if (existed) added -= 1
       continue
@@ -275,6 +291,11 @@ export function writeBackfillBatch(db: TxOrDb, generation: number, parts: Backfi
       cursor = ${nextCursor}
     WHERE id = 1 AND enabled = 1 AND state = 'running' AND complete = 0 AND generation = ${generation}
   `)
+  log.info("session-content-search:backfill-write-completed", {
+    batchSize: parts.length,
+    added,
+    durationMs: Date.now() - started,
+  })
   return progress(db)
 }
 
@@ -303,10 +324,12 @@ export const backfill = Effect.fn("SessionContentSearch.backfill")(function* () 
 
   try {
     for (;;) {
+      const started = Date.now()
       state = yield* Effect.sync(() => Database.use(progress))
       if (!state.enabled || state.state !== "running" || state.complete || state.generation !== generation) return
 
       const cursor = state.cursor
+      log.info("session-content-search:backfill-batch-started", { indexed: state.indexed, pageSize })
       const parts = yield* Effect.sync(() =>
         Database.use((db) =>
           db
@@ -342,9 +365,10 @@ export const backfill = Effect.fn("SessionContentSearch.backfill")(function* () 
         indexed: state.indexed,
         total: state.total,
         cursorPresent: state.cursor !== undefined,
+        durationMs: Date.now() - started,
       })
       // Yield briefly so live chat writes are not starved.
-      yield* Effect.sleep("1 millis")
+      yield* Effect.sleep("10 millis")
     }
   } catch (error) {
     log.error("session-content-search:backfill-failed", {
@@ -356,9 +380,11 @@ export const backfill = Effect.fn("SessionContentSearch.backfill")(function* () 
 
 export const clearSession = (db: TxOrDb, sessionID: string) => {
   const removed =
-    (db.all(sql`SELECT count(*) AS count FROM session_content_fts WHERE session_id = ${sessionID}`)[0] as
-      | { count: number }
-      | undefined)?.count ?? 0
+    (
+      db.all(sql`SELECT count(*) AS count FROM session_content_fts WHERE session_id = ${sessionID}`)[0] as
+        | { count: number }
+        | undefined
+    )?.count ?? 0
   db.run(sql`DELETE FROM session_content_fts WHERE session_id = ${sessionID}`)
   if (removed > 0) {
     db.run(sql`
