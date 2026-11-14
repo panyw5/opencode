@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, spyOn } from "bun:test"
 import { Effect, Layer } from "effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Database } from "@/storage/db"
@@ -9,6 +9,7 @@ import { Session } from "@/session/session"
 import { TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { sql } from "drizzle-orm"
+import { SQLiteSyncDialect } from "drizzle-orm/sqlite-core"
 
 const it = testEffect(Layer.mergeAll(Session.defaultLayer, Project.defaultLayer, CrossSpawnSpawner.defaultLayer))
 
@@ -35,6 +36,59 @@ function insertTextPart(input: { sessionID: string; messageID: string; partID: s
 }
 
 describe("session content search index management", () => {
+  it.instance(
+    "scans existing FTS rows once per batch and replaces them by rowid",
+    () =>
+      Effect.gen(function* () {
+        yield* TestInstance
+        Database.transaction((db) => SessionContentSearch.clear(db))
+        const session = yield* Session.use.create({ title: "bounded content backfill" })
+        const parts = ["a", "b", "c"].map((suffix) => ({
+          id: `part_batch_${suffix}` as never,
+          messageID: `msg_batch_${suffix}`,
+          sessionID: session.id,
+          data: { type: "text" as const, text: `searchable ${suffix}` },
+        }))
+        for (const part of parts) {
+          insertTextPart({ sessionID: session.id, messageID: part.messageID, partID: part.id, text: part.data.text })
+        }
+        const enabled = Database.transaction((db) => SessionContentSearch.enable(db))
+        Database.transaction((db) => SessionContentSearch.writeBackfillBatch(db, enabled.generation, parts))
+
+        // Simulate retrying a page that contains already-indexed and now-hidden text.
+        const replacement = parts.map((part, index) => ({
+          ...part,
+          data: { ...part.data, text: `replacement ${index}`, synthetic: index === 1 },
+        }))
+        Database.transaction((db) => {
+          const all = spyOn(db, "all")
+          const run = spyOn(db, "run")
+          try {
+            const next = SessionContentSearch.writeBackfillBatch(db, enabled.generation, replacement)
+            expect(next.indexed).toBe(2)
+            expect(all).toHaveBeenCalledTimes(1)
+            const dialect = new SQLiteSyncDialect()
+            const queries = run.mock.calls.map(([query]) => dialect.sqlToQuery(query as ReturnType<typeof sql>).sql)
+            const deletes = queries.filter((query) => query.includes("DELETE FROM session_content_fts"))
+            expect(deletes).toHaveLength(3)
+            expect(deletes.every((query) => query.includes("WHERE rowid ="))).toBe(true)
+          } finally {
+            all.mockRestore()
+            run.mockRestore()
+          }
+        })
+        expect(
+          Database.use((db) => db.all(sql`SELECT part_id, text FROM session_content_fts ORDER BY part_id`)),
+        ).toEqual([
+          { part_id: parts[0].id, text: "replacement 0" },
+          { part_id: parts[2].id, text: "replacement 2" },
+        ])
+        yield* Session.use.remove(session.id)
+        Database.transaction((db) => SessionContentSearch.clear(db))
+      }),
+    { git: true },
+  )
+
   it.instance(
     "inserts fresh searchable parts without using replacement semantics",
     () =>
