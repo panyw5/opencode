@@ -68,6 +68,26 @@ export async function acquireBuildLock(name: string) {
 }
 
 /**
+ * Windows rename races with anything still holding a handle on the old tree:
+ * a just-executed smoke test binary, Defender/indexer scans, or a host's file
+ * watcher. Those release within seconds, so retry briefly instead of failing
+ * an otherwise-good build.
+ */
+async function renameWithRetry(from: string, to: string, attempts = 20) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await fs.promises.rename(from, to)
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      const retryable = code === "EPERM" || code === "EBUSY" || code === "EACCES"
+      if (!retryable || attempt >= attempts) throw error
+      await Bun.sleep(250 * attempt)
+    }
+  }
+}
+
+/**
  * Atomically publishes a fully-built staging directory into place. Readers
  * (electron-vite bundling, runtime CLIs) only ever see the complete previous
  * or next tree — never a half-written one. The old tree is moved aside first
@@ -76,9 +96,9 @@ export async function acquireBuildLock(name: string) {
 export async function publishDir(staging: string, target: string) {
   const trash = `${target}.trash-${process.pid}-${Date.now()}`
   await fs.promises.rm(trash, { recursive: true, force: true })
-  if (fs.existsSync(target)) await fs.promises.rename(target, trash)
+  if (fs.existsSync(target)) await renameWithRetry(target, trash)
   try {
-    await fs.promises.rename(staging, target)
+    await renameWithRetry(staging, target)
   } catch (error) {
     if (fs.existsSync(trash) && !fs.existsSync(target)) {
       await fs.promises.rename(trash, target).catch(() => {})
