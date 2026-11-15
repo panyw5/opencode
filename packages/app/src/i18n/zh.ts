@@ -76,7 +76,7 @@ export const dict = {
   "agentBackend.unsavedChanges": "配置已修改但尚未保存。点击「保存并启用后端」后生效。",
   "agentBackend.working": "正在执行",
   "agentBackend.cancelled": "操作已取消，请刷新安装状态后再重试。",
-  "agentBackend.refresh": "刷新",
+  "agentBackend.refresh": "刷新状态",
   "agentBackend.legacyHint": "下方 CLI 设置仅用于 CLI JSON / 原生 RPC。保留旧的托管版本，即可测试后切换回退。",
   "agentBackend.advisor": "智能体",
   "share.open": "分享…",

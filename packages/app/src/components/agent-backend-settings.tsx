@@ -2,6 +2,7 @@ import { createEffect, createMemo, createUniqueId, For, on, onCleanup, Show, typ
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
+import { SegmentedControl } from "@opencode-ai/ui/segmented-control"
 import { Select } from "@opencode-ai/ui/select"
 import { TextField } from "@opencode-ai/ui/text-field"
 import type {
@@ -86,34 +87,6 @@ export function AgentBackendSettings(props: {
     },
     { value: "acp", label: t("agentBackend.transportAcp"), installed: acpInstalled() },
   ])
-  let tablistRef: HTMLDivElement | undefined
-  const onTablistKeyDown = (event: KeyboardEvent) => {
-    if (state.busy) return
-    const values = tabs().map((tab) => tab.value)
-    const index = values.indexOf(state.type)
-    let next = index
-    switch (event.key) {
-      case "ArrowRight":
-      case "ArrowDown":
-        next = (index + 1) % values.length
-        break
-      case "ArrowLeft":
-      case "ArrowUp":
-        next = (index - 1 + values.length) % values.length
-        break
-      case "Home":
-        next = 0
-        break
-      case "End":
-        next = values.length - 1
-        break
-      default:
-        return
-    }
-    event.preventDefault()
-    change("type", values[next])
-    tablistRef?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
-  }
   const managedMode = () =>
     state.source === "managed" &&
     (!!recipe() || !status.latest || (active()?.type === "acp" && !!(active() as AcpConfig).managed))
@@ -313,43 +286,24 @@ export function AgentBackendSettings(props: {
   })
   return (
     <section data-agent-backend={props.advisor} class="flex min-w-0 flex-col gap-3">
-      <div
-        ref={tablistRef}
-        role="tablist"
+      <SegmentedControl
+        variant="tablist"
+        id={versionID}
         aria-label={t("agentBackend.transport")}
-        class="relative grid w-full max-w-[460px] grid-cols-2 rounded-full border border-border-weak-base bg-surface-secondary/70 p-1"
-        onKeyDown={onTablistKeyDown}
-      >
-        <span
-          aria-hidden="true"
-          class="absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-full bg-text-strong shadow-sm transition-transform duration-200 ease-out"
-          style={{ transform: state.type === "acp" ? "translateX(100%)" : "translateX(0%)" }}
-        />
-        <For each={tabs()}>
-          {(tab) => (
-            <button
-              type="button"
-              role="tab"
-              id={`${versionID}-tab-${tab.value}`}
-              aria-selected={state.type === tab.value}
-              aria-controls={`${versionID}-panel`}
-              tabIndex={state.type === tab.value ? 0 : -1}
-              disabled={!!state.busy}
-              onClick={() => change("type", tab.value)}
-              class="relative z-10 flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-13-medium transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-60"
-              classList={{
-                "text-surface-base": state.type === tab.value,
-                "text-text-weak hover:text-text-base": state.type !== tab.value,
-              }}
-            >
-              {tab.label}
-              <Show when={tab.installed}>
-                <Icon name="check-small" size="small" aria-label={t("agentBackend.installed")} />
-              </Show>
-            </button>
-          )}
-        </For>
-      </div>
+        size="medium"
+        fill
+        class="max-w-[460px]"
+        options={tabs().map((tab) => ({
+          value: tab.value,
+          label: tab.label,
+          trailing: tab.installed ? (
+            <Icon name="check-small" size="small" aria-label={t("agentBackend.installed")} />
+          ) : undefined,
+        }))}
+        current={state.type}
+        onSelect={(value) => change("type", value)}
+        disabled={!!state.busy}
+      />
       <div
         role="tabpanel"
         id={`${versionID}-panel`}
@@ -383,20 +337,12 @@ export function AgentBackendSettings(props: {
           </Show>
           <AgentSettingsCard title={t("agentSettings.connection")} badge={t("agentSettings.important")} size="compact">
             <div
-              class="flex min-h-7 min-w-0 flex-wrap items-center justify-between gap-2 text-12-regular text-text-weak"
+              class="flex min-h-7 min-w-0 flex-wrap items-center gap-2 text-12-regular text-text-weak"
               data-agent-backend-target
             >
               <span class="min-w-0 break-words">
                 {t("agentBackend.target")}: {status.latest?.target ?? "..."}
               </span>
-              <Button
-                size="small"
-                variant="ghost"
-                disabled={!!state.busy || status.loading}
-                onClick={() => void status.refresh()}
-              >
-                {t("agentBackend.refresh")}
-              </Button>
             </div>
             <Show when={props.remote}>
               <p class="text-12-regular text-text-base">{t("agentBackend.remote")}</p>
@@ -709,46 +655,57 @@ export function AgentBackendSettings(props: {
             {t("agentBackend.saved")}
           </p>
         </Show>
-        <div class="flex w-full flex-wrap items-center justify-end gap-2 border-t border-border-weak-base pt-3">
-          <Show when={state.type === "acp"}>
+        <Show when={state.type === "acp" || !props.cliSettings}>
+          <div class="flex w-full flex-wrap items-center justify-end gap-2 border-t border-border-weak-base pt-3">
             <Button
               size="small"
               variant="ghost"
-              icon="reset"
-              disabled={!!state.busy || !status.latest || (managedMode() && !installed())}
-              onClick={() => void probe()}
+              icon="refresh"
+              disabled={!!state.busy || status.loading}
+              onClick={() => void status.refresh()}
             >
-              {t("agentBackend.test")}
+              {t("agentBackend.refresh")}
             </Button>
+            <Show when={state.type === "acp"}>
+              <Button
+                size="small"
+                variant="ghost"
+                icon="reset"
+                disabled={!!state.busy || !status.latest || (managedMode() && !installed())}
+                onClick={() => void probe()}
+              >
+                {t("agentBackend.test")}
+              </Button>
+              <Button
+                size="small"
+                variant="ghost"
+                disabled={!!state.busy || !tested()}
+                onClick={() => setState("messageConsent", true)}
+              >
+                {t("agentBackend.messageTest")}
+              </Button>
+            </Show>
+            <Show when={state.busy}>
+              <span role="status" class="text-12-regular text-text-weak">
+                {t("agentBackend.working")}: {state.busy}
+              </span>
+              <Button size="small" variant="ghost" onClick={() => controller?.abort()}>
+                {t("common.cancel")}
+              </Button>
+            </Show>
             <Button
               size="small"
-              variant="ghost"
-              disabled={!!state.busy || !tested()}
-              onClick={() => setState("messageConsent", true)}
+              variant="secondary"
+              icon="save"
+              disabled={!!state.busy || !status.latest}
+              onClick={() => void save()}
+              class="config-save-button"
+              data-config-save-state={!!state.busy || !status.latest ? "disabled" : "active"}
             >
-              {t("agentBackend.messageTest")}
+              {t("agentBackend.activate")}
             </Button>
-          </Show>
-          <Show when={state.busy}>
-            <span role="status" class="text-12-regular text-text-weak">
-              {t("agentBackend.working")}: {state.busy}
-            </span>
-            <Button size="small" variant="ghost" onClick={() => controller?.abort()}>
-              {t("common.cancel")}
-            </Button>
-          </Show>
-          <Button
-            size="small"
-            variant="secondary"
-            icon="save"
-            disabled={!!state.busy || !status.latest}
-            onClick={() => void save()}
-            class="config-save-button"
-            data-config-save-state={!!state.busy || !status.latest ? "disabled" : "active"}
-          >
-            {t("agentBackend.activate")}
-          </Button>
-        </div>
+          </div>
+        </Show>
         <Show when={state.type !== "acp"}>{props.cliSettings?.()}</Show>
         <Show when={state.type === "acp"}>
           <p class="text-11-regular text-text-weak">{t("agentSettings.saveHint")}</p>

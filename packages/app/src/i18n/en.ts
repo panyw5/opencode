@@ -78,7 +78,7 @@ export const dict = {
   "agentBackend.unsavedChanges": "Changes are not saved yet. Click \"Save and enable backend\" to apply.",
   "agentBackend.working": "Working",
   "agentBackend.cancelled": "Operation cancelled. Refresh installation status before retrying.",
-  "agentBackend.refresh": "Refresh",
+  "agentBackend.refresh": "Refresh status",
   "agentBackend.legacyHint":
     "CLI settings below apply only to CLI JSON / native RPC. Keep older managed versions installed to switch back after testing.",
   "agentBackend.advisor": "Advisor",

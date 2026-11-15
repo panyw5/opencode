@@ -183,7 +183,8 @@ const transportTabs = (container: HTMLElement) => {
   return result
 }
 const transportTab = (container: HTMLElement, value: "cli-json" | "acp" | "native-rpc") => {
-  const label = value === "acp" ? "ACP" : value === "native-rpc" ? "Native RPC" : "CLI"
+  const label =
+    value === "acp" ? key("transportAcp") : value === "native-rpc" ? key("transportRpc") : key("transportCli")
   const result = [...transportTabs(container).querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
     (item) => item.textContent?.trim() === label,
   )

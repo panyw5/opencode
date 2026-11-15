@@ -5895,10 +5895,12 @@ export default function ConfigPage() {
       const config = cliAgentConfigs[agent.id]
       const info = cliAgentInfo[agent.id]
       const model = info?.details?.find((detail) => detail.label === "Model")?.value ?? info?.dsh?.model
+      const type = cfg().agent_backends?.[agent.id]?.type ?? (agent.id === "pi" ? "native-rpc" : "cli-json")
+      const transport = type === "acp" ? "ACP" : type === "native-rpc" ? "RPC" : "CLI"
       items.push({
         id: `claw:${agent.id}`,
         label: agent.label,
-        meta: `${agent.command} CLI · ${model ?? t("config.claws.info.unknown")}`,
+        meta: `${agent.command} ${transport} · ${model ?? t("config.claws.info.unknown")}`,
         sourceUrl: agent.sourceUrl,
         enabled: config?.enabled ?? true,
       })

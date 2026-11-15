@@ -3,6 +3,7 @@ import { base64Encode, checksum } from "@opencode-ai/core/util/encode"
 import { Dialog, type DialogProps } from "@opencode-ai/ui/dialog"
 import { Button } from "@opencode-ai/ui/button"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
+import { SegmentedControl } from "@opencode-ai/ui/segmented-control"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
@@ -768,51 +769,33 @@ export function ProjectTaskDetailDialog(props: {
           <Show when={state.error}>{(err) => <ErrorCard err={err()} />}</Show>
 
           <div class="flex shrink-0 flex-wrap items-center gap-2">
-            <div
-              role="group"
+            <SegmentedControl
               aria-label={language.t("projectTask.document.label")}
-              class="config-editor-mode-toggle__group"
-            >
-              <For each={["description", "progress"] as const}>
-                {(document) => (
-                  <button
-                    type="button"
-                    class="config-editor-mode-toggle__button"
-                    data-active={state.document === document ? "true" : undefined}
-                    data-project-task-document={document}
-                    aria-pressed={state.document === document}
-                    disabled={state.loading || state.pending}
-                    onClick={() => void switchDocument(document)}
-                  >
-                    {document === "description" ? language.t("projectTask.field.description") : "progress.md"}
-                  </button>
-                )}
-              </For>
-            </div>
-            <For each={["open", "in_progress", "done"] as const}>
-              {(value) => (
-                <button
-                  type="button"
-                  class="rounded-full border px-3 py-1 text-12-medium transition-colors"
-                  classList={{
-                    "border-border-brand-base bg-surface-interactive-selected/40 text-text-strong": status() === value,
-                    "inset-control border-border-weak-base bg-background-base text-text-base hover:bg-surface-base-hover":
-                      status() !== value,
-                  }}
-                  disabled={state.pending || state.loading}
-                  data-project-task-status={value}
-                  onClick={() => void setStatus(value)}
-                >
-                  {language.t(
-                    value === "in_progress"
-                      ? "projectTask.status.inProgress"
-                      : value === "open"
-                        ? "projectTask.status.open"
-                        : "projectTask.status.done",
-                  )}
-                </button>
-              )}
-            </For>
+              optionDataKey="project-task-document"
+              options={
+                [
+                  { value: "description", label: language.t("projectTask.field.description") },
+                  { value: "progress", label: "progress.md" },
+                ] as const
+              }
+              current={state.document}
+              onSelect={(value) => void switchDocument(value)}
+              disabled={state.loading || state.pending}
+            />
+            <SegmentedControl
+              aria-label={language.t("projectTask.field.status")}
+              optionDataKey="project-task-status"
+              options={
+                [
+                  { value: "open", label: language.t("projectTask.status.open") },
+                  { value: "in_progress", label: language.t("projectTask.status.inProgress") },
+                  { value: "done", label: language.t("projectTask.status.done") },
+                ] as const
+              }
+              current={status()}
+              onSelect={(value) => void setStatus(value)}
+              disabled={state.pending || state.loading}
+            />
             <div data-component="project-task-editor-toolbar" class="ml-auto flex items-center gap-2">
               <Show when={props.embedded && state.mode === "edit"}>
                 <Button
