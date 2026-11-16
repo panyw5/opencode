@@ -594,6 +594,9 @@ export function MessageTimeline(props: {
         if (index === undefined) continue
         const width = estimatorWidth()
         const contentVersion = currentRow ? measurementVersion(currentRow) : undefined
+        const item = virtualizer.measurementsCache[index]
+        const previousSize =
+          item && String(item.key) === rowKey ? (virtualizer.itemSizeCache.get(item.key) ?? item.size) : undefined
         const resolution = resolveObserverMeasurement({
           sampleSize: measurement.size,
           readCurrentSize: () => measurement.element.offsetHeight,
@@ -601,6 +604,7 @@ export function MessageTimeline(props: {
           currentWidth: width,
           sampleVersion: measurement.contentVersion,
           currentVersion: contentVersion,
+          previousSize,
         })
         if (!resolution) continue
         resolved.push({ rowKey, element: measurement.element, index, size: resolution.size, width, contentVersion })
@@ -867,6 +871,14 @@ export function MessageTimeline(props: {
       viewportAnchor = undefined
       readingAnchor = undefined
       followTail()
+      // A measurement-driven correction while pinned to the bottom must land
+      // in the same frame as the resize that displaced the viewport. Waiting
+      // for the eased tail follow paints the displaced position first, then
+      // visibly glides back (the open-session "bounce").
+      if (props.navigationState().following) {
+        const bottom = root.scrollHeight - root.clientHeight
+        if (Math.abs(bottom - root.scrollTop) > 0.5) applyPosition(root, bottom, "bottom", ownerToken)
+      }
       return
     }
     const items = virtualizer.measurementsCache

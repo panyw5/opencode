@@ -81,6 +81,66 @@ test("observer samples refresh only when metadata is stale and reject invalid si
   ).toBeUndefined()
 })
 
+test("observer samples with a large delta re-read the live layout instead of committing a transient", () => {
+  let reads = 0
+  const readCurrentSize = () => {
+    reads++
+    return 1907
+  }
+  // Small deltas still trust the border-box sample — no layout read.
+  expect(
+    resolveObserverMeasurement({
+      sampleSize: 2550,
+      readCurrentSize,
+      sampleWidth: 400,
+      currentWidth: 400,
+      sampleVersion: "a",
+      currentVersion: "a",
+      previousSize: 2572,
+    }),
+  ).toEqual({ stale: false, size: 2550 })
+  expect(reads).toBe(0)
+  // A large jump from the committed size re-reads the DOM: the element had
+  // already recovered when the stale border-box sample (64 vs 2572) arrived.
+  expect(
+    resolveObserverMeasurement({
+      sampleSize: 64,
+      readCurrentSize,
+      sampleWidth: 400,
+      currentWidth: 400,
+      sampleVersion: "a",
+      currentVersion: "a",
+      previousSize: 2572,
+    }),
+  ).toEqual({ stale: false, size: 1907 })
+  expect(reads).toBe(1)
+  // Large growth verifies the same way.
+  expect(
+    resolveObserverMeasurement({
+      sampleSize: 2600,
+      readCurrentSize,
+      sampleWidth: 400,
+      currentWidth: 400,
+      sampleVersion: "a",
+      currentVersion: "a",
+      previousSize: 1907,
+    }),
+  ).toEqual({ stale: false, size: 1907 })
+  expect(reads).toBe(2)
+  // Without a previous size there is nothing to compare — trust the sample.
+  expect(
+    resolveObserverMeasurement({
+      sampleSize: 64,
+      readCurrentSize,
+      sampleWidth: 400,
+      currentWidth: 400,
+      sampleVersion: "a",
+      currentVersion: "a",
+    }),
+  ).toEqual({ stale: false, size: 64 })
+  expect(reads).toBe(2)
+})
+
 test("treats replacement virtual items with unchanged geometry as equal", () => {
   const previous = { key: "row-1", index: 4, start: 240, size: 60 }
 

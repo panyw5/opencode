@@ -90,9 +90,17 @@ export function resolveObserverMeasurement(input: {
   currentWidth: number
   sampleVersion: string | undefined
   currentVersion: string | undefined
+  /** Last committed virtual size; a large delta re-reads the live layout. */
+  previousSize?: number
 }) {
   const stale = input.sampleWidth !== input.currentWidth || input.sampleVersion !== input.currentVersion
-  const size = stale ? input.readCurrentSize() : input.sampleSize
+  // An observer entry can be captured mid-transition — e.g. a row whose
+  // deferred content mounts between the border-box sample and the commit
+  // frame — so a large jump from the last committed size re-reads the live
+  // layout instead of committing a transient value.
+  const suspicious =
+    !stale && input.previousSize !== undefined && Math.abs(input.sampleSize - input.previousSize) >= 64
+  const size = stale || suspicious ? input.readCurrentSize() : input.sampleSize
   return Number.isFinite(size) && size > 0 ? { stale, size } : undefined
 }
 
