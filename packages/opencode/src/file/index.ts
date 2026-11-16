@@ -1,10 +1,11 @@
+import { Bus } from "@/bus"
 import { BusEvent } from "@/bus/bus-event"
 import { serviceUse } from "@/effect/service-use"
 import { InstanceState } from "@/effect/instance-state"
 
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Git } from "@/git"
-import { Effect, Layer, Context, Schema, Scope } from "effect"
+import { Effect, Layer, Context, Schema, Scope, Semaphore } from "effect"
 import * as Stream from "effect/Stream"
 import { formatPatch, structuredPatch } from "diff"
 import fuzzysort from "fuzzysort"
@@ -15,6 +16,7 @@ import { containsPath } from "../project/instance-context"
 import * as Log from "@opencode-ai/core/util/log"
 import { Protected } from "./protected"
 import { Ripgrep } from "./ripgrep"
+import { FileWatcher } from "./watcher"
 import { NonNegativeInt, type DeepMutable } from "@opencode-ai/core/schema"
 
 export const Info = Schema.Struct({
@@ -308,8 +310,19 @@ const sortHiddenLast = (items: string[], prefer: boolean) => {
   return [...visible, ...hiddenItems]
 }
 
+// Stale-while-revalidate window for the workspace file cache. Searches within
+// the TTL reuse the in-memory list; the first search after expiry serves the
+// stale list immediately and refreshes it in the background. Observed file
+// changes (tool writes, watcher events) reset `scannedAt` so the next search
+// always reflects them.
+const SCAN_TTL_MS = 2_000
+
 interface State {
   cache: Entry
+  scannedAt: number
+  inflight: Effect.Effect<void> | undefined
+  lock: Semaphore.Semaphore
+  disposed: boolean
 }
 
 export interface Interface {
@@ -335,17 +348,38 @@ export const layer = Layer.effect(
     const appFs = yield* AppFileSystem.Service
     const rg = yield* Ripgrep.Service
     const git = yield* Git.Service
+    const bus = yield* Bus.Service
     const scope = yield* Scope.Scope
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("File.state")(() =>
-        Effect.succeed({
-          cache: { files: [], dirs: [] } as Entry,
+        Effect.gen(function* () {
+          const s: State = {
+            cache: { files: [], dirs: [] },
+            scannedAt: 0,
+            inflight: undefined,
+            lock: Semaphore.makeUnsafe(1),
+            disposed: false,
+          }
+          // InstanceState.get may hand out a state object whose entry was
+          // already invalidated (dispose races). Treat such stale state as
+          // unscanned so a search can never serve a disposed cache.
+          yield* Effect.addFinalizer(() => Effect.sync(() => (s.disposed = true)))
+          const dirty = Effect.sync(() => (s.scannedAt = 0))
+          yield* (yield* bus.subscribe(FileWatcher.Event.Updated)).pipe(
+            Stream.runForEach(() => dirty),
+            Effect.forkScoped,
+          )
+          yield* (yield* bus.subscribe(FileWatcher.Event.Invalidated)).pipe(
+            Stream.runForEach(() => dirty),
+            Effect.forkScoped,
+          )
+          return s
         }),
       ),
     )
 
-    const scan = Effect.fn("File.scan")(function* () {
+    const scan = Effect.fn("File.scan")(function* (s: State) {
       const ctx = yield* InstanceState.context
       const started = Date.now()
       log.info("scan started", { directory: ctx.directory })
@@ -397,8 +431,8 @@ export const layer = Layer.effect(
         }
       }
 
-      const s = yield* InstanceState.get(state)
       s.cache = next
+      s.scannedAt = Date.now()
       log.info("scan completed", {
         directory: ctx.directory,
         files: next.files.length,
@@ -407,11 +441,29 @@ export const layer = Layer.effect(
       })
     })
 
-    let cachedScan = yield* Effect.cached(scan().pipe(Effect.catchCause(() => Effect.void)))
-
+    // Resolves the state backing `search`. Callers must read `cache` off the
+    // returned object — a second InstanceState.get may resolve a different
+    // entry across dispose boundaries.
     const ensure = Effect.fn("File.ensure")(function* () {
-      yield* cachedScan
-      cachedScan = yield* Effect.cached(scan().pipe(Effect.catchCause(() => Effect.void)))
+      const s = yield* InstanceState.get(state)
+      if (s.disposed) s.scannedAt = 0
+      if (s.scannedAt !== 0 && Date.now() - s.scannedAt < SCAN_TTL_MS) return s
+      const pending = yield* s.lock.withPermits(1)(
+        Effect.gen(function* () {
+          if (!s.inflight) {
+            s.inflight = yield* Effect.cached(
+              scan(s).pipe(
+                Effect.catchCause(() => Effect.void),
+                Effect.ensuring(Effect.sync(() => (s.inflight = undefined))),
+              ),
+            )
+            yield* s.inflight.pipe(Effect.forkIn(scope))
+          }
+          return s.inflight
+        }),
+      )
+      if (s.scannedAt === 0 && pending) yield* pending
+      return s
     })
 
     const gitText = Effect.fnUntraced(function* (args: string[]) {
@@ -625,8 +677,7 @@ export const layer = Layer.effect(
     }) {
       const started = Date.now()
       log.info("search started", { query: input.query, directory: (yield* InstanceState.context).directory })
-      yield* ensure()
-      const { cache } = yield* InstanceState.get(state)
+      const { cache } = yield* ensure()
 
       const query = input.query.trim()
       const limit = input.limit ?? 100
@@ -659,6 +710,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide(Ripgrep.defaultLayer),
   Layer.provide(AppFileSystem.defaultLayer),
   Layer.provide(Git.defaultLayer),
+  Layer.provide(Bus.defaultLayer),
 )
 
 export * as File from "."

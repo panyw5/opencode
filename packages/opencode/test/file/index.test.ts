@@ -5,8 +5,8 @@ import { Cause, Effect, Exit, Layer } from "effect"
 import path from "path"
 import fs from "fs/promises"
 import { File } from "../../src/file"
-import { disposeAllInstances, TestInstance, withTmpdirInstance } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
+import { disposeAllInstances, disposeAllInstancesEffect, TestInstance, withTmpdirInstance } from "../fixture/fixture"
+import { pollWithTimeout, testEffect } from "../lib/effect"
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -757,7 +757,15 @@ describe("file/index Filesystem patterns", () => {
 
           yield* Effect.promise(() => fs.writeFile(path.join(test.directory, "fresh.ts"), "fresh", "utf-8"))
 
-          expect(yield* search({ query: "fresh", type: "file" })).toContain("fresh.ts")
+          // The file list cache is stale-while-revalidate: results may lag a
+          // rescan window, so poll until the refresh lands instead of
+          // expecting immediate visibility.
+          yield* pollWithTimeout(
+            search({ query: "fresh", type: "file" }).pipe(
+              Effect.map((result) => (result.includes("fresh.ts") ? true : undefined)),
+            ),
+            "search never refreshed fresh.ts",
+          )
         }),
       { git: true },
     )
@@ -857,7 +865,10 @@ describe("file/index Filesystem patterns", () => {
           yield* init()
           expect(yield* search({ query: "before", type: "file" })).toContain("before.ts")
 
-          yield* Effect.promise(() => disposeAllInstances())
+          // Dispose through the in-context per-test InstanceStore: the global
+          // `disposeAllInstances()` helper only drains the shared stores and
+          // does not hold entries for instances loaded via it.instance.
+          yield* disposeAllInstancesEffect
 
           yield* Effect.promise(() => fs.writeFile(path.join(test.directory, "after.ts"), "after", "utf-8"))
           yield* Effect.promise(() => fs.rm(path.join(test.directory, "before.ts")))
