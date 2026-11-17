@@ -143,6 +143,12 @@ const emptyUserMessages: UserMessage[] = []
 const scrollBottomThreshold = SESSION_SCROLL_BOTTOM_THRESHOLD
 // Includes Markdown's 8s parse fallback; normal loads reveal after three stable frames.
 const settleMs = 8_500
+// Once content exists, a layout that still cannot settle after this long is
+// pathological — revealing the imperfect frame beats holding a blank overlay.
+const contentSettleMs = 1_500
+// Sessions that settle within this window never flash the loading overlay.
+const overlayArmDelayMs = 150
+const overlayFadeMs = 95
 const sessionBackgroundDelayMs = typeof navigator === "undefined" ? 250 : sessionBackgroundDelay(navigator.userAgent)
 const sessionTodoDelayMs = typeof navigator === "undefined" ? 500 : sessionBackgroundDelay(navigator.userAgent, 500)
 // Background-prefetch delay for review data: after the children/todo prefetches
@@ -814,11 +820,19 @@ export default function Page() {
       ([id, overlay, generation]) => {
         if (renderOverlayTimer !== undefined) window.clearTimeout(renderOverlayTimer)
         renderOverlayTimer = undefined
-        if (!id || overlay !== "hiding") return
+        if (!id) return
+        if (overlay === "armed") {
+          renderOverlayTimer = window.setTimeout(() => {
+            renderOverlayTimer = undefined
+            dispatchSessionRender({ type: "overlay-show", sessionID: id, generation }, "arm-deadline")
+          }, overlayArmDelayMs)
+          return
+        }
+        if (overlay !== "hiding") return
         renderOverlayTimer = window.setTimeout(() => {
           renderOverlayTimer = undefined
           dispatchSessionRender({ type: "overlay-hidden", sessionID: id, generation }, "fade-deadline")
-        }, 120)
+        }, overlayFadeMs)
       },
     ),
   )
@@ -2555,7 +2569,8 @@ export default function Page() {
     initialScrollContentReady = undefined
     initialScrollGeneration = sessionRenderState().generation
     const generation = initialScrollGeneration
-    until = performance.now() + settleMs
+    const deadlineMs = sessionRenderState().hasContent ? contentSettleMs : settleMs
+    until = performance.now() + deadlineMs
     initialScrollDeadlineTimer = window.setTimeout(() => {
       if (initialScrollGeneration !== generation) return
       initialScrollDeadlineTimer = undefined
@@ -2567,7 +2582,7 @@ export default function Page() {
       // settling loop alive so late row measurements can still pin the
       // viewport to the bottom until it stabilizes or reaches `until`.
       dispatchSessionRender({ type: "deadline", sessionID: id, generation }, "initial-scroll")
-    }, settleMs)
+    }, deadlineMs)
   }
 
   const settle = (key: string, generation: number) => {
@@ -3874,7 +3889,7 @@ export default function Page() {
             }}
           />
 
-          <Show when={sessionRenderOverlayStatus() !== "hidden"}>
+          <Show when={sessionRenderOverlayStatus() === "showing" || sessionRenderOverlayStatus() === "hiding"}>
             <div
               data-slot="session-render-overlay"
               data-state={sessionRenderOverlayStatus()}
@@ -3884,7 +3899,7 @@ export default function Page() {
               class="absolute inset-0 z-[70] flex items-center justify-center"
               classList={{
                 "opacity-100 pointer-events-auto": sessionRenderOverlayStatus() === "showing",
-                "opacity-0 pointer-events-none transition-opacity duration-100 ease-out":
+                "opacity-0 pointer-events-none transition-opacity duration-75 ease-out":
                   sessionRenderOverlayStatus() === "hiding",
               }}
               style={{

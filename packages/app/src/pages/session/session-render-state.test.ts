@@ -19,7 +19,7 @@ describe("session render state", () => {
       sessionID,
       cached: true,
     })
-    expect(entering.overlay).toBe("showing")
+    expect(entering.overlay).toBe("armed")
     const bound = reduceSessionRenderState(entering, { type: "viewport-bound", sessionID })
     const warm = reduceSessionRenderState(bound, { type: "warm-ready", sessionID, generation: bound.generation })
     expect(warm.overlay).toBe("hidden")
@@ -35,12 +35,24 @@ describe("session render state", () => {
       cached: true,
     })
     expect(state.phase).toBe("cached-visible")
-    expect(state.overlay).toBe("showing")
+    expect(state.overlay).toBe("armed")
     expect(sessionContentVisible(state)).toBe(true)
 
-    const rendering = transition(state, { type: "messages-ready", sessionID }, { type: "content-ready", sessionID })
-    expect(rendering.overlay).toBe("showing")
-    const settled = reduceSessionRenderState(rendering, { type: "settled", sessionID })
+    // Settling before the arm deadline drops straight to hidden — no flash.
+    const quick = transition(state, { type: "messages-ready", sessionID }, { type: "content-ready", sessionID })
+    expect(quick.overlay).toBe("armed")
+    expect(reduceSessionRenderState(quick, { type: "settled", sessionID }).overlay).toBe("hidden")
+
+    // If it stays unsettled past the arm deadline the overlay promotes to
+    // showing and still fades out on settle.
+    const slow = transition(
+      state,
+      { type: "overlay-show", sessionID },
+      { type: "messages-ready", sessionID },
+      { type: "content-ready", sessionID },
+    )
+    expect(slow.overlay).toBe("showing")
+    const settled = reduceSessionRenderState(slow, { type: "settled", sessionID })
     expect(settled.overlay).toBe("hiding")
     expect(reduceSessionRenderState(settled, { type: "overlay-hidden", sessionID }).overlay).toBe("hidden")
   })
@@ -52,10 +64,13 @@ describe("session render state", () => {
       cached: false,
     })
     expect(fetching.phase).toBe("fetching")
-    expect(fetching.overlay).toBe("showing")
+    expect(fetching.overlay).toBe("armed")
     expect(sessionContentVisible(fetching)).toBe(false)
 
-    const visible = reduceSessionRenderState(fetching, { type: "messages-ready", sessionID })
+    const promoted = reduceSessionRenderState(fetching, { type: "overlay-show", sessionID })
+    expect(promoted.overlay).toBe("showing")
+
+    const visible = reduceSessionRenderState(promoted, { type: "messages-ready", sessionID })
     expect(visible.phase).toBe("content-visible")
     expect(visible.overlay).toBe("showing")
     expect(sessionContentVisible(visible)).toBe(true)
@@ -107,7 +122,7 @@ describe("session render state", () => {
     )
     const firstSwitch = reduceSessionRenderState(previous, { type: "session-change", sessionID, cached: true })
     expect(firstSwitch.hasContent).toBe(true)
-    expect(firstSwitch.overlay).toBe("showing")
+    expect(firstSwitch.overlay).toBe("armed")
     expect(reduceSessionRenderState(firstSwitch, { type: "settled", sessionID: "ses_other" })).toBe(firstSwitch)
   })
 
@@ -166,7 +181,7 @@ describe("session render state", () => {
       { type: "overlay-hidden", sessionID },
     )
     const remounted = reduceSessionRenderState(ready, { type: "viewport-bound", sessionID })
-    expect(remounted.overlay).toBe("showing")
+    expect(remounted.overlay).toBe("armed")
     expect(remounted.generation).toBe(ready.generation + 1)
     expect(
       reduceSessionRenderState(remounted, { type: "overlay-hidden", sessionID, generation: ready.generation }),
@@ -177,8 +192,10 @@ describe("session render state", () => {
     expect(reduceSessionRenderState(remounted, { type: "deadline", sessionID, generation: ready.generation })).toBe(
       remounted,
     )
+    const promoted = reduceSessionRenderState(remounted, { type: "overlay-show", sessionID })
+    expect(promoted.overlay).toBe("showing")
     expect(
-      reduceSessionRenderState(remounted, { type: "settled", sessionID, generation: remounted.generation }).overlay,
+      reduceSessionRenderState(promoted, { type: "settled", sessionID, generation: remounted.generation }).overlay,
     ).toBe("hiding")
   })
 
@@ -227,7 +244,7 @@ describe("session render state", () => {
       cached: true,
     })
     expect(first.sessionKey).not.toBe(second.sessionKey)
-    expect(second.overlay).toBe("showing")
+    expect(second.overlay).toBe("armed")
     expect(second.generation).toBeGreaterThan(first.generation)
   })
 })
