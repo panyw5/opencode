@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { CommandCodePlugin, commandCodeCustomLoader, resolveCommandCodeRuntimeAuth } from "../../src/plugin/commandcode"
+import {
+  CommandCodePlugin,
+  commandCodeCustomLoader,
+  refreshCommandCodeCatalog,
+  resolveCommandCodeRuntimeAuth,
+} from "../../src/plugin/commandcode"
 import { createCommandCodeLanguageModel } from "../../src/provider/commandcode"
 
 function input() {
@@ -65,6 +70,10 @@ describe("commandcode catalog", () => {
         { status: 200, headers: { "content-type": "application/json" } },
       )
 
+    const cacheFile = `${import.meta.dir}/../../.tmp/commandcode-catalog-test-${Date.now()}.json`
+    const previousCache = process.env.OPENCODE_COMMANDCODE_CATALOG
+    process.env.OPENCODE_COMMANDCODE_CATALOG = cacheFile
+
     try {
       const hooks = await CommandCodePlugin({} as never)
       const config = {
@@ -78,6 +87,8 @@ describe("commandcode catalog", () => {
       } as any
 
       await hooks.config?.(config)
+      await refreshCommandCodeCatalog()
+      await hooks.config?.(config)
 
       expect(config.provider.commandcode.models["stale-model"]).toBeUndefined()
       expect(config.provider.commandcode.models["stealth/ox-alpha"]).toMatchObject({
@@ -87,6 +98,8 @@ describe("commandcode catalog", () => {
       })
     } finally {
       globalThis.fetch = previous
+      if (previousCache === undefined) delete process.env.OPENCODE_COMMANDCODE_CATALOG
+      else process.env.OPENCODE_COMMANDCODE_CATALOG = previousCache
     }
   })
 })

@@ -1,6 +1,7 @@
-import { readFileSync } from "node:fs"
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
+import { Global } from "@opencode-ai/core/global"
 import type { Config, Hooks, Plugin } from "@opencode-ai/plugin"
 import * as Log from "@opencode-ai/core/util/log"
 import { Effect } from "effect"
@@ -170,33 +171,93 @@ export function commandCodeFallbackModelsDevProvider() {
   }
 }
 
-async function fetchCatalog(): Promise<CommandCodeModelEntry[]> {
+const CATALOG_CACHE_VERSION = 1
+
+const catalogCacheFilePath = () =>
+  process.env.OPENCODE_COMMANDCODE_CATALOG ?? join(Global.Path.cache, "commandcode-models.json")
+
+let catalogCache: CommandCodeModelEntry[] | undefined
+let catalogRefreshed = false
+let catalogRefresh: Promise<void> | undefined
+
+function catalogEntry(item: unknown): CommandCodeModelEntry[] {
+  if (!item || typeof item !== "object") return []
+  const data = item as Record<string, unknown>
+  if (typeof data.id !== "string" || typeof data.name !== "string") return []
+  const contextLength =
+    typeof data.contextLength === "number"
+      ? data.contextLength
+      : typeof data.context_length === "number"
+        ? data.context_length
+        : undefined
+  if (contextLength === undefined) return []
+  return [{ id: data.id, name: data.name, contextLength }]
+}
+
+function readCachedCatalog(): CommandCodeModelEntry[] | undefined {
+  if (catalogCache) return catalogCache
   try {
-    const response = await fetch(`${COMMANDCODE_API_BASE}/provider/v1/models`, {
-      headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(10_000),
-    })
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    const value: unknown = await response.json()
-    if (!value || typeof value !== "object" || !Array.isArray((value as { data?: unknown }).data)) {
-      throw new Error("unexpected model catalog shape")
+    const parsed = JSON.parse(readFileSync(catalogCacheFilePath(), "utf8")) as {
+      version?: unknown
+      models?: unknown
     }
-    const models = (value as { data: unknown[] }).data.flatMap((item) => {
-      if (!item || typeof item !== "object") return []
-      const data = item as Record<string, unknown>
-      if (typeof data.id !== "string" || typeof data.name !== "string" || typeof data.context_length !== "number")
-        return []
-      return [{ id: data.id, name: data.name, contextLength: data.context_length }]
-    })
-    if (models.length === 0) throw new Error("empty model catalog")
-    log.info("loaded Command Code model catalog", { count: models.length })
+    if (parsed?.version !== CATALOG_CACHE_VERSION || !Array.isArray(parsed.models)) return undefined
+    const models = parsed.models.flatMap(catalogEntry)
+    if (models.length === 0) return undefined
+    catalogCache = models
     return models
+  } catch {
+    return undefined
+  }
+}
+
+function persistCatalog(models: CommandCodeModelEntry[]) {
+  try {
+    const file = catalogCacheFilePath()
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, JSON.stringify({ version: CATALOG_CACHE_VERSION, fetchedAt: Date.now(), models }))
   } catch (error) {
-    log.warn("using Command Code fallback model catalog", {
+    log.warn("failed to persist Command Code model catalog", {
       error: error instanceof Error ? error.message : String(error),
     })
-    return fallbackCatalog()
   }
+}
+
+async function fetchCatalog(): Promise<CommandCodeModelEntry[]> {
+  const response = await fetch(`${COMMANDCODE_API_BASE}/provider/v1/models`, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(10_000),
+  })
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  const value: unknown = await response.json()
+  if (!value || typeof value !== "object" || !Array.isArray((value as { data?: unknown }).data)) {
+    throw new Error("unexpected model catalog shape")
+  }
+  const models = (value as { data: unknown[] }).data.flatMap(catalogEntry)
+  if (models.length === 0) throw new Error("empty model catalog")
+  log.info("loaded Command Code model catalog", { count: models.length })
+  return models
+}
+
+export function refreshCommandCodeCatalog(): Promise<void> {
+  if (!catalogRefreshed) {
+    catalogRefreshed = true
+    catalogRefresh = fetchCatalog()
+      .then((models) => {
+        catalogCache = models
+        persistCatalog(models)
+      })
+      .catch((error) => {
+        catalogRefreshed = false
+        log.warn("Command Code model catalog refresh failed", {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
+      .finally(() => {
+        catalogRefresh = undefined
+      })
+  }
+  return catalogRefresh ?? Promise.resolve()
 }
 
 export function readCommandCodeAuthFile(): string | undefined {
@@ -241,12 +302,13 @@ function modelConfig(model: CommandCodeModelEntry) {
   }
 }
 
-async function configureProvider(config: Config) {
+function configureProvider(config: Config) {
   const target = config as Config & { provider?: Record<string, any> }
   target.provider ??= {}
   const current = target.provider[COMMANDCODE_PROVIDER_ID] ?? {}
 
-  const catalog = await fetchCatalog()
+  void refreshCommandCodeCatalog()
+  const catalog = readCachedCatalog() ?? fallbackCatalog()
   target.provider[COMMANDCODE_PROVIDER_ID] = {
     ...current,
     name: current.name ?? "Command Code",
@@ -270,7 +332,7 @@ export const CommandCodePlugin: Plugin = async () => {
       ],
     },
     config: async (config) => {
-      await configureProvider(config)
+      configureProvider(config)
     },
   }
   return hooks
