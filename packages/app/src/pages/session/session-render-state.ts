@@ -7,7 +7,7 @@ export type SessionRenderPhase =
   | "settling"
   | "interactive"
 
-export type SessionRenderOverlayStatus = "armed" | "showing" | "hiding" | "hidden"
+export type SessionRenderOverlayStatus = "showing" | "hiding" | "hidden"
 
 export type SessionRenderState = {
   sessionID?: string
@@ -29,7 +29,6 @@ export type SessionRenderEvent = (
   | { type: "settle"; sessionID: string }
   | { type: "settled"; sessionID: string }
   | { type: "deadline"; sessionID: string }
-  | { type: "overlay-show"; sessionID: string }
   | { type: "overlay-hidden"; sessionID: string }
 ) & { generation?: number }
 
@@ -63,9 +62,7 @@ export function reduceSessionRenderState(state: SessionRenderState, event: Sessi
       generation: state.generation + 1,
       phase: hasContent ? "cached-visible" : "fetching",
       // Prefetch caches data, not the new viewport's Markdown or measured layout.
-      // The overlay arms delayed so sessions that settle quickly never flash it;
-      // the host promotes "armed" to "showing" after a short grace period.
-      overlay: event.optimistic ? "hidden" : "armed",
+      overlay: event.optimistic ? "hidden" : "showing",
       hasContent,
     }
   }
@@ -80,9 +77,7 @@ export function reduceSessionRenderState(state: SessionRenderState, event: Sessi
       ...state,
       generation: state.generation + 1,
       phase: "settling",
-      // A remounted viewport re-arms the cover, but a painted overlay is never
-      // demoted back to armed — that would blink it off mid-settle.
-      overlay: event.optimistic ? "hidden" : state.overlay === "showing" ? "showing" : "armed",
+      overlay: event.optimistic ? "hidden" : "showing",
     }
   if (event.type === "warm-ready") return { ...state, phase: "interactive", overlay: "hidden", hasContent: true }
 
@@ -109,12 +104,9 @@ export function reduceSessionRenderState(state: SessionRenderState, event: Sessi
     return {
       ...state,
       phase: "interactive",
-      // Armed never painted, so it skips the fade and drops straight to hidden.
-      overlay: state.overlay === "showing" ? "hiding" : state.overlay === "armed" ? "hidden" : state.overlay,
+      overlay: state.overlay === "showing" ? "hiding" : state.overlay,
       hasContent: true,
     }
-  if (event.type === "overlay-show")
-    return state.overlay === "armed" ? { ...state, overlay: "showing" } : state
   if (event.type === "deadline") {
     if (!state.hasContent) return state
     const phase = state.phase === "fetching" ? "content-visible" : state.phase

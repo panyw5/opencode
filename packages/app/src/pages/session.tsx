@@ -147,7 +147,6 @@ const settleMs = 8_500
 // pathological — revealing the imperfect frame beats holding a blank overlay.
 const contentSettleMs = 1_500
 // Sessions that settle within this window never flash the loading overlay.
-const overlayArmDelayMs = 150
 const overlayFadeMs = 95
 const sessionBackgroundDelayMs = typeof navigator === "undefined" ? 250 : sessionBackgroundDelay(navigator.userAgent)
 const sessionTodoDelayMs = typeof navigator === "undefined" ? 500 : sessionBackgroundDelay(navigator.userAgent, 500)
@@ -821,13 +820,6 @@ export default function Page() {
         if (renderOverlayTimer !== undefined) window.clearTimeout(renderOverlayTimer)
         renderOverlayTimer = undefined
         if (!id) return
-        if (overlay === "armed") {
-          renderOverlayTimer = window.setTimeout(() => {
-            renderOverlayTimer = undefined
-            dispatchSessionRender({ type: "overlay-show", sessionID: id, generation }, "arm-deadline")
-          }, overlayArmDelayMs)
-          return
-        }
         if (overlay !== "hiding") return
         renderOverlayTimer = window.setTimeout(() => {
           renderOverlayTimer = undefined
