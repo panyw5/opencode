@@ -28,7 +28,18 @@ export function createSessionTodoService(deps: SessionControllerDeps) {
     const directoryRevision = deps.revision(directory)
     const eventRevision = rev(directory, sessionID)
     console.debug(`[session-todo] load-start directory=${directory} sid=${sessionID} revision=${eventRevision}`)
-    const promise = retry(() => deps.sdk(directory).session.todo({ sessionID }))
+    const promise = retry((): Promise<{ data?: Todo[] }> => {
+      // Attach to the in-flight session overview when a session open triggered
+      // one; standalone todo refreshes keep the dedicated endpoint. Forced
+      // refreshes only join a genuinely in-flight request.
+      const attach = force ? deps.overview?.pending : deps.overview?.current
+      const pending = attach?.(directory, sessionID)
+      if (pending) return pending.then((overview) => ({ data: overview.todo }))
+      return deps
+        .sdk(directory)
+        .session.todo({ sessionID })
+        .then((response) => ({ data: response.data }))
+    })
       .then((response) => {
         if (inflight.get(key) !== promise || !deps.current(directory, child, directoryRevision)) {
           console.debug(`[session-todo] discard directory=${directory} sid=${sessionID} reason=invalidated-request`)

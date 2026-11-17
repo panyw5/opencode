@@ -55,6 +55,18 @@ export const MessagesQuery = Schema.Struct({
   limit: Schema.optional(Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
   before: Schema.optional(Schema.String),
 })
+export const OverviewQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  limit: Schema.optional(Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
+})
+export const SessionOverview = Schema.Struct({
+  session: Session.Info,
+  messages: Schema.Array(MessageV2.WithParts),
+  nextCursor: Schema.optional(Schema.String),
+  children: Schema.Array(Session.Info),
+  todo: Schema.Array(Todo.Info),
+  userMessageIndex: Schema.Array(MessageV2.UserIndexItem),
+})
 export const StatusMap = Schema.Record(Schema.String, SessionStatus.Info)
 export const MathWorkerQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
@@ -246,6 +258,7 @@ export const SessionPaths = {
   diff: `${root}/:sessionID/diff`,
   messages: `${root}/:sessionID/message`,
   userMessageIndex: `${root}/:sessionID/user-message-index`,
+  overview: `${root}/:sessionID/overview`,
   message: `${root}/:sessionID/message/:messageID`,
   create: root,
   remove: `${root}/:sessionID`,
@@ -472,6 +485,19 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.userMessageIndex",
             summary: "Get user message index",
             description: "Retrieve bounded user message previews for navigation without loading assistant history.",
+          }),
+        ),
+        HttpApiEndpoint.get("overview", SessionPaths.overview, {
+          params: { sessionID: SessionID },
+          query: OverviewQuery,
+          success: described(SessionOverview, "Session overview"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.overview",
+            summary: "Get session overview",
+            description:
+              "Retrieve the session first-screen data in a single response: session info, latest messages page, children, todos, and user message index.",
           }),
         ),
         HttpApiEndpoint.get("message", SessionPaths.message, {

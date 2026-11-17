@@ -368,6 +368,8 @@ import type {
   SessionMessageResponses,
   SessionMessagesErrors,
   SessionMessagesResponses,
+  SessionOverviewErrors,
+  SessionOverviewResponses,
   SessionPresentationErrors,
   SessionPresentationResponses,
   SessionPromptAsyncErrors,
@@ -5823,6 +5825,40 @@ export class Session2 extends HeyApiClient {
       ThrowOnError
     >({
       url: "/session/{sessionID}/user-message-index",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get session overview
+   *
+   * Retrieve the session first-screen data in a single response: session info, latest messages page, children, todos, and user message index.
+   */
+  public overview<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      limit?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "limit" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionOverviewResponses, SessionOverviewErrors, ThrowOnError>({
+      url: "/session/{sessionID}/overview",
       ...options,
       ...params,
     })

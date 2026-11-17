@@ -76,6 +76,7 @@ import {
   MathWorkerStopPayload,
   MathWorkerTaskPayload,
   MessagesQuery,
+  OverviewQuery,
   PermissionResponsePayload,
   PromptPayload,
   RevertPayload,
@@ -1003,6 +1004,57 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return yield* SessionError.mapStorageNotFound(MessageV2.userIndex(ctx.params.sessionID))
     })
 
+    const overview = Effect.fn("SessionHttpApi.overview")(function* (ctx: {
+      params: { sessionID: SessionID }
+      query: typeof OverviewQuery.Type
+    }) {
+      const current = yield* requireSession(ctx.params.sessionID)
+      if (!current.external) yield* summary.repair(ctx.params.sessionID)
+      if (current.external) {
+        yield* external.control(current, "status").pipe(Effect.orDie)
+      } else if ((yield* statusSvc.get(ctx.params.sessionID)).type === "idle") {
+        yield* session.finalizeOrphanedAssistant(ctx.params.sessionID, {
+          staleAfterMs: Session.ORPHANED_ASSISTANT_STALE_AFTER_MS,
+        })
+      }
+
+      const limit = ctx.query.limit === undefined || ctx.query.limit === 0 ? undefined : ctx.query.limit
+      const [pageResult, childList, todoList, userIndex] = yield* Effect.all(
+        [
+          limit === undefined
+            ? SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID })).pipe(
+                Effect.map((items) => ({ items, cursor: undefined })),
+              )
+            : SessionError.mapStorageNotFound(MessageV2.page({ sessionID: ctx.params.sessionID, limit })).pipe(
+                Effect.map((page) => {
+                  const stripped = MessageV2.stripInlineMediaAttachments(page.items)
+                  if (stripped.stripped > 0) {
+                    log.warn("overview stripped inline tool media attachments", {
+                      sessionID: ctx.params.sessionID,
+                      attachments: stripped.stripped,
+                      bytes: stripped.bytes,
+                    })
+                  }
+                  return { items: stripped.items, cursor: page.cursor }
+                }),
+              ),
+          session.children(ctx.params.sessionID),
+          todoSvc.get(ctx.params.sessionID),
+          SessionError.mapStorageNotFound(MessageV2.userIndex(ctx.params.sessionID)),
+        ],
+        { concurrency: "unbounded" },
+      )
+
+      return {
+        session: current,
+        messages: pageResult.items,
+        nextCursor: pageResult.cursor,
+        children: childList,
+        todo: todoList,
+        userMessageIndex: userIndex,
+      }
+    })
+
     const message = Effect.fn("SessionHttpApi.message")(function* (ctx: {
       params: { sessionID: SessionID; messageID: MessageID }
     }) {
@@ -1485,6 +1537,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("diff", diff)
       .handle("messages", messages)
       .handle("userMessageIndex", userMessageIndex)
+      .handle("overview", overview)
       .handle("message", message)
       .handleRaw("create", createRaw)
       .handle("remove", remove)

@@ -15,6 +15,7 @@ import { useSDK } from "./sdk"
 import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client"
 import type { SessionHistoryMeta } from "./global-sync/types"
 import { SESSION_CACHE_LIMIT, dropSessionCaches, pickSessionCacheEvictions } from "./global-sync/session-cache"
+import { sessionCreating } from "@/components/prompt-input/pending-session"
 import { createSessionUserMessageIndex } from "./global-sync/session-user-message-index"
 import { createFreshRequestQueue } from "@/utils/fresh-request-queue"
 
@@ -98,7 +99,11 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       key: keyFor,
       version: () => globalSync.version,
       current: (directory) => sdk.directory === directory,
-      load: (directory, sessionID) => sdk.client.session.userMessageIndex({ sessionID, directory }),
+      load: (directory, sessionID) => {
+        const pending = globalSync.session.overview.current(directory, sessionID)
+        if (pending) return pending.then((overview) => ({ data: overview.userMessageIndex }))
+        return sdk.client.session.userMessageIndex({ sessionID, directory })
+      },
     })
     onCleanup(() => userMessageIndex.clearAll("provider-dispose"))
     let syncVersion = globalSync.version
@@ -474,6 +479,15 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
               console.debug(
                 `[sync] sync-fetch directory=${directory} sid=${sessionID} force=${String(!!opts?.force)} hasSession=${String(hasSession)} cached=${String(cached)} current=${String(currentLength)} view=${String(currentShow)} limit=${String(limit)}`,
               )
+              // Kick the aggregated overview before info.ensure so session.get,
+              // todo and user-message-index attach to the same request.
+              if (
+                !(cached && !opts?.force) &&
+                limit === initialMessagePageSize &&
+                !sessionCreating.has(directory, sessionID)
+              ) {
+                void globalSync.session.overview.load(directory, sessionID, { fresh: !!opts?.force }).catch(() => {})
+              }
               const sessionReq =
                 hasSession && !opts?.force
                   ? Promise.resolve()

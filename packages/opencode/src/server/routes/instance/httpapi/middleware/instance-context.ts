@@ -214,7 +214,9 @@ export function canUseLightweightInstanceContext(input: { readonly group: string
   if (input.group === "file") return input.endpoint === "watch"
   if (input.group === "project") return ["list", "current", "open"].includes(input.endpoint)
   if (input.group === "session") {
-    return ["list", "get", "children", "todo", "diff", "messages", "message"].includes(input.endpoint)
+    return ["list", "get", "children", "todo", "diff", "messages", "message", "overview", "userMessageIndex"].includes(
+      input.endpoint,
+    )
   }
   if (input.group === "v2.session") {
     return input.endpoint === "sessions" || input.endpoint === "context"

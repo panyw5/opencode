@@ -1,5 +1,6 @@
 import type { OpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type { SetStoreFunction, Store } from "solid-js/store"
+import type { SessionOverviewCache } from "./session-overview"
 import type { State } from "./types"
 
 export type SessionChildStore = [Store<State>, SetStoreFunction<State>]
@@ -15,5 +16,7 @@ export type SessionControllerDeps = {
   revision(directory: string): number
   pin(directory: string): void
   unpin(directory: string): void
+  /** Shared /session/{id}/overview response for first-page loads. */
+  overview?: SessionOverviewCache
   reconcileMessages?(directory: string, sessionID: string): Promise<unknown>
 }

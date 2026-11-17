@@ -7,9 +7,9 @@ export type ClientOptions = {
 export type Event =
   | EventIssueUpdated
   | EventServerInstanceDisposed
-  | EventFileEdited
   | EventFileWatcherInvalidated
   | EventFileWatcherUpdated
+  | EventFileEdited
   | EventLspClientDiagnostics
   | EventLspUpdated
   | EventMessagePartDelta1
@@ -339,6 +339,8 @@ export type ExtensionPreparedOperation = {
   permissionsRemoved: Array<string>
   contributes: ExtensionContributes
   source: ExtensionPathSource | ExtensionNpmSource | ExtensionArchiveSource | ExtensionReleaseSource
+  signatureStatus?: "verified" | "unsigned"
+  releaseSequence?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   expectedRevision?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   expectedRegistryVersion?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   registryUpgrade?: {
@@ -346,6 +348,7 @@ export type ExtensionPreparedOperation = {
     to: 3
   }
   hasServer: boolean
+  warnings?: Array<string>
   enable: boolean
   installId?: string
   token: string
@@ -396,6 +399,8 @@ export type ExtensionOperationStatus =
       permissionsRemoved: Array<string>
       contributes: ExtensionContributes
       source: ExtensionPathSource | ExtensionNpmSource | ExtensionArchiveSource | ExtensionReleaseSource
+      signatureStatus?: "verified" | "unsigned"
+      releaseSequence?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
       expectedRevision?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
       expectedRegistryVersion?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
       registryUpgrade?: {
@@ -403,6 +408,7 @@ export type ExtensionOperationStatus =
         to: 3
       }
       hasServer: boolean
+      warnings?: Array<string>
       enable: boolean
       installId?: string
       state: "prepared"
@@ -1906,9 +1912,9 @@ export type GlobalEvent = {
   payload:
     | EventIssueUpdated
     | EventServerInstanceDisposed
-    | EventFileEdited
     | EventFileWatcherInvalidated
     | EventFileWatcherUpdated
+    | EventFileEdited
     | EventLspClientDiagnostics
     | EventLspUpdated
     | EventMessagePartDelta
@@ -3712,14 +3718,6 @@ export type EventServerInstanceDisposed = {
   }
 }
 
-export type EventFileEdited = {
-  id: string
-  type: "file.edited"
-  properties: {
-    file: string
-  }
-}
-
 export type EventFileWatcherInvalidated = {
   id: string
   type: "file.watcher.invalidated"
@@ -3734,6 +3732,14 @@ export type EventFileWatcherUpdated = {
   properties: {
     file: string
     event: "add" | "change" | "unlink"
+  }
+}
+
+export type EventFileEdited = {
+  id: string
+  type: "file.edited"
+  properties: {
+    file: string
   }
 }
 
@@ -10731,6 +10737,51 @@ export type SessionUserMessageIndexResponses = {
 }
 
 export type SessionUserMessageIndexResponse = SessionUserMessageIndexResponses[keyof SessionUserMessageIndexResponses]
+
+export type SessionOverviewData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    limit?: string
+  }
+  url: "/session/{sessionID}/overview"
+}
+
+export type SessionOverviewErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionOverviewError = SessionOverviewErrors[keyof SessionOverviewErrors]
+
+export type SessionOverviewResponses = {
+  /**
+   * Session overview
+   */
+  200: {
+    session: Session
+    messages: Array<{
+      info: Message
+      parts: Array<Part>
+    }>
+    nextCursor?: string
+    children: Array<Session>
+    todo: Array<Todo>
+    userMessageIndex: Array<UserMessageIndexItem>
+  }
+}
+
+export type SessionOverviewResponse = SessionOverviewResponses[keyof SessionOverviewResponses]
 
 export type SessionDeleteMessageData = {
   body?: never

@@ -7,6 +7,7 @@ import { sessionCreating } from "@/components/prompt-input/pending-session"
 import { markSessionProfile } from "@/utils/session-profile"
 import { createFreshRequestQueue } from "@/utils/fresh-request-queue"
 import { setSessionPrefetch } from "./session-prefetch"
+import { SESSION_OVERVIEW_PAGE_LIMIT } from "./session-overview"
 import {
   compareSessionItemID,
   mergeFetchedSessionParts,
@@ -73,7 +74,13 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
     if (items.size === 0) optimistic.delete(key)
   }
 
-  const page = (input: { directory: string; sessionID: string; limit: number; before?: string }) => {
+  const page = (input: {
+    directory: string
+    sessionID: string
+    limit: number
+    before?: string
+    authoritative?: boolean
+  }) => {
     const directory = input.directory
     const key = `${keyFor(directory, input.sessionID)}\n${String(input.limit)}\n${input.before ?? ""}`
     const pending = pageInflight.get(key)
@@ -86,9 +93,23 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
       "messages-request-start",
       `limit=${String(input.limit)} before=${input.before ?? "none"}`,
     )
-    const promise = retry(() =>
-      deps.sdk(directory).session.messages({ sessionID: input.sessionID, limit: input.limit, before: input.before }),
-    )
+    const promise = retry(() => {
+      // First-page loads share the aggregated session overview so a session
+      // open costs one request instead of five per-slice fetches.
+      if (input.before === undefined && input.limit === SESSION_OVERVIEW_PAGE_LIMIT && deps.overview) {
+        return deps.overview.load(directory, input.sessionID, { fresh: !!input.authoritative }).then((overview) => ({
+          data: overview.messages,
+          cursor: overview.nextCursor,
+        }))
+      }
+      return deps
+        .sdk(directory)
+        .session.messages({ sessionID: input.sessionID, limit: input.limit, before: input.before })
+        .then((response) => ({
+          data: response.data,
+          cursor: response.response.headers.get("x-next-cursor") ?? undefined,
+        }))
+    })
       .then(async (response) => {
         if (!deps.current(directory, child, directoryRevision)) {
           const error = new Error("Session message request became stale after directory reset")
@@ -143,7 +164,7 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
           throw error
         }
         const messages = items.map((item) => item.info).sort((a, b) => compareSessionItemID(a.id, b.id))
-        const cursor = response.response.headers.get("x-next-cursor") ?? undefined
+        const cursor = response.cursor
         markSessionProfile(
           input.sessionID,
           "messages-request-end",

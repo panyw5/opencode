@@ -6,11 +6,14 @@ import type { SessionControllerDeps } from "./session-service-types"
 import { createSessionStatusService } from "./session-status-service"
 import { createSessionTodoService } from "./session-todo-service"
 import { createSessionHistoryService } from "./session-history-service"
+import { createSessionOverviewCache } from "./session-overview"
 
 export function createSessionService(deps: SessionControllerDeps) {
-  const info = createSessionInfoService(deps)
-  const messages = createSessionMessagesService(deps)
-  const todo = createSessionTodoService(deps)
+  const overview = createSessionOverviewCache(deps)
+  const scoped = { ...deps, overview }
+  const info = createSessionInfoService(scoped)
+  const messages = createSessionMessagesService(scoped)
+  const todo = createSessionTodoService(scoped)
   const diff = createSessionDiffService(deps)
   const status = createSessionStatusService({
     ...deps,
@@ -47,6 +50,7 @@ export function createSessionService(deps: SessionControllerDeps) {
   return {
     api: {
       clear(directory: string, sessionIDs: string[]) {
+        overview.clear(directory, sessionIDs)
         clearHistory(directory, sessionIDs)
         clearInfo(directory, sessionIDs)
         clearMessages(directory, sessionIDs)
@@ -59,6 +63,7 @@ export function createSessionService(deps: SessionControllerDeps) {
       diff: diffApi,
       status: statusApi,
       history: historyApi,
+      overview,
     },
     event(directory: string, mutation: SessionDataMutation) {
       if (mutation.kind === "messages")
@@ -73,6 +78,7 @@ export function createSessionService(deps: SessionControllerDeps) {
       if (mutation.kind === "diff") diffEvent(directory, mutation.sessionID)
     },
     clearDirectory(directory: string) {
+      overview.clearDirectory(directory)
       clearHistoryDirectory(directory)
       clearInfoDirectory(directory)
       clearMessageDirectory(directory)

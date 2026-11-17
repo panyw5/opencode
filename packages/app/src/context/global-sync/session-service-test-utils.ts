@@ -36,6 +36,16 @@ export type FakeSessionClient = {
   }>
   todo: (input: { sessionID: string }) => Promise<{ data?: Todo[] }>
   diff: (input: { sessionID: string }) => Promise<{ data?: any[] }>
+  overview: (input: { sessionID: string; limit?: string }) => Promise<{
+    data?: {
+      session: Session
+      messages: Array<{ info: any; parts: any[] }>
+      nextCursor?: string
+      children: Session[]
+      todo: Todo[]
+      userMessageIndex: any[]
+    }
+  }>
   status: () => Promise<{ data?: Record<string, SessionStatus> }>
 }
 
@@ -73,7 +83,7 @@ export function createSessionControllerHarness(client: Partial<FakeSessionClient
   const sdkDirectories: string[] = []
   let revision = 0
   let pins = 0
-  const session = {
+  const session: FakeSessionClient = {
     abort: client.abort ?? (async () => ({ data: true })),
     revert:
       client.revert ??
@@ -84,6 +94,25 @@ export function createSessionControllerHarness(client: Partial<FakeSessionClient
     messages: client.messages ?? (async () => ({ data: [], response: { headers: { get: () => null } } })),
     todo: client.todo ?? (async () => ({ data: [] })),
     diff: client.diff ?? (async () => ({ data: [] })),
+    overview:
+      client.overview ??
+      (async ({ sessionID, limit }) => {
+        const [page, info, todos] = await Promise.all([
+          session.messages({ sessionID, limit: Number(limit ?? "80") }),
+          session.get({ sessionID }),
+          session.todo({ sessionID }),
+        ])
+        return {
+          data: {
+            session: info.data!,
+            messages: page.data ?? [],
+            nextCursor: page.response?.headers?.get?.("x-next-cursor") ?? undefined,
+            children: [],
+            todo: todos.data ?? [],
+            userMessageIndex: [],
+          },
+        }
+      }),
     status: client.status ?? (async () => ({ data: {} })),
   }
   const deps: SessionControllerDeps = {

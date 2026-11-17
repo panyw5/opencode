@@ -412,7 +412,10 @@ export default function Page() {
         let cancelled = false
         const timer = window.setTimeout(() => {
           markSessionProfile(id, "children-request-start")
-          void sdk.client.session.children({ sessionID: id }).then(
+          const request = globalSync.session.overview
+            .current(sdk.directory, id)
+            ?.then((overview) => ({ data: overview.children }))
+          void (request ?? sdk.client.session.children({ sessionID: id })).then(
             (result) => {
               if (cancelled) return
               const children = result.data ?? []
@@ -455,7 +458,10 @@ export default function Page() {
         const id = params.id
         const timer = window.setTimeout(() => {
           if (id) markSessionProfile(id, "siblings-request-start")
-          void sdk.client.session.children({ sessionID: parentID }).then(
+          const request = globalSync.session.overview
+            .current(sdk.directory, parentID)
+            ?.then((overview) => ({ data: overview.children }))
+          void (request ?? sdk.client.session.children({ sessionID: parentID })).then(
             (result) => {
               if (cancelled) return
               const siblings = result.data ?? []

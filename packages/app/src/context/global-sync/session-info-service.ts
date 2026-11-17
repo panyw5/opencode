@@ -34,7 +34,15 @@ export function createSessionInfoService(deps: SessionControllerDeps) {
       const value = await loadSessionInfo({
         directory,
         sessionID,
-        load: async () => (await deps.sdk(directory).session.get({ sessionID })).data,
+        load: async () => {
+          // Attach to the in-flight session overview when a session open
+          // triggered one; standalone info refreshes keep session.get. Forced
+          // refreshes only join a genuinely in-flight request.
+          const attach = force ? deps.overview?.pending : deps.overview?.current
+          const pending = attach?.(directory, sessionID)
+          if (pending) return (await pending).session
+          return (await deps.sdk(directory).session.get({ sessionID })).data
+        },
       })
       if (!value || !deps.current(directory, child, revision)) return
 
