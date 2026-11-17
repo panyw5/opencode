@@ -1,4 +1,4 @@
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { Session, SessionListItem } from "@opencode-ai/sdk/v2/client"
 import { Avatar } from "@opencode-ai/ui/avatar"
 import { ContextMenu } from "@opencode-ai/ui/context-menu"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -514,6 +514,12 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     const sessionID = props.session.id
     const key = userMessageCountKey(directory, sessionID)
     if (userMessageCountByKey()[key] !== undefined || userMessageCountInflight.has(key)) return
+
+    const listed = (props.session as SessionListItem).userMessageCount
+    if (listed !== undefined) {
+      setUserMessageCountByKey((current) => ({ ...current, [key]: listed }))
+      return
+    }
 
     console.debug(`[sidebar-session] user-message-count load-start directory=${directory} sid=${sessionID}`)
     userMessageCountInflight.add(key)

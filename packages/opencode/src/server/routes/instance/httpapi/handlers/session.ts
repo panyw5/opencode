@@ -200,7 +200,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       })
       try {
         // Handler results are schema type values; validate them in the response encoding direction.
-        Schema.encodeUnknownSync(Schema.Array(Session.Info))(result)
+        Schema.encodeUnknownSync(Schema.Array(Session.ListItem))(result)
       } catch (error) {
         log.error("session.list response encoding failed", {
           query: ctx.query,

@@ -2582,6 +2582,63 @@ export type ProviderAuthError1 = {
   }
 }
 
+export type SessionListItem = {
+  id: string
+  slug: string
+  projectID: string
+  locationID?: string
+  workspaceID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  external?: ExternalSession
+  channel?: SessionChannel
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+    diffs?: Array<SnapshotFileDiff>
+  }
+  cost?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+    favorited?: number
+  }
+  permission?: PermissionRuleset
+  revert?: {
+    messageID: string
+    partID?: string
+    snapshot?: string
+    diff?: string
+  }
+  mountedTaskID?: string
+  injectTaskContext?: boolean
+  userMessageCount: number
+}
+
 export type UserMessageIndexItem = {
   id: string
   sessionID: string
@@ -9842,7 +9899,7 @@ export type SessionListResponses = {
   /**
    * List of sessions
    */
-  200: Array<Session>
+  200: Array<SessionListItem>
 }
 
 export type SessionListResponse = SessionListResponses[keyof SessionListResponses]

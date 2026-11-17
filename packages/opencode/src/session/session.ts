@@ -312,6 +312,13 @@ export const GlobalInfo = Schema.Struct({
 }).annotate({ identifier: "GlobalSession" })
 export type GlobalInfo = Types.DeepMutable<Schema.Schema.Type<typeof GlobalInfo>>
 
+export const ListItem = Schema.Struct({
+  ...Info.fields,
+  // Sidebar badge count, computed with a single grouped query over the page.
+  userMessageCount: Schema.Finite,
+}).annotate({ identifier: "SessionListItem" })
+export type ListItem = Types.DeepMutable<Schema.Schema.Type<typeof ListItem>>
+
 export const CreateInput = Schema.optional(
   Schema.Struct({
     id: Schema.optional(SessionID),
@@ -587,7 +594,7 @@ export const staleOrphanedAssistantReason = (input: { elapsedMs: number; staleAf
   `Assistant inactive for ${formatDuration(input.elapsedMs)} before orphan finalization; threshold is ${formatDuration(input.staleAfterMs)}.`
 
 export interface Interface {
-  readonly list: (input?: ListInput) => Effect.Effect<Info[]>
+  readonly list: (input?: ListInput) => Effect.Effect<ListItem[]>
   readonly create: (input?: {
     id?: SessionID
     external?: ExternalSession
@@ -762,9 +769,28 @@ export const layer: Layer.Layer<
       console.log(
         `[session.list] instance projectID=${ctx.project.id} locationID=${ctx.location?.id ?? "lightweight-unresolved"} worktree=${ctx.worktree} directory=${ctx.directory} inputDirectory=${input?.directory} inputLocationID=${input?.locationID} inputPath=${input?.path} roots=${input?.roots}`,
       )
-      return Array.from(
+      const infos = Array.from(
         listByProject({ projectID: ctx.project.id, experimentalWorkspaces: flags.experimentalWorkspaces, ...input }),
       )
+      if (infos.length === 0) return []
+      const counts = yield* db((d) =>
+        d
+          .select({ sessionID: MessageTable.session_id, count: sql<number>`count(*)` })
+          .from(MessageTable)
+          .where(
+            and(
+              inArray(
+                MessageTable.session_id,
+                infos.map((info) => info.id),
+              ),
+              sql`json_extract(${MessageTable.data}, '$.role') = 'user'`,
+            ),
+          )
+          .groupBy(MessageTable.session_id)
+          .all(),
+      )
+      const bySession = new Map(counts.map((row) => [row.sessionID, row.count]))
+      return infos.map((info): ListItem => ({ ...info, userMessageCount: bySession.get(info.id) ?? 0 }))
     })
 
     const children = Effect.fn("Session.children")(function* (parentID: SessionID) {
