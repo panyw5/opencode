@@ -414,6 +414,7 @@ function SessionChildAgentMenu(props: {
   const visibleGroups = createMemo(() => groups.filter((group) => group.entries().length > 0))
   let contentRef: HTMLDivElement | undefined
   let scrollTimer: number | undefined
+  let keyboardScrollUntil = 0
   const [store, setStore] = createStore({ open: false, scrolling: false })
   onMount(() => console.debug(`[child-agent-menu] mounted entries=${props.entries.length}`))
   createEffect(() => {
@@ -469,6 +470,7 @@ function SessionChildAgentMenu(props: {
     })
   }
   const handleKeyDown = (event: KeyboardEvent): void => {
+    keyboardScrollUntil = performance.now() + 150
     if (!["ArrowDown", "ArrowUp", "Home", "End", "PageDown", "PageUp"].includes(event.key)) return
     console.debug(`[child-agent-menu] keyboard-navigation key=${event.key} scrollTop=${contentRef?.scrollTop ?? 0}`)
     scrollHighlightedIntoView()
@@ -511,6 +513,22 @@ function SessionChildAgentMenu(props: {
           <DropdownMenu.Content
             ref={(el: HTMLDivElement) => {
               contentRef = el
+              // Kobalte scrolls the highlighted item fully into view whenever the
+              // focused key changes - including pointer hover - which makes edge
+              // items jump. Swallow programmatic scrollTop writes except shortly
+              // after a keydown, so keyboard navigation still auto-scrolls while
+              // hover does not.
+              const descriptor = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop")
+              if (!descriptor?.get || !descriptor.set) return
+              Object.defineProperty(el, "scrollTop", {
+                configurable: true,
+                get(this: HTMLElement) {
+                  return descriptor.get!.call(this)
+                },
+                set(this: HTMLElement, value: number) {
+                  if (performance.now() < keyboardScrollUntil) descriptor.set!.call(this, value)
+                },
+              })
             }}
             class="session-child-agent-scrollbar w-[340px] max-w-[calc(100vw-32px)]"
             data-scrolling={store.scrolling ? "true" : undefined}
