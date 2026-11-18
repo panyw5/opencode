@@ -26,17 +26,24 @@ This is a personal fork of **OpenCode Desktop** with extensive UI improvements a
 #### Advanced agent capabilities
 
 - **Math Mode**: integrates the [Danus](https://github.com/frenzymath/Danus) mathematical agent framework for efficiently tackling complex, long-horizon math tasks
-- **Background shell commands and agents**: run shell commands and subagents in the background, with results automatically injected into the main agent's conversation when complete; supports asynchronous, graceful session stopping
+- **Background shell commands and agents**: run shell commands and subagents in the background, with results automatically injected into the main agent's conversation when complete; supports asynchronous, graceful session stopping; the main agent can pause subagents at any time
 - **Scheduled tasks**: agents can autonomously create, modify, and manage scheduled tasks
 - **Project tasks**: a hierarchy of cross-session project tasks and session-level todos that agents can autonomously create, modify, and manage
-- **Codex, Claude, Grok, and dsh advisors**: integrates external agents that the main agent can call for advice during a session
+- **External advisors & ACP agents**: integrates external agents such as codex, claude, grok, and dsh as advisors; also supports talking to agents like codex, claude code, and Pi directly over the ACP protocol, or invoking them ad hoc via `@agent`; consultations can be viewed as standalone sessions
+- **Code Mode**: agents can compose batch tool calls in code to perform complex multi-step tool orchestration in one shot
 - **GPT Pro**: agents can autonomously consult the built-in ChatGPT web interface, making use of the user's web chat allowance
+- **Extension system**: install, update, and uninstall extensions in-app; extensions run in separate processes for stronger fault isolation; ships with Mathematica Notebook and WolframScript REPL extensions; provides create / validate / pack commands and typed RPC helpers for extension developers
 - **Built-in browser**: an integrated browser that agents can control autonomously
 - **Messaging integrations**: chat with OpenCode through QQ, Feishu, and WeChat
+- **Session export**: export a session to a document or PDF for saving and sharing
+- **Session review**: shows file changes and instruction sources in a session, with live todo progress in messages
+- **Remote access**: use OpenCode on a phone browser via OpenTunnel — just scan a QR code
 
 #### Interaction improvements
 
-- **Quick navigation**: a unified home dashboard and session tabs; `Cmd+T` to quickly switch projects and create sessions, and `Cmd+1...5` to switch sessions
+- **Quick navigation**: a unified home dashboard (resource usage overview and project task management), session tabs, and a redesigned project switcher; `Cmd+T` to quickly switch projects and create sessions, and `Cmd+1...5` to switch sessions
+- **Quick assistant**: a floating assistant for parallel side conversations outside the main session, with multiple tabs
+- **New `@` menu**: `Tab` to jump between sections — general, external agents, conversations, project tasks, and scheduled tasks
 - **Convenient notifications**: respond quickly through permission-request pills on session tabs, with all notifications collected in one place
 - **Folder drag and drop**: drop a folder onto the window to open a project directly
 - **Input autocompletion**: autocompletion across all prompt inputs and Markdown editors
@@ -46,11 +53,14 @@ This is a personal fork of **OpenCode Desktop** with extensive UI improvements a
   - image paste support
   - `Cmd+Enter` to confirm edits in custom answer fields
   - call history shows the options and the user's answer, with one-click copy
+  - countdown readout that auto-pauses while the user is interacting, avoiding timeouts mid-answer
 - **Session status panel**: view session file changes, status, and other details at any time
 - **In-page and global search**: `Cmd+F` opens in-page search, and `Cmd+Shift+F` opens global search (requires indexing to be enabled)
 - **File navigation**: click a file path to preview the file; `Cmd/Ctrl + click` opens it in an editor or file manager
 - **Reading mode**: enter a focused reading mode with one click to remove distractions
-- **All-in-one configuration panel**: configure providers, agents, skills, commands, plugins, and MCP servers in one place
+- **Appearance settings**: a new "Appearance" section in the settings panel, with improved contrast across themes
+- **Browsing experience**: long code blocks are truncated for display, and attachment image previews are unified with zoom and save support
+- **All-in-one configuration panel**: configure providers, agents, skills, commands, plugins, and MCP servers in one place, with closable config tabs
 
 <p align="center">
   <img src="../image/README/1777965458550.png" width="32%" />
