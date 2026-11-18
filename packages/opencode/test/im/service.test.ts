@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Exit, Layer } from "effect"
+import { Cause, Effect, Exit, Layer } from "effect"
 import { IM, Service } from "../../src/im/service"
 import { Capabilities, NormalizedMessage, Target, messageRecordID } from "../../src/im/model"
 import { registry, transportCapabilities } from "../../src/im/transport"
@@ -12,6 +12,7 @@ import { IMOutboundTable } from "../../src/im/inbox.sql"
 import { createFeishuTransport } from "../../src/channel/feishu"
 import { createQQTransport } from "../../src/channel/qq"
 import { ProviderRejectedError } from "../../src/im/transport"
+import { permissionReceipt } from "../../src/im/permission-receipt"
 
 function projectID() {
   const id = ProjectID.ascending()
@@ -43,6 +44,113 @@ function message(eventID: string, text: string, conversationID = "chat-1") {
 }
 
 describe("IM service", () => {
+  it.instance("receipt timeout cancels transport and does not resend", () =>
+    Effect.gen(function* () {
+      const service = yield* Service
+      let calls = 0
+      let aborted = false
+      registry.register({
+        platform: "feishu",
+        channelName: "test",
+        capabilities: transportCapabilities("feishu"),
+        sendText: ({ signal }) =>
+          new Promise((_, reject) => {
+            calls++
+            signal?.addEventListener(
+              "abort",
+              () => {
+                aborted = true
+                reject(new Error("aborted"))
+              },
+              { once: true },
+            )
+          }),
+      })
+      try {
+        const inbound = yield* service.ingest({ message: message(`timeout-${crypto.randomUUID()}`, "probe") })
+        const exit = yield* permissionReceipt(inbound.message.id, "bash", "call").pipe(
+          Effect.timeout("50 millis"),
+          Effect.exit,
+        )
+        expect(exit._tag).toBe("Failure")
+        expect(aborted).toBe(true)
+        expect(calls).toBe(1)
+      } finally {
+        registry.unregister("test")
+      }
+    }),
+  )
+  it.instance("missing receipt origin fails observably", () =>
+    Effect.gen(function* () {
+      const exit = yield* permissionReceipt("missing-origin", "bash", "call").pipe(Effect.exit)
+      expect(exit._tag).toBe("Failure")
+      if (exit._tag === "Failure") expect(Cause.pretty(exit.cause)).toContain("origin is missing")
+    }),
+  )
+  it.instance("failed receipt delivery fails observably without retrying", () =>
+    Effect.gen(function* () {
+      const service = yield* Service
+      let calls = 0
+      registry.register({
+        platform: "feishu",
+        channelName: "test",
+        capabilities: transportCapabilities("feishu"),
+        sendText: async () => {
+          calls++
+          throw new ProviderRejectedError("feishu", 403, "denied")
+        },
+      })
+      try {
+        const inbound = yield* service.ingest({ message: message(`failure-${crypto.randomUUID()}`, "probe") })
+        const exit = yield* permissionReceipt(inbound.message.id, "bash", "call").pipe(Effect.exit)
+        expect(exit._tag).toBe("Failure")
+        expect(calls).toBe(1)
+      } finally {
+        registry.unregister("test")
+      }
+    }),
+  )
+  for (const platform of ["feishu", "qq", "wechat"] as const)
+    it.instance(`${platform} permission denial receipt uses original transport and deduplicates retries`, () =>
+      Effect.gen(function* () {
+        const service = yield* Service
+        const received: string[] = []
+        const transport: IMTransport = {
+          platform,
+          channelName: "test",
+          capabilities: transportCapabilities(platform),
+          sendText: async ({ text }) => {
+            received.push(text)
+            return { providerMessageID: "receipt" }
+          },
+        }
+        registry.register(transport)
+        try {
+          const eventID = `receipt-${crypto.randomUUID()}`
+          const inbound = yield* service.ingest({
+            message: new NormalizedMessage({
+              id: messageRecordID(platform, "test", eventID),
+              platform,
+              channelName: "test",
+              eventID,
+              text: "probe",
+              target: new Target({
+                platform,
+                channelName: "test",
+                scope: platform === "feishu" ? "chat" : "c2c",
+                conversationID: "original-chat",
+                replyTo: eventID,
+              }),
+            }),
+          })
+          yield* permissionReceipt(inbound.message.id, "external_directory", "call-1")
+          yield* permissionReceipt(inbound.message.id, "external_directory", "call-1")
+          expect(received).toEqual(["操作已停止：权限 external_directory 被明确的 deny 规则拒绝。其他操作可继续执行。"])
+        } finally {
+          registry.unregister("test", transport)
+        }
+      }),
+    )
   it.effect("records QQ explicit rejection as failed but preserves network uncertainty", () =>
     Effect.gen(function* () {
       const service = yield* Service

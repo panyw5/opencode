@@ -33,6 +33,11 @@ import { SessionCompaction } from "../../src/session/compaction"
 import { SessionSummary } from "../../src/session/summary"
 import { Instruction } from "../../src/session/instruction"
 import { SessionProcessor } from "../../src/session/processor"
+import { ScheduledTaskUnattended } from "../../src/scheduled-task/unattended"
+import { runtime as imRuntime } from "../../src/im/service"
+import { registry as imTransports, transportCapabilities } from "../../src/im/transport"
+import { NormalizedMessage, Target } from "../../src/im/model"
+import { mkdir } from "node:fs/promises"
 import { SessionPrompt } from "../../src/session/prompt"
 import { SessionChannel } from "../../src/agent-backend/channel"
 import { SessionRevert } from "../../src/session/revert"
@@ -55,7 +60,7 @@ import { Ripgrep } from "../../src/file/ripgrep"
 import { Format } from "../../src/format"
 import { Reference } from "../../src/reference/reference"
 import { RepositoryCache } from "../../src/reference/repository-cache"
-import { TestInstance, testInstanceStoreLayer } from "../fixture/fixture"
+import { TestInstance, testInstanceStoreLayer, tmpdirScoped } from "../fixture/fixture"
 import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
 import { reply, TestLLMServer } from "../lib/llm-server"
 import { SyncEvent } from "@/sync"
@@ -1893,6 +1898,217 @@ it.instance("title generation includes every user prompt and the mounted project
     expect(body).toContain("TITLE_SECOND_USER_PROMPT")
     expect(body).toContain("TITLE_TASK_MARKER")
     expect(body).toContain("TITLE_TASK_DESCRIPTION_MARKER")
+  }),
+)
+
+for (const source of ["im", "scheduled"] as const) {
+  it.instance(
+    `${source} prompt propagates unattended permissions through real tools without changing session rules`,
+    () =>
+      Effect.gen(function* () {
+        const { dir, llm } = yield* useServerConfig(providerCfg)
+        const prompt = yield* SessionPrompt.Service
+        const sessions = yield* Session.Service
+        const session = yield* sessions.create({
+          permission: [{ permission: "*", pattern: "*", action: "ask" }],
+        })
+        const outside = yield* tmpdirScoped()
+        yield* llm.tool("glob", { pattern: "opencode-unattended-probe-nonexistent", path: outside })
+        yield* llm.text("done")
+        yield* prompt
+          .prompt({
+            sessionID: session.id,
+            agent: "build",
+            parts: [
+              { type: "text", text: "probe permissions", ...(source === "im" ? { metadata: { imSource: "qq" } } : {}) },
+            ],
+          })
+          .pipe(Effect.provideService(ScheduledTaskUnattended.ContextRef, source === "scheduled"))
+        const msgs = yield* MessageV2.filterCompactedEffect(session.id)
+        const tool = msgs.flatMap((msg) => msg.parts).find((part) => part.type === "tool" && part.tool === "glob")
+        expect(tool?.type === "tool" ? tool.state.status : undefined).toBe(source === "im" ? "completed" : "error")
+        expect((yield* sessions.get(session.id)).permission).toEqual(session.permission)
+      }),
+    { git: true },
+  )
+}
+
+it.instance("IM child task inherits unattended permissions and rejects questions without waiting", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({ permission: [{ permission: "*", pattern: "*", action: "ask" }] })
+    const outside = yield* tmpdirScoped()
+    yield* llm.tool("task", { description: "probe child", prompt: "inspect files", subagent_type: "general" })
+    yield* llm.tool("glob", { pattern: "probe-nonexistent", path: outside })
+    yield* llm.tool("question", {
+      questions: [{ question: "Continue?", header: "Confirm", options: [{ label: "Yes", description: "continue" }] }],
+    })
+    yield* llm.text("child done")
+    yield* llm.text("parent done")
+    yield* prompt
+      .prompt({
+        sessionID: session.id,
+        agent: "build",
+        parts: [{ type: "text", text: "run", metadata: { imSource: "qq" } }],
+      })
+      .pipe(Effect.timeout("10 seconds"))
+    const children = yield* sessions.children(session.id)
+    expect(children).toHaveLength(1)
+    const msgs = yield* MessageV2.filterCompactedEffect(children[0]!.id)
+    const tools = msgs.flatMap((msg) => msg.parts).filter((part) => part.type === "tool")
+    expect(tools.find((part) => part.tool === "glob")?.state.status).toBe("completed")
+    expect(tools.find((part) => part.tool === "question")?.state.status).toBe("error")
+    const question = tools.find((part) => part.tool === "question")
+    expect(question?.state.status === "error" ? question.state.error : "").toContain("该操作已停止")
+    expect(yield* (yield* Question.Service).list()).toEqual([])
+  }),
+)
+
+it.instance(
+  "plugin ctx.ask automatically allows external directory without changing stored permissions",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      yield* Effect.promise(() => mkdir(path.join(dir, ".opencode/tools"), { recursive: true }))
+      yield* writeText(
+        path.join(dir, ".opencode/tools/probe.ts"),
+        `export default { description: "probe", args: {}, execute: async (_, ctx) => { await ctx.ask({ permission: "external_directory", patterns: ["/outside/*"], always: ["*"], metadata: {} }); return "PLUGIN_OPERATION_COMPLETED" } }`,
+      )
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ permission: [{ permission: "*", pattern: "*", action: "ask" }] })
+      yield* llm.tool("probe", {})
+      yield* llm.text("done")
+      yield* prompt
+        .prompt({
+          sessionID: session.id,
+          agent: "build",
+          parts: [{ type: "text", text: "run", metadata: { imSource: "qq" } }],
+        })
+        .pipe(Effect.timeout("10 seconds"))
+      const msgs = yield* MessageV2.filterCompactedEffect(session.id)
+      const part = msgs.flatMap((msg) => msg.parts).find((part) => part.type === "tool" && part.tool === "probe")
+      expect(part?.type === "tool" && part.state.status === "completed" ? part.state.output : "").toContain(
+        "PLUGIN_OPERATION_COMPLETED",
+      )
+      expect((yield* sessions.get(session.id)).permission).toEqual(session.permission)
+    }),
+  30000,
+)
+
+it.instance("plugin service interaction cannot bypass IM-only question restriction", () =>
+  Effect.gen(function* () {
+    const question = yield* Question.Service
+    const session = yield* (yield* Session.Service).create({})
+    const result = yield* question
+      .ask({
+        sessionID: session.id,
+        questions: [{ question: "Continue?", header: "Confirm", options: [{ label: "Yes", description: "continue" }] }],
+      })
+      .pipe(
+        Effect.provideService(ScheduledTaskUnattended.ContextRef, false),
+        Effect.provideService(ScheduledTaskUnattended.IMContextRef, true),
+        Effect.timeout("1 second"),
+        Effect.exit,
+      )
+    expect(result._tag).toBe("Failure")
+    if (result._tag === "Failure") expect(Cause.pretty(result.cause)).toContain("该操作已停止")
+    expect(yield* question.list()).toEqual([])
+  }),
+)
+
+for (const plugin of [false, true])
+  it.instance(
+    `${plugin ? "plugin" : "real IM glob"} denial sends a system receipt through the original transport`,
+    () =>
+      Effect.gen(function* () {
+        const { dir, llm } = yield* useServerConfig(providerCfg)
+        if (plugin) {
+          yield* Effect.promise(() => mkdir(path.join(dir, ".opencode/tools"), { recursive: true }))
+          yield* writeText(
+            path.join(dir, ".opencode/tools/probe.ts"),
+            `export default { description: "probe", args: {}, execute: async (_, ctx) => { await ctx.ask({ permission: "glob", patterns: ["blocked-*"], always: ["*"], metadata: {} }); return "ok" } }`,
+          )
+        }
+        const prompt = yield* SessionPrompt.Service
+        const sessions = yield* Session.Service
+        const channelName = `deny-${crypto.randomUUID()}`
+        const eventID = crypto.randomUUID()
+        const received: string[] = []
+        imTransports.register({
+          platform: "feishu",
+          channelName,
+          capabilities: transportCapabilities("feishu"),
+          sendText: async ({ text, target }) => {
+            expect(target.conversationID).toBe("original-chat")
+            received.push(text)
+            return { providerMessageID: "receipt" }
+          },
+        })
+        try {
+          const inbound = yield* Effect.promise(() =>
+            imRuntime.runPromise((service) =>
+              service.ingest({
+                message: new NormalizedMessage({
+                  id: `im-deny-${eventID}`,
+                  platform: "feishu",
+                  channelName,
+                  eventID,
+                  text: "probe",
+                  target: new Target({
+                    platform: "feishu",
+                    channelName,
+                    scope: "chat",
+                    conversationID: "original-chat",
+                    replyTo: eventID,
+                  }),
+                }),
+              }),
+            ),
+          )
+          const session = yield* sessions.create({
+            permission: [{ permission: "glob", pattern: "*", action: "deny" }],
+          })
+          yield* llm.tool(plugin ? "probe" : "glob", plugin ? {} : { pattern: "blocked-*", path: dir })
+          yield* llm.text("done")
+          yield* prompt
+            .prompt({
+              sessionID: session.id,
+              agent: "build",
+              parts: [{ type: "text", text: "run", metadata: { imSource: "feishu", imMessageID: inbound.message.id } }],
+            })
+            .pipe(Effect.timeout("10 seconds"))
+          expect(received).toHaveLength(1)
+          expect(received[0]).toContain("权限 glob")
+          expect(received[0]).toContain("deny")
+          expect((yield* sessions.get(session.id)).permission).toEqual(session.permission)
+        } finally {
+          imTransports.unregister(channelName)
+        }
+      }),
+  )
+
+it.instance("IM question returns an explicit error without waiting for an answer", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({ permission: [{ permission: "*", pattern: "*", action: "ask" }] })
+    yield* llm.tool("question", {
+      questions: [{ question: "Continue?", header: "Confirm", options: [{ label: "Yes", description: "continue" }] }],
+    })
+    yield* llm.text("continued")
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      parts: [{ type: "text", text: "run", metadata: { imSource: "qq" } }],
+    })
+    const msgs = yield* MessageV2.filterCompactedEffect(session.id)
+    const tool = msgs.flatMap((msg) => msg.parts).find((part) => part.type === "tool" && part.tool === "question")
+    expect(tool?.type === "tool" && tool.state.status === "error" ? tool.state.error : "").toContain("该操作已停止")
+    expect(yield* (yield* Question.Service).list()).toEqual([])
   }),
 )
 

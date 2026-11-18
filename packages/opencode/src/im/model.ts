@@ -65,6 +65,7 @@ export class NormalizedMessage extends Schema.Class<NormalizedMessage>("IMNormal
 export type Attachment = NonNullable<NormalizedMessage["attachments"]>[number]
 
 export type TransportSendInput = {
+  signal?: AbortSignal
   target: Target
   text: string
   mode: SendMode

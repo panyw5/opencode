@@ -2,6 +2,7 @@ import type { Auth } from "@/auth"
 import type { RuntimeFlags } from "@/effect/runtime-flags"
 import { InstanceState } from "@/effect/instance-state"
 import { Permission } from "@/permission"
+import { ScheduledTaskUnattended } from "@/scheduled-task/unattended"
 import type { Agent } from "@/agent/agent"
 import type { MessageV2 } from "../message-v2"
 import type { Provider } from "@/provider/provider"
@@ -154,7 +155,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
           ...input.messages,
         ]
 
-  const tools = resolveTools(input)
+  const tools = resolveTools(input, yield* ScheduledTaskUnattended.IMContextRef)
   const definitions = yield* Effect.forEach(Object.entries(tools), ([name, item]) =>
     Effect.gen(function* () {
       const schema = item.inputSchema
@@ -303,12 +304,12 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
   }
 })
 
-function resolveTools(input: Pick<PrepareInput, "tools" | "agent" | "permission" | "user">) {
+function resolveTools(input: Pick<PrepareInput, "tools" | "agent" | "permission" | "user">, imSource = false) {
   const disabled = Permission.disabled(
     Object.keys(input.tools),
     Permission.merge(input.agent.permission, input.permission ?? []),
   )
-  return Record.filter(input.tools, (_, k) => input.user.tools?.[k] !== false && !disabled.has(k))
+  return Record.filter(input.tools, (_, k) => input.user.tools?.[k] !== false && (imSource || !disabled.has(k)))
 }
 
 export function hasToolCalls(messages: ModelMessage[]): boolean {

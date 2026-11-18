@@ -717,6 +717,34 @@ it.instance(
   { git: true },
 )
 
+for (const action of ["ask", "deny"] as const) {
+  it.instance(
+    `ask - IM external directory ${action} respects explicit rules without persisting approval`,
+    () =>
+      Effect.gen(function* () {
+        const ruleset = [{ permission: "external_directory", pattern: "*", action }]
+        const request = ask({
+          sessionID: SessionID.make("session_im"),
+          permission: "external_directory",
+          patterns: ["/tmp/outside"],
+          metadata: {},
+          always: ["*"],
+          ruleset,
+        }).pipe(
+          Effect.provideService(ScheduledTaskUnattended.ContextRef, true),
+          Effect.provideService(ScheduledTaskUnattended.IMContextRef, true),
+        )
+        if (action === "deny") expect(yield* fail(request)).toBeInstanceOf(Permission.DeniedError)
+        else yield* request
+        expect(ruleset).toEqual([{ permission: "external_directory", pattern: "*", action }])
+        expect(yield* list()).toEqual([])
+        expect(yield* ScheduledTaskUnattended.IMContextRef).toBe(false)
+        expect(yield* ScheduledTaskUnattended.ContextRef).toBe(false)
+      }),
+    { git: true },
+  )
+}
+
 it.instance(
   "ask - adds request to pending list",
   () =>

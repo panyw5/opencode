@@ -122,8 +122,10 @@ export const Event = {
 
 export class RejectedError extends Schema.TaggedErrorClass<RejectedError>()("QuestionRejectedError", {
   timedOut: Schema.optional(Schema.Boolean),
+  unattended: Schema.optional(Schema.Boolean),
 }) {
   override get message() {
+    if (this.unattended) return "IM 无人值守执行无法等待问题确认；该操作已停止。"
     if (this.timedOut) return "The question timed out without a user response. No answer was selected."
     return "The user dismissed this question"
   }
@@ -689,6 +691,10 @@ export const layer = Layer.effect(
       tool?: Tool
       timeout?: number
     }) {
+      if (yield* ScheduledTaskUnattended.IMContextRef) {
+        log.info("IM question rejected without waiting", { sessionID: input.sessionID })
+        return yield* new RejectedError({ unattended: true })
+      }
       if (yield* ScheduledTaskUnattended.ContextRef) return yield* new RejectedError()
       const pending = (yield* InstanceState.get(state)).pending
       const id = QuestionID.ascending()

@@ -867,8 +867,9 @@ export const layer = Layer.effect(
           )
           return yield* Effect.exit(
             Effect.tryPromise({
-              try: () =>
+              try: (signal) =>
                 transport.sendText({
+                  signal,
                   target: input.target,
                   text: input.text,
                   format,

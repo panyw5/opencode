@@ -1,3 +1,4 @@
+import "@/session/prompt"
 import { expect } from "bun:test"
 import { Effect, Layer, Schema } from "effect"
 import { MCP } from "@/mcp"
@@ -15,6 +16,7 @@ import { Truncate } from "@/tool/truncate"
 import type { TaskPromptOps } from "@/tool/task"
 import * as Log from "@opencode-ai/core/util/log"
 import { testEffect } from "../lib/effect"
+import { jsonSchema } from "ai"
 
 void Log.init({ print: false })
 
@@ -171,6 +173,71 @@ const it = testEffect(Layer.mergeAll(pluginLayer, permissionLayer, registryLayer
 type ExecutableTool<Input, Output> = {
   execute: (input: Input, options: { toolCallId: string; abortSignal?: AbortSignal }) => Promise<Output>
 }
+
+const imIt = testEffect(Layer.mergeAll(pluginLayer, Permission.defaultLayer, registryLayer, mcpLayer, truncateLayer))
+for (const mode of ["direct", "codemode"] as const)
+  for (const action of ["ask", "deny"] as const) {
+    imIt.instance(`MCP ${mode} resolver ${action} uses IM permission context without waiting`, () =>
+      Effect.gen(function* () {
+        let executed = 0
+        const session = { id: sessionID, permission: [{ permission: "probe", pattern: "*", action }] } as Session.Info
+        const tools = yield* SessionTools.resolve({
+          getSession: () => Effect.succeed(session),
+          agent,
+          model,
+          session,
+          processor: {
+            message: assistant,
+            startToolCall: () => Effect.void,
+            updateToolCall: () => Effect.succeed(undefined),
+            completeToolCall: () => Effect.void,
+            failToolCall: () => Effect.succeed(false),
+            captureToolFiles: (_tool, work) => work.pipe(Effect.map((value) => ({ value, files: [] }))),
+          },
+          bypassAgentCheck: false,
+          messages: [],
+          imSource: true,
+          unattended: true,
+          promptOps: {
+            cancel: () => Effect.void,
+            resolvePromptParts: () => Effect.succeed([]),
+            prompt: () => Effect.die("unused"),
+            loop: () => Effect.die("unused"),
+          },
+        }).pipe(
+          Effect.provideService(MCP.Service, {
+            ...(yield* MCP.Service),
+            tools: () =>
+              Effect.succeed({
+                probe: {
+                  inputSchema: jsonSchema({ type: "object" }),
+                  ...(mode === "codemode" ? { mcp: { server: "probe", name: "probe", codemode: true } } : {}),
+                  execute: async () => {
+                    executed++
+                    return { content: [{ type: "text" as const, text: "ok" }] }
+                  },
+                },
+              }),
+          }),
+        )
+        const probe = (mode === "direct" ? tools.probe : tools.execute) as unknown as ExecutableTool<
+          Record<string, unknown>,
+          unknown
+        >
+        const result = yield* Effect.tryPromise(() =>
+          probe.execute(mode === "direct" ? {} : { code: "return await tools.probe.probe({})" }, {
+            toolCallId: "probe",
+            abortSignal: new AbortController().signal,
+          }),
+        ).pipe(Effect.timeout("1 second"), Effect.exit)
+        expect(result._tag).toBe(action === "ask" || mode === "codemode" ? "Success" : "Failure")
+        if (action === "deny" && mode === "codemode" && result._tag === "Success")
+          expect(JSON.stringify(result.value)).toContain("error")
+        expect(executed).toBe(action === "ask" ? 1 : 0)
+        expect(yield* (yield* Permission.Service).list()).toEqual([])
+      }),
+    )
+  }
 
 it.instance("session tools settle processor tool calls after successful local execution", () =>
   Effect.gen(function* () {

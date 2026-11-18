@@ -121,6 +121,15 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
           ...(ctx.callID ? { "tool.call_id": ctx.callID } : {}),
         }
         return Effect.gen(function* () {
+          const { ScheduledTaskUnattended } = yield* Effect.promise(() => import("@/scheduled-task/unattended"))
+          if (
+            (yield* ScheduledTaskUnattended.IMContextRef) &&
+            (id.endsWith("_consult") || id === "gpt_pro_consult" || id === "question")
+          ) {
+            return yield* Effect.die(
+              new Error(`IM 无人值守执行无法运行需要人工交互的工具 ${id}；该操作已停止，请继续其他操作。`),
+            )
+          }
           const decoded = yield* decode(args).pipe(
             Effect.mapError(
               (error) =>

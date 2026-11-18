@@ -276,7 +276,7 @@ export async function startWechatChannel(opts: {
         {
           sessionID: sessionId,
           parts: [
-            { type: "text", text: message.text },
+            { type: "text", text: message.text, metadata: { imSource: "wechat", imMessageID: message.id } },
             ...(message.attachments?.flatMap((item) =>
               item.status === "ready" && item.data
                 ? [

@@ -28,6 +28,7 @@ import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
 import { toolError } from "@opencode/codemode"
 import { Cause, Semaphore } from "effect"
 import { FileChange } from "./file-change"
+import { ScheduledTaskUnattended } from "@/scheduled-task/unattended"
 
 const log = Log.create({ service: "session.tools" })
 const catalogs = new WeakMap<Record<string, AITool>, CodeModeCatalog.Summary>()
@@ -46,8 +47,14 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   bypassAgentCheck: boolean
   messages: MessageV2.WithParts[]
   promptOps: TaskPromptOps
+  unattended?: boolean
+  imSource?: boolean
+  imMessageID?: string
 }) {
   using _ = log.time("resolveTools")
+  const inheritedUnattended = yield* ScheduledTaskUnattended.ContextRef
+  const inheritedIM = yield* ScheduledTaskUnattended.IMContextRef
+  const inheritedMessage = yield* ScheduledTaskUnattended.IMMessageRef
   const tools: Record<string, AITool> = {}
   const run = yield* EffectBridge.make()
   const plugin = yield* Plugin.Service
@@ -135,12 +142,18 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           permission: req.permission,
           scoped: scoped.length,
         })
-        yield* permission.ask({
-          ...req,
-          sessionID: input.session.id,
-          tool: { messageID: input.processor.message.id, callID: options.toolCallId },
-          ruleset: Permission.merge(rules, scoped),
-        })
+        yield* permission
+          .ask({
+            ...req,
+            sessionID: input.session.id,
+            tool: { messageID: input.processor.message.id, callID: options.toolCallId },
+            ruleset: Permission.merge(rules, scoped),
+          })
+          .pipe(
+            Effect.provideService(ScheduledTaskUnattended.ContextRef, input.unattended ?? inheritedUnattended),
+            Effect.provideService(ScheduledTaskUnattended.IMContextRef, input.imSource ?? inheritedIM),
+            Effect.provideService(ScheduledTaskUnattended.IMMessageRef, input.imMessageID ?? inheritedMessage),
+          )
       }).pipe(Effect.orDie),
   })
 
@@ -197,7 +210,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       codeModeEnabled &&
       item.codemode === "readonly" &&
       userTools?.[item.id] !== false &&
-      !Permission.disabled([item.id], ruleset).has(item.id)
+      (input.imSource || !Permission.disabled([item.id], ruleset).has(item.id))
     ) {
       const schema = ToolJsonSchema.fromTool(item)
       const validated = yield* Effect.try({
@@ -226,7 +239,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
 
     const schema = yield* Effect.promise(() => Promise.resolve(asSchema(item.inputSchema).jsonSchema))
     if (codeModeEnabled && !tools.execute && item.mcp?.codemode) {
-      if (userTools?.[key] === false || Permission.disabled([key], ruleset).has(key)) {
+      if (userTools?.[key] === false || (!input.imSource && Permission.disabled([key], ruleset).has(key))) {
         log.info("MCP Code Mode tool hidden by permission", { tool: key })
         continue
       }

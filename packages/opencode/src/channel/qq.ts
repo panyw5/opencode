@@ -394,7 +394,13 @@ export function startQQChannel(opts: QQRuntimeOptions): QQChannelHandle {
     try {
       const result = await sdk.session.prompt({
         sessionID: sessionId,
-        parts: [{ type: "text", text }],
+        parts: [
+          {
+            type: "text",
+            text,
+            metadata: { imSource: "qq", imMessageID: messageRecordID("qq", opts.name, event.id!) },
+          },
+        ],
         tools: { question: false },
         ...(model ? { model } : {}),
       })

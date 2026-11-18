@@ -13,6 +13,7 @@ import type { JSONSchema7 } from "@ai-sdk/provider"
 import { SessionCompaction } from "./compaction"
 import { Bus } from "../bus"
 import { Issue } from "@/issue/issue"
+import { ScheduledTaskUnattended } from "@/scheduled-task/unattended"
 import { SystemPrompt } from "./system"
 import { CodeModeState } from "./code-mode-state"
 import { SessionInstructionState } from "./instruction-state"
@@ -2270,6 +2271,22 @@ export const layer = Layer.effect(
 
           if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
 
+          const imSource =
+            (yield* ScheduledTaskUnattended.IMContextRef) ||
+            (msgs
+              .find((m) => m.info.id === lastUser.id)
+              ?.parts.some((p) => p.type === "text" && !!p.metadata?.imSource) ??
+              false)
+          const unattended = (yield* ScheduledTaskUnattended.ContextRef) || imSource
+          const origin = msgs
+            .find((m) => m.info.id === lastUser.id)
+            ?.parts.find((p) => p.type === "text" && p.metadata?.imMessageID)
+          const imMessageID =
+            (yield* ScheduledTaskUnattended.IMMessageRef) ??
+            (origin?.type === "text" && typeof origin.metadata?.imMessageID === "string"
+              ? origin.metadata.imMessageID
+              : undefined)
+
           yield* slog.info("loop latest", {
             lastUserID: lastUser.id,
             lastUserCreated: lastUser.time.created,
@@ -2334,7 +2351,11 @@ export const layer = Layer.effect(
           const task = tasks.pop()
 
           if (task?.type === "subtask") {
-            yield* handleSubtask({ task, model, lastUser, sessionID, session, msgs })
+            yield* handleSubtask({ task, model, lastUser, sessionID, session, msgs }).pipe(
+              Effect.provideService(ScheduledTaskUnattended.ContextRef, unattended),
+              Effect.provideService(ScheduledTaskUnattended.IMContextRef, imSource),
+              Effect.provideService(ScheduledTaskUnattended.IMMessageRef, imMessageID),
+            )
             continue
           }
 
@@ -2545,6 +2566,7 @@ export const layer = Layer.effect(
           const outcome: "break" | "continue" = yield* Effect.gen(function* () {
             const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
             const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
+            if (unattended) yield* slog.info("turn running unattended", { sessionID, imSource })
             const promptOps = yield* ops()
 
             const tools = isLastStep
@@ -2558,6 +2580,9 @@ export const layer = Layer.effect(
                   bypassAgentCheck,
                   messages: msgs,
                   promptOps,
+                  unattended,
+                  imSource,
+                  imMessageID,
                 }).pipe(
                   Effect.provideService(Plugin.Service, plugin),
                   Effect.provideService(Permission.Service, permission),
@@ -2634,24 +2659,26 @@ export const layer = Layer.effect(
             // modelMsgs via toModelMessages — do not also push into system.
             const format = lastUser.format ?? { type: "text" as const }
             if (!isLastStep && format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
-            const result = yield* handle.process({
-              user: lastUser,
-              agent,
-              permission: session.permission,
-              sessionID,
-              parentSessionID: session.parentID,
-              system,
-              messages: [
-                ...modelMsgs,
-                ...(truncatedResponses > 0 && !hasToolCalls
-                  ? [{ role: "user" as const, content: OUTPUT_LIMIT_PROMPT }]
-                  : []),
-                ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
-              ],
-              tools,
-              model,
-              toolChoice: isLastStep ? "none" : format.type === "json_schema" ? "required" : undefined,
-            })
+            const result = yield* handle
+              .process({
+                user: lastUser,
+                agent,
+                permission: session.permission,
+                sessionID,
+                parentSessionID: session.parentID,
+                system,
+                messages: [
+                  ...modelMsgs,
+                  ...(truncatedResponses > 0 && !hasToolCalls
+                    ? [{ role: "user" as const, content: OUTPUT_LIMIT_PROMPT }]
+                    : []),
+                  ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
+                ],
+                tools,
+                model,
+                toolChoice: isLastStep ? "none" : format.type === "json_schema" ? "required" : undefined,
+              })
+              .pipe(Effect.provideService(ScheduledTaskUnattended.ContextRef, unattended))
 
             if (structured !== undefined) {
               handle.message.structured = structured
@@ -2732,6 +2759,9 @@ export const layer = Layer.effect(
             }
             return "continue" as const
           }).pipe(
+            Effect.provideService(ScheduledTaskUnattended.ContextRef, unattended),
+            Effect.provideService(ScheduledTaskUnattended.IMContextRef, imSource),
+            Effect.provideService(ScheduledTaskUnattended.IMMessageRef, imMessageID),
             Effect.ensuring(instruction.clear(handle.message.id)),
             Effect.onInterrupt(() => finalizeInterruptedAssistant),
           )
@@ -2757,8 +2787,20 @@ export const layer = Layer.effect(
         )
         .pipe(Effect.orDie)
       if (currentStatus.type === "idle" && Option.isNone(activeAssistant)) yield* promoteInbox(input.sessionID)
+      const unattended = yield* ScheduledTaskUnattended.ContextRef
+      const imSource = yield* ScheduledTaskUnattended.IMContextRef
+      const imMessageID = yield* ScheduledTaskUnattended.IMMessageRef
       return yield* state
-        .ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID), revision)
+        .ensureRunning(
+          input.sessionID,
+          lastAssistant(input.sessionID),
+          runLoop(input.sessionID).pipe(
+            Effect.provideService(ScheduledTaskUnattended.ContextRef, unattended),
+            Effect.provideService(ScheduledTaskUnattended.IMContextRef, imSource),
+            Effect.provideService(ScheduledTaskUnattended.IMMessageRef, imMessageID),
+          ),
+          revision,
+        )
         .pipe(Effect.ensuring(requestDrain(input.sessionID)))
     })
 

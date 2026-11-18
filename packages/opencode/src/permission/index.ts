@@ -232,24 +232,38 @@ export const layer = Layer.effect(
     const ask = Effect.fn("Permission.ask")(function* (input: AskInput) {
       const { approved, pending } = yield* InstanceState.get(state)
       const unattended = yield* ScheduledTaskUnattended.ContextRef
+      const imSource = yield* ScheduledTaskUnattended.IMContextRef
+      log.info("permission execution context", { unattended, imSource, permission: input.permission })
       const { ruleset, ...request } = input
       let needsAsk = false
 
       for (const pattern of request.patterns) {
         const rule = evaluate(request.permission, pattern, ruleset, approved)
         log.info("evaluated", { permission: request.permission, pattern, action: rule })
-        if (unattended && request.permission === "external_directory") {
+        if (unattended && !imSource && request.permission === "external_directory") {
           return yield* new DeniedError({
             ruleset: [{ permission: request.permission, pattern, action: "deny" }],
           })
         }
         if (rule.action === "deny") {
+          const messageID = yield* ScheduledTaskUnattended.IMMessageRef
+          if (imSource && messageID) {
+            const { permissionReceipt } = yield* Effect.promise(() => import("@/im/permission-receipt"))
+            yield* permissionReceipt(
+              messageID,
+              request.permission,
+              `${request.tool?.messageID ?? ""}:${request.tool?.callID ?? request.permission}`,
+            ).pipe(Effect.timeout("5 seconds"), Effect.orDie)
+          }
           return yield* new DeniedError({
             ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
           })
         }
         if (rule.action === "allow") continue
-        if (unattended) continue
+        if (unattended || imSource) {
+          log.info("turn-local unattended permission allowed", { permission: request.permission, pattern, imSource })
+          continue
+        }
         needsAsk = true
       }
 

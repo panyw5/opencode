@@ -427,7 +427,10 @@ function send(item: Sse) {
   if (item.error) end = Stream.concat(empty, Stream.fail(item.error))
   else if (item.hang) end = Stream.concat(empty, Stream.never)
 
-  return HttpServerResponse.stream(Stream.concat(body, end), { contentType: "text/event-stream" })
+  return HttpServerResponse.stream(Stream.concat(body, end), {
+    contentType: "text/event-stream",
+    headers: { connection: "close" },
+  })
 }
 
 const reset = Effect.fn("TestLLMServer.reset")(function* (item: Sse) {

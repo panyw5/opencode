@@ -619,7 +619,16 @@ async function handleMessage(input: {
   try {
     result = await input.sdk.session.prompt({
       sessionID: sessionId,
-      parts: [{ type: "text", text }],
+      parts: [
+        {
+          type: "text",
+          text,
+          metadata: {
+            imSource: "feishu",
+            ...(messageId ? { imMessageID: messageRecordID("feishu", input.name, messageId) } : {}),
+          },
+        },
+      ],
       tools: {
         question: false,
       },
