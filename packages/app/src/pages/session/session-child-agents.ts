@@ -1,7 +1,7 @@
 import type { Message, Part, Session, SessionStatus, ToolPart } from "@opencode-ai/sdk/v2/client"
 import { working } from "./session-working"
 
-type SessionChildAgentStatus = Exclude<ToolPart["state"]["status"], "pending"> | "unknown"
+type SessionChildAgentStatus = Exclude<ToolPart["state"]["status"], "pending"> | "interrupted" | "unknown"
 
 export type SessionChildAgentEntry = {
   id: string
@@ -66,19 +66,27 @@ const sessionTitle = (
  * Resolve entry status. Shared for foreground and background tasks.
  * Child session activity wins over parent tool status (background/promote
  * completes the parent tool immediately while the child may still run).
+ * When `before` is set the entry describes a superseded invocation of a
+ * resumed session: only messages created before the next invocation belong
+ * to it, and live session state no longer applies.
  */
 function statusFor(
   sessionID: string,
   input: CollectChildAgentEntriesInput,
   toolStatus?: SessionChildAgentStatus,
   background = false,
+  before?: number,
 ): SessionChildAgentStatus {
-  const messages = input.messagesBySession?.[sessionID]
+  const loaded = input.messagesBySession?.[sessionID]
+  const messages = before === undefined ? loaded : loaded?.filter((message) => message.time.created < before)
   const last = messages?.at(-1)
+  if (last?.role === "assistant" && last.error?.name === "MessageAbortedError") return "interrupted"
   if (last?.role === "assistant" && last.error !== undefined) return "error"
-  if (working(input.statuses?.[sessionID], messages)) return "running"
+  if (before === undefined && working(input.statuses?.[sessionID], messages)) return "running"
   if (last?.role === "assistant" && typeof last.time.completed === "number") return "completed"
-  if (toolStatus === "running" || toolStatus === "error") return toolStatus
+  if (before !== undefined && last?.role === "assistant") return "interrupted"
+  if (toolStatus === "error") return "error"
+  if (before === undefined && toolStatus === "running") return "running"
   // Background dispatch completing does not prove that the child finished.
   if (toolStatus === "completed" && !background) return "completed"
   return "unknown"
@@ -92,7 +100,7 @@ function entryFromTaskPart(input: {
   seenSessionIDs: Set<string>
   collect: CollectChildAgentEntriesInput
   order: number
-}): (SessionChildAgentEntry & { order: number }) | undefined {
+}): (SessionChildAgentEntry & { order: number; toolStatus?: SessionChildAgentStatus }) | undefined {
   const metadata = stateMetadata(input.part.state)
   const sessionID = text(metadata?.sessionId) ?? text(metadata?.sessionID)
   if (!sessionID) return
@@ -114,6 +122,7 @@ function entryFromTaskPart(input: {
     description,
     created: stateStart(input.part.state) ?? session?.time.created ?? input.message.time.created,
     status: statusFor(sessionID, input.collect, toolStatus, background),
+    toolStatus,
     index: input.childIndexByID.get(sessionID),
     resume,
     background: background || undefined,
@@ -132,7 +141,7 @@ export function collectSessionChildAgentEntries(input: CollectChildAgentEntriesI
       .toSorted((a, b) => a.time.created - b.time.created || a.id.localeCompare(b.id))
       .map((session, index) => [session.id, index + 1] as const),
   )
-  const entries: Array<SessionChildAgentEntry & { order: number }> = []
+  const entries: Array<SessionChildAgentEntry & { order: number; toolStatus?: SessionChildAgentStatus }> = []
   let order = 0
   const seenSessionIDs = new Set<string>()
 
@@ -152,6 +161,24 @@ export function collectSessionChildAgentEntries(input: CollectChildAgentEntriesI
       if (!entry) continue
       entries.push(entry)
       order += 1
+    }
+  }
+
+  // Entries sharing a session are separate invocations of a resumed task.
+  // Only the newest can be live; re-resolve older entries against the
+  // messages that preceded the next invocation.
+  const bySession = new Map<string, typeof entries>()
+  for (const entry of entries) {
+    const list = bySession.get(entry.sessionID)
+    if (list) list.push(entry)
+    else bySession.set(entry.sessionID, [entry])
+  }
+  for (const list of bySession.values()) {
+    const ordered = list.toSorted((a, b) => a.created - b.created || a.order - b.order)
+    for (const [index, entry] of ordered.entries()) {
+      const next = ordered[index + 1]
+      if (next === undefined) continue
+      entry.status = statusFor(entry.sessionID, input, entry.toolStatus, entry.background === true, next.created)
     }
   }
 
@@ -175,5 +202,5 @@ export function collectSessionChildAgentEntries(input: CollectChildAgentEntriesI
 
   return entries
     .toSorted((a, b) => a.created - b.created || a.order - b.order)
-    .map(({ order: _order, ...entry }) => entry)
+    .map(({ order: _order, toolStatus: _toolStatus, ...entry }) => entry)
 }

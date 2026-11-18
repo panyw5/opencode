@@ -17,7 +17,7 @@ export function createChildAgentMenuEntries(source: Accessor<SessionChildAgentEn
 }
 
 export function createChildAgentMenuGroups(entries: SessionChildAgentEntry[]) {
-  return (["running", "completed", "error", "unknown"] as const).map((status) => ({
+  return (["running", "completed", "interrupted", "error", "unknown"] as const).map((status) => ({
     status,
     entries: createMemo(() => entries.filter((entry) => (entry.status ?? "unknown") === status)),
   }))

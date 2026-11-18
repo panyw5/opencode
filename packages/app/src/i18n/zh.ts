@@ -1431,6 +1431,7 @@ export const dict = {
   "session.childAgents.status.running": "运行中",
   "session.childAgents.status.completed": "已完成",
   "session.childAgents.status.error": "执行失败",
+  "session.childAgents.status.interrupted": "已中断",
   "session.childAgents.status.unknown": "状态未知",
   "session.childAgents.statusUnknownHint": "尚未加载执行状态，不代表子智能体未被使用。",
   "session.userMessages.button": "查看用户消息",

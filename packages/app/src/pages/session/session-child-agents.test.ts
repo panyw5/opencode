@@ -216,6 +216,155 @@ describe("collectSessionChildAgentEntries", () => {
     expect(entries.map((entry) => entry.index)).toEqual([1, 1])
   })
 
+  test("shows only the newest invocation of a resumed session as running", () => {
+    const messages = [
+      assistant({ id: "msg_1", sessionID: "ses_parent", created: 10 }),
+      assistant({ id: "msg_2", sessionID: "ses_parent", created: 20 }),
+      assistant({ id: "msg_3", sessionID: "ses_parent", created: 30 }),
+    ]
+    const entries = collectSessionChildAgentEntries({
+      sessionID: "ses_parent",
+      messages,
+      parts: {
+        msg_1: [
+          task({
+            id: "prt_1",
+            sessionID: "ses_parent",
+            messageID: "msg_1",
+            childID: "ses_child",
+            description: "修复渠道无人值守回归",
+            agent: "coder",
+            started: 25,
+            background: true,
+          }),
+        ],
+        msg_2: [
+          task({
+            id: "prt_2",
+            sessionID: "ses_parent",
+            messageID: "msg_2",
+            childID: "ses_child",
+            description: "继续修复回归",
+            agent: "coder",
+            started: 40,
+            taskID: "ses_child",
+            background: true,
+          }),
+        ],
+        msg_3: [
+          task({
+            id: "prt_3",
+            sessionID: "ses_parent",
+            messageID: "msg_3",
+            childID: "ses_child",
+            description: "再次续跑修复",
+            agent: "coder",
+            started: 55,
+            taskID: "ses_child",
+            background: true,
+          }),
+        ],
+      },
+      sessions: [session({ id: "ses_child", parentID: "ses_parent", created: 25 })],
+      messagesBySession: {
+        ses_child: [
+          assistant({
+            id: "msg_c1",
+            sessionID: "ses_child",
+            created: 26,
+            completed: 30,
+            error: { name: "MessageAbortedError" },
+          }),
+          assistant({ id: "msg_c2", sessionID: "ses_child", created: 41, completed: 50 }),
+          assistant({ id: "msg_c3", sessionID: "ses_child", created: 56, completed: false }),
+        ],
+      },
+      statuses: { ses_child: { type: "busy" } },
+    })
+
+    expect(entries.map((entry) => entry.status)).toEqual(["interrupted", "completed", "running"])
+  })
+
+  test("marks a cleanly finished superseded invocation as completed", () => {
+    const messages = [
+      assistant({ id: "msg_1", sessionID: "ses_parent", created: 10 }),
+      assistant({ id: "msg_2", sessionID: "ses_parent", created: 20 }),
+    ]
+    const entries = collectSessionChildAgentEntries({
+      sessionID: "ses_parent",
+      messages,
+      parts: {
+        msg_1: [
+          task({
+            id: "prt_1",
+            sessionID: "ses_parent",
+            messageID: "msg_1",
+            childID: "ses_child",
+            description: "first run",
+            agent: "coder",
+            started: 25,
+          }),
+        ],
+        msg_2: [
+          task({
+            id: "prt_2",
+            sessionID: "ses_parent",
+            messageID: "msg_2",
+            childID: "ses_child",
+            description: "resumed run",
+            agent: "coder",
+            started: 40,
+            taskID: "ses_child",
+          }),
+        ],
+      },
+      sessions: [session({ id: "ses_child", parentID: "ses_parent", created: 25 })],
+      messagesBySession: {
+        ses_child: [
+          assistant({ id: "msg_c1", sessionID: "ses_child", created: 26, completed: 30 }),
+          assistant({ id: "msg_c2", sessionID: "ses_child", created: 41, completed: 50 }),
+        ],
+      },
+    })
+
+    expect(entries.map((entry) => entry.status)).toEqual(["completed", "completed"])
+  })
+
+  test("marks an aborted latest run as interrupted instead of failed", () => {
+    const message = assistant({ id: "msg_1", sessionID: "ses_parent", created: 10 })
+    const entries = collectSessionChildAgentEntries({
+      sessionID: "ses_parent",
+      messages: [message],
+      parts: {
+        msg_1: [
+          task({
+            id: "prt_1",
+            sessionID: "ses_parent",
+            messageID: "msg_1",
+            childID: "ses_child",
+            description: "stopped run",
+            agent: "coder",
+            started: 25,
+          }),
+        ],
+      },
+      sessions: [session({ id: "ses_child", parentID: "ses_parent", created: 25 })],
+      messagesBySession: {
+        ses_child: [
+          assistant({
+            id: "msg_c1",
+            sessionID: "ses_child",
+            created: 30,
+            completed: 35,
+            error: { name: "MessageAbortedError" },
+          }),
+        ],
+      },
+    })
+
+    expect(entries[0]?.status).toBe("interrupted")
+  })
+
   test("uses the task description as the title when the child session is not loaded", () => {
     const message = assistant({ id: "msg_1", sessionID: "ses_parent", created: 10 })
     const entries = collectSessionChildAgentEntries({

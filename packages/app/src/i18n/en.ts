@@ -1528,6 +1528,7 @@ export const dict = {
   "session.childAgents.status.running": "Running",
   "session.childAgents.status.completed": "Completed",
   "session.childAgents.status.error": "Failed",
+  "session.childAgents.status.interrupted": "Interrupted",
   "session.childAgents.status.unknown": "Status unknown",
   "session.childAgents.statusUnknownHint":
     "Execution status has not been loaded yet. This does not mean the subagent was unused.",
