@@ -1246,6 +1246,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
                 })
                 restoreInput()
               })
+            // session.shell resolves only when the turn ends; release the
+            // pending entry once the request is dispatched so the composer
+            // stays usable for the whole run.
+            if (early) pendingSessionSubmissions.finish(submissionKey)
             return
           }
 
@@ -1319,6 +1323,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
                   })
                   restoreInput()
                 })
+              // session.command resolves only when the turn ends; release the
+              // pending entry once the request is dispatched so the composer
+              // stays usable for the whole run.
+              if (early) pendingSessionSubmissions.finish(submissionKey)
               return
             }
           }

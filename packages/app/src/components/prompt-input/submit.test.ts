@@ -28,6 +28,7 @@ const storedSessions: Record<string, Array<{ id: string; title?: string }>> = {}
 const promoted: Array<{ directory: string; sessionID: string }> = []
 const sentShell: string[] = []
 const sentCommands: Array<{ directory: string; messageID?: string }> = []
+const availableCommands: Array<{ name: string }> = []
 const sentPrompts: Array<{ directory: string; sessionID: string }> = []
 const flushedSessions: Array<{ directory: string; sessionID: string }> = []
 const abortedSessions: Array<{ directory: string; sessionID: string }> = []
@@ -215,7 +216,7 @@ beforeAll(async () => {
   mock.module("@/context/sync", () => ({
     useSync: () => ({
       project: { worktree: root },
-      data: { command: [] },
+      data: { command: availableCommands },
       session: {
         created: (input: { directory?: string; info: { id: string; title?: string } }) => {
           const directory = input.directory ?? current
@@ -236,6 +237,7 @@ beforeAll(async () => {
                 !!storedSessions[value.directory]?.find((item) => item.id === value.sessionID)?.title,
             )
           },
+          complete: () => undefined,
           remove: () => undefined,
         },
       },
@@ -320,6 +322,7 @@ beforeEach(() => {
   params = { dir: "/repo/worktree-a", draftID: "draft-1" }
   sentShell.length = 0
   sentCommands.length = 0
+  availableCommands.length = 0
   sentPrompts.length = 0
   flushedSessions.length = 0
   abortedSessions.length = 0
@@ -396,6 +399,21 @@ describe("prompt submit worktree selection", () => {
     expect(optimistic[0]).toMatchObject({ message: { id: entry.message.id }, sessionID: "session-1" })
     expect(pendingSessionSubmissions.entries[key]?.sessionID).toBe("session-1")
     expect(promptResetScopes).toHaveLength(1)
+  })
+
+  test("custom command submission releases the pending session entry once dispatched", async () => {
+    availableCommands.push({ name: "plot" })
+    promptValue.splice(0, promptValue.length, { type: "text", content: "/plot args", start: 0, end: 10 })
+    try {
+      const submit = newPromptSubmit()
+      await submit.handleSubmit({ preventDefault() {} } as Event)
+      await Bun.sleep(0)
+      const key = pendingSessionKey("http://localhost:4096", current, "draft-1")
+      expect(pendingSessionSubmissions.entries[key]).toBeUndefined()
+      expect(sentCommands).toHaveLength(1)
+    } finally {
+      promptValue.splice(0, promptValue.length, { type: "text", content: "ls", start: 0, end: 2 })
+    }
   })
 
   test("passes the selected external channel into the first session without changing its directory", async () => {
