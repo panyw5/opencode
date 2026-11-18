@@ -8,8 +8,8 @@ import type {
 } from "@opencode-ai/sdk/v2/client"
 import { showToast } from "@opencode-ai/ui/toast"
 import { getFilename } from "@opencode-ai/core/util/path"
-import { getOwner, createEffect, createSignal, onCleanup, on, type ParentProps, untrack } from "solid-js"
-import { createStore, produce, reconcile } from "solid-js/store"
+import { getOwner, createEffect, createMemo, createSignal, onCleanup, on, type ParentProps, untrack } from "solid-js"
+import { createStore, produce, reconcile, type SetStoreFunction } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { Persist, persisted } from "@/utils/persist"
 import type { InitError } from "../pages/error"
@@ -59,6 +59,13 @@ export type GlobalStore = {
   reload: undefined | "pending" | "complete"
 }
 
+type FatKey = "provider" | "provider_auth" | "config"
+type RootKey = "ready" | "error" | "path" | "reload" | FatKey
+type LightRoot = Omit<GlobalStore, "projectByDomain" | "project" | "rootByDomain" | FatKey>
+type GlobalLightStore = Omit<GlobalStore, FatKey | "rootByDomain"> & {
+  rootByDomain: Partial<Record<DomainId, LightRoot>>
+}
+
 function createGlobalSync() {
   const globalSDK = useGlobalSDK()
   const language = useLanguage()
@@ -98,15 +105,37 @@ function createGlobalSync() {
     revs.set(directory, next)
     return next
   }
+  const EMPTY_PATH = { state: "", config: "", worktree: "", directory: "", home: "" }
   const blankRoot = () => ({
     ready: false,
     error: undefined as InitError | undefined,
-    path: { state: "", config: "", worktree: "", directory: "", home: "" },
-    provider: { all: [], connected: [], default: {} } as ProviderListResponse,
-    provider_auth: {} as ProviderAuthResponse,
-    config: {} as Config,
+    path: { ...EMPTY_PATH },
     reload: undefined as undefined | "pending" | "complete",
   })
+  // Provider/auth/config snapshots are large immutable server payloads (the
+  // provider list alone is ~7MB). Keeping them in createStore made every write
+  // deep-traverse the whole tree, so they live in plain per-domain signals and
+  // are exposed through the `data` facade below.
+  const fatStore = new Map<
+    DomainId,
+    {
+      provider: ReturnType<typeof createSignal<ProviderListResponse>>
+      provider_auth: ReturnType<typeof createSignal<ProviderAuthResponse>>
+      config: ReturnType<typeof createSignal<Config>>
+    }
+  >()
+  const fatFor = (domain: DomainId) => {
+    let entry = fatStore.get(domain)
+    if (!entry) {
+      entry = {
+        provider: createSignal({ all: [], connected: [], default: {} } as ProviderListResponse),
+        provider_auth: createSignal({} as ProviderAuthResponse),
+        config: createSignal({} as Config),
+      }
+      fatStore.set(domain, entry)
+    }
+    return entry
+  }
   const rootBucket = (domain = currentDomain()) => globalStore.rootByDomain[domain] ?? blankRoot()
   const projectBucket = (domain = currentDomain()) => globalStore.projectByDomain[domain] ?? []
   const runtime = (domain = currentDomain()) => globalSDK.forDomain(domain)
@@ -127,7 +156,7 @@ function createGlobalSync() {
     createStore({ domains: { [mainDomain]: [] as Project[] } as Partial<Record<DomainId, Project[]>> }),
   )
 
-  const [globalStore, setGlobalStore] = createStore<GlobalStore>({
+  const [globalStore, setGlobalStore] = createStore<GlobalLightStore>({
     ...blankRoot(),
     rootByDomain: {},
     projectByDomain: projectCache.domains,
@@ -156,9 +185,6 @@ function createGlobalSync() {
         setGlobalStore("ready", root.ready)
         setGlobalStore("error", root.error)
         setGlobalStore("path", reconcile(root.path))
-        setGlobalStore("provider", reconcile(root.provider))
-        setGlobalStore("provider_auth", reconcile(root.provider_auth))
-        setGlobalStore("config", reconcile(root.config))
         setGlobalStore("reload", root.reload)
         setGlobalStore("project", reconcile(projectBucket(domain)))
       },
@@ -197,16 +223,19 @@ function createGlobalSync() {
 
   const setProjects = (next: Project[] | ((draft: Project[]) => void)) => setProjectsFor(currentDomain(), next)
 
-  const setRoot = (domain: DomainId, key: keyof ReturnType<typeof blankRoot>, value: unknown) => {
-    setGlobalStore(
+  const setRoot = (domain: DomainId, key: RootKey, value: unknown) => {
+    if (key === "provider" || key === "provider_auth" || key === "config") {
+      ;(fatFor(domain)[key][1] as (next: unknown) => unknown)(value)
+      // Ensure the light bucket exists so the domain shows up in rootByDomain.
+      if (!globalStore.rootByDomain[domain]) setGlobalStore("rootByDomain", domain, {})
+      return
+    }
+    if (!globalStore.rootByDomain[domain]) setGlobalStore("rootByDomain", domain, { ...blankRoot() })
+    ;(setGlobalStore as (...args: unknown[]) => unknown)(
       "rootByDomain",
-      produce((draft) => {
-        const root = draft[domain] ?? blankRoot()
-        draft[domain] = {
-          ...root,
-          [key]: value,
-        }
-      }),
+      domain,
+      key,
+      value !== null && typeof value === "object" ? reconcile(value) : value,
     )
     if (domain !== currentDomain())
       return // Reconcile object values so keys removed upstream (e.g. a config field the server
@@ -234,26 +263,38 @@ function createGlobalSync() {
         typeof input[0] === "string" &&
         ["ready", "error", "path", "provider", "provider_auth", "config", "reload"].includes(input[0])
       ) {
-        setRoot(domain, input[0] as keyof ReturnType<typeof blankRoot>, input[1])
+        setRoot(domain, input[0] as RootKey, input[1])
         return input[1]
       }
       return (setGlobalStore as (...args: unknown[]) => unknown)(...input)
-    }) as typeof setGlobalStore
+    }) as SetStoreFunction<GlobalStore>
 
   const set = ((...input: unknown[]) => {
     if (input[0] === "project" && (Array.isArray(input[1]) || typeof input[1] === "function")) {
       setProjects(input[1] as Project[] | ((draft: Project[]) => void))
       return input[1]
     }
+    // Bucket-level writes (e.g. config.tsx's setMainProviders) embed provider /
+    // auth / config — route those to the per-domain signals and merge only the
+    // light fields into the store.
+    if (input[0] === "rootByDomain" && typeof input[1] === "string" && input[2] && typeof input[2] === "object") {
+      const domain = input[1] as DomainId
+      const { provider, provider_auth, config, ...light } = input[2] as Record<string, unknown>
+      if (provider !== undefined) setRoot(domain, "provider", provider)
+      if (provider_auth !== undefined) setRoot(domain, "provider_auth", provider_auth)
+      if (config !== undefined) setRoot(domain, "config", config)
+      if (Object.keys(light).length) setGlobalStore("rootByDomain", domain, light)
+      return input[2]
+    }
     if (
       typeof input[0] === "string" &&
       ["ready", "error", "path", "provider", "provider_auth", "config", "reload"].includes(input[0])
     ) {
-      setRoot(currentDomain(), input[0] as keyof ReturnType<typeof blankRoot>, input[1])
+      setRoot(currentDomain(), input[0] as RootKey, input[1])
       return input[1]
     }
     return (setGlobalStore as (...args: unknown[]) => unknown)(...input)
-  }) as typeof setGlobalStore
+  }) as SetStoreFunction<GlobalStore>
 
   if (projectInit instanceof Promise) {
     void projectInit.then(() => {
@@ -794,9 +835,9 @@ function createGlobalSync() {
       await bootstrapDirectory({
         directory: logical,
         global: {
-          config: globalStore.config,
+          config: fatFor(currentDomain()).config[0](),
           project: projectBucket(domainFromDirectory(logical)),
-          provider: globalStore.provider,
+          provider: fatFor(currentDomain()).provider[0](),
         },
         sdk,
         store: child[0],
@@ -1097,7 +1138,7 @@ function createGlobalSync() {
     refresh: refreshProviders,
     remove(id: string) {
       if (!id) return
-      setGlobalStore("provider", (prev) => stripProvider(prev, id))
+      fatFor(currentDomain()).provider[1]((prev) => stripProvider(prev, id))
       forEachDirectory((directory, manager) => {
         const child = manager.children[directory]
         if (!child) return
@@ -1140,8 +1181,77 @@ function createGlobalSync() {
       })
   }
 
+  // Facade exposing per-domain buckets with the GlobalStore shape. Light
+  // fields read from the store; provider/auth/config read from fatStore
+  // signals so readers see live values without paying store traversal cost.
+  const rootByDomainFacade = createMemo<GlobalStore["rootByDomain"]>(() => {
+    const out: GlobalStore["rootByDomain"] = {}
+    for (const domain of new Set<DomainId>([
+      ...(Object.keys(globalStore.rootByDomain) as DomainId[]),
+      ...fatStore.keys(),
+    ])) {
+      out[domain] = {
+        get ready() {
+          return globalStore.rootByDomain[domain]?.ready ?? false
+        },
+        get error() {
+          return globalStore.rootByDomain[domain]?.error
+        },
+        get path() {
+          return globalStore.rootByDomain[domain]?.path ?? EMPTY_PATH
+        },
+        get reload() {
+          return globalStore.rootByDomain[domain]?.reload
+        },
+        get provider() {
+          return fatFor(domain).provider[0]()
+        },
+        get provider_auth() {
+          return fatFor(domain).provider_auth[0]()
+        },
+        get config() {
+          return fatFor(domain).config[0]()
+        },
+      }
+    }
+    return out
+  })
+
+  const data = {
+    get ready() {
+      return globalStore.ready
+    },
+    get error() {
+      return globalStore.error
+    },
+    get path() {
+      return globalStore.path
+    },
+    get reload() {
+      return globalStore.reload
+    },
+    get provider() {
+      return fatFor(currentDomain()).provider[0]()
+    },
+    get provider_auth() {
+      return fatFor(currentDomain()).provider_auth[0]()
+    },
+    get config() {
+      return fatFor(currentDomain()).config[0]()
+    },
+    get project() {
+      return globalStore.project
+    },
+    get projectByDomain() {
+      return globalStore.projectByDomain
+    },
+    get rootByDomain() {
+      return rootByDomainFacade()
+    },
+  } as GlobalStore
+
   return {
-    data: globalStore,
+    data,
     set,
     get ready() {
       return globalStore.ready
