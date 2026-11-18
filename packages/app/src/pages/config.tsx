@@ -64,7 +64,7 @@ import {
   validateCustomProvider,
 } from "@/components/dialog-custom-provider-form"
 import { FetchProviderModels } from "@/components/fetch-provider-models"
-import { ModelConfigFields } from "@/components/model-config-fields"
+import { FillAllModelPresetsButton, ModelConfigFields } from "@/components/model-config-fields"
 import { TestProviderModelButton } from "@/components/test-provider-model-button"
 import { ProviderBaseURLField } from "@/components/provider-base-url-field"
 import { hasProviderV1, resolveProviderBaseURL, stripProviderV1 } from "@/components/provider-base-url"
@@ -3545,7 +3545,7 @@ function CustomEditor(props: {
                   the id / title fields (test button has its own fixed column).
                   Icon slots are 24px to match default IconButton size.
                 */}
-                <div class="hidden gap-2 p-2 md:grid md:grid-cols-[24px_minmax(0,1fr)_5.5rem_minmax(0,1fr)_24px]">
+                <div class="hidden gap-2 p-2 md:grid md:grid-cols-[24px_minmax(0,1fr)_5.5rem_minmax(0,1fr)_auto_24px]">
                   <div aria-hidden="true" />
                   <div class="flex min-w-0 flex-wrap items-baseline gap-x-1.5 pl-3">
                     <span class="text-12-medium text-text-weak">{language.t("config.custom.models.id")}</span>
@@ -3559,6 +3559,7 @@ function CustomEditor(props: {
                     </span>
                   </div>
                   <div aria-hidden="true" />
+                  <div aria-hidden="true" />
                 </div>
                 <For each={filteredModels()}>
                   {(entry) => {
@@ -3570,7 +3571,7 @@ function CustomEditor(props: {
                         class="rounded-xl border border-border-weak-base bg-surface-base/60 p-2"
                         data-row={item.row}
                       >
-                        <div class="config-custom-model-summary grid gap-2 md:grid-cols-[24px_minmax(0,1fr)_5.5rem_minmax(0,1fr)_24px]">
+                        <div class="config-custom-model-summary grid gap-2 md:grid-cols-[24px_minmax(0,1fr)_5.5rem_minmax(0,1fr)_auto_24px]">
                           <IconButton
                             type="button"
                             icon={item.expanded ? "chevron-down" : "chevron-right"}
@@ -3608,6 +3609,11 @@ function CustomEditor(props: {
                             onChange={(value) => props.onModel(modelIndex, "name", value)}
                             validationState={item.err.name ? "invalid" : undefined}
                             error={item.err.name}
+                          />
+                          <FillAllModelPresetsButton
+                            providerID={props.form.providerID}
+                            model={item}
+                            onChange={(configIndex, value) => props.onModelConfig(modelIndex, configIndex, value)}
                           />
                           <IconButton
                             type="button"
@@ -7556,7 +7562,7 @@ export default function ConfigPage() {
   function setCustomModelConfig(modelIndex: number, configIndex: number, value: string) {
     const key = state.custom.models[modelIndex]?.config[configIndex]?.key
     setState("custom", "models", modelIndex, "config", configIndex, "value", value)
-    if (key) setState("custom", "models", modelIndex, "err", "config", key, undefined)
+    if (key) setState("custom", "models", modelIndex, "err", "config", (prev) => ({ ...prev, [key]: undefined }))
   }
 
   function toggleCustomModelConfig(index: number) {

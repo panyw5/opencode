@@ -734,6 +734,7 @@ export const dict = {
   "provider.custom.models.config.expand": "Show model config",
   "provider.custom.models.config.collapse": "Hide model config",
   "provider.custom.models.config.empty": "Leave blank to skip",
+  "provider.custom.models.config.fillAll": "Fill all presets",
   "provider.custom.models.config.fillPreset": "Fill preset",
   "provider.custom.models.config.noPreset": "No unambiguous preset for this field",
   "provider.custom.models.config.presetFailed": "Model catalog unavailable",

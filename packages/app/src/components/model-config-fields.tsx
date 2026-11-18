@@ -1,7 +1,7 @@
 import { Button } from "@opencode-ai/ui/button"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { useQueryClient } from "@tanstack/solid-query"
-import { createEffect, createMemo, For, Show } from "solid-js"
+import { batch, createEffect, createMemo, For, Show } from "solid-js"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
@@ -13,12 +13,7 @@ import { isModelConfigFieldVisible, modelConfigPlaceholder, type ModelRow } from
 import { findModelPresets, type ModelCatalog } from "./model-presets"
 import { createModelPresetQuery } from "./model-preset-query"
 
-export function ModelConfigFields(props: {
-  providerID: string
-  model: ModelRow
-  onChange: (index: number, value: string) => void
-}) {
-  const language = useLanguage()
+function useModelPreset(providerID: () => string, modelID: () => string) {
   const server = useServer()
   const sdk = useGlobalSDK()
   const platform = usePlatform()
@@ -62,7 +57,70 @@ export function ModelConfigFields(props: {
       },
     }
   }, useQueryClient())
-  const preset = createMemo(() => findModelPresets(catalog.data ?? {}, props.providerID, props.model.id))
+  const preset = createMemo(() => findModelPresets(catalog.data ?? {}, providerID(), modelID()))
+  return { catalog, preset }
+}
+
+export function FillAllModelPresetsButton(props: {
+  providerID: string
+  model: ModelRow
+  onChange: (index: number, value: string) => void
+}) {
+  const language = useLanguage()
+  const { catalog, preset } = useModelPreset(() => props.providerID, () => props.model.id)
+  const fills = createMemo(() => {
+    const values = preset()?.values ?? {}
+    return props.model.config.flatMap((row, index) => {
+      const value = values[row.key]
+      return value === undefined ? [] : [{ index, key: row.key, value }]
+    })
+  })
+
+  return (
+    <div class="flex h-8 w-full items-center justify-center self-center">
+      <Button
+        type="button"
+        size="large"
+        variant="ghost"
+        class="w-full justify-center whitespace-nowrap leading-none text-text-weak"
+        disabled={fills().length === 0}
+        title={
+          catalog.isError
+            ? language.t("provider.custom.models.config.presetFailed")
+            : fills().length === 0
+              ? language.t("provider.custom.models.config.noPreset")
+              : `${preset()?.approximate ? "参考系列" : "来源模型"} ${preset()?.source}`
+        }
+        aria-label={language.t("provider.custom.models.config.fillAll")}
+        onClick={() => {
+          const list = fills()
+          if (!list.length) return
+          console.info(
+            "[model-presets] fillAll",
+            JSON.stringify({
+              model: props.model.id,
+              fields: list.map((item) => item.key),
+              source: preset()?.source,
+            }),
+          )
+          batch(() => {
+            for (const item of list) props.onChange(item.index, item.value)
+          })
+        }}
+      >
+        {language.t("provider.custom.models.config.fillAll")}
+      </Button>
+    </div>
+  )
+}
+
+export function ModelConfigFields(props: {
+  providerID: string
+  model: ModelRow
+  onChange: (index: number, value: string) => void
+}) {
+  const language = useLanguage()
+  const { catalog, preset } = useModelPreset(() => props.providerID, () => props.model.id)
   createEffect(() => {
     console.info(
       "[model-presets] match",

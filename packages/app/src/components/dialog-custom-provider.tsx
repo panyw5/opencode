@@ -138,7 +138,7 @@ export function DialogCustomProvider(props: Props) {
     const key = form.models[modelIndex]?.config[configIndex]?.key
     batch(() => {
       setForm("models", modelIndex, "config", configIndex, "value", value)
-      if (key) setForm("models", modelIndex, "err", "config", key, undefined)
+      if (key) setForm("models", modelIndex, "err", "config", (prev) => ({ ...prev, [key]: undefined }))
     })
   }
 

@@ -742,6 +742,7 @@ export const dict = {
   "provider.custom.models.config.expand": "展开模型配置",
   "provider.custom.models.config.collapse": "折叠模型配置",
   "provider.custom.models.config.empty": "留空则不设置",
+  "provider.custom.models.config.fillAll": "填入全部预设",
   "provider.custom.models.config.fillPreset": "填入预设",
   "provider.custom.models.config.noPreset": "此字段暂无明确匹配的预设",
   "provider.custom.models.config.presetFailed": "模型目录暂时不可用",

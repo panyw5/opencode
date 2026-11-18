@@ -362,6 +362,7 @@ export const dict = {
   "provider.custom.models.config.expand": "展開模型設定",
   "provider.custom.models.config.collapse": "折疊模型設定",
   "provider.custom.models.config.empty": "留空則不設定",
+  "provider.custom.models.config.fillAll": "填入全部預設",
   "provider.custom.models.config.fillPreset": "填入預設",
   "provider.custom.models.config.noPreset": "此欄位暫無明確匹配的預設",
   "provider.custom.models.config.presetFailed": "模型目錄暫時無法使用",
