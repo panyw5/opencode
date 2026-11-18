@@ -3312,6 +3312,8 @@ function HermesEditor(props: {
   )
 }
 
+const MODEL_ROW_CHUNK = 12
+
 function CustomEditor(props: {
   item?: ProviderItem
   form: CustomState
@@ -3348,6 +3350,32 @@ function CustomEditor(props: {
         if (!query) return true
         return `${model.id} ${model.name}`.toLowerCase().includes(query)
       })
+  })
+
+  // Mount long model lists in per-frame chunks so switching provider cards
+  // paints the first rows immediately instead of blocking on every row.
+  const [visibleCount, setVisibleCount] = createSignal(MODEL_ROW_CHUNK)
+  const visibleModels = createMemo(() => filteredModels().slice(0, visibleCount()))
+
+  createEffect(
+    on(
+      () => props.form.providerID,
+      () => setVisibleCount(MODEL_ROW_CHUNK),
+    ),
+  )
+
+  createEffect(() => {
+    const total = filteredModels().length
+    const shown = visibleCount()
+    if (shown >= total) return
+    let alive = true
+    onCleanup(() => {
+      alive = false
+    })
+    requestAnimationFrame(() => {
+      if (!alive) return
+      setVisibleCount(Math.min(total, Math.max(shown + MODEL_ROW_CHUNK, shown * 2)))
+    })
   })
 
   createEffect(
@@ -3561,7 +3589,7 @@ function CustomEditor(props: {
                   <div aria-hidden="true" />
                   <div aria-hidden="true" />
                 </div>
-                <For each={filteredModels()}>
+                <For each={visibleModels()}>
                   {(entry) => {
                     const item = entry.model
                     const modelIndex = entry.index

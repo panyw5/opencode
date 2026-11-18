@@ -30,36 +30,78 @@ function modelFamily(name: string) {
   return parts.length > 1 ? parts.slice(0, -1).join("-") : ""
 }
 
+type CatalogCandidate = {
+  source: string
+  key: string
+  matchedID: string
+  familyKey: string
+  model: Record<string, unknown>
+}
+
+type CatalogIndex = {
+  byName: Map<string, CatalogCandidate[]>
+  byFamily: Map<string, CatalogCandidate[]>
+}
+
+// Scanning the whole catalog (~9k models) per lookup made every model row pay
+// O(catalog) when a custom provider form mounted. Index once per catalog
+// object so lookups are O(candidates).
+const catalogIndexes = new WeakMap<ModelCatalog, CatalogIndex>()
+
+function catalogIndex(catalog: ModelCatalog): CatalogIndex {
+  const cached = catalogIndexes.get(catalog)
+  if (cached) return cached
+  const index: CatalogIndex = { byName: new Map(), byFamily: new Map() }
+  const add = (map: Map<string, CatalogCandidate[]>, key: string, candidate: CatalogCandidate) => {
+    const list = map.get(key)
+    if (list) list.push(candidate)
+    else map.set(key, [candidate])
+  }
+  for (const [source, item] of Object.entries(catalog)) {
+    for (const [key, model] of Object.entries(item.models)) {
+      const matchedID = typeof model.id === "string" ? model.id : key
+      const matchedName = modelName(matchedID)
+      const candidate: CatalogCandidate = {
+        source,
+        key,
+        matchedID,
+        familyKey: modelFamily(matchedName),
+        model,
+      }
+      add(index.byName, matchedName, candidate)
+      const keyName = modelName(key)
+      if (keyName !== matchedName) add(index.byName, keyName, candidate)
+      add(index.byFamily, candidate.familyKey, candidate)
+    }
+  }
+  catalogIndexes.set(catalog, index)
+  return index
+}
+
 export function findModelPresets(catalog: ModelCatalog, providerID: string, modelID: string): ModelPresets | undefined {
   const id = modelID.trim().toLowerCase()
   const name = modelName(id)
   if (!name) return
   const provider = providerID.trim().toLowerCase()
   const namespace = id.includes("/") ? id.split("/")[0] : ""
-  const matches = Object.entries(catalog).flatMap(([source, item]) =>
-    Object.entries(item.models).flatMap(([key, model]) => {
-      const matchedID = typeof model.id === "string" ? model.id : key
-      const matchedName = modelName(matchedID)
-      if (matchedName !== name && modelName(key) !== name && modelFamily(matchedName) !== modelFamily(name)) return []
-      const rows = modelConfig(model)
-      return [
-        {
-          source,
-          matchedID,
-          model,
-          rows,
-          origin: Number(MODEL_ORIGIN_PROVIDERS.has(source)),
-          current: Number(source === provider),
-          namespace: Number(source === namespace),
-          exact: Number(matchedID.toLowerCase() === id || key.toLowerCase() === id),
-          family: Number(modelFamily(modelName(matchedID)) === modelFamily(name)),
-          populated: rows.filter((row) => row.value !== "").length,
-        },
-      ]
-    }),
-  )
+  const index = catalogIndex(catalog)
+  const family = modelFamily(name)
+  const pool = new Set<CatalogCandidate>([...(index.byName.get(name) ?? []), ...(index.byFamily.get(family) ?? [])])
+  const matches = [...pool].map((item) => ({
+    ...item,
+    origin: Number(MODEL_ORIGIN_PROVIDERS.has(item.source)),
+    current: Number(item.source === provider),
+    namespace: Number(item.source === namespace),
+    exact: Number(item.matchedID.toLowerCase() === id || item.key.toLowerCase() === id),
+    familyMatch: Number(item.familyKey === family),
+  }))
   const exactMatches = matches.filter((item) => item.exact)
-  const candidates = exactMatches.length ? exactMatches : matches.filter((item) => item.family)
+  const candidates = (exactMatches.length ? exactMatches : matches.filter((item) => item.familyMatch)).map(
+    (item) => {
+      const rows = modelConfig(item.model)
+      return { ...item, rows, populated: rows.filter((row) => row.value !== "").length }
+    },
+  )
   if (!candidates.length) return
   // Choose one reference record, not a consensus across resellers with different limits.
   // A family match is only a fallback for model aliases such as gpt-5.6-astra.
