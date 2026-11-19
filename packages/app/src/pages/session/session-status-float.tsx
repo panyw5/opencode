@@ -224,12 +224,9 @@ export function SessionStatusFloat(props: {
         }}
         trigger={
           props.compact ? (
-            <>
-              <Icon name="status" size="small" class="text-icon-weak" />
-              <Show when={props.sessionID}>
-                <SessionContextUsage variant="indicator" />
-              </Show>
-            </>
+            <Show when={props.sessionID} fallback={<Icon name="status" size="small" class="text-icon-weak" />}>
+              <SessionContextUsage variant="indicator" />
+            </Show>
           ) : (
             <>
               <Icon name="status" size="small" class="text-icon-weak" />
