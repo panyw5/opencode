@@ -893,12 +893,12 @@ export const ConfigChannelsDetail: Component<{
                               )}
                             </Show>
 
-                            <div class="flex flex-col gap-1">
-                              <div class="flex items-baseline gap-2">
-                                <span class="text-12-medium text-text-base">
+                            <div class="flex flex-col gap-2">
+                              <div class="flex items-baseline gap-2 leading-[18px]">
+                                <span class="text-12-medium !leading-[18px] text-text-base">
                                   {language.t("config.channels.field.directory")}
                                 </span>
-                                <span class="text-11-regular text-text-weaker">
+                                <span class="text-11-regular leading-[18px] text-text-weaker">
                                   {language.t("config.channels.field.directory.hint")}
                                 </span>
                               </div>
@@ -918,8 +918,8 @@ export const ConfigChannelsDetail: Component<{
                               />
                             </div>
 
-                            <div class="flex flex-col gap-1">
-                              <span class="text-12-medium text-text-base">
+                            <div class="flex flex-col gap-2">
+                              <span class="text-12-medium !leading-[18px] text-text-base">
                                 {language.t("config.channels.field.model")}
                               </span>
                               <ChannelModelSelector
@@ -998,10 +998,10 @@ export const ConfigChannelsDetail: Component<{
                 onChange={(v) => setForm("name", v ?? "")}
               />
 
-              <div class="flex flex-col gap-1">
-                <div class="flex items-baseline gap-2">
-                  <span class="text-12-medium text-text-base">{language.t("config.channels.field.directory")}</span>
-                  <span class="text-11-regular text-text-weaker">
+              <div class="flex flex-col gap-2">
+                <div class="flex items-baseline gap-2 leading-[18px]">
+                  <span class="text-12-medium !leading-[18px] text-text-base">{language.t("config.channels.field.directory")}</span>
+                  <span class="text-11-regular leading-[18px] text-text-weaker">
                     {language.t("config.channels.field.directory.hint")}
                   </span>
                 </div>
@@ -1018,8 +1018,8 @@ export const ConfigChannelsDetail: Component<{
             <Switch>
               <Match when={props.platform === "feishu"}>
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div class="flex flex-col gap-1">
-                    <span class="text-12-medium text-text-base">{language.t("config.channels.feishu.setup")}</span>
+                  <div class="flex flex-col gap-2">
+                    <span class="text-12-medium !leading-[18px] text-text-base">{language.t("config.channels.feishu.setup")}</span>
                     <Select
                       triggerProps={{ "aria-label": language.t("config.channels.feishu.setup") }}
                       options={feishuModeOptions()}
@@ -1185,9 +1185,9 @@ export const ConfigChannelsDetail: Component<{
               </Match>
             </Switch>
 
-            <div class="flex flex-col gap-1">
-              <span class="text-12-medium text-text-base">{language.t("config.channels.field.model")}</span>
-              <span class="text-11-regular text-text-weaker">{language.t("config.channels.field.model.hint")}</span>
+            <div class="flex flex-col gap-2">
+              <span class="text-12-medium !leading-[18px] text-text-base">{language.t("config.channels.field.model")}</span>
+              <span class="text-11-regular leading-[18px] text-text-weaker">{language.t("config.channels.field.model.hint")}</span>
               <ChannelModelSelector value={formModelId()} onChange={(value) => setForm("model", value)} />
             </div>
 
