@@ -169,7 +169,7 @@ const ChannelModelSelector: Component<{
         type: "button",
         variant: "ghost",
         class:
-          "inset-control h-10 w-full min-w-0 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong transition-colors hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-focus",
+          "inset-control !h-10 w-full min-w-0 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong transition-colors hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-focus",
       }}
     >
       <div class="flex min-w-0 items-center gap-2">
@@ -1033,10 +1033,8 @@ export const ConfigChannelsDetail: Component<{
                         setQrSession(null)
                         setQrImage("")
                       }}
-                      variant="secondary"
-                      size="small"
-                      triggerVariant="settings"
-                      triggerStyle={{ width: "100%" }}
+                      variant="ghost"
+                      triggerClass="inset-control !h-10 w-full min-w-0 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong transition-colors hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-focus"
                     />
                   </div>
                   <TextField
