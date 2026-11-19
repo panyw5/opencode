@@ -802,6 +802,12 @@ export function SessionComposerRegion(props: {
     if (platform.platform !== "desktop") return undefined
     return props.subagentNavigation
   })
+  // Web layouts skip the centered prev/next cluster but still need a way back
+  // to the parent session — a compact button sits next to the subagent badge.
+  const inlineSubagentBack = createMemo(() => {
+    if (platform.platform === "desktop") return undefined
+    return props.subagentNavigation
+  })
   const jumpToLatestVisible = createMemo(() => !!props.onScrollToBottom && props.showJumpToLatest === true)
   // Desktop surfaces session todos as a hover capsule in the composer toolbar
   // row (alongside the child-agent / background-shell chips); the web layout
@@ -1082,6 +1088,20 @@ export function SessionComposerRegion(props: {
                           </Show>
                         </span>
                       </span>
+                    )}
+                  </Show>
+                  <Show when={inlineSubagentBack()} keyed>
+                    {(navigation) => (
+                      <button
+                        type="button"
+                        data-testid="subagent-session-back"
+                        class="inline-flex shrink-0 items-center gap-1 rounded-full border border-border-weak-base bg-surface-base px-3 py-2 text-11-medium font-medium text-text-interactive-base shadow-sm"
+                        aria-label={language.t("command.session.back")}
+                        onClick={() => navigation.onNavigate(navigation.parentID)}
+                      >
+                        <Icon name="arrow-up" size="small" />
+                        <span>{language.t("command.session.back")}</span>
+                      </button>
                     )}
                   </Show>
                   {/* Keep the open menu mounted when live child-session data changes. */}
