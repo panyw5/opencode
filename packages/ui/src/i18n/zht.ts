@@ -154,6 +154,8 @@ export const dict = {
   "ui.message.interrupted": "已中斷",
   "ui.message.queued": "排隊中",
   "ui.message.sendQueuedNow": "立刻發送",
+  "ui.message.editQueued": "修改",
+  "ui.message.cancelQueued": "取消",
   "ui.message.injection.hookPrompt": "{{hook}} 注入提示詞",
   "ui.message.injection.hookPromptFallback": "SessionStart 注入提示詞",
   "ui.message.injection.commandPrompt": "{{command}} 命令提示詞",

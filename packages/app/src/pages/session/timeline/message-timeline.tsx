@@ -347,6 +347,8 @@ export type MessageTimelineViewport = {
 export function MessageTimeline(props: {
   actions?: UserActions
   onSendQueued?: () => void
+  onEditQueued?: (messageID: string) => void
+  onCancelQueued?: (messageID: string) => void
   onBackgroundShell?: MessageProps["onBackgroundShell"]
   onBackgroundTask?: MessageProps["onBackgroundTask"]
   scroll: { overflow: boolean; bottom: boolean }
@@ -2001,6 +2003,8 @@ export function MessageTimeline(props: {
                     animate={props.shouldAnimateMessage?.(value().id)}
                     queued={queuedMessageIDs().has(value().id)}
                     onSendQueued={props.onSendQueued}
+                    onEditQueued={props.onEditQueued ? () => props.onEditQueued?.(value().id) : undefined}
+                    onCancelQueued={props.onCancelQueued ? () => props.onCancelQueued?.(value().id) : undefined}
                     actions={props.actions}
                     onBackgroundShell={props.onBackgroundShell}
                     onBackgroundTask={props.onBackgroundTask}

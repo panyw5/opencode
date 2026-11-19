@@ -16,6 +16,8 @@ import { Server } from "../../src/server/server"
 import * as HttpSessionError from "../../src/server/routes/instance/httpapi/handlers/session-errors"
 import { SessionPaths } from "../../src/server/routes/instance/httpapi/groups/session"
 import { Session } from "@/session/session"
+import { SessionStatus } from "@/session/status"
+import { isQueuedPrompt } from "@/session/queued-message"
 import { MessageID, PartID, SessionID, type SessionID as SessionIDType } from "../../src/session/schema"
 import { MessageV2 } from "../../src/session/message-v2"
 import { Database } from "@/storage/db"
@@ -44,7 +46,9 @@ const instanceStoreLayer = InstanceStore.defaultLayer.pipe(
     Layer.succeed(InstanceBootstrapService.Service, InstanceBootstrapService.Service.of({ run: Effect.void })),
   ),
 )
-const it = testEffect(Layer.mergeAll(instanceStoreLayer, Project.defaultLayer, Session.defaultLayer, workspaceLayer))
+const it = testEffect(
+  Layer.mergeAll(instanceStoreLayer, Project.defaultLayer, Session.defaultLayer, workspaceLayer, SessionStatus.defaultLayer),
+)
 
 function app() {
   return Server.Default().app
@@ -926,6 +930,42 @@ describe("session HttpApi", () => {
             { method: "DELETE", headers },
           ),
         ).toBe(true)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "deletes a queued user prompt while the session is busy",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory, "content-type": "application/json" }
+        const session = yield* createSession({ title: "queued prompt" })
+        const running = yield* createTextMessage(session.id, "running turn")
+        const queued = yield* createTextMessage(session.id, "queued prompt")
+        const status = yield* SessionStatus.Service
+        yield* status.set(session.id, { type: "busy" })
+
+        const response = yield* request(
+          pathFor(SessionPaths.deleteMessage, { sessionID: session.id, messageID: queued.info.id }),
+          { method: "DELETE", headers },
+        )
+        expect(response.status).toBe(200)
+        expect(yield* json<boolean>(response)).toBe(true)
+
+        const remaining = yield* Session.use.messages({ sessionID: session.id })
+        expect(remaining.map((item) => item.info.id)).toContain(running.info.id)
+        expect(remaining.map((item) => item.info.id)).not.toContain(queued.info.id)
+
+        // A completed user message is not a queued prompt, so it keeps the
+        // ordinary deletion path instead of the queue bypass.
+        const completed = yield* createTextMessage(session.id, "completed turn")
+        const finished = yield* Session.use.updateMessage({
+          ...completed.info,
+          time: { ...completed.info.time, completed: Date.now() },
+        })
+        expect(isQueuedPrompt({ status: { type: "busy" }, message: finished })).toBe(false)
+        expect(isQueuedPrompt({ status: { type: "busy" }, message: running.info })).toBe(true)
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )

@@ -329,6 +329,8 @@ export const dict = {
   "ui.message.interrupted": "已中断",
   "ui.message.queued": "排队中",
   "ui.message.sendQueuedNow": "立刻发送",
+  "ui.message.editQueued": "修改",
+  "ui.message.cancelQueued": "取消",
   "ui.message.attachment.alt": "附件",
   "ui.message.showMore": "展开更多",
   "ui.message.expandAll": "展开全部",

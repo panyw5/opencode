@@ -267,6 +267,8 @@ export interface MessageProps {
   animate?: boolean
   queued?: boolean
   onSendQueued?: () => void
+  onEditQueued?: () => void
+  onCancelQueued?: () => void
   actions?: UserActions
   showAssistantCopyPartID?: string | null
   assistantCopyText?: string
@@ -1021,6 +1023,8 @@ export function Message(props: MessageProps) {
             animate={props.animate}
             queued={props.queued}
             onSendQueued={props.onSendQueued}
+            onEditQueued={props.onEditQueued}
+            onCancelQueued={props.onCancelQueued}
             actions={props.actions}
             interrupted={props.interrupted}
             showCustomHookParts={props.showCustomHookParts}
@@ -1297,6 +1301,8 @@ export function UserMessageDisplay(props: {
   animate?: boolean
   queued?: boolean
   onSendQueued?: () => void
+  onEditQueued?: () => void
+  onCancelQueued?: () => void
   actions?: UserActions
   interrupted?: boolean
   showCustomHookParts?: boolean
@@ -1577,6 +1583,36 @@ export function UserMessageDisplay(props: {
                       }}
                     >
                       {i18n.t("ui.message.sendQueuedNow")}
+                    </button>
+                  </Show>
+                  <Show when={props.onEditQueued}>
+                    <button
+                      data-slot="user-message-queued-edit"
+                      class="text-12-medium"
+                      disabled={state.flushing}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        if (state.flushing) return
+                        props.onEditQueued?.()
+                      }}
+                    >
+                      {i18n.t("ui.message.editQueued")}
+                    </button>
+                  </Show>
+                  <Show when={props.onCancelQueued}>
+                    <button
+                      data-slot="user-message-queued-cancel"
+                      class="text-12-medium"
+                      disabled={state.flushing}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        if (state.flushing) return
+                        props.onCancelQueued?.()
+                      }}
+                    >
+                      {i18n.t("ui.message.cancelQueued")}
                     </button>
                   </Show>
                 </Show>

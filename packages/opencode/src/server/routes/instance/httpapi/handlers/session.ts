@@ -17,6 +17,7 @@ import { parseUILocale, UI_LOCALE_HEADER } from "@opencode-ai/core/locale"
 import { SessionInput } from "@/session/input"
 import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
+import { SessionQueuedMessage } from "@/session/queued-message"
 import { SessionStatus } from "@/session/status"
 import { makeExternalSessions } from "@/session/external"
 import { InstanceState } from "@/effect/instance-state"
@@ -1482,7 +1483,21 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID; messageID: MessageID }
     }) {
       yield* requireSession(ctx.params.sessionID)
-      yield* SessionError.mapBusy(runState.assertNotBusy(ctx.params.sessionID))
+      // A queued user prompt is not consumed by the running turn yet. Removing it
+      // while the session is busy is safe and is what "cancel queued prompt"
+      // does in the UI, so only guard turns that already started.
+      const target = (yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))).find(
+        (item) => item.info.id === ctx.params.messageID,
+      )
+      const status = yield* statusSvc.get(ctx.params.sessionID)
+      if (SessionQueuedMessage.isQueuedPrompt({ status, message: target?.info })) {
+        log.info("deleteMessage queued prompt", {
+          sessionID: ctx.params.sessionID,
+          messageID: ctx.params.messageID,
+        })
+      } else {
+        yield* SessionError.mapBusy(runState.assertNotBusy(ctx.params.sessionID))
+      }
       yield* session.removeMessage(ctx.params)
       return true
     })

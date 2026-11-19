@@ -349,6 +349,8 @@ export const dict: Record<string, string> = {
   "ui.message.interrupted": "Interrupted",
   "ui.message.queued": "Queued",
   "ui.message.sendQueuedNow": "Send now",
+  "ui.message.editQueued": "Edit",
+  "ui.message.cancelQueued": "Cancel",
   "ui.message.attachment.alt": "attachment",
   "ui.message.showMore": "Show more",
   "ui.message.expandAll": "Show all",
