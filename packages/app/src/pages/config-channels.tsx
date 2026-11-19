@@ -166,10 +166,12 @@ const ChannelModelSelector: Component<{
       model={model}
       triggerAs={Button}
       triggerProps={{
-        type: "button",
-        variant: "ghost",
-        class:
-          "inset-control !h-10 w-full min-w-0 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong transition-colors hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-focus",
+        "type": "button",
+        "variant": "ghost",
+        "data-config-surface": "control",
+        "style": { "border-radius": "var(--radius-xl)" },
+        "class":
+          "inset-control !h-10 w-full min-w-0 justify-between rounded-lg border border-border-weak-base px-3 text-13-regular text-text-strong transition-colors hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-focus",
       }}
     >
       <div class="flex min-w-0 items-center gap-2">
@@ -1034,7 +1036,8 @@ export const ConfigChannelsDetail: Component<{
                         setQrImage("")
                       }}
                       variant="ghost"
-                      triggerClass="inset-control !h-10 w-full min-w-0 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong transition-colors hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-focus"
+                      triggerClass="inset-control !h-10 w-full min-w-0 justify-between rounded-lg border border-border-weak-base px-3 text-13-regular text-text-strong transition-colors hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-focus"
+      triggerStyle={{ "border-radius": "var(--radius-xl)" }}
                     />
                   </div>
                   <TextField

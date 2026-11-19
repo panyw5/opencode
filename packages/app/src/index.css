@@ -261,6 +261,17 @@
     box-shadow: inset 0 0 0 1px var(--border-strong-base);
   }
 
+  [data-component="directory-input"] [data-slot="directory-anchor"]:not([data-size]) {
+    border-radius: var(--radius-md);
+    background-color: var(--input-base);
+  }
+
+  [data-component="config-page"] [data-component="directory-input"] [data-slot="directory-anchor"]:not([data-size]) {
+    border-color: var(--border-weak-base);
+    border-radius: var(--radius-xl);
+    background-color: var(--config-control-bg);
+  }
+
   [data-component="config-page"]
     [data-component="input"][data-variant="normal"]
     [data-slot="input-input"]:not(textarea) {

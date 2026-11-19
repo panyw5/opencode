@@ -189,7 +189,9 @@ export function DirectoryInput(props: {
       >
         <div class="flex min-w-0 gap-2">
           <Popover.Anchor
-            class={`flex ${props.size === "large" ? "h-11 rounded-lg bg-background-base" : "h-10 rounded-[10px] bg-input-base"} min-w-0 flex-1 items-center overflow-hidden border border-border-weak-base text-text-strong transition-colors focus-within:border-border-strong-base focus-within:ring-1 focus-within:ring-border-strong-base`}
+            data-slot="directory-anchor"
+            data-size={props.size === "large" ? "large" : undefined}
+            class={`flex ${props.size === "large" ? "h-11 rounded-lg bg-background-base" : "h-10"} min-w-0 flex-1 items-center overflow-hidden border border-border-weak-base text-text-strong transition-colors focus-within:border-border-strong-base focus-within:ring-1 focus-within:ring-border-strong-base`}
           >
             <span class="pointer-events-none flex items-center pl-3 text-icon-weak" aria-hidden="true">
               <Icon name="terminal" size="normal" />
