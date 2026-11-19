@@ -100,7 +100,11 @@ import { syncSessionModel } from "@/pages/session/session-model-helpers"
 import { createReviewDataService } from "@/pages/session/review-data-service"
 import { SessionSidePanel } from "@/pages/session/session-side-panel"
 import { SessionUserMessageRail, type SessionUserMessageEntry } from "@/pages/session/session-user-message-rail"
-import { userMessageRailPreview } from "@/pages/session/session-user-message-rail-model"
+import {
+  userMessageRailPad,
+  userMessageRailPreview,
+} from "@/pages/session/session-user-message-rail-model"
+import { createSessionContentGap } from "@/pages/session/session-content-gap"
 import { working } from "@/pages/session/session-working"
 import { TerminalPanel } from "@/pages/session/terminal-panel"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
@@ -322,6 +326,28 @@ export default function Page() {
     return layout.rightPanel.sessionWidth()
   })
   const centered = createMemo(() => isDesktop() && !desktopWidePanelOpen())
+  // Gap between the panel edges and the centered content column, measured off
+  // the rendered timeline rows. Drives the rail mark lengths, the content's
+  // reserved side padding, and the status pill's compact fallback.
+  let contentGapHost: HTMLDivElement | undefined
+  const contentGap = createSessionContentGap(() => contentGapHost)
+  const [statusWidth, setStatusWidth] = createStore({ expanded: 172, compact: 56 })
+  const [statusCompact, setStatusCompact] = createSignal(false)
+  createEffect(() => {
+    const gap = contentGap().right
+    const width = statusWidth.expanded
+    setStatusCompact((was) => (was ? gap < width + 4 : gap < width - 2))
+  })
+  createEffect(() => {
+    console.debug(
+      `[session-status] compact=${String(statusCompact())} gap=${String(Math.round(contentGap().right))} width=${String(Math.round(statusWidth.expanded))}`,
+    )
+  })
+  const statusPadRight = createMemo(() =>
+    platform.platform === "desktop" && statusCompact()
+      ? Math.max(0, statusWidth.compact - 2 - contentGap().right)
+      : 0,
+  )
   const pendingSubmission = createMemo(() => pendingSessionSubmissions.get(sdk.url, sdk.directory, params))
   // The pending banner bridges the gap between the route commit and the
   // timeline's first settled paint: the virtualizer reports via onFirstLayout.
@@ -3080,6 +3106,12 @@ export default function Page() {
     scrollToMessageId(entry.id)
   }
 
+  // Extra left padding the timeline adds so message text stays clear of the
+  // rail marks; only reserved while the rail is actually shown.
+  const railPadLeft = createMemo(() =>
+    isDesktop() && userMessageEntries().length > 0 ? userMessageRailPad(contentGap().left) : 0,
+  )
+
   // User-message turn the current viewport belongs to; reported by the timeline
   // as the reader scrolls so the rail can keep that mark highlighted.
   const [railActiveMessageId, setRailActiveMessageId] = createSignal<string | undefined>(undefined)
@@ -3618,9 +3650,16 @@ export default function Page() {
           style={{
             width: sessionPanelWidth(),
             transition: size.active() ? undefined : "width 300ms cubic-bezier(0.16, 1, 0.3, 1)",
+            "--session-inset-left": `${String(railPadLeft())}px`,
+            "--session-inset-right": `${String(statusPadRight())}px`,
           }}
         >
-          <div class="relative flex-1 min-h-0">
+          <div
+            ref={(el) => {
+              contentGapHost = el
+            }}
+            class="relative flex-1 min-h-0"
+          >
             <div class="absolute inset-0 overflow-hidden">
               <Switch>
                 <Match when={params.id}>
@@ -3710,6 +3749,7 @@ export default function Page() {
                       <Show when={isDesktop() && userMessageEntries().length > 0}>
                         <SessionUserMessageRail
                           entries={userMessageEntries()}
+                          space={contentGap().left}
                           activeId={railActiveMessageId()}
                           loading={params.id ? sync.session.userMessageIndex.loading(params.id) : false}
                           complete={
@@ -3742,10 +3782,12 @@ export default function Page() {
             <Show when={platform.platform === "desktop"}>
               <SessionStatusFloat
                 sessionID={params.id}
+                compact={statusCompact()}
                 skills={activeSkills()}
                 diffs={diffs()}
                 childSessionIDs={currentApiChildSessions().map((session) => session.id)}
                 onViewAllChanges={openSessionChangesReview}
+                onWidth={(width) => setStatusWidth(statusCompact() ? "compact" : "expanded", width)}
               />
             </Show>
             <Show when={platform.platform === "desktop"}>

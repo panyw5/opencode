@@ -8,7 +8,7 @@ export function sessionNewPane(width: number) {
 
 export function sessionNewMeta(agent: boolean) {
   if (agent) return ""
-  return "md:max-w-[var(--session-content-width)] md:mx-auto"
+  return "md:max-w-[var(--session-content-width)] md:mx-auto pl-[var(--session-inset-left,0px)] pr-[var(--session-inset-right,0px)]"
 }
 
 export type SessionNewOpenFolderKey =

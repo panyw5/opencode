@@ -1812,6 +1812,7 @@ export function MessageTimeline(props: {
         classList={{
           "min-w-0 w-full max-w-full": true,
           "md:max-w-[var(--session-content-width)] md:mx-auto": props.centered,
+          "pl-[var(--session-inset-left,0px)] pr-[var(--session-inset-right,0px)]": true,
           "pt-3": topSpacing(),
         }}
       >

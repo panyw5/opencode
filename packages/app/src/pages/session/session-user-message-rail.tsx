@@ -23,6 +23,9 @@ export function SessionUserMessageRail(props: {
   activeId?: string
   loading: boolean
   complete: boolean
+  // Horizontal gap between the panel's left edge and the content column;
+  // marks shorten as it shrinks so they never reach the text.
+  space?: number
   onOpen: (entry: SessionUserMessageEntry) => void
 }) {
   const language = useLanguage()
@@ -122,7 +125,7 @@ export function SessionUserMessageRail(props: {
                           "bg-border-strong-base opacity-75": hovered() === undefined && active() !== index(),
                         }}
                         style={{
-                          width: `${String(userMessageRailMarkWidth(index(), hovered(), active()))}px`,
+                          width: `${String(userMessageRailMarkWidth(index(), hovered(), active(), props.space))}px`,
                         }}
                       />
                     </button>

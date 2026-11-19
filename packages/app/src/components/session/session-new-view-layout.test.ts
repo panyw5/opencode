@@ -9,7 +9,9 @@ import {
 
 describe("session new layout", () => {
   test("keeps regular projects aligned with session content width", () => {
-    expect(sessionNewMeta(false)).toBe("md:max-w-[var(--session-content-width)] md:mx-auto")
+    expect(sessionNewMeta(false)).toBe(
+      "md:max-w-[var(--session-content-width)] md:mx-auto pl-[var(--session-inset-left,0px)] pr-[var(--session-inset-right,0px)]",
+    )
   })
 
   test("keeps extra agents on wide layout", () => {

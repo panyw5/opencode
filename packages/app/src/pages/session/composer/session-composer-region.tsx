@@ -978,6 +978,7 @@ export function SessionComposerRegion(props: {
         classList={{
           "w-full px-3 pointer-events-auto": true,
           "md:max-w-[var(--session-content-width)] md:mx-auto": props.centered,
+          "pl-[calc(0.75rem+var(--session-inset-left,0px))] pr-[calc(0.75rem+var(--session-inset-right,0px))]": true,
         }}
       >
         <ComposerDockExit

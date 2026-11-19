@@ -34,10 +34,16 @@ const baseName = (file: string) => file.slice(file.lastIndexOf("/") + 1) || file
 
 export function SessionStatusFloat(props: {
   sessionID?: string
+  // Shrinks the trigger to a floating icon when the margin next to the
+  // content column is too narrow for the full pill.
+  compact?: boolean
   skills: string[]
   diffs: SnapshotFileDiff[]
   childSessionIDs: string[]
   onViewAllChanges: () => void
+  // Reports the trigger's rendered width so the parent can decide when the
+  // pill would reach the content column.
+  onWidth?: (width: number) => void
 }) {
   const language = useLanguage()
   const globalSync = useGlobalSync()
@@ -189,11 +195,20 @@ export function SessionStatusFloat(props: {
     ),
   )
 
+  const widthObserver = new ResizeObserver((entries) => {
+    const width = entries[0]?.contentRect.width
+    if (width === undefined) return
+    props.onWidth?.(width)
+  })
+  onCleanup(() => widthObserver.disconnect())
+
   return (
     <div
+      ref={(el) => widthObserver.observe(el)}
       data-component="session-status-float"
       data-action="session-status-toggle-button"
       data-expanded={shown() ? "true" : "false"}
+      data-compact={props.compact ? "true" : "false"}
       class="absolute top-3 right-3 z-20 pointer-events-auto"
     >
       <Popover
@@ -203,18 +218,28 @@ export function SessionStatusFloat(props: {
         triggerProps={{
           type: "button",
           "aria-label": shown() ? language.t("session.status.collapse") : language.t("session.status.expand"),
-          class:
-            "inline-flex items-center gap-1.5 rounded-full border border-border-weak-base bg-surface-raised-base px-4 py-2 shadow-sm text-13-medium text-text-strong hover:bg-surface-raised-base-hover transition-colors",
+          class: props.compact
+            ? "inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-border-weak-base bg-surface-raised-base px-2.5 shadow-sm text-text-strong hover:bg-surface-raised-base-hover transition-colors"
+            : "inline-flex items-center gap-1.5 rounded-full border border-border-weak-base bg-surface-raised-base px-4 py-2 shadow-sm text-13-medium text-text-strong hover:bg-surface-raised-base-hover transition-colors",
         }}
         trigger={
-          <>
-            <Icon name="status" size="small" class="text-icon-weak" />
-            <span>{language.t("session.status.button")}</span>
-            <Show when={props.sessionID}>
-              <span class="mx-0.5 inline-block size-0.5 rounded-full bg-border-weak-base" />
-              <SessionContextUsage variant="capsule" />
-            </Show>
-          </>
+          props.compact ? (
+            <>
+              <Icon name="status" size="small" class="text-icon-weak" />
+              <Show when={props.sessionID}>
+                <SessionContextUsage variant="indicator" />
+              </Show>
+            </>
+          ) : (
+            <>
+              <Icon name="status" size="small" class="text-icon-weak" />
+              <span>{language.t("session.status.button")}</span>
+              <Show when={props.sessionID}>
+                <span class="mx-0.5 inline-block size-0.5 rounded-full bg-border-weak-base" />
+                <SessionContextUsage variant="capsule" />
+              </Show>
+            </>
+          )
         }
         class="w-[500px] max-w-[calc(100vw-24px)] overflow-hidden rounded-xl border border-border-base bg-surface-raised-stronger p-0"
         style={{

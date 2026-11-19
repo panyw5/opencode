@@ -3,6 +3,7 @@ import {
   USER_MESSAGE_RAIL_PREVIEW_LIMIT,
   userMessageRailHeight,
   userMessageRailMarkWidth,
+  userMessageRailPad,
   userMessageRailPreview,
 } from "./session-user-message-rail-model"
 
@@ -34,6 +35,28 @@ describe("userMessageRailMarkWidth", () => {
 
   test("ignores an active mark outside the entries", () => {
     expect(userMessageRailMarkWidth(2, undefined, -1)).toBe(20)
+  })
+
+  test("shrinks marks when the gap next to the content column is tight", () => {
+    expect(userMessageRailMarkWidth(4, 4, undefined, 0)).toBe(16)
+    expect(userMessageRailMarkWidth(3, 4, undefined, 0)).toBe(16)
+    expect(userMessageRailMarkWidth(4, 4, undefined, 40)).toBe(42)
+    expect(userMessageRailMarkWidth(4, 4, undefined, 46)).toBe(48)
+    expect(userMessageRailMarkWidth(4, 4, undefined, 200)).toBe(48)
+  })
+
+  test("keeps default marks under the minimum cap", () => {
+    expect(userMessageRailMarkWidth(0, undefined, undefined, 0)).toBe(16)
+    expect(userMessageRailMarkWidth(2, undefined, 2, 0)).toBe(16)
+  })
+})
+
+describe("userMessageRailPad", () => {
+  test("reserves text inset only while the gap cannot cover the marks", () => {
+    expect(userMessageRailPad(0)).toBe(14)
+    expect(userMessageRailPad(10)).toBe(4)
+    expect(userMessageRailPad(14)).toBe(0)
+    expect(userMessageRailPad(200)).toBe(0)
   })
 })
 
