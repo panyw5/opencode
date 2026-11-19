@@ -6,14 +6,21 @@ import { Portal } from "solid-js/web"
 import { useLanguage } from "@/context/language"
 import { browserApi } from "@/browser/types"
 
-export function ConfigTitlebarActions() {
+/**
+ * Disabled mirror of the session header actions. Surfaces without a session
+ * (home, config) mount this into the titlebar right slot so the session tabs
+ * keep the same available width when switching between routes.
+ */
+export function TitlebarActionsPlaceholder(props: { surface: string }) {
   const language = useLanguage()
   const rightMount = createMemo(() => document.getElementById("opencode-titlebar-right"))
 
   onMount(() => {
     queueMicrotask(() => {
       const width = rightMount()?.getBoundingClientRect().width ?? 0
-      console.debug(`[config-titlebar] disabled actions mounted width=${width.toFixed(1)}`)
+      console.debug(
+        `[titlebar-actions] placeholder mounted surface=${props.surface} width=${width.toFixed(1)}`,
+      )
     })
   })
 
@@ -21,7 +28,7 @@ export function ConfigTitlebarActions() {
     <Show when={rightMount()}>
       {(mount) => (
         <Portal mount={mount()}>
-          <div data-component="config-titlebar-actions" class="flex items-center gap-2">
+          <div data-component={`${props.surface}-titlebar-actions`} class="flex items-center gap-2">
             <div class="hidden xl:flex items-center">
               <div class="flex h-[24px] box-border items-center rounded-md border border-border-weak-base bg-surface-panel overflow-hidden">
                 <Button

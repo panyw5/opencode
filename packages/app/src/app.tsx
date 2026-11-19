@@ -61,7 +61,7 @@ import { useCheckServerHealth } from "./utils/server-health"
 import { decode64 } from "@/utils/base64"
 import { sameWorkspacePath } from "@/pages/layout/helpers"
 import { pickSessionTabsTarget, useSessionTabs } from "@/context/session-tabs"
-import { ConfigTitlebarActions } from "@/components/config-titlebar-actions"
+import { TitlebarActionsPlaceholder } from "@/components/titlebar-actions-placeholder"
 
 const HomeRoute = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
@@ -171,7 +171,7 @@ function ConfigRouteFrame(props: ParentProps) {
 
   return (
     <>
-      <ConfigTitlebarActions />
+      <TitlebarActionsPlaceholder surface="config" />
       {props.children}
     </>
   )

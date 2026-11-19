@@ -11,6 +11,7 @@ import { useNavigate } from "@solidjs/router"
 import { DateTime } from "luxon"
 import { batch, createEffect, createMemo, createRenderEffect, For, onCleanup, on, Show, untrack } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
+import { Portal } from "solid-js/web"
 import { DialogFavoriteSessions } from "@/components/dialog-favorite-sessions"
 import { DialogRecentSessions } from "@/components/dialog-recent-sessions"
 import {
@@ -20,6 +21,8 @@ import {
 } from "@/components/dialog-recent-sessions-utils"
 import { DialogSelectDirectory } from "@/components/dialog-select-directory"
 import { DialogSelectServer } from "@/components/dialog-select-server"
+import { NewSessionProjectPill } from "@/components/new-session-project-pill"
+import { TitlebarActionsPlaceholder } from "@/components/titlebar-actions-placeholder"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
@@ -27,10 +30,11 @@ import { useLayout } from "@/context/layout"
 import { useNotification } from "@/context/notification"
 import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
-import { useSessionTabs } from "@/context/session-tabs"
+import { sessionTabsTargetHref, useSessionTabs } from "@/context/session-tabs"
 import { HomePathInput } from "@/pages/home-path-input"
 import HomeResourceUsage from "@/pages/home-resource-usage"
 import { ProjectTaskDetailDialog } from "@/pages/layout/project-tasks-panel"
+import { newSessionProjectLabel } from "@/pages/layout/helpers"
 import "./home.css"
 
 const HOME_SESSION_LIMIT = 6
@@ -83,6 +87,18 @@ export default function Home() {
     const latest = latestProject()
     return latest ? [latest] : []
   })
+  const newSessionDirectory = createMemo(() => warmed()[0])
+  const newSessionLabel = createMemo(() =>
+    newSessionProjectLabel(newSessionDirectory(), layout.projects.list()),
+  )
+  const centerProjectMount = createMemo(() => document.getElementById("opencode-titlebar-center-project"))
+  function newSessionIn(directory: string) {
+    console.debug(`[home] new-session directory=${directory}`)
+    layout.projects.open(directory)
+    server.projects.touch(directory)
+    const draft = sessionTabs.createDraft(directory, "button")
+    navigate(sessionTabsTargetHref({ type: "draft", ...draft }))
+  }
   // Fire-and-forget warmup: an effect instead of a createResource, whose value
   // was never read and would only add resource lifecycle overhead.
   createEffect(
@@ -623,6 +639,27 @@ export default function Home() {
       data-component="home-shell"
       class="size-full overflow-y-auto bg-background-base"
     >
+      <TitlebarActionsPlaceholder surface="home" />
+      <Show when={centerProjectMount()}>
+        {(node) => (
+          <Portal mount={node()}>
+            <NewSessionProjectPill
+              projectLabel={newSessionLabel()}
+              projects={layout.projects.rail()}
+              activeDirectory={newSessionDirectory()}
+              onPrimary={() => {
+                const directory = newSessionDirectory()
+                if (directory) {
+                  newSessionIn(directory)
+                  return
+                }
+                void chooseProject()
+              }}
+              onSelect={newSessionIn}
+            />
+          </Portal>
+        )}
+      </Show>
       <main data-component="home-dashboard" class="mx-auto w-full px-4 py-7 sm:px-6 md:py-10 lg:px-8">
         <header class="home-masthead flex items-start justify-between gap-6">
           <div class="min-w-0">
