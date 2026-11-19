@@ -761,6 +761,7 @@ describe("remote gateway", () => {
       "/project-task/task-1/detail",
       "/session/session-1/user-message-index",
       "/session/session-1/hooks",
+      "/session/session-1/overview?limit=80",
     ]) {
       expect((await fetch(`${gateway.url}${path}`, { headers: { Cookie: paired.cookie! } })).status).toBe(200)
     }

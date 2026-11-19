@@ -16,6 +16,7 @@ const READS = [
   new RegExp(`^/session/${ID}/diff$`),
   new RegExp(`^/session/${ID}/message$`),
   new RegExp(`^/session/${ID}/message/${ID}$`),
+  new RegExp(`^/session/${ID}/overview$`),
   new RegExp(`^/session/${ID}/user-message-index$`),
   new RegExp(`^/session/${ID}/hooks$`),
   /^\/experimental\/session$/,
