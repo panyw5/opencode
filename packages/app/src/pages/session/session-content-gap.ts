@@ -1,13 +1,17 @@
 import { createEffect, createSignal, onCleanup, type Accessor } from "solid-js"
 
-export type SessionContentGap = { left: number; right: number }
+export type SessionContentGap = { left: number; right: number; measured: boolean }
 
 // Tracks the horizontal gap between the session panel edges and the centered
-// timeline column. The user-message rail and the floating status pill use
-// this to size themselves against the space that is actually free instead of
-// assuming a fixed margin.
-export function createSessionContentGap(host: Accessor<HTMLElement | undefined>) {
-  const [gap, setGap] = createSignal<SessionContentGap>({ left: 0, right: 0 })
+// content column (timeline rows, or the composer column which is present on
+// every session route). The user-message rail, the floating status pill, and
+// the bottom-right floating actions use this to size themselves against the
+// space that is actually free instead of assuming a fixed margin.
+export function createSessionContentGap(
+  host: Accessor<HTMLElement | undefined>,
+  selector = "[data-timeline-row],[data-session-content-column]",
+) {
+  const [gap, setGap] = createSignal<SessionContentGap>({ left: 0, right: 0, measured: false })
   let row: HTMLElement | undefined
 
   const rowObserver = new ResizeObserver(() => measure())
@@ -18,7 +22,7 @@ export function createSessionContentGap(host: Accessor<HTMLElement | undefined>)
     const el = host()
     if (!el) return
     if (row && !row.isConnected) row = undefined
-    const target = row ?? el.querySelector<HTMLElement>("[data-timeline-row]") ?? undefined
+    const target = row ?? el.querySelector<HTMLElement>(selector) ?? undefined
     if (target !== row) {
       if (row) rowObserver.unobserve(row)
       row = target
@@ -26,16 +30,16 @@ export function createSessionContentGap(host: Accessor<HTMLElement | undefined>)
     }
     const box = el.getBoundingClientRect()
     if (!target) {
-      setGap((prev) => (prev.left === 0 && prev.right === 0 ? prev : { left: 0, right: 0 }))
+      setGap((prev) => (prev.measured ? { left: 0, right: 0, measured: false } : prev))
       return
     }
     const rect = target.getBoundingClientRect()
     const left = Math.max(0, rect.left - box.left)
     const right = Math.max(0, box.right - rect.right)
     setGap((prev) => {
-      if (prev.left === left && prev.right === right) return prev
+      if (prev.measured && prev.left === left && prev.right === right) return prev
       console.debug(`[session-content-gap] left=${String(Math.round(left))} right=${String(Math.round(right))}`)
-      return { left, right }
+      return { left, right, measured: true }
     })
   }
 

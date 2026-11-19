@@ -975,6 +975,7 @@ export function SessionComposerRegion(props: {
         </div>
       </Show>
       <div
+        data-session-content-column
         classList={{
           "w-full px-3 pointer-events-auto": true,
           "md:max-w-[var(--session-content-width)] md:mx-auto": props.centered,

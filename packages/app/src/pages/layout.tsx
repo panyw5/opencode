@@ -28,6 +28,7 @@ import {
   type ConfigReturnTarget,
 } from "@/pages/config-navigation"
 import { collectMissingAncestorTabs } from "@/components/session/session-bar-parent"
+import { createSessionContentGap } from "@/pages/session/session-content-gap"
 import { useGlobalSync } from "@/context/global-sync"
 import { onSessionLifecycle } from "@/context/global-sync/session-lifecycle"
 import { Persist, persisted } from "@/utils/persist"
@@ -364,6 +365,47 @@ export default function Layout(props: ParentProps) {
   // resolvers keep working, but the icon should not look "selected".
   const onConfigRoute = createMemo(() => /\/config(?:\/|$)/.test(location.pathname))
   const onSessionRoute = createMemo(() => /\/session(?:\/|$)/.test(location.pathname))
+  // Bottom-right floating actions (notification bell + quick assistant) hide
+  // when the session content column reaches the viewport edge and would run
+  // underneath them. Hidden only while the quick-assistant panel is closed —
+  // an open panel is a fixed-position child of the same container.
+  let floatingActions: HTMLDivElement | undefined
+  const floatingGap = createSessionContentGap(() => floatingActions?.parentElement ?? undefined)
+  const [floatingWidth, setFloatingWidth] = createSignal(170)
+  const [floatingHidden, setFloatingHidden] = createSignal(false)
+  const floatingPanelOpen = () =>
+    !!floatingActions?.querySelector('[data-component="quick-assistant-panel"]:not([hidden])')
+  const updateFloatingHidden = () => {
+    if (!onSessionRoute() || !floatingGap().measured) {
+      setFloatingHidden(false)
+      return
+    }
+    const need = floatingWidth() + 28 // right-5 inset plus a small clearance
+    const gap = floatingGap().right
+    setFloatingHidden((was) => (was ? gap < need + 8 : gap < need))
+  }
+  const floatingObserver = new MutationObserver(() => {
+    if (floatingPanelOpen()) setFloatingHidden(false)
+  })
+  const floatingSizer = new ResizeObserver((entries) => {
+    const width = entries[0]?.contentRect.width
+    if (width) setFloatingWidth(width)
+  })
+  onCleanup(() => {
+    floatingObserver.disconnect()
+    floatingSizer.disconnect()
+  })
+
+  createEffect(() => {
+    onSessionRoute()
+    updateFloatingHidden()
+    if (floatingPanelOpen()) setFloatingHidden(false)
+  })
+  createEffect(() => {
+    console.debug(
+      `[floating-actions] hidden=${String(floatingHidden())} gap=${String(Math.round(floatingGap().right))} measured=${String(floatingGap().measured)} width=${String(Math.round(floatingWidth()))}`,
+    )
+  })
   const scheduledPanelActive = createMemo(() => store.sidebarPanel === "scheduled")
   const projectTasksPanelActive = createMemo(() => store.sidebarPanel === "projectTasks")
   const [pendingSessionSelection, setPendingSessionSelection] = createSignal<
@@ -5053,9 +5095,22 @@ export default function Layout(props: ParentProps) {
           {import.meta.env.DEV && platform.platform !== "desktop" && <DebugBar />}
         </div>
         <div
+          ref={(el) => {
+            floatingActions = el
+            const width = el.getBoundingClientRect().width
+            if (width) setFloatingWidth(width)
+            floatingSizer.observe(el)
+            floatingObserver.observe(el, {
+              childList: true,
+              subtree: true,
+              attributes: true,
+              attributeFilter: ["hidden"],
+            })
+          }}
           data-component="floating-actions"
+          data-hidden={floatingHidden() ? "true" : "false"}
           class="absolute right-5 bottom-5 flex items-center gap-2 pointer-events-none"
-          style={{ display: onConfigRoute() ? "none" : undefined }}
+          style={{ display: onConfigRoute() || floatingHidden() ? "none" : undefined }}
         >
           <NotificationBell />
           <QuickAssistant />
