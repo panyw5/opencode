@@ -248,8 +248,8 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
           aria-hidden="true"
           class="absolute -top-1 -right-1 z-10 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none"
           classList={{
-            "bg-surface-warning-strong text-white": badge().kind === "permission",
-            "bg-text-diff-delete-base text-white": badge().kind === "error",
+            "bg-surface-warning-base text-text-warning-base": badge().kind === "permission",
+            "bg-icon-critical-base text-text-on-critical-strong": badge().kind === "error",
             "bg-surface-success-base text-text-on-success-base": badge().kind === "message",
           }}
         >
@@ -410,10 +410,10 @@ const SessionRow = (props: {
                 <Spinner class="size-[15px]" />
               </Match>
               <Match when={props.hasPermissions()}>
-                <div class="size-1.5 rounded-full bg-surface-warning-strong" />
+                <div class="size-1.5 rounded-full bg-icon-warning-base" />
               </Match>
               <Match when={props.hasError()}>
-                <div class="size-1.5 rounded-full bg-text-diff-delete-base" />
+                <div class="size-1.5 rounded-full bg-icon-critical-base" />
               </Match>
               <Match when={props.unseenCount() > 0}>
                 <div class="size-1.5 rounded-full bg-text-interactive-base" />

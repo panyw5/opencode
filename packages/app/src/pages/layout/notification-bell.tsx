@@ -280,7 +280,7 @@ export function NotificationBell() {
                   data-variant={hasError() ? "error" : "default"}
                   class="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-medium text-background-base"
                   classList={{
-                    "bg-text-diff-delete-base": hasError(),
+                    "bg-icon-critical-base": hasError(),
                     "bg-text-interactive-base": !hasError(),
                   }}
                 >
