@@ -173,6 +173,7 @@ type Deps = {
   checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string; failed?: boolean; error?: string }>
   installUpdate: () => Promise<void> | void
   getUpdaterState: () => Promise<UpdaterState>
+  downloadUpdate: () => Promise<UpdaterState>
   pauseUpdate: () => Promise<void>
   resumeUpdate: () => Promise<UpdaterState>
   cancelUpdate: () => Promise<void>
@@ -419,6 +420,7 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("check-update", () => deps.checkUpdate())
   ipcMain.handle("install-update", () => deps.installUpdate())
   ipcMain.handle("get-updater-state", () => deps.getUpdaterState())
+  ipcMain.handle("download-update", () => deps.downloadUpdate())
   ipcMain.handle("pause-update", () => deps.pauseUpdate())
   ipcMain.handle("resume-update", () => deps.resumeUpdate())
   ipcMain.handle("cancel-update", () => deps.cancelUpdate())

@@ -15,6 +15,7 @@ import { SettingsProviders } from "./settings-providers"
 import { SettingsModels } from "./settings-models"
 import { SettingsAssistant } from "./settings-assistant"
 import { SettingsRemote } from "./settings-remote"
+import { SettingsUpdates } from "./settings-updates"
 import type { ConfigReturnTarget } from "@/pages/config-navigation"
 
 export const DialogSettings: Component<{ returnTarget?: ConfigReturnTarget }> = (props) => {
@@ -112,6 +113,12 @@ export const DialogSettings: Component<{ returnTarget?: ConfigReturnTarget }> = 
                         {language.t("settings.remote.title")}
                       </Tabs.Trigger>
                     </Show>
+                    <Show when={platform.getUpdaterState}>
+                      <Tabs.Trigger value="updates">
+                        <Icon name="arrow-down-to-line" />
+                        {language.t("settings.tab.updates")}
+                      </Tabs.Trigger>
+                    </Show>
                   </div>
                 </div>
 
@@ -166,6 +173,11 @@ export const DialogSettings: Component<{ returnTarget?: ConfigReturnTarget }> = 
         <Show when={platform.remoteAccess}>
           <Tabs.Content value="remote" class="no-scrollbar">
             <SettingsRemote />
+          </Tabs.Content>
+        </Show>
+        <Show when={platform.getUpdaterState}>
+          <Tabs.Content value="updates" class="no-scrollbar">
+            <SettingsUpdates />
           </Tabs.Content>
         </Show>
       </Tabs>

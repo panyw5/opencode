@@ -1,12 +1,32 @@
-import pkg, { type AppUpdater } from "electron-updater"
+import pkg, { type AppUpdater, type UpdateInfo } from "electron-updater"
 import type { UpdaterBackend } from "./updater-controller"
 
 const { CancellationToken } = pkg
 
+function releaseNotes(value: UpdateInfo["releaseNotes"]): string | undefined {
+  if (!value) return undefined
+  if (typeof value === "string") return value.trim() || undefined
+  const text = value
+    .map((entry) => entry.note ?? "")
+    .filter((note) => note.trim().length > 0)
+    .join("\n\n")
+    .trim()
+  return text || undefined
+}
+
 export function createUpdaterBackend(updater: AppUpdater, log: (message: string) => void): UpdaterBackend {
   let downloadToken: InstanceType<typeof CancellationToken> | undefined
   return {
-    checkForUpdates: () => updater.checkForUpdates(),
+    checkForUpdates: async () => {
+      const result = await updater.checkForUpdates()
+      if (!result) return result
+      return {
+        isUpdateAvailable: result.isUpdateAvailable,
+        updateInfo: result.updateInfo
+          ? { version: result.updateInfo.version, notes: releaseNotes(result.updateInfo.releaseNotes) }
+          : undefined,
+      }
+    },
     async downloadUpdate(onProgress) {
       const token = new CancellationToken()
       downloadToken = token

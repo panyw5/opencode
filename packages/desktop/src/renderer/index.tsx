@@ -290,6 +290,7 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
 
     getUpdaterState: () => desktopApi.getUpdaterState(),
     onUpdaterStateChanged: (listener) => desktopApi.onUpdaterStateChanged(listener),
+    downloadUpdate: () => desktopApi.downloadUpdate(),
     pauseUpdate: () => desktopApi.pauseUpdate(),
     resumeUpdate: () => desktopApi.resumeUpdate(),
     cancelUpdate: () => desktopApi.cancelUpdate(),

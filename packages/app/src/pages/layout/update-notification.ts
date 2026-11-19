@@ -13,6 +13,7 @@ export function createUpdateNotification(platform: Pick<Platform, "getUpdaterSta
     const apply = (state: UpdaterState) => {
       if (disposed) return
       if (
+        state.status === "available" ||
         state.status === "downloading" ||
         state.status === "paused" ||
         state.status === "ready" ||

@@ -304,6 +304,7 @@ const api: ElectronAPI = {
   checkUpdate: () => ipcRenderer.invoke("check-update"),
   installUpdate: () => ipcRenderer.invoke("install-update"),
   getUpdaterState: () => ipcRenderer.invoke("get-updater-state"),
+  downloadUpdate: () => ipcRenderer.invoke("download-update"),
   pauseUpdate: () => ipcRenderer.invoke("pause-update"),
   resumeUpdate: () => ipcRenderer.invoke("resume-update"),
   cancelUpdate: () => ipcRenderer.invoke("cancel-update"),

@@ -53,11 +53,12 @@ export type UpdaterState =
   | { status: "disabled" }
   | { status: "idle" }
   | { status: "checking" }
-  | { status: "downloading"; version: string; percent?: number }
-  | { status: "paused"; version: string; percent?: number }
-  | { status: "ready"; version: string }
+  | { status: "available"; version: string; notes?: string; error?: string }
+  | { status: "downloading"; version: string; percent?: number; notes?: string }
+  | { status: "paused"; version: string; percent?: number; notes?: string }
+  | { status: "ready"; version: string; notes?: string }
   | { status: "up-to-date" }
-  | { status: "installing"; version: string }
+  | { status: "installing"; version: string; notes?: string }
   | { status: "error"; message: string }
 
 export type WindowConfig = {
@@ -424,6 +425,7 @@ export type ElectronAPI = {
   checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string; failed?: boolean; error?: string }>
   installUpdate: () => Promise<void>
   getUpdaterState: () => Promise<UpdaterState>
+  downloadUpdate: () => Promise<UpdaterState>
   pauseUpdate: () => Promise<void>
   resumeUpdate: () => Promise<UpdaterState>
   cancelUpdate: () => Promise<void>

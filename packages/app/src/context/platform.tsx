@@ -22,8 +22,9 @@ type UpdateInfo = { updateAvailable: boolean; version?: string; failed?: boolean
 
 export type UpdaterState =
   | { status: "disabled" | "idle" | "checking" | "up-to-date" }
-  | { status: "downloading" | "paused"; version: string; percent?: number }
-  | { status: "ready" | "installing"; version: string }
+  | { status: "available"; version: string; notes?: string; error?: string }
+  | { status: "downloading" | "paused"; version: string; percent?: number; notes?: string }
+  | { status: "ready" | "installing"; version: string; notes?: string }
   | { status: "error"; message: string }
 
 export type PromptHistoryPlatform = {
@@ -336,11 +337,13 @@ export type Platform = {
   /** File-backed, paged prompt history (desktop only). */
   promptHistory?: PromptHistoryPlatform
 
-  /** Check for updates and download when available. */
+  /** Check for updates only; does not download. */
   checkUpdate?(): Promise<UpdateInfo>
 
   getUpdaterState?(): Promise<UpdaterState>
   onUpdaterStateChanged?(listener: (state: UpdaterState) => void): () => void
+  /** Download the update reported by the latest check (or re-download a ready one). */
+  downloadUpdate?(): Promise<UpdaterState>
   pauseUpdate?(): Promise<void>
   resumeUpdate?(): Promise<UpdaterState>
   cancelUpdate?(): Promise<void>

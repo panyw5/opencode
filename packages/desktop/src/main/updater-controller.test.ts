@@ -112,7 +112,7 @@ describe("createUpdaterController", () => {
       expect(result).toEqual({ status: "error", message: "Updater reported an update without a version" })
     })
 
-    test("transitions through downloading to ready when update is available", async () => {
+    test("transitions to available with notes when update is found without downloading", async () => {
       const downloadCalls: string[] = []
       const ctrl = createUpdaterController({
         enabled: true,
@@ -120,7 +120,7 @@ describe("createUpdaterController", () => {
         backend: createMockBackend({
           checkForUpdates: async () => ({
             isUpdateAvailable: true,
-            updateInfo: { version: "1.1.0" },
+            updateInfo: { version: "1.1.0", notes: "Bug fixes and improvements" },
           }),
           downloadUpdate: async () => {
             downloadCalls.push("downloaded")
@@ -131,10 +131,31 @@ describe("createUpdaterController", () => {
       })
       const states = collectStates(ctrl)
       const result = await ctrl.check()
+      expect(result.status).toBe("available")
+      expect(result).toEqual({ status: "available", version: "1.1.0", notes: "Bug fixes and improvements" })
+      expect(states.map((s) => s.status)).toEqual(["idle", "checking", "available"])
+      expect(downloadCalls).toEqual([])
+    })
+
+    test("download transitions from available through downloading to ready", async () => {
+      const ctrl = createUpdaterController({
+        enabled: true,
+        currentVersion: "1.0.0",
+        backend: createMockBackend({
+          checkForUpdates: async () => ({
+            isUpdateAvailable: true,
+            updateInfo: { version: "1.1.0", notes: "notes" },
+          }),
+        }),
+        persistence: createMockPersistence(),
+        stop: async () => {},
+      })
+      await ctrl.check()
+      const states = collectStates(ctrl)
+      const result = await ctrl.download()
       expect(result.status).toBe("ready")
       expect("version" in result && result.version).toBe("1.1.0")
-      expect(states.map((s) => s.status)).toEqual(["idle", "checking", "downloading", "ready"])
-      expect(downloadCalls).toEqual(["downloaded"])
+      expect(states.map((s) => s.status)).toEqual(["available", "downloading", "ready"])
     })
 
     test("treats same-version as up-to-date", async () => {
@@ -171,25 +192,28 @@ describe("createUpdaterController", () => {
       expect("message" in result && result.message).toBe("network error")
     })
 
-    test("transitions to error on download failure", async () => {
+    test("returns to available with error on download failure and can retry", async () => {
+      let failures = 1
       const ctrl = createUpdaterController({
         enabled: true,
         currentVersion: "1.0.0",
         backend: createMockBackend({
           checkForUpdates: async () => ({
             isUpdateAvailable: true,
-            updateInfo: { version: "1.1.0" },
+            updateInfo: { version: "1.1.0", notes: "notes" },
           }),
           downloadUpdate: async () => {
-            throw new Error("download failed")
+            if (failures-- > 0) throw new Error("download failed")
           },
         }),
         persistence: createMockPersistence(),
         stop: async () => {},
       })
-      const result = await ctrl.check()
-      expect(result.status).toBe("error")
-      expect("message" in result && result.message).toBe("download failed")
+      await ctrl.check()
+      const failed = await ctrl.download()
+      expect(failed).toEqual({ status: "available", version: "1.1.0", notes: "notes", error: "download failed" })
+      const retried = await ctrl.download()
+      expect(retried.status).toBe("ready")
     })
 
     test("deduplicates concurrent check calls", async () => {
@@ -228,6 +252,7 @@ describe("createUpdaterController", () => {
         stop: async () => {},
       })
       await ctrl.check()
+      await ctrl.download()
       expect(ctrl.getState().status).toBe("ready")
       // Second check should return cached ready state without re-calling backend
       const result = await ctrl.check()
@@ -264,12 +289,16 @@ describe("createUpdaterController", () => {
         for (let i = 0; i < 20 && transfers.length < count; i++) await Promise.resolve()
         expect(transfers.length).toBe(count)
       }
-      return { ctrl, transfers, persistence, started, cancellations: () => cancellations }
+      const begin = async () => {
+        await ctrl.check()
+        return ctrl.download()
+      }
+      return { ctrl, transfers, persistence, started, begin, cancellations: () => cancellations }
     }
 
     test("publishes clamped progress and ignores invalid values", async () => {
       const f = fixture()
-      const check = f.ctrl.check()
+      const download = f.begin()
       await f.started()
       f.transfers[0].progress(42.5)
       expect(f.ctrl.getState()).toEqual({ status: "downloading", version: "1.1.0", percent: 42.5 })
@@ -278,33 +307,33 @@ describe("createUpdaterController", () => {
       f.transfers[0].progress(120)
       expect((f.ctrl.getState() as { percent: number }).percent).toBe(100)
       f.transfers[0].resolve()
-      expect((await check).status).toBe("ready")
+      expect((await download).status).toBe("ready")
     })
 
     test("pause cancels the transport and ignores late completion and progress", async () => {
       const f = fixture()
-      const check = f.ctrl.check()
+      const download = f.begin()
       await f.started()
       f.transfers[0].progress(30)
       f.ctrl.pause()
       expect(f.cancellations()).toBe(1)
       f.transfers[0].progress(100)
       f.transfers[0].resolve()
-      expect(await check).toEqual({ status: "paused", version: "1.1.0", percent: 30 })
+      expect(await download).toEqual({ status: "paused", version: "1.1.0", percent: 30 })
       expect(f.persistence._getStored()).toBeUndefined()
       expect((await f.ctrl.check()).status).toBe("paused")
     })
 
     test("resume waits for cancellation and deduplicates concurrent resumes", async () => {
       const f = fixture()
-      const check = f.ctrl.check()
+      const download = f.begin()
       await f.started()
       f.ctrl.pause()
       const a = f.ctrl.resume()
       const b = f.ctrl.resume()
       expect(f.transfers.length).toBe(1)
       f.transfers[0].reject(new Error("cancelled"))
-      await check
+      await download
       await f.started(2)
       expect(f.ctrl.getState()).toEqual({ status: "downloading", version: "1.1.0", percent: 0 })
       f.transfers[1].progress(80)
@@ -314,19 +343,19 @@ describe("createUpdaterController", () => {
       expect(f.persistence._getStored()).toEqual({ version: "1.1.0" })
     })
 
-    test("cancel while paused prevents queued resume and allows a fresh check", async () => {
+    test("cancel while paused prevents queued resume and returns to available for a fresh download", async () => {
       const f = fixture()
-      const check = f.ctrl.check()
+      const download = f.begin()
       await f.started()
       f.ctrl.pause()
       const resume = f.ctrl.resume()
       const cancel = f.ctrl.cancel()
       f.transfers[0].reject(new Error("cancelled"))
-      await Promise.all([check, resume, cancel])
-      expect(f.ctrl.getState()).toEqual({ status: "idle" })
+      await Promise.all([download, resume, cancel])
+      expect(f.ctrl.getState()).toEqual({ status: "available", version: "1.1.0" })
       expect(f.transfers.length).toBe(1)
       expect(f.persistence._getStored()).toBeUndefined()
-      const next = f.ctrl.check()
+      const next = f.ctrl.download()
       await f.started(2)
       f.transfers[1].resolve()
       expect((await next).status).toBe("ready")
@@ -335,14 +364,30 @@ describe("createUpdaterController", () => {
     test("cancel ignores late download success and clears persistence", async () => {
       const f = fixture()
       await f.persistence.set({ version: "old" })
-      const check = f.ctrl.check()
+      const download = f.begin()
       await f.started()
       const cancel = f.ctrl.cancel()
       f.transfers[0].resolve()
-      await Promise.all([check, cancel])
-      expect(f.ctrl.getState()).toEqual({ status: "idle" })
+      await Promise.all([download, cancel])
+      expect(f.ctrl.getState()).toEqual({ status: "available", version: "1.1.0" })
       expect(f.persistence._getStored()).toBeUndefined()
       await expect(f.ctrl.install()).rejects.toThrow("Update is not ready")
+    })
+
+    test("download from ready clears persistence and downloads again", async () => {
+      const f = fixture()
+      const first = f.begin()
+      await f.started()
+      f.transfers[0].resolve()
+      expect((await first).status).toBe("ready")
+      expect(f.persistence._getStored()).toEqual({ version: "1.1.0" })
+      const second = f.ctrl.download()
+      await f.started(2)
+      expect(f.persistence._getStored()).toBeUndefined()
+      expect(f.ctrl.getState()).toEqual({ status: "downloading", version: "1.1.0", percent: 0 })
+      f.transfers[1].resolve()
+      expect((await second).status).toBe("ready")
+      expect(f.persistence._getStored()).toEqual({ version: "1.1.0" })
     })
   })
 
@@ -378,6 +423,7 @@ describe("createUpdaterController", () => {
         },
       })
       await ctrl.check()
+      await ctrl.download()
       const states = collectStates(ctrl)
       await ctrl.install()
       expect(callOrder).toEqual(["stop", "quitAndInstall"])
@@ -401,6 +447,7 @@ describe("createUpdaterController", () => {
         stop: async () => {},
       })
       await ctrl.check()
+      await ctrl.download()
       await expect(ctrl.install()).rejects.toThrow("quit failed")
       expect(ctrl.getState().status).toBe("ready")
     })
@@ -421,6 +468,7 @@ describe("createUpdaterController", () => {
         },
       })
       await ctrl.check()
+      await ctrl.download()
       expect(ctrl.install()).rejects.toThrow("stop failed")
       // After failure, state should be back to ready so user can retry
       expect(ctrl.getState().status).toBe("ready")
@@ -489,8 +537,10 @@ describe("createUpdaterController", () => {
       expect(downloads).toBe(0)
       expect(logs).toContain("updater startup check skipped reason=manual-only")
 
-      expect(await ctrl.check()).toEqual({ status: "ready", version: "1.1.0" })
+      expect(await ctrl.check()).toEqual({ status: "available", version: "1.1.0" })
       expect(checks).toBe(1)
+      expect(downloads).toBe(0)
+      expect(await ctrl.download()).toEqual({ status: "ready", version: "1.1.0" })
       expect(downloads).toBe(1)
     })
 
@@ -509,6 +559,7 @@ describe("createUpdaterController", () => {
         stop: async () => {},
       })
       await ctrl.check()
+      await ctrl.download()
       expect(persistence._getStored()).toEqual({ version: "1.1.0" })
     })
 

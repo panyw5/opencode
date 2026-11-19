@@ -65,7 +65,7 @@ export async function checkUpdate(): Promise<UpdateCheckResult> {
   }
   const state = await controller.check()
   getLogger().log(`updater legacy check result status=${state.status}`)
-  if (state.status === "ready") return { updateAvailable: true, version: state.version }
+  if ("version" in state) return { updateAvailable: true, version: state.version }
   if (state.status === "error") return { updateAvailable: false, failed: true, error: state.message }
   return { updateAvailable: false }
 }
@@ -99,7 +99,7 @@ export async function checkForUpdates(alertOnFail: boolean, _killSidecar: () => 
 }
 
 export async function showUpdaterDialog(ctrl: UpdaterController, alertOnFail: boolean) {
-  const state = await ctrl.check()
+  let state = await ctrl.check()
   getLogger().log(`updater dialog check result status=${state.status}`)
   if (state.status === "error") {
     if (!alertOnFail) return
@@ -111,6 +111,29 @@ export async function showUpdaterDialog(ctrl: UpdaterController, alertOnFail: bo
     await dialog.showMessageBox({ type: "info", message: "You're up to date.", title: "No Updates" })
     return
   }
+
+  if (state.status === "available") {
+    const download = await dialog.showMessageBox({
+      type: "info",
+      message: `Update ${state.version} is available. Download now?`,
+      title: "Update Available",
+      buttons: ["Download", "Later"],
+      defaultId: 0,
+      cancelId: 1,
+    })
+    if (download.response !== 0) return
+    state = await ctrl.download()
+    getLogger().log(`updater dialog download result status=${state.status}`)
+    if (state.status === "available" && state.error) {
+      await dialog.showMessageBox({
+        type: "error",
+        message: `Update download failed: ${state.error}`,
+        title: "Update Error",
+      })
+      return
+    }
+  }
+
   if (state.status !== "ready") return
 
   const response = await dialog.showMessageBox({

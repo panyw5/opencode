@@ -2,17 +2,20 @@ export type UpdaterState =
   | { status: "disabled" }
   | { status: "idle" }
   | { status: "checking" }
-  | { status: "downloading"; version: string; percent?: number }
-  | { status: "paused"; version: string; percent?: number }
-  | { status: "ready"; version: string }
+  | { status: "available"; version: string; notes?: string; error?: string }
+  | { status: "downloading"; version: string; percent?: number; notes?: string }
+  | { status: "paused"; version: string; percent?: number; notes?: string }
+  | { status: "ready"; version: string; notes?: string }
   | { status: "up-to-date" }
-  | { status: "installing"; version: string }
+  | { status: "installing"; version: string; notes?: string }
   | { status: "error"; message: string }
 
 export type UpdaterReadyRecord = { version: string }
 
 export type UpdaterBackend = {
-  checkForUpdates(): Promise<{ isUpdateAvailable?: boolean; updateInfo?: { version?: string } } | null | undefined>
+  checkForUpdates(): Promise<
+    { isUpdateAvailable?: boolean; updateInfo?: { version?: string; notes?: string } } | null | undefined
+  >
   downloadUpdate(onProgress?: (percent: number) => void): Promise<unknown>
   cancelDownload?(): void
   quitAndInstall(): void
@@ -64,21 +67,28 @@ export function createUpdaterController(input: {
     return task
   }
 
-  const download = async (version: string, id: number) => {
-    transition({ status: "downloading", version, percent: 0 })
+  const download = async (version: string, notes: string | undefined, id: number) => {
+    transition({ status: "downloading", version, notes, percent: 0 })
     if (id !== generation) return state
     input.log?.(`updater download started version=${version} generation=${id}`)
     let logged = -1
-    await input.backend.downloadUpdate((value) => {
-      if (id !== generation || state.status !== "downloading" || !Number.isFinite(value)) return
-      const percent = Math.max(0, Math.min(100, value))
-      const step = Math.floor(percent / 10)
-      if (step !== logged) {
-        input.log?.(`updater download progress version=${version} percent=${percent.toFixed(1)}`)
-        logged = step
-      }
-      transition({ status: "downloading", version, percent })
-    })
+    try {
+      await input.backend.downloadUpdate((value) => {
+        if (id !== generation || state.status !== "downloading" || !Number.isFinite(value)) return
+        const percent = Math.max(0, Math.min(100, value))
+        const step = Math.floor(percent / 10)
+        if (step !== logged) {
+          input.log?.(`updater download progress version=${version} percent=${percent.toFixed(1)}`)
+          logged = step
+        }
+        transition({ status: "downloading", version, notes, percent })
+      })
+    } catch (error) {
+      if (id !== generation) return state
+      const message = error instanceof Error ? error.message : String(error)
+      input.log?.(`updater download failed version=${version} message=${message}`)
+      return transition({ status: "available", version, notes, error: message })
+    }
     if (id !== generation) return state
     await input.persistence.set({ version })
     if (id !== generation) {
@@ -86,7 +96,7 @@ export function createUpdaterController(input: {
       return state
     }
     input.log?.(`updater download completed version=${version}`)
-    return transition({ status: "ready", version })
+    return transition({ status: "ready", version, notes })
   }
 
   const check = () => {
@@ -112,8 +122,9 @@ export function createUpdaterController(input: {
       if (!result) throw new Error("Updater returned no check result")
 
       const version = result?.updateInfo?.version
+      const notes = result?.updateInfo?.notes
       input.log?.(
-        `updater backend check completed updateAvailable=${String(result.isUpdateAvailable)} releaseVersion=${version ?? "none"}`,
+        `updater backend check completed updateAvailable=${String(result.isUpdateAvailable)} releaseVersion=${version ?? "none"} notes=${notes ? "yes" : "none"}`,
       )
 
       if (result.isUpdateAvailable === false) {
@@ -135,7 +146,8 @@ export function createUpdaterController(input: {
         return transition({ status: "up-to-date" })
       }
 
-      return download(version, id)
+      input.log?.(`updater check completed result=available version=${version}`)
+      return transition({ status: "available", version, notes })
     })
   }
 
@@ -158,6 +170,27 @@ export function createUpdaterController(input: {
       return state
     },
     check,
+    async download() {
+      if (!input.enabled) {
+        input.log?.("updater download skipped reason=disabled")
+        return state
+      }
+      if (pending) {
+        input.log?.("updater download joined reason=operation-already-running")
+        return pending
+      }
+      if (state.status !== "available" && state.status !== "ready") {
+        input.log?.(`updater download skipped reason=state-${state.status}`)
+        return state
+      }
+      const { version, notes } = state
+      if (state.status === "ready") {
+        input.log?.(`updater re-download requested version=${version}`)
+        await input.persistence.clear()
+      }
+      input.log?.(`updater download requested version=${version}`)
+      return run((id) => download(version, notes, id))
+    },
     pause() {
       if (state.status !== "downloading") return
       input.log?.(`updater pause requested version=${state.version} percent=${state.percent ?? 0}`)
@@ -170,15 +203,20 @@ export function createUpdaterController(input: {
       await pending
       if (id !== generation) return pending ?? state
       if (state.status !== "paused") return state
-      const version = state.version
+      const { version, notes } = state
       input.log?.(`updater resume requested version=${version} mode=restart-download`)
-      return run((id) => download(version, id))
+      return run((id) => download(version, notes, id))
     },
     async cancel() {
       if (state.status !== "downloading" && state.status !== "paused" && state.status !== "checking") return
       input.log?.(`updater cancel requested status=${state.status}`)
+      const from = state
       const id = ++generation
-      transition({ status: "idle" })
+      if (from.status === "downloading" || from.status === "paused") {
+        transition({ status: "available", version: from.version, notes: from.notes })
+      } else {
+        transition({ status: "idle" })
+      }
       input.backend.cancelDownload?.()
       await pending
       if (id !== generation) return
@@ -190,8 +228,8 @@ export function createUpdaterController(input: {
         input.log?.(`updater install skipped reason=state-${state.status}`)
         throw new Error("Update is not ready to install")
       }
-      const version = state.version
-      transition({ status: "installing", version })
+      const { version, notes } = state
+      transition({ status: "installing", version, notes })
       input.log?.(`updater install started version=${version}`)
       await input
         .stop()

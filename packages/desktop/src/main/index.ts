@@ -354,6 +354,7 @@ const main = Effect.gen(function* () {
       const ctrl = getUpdaterController()
       return ctrl ? ctrl.getState() : { status: "disabled" }
     },
+    downloadUpdate: async () => (await getUpdaterController()?.download()) ?? { status: "disabled" },
     pauseUpdate: async () => getUpdaterController()?.pause(),
     resumeUpdate: async () => (await getUpdaterController()?.resume()) ?? { status: "disabled" },
     cancelUpdate: async () => getUpdaterController()?.cancel(),
