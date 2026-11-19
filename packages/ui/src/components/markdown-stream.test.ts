@@ -66,3 +66,84 @@ describe("markdown stream", () => {
     ])
   })
 })
+
+import { renderStreaming, splitStreaming } from "./markdown-stream"
+
+describe("splitStreaming", () => {
+  test("splits at blank lines only", () => {
+    expect(splitStreaming("a\n\nb\n\n\nc").chunks).toEqual(["a\n\n", "b\n\n", "c"])
+    expect(splitStreaming("a\nb").chunks).toEqual(["a\nb"])
+  })
+
+  test("never splits inside a fenced code block", () => {
+    const text = "before\n\n```ts\nconst a = 1\n\nconst b = 2\n```\n\nafter"
+    const { chunks, live } = splitStreaming(text)
+    expect(chunks).toEqual(["before\n\n", "```ts\nconst a = 1\n\nconst b = 2\n```\n\n", "after"])
+    expect(live).toBe("text")
+  })
+
+  test("reports an unclosed fence and math tail", () => {
+    expect(splitStreaming("```ts\nconst x = 1").live).toBe("fence")
+    expect(splitStreaming("$$\nx<y").live).toBe("math")
+    expect(splitStreaming("`$$` still code").live).toBe("text")
+  })
+})
+
+describe("renderStreaming", () => {
+  const render = (src: string) => `<p>${src.trim()}</p>`
+
+  test("joins per-chunk html and heals the tail", async () => {
+    const out = await renderStreaming("one\n\ntwo **bold", undefined, render)
+    expect(out.html).toBe("<p>one</p><p>two **bold**</p>")
+    expect(out.state.inputs).toHaveLength(2)
+  })
+
+  test("re-renders only the divergent tail", async () => {
+    let calls = 0
+    const counted = (src: string) => {
+      calls++
+      return render(src)
+    }
+    const first = await renderStreaming("one\n\ntwo", undefined, counted)
+    expect(calls).toBe(2)
+    const second = await renderStreaming("one\n\ntwo and more", first.state, counted)
+    expect(calls).toBe(3)
+    expect(second.state.inputs[0]).toBe(first.state.inputs[0])
+    const third = await renderStreaming("one\n\ntwo and more\n\nthree", second.state, counted)
+    expect(calls).toBe(4)
+    expect(third.state.htmls[0]).toBe(second.state.htmls[0])
+  })
+
+  test("keeps a live code fence raw instead of healing it", async () => {
+    const seen: string[] = []
+    await renderStreaming("```ts\nconst x = 1", undefined, (src) => {
+      seen.push(src)
+      return ""
+    })
+    expect(seen[0]).toBe("```ts\nconst x = 1")
+  })
+
+  test("prepends link definitions to every chunk", async () => {
+    const seen: string[] = []
+    const out = await renderStreaming("[docs][1]\n\n[1]: https://x.test\n\nmore [docs][1]", undefined, (src) => {
+      seen.push(src)
+      return `<b>${src.includes("[1]:") ? "has-def" : "no-def"}</b>`
+    })
+    // The pure-def chunk renders to nothing without calling render.
+    expect(seen).toHaveLength(2)
+    expect(seen.every((src) => src.includes("[1]:"))).toBe(true)
+    expect(out.html).toBe("<b>has-def</b><b>has-def</b>")
+  })
+
+  test("ignores def-shaped lines inside fenced code", async () => {
+    const seen: string[] = []
+    await renderStreaming("```md\n[a]: https://x.test\n```\n\n[a]", undefined, (src) => {
+      seen.push(src)
+      return src
+    })
+    // The def line lives inside a fence so it must not leak into the next
+    // chunk's prefix; only the real fence chunk and the paragraph render.
+    expect(seen).toHaveLength(2)
+    expect(seen[1]).not.toContain("[a]:")
+  })
+})

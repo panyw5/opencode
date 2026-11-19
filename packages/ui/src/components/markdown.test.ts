@@ -26,6 +26,7 @@ import {
   protectMathExpressions,
   renderMathExpressions,
 } from "../context/marked"
+import { renderStreaming } from "./markdown-stream"
 
 describe("anchored lazy Markdown", () => {
   const source = [
@@ -215,10 +216,18 @@ describe("markdown fileLink", () => {
 })
 
 describe("markdown math", () => {
-  test("heals incomplete streaming markdown before fast parsing", () => {
-    expect(prepareMarkdownSource("hello **world", true)).toBe("hello **world**")
-    expect(prepareMarkdownSource("$$\\frac{1}{2}", true)).toBe("$$\\frac{1}{2}")
-    expect(prepareMarkdownSource("$$\\frac{1}{2}$$", true)).toBe("$$\\frac{1}{2}$$")
+  test("heals incomplete streaming markdown before fast parsing", async () => {
+    const parsed = async (text: string) => {
+      const inputs: string[] = []
+      await renderStreaming(text, undefined, (src) => {
+        inputs.push(src)
+        return ""
+      })
+      return inputs.join("")
+    }
+    expect(await parsed("hello **world")).toBe("hello **world**")
+    expect(await parsed("$$\\frac{1}{2}")).toBe("$$\\frac{1}{2}")
+    expect(await parsed("$$\\frac{1}{2}$$")).toBe("$$\\frac{1}{2}$$")
     expect(prepareMarkdownSource("hello **world", false)).toBe("hello **world")
   })
 

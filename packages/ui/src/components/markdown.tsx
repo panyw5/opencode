@@ -3,7 +3,7 @@ import { useI18n } from "../context/i18n"
 import { sanitizeMarkdown } from "./markdown-sanitize"
 import morphdom from "morphdom"
 import { checksum } from "@opencode-ai/core/util/encode"
-import { stream as streamMarkdown } from "./markdown-stream"
+import { renderStreaming, type StreamRenderState } from "./markdown-stream"
 import { markdownHtmlCache as cache, markdownRendererScope, renderMarkdownWithFallback } from "./markdown-cache"
 import { applyResolvedIcon, readDocumentIconPack, refreshDomIcons, resolveIcon, type IconName } from "./icon"
 import { chooseIconName } from "./file-icon"
@@ -65,9 +65,10 @@ type MarkedApi = ReturnType<typeof useMarked>
 export function prepareMarkdownSource(markdown: string, streaming: boolean) {
   const normalized = normalize(markdown)
   if (!streaming) return normalized
-  return streamMarkdown(normalized, true)
-    .map((block) => block.src)
-    .join("")
+  // Streaming text is healed per chunk by renderStreaming instead of up-front:
+  // healing the whole document every frame was O(document) work that grew with
+  // the message, and the full-text `marked.lexer` it used was superlinear.
+  return normalized
 }
 
 export function upgradeStreamingMath(
@@ -94,8 +95,8 @@ function codeCollapseWindow(wrapper: HTMLElement) {
   return Math.max(fromViewport, codeCollapseFallbackHeight)
 }
 
-function applyCodeCollapseWindow(wrapper: HTMLElement) {
-  wrapper.style.setProperty("--markdown-code-max-height", `${codeCollapseWindow(wrapper)}px`)
+function applyCodeCollapseWindow(wrapper: HTMLElement, maxHeight = codeCollapseWindow(wrapper)) {
+  wrapper.style.setProperty("--markdown-code-max-height", `${maxHeight}px`)
 }
 
 function setExpandedCodeBlock(key: string, value: boolean) {
@@ -150,31 +151,60 @@ export function toggleCodeExpand(wrapper: HTMLElement, button: HTMLButtonElement
   setExpandButtonState(button, labels, expanded)
 }
 
-export function updateCodeCollapse(root: HTMLElement, streaming: boolean, labels: CopyLabels) {
-  for (const wrapper of Array.from(root.querySelectorAll<HTMLElement>('[data-component="markdown-code"]'))) {
+export function updateCodeCollapse(
+  root: HTMLElement,
+  streaming: boolean,
+  labels: CopyLabels,
+  viewportHeight?: number,
+) {
+  const wrappers = Array.from(root.querySelectorAll<HTMLElement>('[data-component="markdown-code"]'))
+  if (!wrappers.length) return
+  // Measure first, mutate second: the first scrollHeight read pays the forced
+  // layout once, and interleaved writes below can't re-dirty it. Wrappers in
+  // one markdown root share the scroll viewport, so the collapse window is
+  // computed a single time — from the caller's pre-write snap when available
+  // (the viewport's own size doesn't change when content does).
+  let maxHeight = viewportHeight !== undefined ? Math.max(Math.round(viewportHeight * codeCollapseWindowRatio), codeCollapseFallbackHeight) : 0
+  const measured: { wrapper: HTMLElement; pre: HTMLElement; height: number }[] = []
+  for (const wrapper of wrappers) {
     const pre = wrapper.querySelector("pre")
     if (!pre) continue
-    const text = pre.querySelector("code")?.textContent ?? pre.textContent ?? ""
-    const key = text ? checksum(text) : ""
-    const maxHeight = codeCollapseWindow(wrapper)
-    if (!key || pre.scrollHeight <= maxHeight + codeCollapseMargin) {
-      delete wrapper.dataset.codeCollapse
-      delete wrapper.dataset.codeStreaming
-      delete wrapper.dataset.codeExpanded
-      wrapper.querySelector(":scope > [data-slot='markdown-expand-button']")?.remove()
+    if (!maxHeight) maxHeight = codeCollapseWindow(wrapper)
+    measured.push({ wrapper, pre, height: pre.scrollHeight })
+  }
+  const cleanup = (wrapper: HTMLElement) => {
+    delete wrapper.dataset.codeCollapse
+    delete wrapper.dataset.codeStreaming
+    delete wrapper.dataset.codeExpanded
+    wrapper.querySelector(":scope > [data-slot='markdown-expand-button']")?.remove()
+  }
+  for (const { wrapper, pre, height } of measured) {
+    if (height <= maxHeight + codeCollapseMargin) {
+      cleanup(wrapper)
       continue
     }
+    // The checksum keys the expanded-state map, which only the non-streaming
+    // branch reads — skip the textContent walk entirely while streaming.
+    let expanded = false
+    if (!streaming) {
+      const text = pre.querySelector("code")?.textContent ?? pre.textContent ?? ""
+      const key = text ? checksum(text) : ""
+      if (!key) {
+        cleanup(wrapper)
+        continue
+      }
+      expanded = expandedCodeBlocks.get(key) === true
+    }
     wrapper.dataset.codeCollapse = "true"
-    applyCodeCollapseWindow(wrapper)
+    applyCodeCollapseWindow(wrapper, maxHeight)
     if (streaming) {
       wrapper.dataset.codeStreaming = "true"
       delete wrapper.dataset.codeExpanded
       wrapper.querySelector(":scope > [data-slot='markdown-expand-button']")?.remove()
-      pre.scrollTop = pre.scrollHeight
+      pre.scrollTop = height
       continue
     }
     delete wrapper.dataset.codeStreaming
-    const expanded = expandedCodeBlocks.get(key) === true
     if (expanded) wrapper.dataset.codeExpanded = "true"
     else delete wrapper.dataset.codeExpanded
     pre.scrollTop = 0
@@ -1048,6 +1078,12 @@ export function Markdown(
     })
   })
 
+  // Streaming render state: chunk inputs and their sanitized html, reused
+  // across frames so only the unfinished tail is re-parsed (see renderStreaming).
+  // Keyed by the cache slot so the same component re-used for another message
+  // starts over.
+  let streamRender: (StreamRenderState & { slot: string; text: string }) | undefined
+
   const [html] = createResource(
     src,
     async (input) => {
@@ -1105,6 +1141,28 @@ export function Markdown(
         fallback: renderFallback,
         onError: renderFailure,
         render: async () => {
+          if (input.streaming && input.mode === "fast") {
+            // `input.key` embeds a content hash that changes every frame, so
+            // only `cacheKey` (the part id) is a stable slot identity. Without
+            // one, prefix-compare still keeps the state correct.
+            const slot = input.cacheKey ?? ""
+            if (streamRender?.slot !== slot) streamRender = undefined
+            const out = await renderStreaming(input.normalized, streamRender, async (src) =>
+              sanitize(
+                upgradeStreamingMath(
+                  await marked.parseFast(src),
+                  { mode: "fast", math: input.math },
+                  marked.renderMath,
+                ),
+              ),
+            )
+            // Overlapping fetches race: keep whichever state came from the
+            // longest text so a stale completion can't roll the chunks back.
+            if (!streamRender || input.normalized.length >= streamRender.text.length) {
+              streamRender = { ...out.state, slot, text: input.normalized }
+            }
+            return out.html
+          }
           const parsed =
             input.anchored && input.mode !== "plain"
               ? await marked.parseAnchored(input.normalized, { mode: input.mode, math: input.math })
@@ -1115,16 +1173,17 @@ export function Markdown(
                   : await (
                       input.mode === "lite"
                         ? marked.parseLite
-                        : input.mode === "fast"
-                          ? marked.parseFast
-                          : input.math === "defer" && marked.parseNoMath
-                            ? marked.parseNoMath
-                            : marked.parse
+                        : input.math === "defer" && marked.parseNoMath
+                          ? marked.parseNoMath
+                          : marked.parse
                     )(input.normalized)
           return upgradeStreamingMath(parsed, input, marked.renderMath)
         },
       })
-      const safe = input.mode === "plain" ? rendered.html : sanitize(rendered.html)
+      const safe =
+        input.mode === "plain" || (input.streaming && !rendered.fallback)
+          ? rendered.html
+          : sanitize(rendered.html)
       mark("parse", {
         key: input.cacheKey ?? input.key,
         mode: input.mode,
@@ -1409,36 +1468,44 @@ export function Markdown(
         }
       }
 
-      if (isStreaming && before) {
-        const after = snap(pane)
-        if (after) {
-          const jump = after.top - before.top
-          const shrink = after.height - before.height
-          if (jump < -24) {
-            console.warn("[markdown] scroll jump", {
-              key: local.cacheKey ?? "",
-              mode,
-              jump,
-              grow: shrink,
-              htmlPrev: prevHtml.length,
-              htmlNext: content.length,
-              text: local.text.length,
-              before,
-              after,
-            })
+      // Layout reads after the DOM write (scroll metrics for the jump
+      // diagnostic, height delta for the upgrade compensation) run inside rAF
+      // where the browser has already settled layout — reading them here would
+      // force a synchronous reflow on every streamed frame.
+      if ((isStreaming && before && pane) || (upgrading && pane && upgradeBox && paneBox && upgradeHeight)) {
+        requestAnimationFrame(() => {
+          if (!container.isConnected) return
+          if (isStreaming && before && pane) {
+            const after = snap(pane)
+            if (after) {
+              const jump = after.top - before.top
+              const shrink = after.height - before.height
+              if (jump < -24) {
+                console.warn("[markdown] scroll jump", {
+                  key: local.cacheKey ?? "",
+                  mode,
+                  jump,
+                  grow: shrink,
+                  htmlPrev: prevHtml.length,
+                  htmlNext: content.length,
+                  text: local.text.length,
+                  before,
+                  after,
+                })
+              }
+            }
           }
-        }
+          // Mode upgrade scroll compensation (defer → full, KaTeX rendering)
+          if (upgrading && pane && upgradeBox && paneBox && upgradeHeight) {
+            const delta = container.offsetHeight - upgradeHeight
+            if (delta > 0 && upgradeBox.bottom <= paneBox.top) {
+              pane.scrollTop += delta
+            }
+          }
+        })
       }
 
-      // Mode upgrade scroll compensation (defer → full, KaTeX rendering)
-      if (upgrading && pane && upgradeBox && paneBox && upgradeHeight) {
-        const delta = container.offsetHeight - upgradeHeight
-        if (delta > 0 && upgradeBox.bottom <= paneBox.top) {
-          pane.scrollTop += delta
-        }
-      }
-
-      updateCodeCollapse(container, !!isStreaming, next)
+      updateCodeCollapse(container, !!isStreaming, next, before?.client)
 
       cancelCopySetup?.()
       const setup = () => {
