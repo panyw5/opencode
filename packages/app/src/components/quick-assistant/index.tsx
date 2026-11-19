@@ -1011,10 +1011,10 @@ function QuickAssistantWindow(props: {
     const created = resolved.session
     if (!created) return
     console.debug(`[quick-assistant] session validated session=${created.id} created=${resolved.created ? 1 : 0}`)
-    if (!resolved.created) return created.id
+    if (!resolved.created) return created
     seed(setStore, created)
     props.onSession(created.id)
-    return created.id
+    return created
   }
 
   const close = () => {
@@ -1195,6 +1195,80 @@ function QuickAssistantWindow(props: {
     })
     console.debug(`[quick-assistant] submitted draft cleared text=${quickPromptText(state.prompt).length} images=0`)
     console.debug(`[quick-assistant] send preparation start text=${text.length} images=${images.length}`)
+
+    const messageID = Identifier.ascending("message")
+    const now = Date.now()
+    const msg: Message = {
+      id: messageID,
+      sessionID: sessionID() ?? "",
+      role: "user",
+      time: { created: now },
+      agent: pick.agent,
+      model: { ...pick.model, variant },
+    }
+    const dropOptimistic = (targetID: string) => {
+      setStore("message", (items) => {
+        const list = items[targetID] ?? []
+        const result = Binary.search(list, messageID, (item) => item.id)
+        if (!result.found) return items
+        const next = [...list]
+        next.splice(result.index, 1)
+        return {
+          ...items,
+          [targetID]: next,
+        }
+      })
+      setStore("part", (items: Record<string, Part[] | undefined>) => {
+        if (!(messageID in items)) return items
+        const next = { ...items }
+        delete next[messageID]
+        return next
+      })
+    }
+    const upsertOptimistic = (parts: Part[]) => {
+      const targetID = msg.sessionID
+      batch(() => {
+        setStore("session_status", targetID, { type: "busy" })
+        setStore("message", (items) => {
+          const list = items[targetID] ?? []
+          const result = Binary.search(list, msg.id, (item) => item.id)
+          const next = [...list]
+          if (result.found) next[result.index] = msg
+          else next.splice(result.index, 0, msg)
+          return {
+            ...items,
+            [targetID]: next,
+          }
+        })
+        setStore("part", messageID, parts)
+      })
+    }
+    let provisionalTarget = ""
+    const abortSend = () => {
+      if (!provisionalTarget) return
+      const target = provisionalTarget
+      provisionalTarget = ""
+      batch(() => {
+        markIdle(target, setStore)
+        dropOptimistic(target)
+      })
+    }
+    if (msg.sessionID) {
+      provisionalTarget = msg.sessionID
+      upsertOptimistic(
+        buildRequestParts({
+          prompt: draft,
+          images,
+          context: [],
+          text: promptText(draft).trim(),
+          messageID,
+          sessionID: msg.sessionID,
+          sessionDirectory: attachmentDirectory,
+        }).optimisticParts,
+      )
+      console.debug(`[quick-assistant] optimistic bubble rendered session=${msg.sessionID} message=${messageID}`)
+    }
+
     let body = promptText(draft).trim()
     const includeContext = saved.context && !!currentContext()
     console.debug(
@@ -1205,6 +1279,7 @@ function QuickAssistantWindow(props: {
       const sourceID = params.id
       if (!directory || !sourceID) {
         console.error("[quick-assistant] context load blocked reason=no-current-session")
+        abortSend()
         setState("loading", false)
         restoreDraft("context-unavailable")
         showToast({ title: "Quick Assistant", description: language.t("quickAssistant.context.loadFailed") })
@@ -1222,9 +1297,13 @@ function QuickAssistantWindow(props: {
           )
           return { items, cursor }
         })
-        if (!activeSend()) return
+        if (!activeSend()) {
+          abortSend()
+          return
+        }
         if (params.id !== sourceID || activeDir() !== directory || !saved.context) {
           console.debug(`[quick-assistant] context load discarded source_session=${sourceID} reason=input-changed`)
+          abortSend()
           setState("loading", false)
           restoreDraft("context-changed")
           return
@@ -1242,8 +1321,12 @@ function QuickAssistantWindow(props: {
           `[quick-assistant] context load complete source_session=${sourceID} pages=${snapshot.pages} fetched=${snapshot.items.length} included=${messages.length} complete=${snapshot.complete ? 1 : 0} chars=${body.length}`,
         )
       } catch (error) {
-        if (!activeSend()) return
+        if (!activeSend()) {
+          abortSend()
+          return
+        }
         console.error(`[quick-assistant] context load failed source_session=${sourceID} error=${String(error)}`)
+        abortSend()
         setState("loading", false)
         restoreDraft("context-failed")
         showToast({ title: "Quick Assistant", description: language.t("quickAssistant.context.loadFailed") })
@@ -1254,7 +1337,7 @@ function QuickAssistantWindow(props: {
       `[quick-assistant] submit context=${includeContext ? 1 : 0} text=${text.length} body=${body.length} model=${pick.model.providerID}/${pick.model.modelID} variant=${variant ?? "none"}`,
     )
     const client = globalSDK.createClient({ directory: current, throwOnError: true })
-    const id = await ensureSession(client, setStore).catch((err: unknown) => {
+    const session = await ensureSession(client, setStore).catch((err: unknown) => {
       if (!activeSend()) return undefined
       console.error(`[quick-assistant] session setup failed error=${String(err)}`)
       showToast({
@@ -1263,57 +1346,25 @@ function QuickAssistantWindow(props: {
       })
       return undefined
     })
-    if (!activeSend()) return
+    if (!activeSend()) {
+      abortSend()
+      return
+    }
 
-    if (!id) {
+    if (!session) {
+      abortSend()
       setState("loading", false)
       restoreDraft("session-failed")
       return
     }
-
-    {
-      try {
-        const current = await client.session.get({ sessionID: id })
-        const rules = current.data?.permission ?? []
-        // Read grants follow this assistant's links, including legacy opt-out markers.
-        const selectedIDs = new Set([
-          ...linkedSessionIDs(rules),
-          ...(saved.context && params.id ? [params.id] : []),
-          ...draft.flatMap((part) => (part.type === "session" ? [part.reference.sessionID] : [])),
-        ])
-        const grants = [...selectedIDs].map((sessionID) => ({ sessionID, readFiles: true }))
-        console.debug(
-          `[quick-assistant:access] default project read grants save reader=${id} sources=${grants.map((item) => item.sessionID).join(",")}`,
-        )
-        const permission = sessionContextRules(rules, grants)
-        if (rules.findLast((rule) => rule.permission === "question" && rule.pattern === "*")?.action !== "allow") {
-          permission.push({ permission: "question", pattern: "*", action: "allow" })
-        }
-        const updated = permission.length ? await client.session.update({ sessionID: id, permission }) : current
-        if (!activeSend()) return
-        if (!updated.data) throw new Error("Session access update returned no session")
-        seed(setStore, updated.data)
-        console.debug(`[quick-assistant:access] grants saved reader=${id}`)
-      } catch (error) {
-        if (!activeSend()) return
-        console.error(`[quick-assistant:access] grants failed reader=${id} error=${String(error)}`)
-        setState("loading", false)
-        restoreDraft("context-access-failed")
-        showToast({ title: "Quick Assistant", description: language.t("quickAssistant.access.failed") })
-        return
-      }
+    const id = session.id
+    if (provisionalTarget && provisionalTarget !== id) {
+      console.debug(`[quick-assistant] optimistic bubble relocated session=${provisionalTarget} next=${id}`)
+      abortSend()
     }
+    provisionalTarget = ""
+    msg.sessionID = id
 
-    const messageID = Identifier.ascending("message")
-    const now = Date.now()
-    const msg: Message = {
-      id: messageID,
-      sessionID: id,
-      role: "user",
-      time: { created: now },
-      agent: pick.agent,
-      model: { ...pick.model, variant },
-    }
     // Mentions resolve against the visible project, not the assistant's private workspace.
     // Source offsets include any injected context and account for trimmed leading whitespace.
     const offset =
@@ -1338,23 +1389,52 @@ function QuickAssistantWindow(props: {
       `[quick-assistant] request built window=${saved.id} session=${id} parts=${requestParts.map((part) => part.type).join(",")} command=${custom?.name ?? "none"}`,
     )
 
-    batch(() => {
-      setStore("session_status", id, { type: "busy" })
-      setStore("message", (items) => {
-        const list = items[id] ?? []
-        const result = Binary.search(list, msg.id, (item) => item.id)
-        const next = [...list]
-        next.splice(result.index, 0, msg)
-        return {
-          ...items,
-          [id]: next,
-        }
-      })
-      setStore("part", messageID, optimisticParts)
-    })
+    upsertOptimistic(optimisticParts)
     console.debug(
       `[quick-assistant] send dispatched session=${id} message=${messageID} next_draft=${quickPromptText(state.prompt).length}`,
     )
+
+    {
+      try {
+        const rules = session.permission ?? []
+        // Read grants follow this assistant's links, including legacy opt-out markers.
+        const selectedIDs = new Set([
+          ...linkedSessionIDs(rules),
+          ...(saved.context && params.id ? [params.id] : []),
+          ...draft.flatMap((part) => (part.type === "session" ? [part.reference.sessionID] : [])),
+        ])
+        const grants = [...selectedIDs].map((sessionID) => ({ sessionID, readFiles: true }))
+        console.debug(
+          `[quick-assistant:access] default project read grants save reader=${id} sources=${grants.map((item) => item.sessionID).join(",")}`,
+        )
+        const permission = sessionContextRules(rules, grants)
+        if (rules.findLast((rule) => rule.permission === "question" && rule.pattern === "*")?.action !== "allow") {
+          permission.push({ permission: "question", pattern: "*", action: "allow" })
+        }
+        const updated = permission.length ? (await client.session.update({ sessionID: id, permission })).data : session
+        if (!activeSend()) {
+          dropOptimistic(id)
+          return
+        }
+        if (!updated) throw new Error("Session access update returned no session")
+        seed(setStore, updated)
+        console.debug(`[quick-assistant:access] grants saved reader=${id}`)
+      } catch (error) {
+        if (!activeSend()) {
+          dropOptimistic(id)
+          return
+        }
+        console.error(`[quick-assistant:access] grants failed reader=${id} error=${String(error)}`)
+        setState("loading", false)
+        restoreDraft("context-access-failed")
+        batch(() => {
+          markIdle(id, setStore)
+          dropOptimistic(id)
+        })
+        showToast({ title: "Quick Assistant", description: language.t("quickAssistant.access.failed") })
+        return
+      }
+    }
 
     clearTimers()
     await (
@@ -1393,25 +1473,7 @@ function QuickAssistantWindow(props: {
         if (!aborted) restoreDraft("request-failed")
         batch(() => {
           markIdle(id, setStore)
-          if (aborted) {
-            setStore("message", (items) => {
-              const list = items[id] ?? []
-              const result = Binary.search(list, messageID, (item) => item.id)
-              if (!result.found) return items
-              const next = [...list]
-              next.splice(result.index, 1)
-              return {
-                ...items,
-                [id]: next,
-              }
-            })
-            setStore("part", (items: Record<string, Part[] | undefined>) => {
-              if (!(messageID in items)) return items
-              const next = { ...items }
-              delete next[messageID]
-              return next
-            })
-          }
+          if (aborted) dropOptimistic(id)
         })
         showToast({
           title: "Quick Assistant",
