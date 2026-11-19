@@ -33,6 +33,9 @@ import { Parameters as ClaudeConsult } from "../../src/tool/claude_consult"
 import { Parameters as GrokConsult } from "../../src/tool/grok_consult"
 import { Parameters as DshConsult } from "../../src/tool/dsh_consult"
 import { Parameters as PiConsult } from "../../src/tool/pi_consult"
+import { Parameters as ClineConsult } from "../../src/tool/cline_consult"
+import { Parameters as DroidConsult } from "../../src/tool/droid_consult"
+import { Parameters as QoderConsult } from "../../src/tool/qoder_consult"
 
 const parse = <S extends Schema.Decoder<unknown>>(schema: S, input: unknown): S["Type"] =>
   Schema.decodeUnknownSync(schema)(input)
@@ -68,6 +71,9 @@ describe("tool parameters", () => {
     test("grok_consult", () => expect(toJsonSchema(GrokConsult)).toMatchSnapshot())
     test("dsh_consult", () => expect(toJsonSchema(DshConsult)).toMatchSnapshot())
     test("pi_consult", () => expect(toJsonSchema(PiConsult)).toMatchSnapshot())
+    test("cline_consult", () => expect(toJsonSchema(ClineConsult)).toMatchSnapshot())
+    test("droid_consult", () => expect(toJsonSchema(DroidConsult)).toMatchSnapshot())
+    test("qoder_consult", () => expect(toJsonSchema(QoderConsult)).toMatchSnapshot())
 
     test("inlines named child schemas for provider compatibility", () => {
       const schema = toJsonSchema(Question)

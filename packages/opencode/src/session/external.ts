@@ -35,6 +35,9 @@ const advisors: Record<string, Advisor> = {
   grok_consult: "grok",
   dsh_consult: "dsh",
   pi_consult: "pi",
+  cline_consult: "cline",
+  droid_consult: "droid",
+  qoder_consult: "qoder",
 }
 
 export function externalSessionID(parentID: string, partID: string) {

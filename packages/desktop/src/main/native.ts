@@ -20,14 +20,17 @@ import { promisify } from "node:util"
 import { app, shell } from "electron"
 import {
   CLAUDE_CONFIG_KEY,
+  CLINE_CONFIG_KEY,
   CODEX_CONFIG_KEY,
   CUSTOM_EDITOR_PATH_KEY,
   DEFAULT_EDITOR_KEY,
+  DROID_CONFIG_KEY,
   DSH_CONFIG_KEY,
   GENERICAGENT_CONFIG_KEY,
   HERMES_CONFIG_KEY,
   GROK_CONFIG_KEY,
   OPENCLAW_CONFIG_KEY,
+  QODER_CONFIG_KEY,
 } from "./constants"
 import { getStore } from "./store"
 import type {
@@ -414,6 +417,9 @@ const cliAgentConfigKeys: Record<CliAgentID, string> = {
   claude: CLAUDE_CONFIG_KEY,
   grok: GROK_CONFIG_KEY,
   dsh: DSH_CONFIG_KEY,
+  cline: CLINE_CONFIG_KEY,
+  droid: DROID_CONFIG_KEY,
+  qoder: QODER_CONFIG_KEY,
 }
 
 export function getCliAgentConfig(id: CliAgentID): CliAgentConfig {

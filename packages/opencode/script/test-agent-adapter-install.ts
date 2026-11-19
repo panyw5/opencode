@@ -11,7 +11,7 @@ process.env.XDG_CONFIG_HOME = path.join(root, "config")
 process.env.XDG_CACHE_HOME = path.join(root, "cache")
 process.env.XDG_STATE_HOME = path.join(root, "state")
 process.env.OPENCODE_TEST_HOME = path.join(root, "home")
-const { AgentInstallManager } = await import("../src/agent-backend/install")
+const { AgentInstallManager, applyAdapterLease } = await import("../src/agent-backend/install")
 const { AcpAgentClient } = await import("../src/agent-backend/acp-client")
 const { Log } = await import("@opencode-ai/core/util/log")
 await Log.init({ dev: true, print: true, level: "INFO" })
@@ -27,15 +27,15 @@ try {
     )
     const lease = await manager.acquire(recipe.advisor, recipe.recommended)
     const client = new AcpAgentClient({
-      config: {
+      config: applyAdapterLease({
         type: "acp",
-        command: lease.command as [string, ...string[]],
+        command: lease.command,
         env: {
           CODEX_HOME: path.join(root, "codex"),
           CLAUDE_CONFIG_DIR: path.join(root, "claude"),
           PI_CODING_AGENT_DIR: path.join(root, "pi"),
         },
-      },
+      }, lease),
       cwd: path.join(root, "home"),
       onEvent: () => {},
       requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),

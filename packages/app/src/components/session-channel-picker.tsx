@@ -9,7 +9,7 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 
-export const CHANNEL_IDS = ["codex", "claude", "grok", "dsh", "pi"] as const
+export const CHANNEL_IDS = ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder"] as const
 type ChannelID = (typeof CHANNEL_IDS)[number]
 export const CHANNEL_LABELS: Record<string, string> = {
   codex: "Codex",
@@ -17,6 +17,9 @@ export const CHANNEL_LABELS: Record<string, string> = {
   grok: "Grok",
   dsh: "DSH",
   pi: "Pi",
+  cline: "Cline",
+  droid: "Factory Droid",
+  qoder: "Qoder",
 }
 
 const CHANNEL_ICONS: Record<string, string> = {

@@ -29,6 +29,9 @@ describe("consult-mention", () => {
     expect(consultMentionFor("dsh")?.tool).toBe("dsh_consult")
     expect(consultMentionFor("dsh")?.label).toBe("DeepSeek")
     expect(consultMentionFor("pi")).toEqual({ id: "pi", tool: "pi_consult", label: "Pi" })
+    expect(consultMentionFor("cline")?.tool).toBe("cline_consult")
+    expect(consultMentionFor("droid")?.tool).toBe("droid_consult")
+    expect(consultMentionFor("qoder")?.tool).toBe("qoder_consult")
     expect(consultMentionFor("planner")).toBeUndefined()
   })
 
@@ -36,6 +39,9 @@ describe("consult-mention", () => {
     expect(isConsultTool("codex_consult")).toBe(true)
     expect(isConsultTool("dsh_consult")).toBe(true)
     expect(isConsultTool("pi_consult")).toBe(true)
+    expect(isConsultTool("cline_consult")).toBe(true)
+    expect(isConsultTool("droid_consult")).toBe(true)
+    expect(isConsultTool("qoder_consult")).toBe(true)
     expect(isConsultTool("task")).toBe(false)
   })
 
@@ -85,7 +91,7 @@ describe("consult-mention", () => {
   })
 
   test("each CLI consultation describes the shared handoff and transcript-reading contract", async () => {
-    for (const advisor of ["codex", "claude", "grok", "dsh", "pi"]) {
+    for (const advisor of ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder"]) {
       const description = await Bun.file(new URL(`../../src/tool/${advisor}_consult.txt`, import.meta.url)).text()
       expect(description).toContain("external_consultation")
       expect(description).toContain("task_transcript")

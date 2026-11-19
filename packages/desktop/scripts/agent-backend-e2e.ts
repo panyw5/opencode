@@ -11,6 +11,12 @@ import { connectCdp, listTargets } from "./cdp"
 const log = (value: string) => console.log(`[agent-backend-e2e] ${value}`)
 const desktop = process.argv.includes("--desktop")
 const installUI = process.argv.includes("--install-ui")
+const managedInstall = process.argv.includes("--qoder-install-ui")
+  ? { advisor: "qoder", version: "1.1.92", args: ["--acp"] }
+  : process.argv.includes("--droid-install-ui")
+    ? { advisor: "droid", version: "1.14.0", args: ["exec", "--output-format", "acp-daemon"] }
+    : undefined
+assert.ok(!managedInstall || desktop, "Managed installation UI tests require --desktop")
 const endpoint = process.env.OPENCODE_CDP_ENDPOINT ?? "http://127.0.0.1:9233"
 const cdpPort = new URL(endpoint).port
 const root = path.resolve(import.meta.dir, "../../..")
@@ -26,6 +32,9 @@ await chmod(dsh, 0o700)
 const counts = new Map<string, number>()
 const scenarios = {
   BACKEND_ACP: { tool: "claude_consult", backend: "acp", answer: "ACP_REPLY_1" },
+  BACKEND_CLINE: { tool: "cline_consult", backend: "acp", answer: "ACP_REPLY_1" },
+  BACKEND_DROID: { tool: "droid_consult", backend: "acp", answer: "ACP_REPLY_1" },
+  BACKEND_QODER: { tool: "qoder_consult", backend: "acp", answer: "ACP_REPLY_1" },
   BACKEND_RPC: { tool: "pi_consult", backend: "native-rpc", answer: "PI_REPLY_1" },
   BACKEND_CLI: { tool: "dsh_consult", backend: "cli-json", answer: "Initial fixture answer" },
 } as const
@@ -76,9 +85,17 @@ const config = {
   plugin: [],
   mcp: {},
   permission: { "*": "allow" },
-  agent_backends: { claude: { type: "acp", command: ["node", path.join(fixture, "acp-agent.mjs")] } },
+  agent_backends: Object.fromEntries(
+    ["claude", "cline", "droid", "qoder"].map((advisor) => [
+      advisor,
+      { type: "acp", command: ["node", path.join(fixture, "acp-agent.mjs")] },
+    ]),
+  ),
   external_agents: {
     claude: { enabled: true },
+    cline: { enabled: true },
+    droid: { enabled: true },
+    qoder: { enabled: true },
     dsh: { binaryPath: dsh, configHome: path.join(temporary, "dsh-home"), enabled: true },
   },
   pi: { enabled: true, binaryPath: path.join(fixture, "pi-rpc.mjs") },
@@ -205,7 +222,7 @@ try {
     assert.ok(response.ok, `${method} ${route}: HTTP ${response.status} ${response.ok ? "" : await response.text()}`)
     return response.status === 204 ? undefined : response.json()
   }
-  for (const [scenario, expected] of Object.entries(scenarios)) {
+  for (const [scenario, expected] of managedInstall ? [] : Object.entries(scenarios)) {
     const session = await request("/session", "POST", { title: `QA ${scenario}` })
     sessions.push(session.id)
     const result = await request(`/session/${session.id}/message`, "POST", {
@@ -226,7 +243,7 @@ try {
     const messages = await request(`/session/${childID}/message`)
     assert.ok(messages.flatMap((item: any) => item.parts).some((item: any) => item.text?.includes(expected.answer)))
     assert.equal(messages.filter((item: any) => item.info.role === "user").length, 1)
-    log(`PASS ${expected.backend} sent prompt, received reply and persisted child transcript`)
+    log(`PASS ${expected.tool} via ${expected.backend}: sent prompt, received reply and persisted child transcript`)
     if (cdp) {
       const route = `/${Buffer.from(workspace).toString("base64url")}/session/${childID}`
       if (scenario === "BACKEND_ACP")
@@ -248,12 +265,12 @@ try {
           const text = await cdp!.client.evaluate<string>("document.body.innerText").catch(() => "")
           return text.includes(expected.answer) && !text.includes("Loading messages") ? true : undefined
         },
-        `${expected.backend} child transcript UI`,
+        `${expected.tool} child transcript UI`,
         30000,
       )
       const shot = await cdp.client.call<{ data: string }>("Page.captureScreenshot", { format: "png" })
-      await Bun.write(`${temporary}-${expected.backend}.png`, Buffer.from(shot.data, "base64"))
-      log(`PASS ${expected.backend} child transcript visible in Electron via CDP`)
+      await Bun.write(`${temporary}-${expected.tool}.png`, Buffer.from(shot.data, "base64"))
+      log(`PASS ${expected.tool} child transcript visible in Electron via CDP`)
       if (scenario === "BACKEND_ACP") {
         const parentRoute = `/${Buffer.from(workspace).toString("base64url")}/session/${session.id}`
         await cdp.client.evaluate(`(() => {
@@ -288,6 +305,89 @@ try {
       }
     }
   }
+  for (const advisor of managedInstall ? [] : ["cline", "droid", "qoder"]) {
+    const options = await request("/agent-backend/channel-options", "POST", { advisor })
+    assert.equal(options.advisor, advisor)
+    assert.ok(options.models.length > 0)
+    const session = await request("/session", "POST", {
+      title: `QA ${advisor} standalone ACP`,
+      channel: { kind: "acp", advisor },
+    })
+    sessions.push(session.id)
+    for (const turn of [1, 2]) {
+      const result = await request(`/session/${session.id}/message`, "POST", {
+        parts: [{ type: "text", text: `Standalone fixture turn ${turn}` }],
+      })
+      assert.ok(result.parts.some((part: { text?: string }) => part.text?.includes(`ACP_REPLY_${turn}`)))
+    }
+    const saved = await request(`/session/${session.id}`)
+    assert.equal(saved.channel.advisor, advisor)
+    assert.match(saved.channel.acpSessionID, /^acp-fixture-/)
+    const history = await request(`/session/${session.id}/message`)
+    assert.equal(history.filter((item: { info: { role: string } }) => item.info.role === "user").length, 2)
+    log(`PASS ${advisor} standalone ACP: options, two turns on one session and persisted history`)
+  }
+  if (cdp && managedInstall) {
+    const { advisor, version, args } = managedInstall
+    const panel = `[data-agent-backend="${advisor}"]`
+    await wait(async () => {
+      const text = await cdp!.client.evaluate<string>("document.body.innerText")
+      return text.includes("Open project") ? true : undefined
+    }, "mounted app router")
+    await cdp.client.evaluate(`(() => {
+      const link = document.createElement("a"); link.href = "/config?section=claws&pick=claw:${advisor}";
+      link.setAttribute("link", ""); document.body.append(link); link.click(); link.remove();
+    })()`)
+    const current = cdp.client
+    const click = async (label: string) =>
+      wait(async () => {
+        const clicked = await current.evaluate<boolean>(`(() => {
+          const button = [...(document.querySelector(${JSON.stringify(panel)})?.querySelectorAll('button') ?? [])]
+            .find(el => el.textContent.trim() === ${JSON.stringify(label)});
+          if (!button || button.disabled) return false; button.click(); return true;
+        })()`)
+        return clicked ? true : undefined
+      }, `${advisor} ${label}`)
+    const status = async () =>
+      (await request("/agent-backend")).adapters.find((item: { advisor: string }) => item.advisor === advisor)
+    const adapter = await status()
+    assert.ok(adapter, `${advisor} must be present in the managed adapter catalog`)
+    assert.equal(adapter.recommended, version)
+    assert.equal(adapter.installed.length, 0)
+    await click("ACP · standalone sessions")
+    const source = await wait(async () => {
+      const point = await current.evaluate<{ x: number; y: number } | { managed: true } | undefined>(`(() => {
+        const trigger = document.querySelector('${panel} button[aria-label="ACP installation"]');
+        if (!trigger) return;
+        if (trigger.textContent.includes('OpenCode-managed adapter')) return { managed: true };
+        const rect = trigger.getBoundingClientRect();
+        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      })()`)
+      if (!point) return
+      if ("managed" in point) return "managed" as const
+      await current.call("Input.dispatchMouseEvent", { ...point, type: "mousePressed", button: "left", clickCount: 1 })
+      await current.call("Input.dispatchMouseEvent", { ...point, type: "mouseReleased", button: "left", clickCount: 1 })
+      return "opened" as const
+    }, `${advisor} installation selector`)
+    if (source === "opened") await wait(async () => {
+      const selected = await current.evaluate<boolean>(`(() => {
+        const option = [...document.querySelectorAll('[role="option"]')]
+          .find(el => el.textContent.trim() === 'OpenCode-managed adapter');
+        if (!option) return false; option.click(); return true;
+      })()`)
+      return selected ? true : undefined
+    }, `${advisor} managed adapter option`)
+    await click("Install selected version")
+    await click("Confirm operation")
+    await wait(async () => (await status()).installed.length === 1 ? true : undefined, `${advisor} npm installation`, 180000)
+    assert.deepEqual((await status()).installed[0].command.slice(-args.length), args)
+    const shot = await current.call<{ data: string }>("Page.captureScreenshot", { format: "png" })
+    await Bun.write(`${temporary}-${advisor}-install.png`, Buffer.from(shot.data, "base64"))
+    await click("Uninstall selected version")
+    await click("Confirm operation")
+    await wait(async () => (await status()).installed.length === 0 ? true : undefined, `${advisor} removal`)
+    log(`PASS ${advisor} managed install and removal from development Electron settings`)
+  }
   if (cdp && installUI) {
     const navigate = async (route: string) =>
       cdp!.client.evaluate(`(() => {
@@ -312,7 +412,10 @@ try {
     await navigate("/config?section=claws&pick=claw:codex")
     await wait(async () => ((await panelText()).includes("Target machine") ? true : undefined), "ACP settings panel")
     await wait(
-      async () => ((await request("/agent-backend")).adapters.length === 3 ? true : undefined),
+      async () =>
+        ((await request("/agent-backend")).adapters.some((item: { advisor: string }) => item.advisor === "codex")
+          ? true
+          : undefined),
       "adapter catalog",
     )
     await cdp.client.evaluate(`(() => {
@@ -492,10 +595,14 @@ try {
   }
   collectedLogs = (await Promise.all(logRoots.map(readLogs))).join("\n")
   const logs = (await readFile(logfile, "utf8")) + collectedLogs
-  for (const expected of Object.values(scenarios)) assert.ok(logs.includes(`backend=${expected.backend}`))
-  assert.ok(logs.includes("ready session=acp-fixture-"))
-  assert.ok(logs.includes("handoff ready"))
-  log("PASS backend logs inspected: routing, ACP handshake and conversation handoff confirmed")
+  if (managedInstall) {
+    assert.ok(logs.includes(`installed advisor=${managedInstall.advisor} version=${managedInstall.version} integrity=verified`))
+  } else {
+    for (const expected of Object.values(scenarios)) assert.ok(logs.includes(`backend=${expected.backend}`))
+    assert.ok(logs.includes("ready session=acp-fixture-"))
+    assert.ok(logs.includes("handoff ready"))
+    log("PASS backend logs inspected: routing, ACP handshake and conversation handoff confirmed")
+  }
 } finally {
   if (cdp) {
     // Quit only the isolated dev app that this script launched.

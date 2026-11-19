@@ -5,9 +5,12 @@ import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
 import {
   CLAUDE_CONFIG_KEY,
+  CLINE_CONFIG_KEY,
   CODEX_CONFIG_KEY,
+  DROID_CONFIG_KEY,
   DSH_CONFIG_KEY,
   GROK_CONFIG_KEY,
+  QODER_CONFIG_KEY,
   DEFAULT_SERVER_URL_KEY,
   WSL_ENABLED_KEY,
 } from "./constants"
@@ -328,6 +331,9 @@ export const spawnLocalServer = createSpawnLocalServer({
               ["claude", CLAUDE_CONFIG_KEY],
               ["dsh", DSH_CONFIG_KEY],
               ["grok", GROK_CONFIG_KEY],
+              ["cline", CLINE_CONFIG_KEY],
+              ["droid", DROID_CONFIG_KEY],
+              ["qoder", QODER_CONFIG_KEY],
             ].map(([id, key]) => [id, getStore().get(key!) ?? { enabled: false }]),
           ),
         ),

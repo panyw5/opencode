@@ -1,7 +1,7 @@
 import type { AcpConfig } from "./schema"
 import { AcpAgentClient, AcpAuthenticationRequired } from "./acp-client"
 import { AcpTranscript } from "./acp-transcript"
-import { managedAgents, type AgentInstallManager } from "./install"
+import { applyAdapterLease, managedAgents, type AgentInstallManager } from "./install"
 import type { ProbeResult } from "./install-schema"
 import { channelOptions } from "./options"
 import type { Advisor } from "@/session/external-schema"
@@ -19,7 +19,7 @@ export async function probeChannelOptions(
   if (ref && ref.advisor !== input.advisor) throw new Error("Managed adapter does not match the selected advisor")
   const lease = ref ? await manager.acquire(ref.advisor, ref.version) : undefined
   const client = new AcpAgentClient({
-    config: { ...input.config, command: lease ? (lease.command as [string, ...string[]]) : input.config.command },
+    config: applyAdapterLease(input.config, lease),
     cwd: input.cwd,
     onEvent: () => {},
     requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),
@@ -54,7 +54,7 @@ export async function probeAdapter(
   const lease = ref ? await manager.acquire(ref.advisor, ref.version) : undefined
   const live = new AcpTranscript()
   const client = new AcpAgentClient({
-    config: { ...input.config, command: lease ? (lease.command as [string, ...string[]]) : input.config.command },
+    config: applyAdapterLease(input.config, lease),
     cwd: input.cwd,
     onEvent: (event) => live.apply(event),
     requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),

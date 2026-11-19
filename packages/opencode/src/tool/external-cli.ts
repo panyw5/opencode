@@ -4,7 +4,7 @@ import { existsSync } from "node:fs"
 import { which } from "@/util/which"
 import { parseDshConsultDefaults, type DshConsultDefaults } from "@opencode-ai/util/dsh-config"
 
-export type ExternalCliID = "codex" | "claude" | "dsh" | "grok"
+export type ExternalCliID = "codex" | "claude" | "dsh" | "grok" | "cline" | "droid" | "qoder"
 export type ExternalCliConfig = {
   enabled?: boolean
   binaryPath?: string
@@ -17,6 +17,9 @@ const homes = {
   claude: ["CLAUDE_CONFIG_DIR", ".claude"],
   dsh: ["DSH_HOME", ".dsh"],
   grok: ["GROK_HOME", ".grok"],
+  cline: ["CLINE_DIR", ".cline"],
+  droid: ["DROID_CONFIG_DIR", ".factory"],
+  qoder: ["QODER_CONFIG_DIR", ".qoder"],
 } as const
 
 export function resolveExternalAgentConfig(
@@ -61,6 +64,7 @@ export function resolveExternalCli(
   const binary = /[/\\]/.test(executable)
     ? path.resolve(base, executable)
     : (which(executable, env) ??
+      (id === "qoder" && executable === "qoder" ? which("qodercli", env) : undefined) ??
       (id === "grok" && !effective.binaryPath?.trim() && existsSync(managed) ? managed : undefined))
   if (!binary)
     throw new Error(id + " CLI not found. Install it or configure its executable in Settings > External agents.")

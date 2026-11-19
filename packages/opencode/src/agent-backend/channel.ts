@@ -20,7 +20,7 @@ import { ToolRegistry } from "@/tool/registry"
 import type { PromptInput } from "@/session/prompt"
 import { AcpAgentClient, AcpAuthenticationRequired } from "./acp-client"
 import { AcpTranscript } from "./acp-transcript"
-import { managedAgents } from "./install"
+import { applyAdapterLease, managedAgents } from "./install"
 import { acpMcpServers, type McpConfig } from "./mcp-servers"
 import { modeOptions, modelOptions } from "./options"
 import type { AcpConfig } from "./schema"
@@ -239,10 +239,8 @@ export const layer = Layer.effect(
       const lease = managed
         ? yield* Effect.promise(() => managedAgents().acquire(managed.advisor, managed.version))
         : undefined
-      const command = lease ? (lease.command as [string, ...string[]]) : selection.command
       const acpConfig: AcpConfig = {
-        ...selection,
-        command,
+        ...applyAdapterLease(selection, lease),
         ...(channel.mode ? { mode: channel.mode } : {}),
       }
 

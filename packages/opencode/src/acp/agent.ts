@@ -1567,6 +1567,9 @@ function toToolKind(toolName: string): ToolKind {
     case "grok_consult":
     case "dsh_consult":
     case "pi_consult":
+    case "cline_consult":
+    case "droid_consult":
+    case "qoder_consult":
       return "search"
 
     case "read":

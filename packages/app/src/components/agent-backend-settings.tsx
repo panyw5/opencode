@@ -20,8 +20,17 @@ import { createAgentBackendStatus } from "./agent-backend-status"
 import { AgentSettingsCard, AgentSettingsDetails, AgentSettingsField, AgentSettingsGrid } from "./agent-settings-layout"
 import { Link } from "./link"
 
-export type AdvisorID = "claude" | "codex" | "pi" | "grok" | "dsh"
+export type AdvisorID = "claude" | "codex" | "pi" | "grok" | "dsh" | "cline" | "droid" | "qoder"
 type AcpConfig = Extract<NonNullable<NonNullable<Config["agent_backends"]>["claude"]>, { type: "acp" }>
+
+// CLIs with a built-in ACP entry point (no managed npm adapter needed).
+const ACP_COMMAND_PRESETS: Partial<Record<AdvisorID, string[]>> = {
+  cline: ["cline", "--acp"],
+  droid: ["droid", "exec", "--output-format", "acp"],
+  qoder: ["qodercli", "--acp"],
+}
+
+const defaultAcpCommand = (advisor: AdvisorID) => JSON.stringify(ACP_COMMAND_PRESETS[advisor] ?? [])
 
 function backendSignature(backend: NonNullable<Config["agent_backends"]>[AdvisorID], advisor: AdvisorID) {
   if (backend?.type !== "acp")
@@ -54,7 +63,7 @@ export function AgentBackendSettings(props: {
       (props.advisor === "pi" ? "native-rpc" : "cli-json")) as string,
     source: "managed",
     version: "",
-    command: "[]",
+    command: defaultAcpCommand(props.advisor),
     env: "{}",
     model: "",
     mode: "",
@@ -75,6 +84,12 @@ export function AgentBackendSettings(props: {
   })
   const status = createAgentBackendStatus(() => props.client)
   const recipe = createMemo(() => status.latest?.adapters.find((item) => item.advisor === props.advisor))
+  const loginHelp = () => {
+    if (props.advisor === "cline") return t("agentBackend.loginHelp.cline")
+    if (props.advisor === "droid") return t("agentBackend.loginHelp.droid")
+    if (props.advisor === "qoder") return t("agentBackend.loginHelp.qoder")
+    return recipe()?.loginHelp ?? t("agentBackend.loginHelp")
+  }
   const installed = createMemo(() => recipe()?.installed.find((item) => item.version === state.version))
   const active = () => props.config.agent_backends?.[props.advisor]
   const cliType = () => (props.advisor === "pi" ? "native-rpc" : "cli-json")
@@ -102,15 +117,15 @@ export function AgentBackendSettings(props: {
     invalidate()
   }
   const draft = (): AcpConfig => {
-    if (managedMode() && !recipe()) throw new Error(status.latest ? t("agentBackend.customOnly") : t("common.loading"))
-    const managed = managedMode() ? installed() : undefined
-    if (managedMode() && !managed) throw new Error(t("agentBackend.notInstalled"))
+    const useManaged = managedMode()
+    const adapter = useManaged ? recipe() : undefined
+    const managed = useManaged ? installed() : undefined
+    if (useManaged && !adapter) throw new Error(status.latest ? t("agentBackend.customOnly") : t("common.loading"))
+    if (useManaged && !managed) throw new Error(t("agentBackend.notInstalled"))
     return {
       type: "acp",
       command: managed?.command ?? parseAcpCommand(state.command),
-      ...(managed
-        ? { managed: { advisor: props.advisor as "claude" | "codex" | "pi", version: managed.version } }
-        : {}),
+      ...(managed && adapter ? { managed: { advisor: adapter.advisor, version: managed.version } } : {}),
       env: parseAcpEnvironment(state.env),
       model: state.model.trim() || undefined,
       mode: state.mode.trim() || undefined,
@@ -183,7 +198,7 @@ export function AgentBackendSettings(props: {
           type: backend?.type ?? (advisor === "pi" ? "native-rpc" : "cli-json"),
           source: backend?.type === "acp" && !backend.managed ? "custom" : "managed",
           version: backend?.type === "acp" ? (backend.managed?.version ?? "") : "",
-          command: backend?.type === "acp" ? JSON.stringify(backend.command) : "[]",
+          command: backend?.type === "acp" ? JSON.stringify(backend.command) : defaultAcpCommand(advisor),
           env: backend?.type === "acp" ? JSON.stringify(backend.env ?? {}) : "{}",
           model: backend?.type === "acp" ? (backend.model ?? "") : "",
           mode: backend?.type === "acp" ? (backend.mode ?? "") : "",
@@ -335,36 +350,22 @@ export function AgentBackendSettings(props: {
               </AgentSettingsCard>
             )}
           </Show>
-          <AgentSettingsCard title={t("agentSettings.connection")} badge={t("agentSettings.important")} size="compact">
-            <div
-              class="flex min-h-7 min-w-0 flex-wrap items-center gap-2 text-12-regular text-text-weak"
-              data-agent-backend-target
-            >
-              <span class="min-w-0 break-words">
-                {t("agentBackend.target")}: {status.latest?.target ?? "..."}
-              </span>
-            </div>
-            <Show when={props.remote}>
-              <p class="text-12-regular text-text-base">{t("agentBackend.remote")}</p>
-            </Show>
-            <Show when={state.type === "acp"}>
-              <label class="flex min-w-0 max-w-full flex-col items-start gap-2 text-12-medium text-text-strong">
-                {t("agentBackend.source")}
-                <Select
-                  triggerProps={{ "aria-label": t("agentBackend.source") }}
-                  options={sourceOptions()}
-                  current={sourceOptions().find((o) => o.value === (customMode() ? "custom" : state.source))}
-                  value={(o) => o.value}
-                  label={(o) => o.label}
-                  onSelect={(o) => o && change("source", o.value)}
-                  disabled={!!state.busy}
-                  variant="secondary"
-                  size="small"
-                  triggerVariant="settings"
-                />
-              </label>
-            </Show>
-          </AgentSettingsCard>
+          <Show when={state.type === "acp"}>
+            <AgentSettingsCard title={t("agentBackend.source")} size="compact">
+              <Select
+                triggerProps={{ "aria-label": t("agentBackend.source") }}
+                options={sourceOptions()}
+                current={sourceOptions().find((o) => o.value === (customMode() ? "custom" : state.source))}
+                value={(o) => o.value}
+                label={(o) => o.label}
+                onSelect={(o) => o && change("source", o.value)}
+                disabled={!!state.busy}
+                variant="secondary"
+                size="small"
+                triggerVariant="settings"
+              />
+            </AgentSettingsCard>
+          </Show>
           <Show when={state.type === "acp"}>
             <Show when={managedMode()}>
               <AgentSettingsCard
@@ -374,9 +375,6 @@ export function AgentBackendSettings(props: {
                 }
                 size="compact"
               >
-                <label for={versionID} class="block text-12-medium text-text-base">
-                  {t("agentBackend.version")}
-                </label>
                 <div class="flex min-w-0 flex-wrap items-center gap-3">
                   <Select
                     triggerProps={{ "aria-label": t("agentBackend.version"), id: versionID }}
@@ -448,13 +446,25 @@ export function AgentBackendSettings(props: {
                 <Show when={status.latest && !recipe()}>
                   <p class="text-12-regular text-text-weak">{t("agentBackend.customOnly")}</p>
                 </Show>
+                <Show when={ACP_COMMAND_PRESETS[props.advisor]}>
+                  {(preset) => (
+                    <button
+                      type="button"
+                      class="self-start text-12-medium text-text-interactive-base hover:underline disabled:opacity-50"
+                      disabled={!!state.busy}
+                      onClick={() => change("command", JSON.stringify(preset()))}
+                    >
+                      {t("agentBackend.suggestedCommand", { command: JSON.stringify(preset()) })}
+                    </button>
+                  )}
+                </Show>
                 <TextField
                   multiline
                   label={t("agentBackend.command")}
                   value={state.command}
                   disabled={!!state.busy}
                   onChange={(value) => change("command", value)}
-                  placeholder={'["/path/to/adapter", "--acp"]'}
+                  placeholder={JSON.stringify(ACP_COMMAND_PRESETS[props.advisor] ?? ["/path/to/adapter", "--acp"])}
                 />
               </AgentSettingsCard>
             </Show>
@@ -565,7 +575,7 @@ export function AgentBackendSettings(props: {
                 <pre class="whitespace-pre-wrap">{state.result?.response}</pre>
               </Show>
               <Show when={state.result?.status === "authentication_required"}>
-                <p class="mt-2">{recipe()?.loginHelp ?? t("agentBackend.loginHelp")}</p>
+                <p class="mt-2">{loginHelp()}</p>
                 <For each={state.result?.authMethods}>
                   {(method) => (
                     <div class="mt-2">
@@ -719,7 +729,9 @@ export function RemoteAgentBackendSettings() {
   const { t } = useLanguage()
   const sdk = useGlobalSDK()
   const server = useServer()
-  const advisorOptions = (["claude", "codex", "pi", "grok", "dsh"] as AdvisorID[]).map((id) => ({
+  const advisorOptions = (["claude", "codex", "pi", "grok", "dsh", "cline", "droid", "qoder"] as AdvisorID[]).map((
+    id,
+  ) => ({
     value: id,
     label: id,
   }))

@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { managedAdvisors } from "./catalog"
 
 const NonEmpty = Schema.String.check(Schema.isMinLength(1))
 
@@ -10,7 +11,7 @@ export const BackendConfig = Schema.Union([
     command: Schema.mutable(Schema.NonEmptyArray(NonEmpty)),
     managed: Schema.optional(
       Schema.Struct({
-        advisor: Schema.Literals(["claude", "codex", "pi"]),
+        advisor: Schema.Literals(managedAdvisors),
         version: NonEmpty,
       }),
     ),
@@ -29,6 +30,9 @@ export const AgentBackends = Schema.Struct({
   grok: Schema.optional(BackendConfig),
   dsh: Schema.optional(BackendConfig),
   pi: Schema.optional(BackendConfig),
+  cline: Schema.optional(BackendConfig),
+  droid: Schema.optional(BackendConfig),
+  qoder: Schema.optional(BackendConfig),
 })
 
 export const AgentChannels = Schema.Struct({

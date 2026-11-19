@@ -22,6 +22,10 @@ for await (const line of createInterface({ input: process.stdin })) {
     text(`PERMISSION_${request.result.outcome.optionId ?? request.result.outcome.outcome}`)
     reply(pendingPermission, { stopReason: "end_turn" })
   } else if (method === "initialize") {
+    if (process.env.ACP_FIXTURE_AUTH === "initialize") {
+      send({ id, error: { code: -32000, message: "Authentication required" } })
+      break
+    }
     reply(id, {
       protocolVersion: process.env.ACP_FIXTURE_VERSION ? 999 : 1,
       agentCapabilities: { loadSession: process.env.ACP_FIXTURE_LOAD_SESSION === "1" },

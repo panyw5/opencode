@@ -1,9 +1,12 @@
-export type ManagedAdvisor = "claude" | "codex" | "pi"
+export const managedAdvisors = ["claude", "codex", "pi", "cline", "droid", "qoder"] as const
+export type ManagedAdvisor = (typeof managedAdvisors)[number]
 export type AdapterRelease = { version: string; integrity: string }
 export type AdapterRecipe = {
   advisor: ManagedAdvisor
   package: string
   entry: string
+  args?: string[]
+  env?: Record<string, string>
   source: string
   loginHelp: string
   requires: string[]
@@ -45,6 +48,52 @@ export const adapterCatalog: AdapterRecipe[] = [
       {
         version: "2.4.0",
         integrity: "sha512-vpY1sFxVQ4t/5nq0XaiHOnXFitIhtaPEf+sVNSGxUuAS/c2p67o4PzW01vTsH88LH7tGRnv9N4WV4V8Jsag86A==",
+      },
+    ],
+  },
+  {
+    advisor: "cline",
+    package: "cline",
+    entry: "bin/cline",
+    args: ["--acp"],
+    source: "https://github.com/cline/cline",
+    loginHelp: "Run cline auth on this backend machine or use an advertised ACP login method, then test again.",
+    requires: ["Node.js >=22", "npm"],
+    releases: [
+      {
+        version: "3.0.74",
+        integrity: "sha512-pCaRaJ6Jx50Urej+BYjpGkpZnFbPDCPsibKEbIjEuVxETXbZ/A1SMij8Thy8FobercevXX6hV7joAzU7OG5lzA==",
+      },
+    ],
+  },
+  {
+    advisor: "droid",
+    package: "droid",
+    entry: "bin/droid",
+    args: ["exec", "--output-format", "acp-daemon"],
+    env: { DROID_DISABLE_AUTO_UPDATE: "true", FACTORY_DROID_AUTO_UPDATE_ENABLED: "false" },
+    source: "https://factory.ai/product/cli",
+    loginHelp: "Use an advertised login method, run droid login, or set FACTORY_API_KEY on the backend machine.",
+    requires: ["Node.js >=22", "npm", "A supported Factory Droid platform"],
+    releases: [
+      {
+        version: "1.14.0",
+        integrity: "sha512-fUTg44RQ8HrQOk3pv+nOv6R5FcnjbBLfqFXeU+cXUgTcpLYDhjxAvyrkPxffP764Jc6Tq8S+ucleM0/xBSaWuw==",
+      },
+    ],
+  },
+  {
+    advisor: "qoder",
+    package: "@qoder-ai/qodercli",
+    entry: "bundle/qodercli.js",
+    args: ["--acp"],
+    source: "https://docs.qoder.com/cli/acp",
+    loginHelp: "Run qodercli login on the backend machine using the same configuration directory, then test again.",
+    requires: ["Node.js >=22", "npm", "A supported Qoder CLI platform"],
+    releases: [
+      {
+        version: "1.1.92",
+        integrity: "sha512-QZ+eEaMSW6ysqNyzDF0og+FwYh1BXBH5HjQc3pPxoDsgG9W5ml2BpTlT+VIURzLSbMgSqmFwrk/Y2BL8U4SBYA==",
       },
     ],
   },

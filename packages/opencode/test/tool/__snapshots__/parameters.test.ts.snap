@@ -767,3 +767,87 @@ exports[`tool parameters JSON Schema (wire shape) pi_consult 1`] = `
   "type": "object",
 }
 `;
+
+exports[`tool parameters JSON Schema (wire shape) cline_consult 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "model": {
+      "description": "Optional Cline model override (passed to \`cline --model\`).",
+      "type": "string",
+    },
+    "prompt": {
+      "description": "Self-contained consultation prompt for local Cline. Include goal, absolute paths, constraints, and the exact form of answer you need. Cline cannot see this conversation.",
+      "type": "string",
+    },
+    "timeout_ms": {
+      "description": "Timeout in milliseconds (default 600000, max 1800000).",
+      "type": "number",
+    },
+    "working_directory": {
+      "description": "Absolute directory Cline should run in. Defaults to the current project directory. Must stay inside an allowed workspace path.",
+      "type": "string",
+    },
+  },
+  "required": [
+    "prompt",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`tool parameters JSON Schema (wire shape) droid_consult 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "model": {
+      "description": "Optional Droid model override (passed to \`droid exec --model\`).",
+      "type": "string",
+    },
+    "prompt": {
+      "description": "Self-contained consultation prompt for local Factory Droid. Include goal, absolute paths, constraints, and the exact form of answer you need. Droid cannot see this conversation.",
+      "type": "string",
+    },
+    "timeout_ms": {
+      "description": "Timeout in milliseconds (default 600000, max 1800000).",
+      "type": "number",
+    },
+    "working_directory": {
+      "description": "Absolute directory Droid should run in. Defaults to the current project directory. Must stay inside an allowed workspace path.",
+      "type": "string",
+    },
+  },
+  "required": [
+    "prompt",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`tool parameters JSON Schema (wire shape) qoder_consult 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "model": {
+      "description": "Optional Qoder model override (passed to \`qoder --model\`).",
+      "type": "string",
+    },
+    "prompt": {
+      "description": "Self-contained consultation prompt for local Qoder. Include goal, absolute paths, constraints, and the exact form of answer you need. Qoder cannot see this conversation.",
+      "type": "string",
+    },
+    "timeout_ms": {
+      "description": "Timeout in milliseconds (default 600000, max 1800000).",
+      "type": "number",
+    },
+    "working_directory": {
+      "description": "Absolute directory Qoder should run in. Defaults to the current project directory. Must stay inside an allowed workspace path.",
+      "type": "string",
+    },
+  },
+  "required": [
+    "prompt",
+  ],
+  "type": "object",
+}
+`;

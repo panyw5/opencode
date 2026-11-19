@@ -7,6 +7,7 @@ import { Global } from "@opencode-ai/core/global"
 import * as Log from "@opencode-ai/core/util/log"
 import { which } from "@/util/which"
 import { adapterCatalog, type AdapterRecipe, type ManagedAdvisor } from "./catalog"
+import type { AcpConfig } from "./schema"
 
 const log = Log.create({ service: "agent-backend.install" })
 const LOCK_POLL_MS = 50
@@ -153,7 +154,7 @@ export class AgentInstallManager {
     }
   }
 
-  async resolve(advisor: string, version: string, allowMissingRuntime = false): Promise<string[]> {
+  async resolve(advisor: string, version: string, allowMissingRuntime = false): Promise<AcpConfig["command"]> {
     const { recipe, release } = this.release(advisor, version)
     const directory = this.directory(advisor, version)
     const receipt: Receipt = JSON.parse(await fs.readFile(path.join(directory, "receipt.json"), "utf8"))
@@ -169,7 +170,7 @@ export class AgentInstallManager {
       throw new AgentInstallError("integrity", "Adapter executable escapes the managed installation")
     if (!this.binaries.node && !allowMissingRuntime)
       throw new AgentInstallError("dependency", "Node.js is not installed on this backend")
-    return [this.binaries.node ?? "node", entry]
+    return [this.binaries.node ?? "node", entry, ...(recipe.args ?? [])]
   }
 
   async status() {
@@ -331,15 +332,21 @@ export class AgentInstallManager {
       advisor,
       async () => {
         const command = await this.resolve(advisor, version)
+        const { recipe } = this.release(advisor, version)
         const directory = path.join(this.root, "leases", advisor, version)
         await fs.mkdir(directory, { recursive: true })
         const file = path.join(directory, `${process.pid}-${randomUUID()}.json`)
         await fs.writeFile(file, JSON.stringify({ pid: process.pid }))
-        return { command, release: () => fs.rm(file, { force: true }) }
+        return { command, env: recipe.env, release: () => fs.rm(file, { force: true }) }
       },
       ACQUIRE_LOCK_WAIT_MS,
     )
   }
+}
+
+export function applyAdapterLease(config: AcpConfig, lease?: Awaited<ReturnType<AgentInstallManager["acquire"]>>) {
+  if (!lease) return config
+  return { ...config, command: lease.command, env: { ...config.env, ...lease.env } }
 }
 
 let manager: AgentInstallManager | undefined

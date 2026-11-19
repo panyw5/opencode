@@ -1,5 +1,14 @@
 /** Reserved @-mention names that route to external CLI consult tools (not task/subagent). */
-export type ConsultMentionID = "codex" | "claude" | "grok" | "dsh" | "pi" | "gpt-pro"
+export type ConsultMentionID =
+  | "codex"
+  | "claude"
+  | "grok"
+  | "dsh"
+  | "pi"
+  | "cline"
+  | "droid"
+  | "qoder"
+  | "gpt-pro"
 
 export type ConsultMentionTool =
   | "codex_consult"
@@ -7,6 +16,9 @@ export type ConsultMentionTool =
   | "grok_consult"
   | "dsh_consult"
   | "pi_consult"
+  | "cline_consult"
+  | "droid_consult"
+  | "qoder_consult"
   | "gpt_pro_consult"
 
 export const CONSULT_MENTION_IDS = [
@@ -15,6 +27,9 @@ export const CONSULT_MENTION_IDS = [
   "grok",
   "dsh",
   "pi",
+  "cline",
+  "droid",
+  "qoder",
   "gpt-pro",
 ] as const satisfies readonly ConsultMentionID[]
 
@@ -24,6 +39,9 @@ export const CONSULT_MENTIONS: Record<ConsultMentionID, { tool: ConsultMentionTo
   grok: { tool: "grok_consult", label: "Grok" },
   dsh: { tool: "dsh_consult", label: "DeepSeek" },
   pi: { tool: "pi_consult", label: "Pi" },
+  cline: { tool: "cline_consult", label: "Cline" },
+  droid: { tool: "droid_consult", label: "Factory Droid" },
+  qoder: { tool: "qoder_consult", label: "Qoder" },
   "gpt-pro": { tool: "gpt_pro_consult", label: "GPT-6 Pro (Chat)" },
 }
 
@@ -38,6 +56,9 @@ export function isConsultTool(tool: string): tool is ConsultMentionTool {
     tool === "grok_consult" ||
     tool === "dsh_consult" ||
     tool === "pi_consult" ||
+    tool === "cline_consult" ||
+    tool === "droid_consult" ||
+    tool === "qoder_consult" ||
     tool === "gpt_pro_consult"
   )
 }

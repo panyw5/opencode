@@ -456,7 +456,7 @@ describe("external CLI child sessions", () => {
     }),
   )
 
-  for (const name of ["claude_consult", "grok_consult", "dsh_consult", "pi_consult"]) {
+  for (const name of ["claude_consult", "grok_consult", "dsh_consult", "pi_consult", "cline_consult", "droid_consult", "qoder_consult"]) {
     it.instance(`projects ${name} through the shared session interface`, () =>
       Effect.gen(function* () {
         const f = yield* fixture(name)

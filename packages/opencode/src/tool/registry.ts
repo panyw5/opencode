@@ -40,6 +40,9 @@ import { ClaudeConsultTool } from "./claude_consult"
 import { GrokConsultTool } from "./grok_consult"
 import { DshConsultTool } from "./dsh_consult"
 import { PiConsultTool } from "./pi_consult"
+import { ClineConsultTool } from "./cline_consult"
+import { DroidConsultTool } from "./droid_consult"
+import { QoderConsultTool } from "./qoder_consult"
 import { GptProConsultTool } from "./gpt_pro_consult"
 import { RepoCloneTool } from "./repo_clone"
 import { RepoOverviewTool } from "./repo_overview"
@@ -179,6 +182,9 @@ const BUILTINS = {
   grok_consult: GrokConsultTool,
   dsh_consult: DshConsultTool,
   pi_consult: PiConsultTool,
+  cline_consult: ClineConsultTool,
+  droid_consult: DroidConsultTool,
+  qoder_consult: QoderConsultTool,
   gpt_pro_consult: GptProConsultTool,
   skill: SkillTool,
   apply_patch: ApplyPatchTool,
@@ -422,7 +428,16 @@ export const layer: Layer.Layer<
         for (const def of Object.values(defs)) {
           if (CODE_MODE_READONLY.has(def.id)) Object.assign(def, { codemode: "readonly" })
         }
-        for (const id of ["codex_consult", "claude_consult", "grok_consult", "dsh_consult", "pi_consult"] as const) {
+        for (const id of [
+          "codex_consult",
+          "claude_consult",
+          "grok_consult",
+          "dsh_consult",
+          "pi_consult",
+          "cline_consult",
+          "droid_consult",
+          "qoder_consult",
+        ] as const) {
           const advisor = id.replace("_consult", "") as Advisor
           defs[id] = external.wrap(routeAgentBackend(advisor, defs[id], config)) as (typeof defs)[typeof id]
         }

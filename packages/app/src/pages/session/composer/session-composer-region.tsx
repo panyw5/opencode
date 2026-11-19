@@ -47,6 +47,9 @@ const externalAdvisorIcons = {
   grok: "xai",
   dsh: "deepseek",
   pi: "synthetic",
+  cline: "cline",
+  droid: "droid",
+  qoder: "qoder",
 } satisfies Record<NonNullable<Session["external"]>["advisor"], string>
 
 const externalAdvisorNames = {
@@ -55,6 +58,9 @@ const externalAdvisorNames = {
   grok: "Grok",
   dsh: "DeepSeek",
   pi: "Pi",
+  cline: "Cline",
+  droid: "Droid",
+  qoder: "Qoder",
 } satisfies Record<NonNullable<Session["external"]>["advisor"], string>
 
 function ComposerDockExit(props: {
@@ -201,9 +207,11 @@ function SessionBackgroundShellMenu(props: {
         <DropdownMenu.Content
           class="session-child-agent-scrollbar w-[420px] max-w-[calc(100vw-32px)]"
           style={{
-            "max-height": "min(520px, calc(100dvh - 160px))",
+            "max-height":
+              "min(520px, calc(100dvh - 160px), var(--kb-popper-content-available-height, 520px))",
             "overflow-y": "auto",
             "overscroll-behavior": "contain",
+            "touch-action": "pan-y",
             "scrollbar-gutter": "stable",
           }}
         >
@@ -533,9 +541,11 @@ function SessionChildAgentMenu(props: {
             class="session-child-agent-scrollbar w-[340px] max-w-[calc(100vw-32px)]"
             data-scrolling={store.scrolling ? "true" : undefined}
             style={{
-              "max-height": "min(520px, calc(100dvh - 160px))",
+              "max-height":
+                "min(520px, calc(100dvh - 160px), var(--kb-popper-content-available-height, 520px))",
               "overflow-y": "auto",
               "overscroll-behavior": "contain",
+              "touch-action": "pan-y",
               "scrollbar-gutter": "stable",
             }}
             onKeyDown={handleKeyDown}

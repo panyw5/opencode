@@ -1347,7 +1347,7 @@ export class AgentBackend extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
-      advisor?: "claude" | "codex" | "pi"
+      advisor?: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
       version?: string
       action?: "install" | "remove"
     },
@@ -1423,7 +1423,7 @@ export class AgentBackend extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
-      advisor?: "claude" | "codex" | "pi" | "grok" | "dsh"
+      advisor?: "claude" | "codex" | "pi" | "grok" | "dsh" | "cline" | "droid" | "qoder"
       config?:
         | {
             type: "cli-json"
@@ -1435,7 +1435,7 @@ export class AgentBackend extends HeyApiClient {
             type: "acp"
             command: Array<string>
             managed?: {
-              advisor: "claude" | "codex" | "pi"
+              advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
               version: string
             }
             env?: {
@@ -1484,7 +1484,7 @@ export class AgentBackend extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
-      advisor?: "codex" | "claude" | "grok" | "dsh" | "pi"
+      advisor?: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder"
     },
     options?: Options<never, ThrowOnError>,
   ) {

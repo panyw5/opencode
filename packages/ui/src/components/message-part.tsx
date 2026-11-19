@@ -564,6 +564,24 @@ export function getToolInfo(tool: string, input: any = {}, metadata: any = {}): 
       }
     case "pi_consult":
       return { icon: "brain", title: i18n.t("ui.tool.pi"), subtitle: text(input.prompt) ?? text(metadata.session_id) }
+    case "cline_consult":
+      return {
+        icon: "brain",
+        title: i18n.t("ui.tool.cline"),
+        subtitle: text(metadata.preview) ?? text(input.prompt) ?? text(metadata.session_id),
+      }
+    case "droid_consult":
+      return {
+        icon: "brain",
+        title: i18n.t("ui.tool.droid"),
+        subtitle: text(metadata.preview) ?? text(input.prompt) ?? text(metadata.session_id),
+      }
+    case "qoder_consult":
+      return {
+        icon: "brain",
+        title: i18n.t("ui.tool.qoder"),
+        subtitle: text(metadata.preview) ?? text(input.prompt) ?? text(metadata.session_id),
+      }
     case "bash":
     case "hook":
     case "exec":
@@ -3882,7 +3900,7 @@ for (const kind of [
   })
 }
 
-for (const advisor of ["codex", "claude", "grok", "dsh", "pi"] as const) {
+for (const advisor of ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder"] as const) {
   registerBuiltinTool({
     name: `${advisor}_consult`,
     render(props) {

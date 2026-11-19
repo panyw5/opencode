@@ -111,6 +111,9 @@ export const iconNames = [
   "abacus",
   "cortecs",
   "jiekou",
+  "cline",
+  "droid",
+  "qoder",
 ] as const
 
 export type IconName = (typeof iconNames)[number]

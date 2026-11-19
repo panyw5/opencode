@@ -3,7 +3,7 @@ import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "tool.advisor_intervention" })
 
-export type AdvisorKind = "codex" | "claude" | "grok" | "dsh" | "pi"
+export type AdvisorKind = "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder"
 
 export type AdvisorInterventionSnapshot = {
   available: true

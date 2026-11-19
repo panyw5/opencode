@@ -2,7 +2,17 @@ import type { CliAgentID, CliAgents, Platform } from "@/context/platform"
 import type { Config } from "@opencode-ai/sdk/v2/client"
 
 /** Reserved @-mention names for desktop CLI consult advisors (must match backend). */
-export const CONSULT_MENTION_IDS = ["codex", "claude", "grok", "dsh", "pi", "gpt-pro"] as const satisfies readonly (
+export const CONSULT_MENTION_IDS = [
+  "codex",
+  "claude",
+  "grok",
+  "dsh",
+  "pi",
+  "cline",
+  "droid",
+  "qoder",
+  "gpt-pro",
+] as const satisfies readonly (
   | CliAgentID
   | "gpt-pro"
 )[]
@@ -36,7 +46,7 @@ export async function loadReadyConsultMentions(
   configuration?: Pick<Config, "agent_backends" | "external_agents" | "pi">,
 ): Promise<ReadyConsultMention[]> {
   const ready: ReadyConsultMention[] = []
-  for (const id of ["codex", "claude", "grok", "dsh", "pi"] as const) {
+  for (const id of ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder"] as const) {
     const backend = configuration?.agent_backends?.[id]
     if (backend?.type !== "acp" || !backend.command[0]?.trim()) continue
     const configured = id === "pi" ? configuration?.pi : configuration?.external_agents?.[id]
@@ -48,7 +58,16 @@ export async function loadReadyConsultMentions(
         continue
       }
     }
-    const labels = { codex: "Codex", claude: "Claude", pi: "Pi", grok: "Grok", dsh: "DSH" }
+    const labels = {
+      codex: "Codex",
+      claude: "Claude",
+      pi: "Pi",
+      grok: "Grok",
+      dsh: "DSH",
+      cline: "Cline",
+      droid: "Factory Droid",
+      qoder: "Qoder",
+    }
     ready.push({ id, name: id, display: `${labels[id]} (ACP)` })
   }
   if (gptPro) {

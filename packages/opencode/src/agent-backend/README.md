@@ -1,7 +1,7 @@
 # External Agent Backends
 
 The external advisor tools (`codex_consult`, `claude_consult`, `grok_consult`,
-`dsh_consult`, `pi_consult`) share one boundary:
+`dsh_consult`, `pi_consult`, `cline_consult`, `droid_consult`, `qoder_consult`) share one boundary:
 
 ```text
 Session / UI
@@ -17,7 +17,7 @@ GPT Pro and the standalone Hermes/GenericAgent servers are separate integrations
 
 Add `agent_backends` to your project's `opencode.json` or global configuration.
 Omitting an advisor keeps its existing implementation: Pi uses native RPC;
-Codex, Claude, Grok and DSH use their existing CLI JSON runners. Existing
+the other advisors use their existing CLI JSON runners. Existing
 `external_agents` and `pi` enable switches still apply.
 
 ```json
@@ -49,12 +49,32 @@ methods as a fallback. Unsupported selections fail rather than being ignored.
 DSH's CLI-specific tool parameters cannot be used with ACP; configure your
 adapter through `command`/`env` instead. DSH CLI defaults apply only to CLI JSON.
 
+### Built-in CLI ACP commands
+
+In **Config > External Agents**, choose **ACP** and **Existing installation / custom command**
+to use the prefilled command. Install the CLI separately on the backend machine if needed,
+then choose **Save and enable backend**. The connection test does not send a model prompt.
+
+| Agent | Command | Backend sign-in |
+| --- | --- | --- |
+| Cline | `["cline", "--acp"]` | `cline auth` or an advertised ACP login method |
+| Factory Droid | `["droid", "exec", "--output-format", "acp"]` | `droid login` or `FACTORY_API_KEY` in the backend environment |
+| Qoder CLI | `["qodercli", "--acp"]` | `qodercli login` with the same configuration directory as the ACP process |
+
+The executable must be on the backend's `PATH`, or you can provide an absolute path.
+An unauthenticated Droid may return an authentication error before advertising any login methods;
+complete sign-in on the backend and try again.
+
 ## Managed Installation
 
 Config > External Agents exposes transport selection, reviewed adapter releases,
 installation confirmation, version selection, connection tests and authentication
-guidance. Claude, Codex and Pi have pinned npm recipes in `catalog.ts`; DSH and
-Grok currently use existing/custom ACP commands. The catalog is reviewed and
+guidance. Claude, Codex, Pi, Cline, Droid and Qoder have pinned npm recipes in `catalog.ts`;
+DSH and Grok use existing/custom ACP commands. Managed Qoder uses the official
+`@qoder-ai/qodercli` package with `--acp`. The managed Droid release follows the
+[ACP Registry](https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json):
+it runs `droid exec --output-format acp-daemon` with Droid's automatic updates disabled.
+The catalog is reviewed and
 append-only: an online registry or project cannot supply executable install steps.
 
 Installations live under the connected backend's data directory in

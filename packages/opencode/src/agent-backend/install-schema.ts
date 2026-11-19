@@ -1,8 +1,9 @@
 import { Schema } from "effect"
 import { BackendConfig } from "./schema"
+import { managedAdvisors } from "./catalog"
 
-export const ManagedAdvisor = Schema.Literals(["claude", "codex", "pi"])
-export const AdvisorID = Schema.Literals(["claude", "codex", "pi", "grok", "dsh"])
+export const ManagedAdvisor = Schema.Literals(managedAdvisors)
+export const AdvisorID = Schema.Literals(["claude", "codex", "pi", "grok", "dsh", "cline", "droid", "qoder"])
 export const InstallAction = Schema.Literals(["install", "remove"])
 export const PrepareInput = Schema.Struct({ advisor: ManagedAdvisor, version: Schema.String, action: InstallAction })
 export const PreparedInstall = Schema.Struct({

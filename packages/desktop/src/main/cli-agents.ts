@@ -21,6 +21,9 @@ import {
 } from "./dsh-status"
 import { getGrokInfo, testGrokConfig } from "./grok-status"
 import { getPiInfo, testPiConfig } from "./pi-status"
+import { getClineInfo, testClineConfig } from "./cline-status"
+import { getDroidInfo, testDroidConfig } from "./droid-status"
+import { getQoderInfo, testQoderConfig } from "./qoder-status"
 import { parseDshConsultDefaults } from "@opencode-ai/util/dsh-config"
 
 type CliAgentDefinition = {
@@ -89,6 +92,42 @@ const cliAgents: Record<CliAgentID, CliAgentDefinition> = {
     },
     getInfo: getDshInfo,
     test: testDshConfig,
+  },
+  cline: {
+    descriptor: {
+      id: "cline",
+      label: "Cline",
+      command: "cline",
+      sourceUrl: "https://github.com/cline/cline",
+      configHomeLabel: "CLINE_DIR",
+      configHomePlaceholder: "~/.cline",
+    },
+    getInfo: getClineInfo,
+    test: testClineConfig,
+  },
+  droid: {
+    descriptor: {
+      id: "droid",
+      label: "Factory Droid",
+      command: "droid",
+      sourceUrl: "https://docs.factory.ai",
+      configHomeLabel: "DROID_CONFIG_DIR",
+      configHomePlaceholder: "~/.factory",
+    },
+    getInfo: getDroidInfo,
+    test: testDroidConfig,
+  },
+  qoder: {
+    descriptor: {
+      id: "qoder",
+      label: "Qoder",
+      command: "qoder",
+      sourceUrl: "https://qoder.com/cli",
+      configHomeLabel: "QODER_CONFIG_DIR",
+      configHomePlaceholder: "~/.qoder",
+    },
+    getInfo: getQoderInfo,
+    test: testQoderConfig,
   },
 }
 

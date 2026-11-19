@@ -12,6 +12,9 @@ const consultChips: Record<string, Pick<ProviderChipProps, "icon" | "tone">> = {
   claude: { icon: "anthropic", tone: "claude" },
   grok: { icon: "xai", tone: "neutral" },
   dsh: { icon: "deepseek", tone: "deepseek" },
+  cline: { icon: "cline", tone: "neutral" },
+  droid: { icon: "droid", tone: "neutral" },
+  qoder: { icon: "qoder", tone: "neutral" },
 }
 
 export type AtOption =
