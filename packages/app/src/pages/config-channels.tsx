@@ -835,7 +835,7 @@ export const ConfigChannelsDetail: Component<{
                             </Show>
                             <Show when={discord()}>
                               {(cfg) => (
-                                <>
+                                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                   <TextField
                                     label={language.t("config.channels.field.botToken")}
                                     type="password"
@@ -855,31 +855,29 @@ export const ConfigChannelsDetail: Component<{
                                       } as Partial<ChannelDiscordConfig>)
                                     }
                                   />
-                                </>
+                                </div>
                               )}
                             </Show>
                             <Show when={qq()}>
                               {(cfg) => (
-                                <>
-                                  <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                    <TextField
-                                      label={language.t("config.channels.field.appId")}
-                                      value={cfg().appId}
-                                      onChange={(v) =>
-                                        void patchChannel(row.name, { appId: v ?? "" } as Partial<ChannelQqConfig>)
-                                      }
-                                    />
-                                    <TextField
-                                      label={language.t("config.channels.field.clientSecret")}
-                                      type="password"
-                                      value={cfg().clientSecret}
-                                      onChange={(v) =>
-                                        void patchChannel(row.name, {
-                                          clientSecret: v ?? "",
-                                        } as Partial<ChannelQqConfig>)
-                                      }
-                                    />
-                                  </div>
+                                <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                  <TextField
+                                    label={language.t("config.channels.field.appId")}
+                                    value={cfg().appId}
+                                    onChange={(v) =>
+                                      void patchChannel(row.name, { appId: v ?? "" } as Partial<ChannelQqConfig>)
+                                    }
+                                  />
+                                  <TextField
+                                    label={language.t("config.channels.field.clientSecret")}
+                                    type="password"
+                                    value={cfg().clientSecret}
+                                    onChange={(v) =>
+                                      void patchChannel(row.name, {
+                                        clientSecret: v ?? "",
+                                      } as Partial<ChannelQqConfig>)
+                                    }
+                                  />
                                   <TextField
                                     label={language.t("config.channels.field.apiBaseUrl")}
                                     value={cfg().apiBaseUrl ?? "https://api.bot.qq.com"}
@@ -889,7 +887,7 @@ export const ConfigChannelsDetail: Component<{
                                       } as Partial<ChannelQqConfig>)
                                     }
                                   />
-                                </>
+                                </div>
                               )}
                             </Show>
 
@@ -1017,27 +1015,44 @@ export const ConfigChannelsDetail: Component<{
 
             <Switch>
               <Match when={props.platform === "feishu"}>
-                <div class="flex flex-col gap-1">
-                  <span class="text-12-medium text-text-base">{language.t("config.channels.feishu.setup")}</span>
-                  <Select
-                    triggerProps={{ "aria-label": language.t("config.channels.feishu.setup") }}
-                    options={feishuModeOptions()}
-                    current={feishuModeOptions().find((o) => o.value === form.mode)}
-                    value={(o) => o.value}
-                    label={(o) => o.label}
-                    onSelect={(o) => {
-                      if (!o) return
-                      stopQr()
-                      setForm("mode", o.value as "qr" | "manual")
-                      setQrStatus("idle")
-                      setQrError("")
-                      setQrSession(null)
-                      setQrImage("")
-                    }}
-                    variant="secondary"
-                    size="small"
-                    triggerVariant="settings"
-                    triggerStyle={{ width: "100%" }}
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div class="flex flex-col gap-1">
+                    <span class="text-12-medium text-text-base">{language.t("config.channels.feishu.setup")}</span>
+                    <Select
+                      triggerProps={{ "aria-label": language.t("config.channels.feishu.setup") }}
+                      options={feishuModeOptions()}
+                      current={feishuModeOptions().find((o) => o.value === form.mode)}
+                      value={(o) => o.value}
+                      label={(o) => o.label}
+                      onSelect={(o) => {
+                        if (!o) return
+                        stopQr()
+                        setForm("mode", o.value as "qr" | "manual")
+                        setQrStatus("idle")
+                        setQrError("")
+                        setQrSession(null)
+                        setQrImage("")
+                      }}
+                      variant="secondary"
+                      size="small"
+                      triggerVariant="settings"
+                      triggerStyle={{ width: "100%" }}
+                    />
+                  </div>
+                  <TextField
+                    label={language.t("config.channels.field.appId")}
+                    class="font-mono"
+                    placeholder="cli_xxx"
+                    value={form.appId}
+                    onChange={(v) => setForm("appId", v ?? "")}
+                  />
+                  <TextField
+                    label={language.t("config.channels.field.appSecret")}
+                    class="font-mono"
+                    type="password"
+                    placeholder="••••••••"
+                    value={form.appSecret}
+                    onChange={(v) => setForm("appSecret", v ?? "")}
                   />
                 </div>
 
@@ -1122,66 +1137,30 @@ export const ConfigChannelsDetail: Component<{
                         </div>
                       </div>
                     </Show>
-
-                    <Show when={qrStatus() === "success"}>
-                      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <TextField
-                          label={language.t("config.channels.field.appId")}
-                          class="font-mono"
-                          value={form.appId}
-                          onChange={(v) => setForm("appId", v ?? "")}
-                        />
-                        <TextField
-                          label={language.t("config.channels.field.appSecret")}
-                          class="font-mono"
-                          type="password"
-                          value={form.appSecret}
-                          onChange={(v) => setForm("appSecret", v ?? "")}
-                        />
-                      </div>
-                    </Show>
-                  </div>
-                </Show>
-
-                <Show when={form.mode === "manual"}>
-                  <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <TextField
-                      label={language.t("config.channels.field.appId")}
-                      class="font-mono"
-                      placeholder="cli_xxx"
-                      value={form.appId}
-                      onChange={(v) => setForm("appId", v ?? "")}
-                    />
-                    <TextField
-                      label={language.t("config.channels.field.appSecret")}
-                      class="font-mono"
-                      type="password"
-                      placeholder="••••••••"
-                      value={form.appSecret}
-                      onChange={(v) => setForm("appSecret", v ?? "")}
-                    />
                   </div>
                 </Show>
               </Match>
 
               <Match when={props.platform === "discord"}>
                 <p class="text-12-regular text-text-weak">{language.t("config.channels.discord.hint")}</p>
-                <TextField
-                  label={language.t("config.channels.field.botToken")}
-                  type="password"
-                  placeholder="Bot token"
-                  value={form.botToken}
-                  onChange={(v) => setForm("botToken", v ?? "")}
-                />
-                <TextField
-                  label={language.t("config.channels.field.proxy")}
-                  placeholder="http://127.0.0.1:7890"
-                  value={form.proxy}
-                  onChange={(v) => setForm("proxy", v ?? "")}
-                />
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <TextField
+                    label={language.t("config.channels.field.botToken")}
+                    type="password"
+                    placeholder="Bot token"
+                    value={form.botToken}
+                    onChange={(v) => setForm("botToken", v ?? "")}
+                  />
+                  <TextField
+                    label={language.t("config.channels.field.proxy")}
+                    placeholder="http://127.0.0.1:7890"
+                    value={form.proxy}
+                    onChange={(v) => setForm("proxy", v ?? "")}
+                  />
+                </div>
               </Match>
               <Match when={props.platform === "qq"}>
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <TextField
                     label={language.t("config.channels.field.appId")}
                     placeholder="QQ Bot App ID"
@@ -1195,13 +1174,13 @@ export const ConfigChannelsDetail: Component<{
                     value={form.appSecret}
                     onChange={(v) => setForm("appSecret", v ?? "")}
                   />
+                  <TextField
+                    label={language.t("config.channels.field.apiBaseUrl")}
+                    placeholder="https://api.bot.qq.com"
+                    value={form.apiBaseUrl}
+                    onChange={(v) => setForm("apiBaseUrl", v ?? "")}
+                  />
                 </div>
-                <TextField
-                  label={language.t("config.channels.field.apiBaseUrl")}
-                  placeholder="https://api.bot.qq.com"
-                  value={form.apiBaseUrl}
-                  onChange={(v) => setForm("apiBaseUrl", v ?? "")}
-                />
               </Match>
             </Switch>
 
