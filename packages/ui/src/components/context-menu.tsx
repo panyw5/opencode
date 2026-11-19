@@ -23,7 +23,8 @@ export interface ContextMenuSubTriggerProps extends ComponentProps<typeof Kobalt
 export interface ContextMenuSubContentProps extends ComponentProps<typeof Kobalte.SubContent> {}
 
 function ContextMenuRoot(props: ContextMenuProps) {
-  return <Kobalte {...props} data-component="context-menu" />
+  // See DropdownMenuRoot: Kobalte's default scroll lock breaks touch scrolling.
+  return <Kobalte preventScroll={false} {...props} data-component="context-menu" />
 }
 
 function ContextMenuTrigger(props: ParentProps<ContextMenuTriggerProps>) {

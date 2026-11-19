@@ -111,6 +111,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
 
   return (
     <Kobalte<T, { category: string; options: T[] }>
+      preventScroll={false}
       {...others}
       multiple={false}
       disabled={local.disabled}

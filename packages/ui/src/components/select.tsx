@@ -115,6 +115,7 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
   return (
     // @ts-ignore
     <Kobalte<T, { category: string; options: T[] }>
+      preventScroll={false}
       {...others}
       data-component="select"
       data-trigger-style={local.triggerVariant}

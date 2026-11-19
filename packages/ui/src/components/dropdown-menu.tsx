@@ -24,7 +24,10 @@ export interface DropdownMenuSubTriggerProps extends ComponentProps<typeof Kobal
 export interface DropdownMenuSubContentProps extends ComponentProps<typeof Kobalte.SubContent> {}
 
 function DropdownMenuRoot(props: DropdownMenuProps) {
-  return <Kobalte {...props} data-component="dropdown-menu" />
+  // Kobalte defaults modal=true which enables solid-prevent-scroll: a document-level
+  // touchmove interceptor that locks the scroll axis from the first move sample, so
+  // slightly diagonal touch drags get misclassified and the menu can't scroll at all.
+  return <Kobalte preventScroll={false} {...props} data-component="dropdown-menu" />
 }
 
 function DropdownMenuTrigger(props: ParentProps<DropdownMenuTriggerProps>) {

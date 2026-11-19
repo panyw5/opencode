@@ -183,11 +183,12 @@ function MenuV2Content(props: ComponentProps<typeof DropdownMenu.Content>) {
 }
 
 function MenuV2Root(props: ComponentProps<typeof DropdownMenu>) {
-  return <DropdownMenu {...props} />
+  // Kobalte's default scroll lock breaks touch scrolling; see DropdownMenu wrapper.
+  return <DropdownMenu preventScroll={false} {...props} />
 }
 
 function MenuV2ContextRoot(props: ComponentProps<typeof ContextMenu>) {
-  return <ContextMenu {...props} />
+  return <ContextMenu preventScroll={false} {...props} />
 }
 
 function MenuV2ContextContent(props: ComponentProps<typeof ContextMenu.Content>) {
