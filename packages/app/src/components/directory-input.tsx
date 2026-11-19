@@ -34,6 +34,8 @@ export function DirectoryInput(props: {
   home?: string
   absolute?: boolean
   suffix?: string
+  /** "default" matches TextField styling (40px); "large" keeps the taller launcher look (44px). */
+  size?: "default" | "large"
   onChange: (value: string) => void
   onSubmit?: (directory: string) => void
   onBrowse?: () => void
@@ -186,7 +188,9 @@ export function DirectoryInput(props: {
         sameWidth
       >
         <div class="flex min-w-0 gap-2">
-          <Popover.Anchor class="flex h-11 min-w-0 flex-1 items-center overflow-hidden rounded-lg border border-border-weak-base bg-background-base text-text-strong transition-colors focus-within:border-border-strong-base focus-within:ring-1 focus-within:ring-border-strong-base">
+          <Popover.Anchor
+            class={`flex ${props.size === "large" ? "h-11 rounded-lg bg-background-base" : "h-10 rounded-[10px] bg-input-base"} min-w-0 flex-1 items-center overflow-hidden border border-border-weak-base text-text-strong transition-colors focus-within:border-border-strong-base focus-within:ring-1 focus-within:ring-border-strong-base`}
+          >
             <span class="pointer-events-none flex items-center pl-3 text-icon-weak" aria-hidden="true">
               <Icon name="terminal" size="normal" />
             </span>
@@ -228,7 +232,7 @@ export function DirectoryInput(props: {
             type="button"
             size="large"
             variant="secondary"
-            class="!h-11 shrink-0 justify-center px-3"
+            class={props.size === "large" ? "!h-11 shrink-0 justify-center px-3" : "!h-10 shrink-0 justify-center px-3"}
             disabled={props.disabled || state.browsing}
             aria-label={language.t("directoryInput.browse", { label: props.label })}
             onClick={() => void browse()}

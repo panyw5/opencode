@@ -43,6 +43,7 @@ export function HomePathInput(props: { home: string; onOpen: (directory: string)
         <DirectoryInput
           label={language.t("home.quickAdd.label")}
           hideLabel
+          size="large"
           home={props.home}
           value={state.query}
           placeholder={language.t("home.quickAdd.placeholder")}
