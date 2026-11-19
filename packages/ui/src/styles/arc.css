@@ -568,7 +568,7 @@ html[data-theme="arc"][data-color-scheme="light"] [data-component="trellis-task-
    background that becomes muddy grey on light canvases */
 html[data-theme="arc"] [data-dock-surface="shell"] {
   --dock-shell-radius: var(--radius-2xl);
-  background-color: var(--dock-shell-bg);
+  background-color: var(--permission-background, var(--dock-shell-bg));
 }
 
 html[data-theme="arc"] [data-dock-surface="tray"] {

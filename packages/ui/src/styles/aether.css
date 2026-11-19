@@ -74,7 +74,7 @@ html[data-theme="aether"] [data-component="collapsible"].tool-collapsible {
 }
 
 html[data-theme="aether"] [data-dock-surface="shell"] {
-  background-color: #ffffff !important;
+  background-color: var(--permission-background, #ffffff) !important;
   border: 1px solid #ddd6c8;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
@@ -86,7 +86,7 @@ html[data-theme="aether"] [data-dock-surface="shell"] {
 }
 
 html[data-theme="aether"] [data-dock-surface="tray"] {
-  background-color: #faf9f5;
+  background-color: var(--permission-background, #faf9f5);
   border: 1px solid #e8e2d8;
   --dock-shell-radius: var(--radius-4xl);
 }
@@ -104,7 +104,7 @@ html[data-theme="aether"][data-color-scheme="dark"] [data-component="collapsible
 }
 
 html[data-theme="aether"][data-color-scheme="dark"] [data-dock-surface="shell"] {
-  background-color: #1e1b18 !important;
+  background-color: var(--permission-background, #1e1b18) !important;
   border-color: #3d3830;
   box-shadow:
     0 0 0 0.5px rgba(193, 95, 60, 0.08),
@@ -113,7 +113,7 @@ html[data-theme="aether"][data-color-scheme="dark"] [data-dock-surface="shell"] 
 }
 
 html[data-theme="aether"][data-color-scheme="dark"] [data-dock-surface="tray"] {
-  background-color: #1a1815;
+  background-color: var(--permission-background, #1a1815);
   border-color: #3d3830;
 }
 

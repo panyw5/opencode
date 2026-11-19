@@ -1414,6 +1414,7 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
 }
 
 [data-component="dock-prompt"][data-kind="permission"] {
+  --permission-background: var(--surface-raised-stronger-non-alpha);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -1425,23 +1426,11 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
     padding-bottom: 8px;
   }
 
-  [data-slot="question-header"] {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 8px 12px;
-    margin: -8px -12px 0 -12px;
-    border-radius: 4px;
-    background-color: var(--surface-inset-strong);
-  }
-
-  [data-slot="question-header-text"] {
-    flex: 1;
-    font-size: 16px;
-    color: var(--text-base);
-    line-height: 1.5;
-    word-break: break-word;
+  [data-slot="permission-body"][data-dock-surface="shell"],
+  [data-slot="permission-footer"][data-dock-surface="tray"] {
+    background: var(--permission-background);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   [data-slot="question-collapse"] {
@@ -1480,14 +1469,10 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
     }
   }
 
-  [data-slot="question-tabs"],
   [data-slot="permission-body"] {
     display: flex;
     flex-direction: column;
-    gap: 16px;
-    flex: 1;
-    min-height: 0;
-    padding: 12px 12px 0;
+    padding: 12px;
   }
 
   [data-slot="permission-header"] {
@@ -1495,24 +1480,22 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 8px 12px 0;
+    padding: 0 4px;
   }
 
   [data-slot="permission-row"] {
-    display: grid;
-    grid-template-columns: 20px 1fr;
-    column-gap: 8px;
-    align-items: start;
-  }
-
-  [data-slot="permission-row"][data-variant="header"] {
+    display: flex;
     align-items: center;
+    gap: 8px;
+    min-width: 0;
   }
 
   [data-slot="permission-icon"] {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
+    width: 16px;
   }
 
   [data-slot="permission-icon"] [data-component="icon"] {
@@ -1525,47 +1508,33 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
     font-weight: var(--font-weight-medium);
     line-height: var(--line-height-large);
     color: var(--text-strong);
-    min-width: 0;
+    flex-shrink: 0;
+    white-space: nowrap;
   }
 
-  [data-slot="permission-content"] {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    flex: 1;
-    min-height: 0;
+  [data-slot="permission-hint"],
+  [data-slot="permission-patterns"] {
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    white-space: pre;
+    font-size: 14px;
+    line-height: var(--line-height-large);
   }
 
   [data-slot="permission-hint"] {
-    font-family: var(--font-family-sans);
-    font-size: 14px;
-    font-weight: var(--font-weight-regular);
-    line-height: var(--line-height-large);
     color: var(--text-weak);
-    padding: 0;
   }
 
   [data-slot="permission-patterns"] {
     display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-top: 8px;
-    margin-bottom: 16px;
-    padding: 1px 0 8px;
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
+    gap: 12px;
+    margin: 4px 4px 0 28px;
+  }
 
-    &::-webkit-scrollbar {
-      display: none;
-    }
-
-    code {
-      font-size: 14px;
-      line-height: var(--line-height-large);
-    }
+  [data-slot="permission-pattern"] {
+    font-family: var(--font-family-mono);
+    color: var(--text-base);
   }
 
   [data-slot="permission-footer"] {
@@ -1614,10 +1583,14 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
       }
 
       &[data-variant="primary"] {
-        box-shadow: 0 2px 8px color-mix(in srgb, var(--icon-strong-base) 26%, transparent);
+        &:hover:not(:disabled):where(:not(:active)) {
+          border-color: var(--border-weak-base);
+          box-shadow: none;
+          transform: none;
+        }
 
-        &:hover:not(:disabled) {
-          box-shadow: 0 4px 12px color-mix(in srgb, var(--icon-strong-base) 34%, transparent);
+        &:focus-visible:not(:disabled) {
+          box-shadow: var(--shadow-xs-border-focus);
         }
 
         &:active:not(:disabled) {

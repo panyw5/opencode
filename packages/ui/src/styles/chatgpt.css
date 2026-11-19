@@ -27,13 +27,13 @@ html[data-theme="chatgpt"][data-color-scheme="dark"] {
   }
 
   & [data-dock-surface="shell"] {
-    background-color: var(--input-base);
+    background-color: var(--permission-background, var(--input-base));
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
 
   & [data-dock-surface="tray"] {
-    background-color: var(--surface-raised-base);
+    background-color: var(--permission-background, var(--surface-raised-base));
   }
 
   /* Selection persists after the pointer leaves; hover and press remain separate. */
