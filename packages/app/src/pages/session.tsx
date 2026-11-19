@@ -3381,6 +3381,44 @@ export default function Page() {
     setFollowup("edit", id, undefined)
   }
 
+  // Queued timeline messages are server-side prompts not yet started. Editing
+  // removes them and restores the draft into the composer; cancelling removes
+  // them and forgets the local optimistic copy.
+  const queuedMessageRemove = async (messageID: string) => {
+    const sessionID = params.id
+    if (!sessionID) return false
+    console.debug(`[queue-edit] remove message sid=${sessionID} message=${messageID}`)
+    try {
+      await sdk.client.session.deleteMessage({ sessionID, messageID })
+    } catch (err) {
+      console.warn(
+        `[queue-edit] remove failed sid=${sessionID} message=${messageID} err=${err instanceof Error ? err.message : String(err)}`,
+      )
+      fail(err)
+      return false
+    }
+    globalSync.session.messages.optimistic.remove(sdk.directory, { sessionID, messageID })
+    return true
+  }
+
+  const editQueuedMessage = async (messageID: string) => {
+    const sessionID = params.id
+    if (!sessionID || composer.blocked()) return
+    const parts = draft(messageID)
+    if (!(await queuedMessageRemove(messageID))) return
+    prompt.set(parts)
+    console.debug(`[queue-edit] restored draft sid=${sessionID} message=${messageID} parts=${parts.length}`)
+  }
+
+  const cancelQueuedMessage = (messageID: string) => {
+    if (composer.blocked()) return
+    if (!params.id) return
+    void queuedMessageRemove(messageID).then((ok) => {
+      if (!ok) return
+      console.debug(`[queue-edit] cancelled sid=${params.id} message=${messageID}`)
+    })
+  }
+
   // Queue jump: interrupt the in-flight step and make the server consume the
   // queued prompts immediately (POST /session/:id/flush) instead of waiting for
   // the current model call or tool run to finish.
@@ -3681,6 +3719,8 @@ export default function Page() {
                       <MessageTimeline
                         actions={actions}
                         onSendQueued={composer.blocked() ? undefined : flushQueued}
+                        onEditQueued={composer.blocked() ? undefined : (id) => void editQueuedMessage(id)}
+                        onCancelQueued={composer.blocked() ? undefined : cancelQueuedMessage}
                         onBackgroundShell={platform.remoteMode ? undefined : backgroundShell}
                         onBackgroundTask={backgroundTask}
                         scroll={ui.scroll}
