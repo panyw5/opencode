@@ -14,6 +14,8 @@ type Authentication = GptProSessionState["authentication"]
 const pageID = (view: ViewState) => view.pageID ?? view.partition
 const stamp = (view: ViewState) => `${pageID(view)}:${view.epoch}:${view.documentEpoch ?? 0}:${view.url}`
 
+export const EVIDENCE_REUSE_WINDOW_MS = 5_000
+
 /** Owns all application authentication for one Cookie jar. Snapshot reads never perform work. */
 export class GptProSessionCoordinator {
   private state: GptProSessionState
@@ -27,6 +29,7 @@ export class GptProSessionCoordinator {
     readonly profileID = GPT_PRO_PARTITION,
     private log: (message: string) => void = () => {},
     private now = Date.now,
+    private settle: { budgetMs: number; pollMs: number } = { budgetMs: 2_500, pollMs: 100 },
   ) {
     this.state = {
       profileID,
@@ -134,32 +137,86 @@ export class GptProSessionCoordinator {
     if (!valid) this.state.authentication = { phase: "unverified", checkedAt: this.now() }
     this.publish()
   }
-  async verify(requestedPageID?: string): Promise<Authentication> {
+  async verify(requestedPageID?: string, force = false): Promise<Authentication> {
     if (this.importing) return { phase: "unverified", checkedAt: this.now() }
     this.pagesChanged()
     const previous = this.state.authentication
     // Explicit reconnect/import or document change is required after terminal login failure.
     if (["invalid", "verification"].includes(previous.phase)) return structuredClone(previous)
     if (previous.retryAt && previous.retryAt > this.now()) return structuredClone(previous)
-    const views = this.views()
-    const view = requestedPageID
-      ? views.find((view) => pageID(view) === requestedPageID)
-      : views
-          .filter(
-            (view) =>
-              !view.loading && !view.authRedirectLoop && isGptProOrigin(view.url) && !isGptProLoginUrl(view.url),
-          )
-          .sort((a, b) => pageID(a).localeCompare(pageID(b)))[0]
-    if (!view || view.loading || view.authRedirectLoop || !isGptProOrigin(view.url) || isGptProLoginUrl(view.url)) {
+    const select = () => {
+      const views = this.views()
+      return requestedPageID
+        ? views.find((view) => pageID(view) === requestedPageID)
+        : views
+            .filter(
+              (view) =>
+                !view.loading && !view.authRedirectLoop && isGptProOrigin(view.url) && !isGptProLoginUrl(view.url),
+            )
+            .sort((a, b) => pageID(a).localeCompare(pageID(b)))[0]
+    }
+    // A dispatch boundary may reuse authenticated evidence only while the exact source document
+    // (page, epoch, documentEpoch, url) and credential generation are unchanged and the check is
+    // fresh; a same-document spinner must not invalidate it. Real navigations bump documentEpoch
+    // at did-start-navigation, so they always fall through to a live check.
+    const reusable = () => {
+      const auth = this.state.authentication
+      const source = auth.source
+      if (force || auth.phase !== "authenticated" || !source) return
+      if (source.generation !== this.state.generation) return
+      if (this.now() - auth.checkedAt > EVIDENCE_REUSE_WINDOW_MS) return
+      const match = this.views().find(
+        (view) => stamp(view) === `${source.pageID}:${source.epoch}:${source.documentEpoch}:${source.url}`,
+      )
+      if (!match || match.authRedirectLoop) return
+      if (requestedPageID && pageID(match) !== requestedPageID) return
+      return auth
+    }
+    const reuse = (auth: Authentication, loading: boolean) => {
+      this.log(
+        `session authentication reused profile=${this.profileID} pageID=${requestedPageID ?? "auto"} ageMs=${this.now() - auth.checkedAt} loading=${loading}; no session request dispatched`,
+      )
+      return structuredClone(auth)
+    }
+    let view = select()
+    const fresh = reusable()
+    if (fresh) return reuse(fresh, view?.loading ?? false)
+    if (!view || view.authRedirectLoop || !isGptProOrigin(view.url) || isGptProLoginUrl(view.url)) {
       // A login URL or redirect loop is page evidence, not proof of an expired Cookie.
       return { phase: "unverified", checkedAt: this.now() }
+    }
+    if (view.loading) {
+      this.log(
+        `session authentication waiting for loading to settle profile=${this.profileID} pageID=${pageID(view)} budgetMs=${this.settle.budgetMs}`,
+      )
+      const deadline = Date.now() + this.settle.budgetMs
+      while (view.loading && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, this.settle.pollMs))
+        if (this.importing) return { phase: "unverified", checkedAt: this.now() }
+        const again = reusable()
+        if (again) return reuse(again, true)
+        const next = select()
+        if (!next) {
+          if (requestedPageID) return { phase: "unverified", checkedAt: this.now() }
+          continue
+        }
+        if (next.authRedirectLoop || !isGptProOrigin(next.url) || isGptProLoginUrl(next.url))
+          return { phase: "unverified", checkedAt: this.now() }
+        view = next
+      }
+      if (view.loading) {
+        this.log(
+          `session authentication loading did not settle profile=${this.profileID} pageID=${pageID(view)}; no session request dispatched`,
+        )
+        return { phase: "unverified", checkedAt: this.now() }
+      }
     }
     const key = stamp(view)
     if (this.pending) {
       this.log(`session authentication joined profile=${this.profileID} sameDocument=${this.pending.page === key}`)
       if (this.pending.page === key) return this.pending.task
       await this.pending.task
-      return this.verify(requestedPageID)
+      return this.verify(requestedPageID, force)
     }
     const generation = this.state.generation
     const captured = { ...view }

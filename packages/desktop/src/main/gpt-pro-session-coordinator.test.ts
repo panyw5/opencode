@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test"
 import { GPT_PRO_PARTITION, GPT_PRO_URL } from "@opencode-ai/util/gpt-pro"
-import { GptProSessionCoordinator } from "./gpt-pro-session-coordinator"
+import { EVIDENCE_REUSE_WINDOW_MS, GptProSessionCoordinator } from "./gpt-pro-session-coordinator"
 import type { ViewState } from "./browser"
 
-function fixture() {
+function fixture(settle?: { budgetMs: number; pollMs: number }) {
   const views: ViewState[] = ["valid", "login"].map((pageID) => ({
     pageID,
     partition: pageID,
@@ -55,6 +55,7 @@ function fixture() {
     GPT_PRO_PARTITION,
     () => {},
     () => time,
+    settle,
   )
   return {
     browser,
@@ -95,11 +96,14 @@ test("authentication is independent of page ordering and composer visibility", a
   }
 })
 
-test("profile single-flight spans different CDP wrapper objects; dispatch checks do not use a TTL", async () => {
+test("profile single-flight spans different CDP wrapper objects; fresh same-document evidence is reused until it ages out", async () => {
   const f = fixture()
   const results = await Promise.all(Array.from({ length: 12 }, () => f.coordinator.verify("valid")))
   expect(results.every((result) => result.phase === "authenticated")).toBe(true)
   expect(f.requests()).toBe(1)
+  await f.coordinator.verify("valid")
+  expect(f.requests()).toBe(1)
+  f.advance(EVIDENCE_REUSE_WINDOW_MS + 1)
   await f.coordinator.verify("valid")
   expect(f.requests()).toBe(2)
 })
@@ -241,17 +245,58 @@ test("visible human verification stops implicit retries before any session reque
   expect(f.requests()).toBe(0)
 })
 
-test("a source still loading cannot borrow another page's valid identity and must be explicitly verified after settling", async () => {
+test("a loading source without reusable evidence waits for settling instead of borrowing another page's identity", async () => {
   const f = fixture()
   await f.coordinator.verify("valid")
   f.views.push({ ...f.views[0], pageID: "loading-consultation", partition: "loading-consultation", loading: true })
-  expect((await f.coordinator.verify("loading-consultation")).phase).toBe("unverified")
+  const pending = f.coordinator.verify("loading-consultation")
+  await new Promise((resolve) => setTimeout(resolve, 20))
   expect(f.requests()).toBe(1)
   expect(f.coordinator.snapshot().authentication.phase).toBe("authenticated")
   f.views.at(-1)!.loading = false
-  const settled = await f.coordinator.verify("loading-consultation")
+  const settled = await pending
   expect(settled.phase).toBe("authenticated")
   expect(settled.source?.pageID).toBe("loading-consultation")
+  expect(f.requests()).toBe(2)
+})
+
+test("a transient loading spinner reuses fresh same-document evidence at the dispatch boundary", async () => {
+  const f = fixture()
+  const first = await f.coordinator.verify("valid")
+  expect(first.phase).toBe("authenticated")
+  f.views[0].loading = true
+  const boundary = await f.coordinator.verify("valid")
+  expect(boundary.phase).toBe("authenticated")
+  expect(boundary.accountID).toBe(first.accountID)
+  expect(boundary.source?.documentEpoch).toBe(first.source?.documentEpoch)
+  expect(f.requests()).toBe(1)
+})
+
+test("a source that never settles returns unverified after the settle budget without fetching", async () => {
+  const f = fixture({ budgetMs: 40, pollMs: 5 })
+  f.views[0].loading = true
+  expect((await f.coordinator.verify("valid")).phase).toBe("unverified")
+  expect(f.requests()).toBe(0)
+})
+
+test("loading with a changed document never reuses evidence and re-checks after settling", async () => {
+  const f = fixture({ budgetMs: 40, pollMs: 5 })
+  await f.coordinator.verify("valid")
+  f.views[0].loading = true
+  f.views[0].documentEpoch!++
+  expect((await f.coordinator.verify("valid")).phase).toBe("unverified")
+  expect(f.requests()).toBe(1)
+  f.views[0].loading = false
+  const settled = await f.coordinator.verify("valid")
+  expect(settled.phase).toBe("authenticated")
+  expect(settled.source?.documentEpoch).toBe(2)
+  expect(f.requests()).toBe(2)
+})
+
+test("force bypasses fresh evidence reuse", async () => {
+  const f = fixture()
+  await f.coordinator.verify("valid")
+  await f.coordinator.verify("valid", true)
   expect(f.requests()).toBe(2)
 })
 
