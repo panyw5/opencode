@@ -72,7 +72,7 @@ html[data-web-layout] [data-prompt-kind="main"][data-compact="true"] {
   }
 
   [data-component="prompt-input"] {
-    min-height: 64px;
+    min-height: 40px;
     padding: 12px 14px 4px;
     font-family: var(--font-family-sans);
     font-size: 16px;
@@ -226,6 +226,12 @@ html[data-web-layout] [data-prompt-kind="main"][data-compact="true"] {
 
 @media (max-width: 1023px) {
   html[data-web-layout] {
+    --app-header-height: 44px;
+
+    [data-component="floating-actions"] {
+      top: 2px;
+    }
+
     [data-slot="session-panel-actions"] {
       display: none;
     }
