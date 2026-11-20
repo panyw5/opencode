@@ -76,7 +76,7 @@ export function SessionSidePanel(props: {
   })
   const wideOpen = createMemo(() => isDesktop() && layout.rightPanel.wide())
   const fileOpen = createMemo(
-    () => isDesktop() && !gitOpen() && layout.fileTree.opened() && !(platform.platform === "web" && tabletWidth() && wideOpen()),
+    () => isDesktop() && layout.fileTree.opened() && !(platform.platform === "web" && tabletWidth() && wideOpen()),
   )
   const open = createMemo(() => isDesktop() && layout.rightPanel.opened())
   const reviewTab = reviewOpen

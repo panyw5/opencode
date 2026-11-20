@@ -20,15 +20,6 @@ export function toggleRightPanel(active: RightPanel, target: Exclude<RightPanel,
 }
 
 export function rightPanelGeometry(active: RightPanel, tree: boolean, sessionWidth: number, treeWidth: number) {
-  if (active === "git") {
-    // Source control is a narrow inspector, not a second editor pane.
-    return {
-      wide: true,
-      opened: true,
-      width: "min(390px, 48%)",
-      sessionWidth: "calc(100% - min(390px, 48%))",
-    }
-  }
   const wide = active !== "none"
   const opened = wide || tree
   return {

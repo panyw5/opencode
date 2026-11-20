@@ -365,6 +365,7 @@ export default function Layout(props: ParentProps) {
   // resolvers keep working, but the icon should not look "selected".
   const onConfigRoute = createMemo(() => /\/config(?:\/|$)/.test(location.pathname))
   const onSessionRoute = createMemo(() => /\/session(?:\/|$)/.test(location.pathname))
+  const sessionDockVisible = createMediaQuery(platform.platform === "web" ? "(min-width: 1024px)" : "(min-width: 768px)")
   // Bottom-right floating actions (notification bell + quick assistant) hide
   // when the session content column reaches the viewport edge and would run
   // underneath them. Hidden only while the quick-assistant panel is closed —
@@ -376,6 +377,12 @@ export default function Layout(props: ParentProps) {
   const floatingPanelOpen = () =>
     !!floatingActions?.querySelector('[data-component="quick-assistant-panel"]:not([hidden])')
   const updateFloatingHidden = () => {
+    // Source control has a full-height action footer at the floating buttons' anchor.
+    // Leave the existing gap-based visibility policy intact for the other panels.
+    if (onSessionRoute() && sessionDockVisible() && layout.rightPanel.active() === "git") {
+      setFloatingHidden(true)
+      return
+    }
     if (!onSessionRoute() || !floatingGap().measured) {
       setFloatingHidden(false)
       return
@@ -5110,12 +5117,7 @@ export default function Layout(props: ParentProps) {
           data-component="floating-actions"
           data-hidden={floatingHidden() ? "true" : "false"}
           class="absolute right-5 bottom-5 flex items-center gap-2 pointer-events-none"
-          style={{
-            display: onConfigRoute() || floatingHidden() ? "none" : undefined,
-            right: onSessionRoute() && layout.rightPanel.active() === "git"
-              ? `calc(${layout.rightPanel.width()} + 1.25rem)`
-              : undefined,
-          }}
+          style={{ display: onConfigRoute() || floatingHidden() ? "none" : undefined }}
         >
           <NotificationBell />
           <QuickAssistant />

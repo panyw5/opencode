@@ -314,17 +314,10 @@ export default function Page() {
   const isDesktop = createMediaQuery(platform.platform === "web" ? "(min-width: 1024px)" : "(min-width: 768px)")
   const size = createSizing()
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
-  const desktopFilePreviewOpen = createMemo(() => isDesktop() && view().filePreview.opened())
-  const desktopBrowserOpen = createMemo(() => isDesktop() && view().browser.opened())
   const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
-  const desktopSidePanelOpen = createMemo(
-    () => desktopReviewOpen() || desktopFilePreviewOpen() || desktopBrowserOpen() || desktopFileTreeOpen(),
-  )
   const desktopWidePanelOpen = createMemo(() => isDesktop() && layout.rightPanel.wide())
-  const sessionPanelWidth = createMemo(() => {
-    if (!desktopSidePanelOpen()) return "100%"
-    return layout.rightPanel.sessionWidth()
-  })
+  // Use the same geometry as the sidebar so a newly added panel cannot overflow the workspace.
+  const sessionPanelWidth = createMemo(() => (isDesktop() ? layout.rightPanel.sessionWidth() : "100%"))
   const centered = createMemo(() => isDesktop() && !desktopWidePanelOpen())
   // Gap between the panel edges and the centered content column, measured off
   // the rendered timeline rows. Drives the rail mark lengths, the content's
@@ -3987,7 +3980,7 @@ export default function Page() {
             </div>
           </Show>
 
-          <Show when={desktopWidePanelOpen() && layout.rightPanel.active() !== "git"}>
+          <Show when={desktopWidePanelOpen()}>
             <div onPointerDown={() => size.start()}>
               <ResizeHandle
                 direction="horizontal"

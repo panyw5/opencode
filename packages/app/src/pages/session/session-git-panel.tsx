@@ -3,7 +3,7 @@ import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
-import { createEffect, createResource, For, Show } from "solid-js"
+import { createEffect, For, onCleanup, onMount, Show } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { usePlatform, type GitPanelStatus } from "@/context/platform"
@@ -27,23 +27,48 @@ export function SessionGitPanel(props: { directory: string; close: () => void })
     busy: false,
     notice: undefined as { text: string; error?: string } | undefined,
   })
-  const [status, { refetch }] = createResource(async () => {
-    try {
-      return { data: (await platform.gitStatus?.(props.directory)) ?? null }
-    } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) }
-    }
+  // Git status is panel-local UI state, not a resource that can suspend the route.
+  const [status, setStatus] = createStore({
+    repo: undefined as GitPanelStatus | null | undefined,
+    loading: true,
+    error: undefined as string | undefined,
   })
-  const repo = () => status()?.data
+  let disposed = false
+  onCleanup(() => (disposed = true))
+
+  const loadStatus = async (reason: "open" | "refresh" | "commit" | "commitPush" | "push") => {
+    if (disposed) return
+    const started = performance.now()
+    console.debug(`[session-git] status start reason=${reason}`)
+    setStatus({ loading: true, error: undefined })
+    try {
+      const next = (await platform.gitStatus?.(props.directory)) ?? null
+      if (disposed) return
+      setStatus("repo", reconcile(next, { key: "path" }))
+      console.debug(`[session-git] status ready reason=${reason} files=${next?.files.length ?? 0}`)
+    } catch (err) {
+      if (disposed) return
+      setStatus("error", err instanceof Error ? err.message : String(err))
+      console.debug(`[session-git] status failed reason=${reason}`)
+    } finally {
+      if (!disposed) setStatus("loading", false)
+      console.debug(
+        `[session-git] status settled reason=${reason} disposed=${disposed} ms=${Math.round(performance.now() - started)}`,
+      )
+    }
+  }
+  onMount(() => void loadStatus("open"))
+
+  const repo = () => status.repo
   const selected = (file: Change) =>
     form.overrides[`/${file.path}`] ?? !file.untracked
   const files = () => repo()?.files ?? []
   const selectedFiles = () => files().filter(selected)
-  const available = () => !form.busy && !status.loading && !!repo()?.branch
+  const available = () => !form.busy && !status.loading && status.error === undefined && !!repo()?.branch
   const canCommit = () => available() && !!form.message.trim() && selectedFiles().length > 0
   const canPush = () => available() && !!repo()?.upstream
   const refresh = () => {
-    if (!status.loading && !form.busy) void refetch()
+    if (!status.loading && !form.busy) void loadStatus("refresh")
   }
 
   const run = async (mode: "commit" | "commitPush" | "push") => {
@@ -60,14 +85,18 @@ export function SessionGitPanel(props: { directory: string; close: () => void })
       if (mode !== "push") {
         await platform.gitCommit(props.directory, { paths, message, branch })
         committed = true
-        setForm("message", "")
-        setForm("overrides", reconcile({}))
+        if (!disposed) {
+          setForm("message", "")
+          setForm("overrides", reconcile({}))
+        }
       }
       if (mode !== "commit" && upstream) await platform.gitPush(props.directory, { branch, upstream })
+      if (disposed) return
       setForm("notice", {
         text: mode === "commit" ? t("session.git.committed") : t("session.git.pushed", { upstream: upstream ?? "" }),
       })
     } catch (err) {
+      if (disposed) return
       setForm("notice", {
         text: committed
           ? t("session.git.pushAfterCommitError")
@@ -75,8 +104,8 @@ export function SessionGitPanel(props: { directory: string; close: () => void })
         error: err instanceof Error ? err.message : String(err),
       })
     } finally {
-      await refetch()
-      setForm("busy", false)
+      await loadStatus(mode)
+      if (!disposed) setForm("busy", false)
     }
   }
 
@@ -155,7 +184,11 @@ export function SessionGitPanel(props: { directory: string; close: () => void })
   }
 
   return (
-    <div data-component="session-git-panel" class="flex size-full min-h-0 min-w-0 flex-col bg-background-base">
+    <div
+      data-component="session-git-panel"
+      aria-busy={status.loading || form.busy}
+      class="flex size-full min-h-0 min-w-0 flex-col bg-background-base"
+    >
       <div class="shrink-0 border-b border-border-weaker-base px-3 py-2">
         <div class="flex items-center gap-2">
           <span class="grid size-7 shrink-0 place-items-center rounded-md bg-surface-raised-base text-icon-strong">
@@ -192,13 +225,13 @@ export function SessionGitPanel(props: { directory: string; close: () => void })
       </div>
 
       <div class="min-h-0 flex-1 overflow-auto py-1">
-        <Show when={status.loading && !status()}>
+        <Show when={status.loading && repo() === undefined}>
           <div class="grid p-6 place-items-center"><Spinner /></div>
         </Show>
-        <Show when={status()?.error}>
+        <Show when={status.error}>
           {(error) => <p role="alert" class="m-3 break-words text-12-regular text-text-weak">{t("session.git.statusError")}: {error()}</p>}
         </Show>
-        <Show when={status()?.data === null}>
+        <Show when={repo() === null && !status.error}>
           <p class="m-3 text-12-regular text-text-weak">{t("session.git.noRepository")}</p>
         </Show>
         <Show when={repo() && !files().length}>

@@ -384,12 +384,9 @@ export function SessionHeader() {
                     {
                       id: "fileTree",
                       icon: "file-tree",
-                      opened: () =>
-                        layout.fileTree.opened() &&
-                        layout.rightPanel.active() !== "git" &&
-                        !(singlePanel() && layout.rightPanel.wide()),
+                      opened: () => layout.fileTree.opened() && !(singlePanel() && layout.rightPanel.wide()),
                       toggle: () => {
-                        if (layout.rightPanel.active() === "git" || (singlePanel() && layout.rightPanel.wide())) {
+                        if (singlePanel() && layout.rightPanel.wide()) {
                           layout.rightPanel.select("none")
                           layout.fileTree.open()
                           return

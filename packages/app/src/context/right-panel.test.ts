@@ -15,8 +15,13 @@ describe("right panel state", () => {
       width: "344px",
       sessionWidth: "calc(100% - 344px)",
     })
-    for (const active of ["review", "filePreview", "browser"] as const) {
-      expect(rightPanelGeometry(active, true, 600, 344).width).toBe("calc(100% - 600px)")
+    for (const active of ["review", "filePreview", "browser", "git"] as const) {
+      expect(rightPanelGeometry(active, true, 600, 344)).toEqual({
+        wide: true,
+        opened: true,
+        width: "calc(100% - 600px)",
+        sessionWidth: "600px",
+      })
     }
   })
   test("migrates legacy flags into one deterministic selection", () => {
@@ -32,10 +37,10 @@ describe("right panel state", () => {
       expect(restoreRightPanel({ rightPanel: { active }, browser: { opened: true } })).toBe(active)
     }
   })
-  test("source control is a transient inspector with a capped width", () => {
+  test("source control is a transient wide panel and opens with the tree closed", () => {
     expect(restoreRightPanel({ rightPanel: { active: "git" } })).toBe("none")
     expect(toggleRightPanel("review", "git")).toBe("git")
-    expect(rightPanelGeometry("git", true, 600, 344).width).toBe("min(390px, 48%)")
+    expect(rightPanelGeometry("git", false, 600, 344)).toEqual(rightPanelGeometry("review", false, 600, 344))
   })
   test("switches directly between panels and toggles only the selected one closed", () => {
     expect(toggleRightPanel("review", "browser")).toBe("browser")
