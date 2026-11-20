@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "@opencode-ai/wolfram-lang",
-  "version": "1.18.69",
+  "version": "1.18.70",
   "private": true,
   "type": "module",
   "license": "MIT",
