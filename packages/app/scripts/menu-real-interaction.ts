@@ -155,10 +155,12 @@ try {
     await page.keyboard.press("Escape")
     log("session tab click opens title editor; cancelled without changes")
 
-    await page.getByRole("button", { name: "Review and files", exact: true }).first().hover()
+    const panels = page.getByRole("button", { name: "Review and files", exact: true }).first()
+    await panels.click()
     const filesToggle = page.locator('[data-slot="session-panel-menu"]').getByRole("button", { name: "Toggle file tree" })
     await expect(filesToggle).toBeVisible()
     if ((await filesToggle.getAttribute("aria-pressed")) !== "true") await filesToggle.click()
+    else await panels.click()
     const tree = page.locator("#file-tree-panel")
     await expect(tree).toBeVisible()
     const all = tree.getByRole("tab", { name: /^All files$/i })

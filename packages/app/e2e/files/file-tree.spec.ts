@@ -8,9 +8,10 @@ test("file tree can expand folders and open a file", async ({ page, gotoSession 
   const panel = page.locator("#file-tree-panel")
   const treeTabs = panel.locator('[data-component="tabs"][data-variant="pill"][data-scope="filetree"]')
 
-  await trigger.hover()
+  await trigger.click()
   await expect(toggle).toBeVisible()
   if ((await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click()
+  else await trigger.click()
   await expect(panel).toBeVisible()
   await expect(treeTabs).toBeVisible()
 
@@ -59,11 +60,11 @@ test("file tree can expand folders and open a file", async ({ page, gotoSession 
   await tab.click()
   await expect(tab).toHaveAttribute("aria-selected", "true")
 
-  await trigger.hover()
+  await trigger.click()
   await toggle.click()
   await expect(panel).toHaveAttribute("aria-hidden", "true")
 
-  await trigger.hover()
+  await trigger.click()
   await toggle.click()
   await expect(panel).toHaveAttribute("aria-hidden", "false")
   await expect(allTab).toHaveAttribute("aria-selected", "true")
