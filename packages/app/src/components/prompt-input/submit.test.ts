@@ -12,13 +12,18 @@ const history = {
 
 const createdClients: string[] = []
 const createdSessions: string[] = []
-type SessionCreateBody = { cwd?: string; channel?: { kind: "acp"; advisor: string; model?: string } }
+type SessionCreateBody = {
+  id?: string
+  cwd?: string
+  channel?: { kind: "acp"; advisor: string; model?: string }
+}
 const sessionCreateOptions: Array<{ directory: string; body?: SessionCreateBody }> = []
 const enabledAutoAccept: Array<{ sessionID: string; directory: string }> = []
 const optimistic: Array<{
   directory?: string
   sessionID?: string
   message: {
+    id?: string
     agent: string
     model: { providerID: string; modelID: string; variant?: string }
   }
@@ -71,7 +76,9 @@ const clientFor = (directory: string, track = true) => {
         sessionCreateOptions.push({ directory, body: options?.body })
         return {
           data: {
-            id: `session-${createdSessions.length}`,
+            // The server honors a client-provided session id (the early-seed
+            // flow navigates to firstSessionID before create resolves).
+            id: options?.body?.id ?? `session-${createdSessions.length}`,
             title: `New session ${createdSessions.length}`,
           },
         }
@@ -115,6 +122,21 @@ beforeAll(async () => {
   mock.module("@solidjs/router", () => ({
     useNavigate: () => (href: string) => sessionTabEvents.push(`navigate:${href}`),
     useParams: () => params,
+  }))
+
+  // The real module renders message parts (kobalte/solid-js/web client APIs
+  // that cannot load under the test runner's SSR graph). Only the pure
+  // markdown-input helper is used by submit.ts.
+  mock.module("@opencode-ai/ui/message-part", () => ({
+    userMessageMarkdownInput: () => undefined,
+  }))
+
+  mock.module("@opencode-ai/ui/context/marked", () => ({
+    useMarked: () => ({}),
+  }))
+
+  mock.module("@opencode-ai/ui/markdown", () => ({
+    prewarmMarkdown: () => Promise.resolve(false),
   }))
 
   mock.module("@opencode-ai/ui/toast", () => ({
@@ -222,20 +244,36 @@ beforeAll(async () => {
           const directory = input.directory ?? current
           syncedDirectories.push(directory)
           storedSessions[directory] ??= []
-          storedSessions[directory].push(input.info)
+          // session.created is an upsert keyed by session id (provisional seed
+          // then authoritative create share one record).
+          const index = storedSessions[directory].findIndex((item) => item.id === input.info.id)
+          if (index >= 0) storedSessions[directory][index] = input.info
+          else storedSessions[directory].push(input.info)
         },
         optimistic: {
           add: (value: {
             directory?: string
             sessionID?: string
-            message: { agent: string; model: { providerID: string; modelID: string }; variant?: string }
+            message: {
+              id?: string
+              agent: string
+              model: { providerID: string; modelID: string }
+              variant?: string
+            }
           }) => {
-            optimistic.push(value)
-            optimisticSeeded.push(
+            const seeded =
               !!value.directory &&
-                !!value.sessionID &&
-                !!storedSessions[value.directory]?.find((item) => item.id === value.sessionID)?.title,
-            )
+              !!value.sessionID &&
+              !!storedSessions[value.directory]?.find((item) => item.id === value.sessionID)?.title
+            // Optimistic items dedupe by message id (seeded add, then confirm).
+            const index = optimistic.findIndex((item) => item.message.id === value.message.id)
+            if (index >= 0) {
+              optimistic[index] = value
+              optimisticSeeded[index] = seeded
+            } else {
+              optimistic.push(value)
+              optimisticSeeded.push(seeded)
+            }
           },
           complete: () => undefined,
           remove: () => undefined,
@@ -390,14 +428,17 @@ describe("prompt submit worktree selection", () => {
     expect(sentPrompts).toHaveLength(0)
     expect(sessionTabEvents).toHaveLength(0)
     await submit.handleSubmit(event)
+    await Bun.sleep(0)
     expect(sessionCreateCalls).toBe(1)
     sessionCreateGate.resolve()
     await operation
     await Bun.sleep(0)
+    const createdID = sessionCreateOptions[0]!.body!.id!
     expect(sentMessageIDs).toEqual([entry.message.id])
     expect(optimistic).toHaveLength(1)
-    expect(optimistic[0]).toMatchObject({ message: { id: entry.message.id }, sessionID: "session-1" })
-    expect(pendingSessionSubmissions.entries[key]?.sessionID).toBe("session-1")
+    expect(optimistic[0]).toMatchObject({ message: { id: entry.message.id }, sessionID: createdID })
+    expect(sentPrompts).toEqual([{ directory: current, sessionID: createdID }])
+    expect(pendingSessionSubmissions.entries[key]).toBeUndefined()
     expect(promptResetScopes).toHaveLength(1)
   })
 
@@ -421,9 +462,15 @@ describe("prompt submit worktree selection", () => {
     await newPromptSubmit().handleSubmit({ preventDefault() {} } as Event)
     await Bun.sleep(0)
     expect(sessionCreateOptions).toEqual([
-      { directory: current, body: { channel: { kind: "acp", advisor: "claude", model: "test-channel-model" } } },
+      {
+        directory: current,
+        body: {
+          id: expect.stringMatching(/^ses_/),
+          channel: { kind: "acp", advisor: "claude", model: "test-channel-model" },
+        },
+      },
     ])
-    expect(sentPrompts).toEqual([{ directory: current, sessionID: "session-1" }])
+    expect(sentPrompts).toEqual([{ directory: current, sessionID: sessionCreateOptions[0]!.body!.id! }])
   })
 
   test("keeps a failed first message and retries once with the original message ID", async () => {
@@ -460,7 +507,8 @@ describe("prompt submit worktree selection", () => {
     sessionCreateGate.resolve()
     await operation
     await Bun.sleep(0)
-    expect(sessionTabEvents).toEqual(["promote:/repo/worktree-a:session-1:draft-1:/repo/worktree-a"])
+    const createdID = sessionCreateOptions[0]!.body!.id!
+    expect(sessionTabEvents).toEqual([`promote:/repo/worktree-a:${createdID}:draft-1:/repo/worktree-a`])
     expect(promptResetScopes).toEqual([{ dir: current, id: "draft-1" }])
     expect(sentPrompts).toHaveLength(1)
     expect(pendingSessionSubmissions.get("http://localhost:4096", current, params)).toBeUndefined()
@@ -763,7 +811,9 @@ describe("prompt submit worktree selection", () => {
 
     await submit.handleSubmit(event)
 
-    expect(storedSessions["/repo/worktree-a"]).toEqual([{ id: "session-1", title: "New session 1" }])
+    expect(storedSessions["/repo/worktree-a"]).toEqual([
+      { id: sessionCreateOptions[0]!.body!.id!, title: "New session 1" },
+    ])
     expect(optimisticSeeded).toEqual([true])
   })
 
