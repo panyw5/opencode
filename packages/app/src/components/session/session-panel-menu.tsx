@@ -19,7 +19,7 @@ export function SessionPanelTriggerIcon(props: { active?: boolean }) {
 }
 
 type Panel = {
-  id: "fileTree" | "filePreview" | "review"
+  id: "fileTree" | "filePreview" | "review" | "git"
   icon: ComponentProps<typeof Icon>["name"]
   opened: () => boolean
   toggle: () => void
@@ -86,7 +86,7 @@ export function SessionPanelMenu(props: { panels: Panel[] }) {
         >
           <For each={props.panels}>
             {(panel) => {
-              const keybind = () => command.keybind(`${panel.id}.toggle`)
+              const keybind = () => (panel.id === "git" ? undefined : command.keybind(`${panel.id}.toggle`))
               return (
                 <Button
                   variant="ghost"
@@ -103,7 +103,9 @@ export function SessionPanelMenu(props: { panels: Panel[] }) {
                   }}
                 >
                   <Icon name={panel.icon} size="small" />
-                  <span class="flex-1 text-left">{language.t(`command.${panel.id}.toggle`)}</span>
+                  <span class="flex-1 text-left">
+                    {panel.id === "git" ? language.t("session.git.title") : language.t(`command.${panel.id}.toggle`)}
+                  </span>
                   <Show when={keybind()}>
                     {(bind) => <Keybind aria-hidden="true">{formatKeybind(bind(), language.t)}</Keybind>}
                   </Show>

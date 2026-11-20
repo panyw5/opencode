@@ -35,6 +35,7 @@ import { ExtensionPanelContent, ExtensionPanelVisual } from "@/extensions/panel-
 import { isExtensionPanelTab } from "@/extensions/panel-tab"
 import { BrowserPanel } from "@/pages/session/browser-panel"
 import { PanelCollapseButton } from "@/pages/session/panel-collapse-button"
+import { SessionGitPanel } from "@/pages/session/session-git-panel"
 import type { ChangeTreeEntry } from "@/pages/session/change-tree-model"
 import { createOpenSessionFileTab, createSessionTabs, getTabReorderIndex, type Sizing } from "@/pages/session/helpers"
 import { setSessionHandoff } from "@/pages/session/handoff"
@@ -69,9 +70,13 @@ export function SessionSidePanel(props: {
   const reviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const filePreviewOpen = createMemo(() => isDesktop() && view().filePreview.opened())
   const browserOpen = createMemo(() => !platform.remoteMode && isDesktop() && view().browser.opened())
+  const gitOpen = () => !platform.remoteMode && server.isLocal() && layout.rightPanel.active() === "git"
+  createEffect(() => {
+    if (layout.rightPanel.active() === "git" && !gitOpen()) layout.rightPanel.select("none")
+  })
   const wideOpen = createMemo(() => isDesktop() && layout.rightPanel.wide())
   const fileOpen = createMemo(
-    () => isDesktop() && layout.fileTree.opened() && !(platform.platform === "web" && tabletWidth() && wideOpen()),
+    () => isDesktop() && !gitOpen() && layout.fileTree.opened() && !(platform.platform === "web" && tabletWidth() && wideOpen()),
   )
   const open = createMemo(() => isDesktop() && layout.rightPanel.opened())
   const reviewTab = reviewOpen
@@ -292,11 +297,13 @@ export function SessionSidePanel(props: {
       <aside
         id="session-side-panel"
         aria-label={
-          browserOpen()
-            ? language.t("command.browser.toggle")
-            : reviewOpen()
-              ? language.t("session.tab.review")
-              : language.t("session.files.all")
+          gitOpen()
+            ? language.t("session.git.title")
+            : browserOpen()
+              ? language.t("command.browser.toggle")
+              : reviewOpen()
+                ? language.t("session.tab.review")
+                : language.t("session.files.all")
         }
         aria-hidden={!open()}
         inert={!open()}
@@ -320,7 +327,10 @@ export function SessionSidePanel(props: {
               "pointer-events-none": !wideOpen(),
             }}
           >
-            <div class="size-full min-w-0 h-full bg-background-base" classList={{ hidden: browserOpen() }}>
+            <Show when={gitOpen() && sdk.directory} keyed>
+              {(directory) => <SessionGitPanel directory={directory} close={() => layout.rightPanel.select("none")} />}
+            </Show>
+            <div class="size-full min-w-0 h-full bg-background-base" classList={{ hidden: browserOpen() || gitOpen() }}>
               <DragDropProvider
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}

@@ -32,6 +32,11 @@ describe("right panel state", () => {
       expect(restoreRightPanel({ rightPanel: { active }, browser: { opened: true } })).toBe(active)
     }
   })
+  test("source control is a transient inspector with a capped width", () => {
+    expect(restoreRightPanel({ rightPanel: { active: "git" } })).toBe("none")
+    expect(toggleRightPanel("review", "git")).toBe("git")
+    expect(rightPanelGeometry("git", true, 600, 344).width).toBe("min(390px, 48%)")
+  })
   test("switches directly between panels and toggles only the selected one closed", () => {
     expect(toggleRightPanel("review", "browser")).toBe("browser")
     expect(toggleRightPanel("browser", "filePreview")).toBe("filePreview")

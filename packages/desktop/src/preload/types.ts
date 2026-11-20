@@ -305,6 +305,16 @@ export type ResourceUsage = {
   targets: ResourceUsageTarget[]
 }
 
+export type GitStatus = {
+  root: string
+  branch: string | null
+  upstream: string | null
+  ahead: number
+  behind: number
+  lastCommit: string | null
+  files: { path: string; status: string; untracked: boolean }[]
+}
+
 export type ElectronAPI = {
   remoteAccess: RemoteAccessApi
   gptPro: import("@opencode-ai/util/gpt-pro").GptProAPI
@@ -374,6 +384,9 @@ export type ElectronAPI = {
   filterDirectories: (paths: string[]) => Promise<string[]>
   listConfigFiles: (directory?: string | null) => Promise<ConfigFile[]>
   readLocalFile: (path: string) => Promise<string | null>
+  gitStatus: (directory: string) => Promise<GitStatus | null>
+  gitCommit: (directory: string, input: { paths: string[]; message: string; branch: string }) => Promise<void>
+  gitPush: (directory: string, input: { branch: string; upstream: string }) => Promise<void>
   statLocalFile: (path: string) => Promise<{ size: number } | null>
   writeLocalFile: (path: string, content: string) => Promise<void>
   createLocalFile: (path: string, content: string) => Promise<void>

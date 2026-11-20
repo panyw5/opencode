@@ -5110,7 +5110,12 @@ export default function Layout(props: ParentProps) {
           data-component="floating-actions"
           data-hidden={floatingHidden() ? "true" : "false"}
           class="absolute right-5 bottom-5 flex items-center gap-2 pointer-events-none"
-          style={{ display: onConfigRoute() || floatingHidden() ? "none" : undefined }}
+          style={{
+            display: onConfigRoute() || floatingHidden() ? "none" : undefined,
+            right: onSessionRoute() && layout.rightPanel.active() === "git"
+              ? `calc(${layout.rightPanel.width()} + 1.25rem)`
+              : undefined,
+          }}
         >
           <NotificationBell />
           <QuickAssistant />

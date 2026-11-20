@@ -3987,7 +3987,7 @@ export default function Page() {
             </div>
           </Show>
 
-          <Show when={desktopWidePanelOpen()}>
+          <Show when={desktopWidePanelOpen() && layout.rightPanel.active() !== "git"}>
             <div onPointerDown={() => size.start()}>
               <ResizeHandle
                 direction="horizontal"

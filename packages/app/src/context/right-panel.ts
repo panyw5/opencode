@@ -1,4 +1,4 @@
-export type RightPanel = "none" | "review" | "filePreview" | "browser"
+export type RightPanel = "none" | "review" | "filePreview" | "browser" | "git"
 
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -6,6 +6,8 @@ const record = (value: unknown): value is Record<string, unknown> =>
 export function restoreRightPanel(value: unknown): RightPanel {
   if (!record(value)) return "review"
   const active = record(value.rightPanel) ? value.rightPanel.active : undefined
+  // Source control is a transient desktop-only panel; don't restore it on web or a remote server.
+  if (active === "git") return "none"
   if (active === "none" || active === "review" || active === "filePreview" || active === "browser") return active
   if (record(value.browser) && value.browser.opened === true) return "browser"
   if (record(value.filePreview) && value.filePreview.opened === true) return "filePreview"
@@ -18,6 +20,15 @@ export function toggleRightPanel(active: RightPanel, target: Exclude<RightPanel,
 }
 
 export function rightPanelGeometry(active: RightPanel, tree: boolean, sessionWidth: number, treeWidth: number) {
+  if (active === "git") {
+    // Source control is a narrow inspector, not a second editor pane.
+    return {
+      wide: true,
+      opened: true,
+      width: "min(390px, 48%)",
+      sessionWidth: "calc(100% - min(390px, 48%))",
+    }
+  }
   const wide = active !== "none"
   const opened = wide || tree
   return {

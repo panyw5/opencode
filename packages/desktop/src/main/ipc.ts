@@ -89,6 +89,7 @@ import { write as writeLog } from "./logging"
 import { relaunchApp } from "./relaunch"
 import { createSystemNotifications } from "./system-notifications"
 import { exportSessionDocument } from "./session-document"
+import { gitCommit, gitPush, gitStatus } from "./git"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -96,6 +97,16 @@ const pickerFilters = (ext?: string[]) => {
 }
 
 const pickedFiles = createPickedFileAuthorizations()
+
+function trustedRendererWindow(event: IpcMainInvokeEvent) {
+  const parent = BrowserWindow.fromWebContents(event.sender)
+  const url = (event.senderFrame?.url ?? "").split(/[?#]/, 1)[0]
+  const trusted =
+    url === "oc://renderer/index.html" ||
+    (!!process.env.ELECTRON_RENDERER_URL && url === new URL("index.html", process.env.ELECTRON_RENDERER_URL).toString())
+  return event.senderFrame === event.sender.mainFrame && trusted ? parent : null
+}
+
 const gptProProbe = new GptProProbe(
   browserController,
   (message) => writeLog("gpt-pro", message),
@@ -195,14 +206,21 @@ export function registerIpcHandlers(deps: Deps) {
   })
   app.on("before-quit", () => notifications.dispose())
   ipcMain.handle("export-session-document", (event, input: unknown) => {
-    const parent = BrowserWindow.fromWebContents(event.sender)
-    const url = (event.senderFrame?.url ?? "").split(/[?#]/, 1)[0]
-    const trusted =
-      url === "oc://renderer/index.html" ||
-      (!!process.env.ELECTRON_RENDERER_URL &&
-        url === new URL("index.html", process.env.ELECTRON_RENDERER_URL).toString())
-    if (!parent || event.senderFrame !== event.sender.mainFrame || !trusted) throw new Error("Untrusted export sender")
+    const parent = trustedRendererWindow(event)
+    if (!parent) throw new Error("Untrusted export sender")
     return exportSessionDocument(parent, input)
+  })
+  ipcMain.handle("git-status", (event, directory: unknown) => {
+    if (!trustedRendererWindow(event)) throw new Error("Untrusted Git IPC sender")
+    return gitStatus(directory)
+  })
+  ipcMain.handle("git-commit", (event, directory: unknown, input: unknown) => {
+    if (!trustedRendererWindow(event)) throw new Error("Untrusted Git IPC sender")
+    return gitCommit(directory, input)
+  })
+  ipcMain.handle("git-push", (event, directory: unknown, input: unknown) => {
+    if (!trustedRendererWindow(event)) throw new Error("Untrusted Git IPC sender")
+    return gitPush(directory, input)
   })
   getGptProController()
   // Startup is an explicit lifecycle operation, never a side effect of runtimeStatus.

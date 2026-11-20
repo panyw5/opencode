@@ -261,6 +261,16 @@ export type ResourceUsage = {
   targets: ResourceUsageTarget[]
 }
 
+export type GitPanelStatus = {
+  root: string
+  branch: string | null
+  upstream: string | null
+  ahead: number
+  behind: number
+  lastCommit: string | null
+  files: { path: string; status: string; untracked: boolean }[]
+}
+
 export type Platform = {
   /** Platform discriminator */
   platform: "web" | "desktop"
@@ -288,6 +298,9 @@ export type Platform = {
 
   /** Open folder in specified editor (desktop only) */
   openInEditor?(editor: string, path: string): Promise<void>
+  gitStatus?(directory: string): Promise<GitPanelStatus | null>
+  gitCommit?(directory: string, input: { paths: string[]; message: string; branch: string }): Promise<void>
+  gitPush?(directory: string, input: { branch: string; upstream: string }): Promise<void>
 
   /** Get custom editor path (desktop only) */
   getCustomEditorPath?(): Promise<string | null>

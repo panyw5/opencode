@@ -384,9 +384,12 @@ export function SessionHeader() {
                     {
                       id: "fileTree",
                       icon: "file-tree",
-                      opened: () => layout.fileTree.opened() && !(singlePanel() && layout.rightPanel.wide()),
+                      opened: () =>
+                        layout.fileTree.opened() &&
+                        layout.rightPanel.active() !== "git" &&
+                        !(singlePanel() && layout.rightPanel.wide()),
                       toggle: () => {
-                        if (singlePanel() && layout.rightPanel.wide()) {
+                        if (layout.rightPanel.active() === "git" || (singlePanel() && layout.rightPanel.wide())) {
                           layout.rightPanel.select("none")
                           layout.fileTree.open()
                           return
@@ -406,6 +409,16 @@ export function SessionHeader() {
                       opened: () => view().reviewPanel.opened(),
                       toggle: () => view().reviewPanel.toggle(),
                     },
+                    ...(!platform.remoteMode && server.isLocal() && platform.gitStatus
+                      ? [
+                          {
+                            id: "git",
+                            icon: "branch",
+                            opened: () => layout.rightPanel.active() === "git",
+                            toggle: () => layout.rightPanel.toggle("git"),
+                          } as const,
+                        ]
+                      : []),
                   ]}
                 />
               </div>

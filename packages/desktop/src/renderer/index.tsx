@@ -253,6 +253,9 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
     openInVscode: (path: string) => desktopApi.openInEditor("vscode", path),
 
     openInEditor: (editor: string, path: string) => desktopApi.openInEditor(editor, path),
+    gitStatus: (directory) => desktopApi.gitStatus(directory),
+    gitCommit: (directory, input) => desktopApi.gitCommit(directory, input),
+    gitPush: (directory, input) => desktopApi.gitPush(directory, input),
 
     getCustomEditorPath: () => desktopApi.getCustomEditorPath(),
 
