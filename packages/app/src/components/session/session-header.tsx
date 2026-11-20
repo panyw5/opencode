@@ -27,6 +27,7 @@ import { dict as enDict } from "@/i18n/en"
 import { StatusPopover } from "@/components/status-popover"
 import { OPEN_APPS, apps, getOpenPlan, type OpenApp, type OS } from "./open-app"
 import { useComponentMountProfile } from "@/utils/component-mount-profile"
+import { SessionPanelMenu } from "./session-panel-menu"
 
 const detectOS = (platform: ReturnType<typeof usePlatform>): OS => {
   if (platform.platform === "desktop" && platform.os) return platform.os
@@ -378,69 +379,35 @@ export function SessionHeader() {
                   </Show>
                 </Show>
 
-                <div data-slot="session-panel-actions" class="hidden md:flex items-center gap-1 shrink-0">
-                  <TooltipKeybind
-                    title={language.t("command.review.toggle")}
-                    keybind={command.keybind("review.toggle")}
-                  >
-                    <Button
-                      variant="ghost"
-                      class="group/review-toggle titlebar-icon w-8 h-8 p-0 box-border"
-                      data-action="session-review-toggle"
-                      onClick={() => view().reviewPanel.toggle()}
-                      aria-label={language.t("command.review.toggle")}
-                      aria-expanded={view().reviewPanel.opened()}
-                      aria-controls="session-side-panel"
-                    >
-                      <Icon size="normal" name={view().reviewPanel.opened() ? "review-active" : "review"} />
-                    </Button>
-                  </TooltipKeybind>
-
-                  <Tooltip value={language.t("command.filePreview.toggle")}>
-                    <Button
-                      variant="ghost"
-                      class="group/file-preview-toggle titlebar-icon w-8 h-8 p-0 box-border"
-                      onClick={() => view().filePreview.toggle()}
-                      aria-label={language.t("command.filePreview.toggle")}
-                      aria-expanded={view().filePreview.opened()}
-                      aria-controls="session-side-panel"
-                    >
-                      <Icon size="normal" name="file" />
-                    </Button>
-                  </Tooltip>
-
-                  <TooltipKeybind
-                    title={language.t("command.fileTree.toggle")}
-                    keybind={command.keybind("fileTree.toggle")}
-                  >
-                    <Button
-                      variant="ghost"
-                      class="titlebar-icon w-8 h-8 p-0 box-border"
-                      onClick={() => {
+                <SessionPanelMenu
+                  panels={[
+                    {
+                      id: "fileTree",
+                      icon: "file-tree",
+                      opened: () => layout.fileTree.opened() && !(singlePanel() && layout.rightPanel.wide()),
+                      toggle: () => {
                         if (singlePanel() && layout.rightPanel.wide()) {
                           layout.rightPanel.select("none")
                           layout.fileTree.open()
                           return
                         }
                         layout.fileTree.toggle()
-                      }}
-                      aria-label={language.t("command.fileTree.toggle")}
-                      aria-expanded={layout.fileTree.opened() && !(singlePanel() && layout.rightPanel.wide())}
-                      aria-controls="file-tree-panel"
-                    >
-                      <div class="relative flex items-center justify-center size-5">
-                        <Icon
-                          size="normal"
-                          name="file-tree"
-                          classList={{
-                            "text-icon-strong": layout.fileTree.opened(),
-                            "text-icon-weak": !layout.fileTree.opened(),
-                          }}
-                        />
-                      </div>
-                    </Button>
-                  </TooltipKeybind>
-                </div>
+                      },
+                    },
+                    {
+                      id: "filePreview",
+                      icon: "file",
+                      opened: () => view().filePreview.opened(),
+                      toggle: () => view().filePreview.toggle(),
+                    },
+                    {
+                      id: "review",
+                      icon: "review",
+                      opened: () => view().reviewPanel.opened(),
+                      toggle: () => view().reviewPanel.toggle(),
+                    },
+                  ]}
+                />
               </div>
             </div>
           </Portal>

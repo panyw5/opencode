@@ -5,6 +5,7 @@ import { createMemo, onMount, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useLanguage } from "@/context/language"
 import { browserApi } from "@/browser/types"
+import { SessionPanelTriggerIcon, sessionPanelTriggerClass } from "./session/session-panel-menu"
 
 /**
  * Disabled mirror of the session header actions. Surfaces without a session
@@ -81,30 +82,14 @@ export function TitlebarActionsPlaceholder(props: { surface: string }) {
                 </Button>
               </Show>
 
-              <div class="hidden md:flex items-center gap-1 shrink-0">
-                <Button
-                  variant="ghost"
-                  class="titlebar-icon w-8 h-8 p-0 box-border disabled:!cursor-default"
-                  disabled
-                  aria-label={language.t("command.review.toggle")}
-                >
-                  <Icon size="normal" name="review" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  class="titlebar-icon w-8 h-8 p-0 box-border disabled:!cursor-default"
-                  disabled
-                  aria-label={language.t("command.filePreview.toggle")}
-                >
-                  <Icon size="normal" name="file" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  class="titlebar-icon w-8 h-8 p-0 box-border disabled:!cursor-default"
-                  disabled
-                  aria-label={language.t("command.fileTree.toggle")}
-                >
-                  <Icon size="normal" name="file-tree" />
+               <div data-slot="session-panel-actions" class="hidden md:flex items-center shrink-0">
+                 <Button
+                   variant="ghost"
+                   class={sessionPanelTriggerClass + " disabled:!cursor-default"}
+                   disabled
+                   aria-label={language.t("session.panel.reviewAndFiles")}
+                 >
+                   <SessionPanelTriggerIcon />
                 </Button>
               </div>
             </div>

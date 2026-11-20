@@ -3,13 +3,14 @@ import { test, expect } from "../fixtures"
 test("file tree can expand folders and open a file", async ({ page, gotoSession }) => {
   await gotoSession()
 
-  const toggle = page.getByRole("button", { name: "Toggle file tree" })
+  const trigger = page.getByRole("button", { name: "Review and files", exact: true }).first()
+  const toggle = page.locator('[data-slot="session-panel-menu"]').getByRole("button", { name: "Toggle file tree" })
   const panel = page.locator("#file-tree-panel")
   const treeTabs = panel.locator('[data-component="tabs"][data-variant="pill"][data-scope="filetree"]')
 
+  await trigger.hover()
   await expect(toggle).toBeVisible()
-  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click()
-  await expect(toggle).toHaveAttribute("aria-expanded", "true")
+  if ((await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click()
   await expect(panel).toBeVisible()
   await expect(treeTabs).toBeVisible()
 
@@ -58,11 +59,13 @@ test("file tree can expand folders and open a file", async ({ page, gotoSession 
   await tab.click()
   await expect(tab).toHaveAttribute("aria-selected", "true")
 
+  await trigger.hover()
   await toggle.click()
-  await expect(toggle).toHaveAttribute("aria-expanded", "false")
+  await expect(panel).toHaveAttribute("aria-hidden", "true")
 
+  await trigger.hover()
   await toggle.click()
-  await expect(toggle).toHaveAttribute("aria-expanded", "true")
+  await expect(panel).toHaveAttribute("aria-hidden", "false")
   await expect(allTab).toHaveAttribute("aria-selected", "true")
 
   const viewer = page.locator('[data-component="file"][data-mode="text"]').first()

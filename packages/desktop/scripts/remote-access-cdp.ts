@@ -735,6 +735,23 @@ async function checkToolbarSizing() {
 }
 
 async function checkResponsiveLayouts() {
+  const setReviewPanel = (open: boolean) =>
+    browser!.evaluate(`(async () => {
+      const trigger = document.querySelector('[data-slot="session-panel-actions"] button');
+      if (trigger.getAttribute('aria-expanded') !== 'true') trigger.click();
+      const item = await new Promise((resolve, reject) => {
+        const deadline = performance.now() + 2000;
+        const check = () => {
+          const button = document.querySelector('[data-action="session-review-toggle"]');
+          if (button) return resolve(button);
+          if (performance.now() > deadline) return reject(new Error('Review menu item did not mount'));
+          requestAnimationFrame(check);
+        };
+        check();
+      });
+      if ((item.getAttribute('aria-pressed') === 'true') !== ${open}) item.click();
+      else trigger.click();
+    })()`)
   const fits = (selector: string) =>
     browser!.evaluate<boolean>(
       `(() => {const e=document.querySelector(${JSON.stringify(selector)});if(!e)return false;const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&r.left>=-1&&r.right<=innerWidth+1&&r.top>=-1&&r.bottom<=visualViewport.height+1})()`,
@@ -784,9 +801,7 @@ async function checkResponsiveLayouts() {
     console.log(`[remote-responsive] viewport=${width}x${height} failures=${failures.length}`)
     if (failures.length) throw new Error(failures.join("; "))
     if (width === 1024 || width === 1366) {
-      await browser!.evaluate(
-        `(() => {const b=document.querySelector('[data-action="session-review-toggle"]');if(b.getAttribute('aria-expanded')!=='true')b.click()})()`,
-      )
+      await setReviewPanel(true)
       await waitFor(
         async () =>
           (await browser!.evaluate<boolean>(`(() => {
@@ -806,8 +821,7 @@ async function checkResponsiveLayouts() {
       const shot = await captureScreenshot()
       await writeFile(`/private/tmp/opencode-responsive-${width}.png`, Buffer.from(shot.data, "base64"))
     }
-    if (width === 1024 || width === 1366)
-      await browser!.evaluate(`document.querySelector('[data-action="session-review-toggle"]').click()`)
+    if (width === 1024 || width === 1366) await setReviewPanel(false)
   }
   await resizeViewport(390, 664)
   await Bun.sleep(350)

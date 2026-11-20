@@ -1,33 +1,50 @@
 import { test, expect } from "../fixtures"
 import { modKey } from "../utils"
 
-const expanded = async (el: { getAttribute: (name: string) => Promise<string | null> }) => {
-  const value = await el.getAttribute("aria-expanded")
-  if (value !== "true" && value !== "false") throw new Error(`Expected aria-expanded to be true|false, got: ${value}`)
-  return value === "true"
-}
+test("right sidebar menu opens on hover and can be dismissed with Escape", async ({ page, gotoSession }) => {
+  await gotoSession()
+  const trigger = page.getByRole("button", { name: "Review and files", exact: true }).first()
+  const menu = page.locator('[data-slot="session-panel-menu"]')
+  await trigger.hover()
+  await expect(menu.getByRole("button")).toHaveText([/Toggle file tree/, /Toggle file preview/, /Toggle review/])
+  const treeToggle = menu.getByRole("button", { name: "Toggle file tree" })
+  const background = () => treeToggle.evaluate((item) => getComputedStyle(item).backgroundColor)
+  const resting = await background()
+  await treeToggle.hover()
+  await expect.poll(background).not.toBe(resting)
+  await page.mouse.move(0, 0)
+  await expect(trigger).toHaveAttribute("aria-expanded", "false")
+  await trigger.press("ArrowDown")
+  await expect(treeToggle).toBeFocused()
+  await page.keyboard.press("Escape")
+  await expect(trigger).toHaveAttribute("aria-expanded", "false")
+  await expect(trigger).toBeFocused()
+})
 
 test("review panel can be toggled via keybind", async ({ page, gotoSession }) => {
   await gotoSession()
 
   const reviewPanel = page.locator("#session-side-panel")
 
-  const treeToggle = page.getByRole("button", { name: "Toggle file tree" }).first()
+  const trigger = page.getByRole("button", { name: "Review and files", exact: true }).first()
+  const menu = page.locator('[data-slot="session-panel-menu"]')
+  const treeToggle = menu.getByRole("button", { name: "Toggle file tree" })
+  const reviewToggle = menu.getByRole("button", { name: "Toggle review" })
+  await trigger.hover()
   await expect(treeToggle).toBeVisible()
-  if (await expanded(treeToggle)) await treeToggle.click()
-  await expect(treeToggle).toHaveAttribute("aria-expanded", "false")
-
-  const reviewToggle = page.getByRole("button", { name: "Toggle review" }).first()
+  if ((await treeToggle.getAttribute("aria-pressed")) === "true") {
+    await treeToggle.click()
+    await trigger.hover()
+  }
   await expect(reviewToggle).toBeVisible()
-  if (await expanded(reviewToggle)) await reviewToggle.click()
-  await expect(reviewToggle).toHaveAttribute("aria-expanded", "false")
+  if ((await reviewToggle.getAttribute("aria-pressed")) === "true") await reviewToggle.click()
+  await page.mouse.move(0, 0)
+  await expect(trigger).toHaveAttribute("aria-expanded", "false")
   await expect(reviewPanel).toHaveAttribute("aria-hidden", "true")
 
   await page.keyboard.press(`${modKey}+Shift+R`)
-  await expect(reviewToggle).toHaveAttribute("aria-expanded", "true")
   await expect(reviewPanel).toHaveAttribute("aria-hidden", "false")
 
   await page.keyboard.press(`${modKey}+Shift+R`)
-  await expect(reviewToggle).toHaveAttribute("aria-expanded", "false")
   await expect(reviewPanel).toHaveAttribute("aria-hidden", "true")
 })
