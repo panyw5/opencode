@@ -1405,6 +1405,7 @@ export const dict = {
   "session.review.change.one": "Change",
   "session.review.change.other": "Changes",
   "session.review.loadingChanges": "Loading changes...",
+  "session.review.worktreeNotCreated": "Git changes will be available after the new worktree is created.",
   "session.review.empty": "No changes in this session yet",
   "session.review.noVcs": "No Git Version Control System detected, changes not displayed",
   "session.review.noVcs.createGit.title": "Create a Git repository",

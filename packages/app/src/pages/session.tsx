@@ -98,6 +98,7 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { isExtraAgentDirectory } from "@/pages/layout/extra-agents"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
 import { createReviewDataService } from "@/pages/session/review-data-service"
+import { DraftWorkspaceReview } from "@/pages/session/draft-workspace-review"
 import { SessionSidePanel } from "@/pages/session/session-side-panel"
 import { SessionUserMessageRail, type SessionUserMessageEntry } from "@/pages/session/session-user-message-rail"
 import {
@@ -3998,6 +3999,16 @@ export default function Page() {
 
         <SessionSidePanel
           canReview={canReview}
+          draftReviewPanel={() => (
+            <DraftWorkspaceReview
+              worktree={newSessionWorktree()}
+              root={sync.project?.worktree || sdk.directory}
+              git={sync.project?.vcs === "git"}
+              loading={sync.status === "loading"}
+              view={view}
+              onViewFile={openReviewFile}
+            />
+          )}
           diffs={reviewDiffs}
           diffsReady={reviewReady}
           empty={reviewEmptyText}

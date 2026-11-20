@@ -50,6 +50,7 @@ export function SessionSidePanel(props: {
   hasReview: () => boolean
   reviewCount: () => number
   reviewPanel: () => JSX.Element
+  draftReviewPanel: () => JSX.Element
   activeDiff?: string
   focusReviewDiff: (path: string) => void
   size: Sizing
@@ -408,7 +409,7 @@ export function SessionSidePanel(props: {
                     </Tabs.List>
                   </div>
 
-                  <Show when={reviewOpen() && props.canReview()}>
+                  <Show when={reviewOpen()}>
                     {/* Remounts on every open, so the pop-in animation class
                         replays each time. Must be a class: Tabs.Content hardcodes
                         its own data-slot after spreading props. */}
@@ -416,7 +417,9 @@ export function SessionSidePanel(props: {
                       value="review"
                       class="session-review-panel-pop flex flex-col h-full overflow-hidden contain-strict"
                     >
-                      {props.reviewPanel()}
+                      <Show when={props.canReview()} fallback={props.draftReviewPanel()}>
+                        {props.reviewPanel()}
+                      </Show>
                     </Tabs.Content>
                   </Show>
 
