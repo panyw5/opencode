@@ -7,9 +7,13 @@ export type SessionContentGap = { left: number; right: number; measured: boolean
 // every session route). The user-message rail, the floating status pill, and
 // the bottom-right floating actions use this to size themselves against the
 // space that is actually free instead of assuming a fixed margin.
+//
+// TurnGap rows are full-bleed spacers: they are not constrained to the content
+// column, so measuring one would report a zero gap and collapse the rail,
+// status pill, and floating actions while scrolling. They are excluded here.
 export function createSessionContentGap(
   host: Accessor<HTMLElement | undefined>,
-  selector = "[data-timeline-row],[data-session-content-column]",
+  selector = '[data-timeline-row]:not([data-timeline-row="TurnGap"]),[data-session-content-column]',
 ) {
   const [gap, setGap] = createSignal<SessionContentGap>({ left: 0, right: 0, measured: false })
   let row: HTMLElement | undefined
@@ -21,8 +25,18 @@ export function createSessionContentGap(
   function measure() {
     const el = host()
     if (!el) return
-    if (row && !row.isConnected) row = undefined
-    const target = row ?? el.querySelector<HTMLElement>(selector) ?? undefined
+    if (row && (!row.isConnected || row.getBoundingClientRect().width === 0)) row = undefined
+    // Virtualized scrolling constantly swaps which row is first in the DOM, so
+    // re-pick the first *rendered* match whenever the tracked row goes away.
+    let target = row
+    if (!target) {
+      for (const candidate of el.querySelectorAll<HTMLElement>(selector)) {
+        if (candidate.getBoundingClientRect().width > 0) {
+          target = candidate
+          break
+        }
+      }
+    }
     if (target !== row) {
       if (row) rowObserver.unobserve(row)
       row = target
