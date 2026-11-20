@@ -3675,6 +3675,11 @@ export default function Page() {
 
         {/* Session panel */}
         <div
+          ref={(el) => {
+            // Host spans the whole panel so the gap can be measured off the
+            // composer column too when the timeline mounts no marked rows.
+            contentGapHost = el
+          }}
           data-slot="session-main-panel"
           data-command-scope="session"
           tabIndex={-1}
@@ -3692,12 +3697,7 @@ export default function Page() {
             "--session-inset-right": `${String(statusPadRight())}px`,
           }}
         >
-          <div
-            ref={(el) => {
-              contentGapHost = el
-            }}
-            class="relative flex-1 min-h-0"
-          >
+          <div class="relative flex-1 min-h-0">
             <div class="absolute inset-0 overflow-hidden">
               <Switch>
                 <Match when={params.id}>

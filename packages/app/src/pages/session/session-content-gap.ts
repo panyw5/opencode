@@ -3,17 +3,18 @@ import { createEffect, createSignal, onCleanup, type Accessor } from "solid-js"
 export type SessionContentGap = { left: number; right: number; measured: boolean }
 
 // Tracks the horizontal gap between the session panel edges and the centered
-// content column (timeline rows, or the composer column which is present on
-// every session route). The user-message rail, the floating status pill, and
-// the bottom-right floating actions use this to size themselves against the
-// space that is actually free instead of assuming a fixed margin.
+// content column. Elements that *are* the column (every constrained timeline
+// row frame, plus the composer column which is present on every session
+// route) carry data-session-content-column; layout-only rows such as the
+// full-bleed TurnGap spacer are unmarked, so they can never be mistaken for
+// the column when the virtualizer makes them the first DOM element.
 //
-// TurnGap rows are full-bleed spacers: they are not constrained to the content
-// column, so measuring one would report a zero gap and collapse the rail,
-// status pill, and floating actions while scrolling. They are excluded here.
+// The user-message rail, the floating status pill, and the bottom-right
+// floating actions use this to size themselves against the space that is
+// actually free instead of assuming a fixed margin.
 export function createSessionContentGap(
   host: Accessor<HTMLElement | undefined>,
-  selector = '[data-timeline-row]:not([data-timeline-row="TurnGap"]),[data-session-content-column]',
+  selector = "[data-session-content-column]",
 ) {
   const [gap, setGap] = createSignal<SessionContentGap>({ left: 0, right: 0, measured: false })
   let row: HTMLElement | undefined

@@ -1811,6 +1811,7 @@ export function MessageTimeline(props: {
         id={anchor() ? props.anchor(row().userMessageID) : undefined}
         data-message-id={row().userMessageID}
         data-timeline-row={row()._tag}
+        data-session-content-column
         classList={{
           "min-w-0 w-full max-w-full": true,
           "md:max-w-[var(--session-content-width)] md:mx-auto": props.centered,
