@@ -5,6 +5,7 @@ Use this tool when you need to ask the user questions during execution:
 3. Offer choices to the user about what direction to take.
 
 # GUIDELINES:
+- Communicate with user in the main answer BEFORE calling this `question` tool, to provide necessary context and preliminary answer
 - Set `multiple: true` to allow selecting more than one items
 - Set `timeout: x` to wait `x` seconds. Recommended default is 300 (5 mins); DO NOT set timeout under 30 seconds unless instructed. The timeout covers all questions together. On timeout no option is selected; the tool reports that no user response was received. Never interpret a timeout as consent.
 - Answers are returned as arrays of labels
