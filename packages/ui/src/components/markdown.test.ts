@@ -660,6 +660,37 @@ describe("markdown punctuation emphasis", () => {
     expect(html).not.toContain("**a：**")
     expect(html).not.toContain("**c：**")
   })
+
+  test("opens strong when a letter precedes the marker and CJK punctuation follows", async () => {
+    const marked = new Marked()
+    const html = await marked.parse(
+      prepareMarkdown("这里的**「共振」就是：乘在待求 OPE 系数前面的数恰好为零。** 因此，这一步不能像平常那样用除法求出该系数。"),
+    )
+
+    expect(html).toContain("<strong>「共振」就是：乘在待求 OPE 系数前面的数恰好为零。</strong>")
+    expect(html).not.toContain("**「共振」")
+  })
+
+  test("opens emphasis glued between CJK prose and punctuation for all marker kinds", async () => {
+    const marked = new Marked()
+    const em = await marked.parse(prepareMarkdown("说明*「注」*结束"))
+    const underscore = await marked.parse(prepareMarkdown("说明__「注」__结束"))
+    const asciiQuote = await marked.parse(prepareMarkdown('说明**"引用"**结束'))
+
+    expect(em).toContain("<em>「注」</em>")
+    expect(underscore).toContain("<strong>「注」</strong>")
+    expect(asciiQuote).toContain("<strong>&quot;引用&quot;</strong>")
+  })
+
+  test("leaves ASCII flanking failures and valid openers alone", async () => {
+    const marked = new Marked()
+    const html = await marked.parse(prepareMarkdown("a*(b)*c"))
+
+    expect(html).toContain("a*(b)*")
+    expect(html).not.toContain("<em>")
+    expect(healPunctuationEmphasis("**「x」**")).toBe("**「x」**")
+    expect(healPunctuationEmphasis("的 **「x」**")).toBe("的 **「x」**")
+  })
 })
 
 describe("markdown code copy affordance", () => {

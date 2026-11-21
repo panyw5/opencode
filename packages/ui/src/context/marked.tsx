@@ -913,7 +913,9 @@ function isMarkdownWhitespace(ch: string | undefined) {
 
 // CommonMark will not close **text：**Grok because the closer is preceded by
 // punctuation and followed by a letter. Insert a comment so the closer is
-// followed by punctuation and marked can pair it.
+// followed by punctuation and marked can pair it. The opener mirrors this:
+// 的**「text」** will not open because the opener is preceded by a letter and
+// followed by punctuation; a comment before the run makes it openable.
 export function healPunctuationEmphasis(markdown: string): string {
   const block = /(```[\s\S]*?```|~~~[\s\S]*?~~~)/g
   const parts = markdown.split(block)
@@ -966,6 +968,18 @@ function healPunctuationEmphasisInText(text: string): string {
     }
 
     if (remaining > 0 && !followedByWs) {
+      // ASCII-only runs like a*(b)*c stay literal: there the flanking rule is
+      // intended (multiplication, identifiers). Heal only CJK typography.
+      if (
+        before !== undefined &&
+        after !== undefined &&
+        !precededByWs &&
+        !isMarkdownPunctuation(before) &&
+        isMarkdownPunctuation(after) &&
+        (!asciiPunctuation.has(after) || autolinkProseChars.test(before))
+      ) {
+        inserts.push(i)
+      }
       open.push({ mark, size: remaining })
     }
 
