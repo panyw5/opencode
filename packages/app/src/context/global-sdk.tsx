@@ -3,6 +3,7 @@ import { createContext, createEffect, createSignal, getOwner, onCleanup, useCont
 import { createGlobalEmitter, type GlobalEmitter } from "@solid-primitives/event-bus"
 import z from "zod"
 import { createSdkForServer } from "@/utils/server"
+import { permissionPerf } from "@/utils/permission-perf"
 import { domainFromIntegration, mainDomain, type DomainId } from "@/pages/layout/extra-agents"
 import { useLanguage } from "./language"
 import { usePlatform } from "./platform"
@@ -224,6 +225,9 @@ export function GlobalSDKProvider(props: ParentProps) {
         return next
       }
       const dispatch = (event: Queued) => {
+        if (event.payload.type === "permission.replied") {
+          permissionPerf("dispatch-replied", `request=${(event.payload.properties as { requestID?: string }).requestID}`)
+        }
         if (flushSkip && event.payload.type === "message.part.delta") {
           const props = event.payload.properties
           if (flushSkip.has(deltaKey(event.directory, props.messageID, props.partID))) {
@@ -348,6 +352,9 @@ export function GlobalSDKProvider(props: ParentProps) {
               eventCount++
               const directory = event.directory ?? "global"
               const payload = event.payload
+              if (payload.type === "permission.replied" || payload.type === "permission.asked") {
+                permissionPerf("sse-arrived", `type=${payload.type} queue=${queue.length} flushing=${flushing ? flushing.length - flushIndex : 0}`)
+              }
               lastEventType = payload.type
               if (eventCount === 1) {
                 console.info(

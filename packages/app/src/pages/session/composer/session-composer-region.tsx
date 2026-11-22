@@ -10,6 +10,7 @@ import { Markdown } from "@opencode-ai/ui/markdown"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { PromptInput } from "@/components/prompt-input"
+import { permissionPerf } from "@/utils/permission-perf"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { ExternalSessionComposer } from "./external-session-composer"
 import { useLanguage } from "@/context/language"
@@ -750,6 +751,7 @@ export function SessionComposerRegion(props: {
 
   createEffect(() => {
     const next = props.state.permissionRequest()
+    permissionPerf("dock-active", `active=${!!next}${next ? ` request=${next.id}` : ""}`)
     if (next) setHeldPermission(() => next)
   })
 
@@ -1018,7 +1020,10 @@ export function SessionComposerRegion(props: {
 
         <ComposerDockExit
           active={!!props.state.permissionRequest()}
-          onVisibleChange={(visible) => setExitVisible("permission", visible)}
+          onVisibleChange={(visible) => {
+            permissionPerf("dock-exit-visible", `visible=${visible}`)
+            setExitVisible("permission", visible)
+          }}
         >
           <Show when={heldPermission()} keyed>
             {(request) => (

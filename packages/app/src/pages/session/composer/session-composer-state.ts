@@ -17,6 +17,7 @@ import {
   questionRequestNotFound,
 } from "./session-question-dock-helpers"
 import { todoState } from "./session-composer-state-helpers"
+import { permissionPerf } from "@/utils/permission-perf"
 
 export { todoState }
 
@@ -224,8 +225,12 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
     if (store.responding === perm.id) return
 
     setStore("responding", perm.id)
+    permissionPerf("decide-click", `request=${perm.id} response=${response}`)
     sdk.client.permission
       .respond({ sessionID: perm.sessionID, permissionID: perm.id, response })
+      .then(() => {
+        permissionPerf("http-settled", `request=${perm.id}`)
+      })
       .catch((err: unknown) => {
         if (permissionRequestNotFound(err, perm.id)) {
           console.warn(`[permission-dock] stale request missing on server request=${perm.id} session=${perm.sessionID}`)
