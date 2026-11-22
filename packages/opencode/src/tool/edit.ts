@@ -7,7 +7,7 @@ import * as path from "path"
 import { Effect, Schema } from "effect"
 import * as Tool from "./tool"
 import { LSP } from "@/lsp/lsp"
-import { createTwoFilesPatch, diffLines } from "diff"
+import { createTwoFilesPatch } from "diff"
 import DESCRIPTION from "./edit.txt"
 import { File } from "../file"
 import { FileWatcher } from "../file/watcher"
@@ -184,11 +184,13 @@ export const EditTool = Tool.define(
             }).pipe(Effect.orDie),
           )
 
+          // Count +/- lines in the already-computed unified diff instead of
+          // running a third full diff for statistics.
           let additions = 0
           let deletions = 0
-          for (const change of diffLines(contentOld, contentNew)) {
-            if (change.added) additions += change.count || 0
-            if (change.removed) deletions += change.count || 0
+          for (const line of diff.split("\n")) {
+            if (line.startsWith("+") && !line.startsWith("+++")) additions++
+            else if (line.startsWith("-") && !line.startsWith("---")) deletions++
           }
           const filediff: Snapshot.FileDiff = {
             file: filePath,

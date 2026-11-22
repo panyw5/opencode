@@ -34,7 +34,7 @@ import * as Log from "@opencode-ai/core/util/log"
 import { MessageV2 } from "./message-v2"
 import { CodeModeState } from "./code-mode-state"
 import { SessionInstructionState } from "./instruction-state"
-import { appendStreamingText, streamingText, withStreamingText } from "./streaming-text"
+import { appendStreamingText, hasStreamingText, withStreamingText } from "./streaming-text"
 import type { InstanceContext } from "../project/instance-context"
 import { InstanceState } from "@/effect/instance-state"
 import { Snapshot } from "@/snapshot"
@@ -1231,17 +1231,26 @@ export const layer: Layer.Layer<
     }) {
       let offset: number | undefined
       if (input.field === "text") {
-        let base = streamingText(input)
-        if (base === undefined) {
+        // `base` is only needed to seed a brand-new streaming entry; for an
+        // existing one it is discarded, so don't materialize the accumulated
+        // text on every token.
+        const tracked = hasStreamingText(input)
+        let base: string | undefined
+        if (!tracked) {
           const part = yield* getPart(input)
           if (part?.type === "text" || part?.type === "reasoning") base = part.text
         }
-        if (base !== undefined) {
-          offset = appendStreamingText(input, base, input.delta)
-          const line = `[session-stream] snapshot session=${input.sessionID} message=${input.messageID} part=${input.partID} offset=${offset} delta=${input.delta.length} text=${offset + input.delta.length}`
-          if (offset === 0 || Math.floor(offset / 1024) !== Math.floor((offset + input.delta.length) / 1024))
-            log.info(line)
-          else log.debug(line)
+        if (tracked || base !== undefined) {
+          offset = appendStreamingText(input, base ?? "", input.delta)
+          const end = offset + input.delta.length
+          if (offset === 0 || Math.floor(offset / 1024) !== Math.floor(end / 1024))
+            log.info(
+              `[session-stream] snapshot session=${input.sessionID} message=${input.messageID} part=${input.partID} offset=${offset} delta=${input.delta.length} text=${end}`,
+            )
+          else
+            log.debug(
+              `[session-stream] snapshot session=${input.sessionID} message=${input.messageID} part=${input.partID} offset=${offset} delta=${input.delta.length} text=${end}`,
+            )
         } else log.warn(`[session-stream] missing part session=${input.sessionID} part=${input.partID}`)
       }
       yield* bus.publish(MessageV2.Event.PartDelta, { ...input, offset })

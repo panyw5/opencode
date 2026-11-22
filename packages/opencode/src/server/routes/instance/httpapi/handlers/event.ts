@@ -1,4 +1,5 @@
 import { Bus } from "@/bus"
+import { mergePartDeltas } from "@/server/event-merge"
 import * as Log from "@opencode-ai/core/util/log"
 import { Effect } from "effect"
 import * as Stream from "effect/Stream"
@@ -35,7 +36,17 @@ function eventResponse(bus: Bus.Interface) {
     log.info("event connected")
     return HttpServerResponse.stream(
       Stream.make({ id: Bus.createID(), type: "server.connected", properties: {} }).pipe(
-        Stream.concat(events.pipe(Stream.merge(heartbeat, { haltStrategy: "left" }))),
+        Stream.concat(
+          events.pipe(
+            Stream.merge(heartbeat, { haltStrategy: "left" }),
+            // Batch events per 32ms window (the client flushes its own queue
+            // on a ~16ms frame cadence, so sub-frame granularity is invisible)
+            // and merge adjacent per-token deltas into a single payload.
+            Stream.groupedWithin(1024, "32 millis"),
+            Stream.map((chunk) => mergePartDeltas(chunk, (p) => p, (_p, payload) => payload)),
+            Stream.flattenIterable,
+          ),
+        ),
         Stream.map(eventData),
         Stream.pipeThroughChannel(Sse.encode()),
         Stream.encodeText,

@@ -2,6 +2,7 @@ import { Config } from "@/config/config"
 import { Command } from "@/command"
 import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
 import { Bus } from "@/bus"
+import { mergePartDeltas } from "@/server/event-merge"
 import { Installation } from "@/installation"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { Event } from "@/server/event"
@@ -51,7 +52,21 @@ function eventResponse() {
 
   return HttpServerResponse.stream(
     Stream.make({ payload: { id: Bus.createID(), type: "server.connected", properties: {} } }).pipe(
-      Stream.concat(events.pipe(Stream.merge(heartbeat, { haltStrategy: "left" }))),
+      Stream.concat(
+        events.pipe(
+          Stream.merge(heartbeat, { haltStrategy: "left" }),
+          Stream.groupedWithin(1024, "32 millis"),
+          Stream.map((chunk) =>
+            mergePartDeltas(
+              chunk,
+              (e) => e.payload,
+              (e, payload) => ({ ...e, payload }),
+              (a, b) => (a as GlobalBusEvent).directory === (b as GlobalBusEvent).directory,
+            ),
+          ),
+          Stream.flattenIterable,
+        ),
+      ),
       Stream.map(eventData),
       Stream.pipeThroughChannel(Sse.encode()),
       Stream.encodeText,

@@ -33,9 +33,16 @@ const sock = (ws: Socket) => (ws.data && typeof ws.data === "object" ? ws.data :
 type Active = {
   info: Info
   process: Proc
-  buffer: string
+  // Scrollback is held as a chunk list; appending a pty read is O(1) and the
+  // buffer is only joined when a snapshot/replay actually needs the text.
+  chunks: string[]
+  bufferLength: number
   bufferCursor: number
   cursor: number
+  // Chunks not yet flushed to subscribers; sends are coalesced per microtask
+  // so a burst of pty reads costs one ws.send per client instead of one per read.
+  pending: string[]
+  flushScheduled: boolean
   subscribers: Map<unknown, Socket>
   lease: Fiber.Fiber<never, never>
 }
@@ -138,6 +145,30 @@ export const layer = Layer.effect(
     const bus = yield* Bus.Service
     const plugin = yield* Plugin.Service
 
+    const bufferText = (session: Active) => session.chunks.join("")
+
+    function flushSubscribers(session: Active) {
+      session.flushScheduled = false
+      if (session.pending.length === 0) return
+      const data = session.pending.join("")
+      session.pending.length = 0
+      for (const [key, ws] of session.subscribers.entries()) {
+        if (ws.readyState !== 1) {
+          session.subscribers.delete(key)
+          continue
+        }
+        if (sock(ws) !== key) {
+          session.subscribers.delete(key)
+          continue
+        }
+        try {
+          ws.send(data)
+        } catch {
+          session.subscribers.delete(key)
+        }
+      }
+    }
+
     function teardown(session: Active) {
       try {
         session.process.kill()
@@ -202,7 +233,7 @@ export const layer = Layer.effect(
       const session = yield* requireSession(id)
       return {
         info: session.info,
-        output: session.buffer,
+        output: bufferText(session),
         cursor: session.cursor,
       }
     })
@@ -278,43 +309,46 @@ export const layer = Layer.effect(
       const session: Active = {
         info,
         process: proc,
-        buffer: "",
+        chunks: [],
+        bufferLength: 0,
         bufferCursor: 0,
         cursor: 0,
+        pending: [],
+        flushScheduled: false,
         subscribers: new Map(),
         lease,
       }
       s.sessions.set(id, session)
       proc.onData((chunk) => {
         session.cursor += chunk.length
-
-        for (const [key, ws] of session.subscribers.entries()) {
-          if (ws.readyState !== 1) {
-            session.subscribers.delete(key)
-            continue
-          }
-          if (sock(ws) !== key) {
-            session.subscribers.delete(key)
-            continue
-          }
-          try {
-            ws.send(chunk)
-          } catch {
-            session.subscribers.delete(key)
-          }
+        session.pending.push(chunk)
+        if (!session.flushScheduled) {
+          session.flushScheduled = true
+          queueMicrotask(() => flushSubscribers(session))
         }
 
-        session.buffer += chunk
-        if (session.buffer.length <= BUFFER_LIMIT) return
-        const excess = session.buffer.length - BUFFER_LIMIT
-        session.buffer = session.buffer.slice(excess)
-        session.bufferCursor += excess
+        session.chunks.push(chunk)
+        session.bufferLength += chunk.length
+        let excess = session.bufferLength - BUFFER_LIMIT
+        while (excess > 0 && session.chunks.length > 0) {
+          const first = session.chunks[0]
+          if (first.length > excess) {
+            session.chunks[0] = first.slice(excess)
+            session.bufferLength -= excess
+            session.bufferCursor += excess
+            break
+          }
+          excess -= first.length
+          session.bufferLength -= first.length
+          session.bufferCursor += first.length
+          session.chunks.shift()
+        }
       })
       proc.onExit(({ exitCode }) => {
         if (session.info.status === "exited") return
         log.info("pty session exited", { ptyID: id, exitCode })
         session.info.status = "exited"
-        bridge.fork(bus.publish(Event.Exited, { id, exitCode, output: session.buffer }))
+        bridge.fork(bus.publish(Event.Exited, { id, exitCode, output: bufferText(session) }))
         bridge.fork(remove(id))
       })
       yield* bus.publish(Event.Created, { info })
@@ -357,6 +391,11 @@ export const layer = Layer.effect(
       )
       log.info("client connected to session", { id })
 
+      // Deliver queued output to existing subscribers before replaying the
+      // scrollback: the replay below already includes those chunks, and
+      // sending them again to the new subscriber would duplicate data.
+      flushSubscribers(session)
+
       const sub = sock(ws)
       session.subscribers.delete(sub)
       session.subscribers.set(sub, ws)
@@ -370,12 +409,13 @@ export const layer = Layer.effect(
       const from =
         cursor === -1 ? end : typeof cursor === "number" && Number.isSafeInteger(cursor) ? Math.max(0, cursor) : 0
 
+      const buffer = bufferText(session)
       const data = (() => {
-        if (!session.buffer) return ""
+        if (!buffer) return ""
         if (from >= end) return ""
         const offset = Math.max(0, from - start)
-        if (offset >= session.buffer.length) return ""
-        return session.buffer.slice(offset)
+        if (offset >= buffer.length) return ""
+        return buffer.slice(offset)
       })()
 
       if (data) {

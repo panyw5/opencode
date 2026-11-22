@@ -94,7 +94,6 @@ const Summary = Schema.Struct({
 })
 
 const Result = Schema.Union([Begin, Match, End, Summary])
-const decodeResult = Schema.decodeUnknownEffect(Schema.fromJsonString(Result))
 
 export type Result = Schema.Schema.Type<typeof Result>
 export type Match = Schema.Schema.Type<typeof Match>
@@ -188,8 +187,13 @@ function row(data: Row): Row {
   }
 }
 
+// Hot path: rg emits one JSON line per match. Plain JSON.parse trusts the
+// producer's shape instead of paying Effect Schema decode per line.
 function parse(line: string) {
-  return decodeResult(line).pipe(Effect.mapError((cause) => new Error("invalid ripgrep output", { cause })))
+  return Effect.try({
+    try: () => JSON.parse(line) as Result,
+    catch: (cause) => new Error("invalid ripgrep output", { cause }),
+  })
 }
 
 function fail(queue: Queue.Queue<string, PlatformError | Error | Cause.Done>, err: PlatformError | Error) {

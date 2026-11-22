@@ -124,7 +124,10 @@ export const layer = Layer.effect(
           type: def.type,
           properties: issueID ? Object.assign({}, properties, { issueID }) : properties,
         }
-        log.info("publishing", { type: def.type })
+        // High-frequency events (e.g. per-token part deltas) would otherwise
+        // pay a log-line serialize + stream write for every publish.
+        if (def.quiet) log.debug("publishing", { type: def.type })
+        else log.info("publishing", { type: def.type })
 
         const ps = s.typed.get(def.type)
         if (ps) yield* PubSub.publish(ps, payload)

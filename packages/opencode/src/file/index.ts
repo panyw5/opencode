@@ -513,17 +513,32 @@ export const layer = Layer.effect(
       ])
 
       if (untrackedOutput.trim()) {
-        for (const file of untrackedOutput.trim().split("\n")) {
-          const content = yield* appFs
-            .readFileString(path.join(ctx.directory, file))
-            .pipe(Effect.catch(() => Effect.succeed<string | undefined>(undefined)))
-          if (content === undefined) continue
-          changed.push({
-            path: file,
-            added: content.split("\n").length,
-            removed: 0,
-            status: "added",
-          })
+        const files = untrackedOutput.trim().split("\n")
+        const counted = yield* Effect.all(
+          files.map((file) =>
+            Effect.gen(function* () {
+              // Stream-count newlines instead of materializing the whole file.
+              const newlines = yield* appFs.stream(path.join(ctx.directory, file)).pipe(
+                Stream.runFold(
+                  () => 0,
+                  (count, chunk) => {
+                    for (let i = 0; i < chunk.length; i++) if (chunk[i] === 10) count++
+                    return count
+                  },
+                ),
+              )
+              return {
+                path: file,
+                added: newlines + 1,
+                removed: 0,
+                status: "added" as const,
+              }
+            }).pipe(Effect.catch(() => Effect.succeed(undefined))),
+          ),
+          { concurrency: 8 },
+        )
+        for (const item of counted) {
+          if (item) changed.push(item)
         }
       }
 
@@ -609,9 +624,18 @@ export const layer = Layer.effect(
       )
 
       if (ctx.project.vcs === "git") {
-        let diff = yield* gitText(["-c", "core.fsmonitor=false", "diff", "--", file])
-        if (!diff.trim()) {
-          diff = yield* gitText(["-c", "core.fsmonitor=false", "diff", "--staged", "--", file])
+        // One `git diff HEAD` covers both unstaged (worktree vs index) and
+        // staged (index vs HEAD) changes, saving a subprocess per read.
+        const result = yield* git.run(["-c", "core.fsmonitor=false", "diff", "HEAD", "--", file], {
+          cwd: ctx.directory,
+        })
+        let diff = result.text()
+        if (result.exitCode !== 0) {
+          // e.g. a repository without commits yet, where HEAD is unborn.
+          diff = yield* gitText(["-c", "core.fsmonitor=false", "diff", "--", file])
+          if (!diff.trim()) {
+            diff = yield* gitText(["-c", "core.fsmonitor=false", "diff", "--staged", "--", file])
+          }
         }
         if (diff.trim()) {
           const original = yield* git.show(ctx.directory, "HEAD", file)

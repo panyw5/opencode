@@ -4,6 +4,7 @@ import { EventV2 } from "@opencode-ai/core/event"
 export type Definition<Type extends string = string, Properties extends Schema.Top = Schema.Top> = {
   type: Type
   properties: Properties
+  quiet?: boolean
 }
 
 const registry = new Map<string, Definition>()
@@ -11,8 +12,9 @@ const registry = new Map<string, Definition>()
 export function define<Type extends string, Properties extends Schema.Top>(
   type: Type,
   properties: Properties,
+  options?: { quiet?: boolean },
 ): Definition<Type, Properties> {
-  const result = { type, properties }
+  const result = { type, properties, quiet: options?.quiet === true }
   registry.set(type, result)
   return result
 }

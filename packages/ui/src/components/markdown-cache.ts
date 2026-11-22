@@ -14,6 +14,7 @@ export function markdownRendererScope(renderer: object) {
 
 export class MarkdownHtmlCache {
   protected entries = new Map<string, Entry>()
+  private verified = new WeakSet<Entry>()
   private latest = new Map<string, { source: string; ticket: number }>()
   private inflight = new Map<string, Promise<unknown>>()
   private sequence = 0
@@ -44,6 +45,15 @@ export class MarkdownHtmlCache {
     return ticket
   }
 
+  // A damaged entry is a new object identity, so the once-per-entry checksum
+  // still catches corruption on the next read while repeat hits stay O(1).
+  private integrity(entry: Entry) {
+    if (this.verified.has(entry)) return true
+    if (entry.htmlHash !== (checksum(entry.html) ?? "empty")) return false
+    this.verified.add(entry)
+    return true
+  }
+
   get(key: string, hash: string, source = hash): string | undefined {
     const entry = this.entries.get(key)
     if (entry === undefined) return
@@ -53,7 +63,7 @@ export class MarkdownHtmlCache {
       typeof entry.hash !== "string" ||
       entry.hash !== hash ||
       entry.source !== source ||
-      entry.htmlHash !== (checksum(entry.html) ?? "empty")
+      !this.integrity(entry)
     ) {
       this.entries.delete(key)
       console.debug(`[markdown-cache] discard key=${key} reason=integrity-or-source`)

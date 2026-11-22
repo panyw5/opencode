@@ -1,48 +1,14 @@
-import yargs from "yargs"
+import yargs, { type Argv, type CommandModule, type Options } from "yargs"
 import { hideBin } from "yargs/helpers"
-import { RunCommand } from "./cli/cmd/run"
-import { GenerateCommand } from "./cli/cmd/generate"
-import * as Log from "@opencode-ai/core/util/log"
-import { ConsoleCommand } from "./cli/cmd/account"
-import { ProvidersCommand } from "./cli/cmd/providers"
-import { AgentCommand } from "./cli/cmd/agent"
-import { UpgradeCommand } from "./cli/cmd/upgrade"
-import { UninstallCommand } from "./cli/cmd/uninstall"
-import { ModelsCommand } from "./cli/cmd/models"
-import { UI } from "./cli/ui"
-import { Installation } from "./installation"
+import type { Level as LogLevel } from "@opencode-ai/core/util/log"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
-import { NamedError } from "@opencode-ai/core/util/error"
 import { ensureProcessMetadata } from "@opencode-ai/core/util/opencode-process"
-import { FormatError } from "./cli/error"
-import { ServeCommand } from "./cli/cmd/serve"
-import { Filesystem } from "@/util/filesystem"
 import { errorMessage } from "@/util/error"
 import { isRecord } from "@/util/record"
-import { DebugCommand } from "./cli/cmd/debug"
-import { StatsCommand } from "./cli/cmd/stats"
-import { McpCommand } from "./cli/cmd/mcp"
-import { GithubCommand } from "./cli/cmd/github"
-import { ExportCommand } from "./cli/cmd/export"
-import { ImportCommand } from "./cli/cmd/import"
-import { AcpCommand } from "./cli/cmd/acp"
 import { EOL } from "os"
-import { WebCommand } from "./cli/cmd/web"
-import { PrCommand } from "./cli/cmd/pr"
-import { SessionCommand } from "./cli/cmd/session"
-import { DesktopCommand } from "./cli/cmd/desktop"
-import { DbCommand } from "./cli/cmd/db"
-import { OpenClawServeCommand } from "./cli/cmd/openclaw-serve"
-import { ExtraAgentServeCommand } from "./cli/cmd/extra-agent-serve"
-import { MathCommand } from "./cli/cmd/math"
-import { ExtensionCommand } from "./cli/cmd/extension"
-import { ExtensionDrain } from "./extension/drain"
 import path from "path"
-import { Global } from "@opencode-ai/core/global"
-import { JsonMigration } from "./storage/json-migration"
-import { Database } from "./storage/db"
-import { Heap } from "./cli/heap"
-import { drizzle } from "drizzle-orm/bun-sqlite"
+
+const lazyLog = () => import("@opencode-ai/core/util/log")
 
 function isResolveMessage(value: unknown): value is {
   name: string
@@ -57,15 +23,19 @@ function isResolveMessage(value: unknown): value is {
 }
 
 process.on("unhandledRejection", (e) => {
-  Log.Default.error("rejection", {
-    e: errorMessage(e),
-  })
+  void lazyLog().then((log) =>
+    log.Default.error("rejection", {
+      e: errorMessage(e),
+    }),
+  )
 })
 
 process.on("uncaughtException", (e) => {
-  Log.Default.error("exception", {
-    e: errorMessage(e),
-  })
+  void lazyLog().then((log) =>
+    log.Default.error("exception", {
+      e: errorMessage(e),
+    }),
+  )
 })
 
 const args = hideBin(process.argv)
@@ -81,14 +51,45 @@ if (args[0] === "extension-host") {
 
 const processMetadata = ensureProcessMetadata("main")
 
+let ui: typeof import("./cli/ui").UI | undefined
+
 function show(out: string) {
   const text = out.trimStart()
   if (!text.startsWith("opencode ")) {
-    process.stderr.write(UI.logo() + EOL + EOL)
+    if (ui) process.stderr.write(ui.logo() + EOL + EOL)
     process.stderr.write(text)
     return
   }
   process.stderr.write(out)
+}
+
+// Commands are registered as thin stubs so `opencode --version` / `--help`
+// never pay to evaluate the full command module graph (provider SDKs, server,
+// session stack). The real module is imported on first dispatch.
+interface LoadedCommand {
+  builder?: ((yargs: Argv) => unknown) | Record<string, unknown>
+  handler?: (args: never) => unknown
+}
+
+function lazy(
+  meta: { command: string | readonly string[]; describe?: string | false; aliases?: string | readonly string[] },
+  load: () => Promise<LoadedCommand>,
+): CommandModule {
+  return {
+    command: meta.command,
+    describe: meta.describe,
+    aliases: meta.aliases,
+    builder: async (yargs) => {
+      const mod = await load()
+      if (typeof mod.builder === "function") return (mod.builder(yargs) ?? yargs) as Argv
+      if (mod.builder) return yargs.options(mod.builder as { [key: string]: Options })
+      return yargs
+    },
+    handler: async (argv) => {
+      const mod = await load()
+      await mod.handler?.(argv as never)
+    },
+  }
 }
 
 let cli = yargs(args)
@@ -114,11 +115,16 @@ let cli = yargs(args)
   })
   .middleware(async (opts) => {
     const start = Date.now()
+    // `Log` must finish evaluating before other module graphs load it as a
+    // dependency — a concurrent import() sees its "evaluating" state as a
+    // cycle and downstream `Log.create` calls hit the uninitialized binding.
+    const Log = await lazyLog()
+    const [{ Installation }, { Heap }] = await Promise.all([import("./installation"), import("./cli/heap")])
     await Log.init({
       print: process.argv.includes("--print-logs"),
       dev: Installation.isLocal(),
       level: (() => {
-        if (opts.logLevel) return opts.logLevel as Log.Level
+        if (opts.logLevel) return opts.logLevel as LogLevel
         if (Installation.isLocal()) return "DEBUG"
         return "INFO"
       })(),
@@ -145,8 +151,15 @@ let cli = yargs(args)
       run_id: processMetadata.runID,
     })
 
+    const { Global } = await import("@opencode-ai/core/global")
+    const { Filesystem } = await import("@/util/filesystem")
     const marker = path.join(Global.Path.data, "opencode.db")
     if (!(await Filesystem.exists(marker))) {
+      const [{ JsonMigration }, { Database }, { drizzle }] = await Promise.all([
+        import("./storage/json-migration"),
+        import("./storage/db"),
+        import("drizzle-orm/bun-sqlite"),
+      ])
       const timer = Log.create({ service: "startup" }).time("sqlite.migration")
       const tty = process.stderr.isTTY
       process.stderr.write("Performing one time database migration, may take a few minutes..." + EOL)
@@ -186,31 +199,31 @@ let cli = yargs(args)
   })
   .usage("")
   .completion("completion", "generate shell completion script")
-  .command(AcpCommand)
-  .command(McpCommand)
-  .command(ExtensionCommand)
-  .command(MathCommand)
-  .command(RunCommand)
-  .command(GenerateCommand)
-  .command(DebugCommand)
-  .command(ConsoleCommand)
-  .command(ProvidersCommand)
-  .command(AgentCommand)
-  .command(UpgradeCommand)
-  .command(UninstallCommand)
-  .command(ServeCommand)
-  .command(WebCommand)
-  .command(ModelsCommand)
-  .command(StatsCommand)
-  .command(ExportCommand)
-  .command(ImportCommand)
-  .command(GithubCommand)
-  .command(PrCommand)
-  .command(SessionCommand)
-  .command(DesktopCommand)
-  .command(DbCommand)
-  .command(OpenClawServeCommand)
-  .command(ExtraAgentServeCommand)
+  .command(lazy({ command: "acp", describe: "start ACP (Agent Client Protocol) server" }, () => import("./cli/cmd/acp").then((m) => m.AcpCommand)))
+  .command(lazy({ command: "mcp", describe: "manage MCP (Model Context Protocol) servers" }, () => import("./cli/cmd/mcp").then((m) => m.McpCommand)))
+  .command(lazy({ command: "extension", describe: "manage OpenCode extensions", aliases: ["ext"] }, () => import("./cli/cmd/extension").then((m) => m.ExtensionCommand)))
+  .command(lazy({ command: "math", describe: "math mode (fact graph MCP + detached workers)" }, () => import("./cli/cmd/math").then((m) => m.MathCommand)))
+  .command(lazy({ command: "run [message..]", describe: "run opencode with a message" }, () => import("./cli/cmd/run").then((m) => m.RunCommand)))
+  .command(lazy({ command: "generate" }, () => import("./cli/cmd/generate").then((m) => m.GenerateCommand)))
+  .command(lazy({ command: "debug", describe: "debugging and troubleshooting tools" }, () => import("./cli/cmd/debug").then((m) => m.DebugCommand)))
+  .command(lazy({ command: "console", describe: false }, () => import("./cli/cmd/account").then((m) => m.ConsoleCommand)))
+  .command(lazy({ command: "providers", describe: "manage AI providers and credentials", aliases: ["auth"] }, () => import("./cli/cmd/providers").then((m) => m.ProvidersCommand)))
+  .command(lazy({ command: "agent", describe: "manage agents" }, () => import("./cli/cmd/agent").then((m) => m.AgentCommand)))
+  .command(lazy({ command: "upgrade [target]", describe: "upgrade opencode to the latest or a specific version" }, () => import("./cli/cmd/upgrade").then((m) => m.UpgradeCommand)))
+  .command(lazy({ command: "uninstall", describe: "uninstall opencode and remove all related files" }, () => import("./cli/cmd/uninstall").then((m) => m.UninstallCommand)))
+  .command(lazy({ command: "serve", describe: "starts a headless opencode server" }, () => import("./cli/cmd/serve").then((m) => m.ServeCommand)))
+  .command(lazy({ command: "web", describe: "start opencode server and open web interface" }, () => import("./cli/cmd/web").then((m) => m.WebCommand)))
+  .command(lazy({ command: "models [provider]", describe: "list all available models" }, () => import("./cli/cmd/models").then((m) => m.ModelsCommand)))
+  .command(lazy({ command: "stats", describe: "show token usage and cost statistics" }, () => import("./cli/cmd/stats").then((m) => m.StatsCommand)))
+  .command(lazy({ command: "export [sessionID]", describe: "export session data as JSON" }, () => import("./cli/cmd/export").then((m) => m.ExportCommand)))
+  .command(lazy({ command: "import <file>", describe: "import session data from JSON file or URL" }, () => import("./cli/cmd/import").then((m) => m.ImportCommand)))
+  .command(lazy({ command: "github", describe: "manage GitHub agent" }, () => import("./cli/cmd/github").then((m) => m.GithubCommand)))
+  .command(lazy({ command: "pr <number>", describe: "fetch and checkout a GitHub PR branch, then run opencode" }, () => import("./cli/cmd/pr").then((m) => m.PrCommand)))
+  .command(lazy({ command: "session", describe: "manage sessions" }, () => import("./cli/cmd/session").then((m) => m.SessionCommand)))
+  .command(lazy({ command: "desktop [directory]", describe: "open OpenCode desktop app with specified directory" }, () => import("./cli/cmd/desktop").then((m) => m.DesktopCommand)))
+  .command(lazy({ command: "db", describe: "database tools" }, () => import("./cli/cmd/db").then((m) => m.DbCommand)))
+  .command(lazy({ command: "openclaw-serve", describe: "start an OpenClaw gateway adapter server" }, () => import("./cli/cmd/openclaw-serve").then((m) => m.OpenClawServeCommand)))
+  .command(lazy({ command: "extra-agent-serve", describe: "start an extra-agent bridge server by id" }, () => import("./cli/cmd/extra-agent-serve").then((m) => m.ExtraAgentServeCommand)))
 
 cli = cli
   .fail((msg, err) => {
@@ -220,7 +233,12 @@ cli = cli
       msg?.startsWith("Invalid values:")
     ) {
       if (err) throw err
-      cli.showHelp(show)
+      void import("./cli/ui").then((mod) => {
+        ui = mod.UI
+        cli.showHelp(show)
+        process.exit(1)
+      })
+      return
     }
     if (err) throw err
     process.exit(1)
@@ -229,6 +247,7 @@ cli = cli
 
 try {
   if (args.includes("-h") || args.includes("--help")) {
+    ui = (await import("./cli/ui")).UI
     await cli.parse(args, (err: Error | undefined, _argv: unknown, out: string) => {
       if (err) throw err
       if (!out) return
@@ -238,6 +257,10 @@ try {
     await cli.parse()
   }
 } catch (e) {
+  const [{ NamedError }, { FormatError }] = await Promise.all([
+    import("@opencode-ai/core/util/error"),
+    import("./cli/error"),
+  ])
   let data: Record<string, any> = {}
   if (e instanceof Error) {
     Object.assign(data, {
@@ -269,6 +292,8 @@ try {
       importKind: e.importKind,
     })
   }
+  const Log = await lazyLog()
+  const { UI } = await import("./cli/ui")
   Log.Default.error("fatal", data)
   const formatted = FormatError(e)
   if (formatted) UI.error(formatted)
@@ -283,6 +308,7 @@ try {
   // run using `docker run --init`.
   // Explicitly exit to avoid any hanging subprocesses.
   // Extension recovery holds mkdir lease gates; finish it first so no gate is left behind.
+  const { ExtensionDrain } = await import("./extension/drain")
   await ExtensionDrain.drain()
   process.exit()
 }

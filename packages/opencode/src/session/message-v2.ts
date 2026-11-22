@@ -552,6 +552,7 @@ export const Event = {
       delta: Schema.String,
       offset: Schema.optional(Schema.Number),
     }),
+    { quiet: true },
   ),
   PartRemoved: SyncEvent.define({
     type: "message.part.removed",
