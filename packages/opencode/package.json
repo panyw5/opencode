@@ -15,7 +15,8 @@
     "build": "bun run script/build.ts",
     "fix-node-pty": "bun run script/fix-node-pty.ts",
     "dev": "bun run --conditions=browser ./src/index.ts",
-    "db": "bun drizzle-kit"
+    "db": "bun drizzle-kit",
+    "bench:perf": "bun run script/bench-perf.ts"
   },
   "bin": {
     "opencode": "./bin/opencode"
