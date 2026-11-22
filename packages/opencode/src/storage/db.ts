@@ -445,6 +445,7 @@ export type TxOrDb = Transaction | Client
 const ctx = LocalContext.create<{
   tx: TxOrDb
   effects: (() => void | Promise<void>)[]
+  inTx?: boolean
 }>("database")
 
 export function use<T>(callback: (trx: TxOrDb) => T): T {
@@ -453,7 +454,7 @@ export function use<T>(callback: (trx: TxOrDb) => T): T {
   } catch (err) {
     if (err instanceof LocalContext.NotFound) {
       const effects: (() => void | Promise<void>)[] = []
-      const result = ctx.provide({ effects, tx: Client() }, () => callback(Client()))
+      const result = ctx.provide({ effects, tx: Client(), inTx: false }, () => callback(Client()))
       for (const effect of effects) effect()
       return result
     }
@@ -468,6 +469,24 @@ export function effect(fn: () => any | Promise<any>) {
   } catch {
     bound()
   }
+}
+
+/**
+ * Run `callback` inside a SAVEPOINT scoped to the ambient transaction. A
+ * failure rolls back only the savepoint's writes without aborting the outer
+ * transaction — used by SyncEvent batching to keep per-event failure
+ * isolation inside a single immediate transaction.
+ */
+export function savepoint<T>(callback: (tx: TxOrDb) => T): T {
+  const current = ctx.use()
+  if (!current.inTx) {
+    throw new Error("Database.savepoint must be called inside a transaction")
+  }
+  let result!: T
+  ;(current.tx as Transaction).transaction((nested) => {
+    result = ctx.provide({ tx: nested, effects: current.effects, inTx: true }, () => callback(nested))
+  })
+  return result
 }
 
 type NotPromise<T> = T extends Promise<any> ? never : T
@@ -485,7 +504,9 @@ export function transaction<T>(
     if (err instanceof LocalContext.NotFound) {
       const execute = () => {
         const effects: (() => void | Promise<void>)[] = []
-        const txCallback = EffectBridge.bind((tx: TxOrDb) => ctx.provide({ tx, effects }, () => callback(tx)))
+        const txCallback = EffectBridge.bind((tx: TxOrDb) =>
+          ctx.provide({ tx, effects, inTx: true }, () => callback(tx)),
+        )
         return {
           result: Client().transaction(txCallback, { behavior: options?.behavior }),
           effects,

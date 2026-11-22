@@ -53,6 +53,23 @@ export type SerializedEvent<Def extends Definition = Definition> = Event<Def> & 
 type ProjectorFunc = (db: Database.TxOrDb, data: unknown, event: Event) => void
 type ConvertEvent = (type: string, data: Event["data"]) => unknown | Promise<unknown>
 
+// `run` queues same-tick events into one immediate transaction instead of
+// paying BEGIN IMMEDIATE + COMMIT per state transition. Each event still gets
+// its own SAVEPOINT so a failing projector rejects only its own caller —
+// identical failure isolation to the old one-transaction-per-event behavior.
+type PendingEvent = {
+  marker?: boolean
+  def?: Definition
+  agg?: string
+  data?: Event["data"]
+  publish?: boolean
+  pending?: Promise<void>[]
+  bridge?: EffectBridge.Shape
+  settled?: boolean
+  resolve: () => void
+  reject: (err: unknown) => void
+}
+
 export interface Interface {
   readonly run: <Def extends Definition>(
     def: Def,
@@ -75,7 +92,90 @@ export const layer = Layer.effect(Service)(
     const flags = yield* RuntimeFlags.Service
     const bus = yield* ProjectBus.Service
 
+    const queue: PendingEvent[] = []
+    let flushScheduled = false
+
+    function flush() {
+      const batch = queue.splice(0, queue.length)
+      if (!batch.length) return
+      try {
+        Database.transaction(
+          () => {
+            for (const item of batch) {
+              if (item.marker) continue
+              try {
+                Database.savepoint(() => {
+                  const row = Database.use((db) =>
+                    db
+                      .select({ seq: EventSequenceTable.seq })
+                      .from(EventSequenceTable)
+                      .where(eq(EventSequenceTable.aggregate_id, item.agg!))
+                      .get(),
+                  )
+                  const seq = row?.seq != null ? row.seq + 1 : 0
+                  const event = { id: EventID.ascending(), seq, aggregateID: item.agg!, data: item.data! }
+                  process(item.def!, event, {
+                    bus,
+                    bridge: item.bridge!,
+                    publish: item.publish!,
+                    pending: item.pending,
+                    experimentalWorkspaces: flags.experimentalWorkspaces,
+                  })
+                })
+              } catch (err) {
+                item.reject(err)
+              }
+            }
+          },
+          {
+            behavior: "immediate",
+            operation: "sync event batch",
+          },
+        )
+        // Resolve only after COMMIT — an item resolved inside the callback
+        // would falsely report durability if the outer commit then failed.
+        for (const item of batch) item.resolve()
+      } catch (err) {
+        for (const item of batch) item.reject(err)
+      }
+    }
+
+    const enqueue = (item: Omit<PendingEvent, "resolve" | "reject" | "settled">) => {
+      return new Promise<void>((resolve, reject) => {
+        const entry: PendingEvent = {
+          ...item,
+          settled: false,
+          resolve() {
+            if (!entry.settled) {
+              entry.settled = true
+              resolve()
+            }
+          },
+          reject(err) {
+            if (!entry.settled) {
+              entry.settled = true
+              reject(err)
+            }
+          },
+        }
+        queue.push(entry)
+        if (!flushScheduled) {
+          flushScheduled = true
+          queueMicrotask(() => {
+            flushScheduled = false
+            flush()
+          })
+        }
+      })
+    }
+
+    // drain() resolves once every event queued so far is committed — readers
+    // that must observe pending writes (replay's sequence check, aggregate
+    // removal, ownership claims) wait on this before touching the tables.
+    const drain = () => (queue.length ? enqueue({ marker: true }) : Promise.resolve())
+
     const replay: Interface["replay"] = Effect.fn("SyncEvent.replay")(function* (event, options) {
+      yield* Effect.promise(() => drain())
       const def = registry.get(event.type)
       if (!def) {
         throw new Error(`Unknown event type: ${event.type}`)
@@ -152,27 +252,10 @@ export const layer = Layer.effect(Service)(
       const bridge = yield* EffectBridge.make()
       const pending = options?.awaitPublish ? ([] as Promise<void>[]) : undefined
 
-      // Note that this is an "immediate" transaction which is critical.
-      // We need to make sure we can safely read and write with nothing
-      // else changing the data from under us
-      Database.transaction(
-        (tx) => {
-          const id = EventID.ascending()
-          const row = tx
-            .select({ seq: EventSequenceTable.seq })
-            .from(EventSequenceTable)
-            .where(eq(EventSequenceTable.aggregate_id, agg))
-            .get()
-          const seq = row?.seq != null ? row.seq + 1 : 0
-
-          const event = { id, seq, aggregateID: agg, data }
-          process(def, event, { bus, bridge, publish, pending, experimentalWorkspaces: flags.experimentalWorkspaces })
-        },
-        {
-          behavior: "immediate",
-          operation: `sync event ${def.type}`,
-        },
-      )
+      // Queued into the same-tick batch; resolves once this event is committed
+      // inside the shared immediate transaction (per-event SAVEPOINT keeps the
+      // old failure semantics). See the flush() comment above.
+      yield* Effect.promise(() => enqueue({ def, agg, data, publish, pending, bridge }))
       if (pending?.length) {
         yield* Effect.promise(() =>
           Promise.allSettled(pending).then((results) => {
@@ -190,6 +273,7 @@ export const layer = Layer.effect(Service)(
     })
 
     const remove: Interface["remove"] = Effect.fn("SyncEvent.remove")(function* (aggregateID) {
+      yield* Effect.promise(() => drain())
       Database.transaction((tx) => {
         tx.delete(EventSequenceTable).where(eq(EventSequenceTable.aggregate_id, aggregateID)).run()
         tx.delete(EventTable).where(eq(EventTable.aggregate_id, aggregateID)).run()
@@ -197,13 +281,17 @@ export const layer = Layer.effect(Service)(
     })
 
     const claim: Interface["claim"] = Effect.fn("SyncEvent.claim")((aggregateID, ownerID) =>
-      Effect.sync(() =>
-        Database.use((db) =>
-          db
-            .update(EventSequenceTable)
-            .set({ owner_id: ownerID })
-            .where(eq(EventSequenceTable.aggregate_id, aggregateID))
-            .run(),
+      Effect.promise(() => drain()).pipe(
+        Effect.andThen(
+          Effect.sync(() =>
+            Database.use((db) =>
+              db
+                .update(EventSequenceTable)
+                .set({ owner_id: ownerID })
+                .where(eq(EventSequenceTable.aggregate_id, aggregateID))
+                .run(),
+            ),
+          ),
         ),
       ),
     )
