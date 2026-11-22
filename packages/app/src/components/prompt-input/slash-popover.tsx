@@ -211,8 +211,8 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
 
                     const displayPath = item.display || item.path
                     const isDirectory = displayPath.endsWith("/")
-                    const directory = isDirectory ? displayPath : getDirectory(displayPath)
-                    const filename = isDirectory ? "" : getFilename(displayPath)
+                    const directory = getDirectory(displayPath)
+                    const filename = getFilename(displayPath)
 
                     return (
                       <button
@@ -227,9 +227,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                           class="shrink-0 size-4"
                         />
                         <div class="flex items-center gap-1.5 min-w-0">
-                          <Show when={!isDirectory}>
-                            <span class="text-text-strong whitespace-nowrap">{filename}</span>
-                          </Show>
+                          <span class="text-text-strong whitespace-nowrap">{filename}</span>
                           <span class="text-12-regular text-text-weak whitespace-nowrap truncate min-w-0">{directory}</span>
                         </div>
                       </button>
