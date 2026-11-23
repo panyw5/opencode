@@ -16,6 +16,7 @@ import { createBrowserDisplay } from "@/browser/display"
 import { browserOverlay } from "@/browser/overlays"
 import { CLOSE_BROWSER_TAB_COMMAND } from "@/browser/close-tab"
 import { PanelCollapseButton } from "@/pages/session/panel-collapse-button"
+import type { Sizing } from "@/pages/session/helpers"
 import "./browser-panel.css"
 
 export { browserApi } from "@/browser/types"
@@ -26,7 +27,7 @@ export function openInBrowserTab(url: string) {
   window.dispatchEvent(new CustomEvent(OPEN_TAB_EVENT, { detail: url }))
 }
 
-export function BrowserPanel(props: { class?: string }) {
+export function BrowserPanel(props: { class?: string; size?: Sizing }) {
   const language = useLanguage()
   const platform = usePlatform()
   const layout = useLayout()
@@ -73,6 +74,10 @@ export function BrowserPanel(props: { class?: string }) {
     setConfirmClose(undefined)
   }
   const [preview, setPreview] = createStore({ partition: "", image: "" })
+  // While a resize handle is dragged, the live native view trails the DOM
+  // handle by a compositor frame per pixel-step. Freeze it into a preview
+  // bitmap (the DOM scales instantly) and restore once the drag settles.
+  const [resize, setResize] = createStore({ frozen: false, width: undefined as number | undefined })
 
   const display = createBrowserDisplay({
     api,
@@ -88,11 +93,21 @@ export function BrowserPanel(props: { class?: string }) {
       const height = Math.floor(Math.min(window.innerHeight, rect.bottom)) - y
       if (width < 2 || height < 2) return { pageID: null, partition: null, bounds: null }
       const bounds = { x, y, width, height }
+      const overlay = dialog.active ? "dialog" : browserOverlay(bounds)
+      // Enter freeze only when the placeholder width actually moves during a
+      // drag so unrelated handles (e.g. file tree) never hide the live page.
+      if (!props.size?.active()) {
+        if (resize.frozen) setResize("frozen", false)
+        setResize("width", bounds.width)
+      } else if (resize.width !== undefined && resize.width !== bounds.width) {
+        setResize("frozen", true)
+      }
+      if (resize.frozen) return { pageID: tab.pageID, partition: tab.pageID, bounds: null, overlay: overlay ?? "resize" }
       return {
         pageID: tab.pageID,
         partition: tab.pageID,
         bounds,
-        overlay: dialog.active ? "dialog" : browserOverlay(bounds),
+        overlay,
       }
     },
     shown: () => service.acknowledge(service.presentation()),
@@ -121,6 +136,12 @@ export function BrowserPanel(props: { class?: string }) {
     dialog.active
     service.presentation()
     display.sync()
+  })
+  // sizing.active() falls ~120ms after the last pointer event; nothing else
+  // guarantees a read() at that moment, so unfreeze needs an explicit sync.
+  createEffect(() => {
+    if (props.size?.active() || !resize.frozen) return
+    schedule()
   })
   createEffect(() => {
     if (!maximized()) return

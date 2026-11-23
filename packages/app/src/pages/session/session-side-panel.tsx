@@ -487,7 +487,7 @@ export function SessionSidePanel(props: {
                 agent-driven tabs and can auto-reveal the panel. */}
             <div class="size-full min-w-0 h-full bg-background-base" classList={{ hidden: !browserOpen() }}>
               <Show when={!platform.remoteMode}>
-                <BrowserPanel />
+                <BrowserPanel size={props.size} />
               </Show>
             </div>
           </div>
