@@ -7,56 +7,18 @@ export type ClientOptions = {
 export type Event =
   | EventIssueUpdated
   | EventServerInstanceDisposed
-  | EventFileWatcherInvalidated
-  | EventFileWatcherUpdated
-  | EventFileEdited
+  | EventMcpToolsChanged
+  | EventMcpBrowserOpenFailed
+  | EventPermissionAsked
+  | EventPermissionReplied
+  | EventCommandExecuted
+  | EventProjectUpdated
   | EventLspClientDiagnostics
   | EventLspUpdated
   | EventMessagePartDelta1
-  | EventExtensionStatus
-  | EventExtensionEvent
-  | EventPermissionAsked
-  | EventPermissionReplied
-  | EventMcpToolsChanged
-  | EventMcpBrowserOpenFailed
-  | EventCommandExecuted
-  | EventProjectUpdated
   | EventTodoUpdated
   | EventSessionDiff
   | EventSessionError
-  | EventSessionStatus
-  | EventSessionIdle
-  | EventQuestionAsked
-  | EventQuestionUpdated
-  | EventQuestionReplied
-  | EventQuestionRejected
-  | EventSessionCompacted
-  | EventProjectTaskCreated
-  | EventProjectTaskUpdated
-  | EventProjectTaskDeleted
-  | EventPtyCreated
-  | EventPtyUpdated
-  | EventPtyExited
-  | EventPtyDeleted
-  | EventBackgroundShellCreated
-  | EventBackgroundShellUpdated
-  | EventBackgroundShellExited
-  | EventBrowserUpdated1
-  | EventBrowserClosed1
-  | EventGptProNotification1
-  | EventScheduledTaskCreated
-  | EventScheduledTaskUpdated
-  | EventScheduledTaskDeleted
-  | EventScheduledTaskRunUpdated
-  | EventMathWorkerStatus1
-  | EventVcsBranchUpdated
-  | EventWorkspaceReady
-  | EventWorkspaceFailed
-  | EventWorkspaceStatus
-  | EventWorktreeReady
-  | EventWorktreeFailed
-  | EventInstallationUpdated
-  | EventInstallationUpdateAvailable
   | EventMessageUpdated
   | EventMessageRemoved
   | EventMessagePartUpdated
@@ -90,6 +52,44 @@ export type Event =
   | EventSessionNextCompactionStarted
   | EventSessionNextCompactionDelta
   | EventSessionNextCompactionEnded
+  | EventExtensionStatus
+  | EventExtensionEvent
+  | EventPtyCreated
+  | EventPtyUpdated
+  | EventPtyExited
+  | EventPtyDeleted
+  | EventBackgroundShellCreated
+  | EventBackgroundShellUpdated
+  | EventBackgroundShellExited
+  | EventBrowserUpdated1
+  | EventBrowserClosed1
+  | EventGptProNotification1
+  | EventFileWatcherInvalidated
+  | EventFileWatcherUpdated
+  | EventFileEdited
+  | EventInstallationUpdated
+  | EventInstallationUpdateAvailable
+  | EventSessionStatus
+  | EventSessionIdle
+  | EventQuestionAsked
+  | EventQuestionUpdated
+  | EventQuestionReplied
+  | EventQuestionRejected
+  | EventSessionCompacted
+  | EventProjectTaskCreated
+  | EventProjectTaskUpdated
+  | EventProjectTaskDeleted
+  | EventScheduledTaskCreated
+  | EventScheduledTaskUpdated
+  | EventScheduledTaskDeleted
+  | EventScheduledTaskRunUpdated
+  | EventMathWorkerStatus1
+  | EventVcsBranchUpdated
+  | EventWorktreeReady
+  | EventWorktreeFailed
+  | EventWorkspaceReady
+  | EventWorkspaceFailed
+  | EventWorkspaceStatus
   | EventServerConnected
   | EventGlobalDisposed
   | EventGlobalConfigUpdated
@@ -450,19 +450,6 @@ export type ServiceUnavailableError = {
   service?: string
 }
 
-export type ExtensionStatusProperties = {
-  id: string
-  version: string
-  state: "installed" | "enabled" | "disabled" | "error" | "blocked" | "changed" | "removed"
-  error?: string
-}
-
-export type ExtensionEventProperties = {
-  id: string
-  name: string
-  data: unknown
-}
-
 export type PermissionRequest = {
   id: string
   sessionID: string
@@ -594,211 +581,6 @@ export type ApiError = {
     metadata?: {
       [key: string]: string
     }
-  }
-}
-
-export type SessionStatus =
-  | {
-      type: "idle"
-    }
-  | {
-      type: "retry"
-      attempt: number
-      message: string
-      action?: {
-        reason: string
-        provider: string
-        title: string
-        message: string
-        label: string
-        link?: string
-      }
-      next: number
-    }
-  | {
-      type: "busy"
-    }
-
-export type QuestionOption = {
-  /**
-   * Display text (1-5 words, concise)
-   */
-  label: string
-  /**
-   * Explanation of choice
-   */
-  description: string
-}
-
-export type QuestionPrompt = {
-  /**
-   * Complete question
-   */
-  question: string
-  /**
-   * Very short label (max 30 chars)
-   */
-  header: string
-  /**
-   * Available choices
-   */
-  options: Array<QuestionOption>
-  multiple?: boolean
-}
-
-export type QuestionTool = {
-  messageID: string
-  callID: string
-}
-
-export type QuestionRequest = {
-  id: string
-  sessionID: string
-  /**
-   * Questions to ask
-   */
-  questions: Array<QuestionPrompt>
-  tool?: QuestionTool
-  expiresAt?: number
-  timeoutPause?: {
-    until: number
-    remaining: number
-  }
-}
-
-export type QuestionImageAnswer = {
-  type: "image"
-  mime: string
-  url: string
-  filename?: string
-}
-
-export type QuestionAnswerPart = string | QuestionImageAnswer
-
-export type QuestionAnswer = Array<QuestionAnswerPart>
-
-export type QuestionReplied = {
-  sessionID: string
-  requestID: string
-  answers: Array<QuestionAnswer>
-}
-
-export type QuestionRejected = {
-  sessionID: string
-  requestID: string
-}
-
-export type ProjectTaskStatus = "open" | "in_progress" | "done" | "archived"
-
-export type ProjectTaskProgress = {
-  total: number
-  completed: number
-  inProgress: number
-  pending: number
-  cancelled: number
-}
-
-export type ProjectTask = {
-  id: string
-  projectID: string
-  title: string
-  description: string
-  descriptionPath: string
-  status: ProjectTaskStatus
-  sessionCount: number
-  lastSessionAt?: number
-  progress: ProjectTaskProgress
-  sessionDirectories: Array<string>
-  time: {
-    created: number
-    updated: number
-    archived?: number
-  }
-}
-
-export type Pty = {
-  id: string
-  title: string
-  command: string
-  args: Array<string>
-  cwd: string
-  status: "running" | "exited"
-  pid: number
-}
-
-export type BackgroundShell = {
-  id: string
-  sessionID: string
-  messageID?: string
-  callID?: string
-  ptyID: string
-  command: string
-  cwd: string
-  description?: string
-  background: boolean
-  status: "running" | "completed" | "error" | "stopped"
-  exitCode?: number
-  startedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  endedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  outputTail?: string
-}
-
-export type ScheduledTaskSchedule =
-  | {
-      kind: "at"
-      at: number
-      timezone?: string
-    }
-  | {
-      kind: "every"
-      interval: number
-    }
-  | {
-      kind: "cron"
-      expression: string
-      timezone?: string
-    }
-
-export type ScheduledTask = {
-  id: string
-  projectID: string
-  projectName?: string
-  directory: string
-  name: string
-  prompt: string
-  schedule: ScheduledTaskSchedule
-  executionMode: "automatic_session" | "new_session" | "existing_session"
-  sessionID?: string
-  agent: string
-  model: {
-    providerID: string
-    modelID: string
-    variant?: string
-  }
-  enabled: boolean
-  unattended: true
-  nextRunAt?: number
-  lastRunAt?: number
-  lastStatus?: "pending" | "retrying" | "running" | "ok" | "error" | "skipped" | "missed"
-  lastError?: string
-  time: {
-    created: number
-    updated: number
-  }
-}
-
-export type ScheduledTaskRun = {
-  id: string
-  taskID: string
-  scheduledAt: number
-  status: "pending" | "retrying" | "running" | "ok" | "error" | "skipped" | "missed"
-  attempt: number
-  sessionID?: string
-  error?: string
-  time: {
-    created: number
-    started?: number
-    finished?: number
   }
 }
 
@@ -1152,7 +934,7 @@ export type Part =
   | CompactionPart
 
 export type ExternalSession = {
-  advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder"
+  advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity"
   sourceMessageID: string
   sourcePartID: string
   callID: string
@@ -1162,7 +944,7 @@ export type ExternalSession = {
 
 export type SessionChannel = {
   kind: "acp"
-  advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder"
+  advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity"
   model?: string
   mode?: string
   acpSessionID?: string
@@ -1239,6 +1021,224 @@ export type Prompt = {
   files?: Array<PromptFileAttachment>
   agents?: Array<PromptAgentAttachment>
   references?: Array<PromptReferenceAttachment>
+}
+
+export type ExtensionStatusProperties = {
+  id: string
+  version: string
+  state: "installed" | "enabled" | "disabled" | "error" | "blocked" | "changed" | "removed"
+  error?: string
+}
+
+export type ExtensionEventProperties = {
+  id: string
+  name: string
+  data: unknown
+}
+
+export type Pty = {
+  id: string
+  title: string
+  command: string
+  args: Array<string>
+  cwd: string
+  status: "running" | "exited"
+  pid: number
+}
+
+export type BackgroundShell = {
+  id: string
+  sessionID: string
+  messageID?: string
+  callID?: string
+  ptyID: string
+  command: string
+  cwd: string
+  description?: string
+  background: boolean
+  status: "running" | "completed" | "error" | "stopped"
+  exitCode?: number
+  startedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  endedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  outputTail?: string
+}
+
+export type SessionStatus =
+  | {
+      type: "idle"
+    }
+  | {
+      type: "retry"
+      attempt: number
+      message: string
+      action?: {
+        reason: string
+        provider: string
+        title: string
+        message: string
+        label: string
+        link?: string
+      }
+      next: number
+    }
+  | {
+      type: "busy"
+    }
+
+export type QuestionOption = {
+  /**
+   * Display text (1-5 words, concise)
+   */
+  label: string
+  /**
+   * Explanation of choice
+   */
+  description: string
+}
+
+export type QuestionPrompt = {
+  /**
+   * Complete question
+   */
+  question: string
+  /**
+   * Very short label (max 30 chars)
+   */
+  header: string
+  /**
+   * Available choices
+   */
+  options: Array<QuestionOption>
+  multiple?: boolean
+}
+
+export type QuestionTool = {
+  messageID: string
+  callID: string
+}
+
+export type QuestionRequest = {
+  id: string
+  sessionID: string
+  /**
+   * Questions to ask
+   */
+  questions: Array<QuestionPrompt>
+  tool?: QuestionTool
+  expiresAt?: number
+  timeoutPause?: {
+    until: number
+    remaining: number
+  }
+}
+
+export type QuestionImageAnswer = {
+  type: "image"
+  mime: string
+  url: string
+  filename?: string
+}
+
+export type QuestionAnswerPart = string | QuestionImageAnswer
+
+export type QuestionAnswer = Array<QuestionAnswerPart>
+
+export type QuestionReplied = {
+  sessionID: string
+  requestID: string
+  answers: Array<QuestionAnswer>
+}
+
+export type QuestionRejected = {
+  sessionID: string
+  requestID: string
+}
+
+export type ProjectTaskStatus = "open" | "in_progress" | "done" | "archived"
+
+export type ProjectTaskProgress = {
+  total: number
+  completed: number
+  inProgress: number
+  pending: number
+  cancelled: number
+}
+
+export type ProjectTask = {
+  id: string
+  projectID: string
+  title: string
+  description: string
+  descriptionPath: string
+  status: ProjectTaskStatus
+  sessionCount: number
+  lastSessionAt?: number
+  progress: ProjectTaskProgress
+  sessionDirectories: Array<string>
+  time: {
+    created: number
+    updated: number
+    archived?: number
+  }
+}
+
+export type ScheduledTaskSchedule =
+  | {
+      kind: "at"
+      at: number
+      timezone?: string
+    }
+  | {
+      kind: "every"
+      interval: number
+    }
+  | {
+      kind: "cron"
+      expression: string
+      timezone?: string
+    }
+
+export type ScheduledTask = {
+  id: string
+  projectID: string
+  projectName?: string
+  directory: string
+  name: string
+  prompt: string
+  schedule: ScheduledTaskSchedule
+  executionMode: "automatic_session" | "new_session" | "existing_session"
+  sessionID?: string
+  agent: string
+  model: {
+    providerID: string
+    modelID: string
+    variant?: string
+  }
+  enabled: boolean
+  unattended: true
+  nextRunAt?: number
+  lastRunAt?: number
+  lastStatus?: "pending" | "retrying" | "running" | "ok" | "error" | "skipped" | "missed"
+  lastError?: string
+  time: {
+    created: number
+    updated: number
+  }
+}
+
+export type ScheduledTaskRun = {
+  id: string
+  taskID: string
+  scheduledAt: number
+  status: "pending" | "retrying" | "running" | "ok" | "error" | "skipped" | "missed"
+  attempt: number
+  sessionID?: string
+  error?: string
+  time: {
+    created: number
+    started?: number
+    finished?: number
+  }
 }
 
 export type AgentChannels = {
@@ -1331,6 +1331,7 @@ export type PermissionConfig =
       cline_consult?: PermissionActionConfig
       droid_consult?: PermissionActionConfig
       qoder_consult?: PermissionActionConfig
+      antigravity_consult?: PermissionActionConfig
       gpt_pro_consult?: PermissionActionConfig
       repo_clone?: PermissionRuleConfig
       repo_overview?: PermissionRuleConfig
@@ -1781,6 +1782,27 @@ export type Config = {
           mode?: string
           permission?: "deny" | "ask"
         }
+    antigravity?:
+      | {
+          type: "cli-json"
+        }
+      | {
+          type: "native-rpc"
+        }
+      | {
+          type: "acp"
+          command: Array<string>
+          managed?: {
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            version: string
+          }
+          env?: {
+            [key: string]: string
+          }
+          model?: string
+          mode?: string
+          permission?: "deny" | "ask"
+        }
   }
   agent_channels?: AgentChannels
   $schema?: string
@@ -1832,6 +1854,11 @@ export type Config = {
       configHome?: string
     }
     qoder?: {
+      enabled?: boolean
+      binaryPath?: string
+      configHome?: string
+    }
+    antigravity?: {
       enabled?: boolean
       binaryPath?: string
       configHome?: string
@@ -1993,56 +2020,18 @@ export type GlobalEvent = {
   payload:
     | EventIssueUpdated
     | EventServerInstanceDisposed
-    | EventFileWatcherInvalidated
-    | EventFileWatcherUpdated
-    | EventFileEdited
+    | EventMcpToolsChanged
+    | EventMcpBrowserOpenFailed
+    | EventPermissionAsked
+    | EventPermissionReplied
+    | EventCommandExecuted
+    | EventProjectUpdated
     | EventLspClientDiagnostics
     | EventLspUpdated
     | EventMessagePartDelta
-    | EventExtensionStatus
-    | EventExtensionEvent
-    | EventPermissionAsked
-    | EventPermissionReplied
-    | EventMcpToolsChanged
-    | EventMcpBrowserOpenFailed
-    | EventCommandExecuted
-    | EventProjectUpdated
     | EventTodoUpdated
     | EventSessionDiff
     | EventSessionError
-    | EventSessionStatus
-    | EventSessionIdle
-    | EventQuestionAsked
-    | EventQuestionUpdated
-    | EventQuestionReplied
-    | EventQuestionRejected
-    | EventSessionCompacted
-    | EventProjectTaskCreated
-    | EventProjectTaskUpdated
-    | EventProjectTaskDeleted
-    | EventPtyCreated
-    | EventPtyUpdated
-    | EventPtyExited
-    | EventPtyDeleted
-    | EventBackgroundShellCreated
-    | EventBackgroundShellUpdated
-    | EventBackgroundShellExited
-    | EventBrowserUpdated
-    | EventBrowserClosed
-    | EventGptProNotification
-    | EventScheduledTaskCreated
-    | EventScheduledTaskUpdated
-    | EventScheduledTaskDeleted
-    | EventScheduledTaskRunUpdated
-    | EventMathWorkerStatus
-    | EventVcsBranchUpdated
-    | EventWorkspaceReady
-    | EventWorkspaceFailed
-    | EventWorkspaceStatus
-    | EventWorktreeReady
-    | EventWorktreeFailed
-    | EventInstallationUpdated
-    | EventInstallationUpdateAvailable
     | EventMessageUpdated
     | EventMessageRemoved
     | EventMessagePartUpdated
@@ -2076,6 +2065,44 @@ export type GlobalEvent = {
     | EventSessionNextCompactionStarted
     | EventSessionNextCompactionDelta
     | EventSessionNextCompactionEnded
+    | EventExtensionStatus
+    | EventExtensionEvent
+    | EventPtyCreated
+    | EventPtyUpdated
+    | EventPtyExited
+    | EventPtyDeleted
+    | EventBackgroundShellCreated
+    | EventBackgroundShellUpdated
+    | EventBackgroundShellExited
+    | EventBrowserUpdated
+    | EventBrowserClosed
+    | EventGptProNotification
+    | EventFileWatcherInvalidated
+    | EventFileWatcherUpdated
+    | EventFileEdited
+    | EventInstallationUpdated
+    | EventInstallationUpdateAvailable
+    | EventSessionStatus
+    | EventSessionIdle
+    | EventQuestionAsked
+    | EventQuestionUpdated
+    | EventQuestionReplied
+    | EventQuestionRejected
+    | EventSessionCompacted
+    | EventProjectTaskCreated
+    | EventProjectTaskUpdated
+    | EventProjectTaskDeleted
+    | EventScheduledTaskCreated
+    | EventScheduledTaskUpdated
+    | EventScheduledTaskDeleted
+    | EventScheduledTaskRunUpdated
+    | EventMathWorkerStatus
+    | EventVcsBranchUpdated
+    | EventWorktreeReady
+    | EventWorktreeFailed
+    | EventWorkspaceReady
+    | EventWorkspaceFailed
+    | EventWorkspaceStatus
     | EventServerConnected
     | EventGlobalDisposed
     | EventGlobalConfigUpdated
@@ -2120,7 +2147,7 @@ export type GlobalEvent = {
 }
 
 export type ChannelOptions = {
-  advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder"
+  advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity"
   model?: string
   mode?: string
   models: Array<{
@@ -3156,6 +3183,27 @@ export type Config7 = {
           mode?: string
           permission?: "deny" | "ask"
         }
+    antigravity?:
+      | {
+          type: "cli-json"
+        }
+      | {
+          type: "native-rpc"
+        }
+      | {
+          type: "acp"
+          command: Array<string>
+          managed?: {
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            version: string
+          }
+          env?: {
+            [key: string]: string
+          }
+          model?: string
+          mode?: string
+          permission?: "deny" | "ask"
+        }
   }
   agent_channels?: AgentChannels
   $schema?: string
@@ -3207,6 +3255,11 @@ export type Config7 = {
       configHome?: string
     }
     qoder?: {
+      enabled?: boolean
+      binaryPath?: string
+      configHome?: string
+    }
+    antigravity?: {
       enabled?: boolean
       binaryPath?: string
       configHome?: string
@@ -3934,29 +3987,54 @@ export type EventServerInstanceDisposed = {
   }
 }
 
-export type EventFileWatcherInvalidated = {
+export type EventMcpToolsChanged = {
   id: string
-  type: "file.watcher.invalidated"
+  type: "mcp.tools.changed"
   properties: {
-    directory: string
+    server: string
   }
 }
 
-export type EventFileWatcherUpdated = {
+export type EventMcpBrowserOpenFailed = {
   id: string
-  type: "file.watcher.updated"
+  type: "mcp.browser.open.failed"
   properties: {
-    file: string
-    event: "add" | "change" | "unlink"
+    mcpName: string
+    url: string
   }
 }
 
-export type EventFileEdited = {
+export type EventPermissionAsked = {
   id: string
-  type: "file.edited"
+  type: "permission.asked"
+  properties: PermissionRequest
+}
+
+export type EventPermissionReplied = {
+  id: string
+  type: "permission.replied"
   properties: {
-    file: string
+    sessionID: string
+    requestID: string
+    reply: "once" | "always" | "reject"
   }
+}
+
+export type EventCommandExecuted = {
+  id: string
+  type: "command.executed"
+  properties: {
+    name: string
+    sessionID: string
+    arguments: string
+    messageID: string
+  }
+}
+
+export type EventProjectUpdated = {
+  id: string
+  type: "project.updated"
+  properties: Project
 }
 
 export type EventLspClientDiagnostics = {
@@ -3987,68 +4065,6 @@ export type EventMessagePartDelta = {
     delta: string
     offset?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   }
-}
-
-export type EventExtensionStatus = {
-  id: string
-  type: "extension.status"
-  properties: ExtensionStatusProperties
-}
-
-export type EventExtensionEvent = {
-  id: string
-  type: "extension.event"
-  properties: ExtensionEventProperties
-}
-
-export type EventPermissionAsked = {
-  id: string
-  type: "permission.asked"
-  properties: PermissionRequest
-}
-
-export type EventPermissionReplied = {
-  id: string
-  type: "permission.replied"
-  properties: {
-    sessionID: string
-    requestID: string
-    reply: "once" | "always" | "reject"
-  }
-}
-
-export type EventMcpToolsChanged = {
-  id: string
-  type: "mcp.tools.changed"
-  properties: {
-    server: string
-  }
-}
-
-export type EventMcpBrowserOpenFailed = {
-  id: string
-  type: "mcp.browser.open.failed"
-  properties: {
-    mcpName: string
-    url: string
-  }
-}
-
-export type EventCommandExecuted = {
-  id: string
-  type: "command.executed"
-  properties: {
-    name: string
-    sessionID: string
-    arguments: string
-    messageID: string
-  }
-}
-
-export type EventProjectUpdated = {
-  id: string
-  type: "project.updated"
-  properties: Project
 }
 
 export type EventTodoUpdated = {
@@ -4083,305 +4099,6 @@ export type EventSessionError = {
       | StructuredOutputError
       | ContextOverflowError
       | ApiError
-  }
-}
-
-export type EventSessionStatus = {
-  id: string
-  type: "session.status"
-  properties: {
-    sessionID: string
-    status: SessionStatus
-  }
-}
-
-export type EventSessionIdle = {
-  id: string
-  type: "session.idle"
-  properties: {
-    sessionID: string
-  }
-}
-
-export type EventQuestionAsked = {
-  id: string
-  type: "question.asked"
-  properties: QuestionRequest
-}
-
-export type EventQuestionUpdated = {
-  id: string
-  type: "question.updated"
-  properties: QuestionRequest
-}
-
-export type EventQuestionReplied = {
-  id: string
-  type: "question.replied"
-  properties: QuestionReplied
-}
-
-export type EventQuestionRejected = {
-  id: string
-  type: "question.rejected"
-  properties: QuestionRejected
-}
-
-export type EventSessionCompacted = {
-  id: string
-  type: "session.compacted"
-  properties: {
-    sessionID: string
-  }
-}
-
-export type EventProjectTaskCreated = {
-  id: string
-  type: "project-task.created"
-  properties: ProjectTask
-}
-
-export type EventProjectTaskUpdated = {
-  id: string
-  type: "project-task.updated"
-  properties: ProjectTask
-}
-
-export type EventProjectTaskDeleted = {
-  id: string
-  type: "project-task.deleted"
-  properties: {
-    taskID: string
-  }
-}
-
-export type EventPtyCreated = {
-  id: string
-  type: "pty.created"
-  properties: {
-    info: Pty
-  }
-}
-
-export type EventPtyUpdated = {
-  id: string
-  type: "pty.updated"
-  properties: {
-    info: Pty
-  }
-}
-
-export type EventPtyExited = {
-  id: string
-  type: "pty.exited"
-  properties: {
-    id: string
-    exitCode: number
-    output?: string
-  }
-}
-
-export type EventPtyDeleted = {
-  id: string
-  type: "pty.deleted"
-  properties: {
-    id: string
-  }
-}
-
-export type EventBackgroundShellCreated = {
-  id: string
-  type: "background.shell.created"
-  properties: {
-    info: BackgroundShell
-  }
-}
-
-export type EventBackgroundShellUpdated = {
-  id: string
-  type: "background.shell.updated"
-  properties: {
-    info: BackgroundShell
-  }
-}
-
-export type EventBackgroundShellExited = {
-  id: string
-  type: "background.shell.exited"
-  properties: {
-    info: BackgroundShell
-  }
-}
-
-export type EventBrowserUpdated = {
-  id: string
-  type: "browser.updated"
-  properties: {
-    pageID?: string
-    profileID?: string
-    owner?: {
-      directory?: string
-      sessionID?: string
-    }
-    kind?: "user" | "agent" | "consultation" | "login"
-    partition: string
-    url: string
-    title: string
-    loading: boolean
-    shared: boolean
-    epoch?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  }
-}
-
-export type EventBrowserClosed = {
-  id: string
-  type: "browser.closed"
-  properties: {
-    pageID?: string
-    partition: string
-    profileID?: string
-    epoch?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  }
-}
-
-export type EventGptProNotification = {
-  id: string
-  type: "gpt-pro.notification"
-  properties: {
-    id: string
-    consultationID: string
-    owner: string
-    phase:
-      | "queued"
-      | "preparing"
-      | "sending"
-      | "generating"
-      | "completed"
-      | "paused"
-      | "cancelled"
-      | "failed"
-      | "interrupted"
-      | "send_uncertain"
-    revision: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    url: string
-    kind: "progress" | "completed" | "state"
-    format: "append" | "snapshot"
-    text: string
-    truncated: boolean
-    error?: string
-    recovery?: {
-      stage: "open" | "ready" | "model" | "compose" | "submit" | "track"
-      reason: string
-      needsHuman?: boolean
-    }
-  }
-}
-
-export type EventScheduledTaskCreated = {
-  id: string
-  type: "scheduled-task.created"
-  properties: ScheduledTask
-}
-
-export type EventScheduledTaskUpdated = {
-  id: string
-  type: "scheduled-task.updated"
-  properties: ScheduledTask
-}
-
-export type EventScheduledTaskDeleted = {
-  id: string
-  type: "scheduled-task.deleted"
-  properties: {
-    taskID: string
-  }
-}
-
-export type EventScheduledTaskRunUpdated = {
-  id: string
-  type: "scheduled-task.run-updated"
-  properties: ScheduledTaskRun
-}
-
-export type EventMathWorkerStatus = {
-  id: string
-  type: "math.worker.status"
-  properties: {
-    sessionID: string
-    parentSessionID?: string
-    state: string
-    alive: boolean
-    pid?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    round?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    lastFactId?: string
-    reason: string
-  }
-}
-
-export type EventVcsBranchUpdated = {
-  id: string
-  type: "vcs.branch.updated"
-  properties: {
-    branch?: string
-  }
-}
-
-export type EventWorkspaceReady = {
-  id: string
-  type: "workspace.ready"
-  properties: {
-    name: string
-  }
-}
-
-export type EventWorkspaceFailed = {
-  id: string
-  type: "workspace.failed"
-  properties: {
-    message: string
-  }
-}
-
-export type EventWorkspaceStatus = {
-  id: string
-  type: "workspace.status"
-  properties: {
-    workspaceID: string
-    status: "connected" | "connecting" | "disconnected" | "error"
-  }
-}
-
-export type EventWorktreeReady = {
-  id: string
-  type: "worktree.ready"
-  properties: {
-    name: string
-    branch?: string
-  }
-}
-
-export type EventWorktreeFailed = {
-  id: string
-  type: "worktree.failed"
-  properties: {
-    message: string
-  }
-}
-
-export type EventInstallationUpdated = {
-  id: string
-  type: "installation.updated"
-  properties: {
-    version: string
-  }
-}
-
-export type EventInstallationUpdateAvailable = {
-  id: string
-  type: "installation.update-available"
-  properties: {
-    version: string
   }
 }
 
@@ -4828,6 +4545,342 @@ export type EventSessionNextCompactionEnded = {
     sessionID: string
     text: string
     include?: string
+  }
+}
+
+export type EventExtensionStatus = {
+  id: string
+  type: "extension.status"
+  properties: ExtensionStatusProperties
+}
+
+export type EventExtensionEvent = {
+  id: string
+  type: "extension.event"
+  properties: ExtensionEventProperties
+}
+
+export type EventPtyCreated = {
+  id: string
+  type: "pty.created"
+  properties: {
+    info: Pty
+  }
+}
+
+export type EventPtyUpdated = {
+  id: string
+  type: "pty.updated"
+  properties: {
+    info: Pty
+  }
+}
+
+export type EventPtyExited = {
+  id: string
+  type: "pty.exited"
+  properties: {
+    id: string
+    exitCode: number
+    output?: string
+  }
+}
+
+export type EventPtyDeleted = {
+  id: string
+  type: "pty.deleted"
+  properties: {
+    id: string
+  }
+}
+
+export type EventBackgroundShellCreated = {
+  id: string
+  type: "background.shell.created"
+  properties: {
+    info: BackgroundShell
+  }
+}
+
+export type EventBackgroundShellUpdated = {
+  id: string
+  type: "background.shell.updated"
+  properties: {
+    info: BackgroundShell
+  }
+}
+
+export type EventBackgroundShellExited = {
+  id: string
+  type: "background.shell.exited"
+  properties: {
+    info: BackgroundShell
+  }
+}
+
+export type EventBrowserUpdated = {
+  id: string
+  type: "browser.updated"
+  properties: {
+    pageID?: string
+    profileID?: string
+    owner?: {
+      directory?: string
+      sessionID?: string
+    }
+    kind?: "user" | "agent" | "consultation" | "login"
+    partition: string
+    url: string
+    title: string
+    loading: boolean
+    shared: boolean
+    epoch?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type EventBrowserClosed = {
+  id: string
+  type: "browser.closed"
+  properties: {
+    pageID?: string
+    partition: string
+    profileID?: string
+    epoch?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type EventGptProNotification = {
+  id: string
+  type: "gpt-pro.notification"
+  properties: {
+    id: string
+    consultationID: string
+    owner: string
+    phase:
+      | "queued"
+      | "preparing"
+      | "sending"
+      | "generating"
+      | "completed"
+      | "paused"
+      | "cancelled"
+      | "failed"
+      | "interrupted"
+      | "send_uncertain"
+    revision: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    url: string
+    kind: "progress" | "completed" | "state"
+    format: "append" | "snapshot"
+    text: string
+    truncated: boolean
+    error?: string
+    recovery?: {
+      stage: "open" | "ready" | "model" | "compose" | "submit" | "track"
+      reason: string
+      needsHuman?: boolean
+    }
+  }
+}
+
+export type EventFileWatcherInvalidated = {
+  id: string
+  type: "file.watcher.invalidated"
+  properties: {
+    directory: string
+  }
+}
+
+export type EventFileWatcherUpdated = {
+  id: string
+  type: "file.watcher.updated"
+  properties: {
+    file: string
+    event: "add" | "change" | "unlink"
+  }
+}
+
+export type EventFileEdited = {
+  id: string
+  type: "file.edited"
+  properties: {
+    file: string
+  }
+}
+
+export type EventInstallationUpdated = {
+  id: string
+  type: "installation.updated"
+  properties: {
+    version: string
+  }
+}
+
+export type EventInstallationUpdateAvailable = {
+  id: string
+  type: "installation.update-available"
+  properties: {
+    version: string
+  }
+}
+
+export type EventSessionStatus = {
+  id: string
+  type: "session.status"
+  properties: {
+    sessionID: string
+    status: SessionStatus
+  }
+}
+
+export type EventSessionIdle = {
+  id: string
+  type: "session.idle"
+  properties: {
+    sessionID: string
+  }
+}
+
+export type EventQuestionAsked = {
+  id: string
+  type: "question.asked"
+  properties: QuestionRequest
+}
+
+export type EventQuestionUpdated = {
+  id: string
+  type: "question.updated"
+  properties: QuestionRequest
+}
+
+export type EventQuestionReplied = {
+  id: string
+  type: "question.replied"
+  properties: QuestionReplied
+}
+
+export type EventQuestionRejected = {
+  id: string
+  type: "question.rejected"
+  properties: QuestionRejected
+}
+
+export type EventSessionCompacted = {
+  id: string
+  type: "session.compacted"
+  properties: {
+    sessionID: string
+  }
+}
+
+export type EventProjectTaskCreated = {
+  id: string
+  type: "project-task.created"
+  properties: ProjectTask
+}
+
+export type EventProjectTaskUpdated = {
+  id: string
+  type: "project-task.updated"
+  properties: ProjectTask
+}
+
+export type EventProjectTaskDeleted = {
+  id: string
+  type: "project-task.deleted"
+  properties: {
+    taskID: string
+  }
+}
+
+export type EventScheduledTaskCreated = {
+  id: string
+  type: "scheduled-task.created"
+  properties: ScheduledTask
+}
+
+export type EventScheduledTaskUpdated = {
+  id: string
+  type: "scheduled-task.updated"
+  properties: ScheduledTask
+}
+
+export type EventScheduledTaskDeleted = {
+  id: string
+  type: "scheduled-task.deleted"
+  properties: {
+    taskID: string
+  }
+}
+
+export type EventScheduledTaskRunUpdated = {
+  id: string
+  type: "scheduled-task.run-updated"
+  properties: ScheduledTaskRun
+}
+
+export type EventMathWorkerStatus = {
+  id: string
+  type: "math.worker.status"
+  properties: {
+    sessionID: string
+    parentSessionID?: string
+    state: string
+    alive: boolean
+    pid?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    round?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    lastFactId?: string
+    reason: string
+  }
+}
+
+export type EventVcsBranchUpdated = {
+  id: string
+  type: "vcs.branch.updated"
+  properties: {
+    branch?: string
+  }
+}
+
+export type EventWorktreeReady = {
+  id: string
+  type: "worktree.ready"
+  properties: {
+    name: string
+    branch?: string
+  }
+}
+
+export type EventWorktreeFailed = {
+  id: string
+  type: "worktree.failed"
+  properties: {
+    message: string
+  }
+}
+
+export type EventWorkspaceReady = {
+  id: string
+  type: "workspace.ready"
+  properties: {
+    name: string
+  }
+}
+
+export type EventWorkspaceFailed = {
+  id: string
+  type: "workspace.failed"
+  properties: {
+    message: string
+  }
+}
+
+export type EventWorkspaceStatus = {
+  id: string
+  type: "workspace.status"
+  properties: {
+    workspaceID: string
+    status: "connected" | "connecting" | "disconnected" | "error"
   }
 }
 
@@ -6762,7 +6815,7 @@ export type AgentBackendCommitResponse = AgentBackendCommitResponses[keyof Agent
 
 export type AgentBackendProbeData = {
   body?: {
-    advisor: "claude" | "codex" | "pi" | "grok" | "dsh" | "cline" | "droid" | "qoder"
+    advisor: "claude" | "codex" | "pi" | "grok" | "dsh" | "cline" | "droid" | "qoder" | "antigravity"
     config:
       | {
           type: "cli-json"
@@ -6838,7 +6891,7 @@ export type AgentBackendProbeResponse = AgentBackendProbeResponses[keyof AgentBa
 
 export type AgentBackendChannelOptionsData = {
   body?: {
-    advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder"
+    advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity"
   }
   path?: never
   query?: {

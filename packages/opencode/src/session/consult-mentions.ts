@@ -30,7 +30,7 @@ export type Result = {
 export type Mode = "native" | "channel"
 
 /**
- * Deterministically executes @codex/@claude/@grok/@dsh/@pi/@cline/@droid/@qoder mention parts.
+ * Deterministically executes @codex/@claude/@grok/@dsh/@pi/@cline/@droid/@qoder/@antigravity mention parts.
  * Native sessions let the primary agent summarize afterwards; channel sessions
  * inject the returned summary into the external agent prompt instead.
  */

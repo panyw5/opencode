@@ -324,6 +324,7 @@ export const dict = {
   "ui.tool.droid.role.assistant": "Droid",
   "ui.tool.droid.role.system": "系统",
   "ui.tool.qoder": "Qoder 参谋",
+  "ui.tool.antigravity": "Antigravity 参谋",
   "ui.tool.qoder.running": "会诊中…",
   "ui.tool.qoder.streaming": "输出中",
   "ui.tool.qoder.view": "查看会话",

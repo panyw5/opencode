@@ -20,7 +20,7 @@ import { createAgentBackendStatus } from "./agent-backend-status"
 import { AgentSettingsCard, AgentSettingsDetails, AgentSettingsField, AgentSettingsGrid } from "./agent-settings-layout"
 import { Link } from "./link"
 
-export type AdvisorID = "claude" | "codex" | "pi" | "grok" | "dsh" | "cline" | "droid" | "qoder"
+export type AdvisorID = "claude" | "codex" | "pi" | "grok" | "dsh" | "cline" | "droid" | "qoder" | "antigravity"
 type AcpConfig = Extract<NonNullable<NonNullable<Config["agent_backends"]>["claude"]>, { type: "acp" }>
 
 // CLIs with a built-in ACP entry point (no managed npm adapter needed).
@@ -28,6 +28,7 @@ const ACP_COMMAND_PRESETS: Partial<Record<AdvisorID, string[]>> = {
   cline: ["cline", "--acp"],
   droid: ["droid", "exec", "--output-format", "acp"],
   qoder: ["qodercli", "--acp"],
+  antigravity: ["agy", "acp"],
 }
 
 const defaultAcpCommand = (advisor: AdvisorID) => JSON.stringify(ACP_COMMAND_PRESETS[advisor] ?? [])
@@ -88,6 +89,7 @@ export function AgentBackendSettings(props: {
     if (props.advisor === "cline") return t("agentBackend.loginHelp.cline")
     if (props.advisor === "droid") return t("agentBackend.loginHelp.droid")
     if (props.advisor === "qoder") return t("agentBackend.loginHelp.qoder")
+    if (props.advisor === "antigravity") return t("agentBackend.loginHelp.antigravity")
     return recipe()?.loginHelp ?? t("agentBackend.loginHelp")
   }
   const installed = createMemo(() => recipe()?.installed.find((item) => item.version === state.version))
@@ -370,9 +372,7 @@ export function AgentBackendSettings(props: {
             <Show when={managedMode()}>
               <AgentSettingsCard
                 title={t("agentSettings.adapter")}
-                badge={
-                  pendingActivation() && active()?.type !== "acp" ? t("agentBackend.notEnabledBadge") : undefined
-                }
+                badge={pendingActivation() && active()?.type !== "acp" ? t("agentBackend.notEnabledBadge") : undefined}
                 size="compact"
               >
                 <div class="flex min-w-0 flex-wrap items-center gap-3">
@@ -729,9 +729,9 @@ export function RemoteAgentBackendSettings() {
   const { t } = useLanguage()
   const sdk = useGlobalSDK()
   const server = useServer()
-  const advisorOptions = (["claude", "codex", "pi", "grok", "dsh", "cline", "droid", "qoder"] as AdvisorID[]).map((
-    id,
-  ) => ({
+  const advisorOptions = (
+    ["claude", "codex", "pi", "grok", "dsh", "cline", "droid", "qoder", "antigravity"] as AdvisorID[]
+  ).map((id) => ({
     value: id,
     label: id,
   }))

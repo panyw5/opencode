@@ -24,6 +24,7 @@ import { getPiInfo, testPiConfig } from "./pi-status"
 import { getClineInfo, testClineConfig } from "./cline-status"
 import { getDroidInfo, testDroidConfig } from "./droid-status"
 import { getQoderInfo, testQoderConfig } from "./qoder-status"
+import { getAntigravityInfo, testAntigravityConfig } from "./antigravity-status"
 import { parseDshConsultDefaults } from "@opencode-ai/util/dsh-config"
 
 type CliAgentDefinition = {
@@ -128,6 +129,18 @@ const cliAgents: Record<CliAgentID, CliAgentDefinition> = {
     },
     getInfo: getQoderInfo,
     test: testQoderConfig,
+  },
+  antigravity: {
+    descriptor: {
+      id: "antigravity",
+      label: "Antigravity",
+      command: "agy",
+      sourceUrl: "https://antigravity.google/docs/cli",
+      configHomeLabel: "ANTIGRAVITY_GEMINI_DIR",
+      configHomePlaceholder: "~/.gemini",
+    },
+    getInfo: getAntigravityInfo,
+    test: testAntigravityConfig,
   },
 }
 

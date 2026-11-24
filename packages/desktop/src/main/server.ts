@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
 import {
+  ANTIGRAVITY_CONFIG_KEY,
   CLAUDE_CONFIG_KEY,
   CLINE_CONFIG_KEY,
   CODEX_CONFIG_KEY,
@@ -334,6 +335,7 @@ export const spawnLocalServer = createSpawnLocalServer({
               ["cline", CLINE_CONFIG_KEY],
               ["droid", DROID_CONFIG_KEY],
               ["qoder", QODER_CONFIG_KEY],
+              ["antigravity", ANTIGRAVITY_CONFIG_KEY],
             ].map(([id, key]) => [id, getStore().get(key!) ?? { enabled: false }]),
           ),
         ),

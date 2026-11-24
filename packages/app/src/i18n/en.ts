@@ -69,6 +69,7 @@ export const dict = {
   "agentBackend.loginHelp.cline": "Run `cline auth` on the backend machine or choose an advertised login method below, then test again.",
   "agentBackend.loginHelp.droid": "Run `droid login` on the backend machine or set FACTORY_API_KEY in the backend process environment, then test again.",
   "agentBackend.loginHelp.qoder": "Run `qodercli login` on the backend machine, using the same configuration directory as the ACP command, then test again.",
+  "agentBackend.loginHelp.antigravity": "Sign in to Antigravity on the backend machine (`agy` shares the ~/.gemini/antigravity-cli configuration), then test again.",
   "agentBackend.confirmation": "Confirm adapter operation",
   "agentBackend.installNotice":
     "Only this reviewed release will be changed. Existing global CLIs and account credentials are not removed. Installing does not enable the adapter.",

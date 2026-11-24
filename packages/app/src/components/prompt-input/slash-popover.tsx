@@ -15,6 +15,7 @@ const consultChips: Record<string, Pick<ProviderChipProps, "icon" | "tone">> = {
   cline: { icon: "cline", tone: "neutral" },
   droid: { icon: "droid", tone: "neutral" },
   qoder: { icon: "qoder", tone: "neutral" },
+  antigravity: { icon: "antigravity", tone: "neutral" },
 }
 
 export type AtOption =
@@ -137,7 +138,11 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
               </Show>
               <Show
                 when={props.atFlat.length > 0}
-                fallback={<div class="px-2.5 py-1.5 text-12-regular text-text-weak">{props.t("prompt.popover.emptyResults")}</div>}
+                fallback={
+                  <div class="px-2.5 py-1.5 text-12-regular text-text-weak">
+                    {props.t("prompt.popover.emptyResults")}
+                  </div>
+                }
               >
                 <For each={props.atFlat}>
                   {(item) => {
@@ -228,7 +233,9 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                         />
                         <div class="flex items-center gap-1.5 min-w-0">
                           <span class="text-text-strong whitespace-nowrap">{filename}</span>
-                          <span class="text-12-regular text-text-weak whitespace-nowrap truncate min-w-0">{directory}</span>
+                          <span class="text-12-regular text-text-weak whitespace-nowrap truncate min-w-0">
+                            {directory}
+                          </span>
                         </div>
                       </button>
                     )
@@ -239,7 +246,11 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
             <Match when={props.popover === "slash"}>
               <Show
                 when={props.slashFlat.length > 0}
-                fallback={<div class="px-2.5 py-1.5 text-12-regular text-text-weak">{props.t("prompt.popover.emptyCommands")}</div>}
+                fallback={
+                  <div class="px-2.5 py-1.5 text-12-regular text-text-weak">
+                    {props.t("prompt.popover.emptyCommands")}
+                  </div>
+                }
               >
                 <For each={props.slashFlat}>
                   {(cmd) => (

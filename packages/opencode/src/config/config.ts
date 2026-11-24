@@ -195,6 +195,7 @@ export const Info = Schema.Struct({
       cline: Schema.optional(ExternalAgentConfig),
       droid: Schema.optional(ExternalAgentConfig),
       qoder: Schema.optional(ExternalAgentConfig),
+      antigravity: Schema.optional(ExternalAgentConfig),
     }),
   ).annotate({ description: "Local external advisor executables and configuration directories" }),
   server: Schema.optional(ConfigServer.Server).annotate({

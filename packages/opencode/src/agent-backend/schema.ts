@@ -33,6 +33,7 @@ export const AgentBackends = Schema.Struct({
   cline: Schema.optional(BackendConfig),
   droid: Schema.optional(BackendConfig),
   qoder: Schema.optional(BackendConfig),
+  antigravity: Schema.optional(BackendConfig),
 })
 
 export const AgentChannels = Schema.Struct({

@@ -51,6 +51,7 @@ const InputObject = Schema.StructWithRest(
     cline_consult: Schema.optional(Action),
     droid_consult: Schema.optional(Action),
     qoder_consult: Schema.optional(Action),
+    antigravity_consult: Schema.optional(Action),
     gpt_pro_consult: Schema.optional(Action),
     repo_clone: Schema.optional(Rule),
     repo_overview: Schema.optional(Rule),

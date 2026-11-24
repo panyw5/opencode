@@ -19,6 +19,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { promisify } from "node:util"
 import { app, shell } from "electron"
 import {
+  ANTIGRAVITY_CONFIG_KEY,
   CLAUDE_CONFIG_KEY,
   CLINE_CONFIG_KEY,
   CODEX_CONFIG_KEY,
@@ -420,6 +421,7 @@ const cliAgentConfigKeys: Record<CliAgentID, string> = {
   cline: CLINE_CONFIG_KEY,
   droid: DROID_CONFIG_KEY,
   qoder: QODER_CONFIG_KEY,
+  antigravity: ANTIGRAVITY_CONFIG_KEY,
 }
 
 export function getCliAgentConfig(id: CliAgentID): CliAgentConfig {

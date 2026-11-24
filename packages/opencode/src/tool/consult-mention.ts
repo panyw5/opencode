@@ -8,6 +8,7 @@ export type ConsultMentionID =
   | "cline"
   | "droid"
   | "qoder"
+  | "antigravity"
   | "gpt-pro"
 
 export type ConsultMentionTool =
@@ -19,6 +20,7 @@ export type ConsultMentionTool =
   | "cline_consult"
   | "droid_consult"
   | "qoder_consult"
+  | "antigravity_consult"
   | "gpt_pro_consult"
 
 export const CONSULT_MENTION_IDS = [
@@ -30,6 +32,7 @@ export const CONSULT_MENTION_IDS = [
   "cline",
   "droid",
   "qoder",
+  "antigravity",
   "gpt-pro",
 ] as const satisfies readonly ConsultMentionID[]
 
@@ -42,6 +45,7 @@ export const CONSULT_MENTIONS: Record<ConsultMentionID, { tool: ConsultMentionTo
   cline: { tool: "cline_consult", label: "Cline" },
   droid: { tool: "droid_consult", label: "Factory Droid" },
   qoder: { tool: "qoder_consult", label: "Qoder" },
+  antigravity: { tool: "antigravity_consult", label: "Antigravity" },
   "gpt-pro": { tool: "gpt_pro_consult", label: "GPT-6 Pro (Chat)" },
 }
 
@@ -59,6 +63,7 @@ export function isConsultTool(tool: string): tool is ConsultMentionTool {
     tool === "cline_consult" ||
     tool === "droid_consult" ||
     tool === "qoder_consult" ||
+    tool === "antigravity_consult" ||
     tool === "gpt_pro_consult"
   )
 }

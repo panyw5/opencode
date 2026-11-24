@@ -69,6 +69,7 @@ export const dict = {
   "agentBackend.loginHelp.cline": "请在后端机器运行 `cline auth`，或使用下方列出的登录方式，然后重新测试。",
   "agentBackend.loginHelp.droid": "请在后端机器运行 `droid login`，或在后端进程环境中设置 FACTORY_API_KEY，然后重新测试。",
   "agentBackend.loginHelp.qoder": "请在后端机器运行 `qodercli login`，使用与 ACP 命令相同的配置目录，然后重新测试。",
+  "agentBackend.loginHelp.antigravity": "请在后端机器登录 Antigravity（`agy` 共享 ~/.gemini/antigravity-cli 配置），然后重新测试。",
   "agentBackend.confirmation": "确认适配器操作",
   "agentBackend.installNotice": "仅修改此已审核版本，不删除已有全局 CLI 和账号凭据。安装不会自动启用适配器。",
   "agentBackend.confirm": "确认执行",

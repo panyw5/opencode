@@ -36,6 +36,7 @@ import { Parameters as PiConsult } from "../../src/tool/pi_consult"
 import { Parameters as ClineConsult } from "../../src/tool/cline_consult"
 import { Parameters as DroidConsult } from "../../src/tool/droid_consult"
 import { Parameters as QoderConsult } from "../../src/tool/qoder_consult"
+import { Parameters as AntigravityConsult } from "../../src/tool/antigravity_consult"
 
 const parse = <S extends Schema.Decoder<unknown>>(schema: S, input: unknown): S["Type"] =>
   Schema.decodeUnknownSync(schema)(input)
@@ -74,6 +75,7 @@ describe("tool parameters", () => {
     test("cline_consult", () => expect(toJsonSchema(ClineConsult)).toMatchSnapshot())
     test("droid_consult", () => expect(toJsonSchema(DroidConsult)).toMatchSnapshot())
     test("qoder_consult", () => expect(toJsonSchema(QoderConsult)).toMatchSnapshot())
+    test("antigravity_consult", () => expect(toJsonSchema(AntigravityConsult)).toMatchSnapshot())
 
     test("inlines named child schemas for provider compatibility", () => {
       const schema = toJsonSchema(Question)

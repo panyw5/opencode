@@ -28,6 +28,7 @@ const labels = new Map<string, keyof typeof dict>([
   ["cline_consult", "ui.tool.cline"],
   ["droid_consult", "ui.tool.droid"],
   ["qoder_consult", "ui.tool.qoder"],
+  ["antigravity_consult", "ui.tool.antigravity"],
 ])
 
 export function quickAssistantToolName(tool: string, t: (key: keyof typeof dict) => string) {

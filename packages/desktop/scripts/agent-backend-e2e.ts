@@ -35,6 +35,7 @@ const scenarios = {
   BACKEND_CLINE: { tool: "cline_consult", backend: "acp", answer: "ACP_REPLY_1" },
   BACKEND_DROID: { tool: "droid_consult", backend: "acp", answer: "ACP_REPLY_1" },
   BACKEND_QODER: { tool: "qoder_consult", backend: "acp", answer: "ACP_REPLY_1" },
+  BACKEND_ANTIGRAVITY: { tool: "antigravity_consult", backend: "acp", answer: "ACP_REPLY_1" },
   BACKEND_RPC: { tool: "pi_consult", backend: "native-rpc", answer: "PI_REPLY_1" },
   BACKEND_CLI: { tool: "dsh_consult", backend: "cli-json", answer: "Initial fixture answer" },
 } as const
@@ -86,7 +87,7 @@ const config = {
   mcp: {},
   permission: { "*": "allow" },
   agent_backends: Object.fromEntries(
-    ["claude", "cline", "droid", "qoder"].map((advisor) => [
+    ["claude", "cline", "droid", "qoder", "antigravity"].map((advisor) => [
       advisor,
       { type: "acp", command: ["node", path.join(fixture, "acp-agent.mjs")] },
     ]),
@@ -96,6 +97,7 @@ const config = {
     cline: { enabled: true },
     droid: { enabled: true },
     qoder: { enabled: true },
+    antigravity: { enabled: true },
     dsh: { binaryPath: dsh, configHome: path.join(temporary, "dsh-home"), enabled: true },
   },
   pi: { enabled: true, binaryPath: path.join(fixture, "pi-rpc.mjs") },
@@ -305,7 +307,7 @@ try {
       }
     }
   }
-  for (const advisor of managedInstall ? [] : ["cline", "droid", "qoder"]) {
+  for (const advisor of managedInstall ? [] : ["cline", "droid", "qoder", "antigravity"]) {
     const options = await request("/agent-backend/channel-options", "POST", { advisor })
     assert.equal(options.advisor, advisor)
     assert.ok(options.models.length > 0)
@@ -369,23 +371,28 @@ try {
       await current.call("Input.dispatchMouseEvent", { ...point, type: "mouseReleased", button: "left", clickCount: 1 })
       return "opened" as const
     }, `${advisor} installation selector`)
-    if (source === "opened") await wait(async () => {
-      const selected = await current.evaluate<boolean>(`(() => {
+    if (source === "opened")
+      await wait(async () => {
+        const selected = await current.evaluate<boolean>(`(() => {
         const option = [...document.querySelectorAll('[role="option"]')]
           .find(el => el.textContent.trim() === 'OpenCode-managed adapter');
         if (!option) return false; option.click(); return true;
       })()`)
-      return selected ? true : undefined
-    }, `${advisor} managed adapter option`)
+        return selected ? true : undefined
+      }, `${advisor} managed adapter option`)
     await click("Install selected version")
     await click("Confirm operation")
-    await wait(async () => (await status()).installed.length === 1 ? true : undefined, `${advisor} npm installation`, 180000)
+    await wait(
+      async () => ((await status()).installed.length === 1 ? true : undefined),
+      `${advisor} npm installation`,
+      180000,
+    )
     assert.deepEqual((await status()).installed[0].command.slice(-args.length), args)
     const shot = await current.call<{ data: string }>("Page.captureScreenshot", { format: "png" })
     await Bun.write(`${temporary}-${advisor}-install.png`, Buffer.from(shot.data, "base64"))
     await click("Uninstall selected version")
     await click("Confirm operation")
-    await wait(async () => (await status()).installed.length === 0 ? true : undefined, `${advisor} removal`)
+    await wait(async () => ((await status()).installed.length === 0 ? true : undefined), `${advisor} removal`)
     log(`PASS ${advisor} managed install and removal from development Electron settings`)
   }
   if (cdp && installUI) {
@@ -413,9 +420,9 @@ try {
     await wait(async () => ((await panelText()).includes("Target machine") ? true : undefined), "ACP settings panel")
     await wait(
       async () =>
-        ((await request("/agent-backend")).adapters.some((item: { advisor: string }) => item.advisor === "codex")
+        (await request("/agent-backend")).adapters.some((item: { advisor: string }) => item.advisor === "codex")
           ? true
-          : undefined),
+          : undefined,
       "adapter catalog",
     )
     await cdp.client.evaluate(`(() => {
@@ -596,7 +603,9 @@ try {
   collectedLogs = (await Promise.all(logRoots.map(readLogs))).join("\n")
   const logs = (await readFile(logfile, "utf8")) + collectedLogs
   if (managedInstall) {
-    assert.ok(logs.includes(`installed advisor=${managedInstall.advisor} version=${managedInstall.version} integrity=verified`))
+    assert.ok(
+      logs.includes(`installed advisor=${managedInstall.advisor} version=${managedInstall.version} integrity=verified`),
+    )
   } else {
     for (const expected of Object.values(scenarios)) assert.ok(logs.includes(`backend=${expected.backend}`))
     assert.ok(logs.includes("ready session=acp-fixture-"))

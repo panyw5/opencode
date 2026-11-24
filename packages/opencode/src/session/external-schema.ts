@@ -1,7 +1,17 @@
 import { Schema } from "effect"
 import { MessageID, PartID } from "./schema"
 
-export const Advisor = Schema.Literals(["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder"])
+export const Advisor = Schema.Literals([
+  "codex",
+  "claude",
+  "grok",
+  "dsh",
+  "pi",
+  "cline",
+  "droid",
+  "qoder",
+  "antigravity",
+])
 export type Advisor = typeof Advisor.Type
 
 export const ExternalSession = Schema.Struct({

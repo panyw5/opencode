@@ -125,7 +125,7 @@ export type HermesTest = {
   logs: string[]
 }
 
-export type CliAgentID = "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder"
+export type CliAgentID = "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity"
 
 export type CliAgentConfig = {
   enabled: boolean

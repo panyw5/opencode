@@ -1423,7 +1423,7 @@ export class AgentBackend extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
-      advisor?: "claude" | "codex" | "pi" | "grok" | "dsh" | "cline" | "droid" | "qoder"
+      advisor?: "claude" | "codex" | "pi" | "grok" | "dsh" | "cline" | "droid" | "qoder" | "antigravity"
       config?:
         | {
             type: "cli-json"
@@ -1484,7 +1484,7 @@ export class AgentBackend extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
-      advisor?: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder"
+      advisor?: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity"
     },
     options?: Options<never, ThrowOnError>,
   ) {

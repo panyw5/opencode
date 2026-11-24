@@ -582,6 +582,12 @@ export function getToolInfo(tool: string, input: any = {}, metadata: any = {}): 
         title: i18n.t("ui.tool.qoder"),
         subtitle: text(metadata.preview) ?? text(input.prompt) ?? text(metadata.session_id),
       }
+    case "antigravity_consult":
+      return {
+        icon: "brain",
+        title: i18n.t("ui.tool.antigravity"),
+        subtitle: text(metadata.preview) ?? text(input.prompt) ?? text(metadata.session_id),
+      }
     case "bash":
     case "hook":
     case "exec":
@@ -1302,11 +1308,9 @@ export function userMessageMarkdownInput(input: {
 }): { text: string; cacheKey: string } | undefined {
   const part = input.parts?.find((p) => p.type === "text" && !p.synthetic)
   if (!part) return
-  const full = splitMathInitializationPrompt(part.text ?? "")?.problem ?? (part.text ?? "")
+  const full = splitMathInitializationPrompt(part.text ?? "")?.problem ?? part.text ?? ""
   const shown =
-    !input.expanded && full.length > USER_MESSAGE_PREVIEW_LENGTH
-      ? full.slice(0, USER_MESSAGE_PREVIEW_LENGTH)
-      : full
+    !input.expanded && full.length > USER_MESSAGE_PREVIEW_LENGTH ? full.slice(0, USER_MESSAGE_PREVIEW_LENGTH) : full
   return {
     text: preserveUserMessageLineBreaks(escapeUserMessageHtmlTags(shown)),
     cacheKey: input.expanded ? part.id : `${part.id}:preview`,
@@ -1356,9 +1360,7 @@ export function UserMessageDisplay(props: {
 
   const isLongMessage = createMemo(() => text().length > USER_MESSAGE_PREVIEW_LENGTH)
 
-  const markdownInput = createMemo(() =>
-    userMessageMarkdownInput({ parts: props.parts, expanded: expanded() }),
-  )
+  const markdownInput = createMemo(() => userMessageMarkdownInput({ parts: props.parts, expanded: expanded() }))
 
   const skillTemplatePart = createMemo(() => skillText(props.parts))
   const sessionReferences = createMemo(() =>
@@ -3900,7 +3902,7 @@ for (const kind of [
   })
 }
 
-for (const advisor of ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder"] as const) {
+for (const advisor of ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder", "antigravity"] as const) {
   registerBuiltinTool({
     name: `${advisor}_consult`,
     render(props) {

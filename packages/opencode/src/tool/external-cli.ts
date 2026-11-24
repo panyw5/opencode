@@ -4,7 +4,7 @@ import { existsSync } from "node:fs"
 import { which } from "@/util/which"
 import { parseDshConsultDefaults, type DshConsultDefaults } from "@opencode-ai/util/dsh-config"
 
-export type ExternalCliID = "codex" | "claude" | "dsh" | "grok" | "cline" | "droid" | "qoder"
+export type ExternalCliID = "codex" | "claude" | "dsh" | "grok" | "cline" | "droid" | "qoder" | "antigravity"
 export type ExternalCliConfig = {
   enabled?: boolean
   binaryPath?: string
@@ -20,6 +20,7 @@ const homes = {
   cline: ["CLINE_DIR", ".cline"],
   droid: ["DROID_CONFIG_DIR", ".factory"],
   qoder: ["QODER_CONFIG_DIR", ".qoder"],
+  antigravity: ["ANTIGRAVITY_GEMINI_DIR", ".gemini"],
 } as const
 
 export function resolveExternalAgentConfig(
@@ -56,6 +57,8 @@ export function resolveExternalCli(
   const expand = (value: string) =>
     value === "~" ? homedir() : /^~[/\\]/.test(value) ? path.join(homedir(), value.slice(2)) : value
   const executable = expand(effective.binaryPath?.trim() || id)
+  // The Antigravity IDE ships an `antigravity` app opener; the agent CLI is `agy`.
+  const preferred = id === "antigravity" && executable === "antigravity" ? "agy" : executable
   const managed = path.join(
     path.resolve(base, expand(env.GROK_HOME?.trim() || path.join(homedir(), ".grok"))),
     "bin",
@@ -63,7 +66,8 @@ export function resolveExternalCli(
   )
   const binary = /[/\\]/.test(executable)
     ? path.resolve(base, executable)
-    : (which(executable, env) ??
+    : (which(preferred, env) ??
+      (preferred !== executable ? which(executable, env) : undefined) ??
       (id === "qoder" && executable === "qoder" ? which("qodercli", env) : undefined) ??
       (id === "grok" && !effective.binaryPath?.trim() && existsSync(managed) ? managed : undefined))
   if (!binary)

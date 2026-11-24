@@ -78,5 +78,15 @@ export function ExtraAgentBrandIcon(props: { id: string }) {
   // Official Qoder app icon (qoder.com favicon, rasterized to PNG).
   if (props.id === "qoder")
     return <img src={qoderIcon} alt="" aria-hidden="true" class="size-[18px] shrink-0 rounded-[4px]" />
+  // Official Antigravity mark from the ACP registry (antigravity-acp.svg).
+  if (props.id === "antigravity")
+    return (
+      <svg viewBox="0 0 16 16" class={vector} aria-hidden="true">
+        <path
+          fill="currentColor"
+          d="M14.1452 14.6818C14.9937 15.3182 16.2664 14.894 15.0997 13.7273C11.5998 10.3333 12.3421 1 7.99366 1C3.64518 1 4.3876 10.3333 0.887603 13.7273C-0.385123 15 0.993664 15.3182 1.84215 14.6818C5.13002 12.4545 4.9179 8.5303 7.99366 8.5303C11.0694 8.5303 10.8573 12.4545 14.1452 14.6818Z"
+        />
+      </svg>
+    )
   return <Icon name="code" size="small" />
 }

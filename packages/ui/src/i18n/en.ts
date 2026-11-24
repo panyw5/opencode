@@ -338,6 +338,7 @@ export const dict: Record<string, string> = {
   "ui.tool.droid.role.assistant": "Droid",
   "ui.tool.droid.role.system": "System",
   "ui.tool.qoder": "Qoder consult",
+  "ui.tool.antigravity": "Antigravity consult",
   "ui.tool.qoder.running": "Consulting…",
   "ui.tool.qoder.streaming": "streaming",
   "ui.tool.qoder.view": "View session",
