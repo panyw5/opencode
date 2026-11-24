@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process"
+import { writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
@@ -6,11 +7,14 @@ import { promisify } from "node:util"
 import type { Configuration } from "electron-builder"
 import { auditPackage } from "./scripts/package-content"
 import { packagePruningPatterns } from "./scripts/package-pruning"
+import { findSharedRendererAssets } from "./scripts/shared-renderer-assets"
 
 const execFileAsync = promisify(execFile)
 const packageDir = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(packageDir, "../..")
 const signScript = path.join(rootDir, "script", "sign-windows.ps1")
+const rendererAssets = path.join(packageDir, "out/renderer")
+const sharedAssets = findSharedRendererAssets(rendererAssets, path.join(packageDir, "resources/remote-web"))
 
 // Custom signer so electron-builder still runs rcedit (icon + version metadata).
 // `signAndEditExecutable: false` skips both signing AND icon embedding.
@@ -54,7 +58,6 @@ const getBase = (appId: string): Configuration => ({
   files: [
     "out/**/*",
     "!**/*.map",
-    "!out/renderer/assets/JetBrainsMonoNerdFontMono-Regular.woff2",
     "package.json",
     // These source-only workspace packages and the tunnel SDK are bundled by
     // electron-vite. Keep metadata/licenses, not a second runtime/source tree.
@@ -66,13 +69,23 @@ const getBase = (appId: string): Configuration => ({
     "!node_modules/effect/ai-docs/**/*",
     "!**/node_modules/**/{AGENTS,CLAUDE}.md",
     ...packagePruningPatterns,
+    ...sharedAssets.map((asset) => `!out/renderer/${asset}`),
   ],
   afterPack: async (context) => {
     const resources =
       context.electronPlatformName === "darwin"
         ? path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, "Contents", "Resources")
         : path.join(context.appOutDir, "resources")
-    await auditPackage(resources)
+    const report = await auditPackage(resources)
+    const packaged = new Set(report.entries.map((entry) => entry.path))
+    const present = new Set(findSharedRendererAssets(rendererAssets, path.join(resources, "remote-web")))
+    for (const asset of sharedAssets) {
+      if (packaged.has(`out/renderer/${asset}`) || !present.has(asset)) {
+        throw new Error(`Shared renderer asset was not deduplicated correctly: ${asset}`)
+      }
+    }
+    await writeFile(path.join(resources, "shared-renderer-assets.json"), JSON.stringify(sharedAssets))
+    console.log(`[desktop] shared renderer assets=${sharedAssets.length}`)
   },
   extraResources: [
     { from: "resources/gpt-pro-login", to: "gpt-pro-login", filter: ["**/*"] },

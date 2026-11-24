@@ -2,6 +2,7 @@ import windowState from "electron-window-state"
 import { oc2Theme } from "@opencode-ai/ui/theme/default-themes"
 import { resolveThemeVariant } from "@opencode-ai/ui/theme/resolve"
 import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol } from "electron"
+import { readFileSync } from "node:fs"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
@@ -10,6 +11,7 @@ import { exportDebugLogs, write as writeLog } from "./logging"
 import { getStore } from "./store"
 import { createUnresponsiveSampler } from "./unresponsive"
 import { relaunchApp } from "./relaunch"
+import { isShareableRendererAsset } from "./shared-renderer-assets"
 
 const root = dirname(fileURLToPath(import.meta.url))
 const rendererRoot = join(root, "../renderer")
@@ -379,6 +381,20 @@ export function createLoadingWindow() {
 export function registerRendererProtocol() {
   if (protocol.isProtocolHandled(rendererProtocol)) return
 
+  const sharedAssets = new Set<string>()
+  if (app.isPackaged) {
+    const manifest = join(process.resourcesPath, "shared-renderer-assets.json")
+    try {
+      const assets: unknown = JSON.parse(readFileSync(manifest, "utf8"))
+      if (!Array.isArray(assets) || !assets.every((asset) => typeof asset === "string" && isShareableRendererAsset(asset))) {
+        throw new Error("Invalid shared renderer asset manifest")
+      }
+      for (const asset of assets) sharedAssets.add(asset)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+    }
+  }
+
   protocol.handle(rendererProtocol, async (request) => {
     const url = new URL(request.url)
     if (url.host !== rendererHost) {
@@ -386,7 +402,8 @@ export function registerRendererProtocol() {
       return new Response("Not found", { status: 404 })
     }
 
-    const file = resolve(rendererRoot, `.${decodeURIComponent(url.pathname)}`)
+    const pathname = decodeURIComponent(url.pathname)
+    let file = resolve(rendererRoot, `.${pathname}`)
     const rel = relative(rendererRoot, file)
     if (rel.startsWith("..") || isAbsolute(rel)) {
       writeLog("protocol", "rejected path", { url: request.url, file }, "warn")
@@ -394,6 +411,10 @@ export function registerRendererProtocol() {
     }
 
     try {
+      const asset = pathname.slice(1)
+      if (isShareableRendererAsset(asset) && sharedAssets.has(asset)) {
+        file = join(process.resourcesPath, "remote-web", asset)
+      }
       const response = await net.fetch(pathToFileURL(file).toString())
       if (response.status >= 400) {
         writeLog(
