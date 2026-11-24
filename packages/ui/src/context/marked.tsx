@@ -874,6 +874,19 @@ function protectInlineMath(text: string) {
       continue
     }
     const ch = text[i]
+    if (ch === "\\" && text[i + 1] === "(" && !escapedDollar(text, i)) {
+      let end = text.indexOf("\\)", i + 2)
+      // "\\)" is a TeX line break followed by a parenthesis, not the closer.
+      while (end !== -1 && escapedDollar(text, end)) end = text.indexOf("\\)", end + 2)
+      if (end === -1) continue
+      const math = text.slice(i + 2, end)
+      if (!math.trim()) continue
+      out += text.slice(from, i)
+      out += mathPlaceholder(math, "inline")
+      i = end + 1
+      from = end + 2
+      continue
+    }
     if (ch !== "$" || escapedDollar(text, i)) continue
     if (text[i + 1] === "$") {
       const end = text.indexOf("$$", i + 2)

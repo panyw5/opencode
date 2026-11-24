@@ -327,6 +327,53 @@ $$`
     expect(html).not.toContain("\\substack")
   })
 
+  test("protects backslash-paren inline math before markdown parsing", () => {
+    const html = protectMathExpressions("令 \\(L=L_{-2}(\\mathfrak{so}_8)\\)，取它的四个 Cartan 流 \\(H_i\\)")
+
+    expect(html).toContain('data-opencode-math-style="inline"')
+    expect(html).toContain('data-opencode-math-tex="L=L_{-2}(&#92;mathfrak{so}_8)"')
+    expect(html).toContain('data-opencode-math-tex="H_i"')
+    expect(html).not.toContain("\\(")
+    expect(html).not.toContain("\\)")
+  })
+
+  test("renders backslash-paren math instead of leaking emphasis", async () => {
+    const marked = new Marked()
+    const source =
+      "令 \\(L=L_{-2}(\\mathfrak{so}_8)\\)，规范化取 \\(H_iH_j\\) 的二阶极点为 \\(-2\\delta_{ij}\\)。中心荷为 \\(-18\\)。"
+    const html = renderMathExpressions(await marked.parse(prepareMarkdown(source)), "html")
+
+    expect(html).toContain("katex")
+    expect(html).not.toContain("<em>")
+    expect(html).not.toContain("\\(")
+    expect(html).toContain('data-opencode-math-tex="H_iH_j"')
+  })
+
+  test("renders bold wrapping backslash-paren math", async () => {
+    const marked = new Marked()
+    const html = renderMathExpressions(await marked.parse(prepareMarkdown("**八个共形权 \\(3/2\\) 的奇场**可以写为")), "html")
+
+    expect(html).toContain("<strong>")
+    expect(html).toContain("katex")
+    expect(html).not.toContain("\\(3/2\\)")
+  })
+
+  test("keeps escaped backslash-paren and code spans literal", () => {
+    expect(protectMathExpressions("text \\\\(not math\\\\) tail")).toBe("text \\\\(not math\\\\) tail")
+    expect(protectMathExpressions("`\\(x_1\\)`")).toBe("`\\(x_1\\)`")
+    expect(protectMathExpressions("\\(\\)")).toBe("\\(\\)")
+  })
+
+  test("mixes backslash-paren, dollar, and display math in one paragraph", () => {
+    const html = protectMathExpressions("对比 \\(a_1\\) 与 $b_2$：\n$$\nc_3\n$$")
+
+    expect(html).toContain('data-opencode-math-tex="a_1"')
+    expect(html).toContain('data-opencode-math-tex="b_2"')
+    expect(html).toContain('data-opencode-math-style="display"')
+    expect(html).not.toContain("\\(")
+    expect(html).not.toContain("$b_2$")
+  })
+
   test("renders protected inline spacing and substack commands", () => {
     const protectedHtml =
       '<p>约定 <span data-math-style="inline">E_0\\!\\left[\\substack{-1\\\\ z}\\right]=-1</span> 下满足</p>'
