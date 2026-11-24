@@ -1548,6 +1548,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       pill.className =
         "inline-flex items-center gap-1 rounded-full border border-border-weak-base bg-surface-raised-base px-2 align-middle text-syntax-keyword"
       pill.textContent = language.t("prompt.skill.pill", { name: part.name })
+    } else if (part.type === "file") {
+      pill.className =
+        "inline-flex max-w-full items-center rounded-full border border-border-weak-base bg-surface-raised-base px-2 align-middle text-syntax-string"
+      pill.title = part.path
+      const label = document.createElement("span")
+      label.className = "truncate"
+      label.textContent = part.content
+      pill.append(label)
     } else {
       pill.textContent = part.content
     }
@@ -2835,7 +2843,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   classList={{
                     "select-text": true,
                     "w-full min-h-[96px] px-4 pt-3 pb-3 text-14-regular text-text-strong focus:outline-none whitespace-pre-wrap": true,
-                    "[&_[data-type=file]]:text-syntax-property": true,
+                    "[&_[data-type=file]]:text-syntax-string": true,
                     "[&_[data-type=agent]]:text-syntax-type": true,
                     "[&_[data-type=im]]:text-syntax-property": true,
                     "[&_[data-type=skill]]:text-syntax-keyword": true,
