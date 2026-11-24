@@ -702,8 +702,6 @@ export const dict = {
   "settings.general.row.wayland.tooltip":
     "Na Linuxu sa monitorima miješanih stopa osvježavanja, nativni Wayland može biti stabilniji.",
 
-  "settings.general.row.releaseNotes.title": "Bilješke o izdanju",
-  "settings.general.row.releaseNotes.description": 'Prikaži iskačuće prozore "Šta je novo" nakon ažuriranja',
 
   "settings.updates.row.startup.title": "Provjeri ažuriranja pri pokretanju",
   "settings.updates.row.startup.description": "Automatski provjerava ažuriranja kada se OpenCode pokrene",
@@ -905,10 +903,6 @@ export const dict = {
   "workspace.reset.archived.many": "Biće arhivirano {{count}} sesija.",
   "workspace.reset.note": "Ovo će resetovati radni prostor da odgovara podrazumijevanoj grani.",
   "common.open": "Otvori",
-  "dialog.releaseNotes.action.getStarted": "Započni",
-  "dialog.releaseNotes.action.next": "Sljedeće",
-  "dialog.releaseNotes.action.hideFuture": "Ne prikazuj ovo u budućnosti",
-  "dialog.releaseNotes.media.alt": "Pregled izdanja",
   "toast.project.reloadFailed.title": "Nije uspjelo ponovno učitavanje {{project}}",
   "error.server.invalidConfiguration": "Nevažeća konfiguracija",
   "common.moreCountSuffix": " (+{{count}} više)",

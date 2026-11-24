@@ -703,8 +703,6 @@ export const dict = {
   "settings.general.row.wayland.tooltip":
     "På Linux med skjermer med blandet oppdateringsfrekvens kan innebygd Wayland være mer stabilt.",
 
-  "settings.general.row.releaseNotes.title": "Utgivelsesnotater",
-  "settings.general.row.releaseNotes.description": 'Vis "Hva er nytt"-vinduer etter oppdateringer',
 
   "settings.updates.row.startup.title": "Se etter oppdateringer ved oppstart",
   "settings.updates.row.startup.description": "Se automatisk etter oppdateringer når OpenCode starter",
@@ -906,10 +904,6 @@ export const dict = {
   "workspace.reset.archived.many": "{{count}} sesjoner vil bli arkivert.",
   "workspace.reset.note": "Dette vil tilbakestille arbeidsområdet til å samsvare med standardgrenen.",
   "common.open": "Åpne",
-  "dialog.releaseNotes.action.getStarted": "Kom i gang",
-  "dialog.releaseNotes.action.next": "Neste",
-  "dialog.releaseNotes.action.hideFuture": "Ikke vis disse igjen",
-  "dialog.releaseNotes.media.alt": "Forhåndsvisning av utgivelse",
   "toast.project.reloadFailed.title": "Kunne ikke laste inn {{project}} på nytt",
   "error.server.invalidConfiguration": "Ugyldig konfigurasjon",
   "common.moreCountSuffix": " (+{{count}} mer)",

@@ -3,18 +3,15 @@ import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Progress } from "@opencode-ai/ui/progress"
-import { Switch } from "@opencode-ai/ui/switch"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useLanguage } from "@/context/language"
 import { usePlatform, type UpdaterState } from "@/context/platform"
-import { useSettings } from "@/context/settings"
 import { SettingsRow } from "./settings-row"
 import { SettingsList } from "./settings-list"
 
 export const SettingsUpdates: Component = () => {
   const language = useLanguage()
   const platform = usePlatform()
-  const settings = useSettings()
 
   const [updater, setUpdater] = createStore<{
     state: UpdaterState
@@ -176,18 +173,6 @@ export const SettingsUpdates: Component = () => {
       <div class="flex flex-col gap-8 w-full">
         <div class="flex flex-col gap-1">
           <SettingsList>
-            <SettingsRow
-              title={language.t("settings.general.row.releaseNotes.title")}
-              description={language.t("settings.general.row.releaseNotes.description")}
-            >
-              <div data-action="settings-release-notes">
-                <Switch
-                  checked={settings.general.releaseNotes()}
-                  onChange={(checked) => settings.general.setReleaseNotes(checked)}
-                />
-              </div>
-            </SettingsRow>
-
             <SettingsRow
               title={language.t("settings.updates.row.check.title")}
               description={language.t("settings.updates.row.check.description")}

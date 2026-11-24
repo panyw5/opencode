@@ -1097,10 +1097,6 @@ export const dict = {
   "project.switch.hint.newSession": "New session",
   "project.switch.hint.open": "Open",
 
-  "dialog.releaseNotes.action.getStarted": "Get started",
-  "dialog.releaseNotes.action.next": "Next",
-  "dialog.releaseNotes.action.hideFuture": "Don't show these in the future",
-  "dialog.releaseNotes.media.alt": "Release preview",
 
   "context.breakdown.title": "Context Breakdown",
   "context.breakdown.note": 'Approximate breakdown of input tokens. "Other" includes tool definitions and overhead.',
@@ -2007,8 +2003,6 @@ export const dict = {
   "settings.general.row.wayland.tooltip":
     "On Linux with mixed refresh-rate monitors, native Wayland can be more stable.",
 
-  "settings.general.row.releaseNotes.title": "Release notes",
-  "settings.general.row.releaseNotes.description": "Show What's New popups after updates",
 
   "settings.updates.row.startup.title": "Check for updates on startup",
   "settings.updates.row.startup.description": "Automatically check for updates when OpenCode launches",

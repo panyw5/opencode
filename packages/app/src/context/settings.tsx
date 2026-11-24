@@ -29,7 +29,6 @@ type AssistantModel = ModelKey | "auto" | "disabled"
 export interface Settings {
   general: {
     autoSave: boolean
-    releaseNotes: boolean
     followup: "queue" | "steer"
     showReasoningSummaries: boolean
     showCustomHookParts: boolean
@@ -76,7 +75,6 @@ function migrate(value: unknown) {
 const defaultSettings: Settings = {
   general: {
     autoSave: true,
-    releaseNotes: true,
     followup: "steer",
     showReasoningSummaries: true,
     showCustomHookParts: true,
@@ -200,10 +198,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         autoSave: withFallback(() => store.general?.autoSave, defaultSettings.general.autoSave),
         setAutoSave(value: boolean) {
           setStore("general", "autoSave", value)
-        },
-        releaseNotes: withFallback(() => store.general?.releaseNotes, defaultSettings.general.releaseNotes),
-        setReleaseNotes(value: boolean) {
-          setStore("general", "releaseNotes", value)
         },
         followup: withFallback(() => store.general?.followup, defaultSettings.general.followup),
         setFollowup(value: "queue" | "steer") {

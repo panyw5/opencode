@@ -968,8 +968,6 @@ export const dict = {
   "settings.general.row.wayland.description": "在 Wayland 上停用 X11 後備模式。需要重新啟動。",
   "settings.general.row.wayland.tooltip": "在混合更新率螢幕的 Linux 系統上，原生 Wayland 可能更穩定。",
 
-  "settings.general.row.releaseNotes.title": "發行說明",
-  "settings.general.row.releaseNotes.description": "更新後顯示「新功能」彈出視窗",
 
   "settings.updates.row.startup.title": "啟動時檢查更新",
   "settings.updates.row.startup.description": "在 OpenCode 啟動時自動檢查更新",
@@ -1175,10 +1173,6 @@ export const dict = {
   "workspace.reset.archived.many": "將封存 {{count}} 個工作階段。",
   "workspace.reset.note": "這將把工作區重設為與預設分支一致。",
   "common.open": "打開",
-  "dialog.releaseNotes.action.getStarted": "開始",
-  "dialog.releaseNotes.action.next": "下一步",
-  "dialog.releaseNotes.action.hideFuture": "不再顯示",
-  "dialog.releaseNotes.media.alt": "發佈預覽",
   "toast.project.reloadFailed.title": "無法重新載入 {{project}}",
   "error.server.invalidConfiguration": "無效的設定",
   "common.moreCountSuffix": " (還有 {{count}} 個)",

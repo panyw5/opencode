@@ -711,8 +711,6 @@ export const dict = {
   "settings.general.row.wayland.tooltip":
     "Karışık yenileme hızlı monitörlere sahip Linux'ta yerel Wayland daha kararlı olabilir.",
 
-  "settings.general.row.releaseNotes.title": "Sürüm notları",
-  "settings.general.row.releaseNotes.description": "Güncellemelerden sonra Yenilikler bildirimlerini göster",
 
   "settings.updates.row.startup.title": "Başlangıçta güncellemeleri kontrol et",
   "settings.updates.row.startup.description": "OpenCode başladığında otomatik güncelleme kontrolü yap",
@@ -915,10 +913,6 @@ export const dict = {
   "workspace.reset.archived.many": "{{count}} oturum arşivlenecek.",
   "workspace.reset.note": "Bu işlem çalışma alanını varsayılan dalla eşleşecek şekilde sıfırlayacak.",
   "common.open": "Aç",
-  "dialog.releaseNotes.action.getStarted": "Başla",
-  "dialog.releaseNotes.action.next": "İleri",
-  "dialog.releaseNotes.action.hideFuture": "Bunu gelecekte bir daha gösterme",
-  "dialog.releaseNotes.media.alt": "Sürüm önizlemesi",
   "toast.project.reloadFailed.title": "{{project}} yeniden yüklenemedi",
   "error.server.invalidConfiguration": "Geçersiz yapılandırma",
   "common.moreCountSuffix": " (+{{count}} daha)",

@@ -708,9 +708,6 @@ export const dict = {
   "settings.general.row.wayland.tooltip":
     "En Linux con monitores de frecuencia de actualización mixta, Wayland nativo puede ser más estable.",
 
-  "settings.general.row.releaseNotes.title": "Notas de la versión",
-  "settings.general.row.releaseNotes.description":
-    'Mostrar ventanas emergentes de "Novedades" después de las actualizaciones',
 
   "settings.updates.row.startup.title": "Buscar actualizaciones al iniciar",
   "settings.updates.row.startup.description": "Buscar actualizaciones automáticamente cuando se inicia OpenCode",
@@ -914,10 +911,6 @@ export const dict = {
   "workspace.reset.archived.many": "{{count}} sesiones serán archivadas.",
   "workspace.reset.note": "Esto restablecerá el espacio de trabajo para coincidir con la rama predeterminada.",
   "common.open": "Abrir",
-  "dialog.releaseNotes.action.getStarted": "Comenzar",
-  "dialog.releaseNotes.action.next": "Siguiente",
-  "dialog.releaseNotes.action.hideFuture": "No mostrar esto en el futuro",
-  "dialog.releaseNotes.media.alt": "Vista previa de la versión",
   "toast.project.reloadFailed.title": "Error al recargar {{project}}",
   "error.server.invalidConfiguration": "Configuración inválida",
   "common.moreCountSuffix": " (+{{count}} más)",

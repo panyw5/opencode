@@ -703,8 +703,6 @@ export const dict = {
   "settings.general.row.wayland.tooltip":
     "На Linux с мониторами разной частоты обновления нативный Wayland может быть стабильнее.",
 
-  "settings.general.row.releaseNotes.title": "Примечания к выпуску",
-  "settings.general.row.releaseNotes.description": 'Показывать всплывающие окна "Что нового" после обновлений',
 
   "settings.updates.row.startup.title": "Проверять обновления при запуске",
   "settings.updates.row.startup.description": "Автоматически проверять обновления при запуске OpenCode",
@@ -908,10 +906,6 @@ export const dict = {
   "workspace.reset.archived.many": "{{count}} сессий будет архивировано.",
   "workspace.reset.note": "Это сбросит рабочее пространство до соответствия ветке по умолчанию.",
   "common.open": "Открыть",
-  "dialog.releaseNotes.action.getStarted": "Начать",
-  "dialog.releaseNotes.action.next": "Далее",
-  "dialog.releaseNotes.action.hideFuture": "Больше не показывать",
-  "dialog.releaseNotes.media.alt": "Превью релиза",
   "toast.project.reloadFailed.title": "Не удалось перезагрузить {{project}}",
   "error.server.invalidConfiguration": "Недопустимая конфигурация",
   "common.moreCountSuffix": " (ещё {{count}})",

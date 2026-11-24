@@ -7,7 +7,6 @@ import {
   settingsNotificationsAgentSelector,
   settingsNotificationsErrorsSelector,
   settingsNotificationsPermissionsSelector,
-  settingsReleaseNotesSelector,
   settingsSearchIndexSelector,
   settingsSearchIndexStatusSelector,
   settingsSoundsAgentSelector,
@@ -620,29 +619,4 @@ test("toggling updates startup switch updates localStorage", async ({ page, goto
   }, settingsKey)
 
   expect(stored?.updates?.startup).toBe(false)
-})
-
-test("toggling release notes switch updates localStorage", async ({ page, gotoSession }) => {
-  await gotoSession()
-
-  const dialog = await openSettings(page)
-  const switchContainer = dialog.locator(settingsReleaseNotesSelector)
-  await expect(switchContainer).toBeVisible()
-
-  const toggleInput = switchContainer.locator('[data-slot="switch-input"]')
-  const initialState = await toggleInput.evaluate((el: HTMLInputElement) => el.checked)
-  expect(initialState).toBe(true)
-
-  await switchContainer.locator('[data-slot="switch-control"]').click()
-  await page.waitForTimeout(100)
-
-  const newState = await toggleInput.evaluate((el: HTMLInputElement) => el.checked)
-  expect(newState).toBe(false)
-
-  const stored = await page.evaluate((key) => {
-    const raw = localStorage.getItem(key)
-    return raw ? JSON.parse(raw) : null
-  }, settingsKey)
-
-  expect(stored?.general?.releaseNotes).toBe(false)
 })

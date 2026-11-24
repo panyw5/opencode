@@ -693,8 +693,6 @@ export const dict = {
   "settings.general.row.wayland.description": "ปิดใช้งาน X11 fallback บน Wayland ต้องรีสตาร์ท",
   "settings.general.row.wayland.tooltip": "บน Linux ที่มีจอภาพรีเฟรชเรตแบบผสม Wayland แบบเนทีฟอาจเสถียรกว่า",
 
-  "settings.general.row.releaseNotes.title": "บันทึกการอัปเดต",
-  "settings.general.row.releaseNotes.description": "แสดงป๊อปอัพ What's New หลังจากอัปเดต",
 
   "settings.updates.row.startup.title": "ตรวจสอบการอัปเดตเมื่อเริ่มต้น",
   "settings.updates.row.startup.description": "ตรวจสอบการอัปเดตโดยอัตโนมัติเมื่อ OpenCode เปิดใช้งาน",
@@ -895,10 +893,6 @@ export const dict = {
   "workspace.reset.archived.many": "{{count}} เซสชันจะถูกจัดเก็บ",
   "workspace.reset.note": "สิ่งนี้จะรีเซ็ตพื้นที่ทำงานให้ตรงกับสาขาเริ่มต้น",
   "common.open": "เปิด",
-  "dialog.releaseNotes.action.getStarted": "เริ่มต้น",
-  "dialog.releaseNotes.action.next": "ถัดไป",
-  "dialog.releaseNotes.action.hideFuture": "ไม่ต้องแสดงสิ่งนี้อีกในอนาคต",
-  "dialog.releaseNotes.media.alt": "ตัวอย่างรุ่น",
   "toast.project.reloadFailed.title": "ไม่สามารถโหลด {{project}} ใหม่ได้",
   "error.server.invalidConfiguration": "การกำหนดค่าไม่ถูกต้อง",
   "common.moreCountSuffix": " (เพิ่มอีก {{count}})",

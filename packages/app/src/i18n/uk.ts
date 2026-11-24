@@ -373,10 +373,6 @@ export const dict = {
   "dialog.project.edit.worktree.startup.description": "Виконується після створення нової робочої області (worktree).",
   "dialog.project.edit.worktree.startup.placeholder": "напр. bun install",
 
-  "dialog.releaseNotes.action.getStarted": "Розпочати",
-  "dialog.releaseNotes.action.next": "Далі",
-  "dialog.releaseNotes.action.hideFuture": "Не показувати це в майбутньому",
-  "dialog.releaseNotes.media.alt": "Попередній перегляд релізу",
 
   "context.breakdown.title": "Розподіл контексту",
   "context.breakdown.note":
@@ -800,8 +796,6 @@ export const dict = {
   "settings.general.row.wayland.tooltip":
     "На Linux з моніторами з різною частотою оновлення нативний Wayland може бути більш стабільним.",
 
-  "settings.general.row.releaseNotes.title": "Нотатки до релізу",
-  "settings.general.row.releaseNotes.description": 'Показувати спливаючі вікна "Що нового" після оновлень',
 
   "settings.updates.row.startup.title": "Перевіряти оновлення під час запуску",
   "settings.updates.row.startup.description": "Автоматично перевіряти наявність оновлень під час запуску OpenCode",

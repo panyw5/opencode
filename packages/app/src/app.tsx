@@ -38,7 +38,6 @@ import { GlobalSDKProvider } from "@/context/global-sdk"
 import { GlobalSyncProvider } from "@/context/global-sync"
 import { ExtensionHostProvider } from "@/extensions/host"
 import { notifyExtensionPageError } from "@/extensions/safe-mode"
-import { HighlightsProvider } from "@/context/highlights"
 import { LanguageProvider, type Locale, useLanguage } from "@/context/language"
 import { LayoutProvider, useLayout } from "@/context/layout"
 import { ModelsProvider } from "@/context/models"
@@ -459,9 +458,7 @@ function AppShellProviders(props: ParentProps) {
                 <ModelsProvider>
                   <CommandProvider>
                     <ExtensionHostProvider>
-                      <HighlightsProvider>
-                        <Layout>{props.children}</Layout>
-                      </HighlightsProvider>
+                      <Layout>{props.children}</Layout>
                     </ExtensionHostProvider>
                   </CommandProvider>
                 </ModelsProvider>
