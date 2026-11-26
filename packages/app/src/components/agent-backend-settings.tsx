@@ -73,9 +73,9 @@ export function AgentBackendSettings(props: {
     result: undefined as AgentBackendProbeResponse | undefined,
     tested: "",
     busy: "",
+    busyDetail: "",
     error: "",
     saved: false,
-    messageConsent: false,
   })
   let controller: AbortController | undefined
   let generation = 0
@@ -109,7 +109,7 @@ export function AgentBackendSettings(props: {
     (!!recipe() || !status.latest || (active()?.type === "acp" && !!(active() as AcpConfig).managed))
   const customMode = () => state.source === "custom" || (!!status.latest && !recipe() && !managedMode())
   const invalidate = () => {
-    setState({ tested: "", result: undefined, saved: false, confirmation: undefined, messageConsent: false })
+    setState({ tested: "", result: undefined, saved: false, confirmation: undefined })
   }
   const change = (
     key: "type" | "source" | "version" | "command" | "env" | "model" | "mode" | "permission",
@@ -141,6 +141,44 @@ export function AgentBackendSettings(props: {
       return false
     }
   }
+  const resultTitle = () =>
+    state.result?.status === "ready"
+      ? t("agentBackend.ready")
+      : state.result?.status === "authentication_required"
+        ? t("agentBackend.authRequired")
+        : t("agentBackend.failed")
+  const busyLabel = () => {
+    switch (state.busy) {
+      case "save":
+        return t("agentBackend.busy.save")
+      case "probe":
+        return t("agentBackend.busy.probe")
+      case "message":
+        return t("agentBackend.busy.message")
+      case "login":
+        return t("agentBackend.busy.login")
+      case "prepare":
+        return t("agentBackend.busy.prepare")
+      case "remove":
+        return t("agentBackend.busy.remove")
+      case "commit":
+        return t("agentBackend.busy.commit")
+      default:
+        return state.busy
+    }
+  }
+  const busyDetailLabel = () => {
+    switch (state.busyDetail) {
+      case "probing":
+        return t("agentBackend.busyDetail.probing")
+      case "sending":
+        return t("agentBackend.busyDetail.sending")
+      case "writing":
+        return t("agentBackend.busyDetail.writing")
+      default:
+        return ""
+    }
+  }
   createEffect(() => {
     const recommended = recipe()?.recommended
     if (!state.version && recommended) setState("version", recommended)
@@ -162,7 +200,7 @@ export function AgentBackendSettings(props: {
     const advisor = props.advisor
     const current = () => run === generation && !operation.signal.aborted
     controller = operation
-    setState({ busy: name, error: "", saved: false })
+    setState({ busy: name, busyDetail: "", error: "", saved: false })
     console.info(`[agent-backend.settings] start advisor=${advisor} action=${name} run=${run}`)
     try {
       await fn(operation.signal, current)
@@ -176,7 +214,7 @@ export function AgentBackendSettings(props: {
         `[agent-backend.settings] failed advisor=${advisor} action=${name} run=${run} cancelled=${operation.signal.aborted}`,
       )
     } finally {
-      if (run === generation) setState("busy", "")
+      if (run === generation) setState({ busy: "", busyDetail: "" })
     }
   }
   let initialized: { advisor: AdvisorID; client: OpencodeClient; signature: string } | undefined
@@ -211,14 +249,13 @@ export function AgentBackendSettings(props: {
           result: undefined,
           tested: "",
           saved: false,
-          messageConsent: false,
         })
         console.info(`[agent-backend.settings] draft initialized advisor=${advisor}`)
       },
     ),
   )
   const prepare = (action: "install" | "remove") =>
-    perform("prepare", async (signal, current) => {
+    perform(action === "remove" ? "remove" : "prepare", async (signal, current) => {
       const adapter = recipe()
       if (!adapter) throw new Error(t("agentBackend.customOnly"))
       const result = await props.client.agentBackend.prepare(
@@ -235,7 +272,7 @@ export function AgentBackendSettings(props: {
     authMethod?: string,
   ) => {
     const advisor = props.advisor
-    setState("messageConsent", false)
+    setState("busyDetail", message ? "sending" : "probing")
     console.info(`[agent-backend.settings] probe advisor=${advisor} message=${message} login=${!!authMethod}`)
     const result = await props.client.agentBackend.probe(
       { advisor, config, message, authMethod },
@@ -250,7 +287,7 @@ export function AgentBackendSettings(props: {
     return result.data.status === "ready"
   }
   const probe = (message = false, authMethod?: string) =>
-    perform(authMethod ? "login" : "probe", async (signal, current) => {
+    perform(authMethod ? "login" : message ? "message" : "probe", async (signal, current) => {
       await testConnection(draft(), signal, current, message, authMethod)
     })
   const save = () =>
@@ -267,6 +304,7 @@ export function AgentBackendSettings(props: {
         }
       }
       if (!current()) return
+      setState("busyDetail", "writing")
       console.info(`[agent-backend.settings] save submit advisor=${advisor} type=${backend.type}`)
       submitted = { advisor, client: props.client, signature: backendSignature(backend, advisor) }
       await props.onSave({
@@ -359,8 +397,6 @@ export function AgentBackendSettings(props: {
                 triggerVariant="settings"
               />
             </AgentSettingsCard>
-          </Show>
-          <Show when={state.type === "acp"}>
             <Show when={managedMode()}>
               <AgentSettingsCard
                 title={t("agentSettings.adapter")}
@@ -434,7 +470,7 @@ export function AgentBackendSettings(props: {
               </AgentSettingsCard>
             </Show>
             <Show when={customMode()}>
-              <AgentSettingsCard title={t("agentBackend.command")} badge={t("agentSettings.required")} size="wide">
+              <AgentSettingsCard title={t("agentBackend.command")} badge={t("agentSettings.required")}>
                 <TextField
                   label={t("agentBackend.command")}
                   hideLabel
@@ -543,55 +579,6 @@ export function AgentBackendSettings(props: {
               </Show>
             </AgentSettingsDetails>
           </AgentSettingsCard>
-          <Show when={state.messageConsent}>
-            <p class="text-12-regular">{t("agentBackend.messageConsent")}</p>
-            <Button size="small" variant="secondary" disabled={!!state.busy} onClick={() => void probe(true)}>
-              {t("agentBackend.confirmMessage")}
-            </Button>
-          </Show>
-          <Show when={state.result}>
-            <div
-              role="status"
-              class="rounded-lg border border-border-weak-base p-3 text-12-regular whitespace-pre-wrap break-words"
-            >
-              <strong>
-                {state.result?.status === "ready"
-                  ? t("agentBackend.ready")
-                  : state.result?.status === "authentication_required"
-                    ? t("agentBackend.authRequired")
-                    : t("agentBackend.failed")}
-              </strong>
-              <p>{state.result?.message}</p>
-              <Show when={state.result?.response}>
-                <pre class="whitespace-pre-wrap">{state.result?.response}</pre>
-              </Show>
-              <Show when={state.result?.status === "authentication_required"}>
-                <p class="mt-2">{loginHelp()}</p>
-                <For each={state.result?.authMethods}>
-                  {(method) => (
-                    <div class="mt-2">
-                      <Show when={method.description}>
-                        <p>{method.description}</p>
-                      </Show>
-                      <Show when={method.environment?.length}>
-                        <p>
-                          {t("agentBackend.environmentNames")}: {method.environment.join(", ")}
-                        </p>
-                      </Show>
-                      <Button
-                        size="small"
-                        variant="secondary"
-                        disabled={!!state.busy || !!props.remote || method.type !== "agent"}
-                        onClick={() => void probe(false, method.id)}
-                      >
-                        {t("agentBackend.login")}: {method.name}
-                      </Button>
-                    </div>
-                  )}
-                </For>
-              </Show>
-            </div>
-          </Show>
         </Show>
         <Show when={state.confirmation}>
           {(confirmation) => (
@@ -651,10 +638,71 @@ export function AgentBackendSettings(props: {
             {state.error}
           </p>
         </Show>
-        <Show when={state.saved}>
-          <p role="status" class="text-12-regular">
-            {t("agentBackend.saved")}
-          </p>
+        <Show when={state.busy || state.result || state.saved}>
+          <AgentSettingsCard
+            title={
+              state.busy ? t("agentBackend.working") : state.result ? resultTitle() : t("agentBackend.saved")
+            }
+            size="wide"
+          >
+            <div class="flex flex-col gap-3 whitespace-pre-wrap break-words text-12-regular">
+              <Show when={state.result && !state.busy}>
+                <div role="status">
+                  <Show when={state.result?.status !== "ready" && state.result?.message}>
+                    <p>{state.result?.message}</p>
+                  </Show>
+                  <Show when={state.result?.response}>
+                    <pre class="whitespace-pre-wrap">{state.result?.response}</pre>
+                  </Show>
+                  <Show when={state.result?.status === "authentication_required"}>
+                    <p class="mt-2">{loginHelp()}</p>
+                    <For each={state.result?.authMethods}>
+                      {(method) => (
+                        <div class="mt-2">
+                          <Show when={method.description}>
+                            <p>{method.description}</p>
+                          </Show>
+                          <Show when={method.environment?.length}>
+                            <p>
+                              {t("agentBackend.environmentNames")}: {method.environment.join(", ")}
+                            </p>
+                          </Show>
+                          <Button
+                            size="small"
+                            variant="secondary"
+                            disabled={!!state.busy || !!props.remote || method.type !== "agent"}
+                            onClick={() => void probe(false, method.id)}
+                          >
+                            {t("agentBackend.login")}: {method.name}
+                          </Button>
+                        </div>
+                      )}
+                    </For>
+                  </Show>
+                </div>
+              </Show>
+              <Show when={state.saved && !state.busy && state.result}>
+                <span role="status" class="flex items-center gap-2">
+                  <Icon name="circle-check" size="small" class="shrink-0 text-icon-success-base" />
+                  {t("agentBackend.saved")}
+                </span>
+              </Show>
+              <Show when={state.busy}>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <span role="status" class="flex min-w-0 items-center gap-2 text-12-regular text-text-weak">
+                    <Icon name="refresh" size="small" class="shrink-0 animate-spin" />
+                    <span class="text-text-base">{busyLabel()}</span>
+                    <Show when={busyDetailLabel()}>
+                      <span class="text-text-weak">· {busyDetailLabel()}</span>
+                    </Show>
+                  </span>
+                  <Button size="small" variant="ghost" onClick={() => controller?.abort()}>
+                    {t("common.cancel")}
+                  </Button>
+                </div>
+              </Show>
+            </div>
+          </AgentSettingsCard>
         </Show>
         <Show when={state.type === "acp" || !props.cliSettings}>
           <div class="flex w-full flex-wrap items-center justify-end gap-2 border-t border-border-weak-base pt-3">
@@ -671,7 +719,7 @@ export function AgentBackendSettings(props: {
               <Button
                 size="small"
                 variant="ghost"
-                icon="reset"
+                icon="link"
                 disabled={!!state.busy || !status.latest || (managedMode() && !installed())}
                 onClick={() => void probe()}
               >
@@ -680,18 +728,11 @@ export function AgentBackendSettings(props: {
               <Button
                 size="small"
                 variant="ghost"
+                icon="comment"
                 disabled={!!state.busy || !tested()}
-                onClick={() => setState("messageConsent", true)}
+                onClick={() => void probe(true)}
               >
                 {t("agentBackend.messageTest")}
-              </Button>
-            </Show>
-            <Show when={state.busy}>
-              <span role="status" class="text-12-regular text-text-weak">
-                {t("agentBackend.working")}: {state.busy}
-              </span>
-              <Button size="small" variant="ghost" onClick={() => controller?.abort()}>
-                {t("common.cancel")}
               </Button>
             </Show>
             <Button
@@ -708,9 +749,6 @@ export function AgentBackendSettings(props: {
           </div>
         </Show>
         <Show when={state.type !== "acp"}>{props.cliSettings?.()}</Show>
-        <Show when={state.type === "acp"}>
-          <p class="text-11-regular text-text-weak">{t("agentSettings.saveHint")}</p>
-        </Show>
       </div>
     </section>
   )
