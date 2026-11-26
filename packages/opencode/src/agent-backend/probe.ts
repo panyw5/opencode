@@ -115,14 +115,36 @@ export async function probeAgentSessionPreview(
     onEvent: (event) => replay.apply(event),
     requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),
   })
+  // session/load streams the whole history before resolving; stop as soon as
+  // enough distinct messages for the preview have been replayed.
+  const seen = new Set<string>()
+  let resolveEnough: () => void = () => {}
+  const enough = new Promise<void>((resolve) => (resolveEnough = resolve))
+  replay.onTranscript = (item) => {
+    if (!item.text || (item.kind !== "user" && item.kind !== "message")) return
+    seen.add(item.id)
+    if (seen.size >= AGENT_PREVIEW_MESSAGES) resolveEnough()
+  }
+  const started = Date.now()
   try {
     log.info(`preview start advisor=${input.advisor} agentSession=${input.sessionID} cwd=${input.cwd}`)
-    await client.start(input.signal, { resumeSessionID: input.sessionID, loadOnly: true })
+    const loading = client
+      .start(input.signal, { resumeSessionID: input.sessionID, loadOnly: true })
+      .then(() => "done" as const)
+    loading.catch(() => {})
+    const outcome = await Promise.race([loading, enough.then(() => "early" as const)])
+    if (outcome === "early") {
+      log.info(`preview early-stop advisor=${input.advisor} agentSession=${input.sessionID} ms=${Date.now() - started}`)
+    } else {
+      await loading
+    }
     const messages = replay.transcript
       .filter((item) => item.text && (item.kind === "user" || item.kind === "message"))
       .slice(0, AGENT_PREVIEW_MESSAGES)
       .map((item) => ({ kind: item.kind, text: item.text!.slice(0, AGENT_PREVIEW_CHARS) }))
-    log.info(`preview ready advisor=${input.advisor} agentSession=${input.sessionID} messages=${messages.length}`)
+    log.info(
+      `preview ready advisor=${input.advisor} agentSession=${input.sessionID} messages=${messages.length} ms=${Date.now() - started}`,
+    )
     return { supported: true, messages }
   } finally {
     await client.stop()
