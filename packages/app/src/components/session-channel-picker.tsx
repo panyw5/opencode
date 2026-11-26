@@ -7,6 +7,8 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { List } from "@opencode-ai/ui/list"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Dialog } from "@opencode-ai/ui/dialog"
+import { Tag } from "@opencode-ai/ui/tag"
+import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { useNavigate } from "@solidjs/router"
@@ -470,40 +472,54 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
     <Dialog
       title={
         <span class="flex items-center gap-2.5">
-          <ChannelIcon id={props.advisor} class="size-5 shrink-0" />
           <span>{language.t("prompt.channel.sessions")}</span>
-          <span class="text-12-regular text-text-weak">{CHANNEL_LABELS[props.advisor] ?? props.advisor}</span>
+          <Tag class="inline-flex items-center gap-1.5">
+            <ChannelIcon id={props.advisor} class="size-4 shrink-0" />
+            <span>{CHANNEL_LABELS[props.advisor] ?? props.advisor}</span>
+          </Tag>
         </span>
       }
+      description={<span class="truncate">{sdk.directory}</span>}
       containerStyle={{ height: "min(calc(100vh - 16px), 560px)" }}
       class="flex min-h-0 flex-col"
     >
-      <List
-        class="flex-1 min-h-0 [&_[data-slot=list-viewport]]:flex-1 [&_[data-slot=list-viewport]]:min-h-0"
-        virtual={false}
-        search={{ placeholder: language.t("prompt.channel.sessions.search"), autofocus: true }}
-        emptyMessage={emptyMessage()}
-        key={(item) => item.id}
-        items={items()}
-        filterKeys={["name"]}
-        onSelect={(item) => {
-          if (item) void pick(item)
-        }}
+      <Show
+        when={!state.loading}
+        fallback={
+          <div class="flex flex-1 items-center justify-center">
+            <TextShimmer text={language.t("prompt.channel.sessions.loading")} />
+          </div>
+        }
       >
-        {(item) => (
-          <div class="w-full flex items-center justify-start gap-x-2 text-left text-13-regular">
-            <div class="min-w-0 flex-1 text-left">
-              <div class="truncate">{item.name}</div>
-              <Show when={item.updated}>
-                <div class="truncate text-11-regular text-text-weak">{new Date(item.updated!).toLocaleString()}</div>
+        <List
+          class="flex-1 min-h-0 [&_[data-slot=list-viewport]]:flex-1 [&_[data-slot=list-viewport]]:min-h-0"
+          virtual={false}
+          search={{ placeholder: language.t("prompt.channel.sessions.search"), autofocus: true }}
+          emptyMessage={emptyMessage()}
+          key={(item) => item.id}
+          items={items()}
+          filterKeys={["name"]}
+          onSelect={(item) => {
+            if (item) void pick(item)
+          }}
+        >
+          {(item) => (
+            <div class="w-full flex items-center justify-start gap-x-2 text-left text-13-regular">
+              <div class="min-w-0 flex-1 text-left">
+                <div class="truncate">{item.name}</div>
+                <Show when={item.updated}>
+                  <div class="truncate text-11-regular text-text-weak">
+                    {new Date(item.updated!).toLocaleString()}
+                  </div>
+                </Show>
+              </div>
+              <Show when={state.busy === item.id}>
+                <Icon name="refresh" size="small" class="shrink-0 animate-spin" />
               </Show>
             </div>
-            <Show when={state.busy === item.id}>
-              <Icon name="refresh" size="small" class="shrink-0 animate-spin" />
-            </Show>
-          </div>
-        )}
-      </List>
+          )}
+        </List>
+      </Show>
     </Dialog>
   )
 }
