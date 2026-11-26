@@ -253,6 +253,18 @@ function createGlobalSync() {
   const configAffectsProviders = (config: Config) =>
     "provider" in config || "disabled_providers" in config || "enabled_providers" in config
 
+  // Mirrors the server-side Provider stateKey (provider/disabled_providers/
+  // enabled_providers/auth) plus model/small_model which feed the response's
+  // default selection. Auth changes arrive via their own events, not config.
+  const providerRefreshKey = (config?: Config) =>
+    JSON.stringify({
+      provider: config?.provider ?? {},
+      disabled_providers: [...(config?.disabled_providers ?? [])].sort(),
+      enabled_providers: config?.enabled_providers ? [...config.enabled_providers].sort() : undefined,
+      model: config?.model,
+      small_model: config?.small_model,
+    })
+
   const bootStoreFor = (domain: DomainId) =>
     ((...input: unknown[]) => {
       if (input[0] === "project" && Array.isArray(input[1])) {
@@ -881,6 +893,10 @@ function createGlobalSync() {
       }
       // Route to the emitting domain's bucket regardless of which domain is visible.
       // Hidden domains must continue to process their own global events.
+      // Capture the previous config so we can skip the expensive provider
+      // refresh when the update didn't touch provider-relevant fields.
+      const prevProviderKey =
+        event.type === "global.config.updated" ? providerRefreshKey(fatFor(emittingDomain).config[0]()) : undefined
       applyGlobalEvent({
         event,
         project: projectBucket(emittingDomain),
@@ -906,11 +922,13 @@ function createGlobalSync() {
             )
           }
         }
-        void refreshProviders(emittingDomain).catch((err) => {
-          console.error(
-            `[global-sync] provider refresh failed error=${err instanceof Error ? err.message : String(err)}`,
-          )
-        })
+        if (providerRefreshKey(event.properties as Config) !== prevProviderKey) {
+          void refreshProviders(emittingDomain).catch((err) => {
+            console.error(
+              `[global-sync] provider refresh failed error=${err instanceof Error ? err.message : String(err)}`,
+            )
+          })
+        }
         return
       }
       if (event.type === "server.connected" || event.type === "global.disposed") {
