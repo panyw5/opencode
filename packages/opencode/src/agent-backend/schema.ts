@@ -34,6 +34,7 @@ export const AgentBackends = Schema.Struct({
   droid: Schema.optional(BackendConfig),
   qoder: Schema.optional(BackendConfig),
   antigravity: Schema.optional(BackendConfig),
+  devin: Schema.optional(BackendConfig),
 })
 
 export const AgentChannels = Schema.Struct({

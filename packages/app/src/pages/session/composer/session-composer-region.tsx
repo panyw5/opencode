@@ -52,6 +52,7 @@ const externalAdvisorIcons = {
   droid: "droid",
   qoder: "qoder",
   antigravity: "antigravity",
+  devin: "devin",
 } satisfies Record<NonNullable<Session["external"]>["advisor"], string>
 
 const externalAdvisorNames = {
@@ -64,6 +65,7 @@ const externalAdvisorNames = {
   droid: "Droid",
   qoder: "Qoder",
   antigravity: "Antigravity",
+  devin: "Devin",
 } satisfies Record<NonNullable<Session["external"]>["advisor"], string>
 
 function ComposerDockExit(props: {

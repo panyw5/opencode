@@ -37,6 +37,7 @@ export const KNOWN_AGENT_PERMISSION_KEYS = new Set([
   "droid_consult",
   "qoder_consult",
   "antigravity_consult",
+  "devin_consult",
   "gpt_pro_consult",
   "repo_clone",
   "repo_overview",

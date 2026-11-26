@@ -70,6 +70,8 @@ export const dict = {
     "Run `qodercli login` on the backend machine, using the same configuration directory as the ACP command, then test again.",
   "agentBackend.loginHelp.antigravity":
     "Sign in to Antigravity on the backend machine (`agy` shares the ~/.gemini/antigravity-cli configuration), then test again.",
+  "agentBackend.loginHelp.devin":
+    "Run `devin auth login` on the backend machine or set WINDSURF_API_KEY in the backend process environment, then test again.",
   "agentBackend.confirmation": "Confirm adapter operation",
   "agentBackend.installNotice":
     "Only this reviewed release will be changed. Existing global CLIs and account credentials are not removed. Installing does not enable the adapter.",

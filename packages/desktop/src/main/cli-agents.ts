@@ -25,6 +25,7 @@ import { getClineInfo, testClineConfig } from "./cline-status"
 import { getDroidInfo, testDroidConfig } from "./droid-status"
 import { getQoderInfo, testQoderConfig } from "./qoder-status"
 import { getAntigravityInfo, testAntigravityConfig } from "./antigravity-status"
+import { getDevinInfo, testDevinConfig } from "./devin-status"
 import { parseDshConsultDefaults } from "@opencode-ai/util/dsh-config"
 
 type CliAgentDefinition = {
@@ -141,6 +142,18 @@ const cliAgents: Record<CliAgentID, CliAgentDefinition> = {
     },
     getInfo: getAntigravityInfo,
     test: testAntigravityConfig,
+  },
+  devin: {
+    descriptor: {
+      id: "devin",
+      label: "Devin",
+      command: "devin",
+      sourceUrl: "https://devin.ai/docs/cli",
+      configHomeLabel: "DEVIN_CONFIG_DIR",
+      configHomePlaceholder: "~/.config/devin",
+    },
+    getInfo: getDevinInfo,
+    test: testDevinConfig,
   },
 }
 

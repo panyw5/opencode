@@ -4,7 +4,7 @@ import { existsSync } from "node:fs"
 import { which } from "@/util/which"
 import { parseDshConsultDefaults, type DshConsultDefaults } from "@opencode-ai/util/dsh-config"
 
-export type ExternalCliID = "codex" | "claude" | "dsh" | "grok" | "cline" | "droid" | "qoder" | "antigravity"
+export type ExternalCliID = "codex" | "claude" | "dsh" | "grok" | "cline" | "droid" | "qoder" | "antigravity" | "devin"
 export type ExternalCliConfig = {
   enabled?: boolean
   binaryPath?: string
@@ -21,6 +21,9 @@ const homes = {
   droid: ["DROID_CONFIG_DIR", ".factory"],
   qoder: ["QODER_CONFIG_DIR", ".qoder"],
   antigravity: ["ANTIGRAVITY_GEMINI_DIR", ".gemini"],
+  // Devin reads ~/.config/devin/config.json; DEVIN_CONFIG_DIR is our resolver
+  // convention only — the consult tool maps the home to `--config <home>/config.json`.
+  devin: ["DEVIN_CONFIG_DIR", ".config/devin"],
 } as const
 
 export function resolveExternalAgentConfig(

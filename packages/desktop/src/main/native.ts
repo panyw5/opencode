@@ -25,6 +25,7 @@ import {
   CODEX_CONFIG_KEY,
   CUSTOM_EDITOR_PATH_KEY,
   DEFAULT_EDITOR_KEY,
+  DEVIN_CONFIG_KEY,
   DROID_CONFIG_KEY,
   DSH_CONFIG_KEY,
   GENERICAGENT_CONFIG_KEY,
@@ -422,6 +423,7 @@ const cliAgentConfigKeys: Record<CliAgentID, string> = {
   droid: DROID_CONFIG_KEY,
   qoder: QODER_CONFIG_KEY,
   antigravity: ANTIGRAVITY_CONFIG_KEY,
+  devin: DEVIN_CONFIG_KEY,
 }
 
 export function getCliAgentConfig(id: CliAgentID): CliAgentConfig {

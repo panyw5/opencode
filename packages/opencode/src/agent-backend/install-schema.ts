@@ -13,6 +13,7 @@ export const AdvisorID = Schema.Literals([
   "droid",
   "qoder",
   "antigravity",
+  "devin",
 ])
 export const InstallAction = Schema.Literals(["install", "remove"])
 export const PrepareInput = Schema.Struct({ advisor: ManagedAdvisor, version: Schema.String, action: InstallAction })

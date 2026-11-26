@@ -11,6 +11,7 @@ export const Advisor = Schema.Literals([
   "droid",
   "qoder",
   "antigravity",
+  "devin",
 ])
 export type Advisor = typeof Advisor.Type
 

@@ -82,7 +82,18 @@ describe("unified AgentBackend routing", () => {
       expect(() => decode({ agent_backends: { claude: backend } })).toThrow()
   })
 
-  for (const advisor of ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder", "antigravity"] as const) {
+  for (const advisor of [
+    "codex",
+    "claude",
+    "grok",
+    "dsh",
+    "pi",
+    "cline",
+    "droid",
+    "qoder",
+    "antigravity",
+    "devin",
+  ] as const) {
     it.live(`keeps ${advisor}'s default backend and propagates normalized metadata`, () =>
       Effect.gen(function* () {
         const kind = advisor === "pi" ? "native-rpc" : "cli-json"

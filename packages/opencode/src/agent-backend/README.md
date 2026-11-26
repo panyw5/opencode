@@ -2,7 +2,7 @@
 
 The external advisor tools (`codex_consult`, `claude_consult`, `grok_consult`,
 `dsh_consult`, `pi_consult`, `cline_consult`, `droid_consult`, `qoder_consult`,
-`antigravity_consult`) share one boundary:
+`antigravity_consult`, `devin_consult`) share one boundary:
 
 ```text
 Session / UI
@@ -56,12 +56,13 @@ In **Config > External Agents**, choose **ACP** and **Existing installation / cu
 to use the prefilled command. Install the CLI separately on the backend machine if needed,
 then choose **Save and enable backend**. The connection test does not send a model prompt.
 
-| Agent | Command | Backend sign-in |
-| --- | --- | --- |
-| Cline | `["cline", "--acp"]` | `cline auth` or an advertised ACP login method |
-| Factory Droid | `["droid", "exec", "--output-format", "acp"]` | `droid login` or `FACTORY_API_KEY` in the backend environment |
-| Qoder CLI | `["qodercli", "--acp"]` | `qodercli login` with the same configuration directory as the ACP process |
-| Antigravity | `["agy", "acp"]` | Sign in to Antigravity on the backend machine (see `https://antigravity.google/docs/cli/reference.md`) |
+| Agent         | Command                                       | Backend sign-in                                                                                        |
+| ------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Cline         | `["cline", "--acp"]`                          | `cline auth` or an advertised ACP login method                                                         |
+| Factory Droid | `["droid", "exec", "--output-format", "acp"]` | `droid login` or `FACTORY_API_KEY` in the backend environment                                          |
+| Qoder CLI     | `["qodercli", "--acp"]`                       | `qodercli login` with the same configuration directory as the ACP process                              |
+| Antigravity   | `["agy", "acp"]`                              | Sign in to Antigravity on the backend machine (see `https://antigravity.google/docs/cli/reference.md`) |
+| Devin         | `["devin", "acp"]`                            | `devin auth login` or `WINDSURF_API_KEY` in the backend environment                                    |
 
 The executable must be on the backend's `PATH`, or you can provide an absolute path.
 An unauthenticated Droid may return an authentication error before advertising any login methods;
@@ -71,8 +72,10 @@ complete sign-in on the backend and try again.
 
 Config > External Agents exposes transport selection, reviewed adapter releases,
 installation confirmation, version selection, connection tests and authentication
-guidance. Claude, Codex, Pi, Cline, Droid and Qoder have pinned npm recipes in `catalog.ts`;
-DSH, Grok and Antigravity use existing/custom ACP commands. Managed Qoder uses the official
+guidance. Claude, Codex, Pi, Cline, Droid, Qoder and Devin have pinned npm recipes in
+`catalog.ts`; DSH, Grok and Antigravity use existing/custom ACP commands. Managed Devin runs
+the `devin` npm launcher (`bin/devin.js`) with `acp`; the launcher resolves the
+platform binary from its optional dependencies. Managed Qoder uses the official
 `@qoder-ai/qodercli` package with `--acp`. The managed Droid release follows the
 [ACP Registry](https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json):
 it runs `droid exec --output-format acp-daemon` with Droid's automatic updates disabled.

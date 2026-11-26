@@ -36,6 +36,7 @@ const scenarios = {
   BACKEND_DROID: { tool: "droid_consult", backend: "acp", answer: "ACP_REPLY_1" },
   BACKEND_QODER: { tool: "qoder_consult", backend: "acp", answer: "ACP_REPLY_1" },
   BACKEND_ANTIGRAVITY: { tool: "antigravity_consult", backend: "acp", answer: "ACP_REPLY_1" },
+  BACKEND_DEVIN: { tool: "devin_consult", backend: "acp", answer: "ACP_REPLY_1" },
   BACKEND_RPC: { tool: "pi_consult", backend: "native-rpc", answer: "PI_REPLY_1" },
   BACKEND_CLI: { tool: "dsh_consult", backend: "cli-json", answer: "Initial fixture answer" },
 } as const
@@ -87,7 +88,7 @@ const config = {
   mcp: {},
   permission: { "*": "allow" },
   agent_backends: Object.fromEntries(
-    ["claude", "cline", "droid", "qoder", "antigravity"].map((advisor) => [
+    ["claude", "cline", "droid", "qoder", "antigravity", "devin"].map((advisor) => [
       advisor,
       { type: "acp", command: ["node", path.join(fixture, "acp-agent.mjs")] },
     ]),
@@ -98,6 +99,7 @@ const config = {
     droid: { enabled: true },
     qoder: { enabled: true },
     antigravity: { enabled: true },
+    devin: { enabled: true },
     dsh: { binaryPath: dsh, configHome: path.join(temporary, "dsh-home"), enabled: true },
   },
   pi: { enabled: true, binaryPath: path.join(fixture, "pi-rpc.mjs") },
@@ -307,7 +309,7 @@ try {
       }
     }
   }
-  for (const advisor of managedInstall ? [] : ["cline", "droid", "qoder", "antigravity"]) {
+  for (const advisor of managedInstall ? [] : ["cline", "droid", "qoder", "antigravity", "devin"]) {
     const options = await request("/agent-backend/channel-options", "POST", { advisor })
     assert.equal(options.advisor, advisor)
     assert.ok(options.models.length > 0)

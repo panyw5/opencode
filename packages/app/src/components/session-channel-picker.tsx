@@ -448,7 +448,9 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
       previewCache.set(item.id, messages)
       if (selected()?.id === item.id) setPreview({ loading: false, failed: false, messages })
     } catch (error) {
-      console.warn(`[channel] session preview failed advisor=${props.advisor} agentSession=${item.id} error=${String(error)}`)
+      console.warn(
+        `[channel] session preview failed advisor=${props.advisor} agentSession=${item.id} error=${String(error)}`,
+      )
       if (selected()?.id === item.id) setPreview({ loading: false, failed: true, messages: [] })
     }
   }
@@ -479,7 +481,9 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
         },
       }).then((x) => x.data)
       if (!session) return
-      console.debug(`[channel] bound agent session advisor=${props.advisor} agentSession=${item.id} session=${session.id}`)
+      console.debug(
+        `[channel] bound agent session advisor=${props.advisor} agentSession=${item.id} session=${session.id}`,
+      )
       sync.session.created({ directory, info: session })
       // Warm the channel process so `session/load` replays the agent history into messages.
       void sdk.client.session
@@ -593,14 +597,6 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
           <Show when={selected()}>
             {(item) => (
               <div class="flex min-w-0 flex-1 flex-col">
-                <div class="border-b border-border-weak-base px-4 py-3">
-                  <div class="truncate text-14-medium text-text-strong">{item().name}</div>
-                  <Show when={item().updated}>
-                    <div class="mt-0.5 truncate text-11-regular text-text-weak">
-                      {new Date(item().updated!).toLocaleString()}
-                    </div>
-                  </Show>
-                </div>
                 <div class="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-3">
                   <Show
                     when={!preview.loading}
@@ -627,7 +623,7 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
                           <div class="text-11-medium text-text-weak">
                             {message.kind === "user"
                               ? language.t("prompt.channel.sessions.preview.you")
-                              : CHANNEL_LABELS[props.advisor] ?? props.advisor}
+                              : (CHANNEL_LABELS[props.advisor] ?? props.advisor)}
                           </div>
                           <div class="mt-1 line-clamp-4 whitespace-pre-wrap break-words text-13-regular text-text-base">
                             {message.text}
@@ -647,12 +643,7 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
                   </Show>
                 </div>
                 <div class="flex items-center justify-end gap-2 border-t border-border-weak-base px-4 py-3">
-                  <Button
-                    type="button"
-                    variant="primary"
-                    disabled={!!state.busy}
-                    onClick={() => void pick(item())}
-                  >
+                  <Button type="button" variant="primary" disabled={!!state.busy} onClick={() => void pick(item())}>
                     <Show when={state.busy === item().id}>
                       <Icon name="refresh" size="small" class="shrink-0 animate-spin" />
                     </Show>

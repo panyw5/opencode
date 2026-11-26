@@ -88,6 +88,7 @@ describe("builtin tool markers", () => {
       "droid_consult",
       "qoder_consult",
       "antigravity_consult",
+      "devin_consult",
       "external_command",
     ]) {
       expect(ToolRegistry.render(name)).toBeDefined()

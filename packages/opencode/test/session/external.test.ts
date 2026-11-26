@@ -465,6 +465,7 @@ describe("external CLI child sessions", () => {
     "droid_consult",
     "qoder_consult",
     "antigravity_consult",
+    "devin_consult",
   ]) {
     it.instance(`projects ${name} through the shared session interface`, () =>
       Effect.gen(function* () {

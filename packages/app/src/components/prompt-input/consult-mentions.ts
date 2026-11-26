@@ -12,6 +12,7 @@ export const CONSULT_MENTION_IDS = [
   "droid",
   "qoder",
   "antigravity",
+  "devin",
   "gpt-pro",
 ] as const satisfies readonly (CliAgentID | "gpt-pro")[]
 
@@ -44,7 +45,18 @@ export async function loadReadyConsultMentions(
   configuration?: Pick<Config, "agent_backends" | "external_agents" | "pi">,
 ): Promise<ReadyConsultMention[]> {
   const ready: ReadyConsultMention[] = []
-  for (const id of ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder", "antigravity"] as const) {
+  for (const id of [
+    "codex",
+    "claude",
+    "grok",
+    "dsh",
+    "pi",
+    "cline",
+    "droid",
+    "qoder",
+    "antigravity",
+    "devin",
+  ] as const) {
     const backend = configuration?.agent_backends?.[id]
     if (backend?.type !== "acp" || !backend.command[0]?.trim()) continue
     const configured = id === "pi" ? configuration?.pi : configuration?.external_agents?.[id]
@@ -66,6 +78,7 @@ export async function loadReadyConsultMentions(
       droid: "Factory Droid",
       qoder: "Qoder",
       antigravity: "Antigravity",
+      devin: "Devin",
     }
     ready.push({ id, name: id, display: `${labels[id]} (ACP)` })
   }

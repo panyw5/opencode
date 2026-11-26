@@ -1,4 +1,4 @@
-export const managedAdvisors = ["claude", "codex", "pi", "cline", "droid", "qoder"] as const
+export const managedAdvisors = ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"] as const
 export type ManagedAdvisor = (typeof managedAdvisors)[number]
 export type AdapterRelease = { version: string; integrity: string }
 export type AdapterRecipe = {
@@ -94,6 +94,22 @@ export const adapterCatalog: AdapterRecipe[] = [
       {
         version: "1.1.92",
         integrity: "sha512-QZ+eEaMSW6ysqNyzDF0og+FwYh1BXBH5HjQc3pPxoDsgG9W5ml2BpTlT+VIURzLSbMgSqmFwrk/Y2BL8U4SBYA==",
+      },
+    ],
+  },
+  {
+    advisor: "devin",
+    package: "devin",
+    entry: "bin/devin.js",
+    args: ["acp"],
+    source: "https://github.com/CognitionAI/devin-cli",
+    loginHelp:
+      "Use an advertised ACP login method, run `devin auth login`, or set WINDSURF_API_KEY on the backend machine, then test again.",
+    requires: ["Node.js >=22", "npm", "A supported Devin CLI platform"],
+    releases: [
+      {
+        version: "3000.15.14",
+        integrity: "sha512-TMQUET4+DWnTYCKX+vxlP9BQnee2TG3z59UrrHC44cTEf7y1nB5ulRffA6QXFA8p/JY97tSHk+KLYFSNlq8PRw==",
       },
     ],
   },

@@ -115,6 +115,7 @@ export const iconNames = [
   "droid",
   "qoder",
   "antigravity",
+  "devin",
 ] as const
 
 export type IconName = (typeof iconNames)[number]

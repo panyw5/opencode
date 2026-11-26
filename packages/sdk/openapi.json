@@ -2379,7 +2379,7 @@
                         "properties": {
                           "advisor": {
                             "type": "string",
-                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                           },
                           "package": {
                             "type": "string"
@@ -2583,7 +2583,7 @@
                     },
                     "advisor": {
                       "type": "string",
-                      "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                      "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                     },
                     "version": {
                       "type": "string"
@@ -2682,7 +2682,7 @@
                 "properties": {
                   "advisor": {
                     "type": "string",
-                    "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                    "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                   },
                   "version": {
                     "type": "string"
@@ -2761,7 +2761,7 @@
                         "properties": {
                           "advisor": {
                             "type": "string",
-                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                           },
                           "package": {
                             "type": "string"
@@ -3056,7 +3056,7 @@
                 "properties": {
                   "advisor": {
                     "type": "string",
-                    "enum": ["claude", "codex", "pi", "grok", "dsh", "cline", "droid", "qoder", "antigravity"]
+                    "enum": ["claude", "codex", "pi", "grok", "dsh", "cline", "droid", "qoder", "antigravity", "devin"]
                   },
                   "config": {
                     "anyOf": [
@@ -3102,7 +3102,7 @@
                             "properties": {
                               "advisor": {
                                 "type": "string",
-                                "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                                "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                               },
                               "version": {
                                 "type": "string",
@@ -3247,7 +3247,7 @@
                 "properties": {
                   "advisor": {
                     "type": "string",
-                    "enum": ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder", "antigravity"]
+                    "enum": ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder", "antigravity", "devin"]
                   }
                 },
                 "required": ["advisor"],
@@ -3354,7 +3354,7 @@
                 "properties": {
                   "advisor": {
                     "type": "string",
-                    "enum": ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder", "antigravity"]
+                    "enum": ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder", "antigravity", "devin"]
                   }
                 },
                 "required": ["advisor"],
@@ -3367,6 +3367,116 @@
           {
             "lang": "js",
             "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.agentBackend.agentSessions({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/agent-backend/session-preview": {
+      "post": {
+        "tags": ["agentBackend"],
+        "operationId": "agentBackend.agentSessionPreview",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "AgentSessionPreview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionPreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "ForbiddenError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "UpstreamError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpstreamError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Replay the head of an agent session for a history preview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "advisor": {
+                    "type": "string",
+                    "enum": ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder", "antigravity", "devin"]
+                  },
+                  "sessionID": {
+                    "type": "string"
+                  }
+                },
+                "required": ["advisor", "sessionID"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.agentBackend.agentSessionPreview({\n  ...\n})"
           }
         ]
       }
@@ -24778,7 +24888,7 @@
         "properties": {
           "advisor": {
             "type": "string",
-            "enum": ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder", "antigravity"]
+            "enum": ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder", "antigravity", "devin"]
           },
           "sourceMessageID": {
             "type": "string",
@@ -24810,7 +24920,7 @@
           },
           "advisor": {
             "type": "string",
-            "enum": ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder", "antigravity"]
+            "enum": ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder", "antigravity", "devin"]
           },
           "model": {
             "type": "string"
@@ -26026,6 +26136,9 @@
               "antigravity_consult": {
                 "$ref": "#/components/schemas/PermissionActionConfig"
               },
+              "devin_consult": {
+                "$ref": "#/components/schemas/PermissionActionConfig"
+              },
               "gpt_pro_consult": {
                 "$ref": "#/components/schemas/PermissionActionConfig"
               },
@@ -26723,7 +26836,7 @@
                         "properties": {
                           "advisor": {
                             "type": "string",
-                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                           },
                           "version": {
                             "type": "string",
@@ -26801,7 +26914,7 @@
                         "properties": {
                           "advisor": {
                             "type": "string",
-                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                           },
                           "version": {
                             "type": "string",
@@ -26879,7 +26992,7 @@
                         "properties": {
                           "advisor": {
                             "type": "string",
-                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                           },
                           "version": {
                             "type": "string",
@@ -26957,7 +27070,7 @@
                         "properties": {
                           "advisor": {
                             "type": "string",
-                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                           },
                           "version": {
                             "type": "string",
@@ -27035,7 +27148,7 @@
                         "properties": {
                           "advisor": {
                             "type": "string",
-                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                           },
                           "version": {
                             "type": "string",
@@ -27113,7 +27226,7 @@
                         "properties": {
                           "advisor": {
                             "type": "string",
-                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                           },
                           "version": {
                             "type": "string",
@@ -27191,7 +27304,7 @@
                         "properties": {
                           "advisor": {
                             "type": "string",
-                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                           },
                           "version": {
                             "type": "string",
@@ -27269,7 +27382,7 @@
                         "properties": {
                           "advisor": {
                             "type": "string",
-                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                           },
                           "version": {
                             "type": "string",
@@ -27347,7 +27460,85 @@
                         "properties": {
                           "advisor": {
                             "type": "string",
-                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
+                          },
+                          "version": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": ["advisor", "version"],
+                        "additionalProperties": false
+                      },
+                      "env": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "mode": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "permission": {
+                        "type": "string",
+                        "enum": ["deny", "ask"]
+                      }
+                    },
+                    "required": ["type", "command"],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "devin": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": ["cli-json"]
+                      }
+                    },
+                    "required": ["type"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": ["native-rpc"]
+                      }
+                    },
+                    "required": ["type"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": ["acp"]
+                      },
+                      "command": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "managed": {
+                        "type": "object",
+                        "properties": {
+                          "advisor": {
+                            "type": "string",
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                           },
                           "version": {
                             "type": "string",
@@ -27564,6 +27755,21 @@
                 "additionalProperties": false
               },
               "antigravity": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "binaryPath": {
+                    "type": "string"
+                  },
+                  "configHome": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "devin": {
                 "type": "object",
                 "properties": {
                   "enabled": {
@@ -28526,7 +28732,7 @@
         "properties": {
           "advisor": {
             "type": "string",
-            "enum": ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder", "antigravity"]
+            "enum": ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder", "antigravity", "devin"]
           },
           "model": {
             "type": "string"
@@ -28606,6 +28812,35 @@
           }
         },
         "required": ["supported", "loadable", "sessions"],
+        "additionalProperties": false
+      },
+      "AgentSessionPreviewMessage": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": ["kind", "text"],
+        "additionalProperties": false
+      },
+      "AgentSessionPreview": {
+        "type": "object",
+        "properties": {
+          "supported": {
+            "type": "boolean"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentSessionPreviewMessage"
+            }
+          }
+        },
+        "required": ["supported", "messages"],
         "additionalProperties": false
       },
       "BrowserForbiddenError": {
@@ -31351,7 +31586,7 @@
                         "properties": {
                           "advisor": {
                             "type": "string",
-                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                           },
                           "version": {
                             "type": "string",
@@ -31429,7 +31664,7 @@
                         "properties": {
                           "advisor": {
                             "type": "string",
-                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                           },
                           "version": {
                             "type": "string",
@@ -31507,7 +31742,7 @@
                         "properties": {
                           "advisor": {
                             "type": "string",
-                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                           },
                           "version": {
                             "type": "string",
@@ -31585,7 +31820,7 @@
                         "properties": {
                           "advisor": {
                             "type": "string",
-                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                           },
                           "version": {
                             "type": "string",
@@ -31663,7 +31898,7 @@
                         "properties": {
                           "advisor": {
                             "type": "string",
-                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                           },
                           "version": {
                             "type": "string",
@@ -31741,7 +31976,7 @@
                         "properties": {
                           "advisor": {
                             "type": "string",
-                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                           },
                           "version": {
                             "type": "string",
@@ -31819,7 +32054,7 @@
                         "properties": {
                           "advisor": {
                             "type": "string",
-                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                           },
                           "version": {
                             "type": "string",
@@ -31897,7 +32132,7 @@
                         "properties": {
                           "advisor": {
                             "type": "string",
-                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                           },
                           "version": {
                             "type": "string",
@@ -31975,7 +32210,85 @@
                         "properties": {
                           "advisor": {
                             "type": "string",
-                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder"]
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
+                          },
+                          "version": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": ["advisor", "version"],
+                        "additionalProperties": false
+                      },
+                      "env": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "mode": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "permission": {
+                        "type": "string",
+                        "enum": ["deny", "ask"]
+                      }
+                    },
+                    "required": ["type", "command"],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "devin": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": ["cli-json"]
+                      }
+                    },
+                    "required": ["type"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": ["native-rpc"]
+                      }
+                    },
+                    "required": ["type"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": ["acp"]
+                      },
+                      "command": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "managed": {
+                        "type": "object",
+                        "properties": {
+                          "advisor": {
+                            "type": "string",
+                            "enum": ["claude", "codex", "pi", "cline", "droid", "qoder", "devin"]
                           },
                           "version": {
                             "type": "string",
@@ -32192,6 +32505,21 @@
                 "additionalProperties": false
               },
               "antigravity": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "binaryPath": {
+                    "type": "string"
+                  },
+                  "configHome": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "devin": {
                 "type": "object",
                 "properties": {
                   "enabled": {

@@ -1571,6 +1571,7 @@ function toToolKind(toolName: string): ToolKind {
     case "droid_consult":
     case "qoder_consult":
     case "antigravity_consult":
+    case "devin_consult":
       return "search"
 
     case "read":

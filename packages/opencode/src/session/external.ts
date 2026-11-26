@@ -39,6 +39,7 @@ const advisors: Record<string, Advisor> = {
   droid_consult: "droid",
   qoder_consult: "qoder",
   antigravity_consult: "antigravity",
+  devin_consult: "devin",
 }
 
 export function externalSessionID(parentID: string, partID: string) {

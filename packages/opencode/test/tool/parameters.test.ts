@@ -37,6 +37,7 @@ import { Parameters as ClineConsult } from "../../src/tool/cline_consult"
 import { Parameters as DroidConsult } from "../../src/tool/droid_consult"
 import { Parameters as QoderConsult } from "../../src/tool/qoder_consult"
 import { Parameters as AntigravityConsult } from "../../src/tool/antigravity_consult"
+import { Parameters as DevinConsult } from "../../src/tool/devin_consult"
 
 const parse = <S extends Schema.Decoder<unknown>>(schema: S, input: unknown): S["Type"] =>
   Schema.decodeUnknownSync(schema)(input)
@@ -76,6 +77,7 @@ describe("tool parameters", () => {
     test("droid_consult", () => expect(toJsonSchema(DroidConsult)).toMatchSnapshot())
     test("qoder_consult", () => expect(toJsonSchema(QoderConsult)).toMatchSnapshot())
     test("antigravity_consult", () => expect(toJsonSchema(AntigravityConsult)).toMatchSnapshot())
+    test("devin_consult", () => expect(toJsonSchema(DevinConsult)).toMatchSnapshot())
 
     test("inlines named child schemas for provider compatibility", () => {
       const schema = toJsonSchema(Question)

@@ -44,6 +44,7 @@ import { ClineConsultTool } from "./cline_consult"
 import { DroidConsultTool } from "./droid_consult"
 import { QoderConsultTool } from "./qoder_consult"
 import { AntigravityConsultTool } from "./antigravity_consult"
+import { DevinConsultTool } from "./devin_consult"
 import { GptProConsultTool } from "./gpt_pro_consult"
 import { RepoCloneTool } from "./repo_clone"
 import { RepoOverviewTool } from "./repo_overview"
@@ -187,6 +188,7 @@ const BUILTINS = {
   droid_consult: DroidConsultTool,
   qoder_consult: QoderConsultTool,
   antigravity_consult: AntigravityConsultTool,
+  devin_consult: DevinConsultTool,
   gpt_pro_consult: GptProConsultTool,
   skill: SkillTool,
   apply_patch: ApplyPatchTool,
@@ -440,6 +442,7 @@ export const layer: Layer.Layer<
           "droid_consult",
           "qoder_consult",
           "antigravity_consult",
+          "devin_consult",
         ] as const) {
           const advisor = id.replace("_consult", "") as Advisor
           defs[id] = external.wrap(routeAgentBackend(advisor, defs[id], config)) as (typeof defs)[typeof id]

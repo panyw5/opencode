@@ -588,6 +588,12 @@ export function getToolInfo(tool: string, input: any = {}, metadata: any = {}): 
         title: i18n.t("ui.tool.antigravity"),
         subtitle: text(metadata.preview) ?? text(input.prompt) ?? text(metadata.session_id),
       }
+    case "devin_consult":
+      return {
+        icon: "brain",
+        title: i18n.t("ui.tool.devin"),
+        subtitle: text(metadata.preview) ?? text(input.prompt) ?? text(metadata.session_id),
+      }
     case "bash":
     case "hook":
     case "exec":
@@ -3902,7 +3908,18 @@ for (const kind of [
   })
 }
 
-for (const advisor of ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder", "antigravity"] as const) {
+for (const advisor of [
+  "codex",
+  "claude",
+  "grok",
+  "dsh",
+  "pi",
+  "cline",
+  "droid",
+  "qoder",
+  "antigravity",
+  "devin",
+] as const) {
   registerBuiltinTool({
     name: `${advisor}_consult`,
     render(props) {
