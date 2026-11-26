@@ -45,7 +45,7 @@ export const dict = {
   "agentBackend.update": "Update to recommended version",
   "agentBackend.environmentNames": "Required environment variables on target",
   "agentBackend.remove": "Uninstall selected version",
-  "agentBackend.command": "Command (JSON argv array, no shell)",
+  "agentBackend.command": "Command (JSON argv array)",
   "agentBackend.suggestedCommand": "Use the CLI's built-in ACP mode: {{command}}",
   "agentBackend.environment": "Environment (JSON object; avoid saving secrets)",
   "agentBackend.advanced": "Advanced settings",

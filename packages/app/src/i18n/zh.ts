@@ -47,7 +47,7 @@ export const dict = {
   "agentBackend.update": "更新至推荐版本",
   "agentBackend.environmentNames": "目标机器所需环境变量",
   "agentBackend.remove": "卸载所选版本",
-  "agentBackend.command": "命令（JSON 参数数组，不经过 shell）",
+  "agentBackend.command": "命令（JSON 参数数组）",
   "agentBackend.suggestedCommand": "使用 CLI 内置 ACP 模式：{{command}}",
   "agentBackend.environment": "环境变量（JSON 对象，请勿保存敏感凭据）",
   "agentBackend.advanced": "高级设置",
