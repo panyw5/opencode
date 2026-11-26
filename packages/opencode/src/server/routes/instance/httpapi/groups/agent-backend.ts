@@ -2,7 +2,7 @@ import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { InstallStatus, PrepareInput, PreparedInstall, ProbeInput, ProbeResult } from "@/agent-backend/install-schema"
 import { Advisor } from "@/session/external-schema"
-import { AgentSessionList, ChannelOptions } from "@/session/channel-schema"
+import { AgentSessionList, AgentSessionPreview, ChannelOptions } from "@/session/channel-schema"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware/workspace-routing"
@@ -75,6 +75,17 @@ export const AgentBackendApi = HttpApi.make("agent-backend").add(
         OpenApi.annotations({
           identifier: "agentBackend.agentSessions",
           summary: "List the ACP agent's existing sessions for this workspace",
+        }),
+      ),
+      HttpApiEndpoint.post("agentSessionPreview", "/agent-backend/session-preview", {
+        query: WorkspaceRoutingQuery,
+        payload: Schema.Struct({ advisor: Advisor, sessionID: Schema.String }),
+        success: AgentSessionPreview,
+        error: errors,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "agentBackend.agentSessionPreview",
+          summary: "Replay the head of an agent session for a history preview",
         }),
       ),
     )

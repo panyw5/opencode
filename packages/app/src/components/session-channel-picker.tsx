@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, createSignal, onMount } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { JSX } from "solid-js"
 import { Popover as Kobalte } from "@kobalte/core/popover"
@@ -376,6 +376,8 @@ export function ChannelSessionPicker(props: {
   )
 }
 
+type PreviewMessage = { kind: string; text: string }
+
 function AgentSessionDialog(props: { advisor: string; model?: string }) {
   const dialog = useDialog()
   const sdk = useSDK()
@@ -391,6 +393,13 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
     busy?: string
     sessions: AgentSession[]
   }>({ loading: true, supported: true, sessions: [] })
+  const [selected, setSelected] = createSignal<AgentSessionItem>()
+  const [preview, setPreview] = createStore<{ loading: boolean; failed: boolean; messages: PreviewMessage[] }>({
+    loading: false,
+    failed: false,
+    messages: [],
+  })
+  const previewCache = new Map<string, PreviewMessage[]>()
 
   onMount(async () => {
     try {
@@ -408,6 +417,29 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
       setState("loading", false)
     }
   })
+
+  const select = async (item: AgentSessionItem | undefined) => {
+    if (!item || item.id === selected()?.id) return
+    setSelected(item)
+    const cached = previewCache.get(item.id)
+    if (cached) {
+      setPreview({ loading: false, failed: false, messages: cached })
+      return
+    }
+    setPreview({ loading: true, failed: false, messages: [] })
+    try {
+      const result = await sdk.client.agentBackend.agentSessionPreview({
+        advisor: props.advisor as ChannelID,
+        sessionID: item.id,
+      })
+      const messages = result.data?.messages ?? []
+      previewCache.set(item.id, messages)
+      if (selected()?.id === item.id) setPreview({ loading: false, failed: false, messages })
+    } catch (error) {
+      console.warn(`[channel] session preview failed advisor=${props.advisor} agentSession=${item.id} error=${String(error)}`)
+      if (selected()?.id === item.id) setPreview({ loading: false, failed: true, messages: [] })
+    }
+  }
 
   const pick = async (item: AgentSessionItem) => {
     if (state.busy) return
@@ -494,7 +526,10 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
         </span>
       }
       description={<span class="truncate">{sdk.directory}</span>}
-      containerStyle={{ height: "min(calc(100vh - 16px), 560px)" }}
+      containerStyle={{
+        height: "min(calc(100vh - 16px), 600px)",
+        width: selected() ? "min(calc(100vw - 32px), 880px)" : "min(calc(100vw - 32px), 440px)",
+      }}
       class="flex min-h-0 flex-col"
     >
       <Show
@@ -505,34 +540,102 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
           </div>
         }
       >
-        <List
-          class="flex-1 min-h-0 [&_[data-slot=list-viewport]]:flex-1 [&_[data-slot=list-viewport]]:min-h-0"
-          virtual={false}
-          search={{ placeholder: language.t("prompt.channel.sessions.search"), autofocus: true }}
-          emptyMessage={emptyMessage()}
-          key={(item) => item.id}
-          items={items()}
-          filterKeys={["name"]}
-          onSelect={(item) => {
-            if (item) void pick(item)
-          }}
-        >
-          {(item) => (
-            <div class="w-full flex items-center justify-start gap-x-2 text-left text-13-regular">
-              <div class="min-w-0 flex-1 text-left">
-                <div class="truncate">{item.name}</div>
-                <Show when={item.updated}>
-                  <div class="truncate text-11-regular text-text-weak">
-                    {new Date(item.updated!).toLocaleString()}
+        <div class="flex min-h-0 flex-1">
+          <div classList={{ "flex min-w-0 flex-col": true, "w-[300px] shrink-0 border-r border-border-weak-base": !!selected(), "flex-1": !selected() }}>
+            <List
+              class="flex-1 min-h-0 [&_[data-slot=list-viewport]]:flex-1 [&_[data-slot=list-viewport]]:min-h-0"
+              virtual={false}
+              search={{ placeholder: language.t("prompt.channel.sessions.search"), autofocus: true }}
+              emptyMessage={emptyMessage()}
+              key={(item) => item.id}
+              items={items()}
+              current={selected()}
+              filterKeys={["name"]}
+              onSelect={(item) => void select(item)}
+            >
+              {(item) => (
+                <div class="w-full flex items-center gap-x-2.5 text-left">
+                  <Icon name="speech-bubble" size="small" class="shrink-0 text-icon-weak" />
+                  <div class="min-w-0 flex-1 text-left">
+                    <div class="truncate text-13-medium text-text-strong">{item.name}</div>
+                    <Show when={item.updated}>
+                      <div class="mt-0.5 truncate text-11-regular text-text-weak">
+                        {new Date(item.updated!).toLocaleString()}
+                      </div>
+                    </Show>
                   </div>
-                </Show>
+                  <Show when={state.busy === item.id}>
+                    <Icon name="refresh" size="small" class="shrink-0 animate-spin" />
+                  </Show>
+                </div>
+              )}
+            </List>
+          </div>
+          <Show when={selected()}>
+            {(item) => (
+              <div class="flex min-w-0 flex-1 flex-col">
+                <div class="border-b border-border-weak-base px-4 py-3">
+                  <div class="truncate text-14-medium text-text-strong">{item().name}</div>
+                  <Show when={item().updated}>
+                    <div class="mt-0.5 truncate text-11-regular text-text-weak">
+                      {new Date(item().updated!).toLocaleString()}
+                    </div>
+                  </Show>
+                </div>
+                <div class="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-3">
+                  <Show
+                    when={!preview.loading}
+                    fallback={
+                      <div class="flex flex-1 items-center justify-center">
+                        <TextShimmer
+                          class="text-13-regular"
+                          text={language.t("prompt.channel.sessions.preview.loading")}
+                        />
+                      </div>
+                    }
+                  >
+                    <For each={preview.messages}>
+                      {(message) => (
+                        <div class="rounded-lg border border-border-weak-base bg-surface-raised-base px-3 py-2">
+                          <div class="text-11-medium text-text-weak">
+                            {message.kind === "user"
+                              ? language.t("prompt.channel.sessions.preview.you")
+                              : CHANNEL_LABELS[props.advisor] ?? props.advisor}
+                          </div>
+                          <div class="mt-1 line-clamp-4 whitespace-pre-wrap break-words text-13-regular text-text-base">
+                            {message.text}
+                          </div>
+                        </div>
+                      )}
+                    </For>
+                    <Show when={preview.messages.length === 0}>
+                      <div class="flex flex-1 items-center justify-center text-13-regular text-text-weak">
+                        {language.t(
+                          preview.failed
+                            ? "prompt.channel.sessions.preview.failed"
+                            : "prompt.channel.sessions.preview.empty",
+                        )}
+                      </div>
+                    </Show>
+                  </Show>
+                </div>
+                <div class="flex items-center justify-end gap-2 border-t border-border-weak-base px-4 py-3">
+                  <Button
+                    type="button"
+                    variant="primary"
+                    disabled={!!state.busy}
+                    onClick={() => void pick(item())}
+                  >
+                    <Show when={state.busy === item().id}>
+                      <Icon name="refresh" size="small" class="shrink-0 animate-spin" />
+                    </Show>
+                    <span>{language.t("prompt.channel.sessions.open")}</span>
+                  </Button>
+                </div>
               </div>
-              <Show when={state.busy === item.id}>
-                <Icon name="refresh" size="small" class="shrink-0 animate-spin" />
-              </Show>
-            </div>
-          )}
-        </List>
+            )}
+          </Show>
+        </div>
       </Show>
     </Dialog>
   )

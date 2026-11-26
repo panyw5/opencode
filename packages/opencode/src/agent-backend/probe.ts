@@ -5,7 +5,12 @@ import { applyAdapterLease, managedAgents, type AgentInstallManager } from "./in
 import type { ProbeResult } from "./install-schema"
 import { channelOptions } from "./options"
 import type { Advisor } from "@/session/external-schema"
-import type { AgentSession, AgentSessionList, ChannelOptions } from "@/session/channel-schema"
+import type {
+  AgentSession,
+  AgentSessionList,
+  AgentSessionPreview,
+  ChannelOptions,
+} from "@/session/channel-schema"
 import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "agent-backend.probe" })
@@ -83,6 +88,42 @@ export async function probeAgentSessions(
     }
     log.info(`sessions ready advisor=${input.advisor} count=${sessions.length} loadable=${loadable}`)
     return { supported: true, loadable, sessions: sessions.slice(0, AGENT_SESSIONS_LIMIT) }
+  } finally {
+    await client.stop()
+    await lease?.release()
+  }
+}
+
+const AGENT_PREVIEW_MESSAGES = 6
+const AGENT_PREVIEW_CHARS = 600
+
+/**
+ * Replay the head of an agent session via ACP session/load and return the first
+ * transcript messages. Spawns the agent, loads the session, then stops it.
+ */
+export async function probeAgentSessionPreview(
+  input: { advisor: Advisor; config: AcpConfig; cwd: string; sessionID: string; signal: AbortSignal },
+  manager: AgentInstallManager = managedAgents(),
+): Promise<AgentSessionPreview> {
+  const ref = input.config.managed
+  if (ref && ref.advisor !== input.advisor) throw new Error("Managed adapter does not match the selected advisor")
+  const lease = ref ? await manager.acquire(ref.advisor, ref.version) : undefined
+  const replay = new AcpTranscript({ captureUser: true })
+  const client = new AcpAgentClient({
+    config: applyAdapterLease(input.config, lease),
+    cwd: input.cwd,
+    onEvent: (event) => replay.apply(event),
+    requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),
+  })
+  try {
+    log.info(`preview start advisor=${input.advisor} agentSession=${input.sessionID} cwd=${input.cwd}`)
+    await client.start(input.signal, { resumeSessionID: input.sessionID, loadOnly: true })
+    const messages = replay.transcript
+      .filter((item) => item.text && (item.kind === "user" || item.kind === "message" || item.kind === "reasoning"))
+      .slice(0, AGENT_PREVIEW_MESSAGES)
+      .map((item) => ({ kind: item.kind, text: item.text!.slice(0, AGENT_PREVIEW_CHARS) }))
+    log.info(`preview ready advisor=${input.advisor} agentSession=${input.sessionID} messages=${messages.length}`)
+    return { supported: true, messages }
   } finally {
     await client.stop()
     await lease?.release()

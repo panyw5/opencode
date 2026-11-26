@@ -2173,6 +2173,16 @@ export type AgentSessionList = {
   sessions: Array<AgentSession>
 }
 
+export type AgentSessionPreviewMessage = {
+  kind: string
+  text: string
+}
+
+export type AgentSessionPreview = {
+  supported: boolean
+  messages: Array<AgentSessionPreviewMessage>
+}
+
 export type BrowserForbiddenError = {
   _tag: "BrowserForbiddenError"
   message: string
@@ -6987,6 +6997,51 @@ export type AgentBackendAgentSessionsResponses = {
 
 export type AgentBackendAgentSessionsResponse =
   AgentBackendAgentSessionsResponses[keyof AgentBackendAgentSessionsResponses]
+
+export type AgentBackendAgentSessionPreviewData = {
+  body?: {
+    advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity"
+    sessionID: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/agent-backend/session-preview"
+}
+
+export type AgentBackendAgentSessionPreviewErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * UpstreamError
+   */
+  502: UpstreamError
+}
+
+export type AgentBackendAgentSessionPreviewError =
+  AgentBackendAgentSessionPreviewErrors[keyof AgentBackendAgentSessionPreviewErrors]
+
+export type AgentBackendAgentSessionPreviewResponses = {
+  /**
+   * AgentSessionPreview
+   */
+  200: AgentSessionPreview
+}
+
+export type AgentBackendAgentSessionPreviewResponse =
+  AgentBackendAgentSessionPreviewResponses[keyof AgentBackendAgentSessionPreviewResponses]
 
 export type BackgroundShellListData = {
   body?: never

@@ -3,6 +3,8 @@
 import { client } from "./client.gen.js"
 import { buildClientParams, type Client, type Options as Options2, type TDataShape } from "./client/index.js"
 import type {
+  AgentBackendAgentSessionPreviewErrors,
+  AgentBackendAgentSessionPreviewResponses,
   AgentBackendAgentSessionsErrors,
   AgentBackendAgentSessionsResponses,
   AgentBackendChannelOptionsErrors,
@@ -1547,6 +1549,47 @@ export class AgentBackend extends HeyApiClient {
       ThrowOnError
     >({
       url: "/agent-backend/agent-sessions",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Replay the head of an agent session for a history preview
+   */
+  public agentSessionPreview<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      advisor?: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity"
+      sessionID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "advisor" },
+            { in: "body", key: "sessionID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      AgentBackendAgentSessionPreviewResponses,
+      AgentBackendAgentSessionPreviewErrors,
+      ThrowOnError
+    >({
+      url: "/agent-backend/session-preview",
       ...options,
       ...params,
       headers: {

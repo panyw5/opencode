@@ -4,7 +4,7 @@ import { Config } from "@/config/config"
 import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { AgentInstallError, managedAgents } from "@/agent-backend/install"
-import { probeAdapter, probeAgentSessions, probeChannelOptions } from "@/agent-backend/probe"
+import { probeAdapter, probeAgentSessionPreview, probeAgentSessions, probeChannelOptions } from "@/agent-backend/probe"
 import type { ChannelOptions } from "@/session/channel-schema"
 import { InstanceHttpApi } from "../api"
 import { InvalidRequestError, ConflictError, UpstreamError, ForbiddenError } from "../errors"
@@ -88,6 +88,29 @@ export const agentBackendHandlers = HttpApiBuilder.group(InstanceHttpApi, "agent
                 config: selection,
                 cwd,
                 signal: AbortSignal.any([signal, AbortSignal.timeout(30000)]),
+              },
+              manager,
+            ),
+          )
+        }),
+      )
+      .handle("agentSessionPreview", (ctx) =>
+        Effect.gen(function* () {
+          const info = yield* config.get()
+          const selection = info.agent_backends?.[ctx.payload.advisor]
+          if (!selection || selection.type !== "acp")
+            return yield* new InvalidRequestError({
+              message: `${ctx.payload.advisor} is not configured for ACP`,
+            })
+          const cwd = yield* InstanceState.directory
+          return yield* run((signal) =>
+            probeAgentSessionPreview(
+              {
+                advisor: ctx.payload.advisor,
+                config: selection,
+                cwd,
+                sessionID: ctx.payload.sessionID,
+                signal: AbortSignal.any([signal, AbortSignal.timeout(60000)]),
               },
               manager,
             ),
