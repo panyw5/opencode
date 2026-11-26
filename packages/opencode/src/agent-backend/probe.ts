@@ -119,7 +119,7 @@ export async function probeAgentSessionPreview(
     log.info(`preview start advisor=${input.advisor} agentSession=${input.sessionID} cwd=${input.cwd}`)
     await client.start(input.signal, { resumeSessionID: input.sessionID, loadOnly: true })
     const messages = replay.transcript
-      .filter((item) => item.text && (item.kind === "user" || item.kind === "message" || item.kind === "reasoning"))
+      .filter((item) => item.text && (item.kind === "user" || item.kind === "message"))
       .slice(0, AGENT_PREVIEW_MESSAGES)
       .map((item) => ({ kind: item.kind, text: item.text!.slice(0, AGENT_PREVIEW_CHARS) }))
     log.info(`preview ready advisor=${input.advisor} agentSession=${input.sessionID} messages=${messages.length}`)

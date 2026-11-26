@@ -541,7 +541,14 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
         }
       >
         <div class="flex min-h-0 flex-1">
-          <div classList={{ "flex min-w-0 flex-col": true, "w-[300px] shrink-0 border-r border-border-weak-base": !!selected(), "flex-1": !selected() }}>
+          <div
+            data-component="agent-sessions-list"
+            classList={{
+              "flex min-w-0 flex-col": true,
+              "w-[300px] shrink-0 border-r border-border-weak-base": !!selected(),
+              "flex-1": !selected(),
+            }}
+          >
             <List
               class="flex-1 min-h-0 [&_[data-slot=list-viewport]]:flex-1 [&_[data-slot=list-viewport]]:min-h-0"
               virtual={false}

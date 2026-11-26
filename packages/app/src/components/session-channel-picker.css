@@ -1,3 +1,23 @@
+/* Session list feedback: keep a visible background on the selected row and
+   wrap the checkmark in a filled circle. */
+[data-component="agent-sessions-list"] [data-slot="list-item"] {
+  border-radius: var(--radius-md);
+  &[data-selected="true"] {
+    background: var(--list-item-hover-bg);
+  }
+  [data-slot="list-item-selected-icon"] {
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    background: var(--text-strong);
+    [data-component="icon"] {
+      width: 12px;
+      height: 12px;
+      color: var(--surface-base);
+    }
+  }
+}
+
 /* The load-session dialog keeps the sweep even under prefers-reduced-motion:
    the motion is a loading affordance here, not decoration. Same
    `components` layer as ui/text-shimmer.css so this later rule wins. */
