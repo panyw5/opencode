@@ -19,6 +19,7 @@ import { useSessionTabs } from "@/context/session-tabs"
 import { useSync } from "@/context/sync"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { useSDK } from "@/context/sdk"
+import "./session-channel-picker.css"
 
 export const CHANNEL_IDS = ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder", "antigravity"] as const
 type ChannelID = (typeof CHANNEL_IDS)[number]
@@ -499,7 +500,7 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
       <Show
         when={!state.loading}
         fallback={
-          <div class="flex min-h-[320px] flex-1 items-center justify-center">
+          <div data-component="agent-session-loading" class="flex min-h-[320px] flex-1 items-center justify-center">
             <TextShimmer class="text-14-regular" text={language.t("prompt.channel.sessions.loading")} />
           </div>
         }

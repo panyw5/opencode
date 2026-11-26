@@ -1,0 +1,27 @@
+/* The load-session dialog keeps the sweep even under prefers-reduced-motion:
+   the motion is a loading affordance here, not decoration. Same
+   `components` layer as ui/text-shimmer.css so this later rule wins. */
+@layer components {
+  @media (prefers-reduced-motion: reduce) {
+    [data-component="agent-session-loading"] [data-component="text-shimmer"] [data-slot="text-shimmer-char-shimmer"] {
+      animation-name: text-shimmer-sweep !important;
+      animation-duration: var(--text-shimmer-duration) !important;
+      animation-iteration-count: infinite !important;
+      animation-timing-function: linear !important;
+      animation-fill-mode: both !important;
+      animation-delay: calc(var(--text-shimmer-step) * var(--text-shimmer-index) * -1) !important;
+      color: transparent !important;
+      -webkit-text-fill-color: transparent !important;
+      background-image: var(--text-shimmer-sweep), var(--text-shimmer-base) !important;
+      background-size:
+        var(--text-shimmer-size) 100%,
+        100% 100% !important;
+      background-position:
+        100% 0,
+        0 0 !important;
+      background-repeat: no-repeat !important;
+      -webkit-background-clip: text !important;
+      background-clip: text !important;
+    }
+  }
+}
