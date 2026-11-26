@@ -45,6 +45,11 @@ const CHANNEL_ICONS: Record<string, string> = {
 const CHANNEL_COLORS: Record<string, string> = {
   claude: "#D97757",
   dsh: "#4D6BFE",
+  pi: "#E0A62E",
+  cline: "#A78BFA",
+  droid: "#EF6F2E",
+  qoder: "#2ADB5C",
+  antigravity: "#3186FF",
 }
 
 export function ChannelIcon(props: { id: string; class?: string }) {
