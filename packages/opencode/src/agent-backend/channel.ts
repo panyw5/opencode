@@ -245,6 +245,10 @@ export const layer = Layer.effect(
       }
 
       const holder: { entry?: Entry } = {}
+      // session/load replays history before the first live turn exists; buffer
+      // it here and project it once startup finishes. user chunks are captured
+      // so replayed turns can be reconstructed as OpenCode messages.
+      const replay = new AcpTranscript({ captureUser: true })
       const client = new AcpAgentClient({
         config: acpConfig,
         cwd: session.directory,
@@ -258,8 +262,11 @@ export const layer = Layer.effect(
           }),
         onEvent: (event) => {
           const target = holder.entry
-          if (!target) return
-          target.live?.apply(event)
+          if (!target?.live) {
+            replay.apply(event)
+            return
+          }
+          target.live.apply(event)
           const projector = target.projector
           const bridge = target.bridge
           if (!projector || !bridge || target.timer) return
@@ -318,6 +325,42 @@ export const layer = Layer.effect(
           sessionID: session.id,
           channel: { ...channel, acpSessionID: client.sessionID },
         })
+      }
+      // A resumed session replays its history during session/load; write it into
+      // the OpenCode session once so the loaded conversation is visible. Every
+      // respawn replays again, so only project into a session that has no
+      // messages yet — otherwise idle reaps and restarts would duplicate them.
+      const hasMessages = yield* sessions.messages({ sessionID: session.id }).pipe(
+        Effect.map((list) => list.length > 0),
+        Effect.catch(() => Effect.succeed(true)),
+      )
+      if (
+        !hasMessages &&
+        channel.acpSessionID &&
+        client.sessionID === channel.acpSessionID &&
+        replay.transcript.length
+      ) {
+        let initial = replay.transcript.find((item) => item.kind === "user")
+        if (initial) initial.id = "user:initial"
+        else {
+          initial = { id: "user:initial", kind: "user", text: "(restored session)" }
+          replay.transcript.unshift(initial)
+        }
+        const projector = makeTranscriptProjector({
+          sessions,
+          statuses: status,
+          session,
+          agent: channel.advisor,
+          model: {
+            providerID: ProviderID.make(`external-${channel.advisor}`),
+            modelID: ModelID.make(channel.model ?? client.model ?? "default"),
+          },
+          initialText: initial?.text ?? "",
+          userItems: "turns",
+          finalIdle: false,
+        })
+        yield* projector.apply(replay.transcript, true)
+        log.info(`replayed session=${session.id} advisor=${channel.advisor} items=${replay.transcript.length}`)
       }
       current.entries.set(session.id, entry)
       yield* enforceLimit(current, session.id, info)

@@ -2160,6 +2160,19 @@ export type ChannelOptions = {
   }>
 }
 
+export type AgentSession = {
+  id: string
+  title?: string
+  cwd: string
+  updated?: string
+}
+
+export type AgentSessionList = {
+  supported: boolean
+  loadable: boolean
+  sessions: Array<AgentSession>
+}
+
 export type BrowserForbiddenError = {
   _tag: "BrowserForbiddenError"
   message: string
@@ -6931,6 +6944,49 @@ export type AgentBackendChannelOptionsResponses = {
 
 export type AgentBackendChannelOptionsResponse =
   AgentBackendChannelOptionsResponses[keyof AgentBackendChannelOptionsResponses]
+
+export type AgentBackendAgentSessionsData = {
+  body?: {
+    advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity"
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/agent-backend/agent-sessions"
+}
+
+export type AgentBackendAgentSessionsErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * UpstreamError
+   */
+  502: UpstreamError
+}
+
+export type AgentBackendAgentSessionsError = AgentBackendAgentSessionsErrors[keyof AgentBackendAgentSessionsErrors]
+
+export type AgentBackendAgentSessionsResponses = {
+  /**
+   * AgentSessionList
+   */
+  200: AgentSessionList
+}
+
+export type AgentBackendAgentSessionsResponse =
+  AgentBackendAgentSessionsResponses[keyof AgentBackendAgentSessionsResponses]
 
 export type BackgroundShellListData = {
   body?: never

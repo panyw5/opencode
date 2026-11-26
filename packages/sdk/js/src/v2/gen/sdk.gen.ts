@@ -3,6 +3,8 @@
 import { client } from "./client.gen.js"
 import { buildClientParams, type Client, type Options as Options2, type TDataShape } from "./client/index.js"
 import type {
+  AgentBackendAgentSessionsErrors,
+  AgentBackendAgentSessionsResponses,
   AgentBackendChannelOptionsErrors,
   AgentBackendChannelOptionsResponses,
   AgentBackendCommitErrors,
@@ -1506,6 +1508,45 @@ export class AgentBackend extends HeyApiClient {
       ThrowOnError
     >({
       url: "/agent-backend/channel-options",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * List the ACP agent's existing sessions for this workspace
+   */
+  public agentSessions<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      advisor?: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "advisor" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      AgentBackendAgentSessionsResponses,
+      AgentBackendAgentSessionsErrors,
+      ThrowOnError
+    >({
+      url: "/agent-backend/agent-sessions",
       ...options,
       ...params,
       headers: {

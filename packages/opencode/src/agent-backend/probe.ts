@@ -5,10 +5,13 @@ import { applyAdapterLease, managedAgents, type AgentInstallManager } from "./in
 import type { ProbeResult } from "./install-schema"
 import { channelOptions } from "./options"
 import type { Advisor } from "@/session/external-schema"
-import type { ChannelOptions } from "@/session/channel-schema"
+import type { AgentSession, AgentSessionList, ChannelOptions } from "@/session/channel-schema"
 import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "agent-backend.probe" })
+
+const AGENT_SESSIONS_PAGE_LIMIT = 5
+const AGENT_SESSIONS_LIMIT = 200
 
 /** Read a channel's models and modes without a session: spawns the ACP agent, negotiates, then stops it. */
 export async function probeChannelOptions(
@@ -32,6 +35,54 @@ export async function probeChannelOptions(
       `options ready advisor=${input.advisor} models=${options.models.length} modes=${options.modes.length} model=${options.model ?? "none"}`,
     )
     return options
+  } finally {
+    await client.stop()
+    await lease?.release()
+  }
+}
+
+/**
+ * List the agent's existing sessions for a working directory via ACP session/list.
+ * Spawns the agent, initializes only (no session is created), then stops it.
+ */
+export async function probeAgentSessions(
+  input: { advisor: Advisor; config: AcpConfig; cwd: string; signal: AbortSignal },
+  manager: AgentInstallManager = managedAgents(),
+): Promise<AgentSessionList> {
+  const ref = input.config.managed
+  if (ref && ref.advisor !== input.advisor) throw new Error("Managed adapter does not match the selected advisor")
+  const lease = ref ? await manager.acquire(ref.advisor, ref.version) : undefined
+  const client = new AcpAgentClient({
+    config: applyAdapterLease(input.config, lease),
+    cwd: input.cwd,
+    onEvent: () => {},
+    requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),
+  })
+  try {
+    log.info(`sessions start advisor=${input.advisor} managed=${!!ref} cwd=${input.cwd}`)
+    await client.start(input.signal, { initializeOnly: true })
+    const loadable = Boolean(client.capabilities?.loadSession)
+    if (!client.canListSessions) {
+      log.info(`sessions unsupported advisor=${input.advisor} loadable=${loadable}`)
+      return { supported: false, loadable, sessions: [] }
+    }
+    const sessions: AgentSession[] = []
+    let cursor: string | null | undefined
+    for (let page = 0; page < AGENT_SESSIONS_PAGE_LIMIT && sessions.length < AGENT_SESSIONS_LIMIT; page++) {
+      const result = await client.listSessions(input.cwd, cursor)
+      sessions.push(
+        ...result.sessions.map((session) => ({
+          id: session.sessionId,
+          ...(session.title ? { title: session.title } : {}),
+          cwd: session.cwd,
+          ...(session.updatedAt ? { updated: session.updatedAt } : {}),
+        })),
+      )
+      cursor = result.nextCursor ?? null
+      if (!cursor) break
+    }
+    log.info(`sessions ready advisor=${input.advisor} count=${sessions.length} loadable=${loadable}`)
+    return { supported: true, loadable, sessions: sessions.slice(0, AGENT_SESSIONS_LIMIT) }
   } finally {
     await client.stop()
     await lease?.release()

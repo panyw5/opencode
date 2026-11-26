@@ -837,30 +837,30 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         deferredRun = (async () => {
           await warm
           const now = Date.now()
-        sessionCreating.mark(sessionDirectory, firstSessionID!)
-        sync.session.created({
-          directory: sessionDirectory,
-          info: {
-            id: firstSessionID!,
-            slug: "",
+          sessionCreating.mark(sessionDirectory, firstSessionID!)
+          sync.session.created({
             directory: sessionDirectory,
-            projectID: sync.project?.id ?? "",
-            title: text.slice(0, 60),
-            version: "",
-            time: { created: now, updated: now },
-          },
-        })
-        if (sessionDirectory === currentDirectory) {
-          globalSync.session.status.set(sessionDirectory, firstSessionID!, { type: "busy" })
-          setSessionStatusPending(sessionDirectory, firstSessionID!, true, firstMessageID)
-        }
-        prepared = { ...preview, message: pendingSessionSubmissions.entries[submissionKey]!.message }
-        sync.session.optimistic.add({
-          directory: sessionDirectory,
-          sessionID: firstSessionID!,
-          message: prepared.message,
-          parts: prepared.optimisticParts,
-        })
+            info: {
+              id: firstSessionID!,
+              slug: "",
+              directory: sessionDirectory,
+              projectID: sync.project?.id ?? "",
+              title: text.slice(0, 60),
+              version: "",
+              time: { created: now, updated: now },
+            },
+          })
+          if (sessionDirectory === currentDirectory) {
+            globalSync.session.status.set(sessionDirectory, firstSessionID!, { type: "busy" })
+            setSessionStatusPending(sessionDirectory, firstSessionID!, true, firstMessageID)
+          }
+          prepared = { ...preview, message: pendingSessionSubmissions.entries[submissionKey]!.message }
+          sync.session.optimistic.add({
+            directory: sessionDirectory,
+            sessionID: firstSessionID!,
+            message: prepared.message,
+            parts: prepared.optimisticParts,
+          })
           batch(() => {
             navigatedEarly = true
             pendingSessionSubmissions.send(submissionKey)
@@ -869,25 +869,25 @@ export function createPromptSubmit(input: PromptSubmitInput) {
               navigate(`/${base64Encode(sessionDirectory)}/session/${firstSessionID}`)
               return
             }
-          const active = !params.id && params.draftID === submittedDraft.id
-          if (active) {
-            layout.handoff.setTabs(
-              base64Encode(sessionDirectory),
-              firstSessionID!,
-              submittedDraft.id,
-              base64Encode(currentDirectory),
+            const active = !params.id && params.draftID === submittedDraft.id
+            if (active) {
+              layout.handoff.setTabs(
+                base64Encode(sessionDirectory),
+                firstSessionID!,
+                submittedDraft.id,
+                base64Encode(currentDirectory),
+              )
+            }
+            sessionTabs.promoteDraft(
+              { directory: sessionDirectory, id: firstSessionID! },
+              submittedDraft,
+              active
+                ? () => {
+                    pendingScopeReset?.()
+                    diagnose("draft-scope-reset", { sessionID: firstSessionID, draftID: submittedDraft.id })
+                  }
+                : undefined,
             )
-          }
-          sessionTabs.promoteDraft(
-            { directory: sessionDirectory, id: firstSessionID! },
-            submittedDraft,
-            active
-              ? () => {
-                  pendingScopeReset?.()
-                  diagnose("draft-scope-reset", { sessionID: firstSessionID, draftID: submittedDraft.id })
-                }
-              : undefined,
-          )
             if (active) navigate(`/${base64Encode(sessionDirectory)}/session/${firstSessionID}`)
           })
           diagnose("preview-seeded", { sessionID: firstSessionID, messageID: firstMessageID })
@@ -987,7 +987,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
               body?: {
                 id?: string
                 cwd?: string
-                channel?: { kind: "acp"; advisor: string; model?: string; mode?: string }
+                title?: string
+                channel?: { kind: "acp"; advisor: string; model?: string; mode?: string; acpSessionID?: string }
               }
             },
           ) => Promise<{ data?: Session }>
@@ -995,12 +996,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           const createBody = {
             ...(early && firstSessionID ? { id: firstSessionID } : {}),
             ...(genericagent && sessionCwd ? { cwd: sessionCwd } : {}),
+            ...(channel?.agentSessionTitle ? { title: channel.agentSessionTitle } : {}),
             ...(channel
               ? {
                   channel: {
                     kind: "acp" as const,
                     advisor: channel.advisor,
                     ...(channel.model ? { model: channel.model } : {}),
+                    ...(channel.agentSessionID ? { acpSessionID: channel.agentSessionID } : {}),
                   },
                 }
               : {}),
@@ -1105,43 +1108,43 @@ export function createPromptSubmit(input: PromptSubmitInput) {
             )
             performance.mark("submit:navigate:start")
             if (!navigatedEarly)
-            batch(() => {
-              // draftDir lets the tab bar and draft route mask the consumed draft
-              // for the rest of the router transition (params.id stays stale until
-              // the new route commits).
-              if (!submittedDraft) {
-                console.error(
-                  `[session-bar] draft transition missing draft routeDraftID=${params.draftID ?? "none"} sessionID=${sessionID}`,
+              batch(() => {
+                // draftDir lets the tab bar and draft route mask the consumed draft
+                // for the rest of the router transition (params.id stays stale until
+                // the new route commits).
+                if (!submittedDraft) {
+                  console.error(
+                    `[session-bar] draft transition missing draft routeDraftID=${params.draftID ?? "none"} sessionID=${sessionID}`,
+                  )
+                  sessionTabs.ensureOpen({ directory: sessionDirectory, id: sessionID })
+                  navigate(`/${base64Encode(sessionDirectory)}/session/${sessionID}`)
+                  return
+                }
+                const active = !params.id && params.draftID === submittedDraft.id
+                if (active && !early) deferScopeReset = true
+                console.debug(
+                  `[session-bar] draft promotion decision draftID=${submittedDraft.id} sessionID=${sessionID} active=${active}`,
                 )
-                sessionTabs.ensureOpen({ directory: sessionDirectory, id: sessionID })
-                navigate(`/${base64Encode(sessionDirectory)}/session/${sessionID}`)
-                return
-              }
-              const active = !params.id && params.draftID === submittedDraft.id
-              if (active && !early) deferScopeReset = true
-              console.debug(
-                `[session-bar] draft promotion decision draftID=${submittedDraft.id} sessionID=${sessionID} active=${active}`,
-              )
-              if (active) {
-                layout.handoff.setTabs(
-                  base64Encode(sessionDirectory),
-                  sessionID,
-                  submittedDraft.id,
-                  base64Encode(currentDirectory),
+                if (active) {
+                  layout.handoff.setTabs(
+                    base64Encode(sessionDirectory),
+                    sessionID,
+                    submittedDraft.id,
+                    base64Encode(currentDirectory),
+                  )
+                }
+                sessionTabs.promoteDraft(
+                  { directory: sessionDirectory, id: sessionID },
+                  submittedDraft,
+                  active
+                    ? () => {
+                        pendingScopeReset?.()
+                        diagnose("draft-scope-reset", { sessionID, draftID: submittedDraft.id })
+                      }
+                    : undefined,
                 )
-              }
-              sessionTabs.promoteDraft(
-                { directory: sessionDirectory, id: sessionID },
-                submittedDraft,
-                active
-                  ? () => {
-                      pendingScopeReset?.()
-                      diagnose("draft-scope-reset", { sessionID, draftID: submittedDraft.id })
-                    }
-                  : undefined,
-              )
-              if (active) navigate(`/${base64Encode(sessionDirectory)}/session/${sessionID}`)
-            })
+                if (active) navigate(`/${base64Encode(sessionDirectory)}/session/${sessionID}`)
+              })
             performance.mark("submit:navigate:end")
             performance.measure("submit:navigate", "submit:navigate:start", "submit:navigate:end")
             console.debug(

@@ -36,3 +36,21 @@ export const ChannelUpdateInput = Schema.Struct({
   mode: Schema.optional(Schema.String),
 }).annotate({ identifier: "ChannelUpdateInput" })
 export type ChannelUpdateInput = Schema.Schema.Type<typeof ChannelUpdateInput>
+
+/** An existing agent-side session returned by ACP session/list. */
+export const AgentSession = Schema.Struct({
+  id: Schema.String,
+  title: Schema.optional(Schema.String),
+  cwd: Schema.String,
+  updated: Schema.optional(Schema.String),
+}).annotate({ identifier: "AgentSession" })
+export type AgentSession = Schema.Schema.Type<typeof AgentSession>
+
+export const AgentSessionList = Schema.Struct({
+  /** False when the agent does not advertise the ACP session/list capability. */
+  supported: Schema.Boolean,
+  /** Whether the agent advertises session/load — required to actually attach a listed session. */
+  loadable: Schema.Boolean,
+  sessions: Schema.Array(AgentSession),
+}).annotate({ identifier: "AgentSessionList" })
+export type AgentSessionList = Schema.Schema.Type<typeof AgentSessionList>

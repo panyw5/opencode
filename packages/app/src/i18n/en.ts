@@ -66,10 +66,14 @@ export const dict = {
   "agentBackend.failed": "Connection failed",
   "agentBackend.login": "Log in on target",
   "agentBackend.loginHelp": "Authenticate this adapter on the target machine, then test again.",
-  "agentBackend.loginHelp.cline": "Run `cline auth` on the backend machine or choose an advertised login method below, then test again.",
-  "agentBackend.loginHelp.droid": "Run `droid login` on the backend machine or set FACTORY_API_KEY in the backend process environment, then test again.",
-  "agentBackend.loginHelp.qoder": "Run `qodercli login` on the backend machine, using the same configuration directory as the ACP command, then test again.",
-  "agentBackend.loginHelp.antigravity": "Sign in to Antigravity on the backend machine (`agy` shares the ~/.gemini/antigravity-cli configuration), then test again.",
+  "agentBackend.loginHelp.cline":
+    "Run `cline auth` on the backend machine or choose an advertised login method below, then test again.",
+  "agentBackend.loginHelp.droid":
+    "Run `droid login` on the backend machine or set FACTORY_API_KEY in the backend process environment, then test again.",
+  "agentBackend.loginHelp.qoder":
+    "Run `qodercli login` on the backend machine, using the same configuration directory as the ACP command, then test again.",
+  "agentBackend.loginHelp.antigravity":
+    "Sign in to Antigravity on the backend machine (`agy` shares the ~/.gemini/antigravity-cli configuration), then test again.",
   "agentBackend.confirmation": "Confirm adapter operation",
   "agentBackend.installNotice":
     "Only this reviewed release will be changed. Existing global CLIs and account credentials are not removed. Installing does not enable the adapter.",
@@ -79,8 +83,8 @@ export const dict = {
   "agentBackend.saved": "Backend configuration saved and enabled.",
   "agentBackend.notEnabledBadge": "Not enabled",
   "agentBackend.notEnabled":
-    "Adapter installed, but ACP is not enabled yet. Click \"Save and enable backend\" below; once the connection check passes, it can run standalone sessions.",
-  "agentBackend.unsavedChanges": "Changes are not saved yet. Click \"Save and enable backend\" to apply.",
+    'Adapter installed, but ACP is not enabled yet. Click "Save and enable backend" below; once the connection check passes, it can run standalone sessions.',
+  "agentBackend.unsavedChanges": 'Changes are not saved yet. Click "Save and enable backend" to apply.',
   "agentBackend.working": "Working",
   "agentBackend.cancelled": "Operation cancelled. Refresh installation status before retrying.",
   "agentBackend.refresh": "Refresh status",
@@ -276,6 +280,12 @@ export const dict = {
   "prompt.channel.model": "Model",
   "prompt.channel.loading": "Loading models",
   "prompt.channel.empty": "No models available",
+  "prompt.channel.sessions": "Load session",
+  "prompt.channel.sessions.new": "Start a new session",
+  "prompt.channel.sessions.search": "Search sessions",
+  "prompt.channel.sessions.loading": "Loading sessions",
+  "prompt.channel.sessions.empty": "No sessions to load",
+  "prompt.channel.sessions.unsupported": "This agent cannot list sessions",
   "gptPro.card.login": "ChatGPT identity",
   "gptPro.card.model": "Current model",
   "gptPro.card.userSelected": "Uses your selection in ChatGPT",
@@ -1097,7 +1107,6 @@ export const dict = {
   "project.switch.hint.pane": "Switch pane",
   "project.switch.hint.newSession": "New session",
   "project.switch.hint.open": "Open",
-
 
   "context.breakdown.title": "Context Breakdown",
   "context.breakdown.note": 'Approximate breakdown of input tokens. "Other" includes tool definitions and overhead.',
@@ -2004,7 +2013,6 @@ export const dict = {
   "settings.general.row.wayland.tooltip":
     "On Linux with mixed refresh-rate monitors, native Wayland can be more stable.",
 
-
   "settings.updates.row.startup.title": "Check for updates on startup",
   "settings.updates.row.startup.description": "Automatically check for updates when OpenCode launches",
   "settings.updates.row.check.title": "Check for updates",
@@ -2320,9 +2328,12 @@ export const dict = {
   "config.extensions.runtime.retrying": "Retrying…",
   "config.extensions.runtime.failed": "Could not retry extension",
   "config.extensions.warnings.title": "Warnings",
-  "config.extensions.warnings.webApiVersion": "The frontend part requires a newer OpenCode (web.apiVersion {{version}}).",
-  "config.extensions.warnings.serverApiVersion": "The server part requires a newer OpenCode (server.apiVersion {{version}}).",
-  "config.extensions.warnings.inlineIsolation": "The server part declares inline isolation, which is reserved for local development installs. It keeps running in-process for now; packaged extensions should use process isolation.",
+  "config.extensions.warnings.webApiVersion":
+    "The frontend part requires a newer OpenCode (web.apiVersion {{version}}).",
+  "config.extensions.warnings.serverApiVersion":
+    "The server part requires a newer OpenCode (server.apiVersion {{version}}).",
+  "config.extensions.warnings.inlineIsolation":
+    "The server part declares inline isolation, which is reserved for local development installs. It keeps running in-process for now; packaged extensions should use process isolation.",
   "config.extensions.toggle.enable": "Enable",
   "config.extensions.toggle.disable": "Disable",
   "config.extensions.toggle.busy": "Updating…",

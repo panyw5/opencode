@@ -18,6 +18,21 @@ const config = {
   mcp: { "test-mcp": { type: "local", command: [process.execPath, fixture] } },
 } satisfies Partial<Config.Info>
 
+const listConfig = {
+  agent_backends: {
+    codex: {
+      type: "acp",
+      command: [process.execPath, fixture],
+      env: {
+        ACP_FIXTURE_LIST_SESSIONS: "1",
+        ACP_FIXTURE_LOAD_SESSION: "1",
+        ACP_FIXTURE_REPLAY: "1",
+      },
+    },
+  },
+  agent_channels: { idle_timeout_ms: 60_000 },
+} satisfies Partial<Config.Info>
+
 const allowAll = [{ permission: "*", pattern: "*", action: "allow" as const }]
 
 function call(instance: { directory: string }, route: string, init?: { method?: string; body?: unknown }) {
@@ -200,5 +215,60 @@ describe("session-level external channel", () => {
         expect(child.external.advisor).toBe("claude")
       }),
     { config },
+  )
+
+  it.instance(
+    "lists the agent's existing sessions for the workspace",
+    () =>
+      Effect.gen(function* () {
+        const instance = yield* TestInstance
+        const listed = yield* call(instance, "/agent-backend/agent-sessions", {
+          method: "POST",
+          body: { advisor: "codex" },
+        })
+        expect(listed.status).toBe(200)
+        expect(listed.body.supported).toBe(true)
+        expect(listed.body.loadable).toBe(true)
+        expect(listed.body.sessions.map((session: any) => session.id)).toEqual([
+          "fixture-session-1",
+          "fixture-session-2",
+        ])
+      }),
+    { config: listConfig },
+  )
+
+  it.instance(
+    "loads an existing agent session and replays its history",
+    () =>
+      Effect.gen(function* () {
+        const instance = yield* TestInstance
+        const created = yield* call(instance, "/session", {
+          method: "POST",
+          body: {
+            channel: { kind: "acp", advisor: "codex", acpSessionID: "fixture-session-1" },
+            permission: allowAll,
+          },
+        })
+        expect(created.status).toBe(200)
+        const sessionID = created.body.id as string
+
+        const first = yield* prompt(instance, sessionID, [textPart("loaded")])
+        expect(first.status).toBe(200)
+        expect(textOf(first.body)).toContain("SESSION=fixture-session-1")
+
+        const list = yield* messages(instance, sessionID)
+        const users = list.filter((message) => message.info.role === "user")
+        const assistants = list.filter((message) => message.info.role === "assistant")
+        expect(users.some((message) => textOf(message).includes("replayed question"))).toBe(true)
+        expect(users.some((message) => textOf(message).includes("replayed followup"))).toBe(true)
+        expect(assistants.some((message) => textOf(message).includes("replayed answer"))).toBe(true)
+        expect(assistants.some((message) => textOf(message).includes("replayed followup answer"))).toBe(true)
+        // Replayed history precedes the live turn's user message.
+        const order = users.map((message) => textOf(message))
+        expect(order.findIndex((text) => text.includes("replayed question"))).toBeLessThan(
+          order.findIndex((text) => text.includes("loaded")),
+        )
+      }),
+    { config: listConfig },
   )
 })

@@ -6,6 +6,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { List } from "@opencode-ai/ui/list"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
+import type { AgentSession } from "@opencode-ai/sdk/v2/client"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 
@@ -321,5 +322,155 @@ export function ChannelModelSelect(props: {
         </Kobalte.Portal>
       </Kobalte>
     </Show>
+  )
+}
+
+const NEW_SESSION_ID = "__new__"
+type AgentSessionItem = { id: string; name: string; updated?: string }
+
+/** Pick one of the agent's existing sessions to load into the new channel session. */
+export function ChannelSessionPicker(props: {
+  advisor: string
+  sessionID?: string
+  sessionTitle?: string
+  onSelect: (session: { id: string; title?: string } | undefined) => void
+  class?: string
+  triggerStyle?: JSX.CSSProperties
+  compact?: boolean
+}) {
+  const sdk = useSDK()
+  const language = useLanguage()
+  const [state, setState] = createStore<{
+    loading: boolean
+    loaded: boolean
+    supported: boolean
+    sessions: AgentSession[]
+  }>({ loading: false, loaded: false, supported: true, sessions: [] })
+  const [open, setOpen] = createSignal(false)
+
+  const load = async () => {
+    if (state.loading) return
+    setState("loading", true)
+    try {
+      const result = await sdk.client.agentBackend.agentSessions({ advisor: props.advisor as ChannelID })
+      const data = result.data
+      setState({
+        supported: !!data?.supported && !!data?.loadable,
+        sessions: data?.sessions ?? [],
+        loaded: true,
+      })
+      console.debug(`[channel] loaded agent sessions advisor=${props.advisor} count=${data?.sessions?.length ?? 0}`)
+    } catch (error) {
+      console.warn(`[channel] agent sessions failed advisor=${props.advisor} error=${String(error)}`)
+      setState({ loaded: true, supported: false, sessions: [] })
+    } finally {
+      setState("loading", false)
+    }
+  }
+
+  const items = createMemo<AgentSessionItem[]>(() => {
+    const sessions = state.sessions
+      .map((session) => ({
+        id: session.id,
+        name: session.title ?? session.id,
+        updated: session.updated,
+      }))
+      .sort((a, b) => (b.updated ?? "").localeCompare(a.updated ?? ""))
+    return [{ id: NEW_SESSION_ID, name: language.t("prompt.channel.sessions.new") }, ...sessions]
+  })
+  const current = createMemo(() => {
+    if (!props.sessionID) return items()[0]
+    return items().find((item) => item.id === props.sessionID)
+  })
+  const label = () => props.sessionTitle ?? props.sessionID ?? language.t("prompt.channel.sessions")
+
+  const emptyMessage = () =>
+    state.loading
+      ? language.t("prompt.channel.sessions.loading")
+      : state.supported
+        ? language.t("prompt.channel.sessions.empty")
+        : language.t("prompt.channel.sessions.unsupported")
+
+  return (
+    <Kobalte
+      open={open()}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next && !state.loaded) void load()
+      }}
+      modal={false}
+      placement="top-start"
+      flip
+      gutter={4}
+    >
+      <Kobalte.Trigger
+        as={Button}
+        type="button"
+        variant="ghost"
+        size={props.compact ? "small" : "normal"}
+        class={props.class ?? "prompt-pick"}
+        style={props.triggerStyle}
+        aria-label={language.t("prompt.channel.sessions")}
+      >
+        <Icon name="clock" size="small" class="shrink-0" />
+        <span class="truncate">{label()}</span>
+        <Icon name="chevron-down" size="small" class="shrink-0" />
+      </Kobalte.Trigger>
+      <Kobalte.Portal>
+        <Kobalte.Content
+          data-component="popover-content"
+          data-kb-top-layer=""
+          class="w-[390px] max-w-[calc(100vw-24px)] h-[39rem] max-h-[calc(100vh-96px)] flex flex-col p-2 overflow-hidden"
+          style={{ "z-index": 100 }}
+        >
+          <Kobalte.Title class="sr-only">{language.t("prompt.channel.sessions")}</Kobalte.Title>
+          <div
+            class="mb-2 rounded-lg border px-3 py-2.5"
+            style={{ "background-color": "var(--apple-light-alpha-5)", "border-color": "var(--border-weak-base)" }}
+          >
+            <div class="flex min-w-0 items-start gap-2.5">
+              <ChannelIcon id={props.advisor} class="mt-0.5 size-6 shrink-0" />
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-16-medium font-semibold text-text-strong">{label()}</div>
+                <div class="mt-0.5 truncate text-12-regular text-text-weak">
+                  {CHANNEL_LABELS[props.advisor] ?? props.advisor}
+                </div>
+              </div>
+            </div>
+          </div>
+          <List
+            class="model-selector-list flex-1 min-h-0 [&_[data-slot=list-viewport]]:flex-1 [&_[data-slot=list-viewport]]:min-h-0 p-1"
+            virtual={false}
+            search={{ placeholder: language.t("prompt.channel.sessions.search"), autofocus: true }}
+            emptyMessage={emptyMessage()}
+            key={(item) => item.id}
+            items={items()}
+            current={current()}
+            filterKeys={["name"]}
+            onSelect={(item) => {
+              setOpen(false)
+              if (!item || item.id === NEW_SESSION_ID) {
+                props.onSelect(undefined)
+                return
+              }
+              props.onSelect({ id: item.id, title: state.sessions.find((s) => s.id === item.id)?.title })
+            }}
+          >
+            {(item) => (
+              <div class="w-full flex items-center gap-x-2 text-13-regular">
+                <div class="min-w-0 flex-1">
+                  <div class="truncate">{item.name}</div>
+                  <Show when={item.updated}>
+                    <div class="truncate text-11-regular text-text-weak">
+                      {new Date(item.updated!).toLocaleString()}
+                    </div>
+                  </Show>
+                </div>
+              </div>
+            )}
+          </List>
+        </Kobalte.Content>
+      </Kobalte.Portal>
+    </Kobalte>
   )
 }

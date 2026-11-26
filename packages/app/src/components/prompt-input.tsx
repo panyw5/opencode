@@ -48,7 +48,13 @@ import { Select } from "@opencode-ai/ui/select"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ModelSelectorPopover } from "@/components/dialog-select-model"
-import { ChannelBadge, ChannelModelSelect, ChannelToggles, readyChannels } from "@/components/session-channel-picker"
+import {
+  ChannelBadge,
+  ChannelModelSelect,
+  ChannelSessionPicker,
+  ChannelToggles,
+  readyChannels,
+} from "@/components/session-channel-picker"
 import { createChannelBrandIconElement } from "@/components/channel-brand-icon"
 import { DialogSelectModelUnpaid } from "@/components/dialog-select-model-unpaid"
 import { useProviders } from "@/hooks/use-providers"
@@ -620,9 +626,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const currentChannel = createMemo(() => sessionChannel() ?? draftChannel())
   const isChannel = createMemo(() => !!currentChannel())
   const setChannel = (advisor: string | undefined) => local.channel.set(advisor ? { advisor } : undefined)
+  const draftAgentSessionID = createMemo(() => local.channel.current()?.agentSessionID)
+  const draftAgentSessionTitle = createMemo(() => local.channel.current()?.agentSessionTitle)
+  const setChannelSession = (session: { id: string; title?: string } | undefined) => {
+    const channel = local.channel.current()
+    if (!channel) return
+    local.channel.set({ ...channel, agentSessionID: session?.id, agentSessionTitle: session?.title })
+  }
   const setChannelModel = (model: string) => {
     const advisor = draftChannel()
-    if (advisor) local.channel.set({ advisor, model })
+    if (advisor) local.channel.set({ ...local.channel.current(), advisor, model })
   }
   const status = createMemo(
     () =>
@@ -2920,14 +2933,26 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   }
                 >
                   {(advisor) => (
-                    <ChannelModelSelect
-                      sessionID={params.id}
-                      advisor={advisor}
-                      draftModel={draftChannelModel()}
-                      onSelectModel={setChannelModel}
-                      compact
-                      class="mobile-model-trigger min-w-0 flex-1 h-11 justify-start gap-1 px-2"
-                    />
+                    <>
+                      <ChannelModelSelect
+                        sessionID={params.id}
+                        advisor={advisor}
+                        draftModel={draftChannelModel()}
+                        onSelectModel={setChannelModel}
+                        compact
+                        class="mobile-model-trigger min-w-0 flex-1 h-11 justify-start gap-1 px-2"
+                      />
+                      <Show when={!params.id}>
+                        <ChannelSessionPicker
+                          advisor={advisor}
+                          sessionID={draftAgentSessionID()}
+                          sessionTitle={draftAgentSessionTitle()}
+                          onSelect={setChannelSession}
+                          compact
+                          class="mobile-model-trigger min-w-0 flex-1 h-11 justify-start gap-1 px-2"
+                        />
+                      </Show>
+                    </>
                   )}
                 </Show>
                 <IconButton
@@ -3324,13 +3349,24 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         </Show>
                         <Show when={currentChannel()} keyed>
                           {(advisor) => (
-                            <ChannelModelSelect
-                              sessionID={params.id}
-                              advisor={advisor}
-                              draftModel={draftChannelModel()}
-                              onSelectModel={setChannelModel}
-                              triggerStyle={control()}
-                            />
+                            <>
+                              <ChannelModelSelect
+                                sessionID={params.id}
+                                advisor={advisor}
+                                draftModel={draftChannelModel()}
+                                onSelectModel={setChannelModel}
+                                triggerStyle={control()}
+                              />
+                              <Show when={!params.id}>
+                                <ChannelSessionPicker
+                                  advisor={advisor}
+                                  sessionID={draftAgentSessionID()}
+                                  sessionTitle={draftAgentSessionTitle()}
+                                  onSelect={setChannelSession}
+                                  triggerStyle={control()}
+                                />
+                              </Show>
+                            </>
                           )}
                         </Show>
                       </>

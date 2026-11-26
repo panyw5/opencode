@@ -18,7 +18,10 @@ export class AcpTranscript {
   private turn = 0
   private sequence = 0
   private chunk?: AgentEvent
+  private userChunk?: AgentEvent
   private items = new Map<string, AgentEvent>()
+
+  constructor(private readonly options: { captureUser?: boolean } = {}) {}
 
   beginTurn(message: string) {
     this.turn++
@@ -43,6 +46,17 @@ export class AcpTranscript {
 
   apply({ update }: SessionNotification) {
     const type = update.sessionUpdate
+    if (type === "user_message_chunk") {
+      // History replays (session/load) stream the user's side as chunks. Opt in
+      // so live turns keep ignoring them — OpenCode owns live user messages.
+      if (!this.options.captureUser) return
+      const text = update.content.type === "text" ? update.content.text : `[${update.content.type}]`
+      if (!this.userChunk) this.userChunk = { id: `replay:user:${++this.sequence}`, kind: "user", text: "" }
+      this.userChunk.text += text
+      this.put(this.userChunk)
+      return
+    }
+    this.userChunk = undefined
     if (type === "agent_message_chunk" || type === "agent_thought_chunk") {
       const kind = type === "agent_message_chunk" ? "message" : "reasoning"
       const content = update.content
@@ -80,7 +94,7 @@ export class AcpTranscript {
       })
     } else if (metadataUpdate.has(type)) {
       // Titles, usage, modes and command catalogs are not conversation content.
-    } else if (type !== "user_message_chunk") {
+    } else {
       this.put({ id: `${this.turn}:${type}`, kind: "status", title: type, text: JSON.stringify(update) })
     }
   }

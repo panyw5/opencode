@@ -4,7 +4,7 @@ import { Config } from "@/config/config"
 import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { AgentInstallError, managedAgents } from "@/agent-backend/install"
-import { probeAdapter, probeChannelOptions } from "@/agent-backend/probe"
+import { probeAdapter, probeAgentSessions, probeChannelOptions } from "@/agent-backend/probe"
 import type { ChannelOptions } from "@/session/channel-schema"
 import { InstanceHttpApi } from "../api"
 import { InvalidRequestError, ConflictError, UpstreamError, ForbiddenError } from "../errors"
@@ -70,6 +70,28 @@ export const agentBackendHandlers = HttpApiBuilder.group(InstanceHttpApi, "agent
           )
           channelOptionsCache.set(key, { at: Date.now(), value })
           return value
+        }),
+      )
+      .handle("agentSessions", (ctx) =>
+        Effect.gen(function* () {
+          const info = yield* config.get()
+          const selection = info.agent_backends?.[ctx.payload.advisor]
+          if (!selection || selection.type !== "acp")
+            return yield* new InvalidRequestError({
+              message: `${ctx.payload.advisor} is not configured for ACP`,
+            })
+          const cwd = yield* InstanceState.directory
+          return yield* run((signal) =>
+            probeAgentSessions(
+              {
+                advisor: ctx.payload.advisor,
+                config: selection,
+                cwd,
+                signal: AbortSignal.any([signal, AbortSignal.timeout(30000)]),
+              },
+              manager,
+            ),
+          )
         }),
       )
   }),

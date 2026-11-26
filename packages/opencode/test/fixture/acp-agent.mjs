@@ -28,7 +28,10 @@ for await (const line of createInterface({ input: process.stdin })) {
     }
     reply(id, {
       protocolVersion: process.env.ACP_FIXTURE_VERSION ? 999 : 1,
-      agentCapabilities: { loadSession: process.env.ACP_FIXTURE_LOAD_SESSION === "1" },
+      agentCapabilities: {
+        loadSession: process.env.ACP_FIXTURE_LOAD_SESSION === "1",
+        ...(process.env.ACP_FIXTURE_LIST_SESSIONS === "1" ? { sessionCapabilities: { list: {} } } : {}),
+      },
       agentInfo: { name: "fixture", version: "1" },
       ...(process.env.ACP_FIXTURE_AUTH
         ? {
@@ -45,9 +48,33 @@ for await (const line of createInterface({ input: process.stdin })) {
           }
         : {}),
     })
+  } else if (method === "session/list") {
+    reply(id, {
+      nextCursor: null,
+      sessions: [
+        {
+          sessionId: "fixture-session-1",
+          cwd: params.cwd ?? process.cwd(),
+          title: "Fixture session one",
+          updatedAt: "2026-01-02T03:04:05Z",
+        },
+        {
+          sessionId: "fixture-session-2",
+          cwd: params.cwd ?? process.cwd(),
+          title: "Fixture session two",
+          updatedAt: "2026-01-01T03:04:05Z",
+        },
+      ],
+    })
   } else if (method === "session/load") {
     sessionId = params.sessionId
     mcpNames = (params.mcpServers ?? []).map((server) => server.name)
+    if (process.env.ACP_FIXTURE_REPLAY === "1") {
+      update({ sessionUpdate: "user_message_chunk", content: { type: "text", text: "replayed question" } })
+      update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "replayed answer" } })
+      update({ sessionUpdate: "user_message_chunk", content: { type: "text", text: "replayed followup" } })
+      update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "replayed followup answer" } })
+    }
     reply(id, {
       configOptions: [],
       models: {

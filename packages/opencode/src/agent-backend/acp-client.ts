@@ -10,6 +10,7 @@ import {
   type AgentCapabilities,
   type AuthMethod,
   type McpServer,
+  type ListSessionsResponse,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
   type SessionConfigOption,
@@ -39,7 +40,7 @@ export class AcpAgentClient {
   sessionID?: string
   model?: string
   mode?: string
-  capabilities?: unknown
+  capabilities?: AgentCapabilities
   authMethods: AuthMethod[] = []
   configOptions?: Array<SessionConfigOption>
   models?: SessionModelState
@@ -288,8 +289,7 @@ export class AcpAgentClient {
     if (!connection || !this.sessionID) throw new Error("ACP client is not ready")
     if (!this.modes?.availableModes.some((item) => item.id === mode))
       throw new Error(`ACP agent does not advertise requested mode ${mode}`)
-    if (this.modes.currentModeId !== mode)
-      await connection.setSessionMode({ sessionId: this.sessionID, modeId: mode })
+    if (this.modes.currentModeId !== mode) await connection.setSessionMode({ sessionId: this.sessionID, modeId: mode })
     this.modes = { ...this.modes, currentModeId: mode }
     this.mode = mode
   }
@@ -312,6 +312,17 @@ export class AcpAgentClient {
     })
     log.info(`completed session=${sessionId} reason=${result.stopReason}`)
     return result
+  }
+
+  get canListSessions() {
+    return Boolean(this.capabilities?.sessionCapabilities?.list)
+  }
+
+  /** Lists the agent's own sessions. Call after start({ initializeOnly: true }); no session is required. */
+  async listSessions(cwd: string, cursor?: string | null): Promise<ListSessionsResponse> {
+    const connection = this.connection
+    if (!connection) throw new Error("ACP client is not ready")
+    return connection.listSessions({ cwd, cursor: cursor ?? null })
   }
 
   async cancel() {
