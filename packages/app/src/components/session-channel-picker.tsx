@@ -499,8 +499,8 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
       <Show
         when={!state.loading}
         fallback={
-          <div class="flex flex-1 items-center justify-center">
-            <TextShimmer text={language.t("prompt.channel.sessions.loading")} />
+          <div class="flex min-h-[320px] flex-1 items-center justify-center">
+            <TextShimmer class="text-14-regular" text={language.t("prompt.channel.sessions.loading")} />
           </div>
         }
       >
