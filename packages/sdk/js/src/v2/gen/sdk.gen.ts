@@ -1351,7 +1351,7 @@ export class AgentBackend extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
-      advisor?: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+      advisor?: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
       version?: string
       action?: "install" | "remove"
     },
@@ -1427,7 +1427,7 @@ export class AgentBackend extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
-      advisor?: "claude" | "codex" | "pi" | "grok" | "dsh" | "cline" | "droid" | "qoder" | "antigravity"
+      advisor?: "claude" | "codex" | "pi" | "grok" | "dsh" | "cline" | "droid" | "qoder" | "antigravity" | "devin"
       config?:
         | {
             type: "cli-json"
@@ -1439,7 +1439,7 @@ export class AgentBackend extends HeyApiClient {
             type: "acp"
             command: Array<string>
             managed?: {
-              advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+              advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
               version: string
             }
             env?: {
@@ -1488,7 +1488,7 @@ export class AgentBackend extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
-      advisor?: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity"
+      advisor?: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity" | "devin"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1527,7 +1527,7 @@ export class AgentBackend extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
-      advisor?: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity"
+      advisor?: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity" | "devin"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1566,7 +1566,7 @@ export class AgentBackend extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
-      advisor?: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity"
+      advisor?: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity" | "devin"
       sessionID?: string
     },
     options?: Options<never, ThrowOnError>,

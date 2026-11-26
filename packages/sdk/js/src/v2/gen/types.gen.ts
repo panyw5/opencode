@@ -934,7 +934,7 @@ export type Part =
   | CompactionPart
 
 export type ExternalSession = {
-  advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity"
+  advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity" | "devin"
   sourceMessageID: string
   sourcePartID: string
   callID: string
@@ -944,7 +944,7 @@ export type ExternalSession = {
 
 export type SessionChannel = {
   kind: "acp"
-  advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity"
+  advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity" | "devin"
   model?: string
   mode?: string
   acpSessionID?: string
@@ -1332,6 +1332,7 @@ export type PermissionConfig =
       droid_consult?: PermissionActionConfig
       qoder_consult?: PermissionActionConfig
       antigravity_consult?: PermissionActionConfig
+      devin_consult?: PermissionActionConfig
       gpt_pro_consult?: PermissionActionConfig
       repo_clone?: PermissionRuleConfig
       repo_overview?: PermissionRuleConfig
@@ -1625,7 +1626,7 @@ export type Config = {
           type: "acp"
           command: Array<string>
           managed?: {
-            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
             version: string
           }
           env?: {
@@ -1646,7 +1647,7 @@ export type Config = {
           type: "acp"
           command: Array<string>
           managed?: {
-            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
             version: string
           }
           env?: {
@@ -1667,7 +1668,7 @@ export type Config = {
           type: "acp"
           command: Array<string>
           managed?: {
-            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
             version: string
           }
           env?: {
@@ -1688,7 +1689,7 @@ export type Config = {
           type: "acp"
           command: Array<string>
           managed?: {
-            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
             version: string
           }
           env?: {
@@ -1709,7 +1710,7 @@ export type Config = {
           type: "acp"
           command: Array<string>
           managed?: {
-            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
             version: string
           }
           env?: {
@@ -1730,7 +1731,7 @@ export type Config = {
           type: "acp"
           command: Array<string>
           managed?: {
-            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
             version: string
           }
           env?: {
@@ -1751,7 +1752,7 @@ export type Config = {
           type: "acp"
           command: Array<string>
           managed?: {
-            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
             version: string
           }
           env?: {
@@ -1772,7 +1773,7 @@ export type Config = {
           type: "acp"
           command: Array<string>
           managed?: {
-            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
             version: string
           }
           env?: {
@@ -1793,7 +1794,28 @@ export type Config = {
           type: "acp"
           command: Array<string>
           managed?: {
-            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
+            version: string
+          }
+          env?: {
+            [key: string]: string
+          }
+          model?: string
+          mode?: string
+          permission?: "deny" | "ask"
+        }
+    devin?:
+      | {
+          type: "cli-json"
+        }
+      | {
+          type: "native-rpc"
+        }
+      | {
+          type: "acp"
+          command: Array<string>
+          managed?: {
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
             version: string
           }
           env?: {
@@ -1859,6 +1881,11 @@ export type Config = {
       configHome?: string
     }
     antigravity?: {
+      enabled?: boolean
+      binaryPath?: string
+      configHome?: string
+    }
+    devin?: {
       enabled?: boolean
       binaryPath?: string
       configHome?: string
@@ -2147,7 +2174,7 @@ export type GlobalEvent = {
 }
 
 export type ChannelOptions = {
-  advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity"
+  advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity" | "devin"
   model?: string
   mode?: string
   models: Array<{
@@ -3049,7 +3076,7 @@ export type Config7 = {
           type: "acp"
           command: Array<string>
           managed?: {
-            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
             version: string
           }
           env?: {
@@ -3070,7 +3097,7 @@ export type Config7 = {
           type: "acp"
           command: Array<string>
           managed?: {
-            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
             version: string
           }
           env?: {
@@ -3091,7 +3118,7 @@ export type Config7 = {
           type: "acp"
           command: Array<string>
           managed?: {
-            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
             version: string
           }
           env?: {
@@ -3112,7 +3139,7 @@ export type Config7 = {
           type: "acp"
           command: Array<string>
           managed?: {
-            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
             version: string
           }
           env?: {
@@ -3133,7 +3160,7 @@ export type Config7 = {
           type: "acp"
           command: Array<string>
           managed?: {
-            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
             version: string
           }
           env?: {
@@ -3154,7 +3181,7 @@ export type Config7 = {
           type: "acp"
           command: Array<string>
           managed?: {
-            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
             version: string
           }
           env?: {
@@ -3175,7 +3202,7 @@ export type Config7 = {
           type: "acp"
           command: Array<string>
           managed?: {
-            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
             version: string
           }
           env?: {
@@ -3196,7 +3223,7 @@ export type Config7 = {
           type: "acp"
           command: Array<string>
           managed?: {
-            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
             version: string
           }
           env?: {
@@ -3217,7 +3244,28 @@ export type Config7 = {
           type: "acp"
           command: Array<string>
           managed?: {
-            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
+            version: string
+          }
+          env?: {
+            [key: string]: string
+          }
+          model?: string
+          mode?: string
+          permission?: "deny" | "ask"
+        }
+    devin?:
+      | {
+          type: "cli-json"
+        }
+      | {
+          type: "native-rpc"
+        }
+      | {
+          type: "acp"
+          command: Array<string>
+          managed?: {
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
             version: string
           }
           env?: {
@@ -3283,6 +3331,11 @@ export type Config7 = {
       configHome?: string
     }
     antigravity?: {
+      enabled?: boolean
+      binaryPath?: string
+      configHome?: string
+    }
+    devin?: {
       enabled?: boolean
       binaryPath?: string
       configHome?: string
@@ -6700,7 +6753,7 @@ export type AgentBackendStatusResponses = {
     node: string
     npm: string
     adapters: Array<{
-      advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+      advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
       package: string
       source: string
       loginHelp: string
@@ -6720,7 +6773,7 @@ export type AgentBackendStatusResponse = AgentBackendStatusResponses[keyof Agent
 
 export type AgentBackendPrepareData = {
   body?: {
-    advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+    advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
     version: string
     action: "install" | "remove"
   }
@@ -6760,7 +6813,7 @@ export type AgentBackendPrepareResponses = {
   200: {
     token: string
     expiresAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+    advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
     version: string
     action: "install" | "remove"
     package: string
@@ -6818,7 +6871,7 @@ export type AgentBackendCommitResponses = {
     node: string
     npm: string
     adapters: Array<{
-      advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+      advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
       package: string
       source: string
       loginHelp: string
@@ -6838,7 +6891,7 @@ export type AgentBackendCommitResponse = AgentBackendCommitResponses[keyof Agent
 
 export type AgentBackendProbeData = {
   body?: {
-    advisor: "claude" | "codex" | "pi" | "grok" | "dsh" | "cline" | "droid" | "qoder" | "antigravity"
+    advisor: "claude" | "codex" | "pi" | "grok" | "dsh" | "cline" | "droid" | "qoder" | "antigravity" | "devin"
     config:
       | {
           type: "cli-json"
@@ -6850,7 +6903,7 @@ export type AgentBackendProbeData = {
           type: "acp"
           command: Array<string>
           managed?: {
-            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder"
+            advisor: "claude" | "codex" | "pi" | "cline" | "droid" | "qoder" | "devin"
             version: string
           }
           env?: {
@@ -6914,7 +6967,7 @@ export type AgentBackendProbeResponse = AgentBackendProbeResponses[keyof AgentBa
 
 export type AgentBackendChannelOptionsData = {
   body?: {
-    advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity"
+    advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity" | "devin"
   }
   path?: never
   query?: {
@@ -6957,7 +7010,7 @@ export type AgentBackendChannelOptionsResponse =
 
 export type AgentBackendAgentSessionsData = {
   body?: {
-    advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity"
+    advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity" | "devin"
   }
   path?: never
   query?: {
@@ -7000,7 +7053,7 @@ export type AgentBackendAgentSessionsResponse =
 
 export type AgentBackendAgentSessionPreviewData = {
   body?: {
-    advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity"
+    advisor: "codex" | "claude" | "grok" | "dsh" | "pi" | "cline" | "droid" | "qoder" | "antigravity" | "devin"
     sessionID: string
   }
   path?: never

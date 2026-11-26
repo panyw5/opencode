@@ -21,7 +21,18 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { useSDK } from "@/context/sdk"
 import "./session-channel-picker.css"
 
-export const CHANNEL_IDS = ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder", "antigravity"] as const
+export const CHANNEL_IDS = [
+  "codex",
+  "claude",
+  "grok",
+  "dsh",
+  "pi",
+  "cline",
+  "droid",
+  "qoder",
+  "antigravity",
+  "devin",
+] as const
 type ChannelID = (typeof CHANNEL_IDS)[number]
 export const CHANNEL_LABELS: Record<string, string> = {
   codex: "Codex",
@@ -33,6 +44,7 @@ export const CHANNEL_LABELS: Record<string, string> = {
   droid: "Factory Droid",
   qoder: "Qoder",
   antigravity: "Antigravity",
+  devin: "Devin",
 }
 
 const CHANNEL_ICONS: Record<string, string> = {
@@ -561,12 +573,12 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
               onSelect={(item) => void select(item)}
             >
               {(item) => (
-                <div class="w-full flex items-center gap-x-2.5 text-left">
+                <div class="flex min-w-0 flex-1 items-center gap-x-2.5 text-left">
                   <Icon name="speech-bubble" size="small" class="shrink-0 text-icon-weak" />
                   <div class="min-w-0 flex-1 text-left">
-                    <div class="truncate text-13-medium text-text-strong">{item.name}</div>
+                    <div class="truncate text-14-medium text-text-strong">{item.name}</div>
                     <Show when={item.updated}>
-                      <div class="mt-0.5 truncate text-11-regular text-text-weak">
+                      <div class="mt-0.5 truncate text-12-regular text-text-weak">
                         {new Date(item.updated!).toLocaleString()}
                       </div>
                     </Show>
@@ -603,7 +615,15 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
                   >
                     <For each={preview.messages}>
                       {(message) => (
-                        <div class="rounded-lg border border-border-weak-base bg-surface-raised-base px-3 py-2">
+                        <div
+                          class="rounded-lg px-3 py-2"
+                          style={{
+                            "background-color":
+                              message.kind === "user"
+                                ? `color-mix(in srgb, ${CHANNEL_COLORS[props.advisor] ?? "var(--icon-weak-base)"} 12%, transparent)`
+                                : "var(--surface-raised-base)",
+                          }}
+                        >
                           <div class="text-11-medium text-text-weak">
                             {message.kind === "user"
                               ? language.t("prompt.channel.sessions.preview.you")
