@@ -2208,6 +2208,7 @@ export type AgentSessionPreviewMessage = {
 export type AgentSessionPreview = {
   supported: boolean
   messages: Array<AgentSessionPreviewMessage>
+  unavailable?: string
 }
 
 export type BrowserForbiddenError = {

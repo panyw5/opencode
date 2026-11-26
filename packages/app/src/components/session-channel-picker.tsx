@@ -406,12 +406,17 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
     sessions: AgentSession[]
   }>({ loading: true, supported: true, sessions: [] })
   const [selected, setSelected] = createSignal<AgentSessionItem>()
-  const [preview, setPreview] = createStore<{ loading: boolean; failed: boolean; messages: PreviewMessage[] }>({
+  const [preview, setPreview] = createStore<{
+    loading: boolean
+    failed: boolean
+    unavailable?: string
+    messages: PreviewMessage[]
+  }>({
     loading: false,
     failed: false,
     messages: [],
   })
-  const previewCache = new Map<string, PreviewMessage[]>()
+  const previewCache = new Map<string, { messages: PreviewMessage[]; unavailable?: string }>()
 
   onMount(async () => {
     try {
@@ -435,18 +440,19 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
     setSelected(item)
     const cached = previewCache.get(item.id)
     if (cached) {
-      setPreview({ loading: false, failed: false, messages: cached })
+      setPreview({ loading: false, failed: false, unavailable: cached.unavailable, messages: cached.messages })
       return
     }
-    setPreview({ loading: true, failed: false, messages: [] })
+    setPreview({ loading: true, failed: false, unavailable: undefined, messages: [] })
     try {
       const result = await sdk.client.agentBackend.agentSessionPreview({
         advisor: props.advisor as ChannelID,
         sessionID: item.id,
       })
       const messages = result.data?.messages ?? []
-      previewCache.set(item.id, messages)
-      if (selected()?.id === item.id) setPreview({ loading: false, failed: false, messages })
+      const unavailable = result.data?.unavailable
+      previewCache.set(item.id, { messages, unavailable })
+      if (selected()?.id === item.id) setPreview({ loading: false, failed: false, unavailable, messages })
     } catch (error) {
       console.warn(
         `[channel] session preview failed advisor=${props.advisor} agentSession=${item.id} error=${String(error)}`,
@@ -632,18 +638,32 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
                       )}
                     </For>
                     <Show when={preview.messages.length === 0}>
-                      <div class="flex flex-1 items-center justify-center text-13-regular text-text-weak">
-                        {language.t(
-                          preview.failed
-                            ? "prompt.channel.sessions.preview.failed"
-                            : "prompt.channel.sessions.preview.empty",
-                        )}
+                      <div class="flex flex-1 flex-col items-center justify-center gap-1.5 px-6 text-center text-13-regular text-text-weak">
+                        <span>
+                          {language.t(
+                            preview.unavailable
+                              ? "prompt.channel.sessions.preview.unavailable"
+                              : preview.failed
+                                ? "prompt.channel.sessions.preview.failed"
+                                : "prompt.channel.sessions.preview.empty",
+                          )}
+                        </span>
+                        <Show when={preview.unavailable}>
+                          {(reason) => (
+                            <span class="break-all text-12-regular text-text-weak opacity-70">{reason()}</span>
+                          )}
+                        </Show>
                       </div>
                     </Show>
                   </Show>
                 </div>
                 <div class="flex items-center justify-end gap-2 px-4 py-3">
-                  <Button type="button" variant="primary" disabled={!!state.busy} onClick={() => void pick(item())}>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    disabled={!!state.busy || !!preview.unavailable}
+                    onClick={() => void pick(item())}
+                  >
                     <Show when={state.busy === item().id}>
                       <Icon name="refresh" size="small" class="shrink-0 animate-spin" />
                     </Show>

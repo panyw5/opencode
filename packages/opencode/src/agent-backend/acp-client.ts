@@ -19,6 +19,7 @@ import {
   type SessionNotification,
 } from "@agentclientprotocol/sdk"
 import * as Log from "@opencode-ai/core/util/log"
+import { relinkAntigravitySession } from "./antigravity-stores"
 import type { AcpConfig } from "./schema"
 
 const log = Log.create({ service: "agent-backend.acp" })
@@ -26,6 +27,17 @@ const log = Log.create({ service: "agent-backend.acp" })
 export class AcpAuthenticationRequired extends Error {
   constructor(readonly methods: AuthMethod[]) {
     super("Authentication is required on the backend machine")
+  }
+}
+
+/** session/list advertised a session that session/load refuses to open. */
+export class AcpSessionNotFound extends Error {
+  constructor(
+    readonly sessionID: string,
+    reason?: string,
+  ) {
+    super(reason ?? `Session not found: ${sessionID}`)
+    this.name = "AcpSessionNotFound"
   }
 }
 
@@ -215,11 +227,27 @@ export class AcpAgentClient {
             if (options.loadOnly) throw new Error("The agent does not support loading existing sessions")
             log.warn(`agent does not support loadSession; starting a new session requested=${options.resumeSessionID}`)
           }
-          const session = resumable
-            ? await connection.loadSession({
+          const loadSession = () =>
+            connection
+              .loadSession({
                 sessionId: options.resumeSessionID!,
                 cwd: this.options.cwd,
                 mcpServers,
+              })
+              .catch((error) => {
+                if (error instanceof RequestError && error.code === -32002)
+                  throw new AcpSessionNotFound(options.resumeSessionID!, error.message)
+                throw error
+              })
+          const session = resumable
+            ? await loadSession().catch(async (error) => {
+                // agy's session/list aggregates every app-data store while
+                // session/load only opens its own — link the conversation file
+                // into the active store and retry once before giving up.
+                if (!(error instanceof AcpSessionNotFound)) throw error
+                if (!(await relinkAntigravitySession(this.options.config, options.resumeSessionID!))) throw error
+                log.info(`relinked agent session; retrying load session=${options.resumeSessionID}`)
+                return loadSession()
               })
             : await connection.newSession({ cwd: this.options.cwd, mcpServers })
           this.sessionID = resumable ? options.resumeSessionID! : (session as { sessionId: string }).sessionId
@@ -252,6 +280,7 @@ export class AcpAgentClient {
       )
     } catch (error) {
       await this.stop()
+      if (error instanceof AcpSessionNotFound) throw error
       if (error instanceof RequestError && error.code === -32000) throw new AcpAuthenticationRequired(this.authMethods)
       throw new Error(`ACP startup failed: ${String(error)}${this.stderr ? `; stderr: ${this.stderr}` : ""}`)
     }

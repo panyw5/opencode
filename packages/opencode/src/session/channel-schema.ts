@@ -68,5 +68,11 @@ export const AgentSessionPreview = Schema.Struct({
   supported: Schema.Boolean,
   /** The first replayed transcript messages, already truncated. */
   messages: Schema.Array(AgentSessionPreviewMessage),
+  /**
+   * Set when the agent lists the session but session/load rejects it (e.g. the
+   * conversation lives in a different app data store it cannot open). Value is
+   * the upstream reason; the session cannot be attached at all.
+   */
+  unavailable: Schema.optional(Schema.String),
 }).annotate({ identifier: "AgentSessionPreview" })
 export type AgentSessionPreview = Schema.Schema.Type<typeof AgentSessionPreview>

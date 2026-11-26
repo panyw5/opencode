@@ -54,10 +54,7 @@ export function routeAgentBackend<P extends Schema.Decoder<AgentInput>>(
           ? yield* Effect.promise(() => managedAgents().acquire(managed.advisor, managed.version))
           : undefined
         if (lease) yield* Effect.addFinalizer(() => Effect.promise(lease.release))
-        const backend =
-          selection?.type === "acp"
-            ? acpBackend(advisor, applyAdapterLease(selection, lease))
-            : legacy
+        const backend = selection?.type === "acp" ? acpBackend(advisor, applyAdapterLease(selection, lease)) : legacy
         log.info(`selected advisor=${advisor} backend=${backend.kind} session=${ctx.sessionID}`)
         const context: Tool.Context = {
           ...ctx,

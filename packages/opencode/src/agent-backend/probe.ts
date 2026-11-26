@@ -15,10 +15,15 @@ const AGENT_SESSIONS_PAGE_LIMIT = 5
 const AGENT_SESSIONS_LIMIT = 200
 
 const normalized = (dir: string) => {
+  // agy percent-encodes recorded session cwds (e.g. spaces as %20).
+  let decoded = dir
   try {
-    return realpathSync(dir)
+    decoded = decodeURIComponent(dir)
+  } catch {}
+  try {
+    return realpathSync(decoded)
   } catch {
-    return dir
+    return decoded
   }
 }
 

@@ -296,6 +296,7 @@ export const dict = {
   "prompt.channel.sessions.preview.loading": "Loading preview",
   "prompt.channel.sessions.preview.empty": "No messages to preview",
   "prompt.channel.sessions.preview.failed": "Preview unavailable",
+  "prompt.channel.sessions.preview.unavailable": "The agent can't load this session",
   "prompt.channel.sessions.preview.you": "You",
   "prompt.channel.sessions.open": "Load session",
   "gptPro.card.login": "ChatGPT identity",

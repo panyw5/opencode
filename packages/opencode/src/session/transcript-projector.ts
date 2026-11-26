@@ -133,8 +133,11 @@ export function makeTranscriptProjector(input: {
             yield* sessions.updatePart({ ...base, type: "reasoning", text: item.text ?? "", time })
           } else {
             // These are observed external events, never locally executable tools.
+            // Agent titles can carry multi-line payloads (e.g. agy puts the whole
+            // command body in the tool title) — keep the display line short.
+            const title = (item.title ?? item.kind).split("\n", 1)[0].slice(0, 160)
             const running = !final && (item.status === "running" || item.status === "pending")
-            const metadata = { external: true, title: item.title ?? item.kind, status: item.status }
+            const metadata = { external: true, title, status: item.status }
             yield* sessions.updatePart({
               ...base,
               type: "tool",
@@ -144,14 +147,14 @@ export function makeTranscriptProjector(input: {
                 ? {
                     status: "running",
                     input: {},
-                    title: item.title ?? item.kind,
+                    title,
                     metadata: { ...metadata, output: item.text ?? "" },
                     time: { start: ref.start },
                   }
                 : {
                     status: "completed",
                     input: {},
-                    title: item.title ?? item.kind,
+                    title,
                     output: item.text ?? "",
                     metadata,
                     time: { start: ref.start, end: Date.now() },

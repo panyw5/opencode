@@ -278,6 +278,7 @@ export const dict = {
   "prompt.channel.sessions.preview.loading": "正在加载预览",
   "prompt.channel.sessions.preview.empty": "没有可预览的消息",
   "prompt.channel.sessions.preview.failed": "无法加载预览",
+  "prompt.channel.sessions.preview.unavailable": "此会话无法由该渠道载入",
   "prompt.channel.sessions.preview.you": "用户",
   "prompt.channel.sessions.open": "加载会话",
   "gptPro.card.login": "ChatGPT 登录身份",

@@ -21,7 +21,12 @@ export class AcpTranscript {
   private userChunk?: AgentEvent
   private items = new Map<string, AgentEvent>()
 
-  constructor(private readonly options: { captureUser?: boolean } = {}) {}
+  /**
+   * `limit` bounds the retained transcript (default 80) — fine for live turns
+   * and preview, but session/load replays must pass 0 so the whole history
+   * survives for projection into session messages.
+   */
+  constructor(private readonly options: { captureUser?: boolean; limit?: number } = {}) {}
 
   beginTurn(message: string) {
     this.turn++
@@ -34,11 +39,16 @@ export class AcpTranscript {
     // Persist the full patch before limiting the in-memory/UI preview.
     this.onTranscript?.({ ...item })
     const previous = this.items.get(item.id)
-    const merged = { ...previous, ...item, ...(item.text != null ? { text: item.text.slice(0, 8000) } : {}) }
+    const limit = this.options.limit ?? 80
+    const merged = {
+      ...previous,
+      ...item,
+      ...(item.text != null ? { text: limit ? item.text.slice(0, 8000) : item.text } : {}),
+    }
     this.items.set(item.id, merged)
     if (previous) this.transcript[this.transcript.indexOf(previous)] = merged
     else this.transcript.push(merged)
-    if (this.transcript.length > 80) {
+    if (limit > 0 && this.transcript.length > limit) {
       const removed = this.transcript.shift()!
       this.items.delete(removed.id)
     }

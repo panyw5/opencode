@@ -253,8 +253,9 @@ export const layer = Layer.effect(
       const holder: { entry?: Entry } = {}
       // session/load replays history before the first live turn exists; buffer
       // it here and project it once startup finishes. user chunks are captured
-      // so replayed turns can be reconstructed as OpenCode messages.
-      const replay = new AcpTranscript({ captureUser: true })
+      // so replayed turns can be reconstructed as OpenCode messages. Unlimited:
+      // trimming would drop the replayed user turns and collapse the history.
+      const replay = new AcpTranscript({ captureUser: true, limit: 0 })
       const client = new AcpAgentClient({
         config: acpConfig,
         cwd: session.directory,

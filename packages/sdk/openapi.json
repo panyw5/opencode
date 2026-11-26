@@ -28838,6 +28838,9 @@
             "items": {
               "$ref": "#/components/schemas/AgentSessionPreviewMessage"
             }
+          },
+          "unavailable": {
+            "type": "string"
           }
         },
         "required": ["supported", "messages"],
