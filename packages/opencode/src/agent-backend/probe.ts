@@ -61,9 +61,12 @@ export async function probeAgentSessions(
   const ref = input.config.managed
   if (ref && ref.advisor !== input.advisor) throw new Error("Managed adapter does not match the selected advisor")
   const lease = ref ? await manager.acquire(ref.advisor, ref.version) : undefined
+  // Spawn in a sentinel dir: agents stamp their process cwd onto sessions
+  // that have no recorded workspace, so listing from "/" lets those floaters
+  // be filtered out instead of masquerading as this directory's sessions.
   const client = new AcpAgentClient({
     config: applyAdapterLease(input.config, lease),
-    cwd: input.cwd,
+    cwd: "/",
     onEvent: () => {},
     requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),
   })
