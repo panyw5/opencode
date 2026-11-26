@@ -72,12 +72,19 @@ export function ChannelIcon(props: { id: string; class?: string }) {
 }
 
 type BackendConfig = { type?: string; command?: readonly string[] }
+type AgentToggle = { enabled?: boolean } | undefined
 
-/** Advisors that can actually drive a session: ACP configured with a command. */
-export function readyChannels(config?: { agent_backends?: Record<string, BackendConfig | undefined> }) {
+/** Advisors that can actually drive a session: enabled and ACP configured with a command. */
+export function readyChannels(config?: {
+  agent_backends?: Record<string, BackendConfig | undefined>
+  external_agents?: Record<string, AgentToggle>
+  pi?: AgentToggle
+}) {
   return CHANNEL_IDS.filter((id) => {
     const backend = config?.agent_backends?.[id]
-    return backend?.type === "acp" && !!backend.command?.[0]?.trim()
+    if (backend?.type !== "acp" || !backend.command?.[0]?.trim()) return false
+    const toggle = id === "pi" ? config?.pi : config?.external_agents?.[id]
+    return toggle?.enabled !== false
   }).map((id) => ({ id, label: CHANNEL_LABELS[id] }))
 }
 

@@ -7261,6 +7261,44 @@ export default function ConfigPage() {
     }
   }
 
+  async function persistCliAgentEnabled(id: CliAgentID, enabled: boolean) {
+    if (!state.cliAgents[id]) setState("cliAgents", id, cliAgentCfg())
+    setState("cliAgents", id, "enabled", enabled)
+    setState("cliAgents", id, "test", undefined)
+    setState("cliAgents", id, "saving", true)
+    console.info(`[config-cli-agents] persist enabled id=${id} enabled=${enabled}`)
+    try {
+      if (id === "pi") {
+        await patchConfig({ pi: { ...cfg().pi, enabled } })
+      } else {
+        await patchConfig({
+          external_agents: {
+            ...cfg().external_agents,
+            [id]: { ...cfg().external_agents?.[id], enabled },
+          },
+        })
+      }
+      if (platform.cliAgents) {
+        const stored = await platform.cliAgents.get(id)
+        const overlay = id === "pi" ? cfg().pi : cfg().external_agents?.[id]
+        const next = { ...stored, ...overlay, enabled }
+        await platform.cliAgents.set(id, next)
+        setCliAgentConfigs(id, next)
+      } else {
+        setCliAgentConfigs(id, { ...cliAgentConfigs[id], enabled })
+      }
+      console.info(`[config-cli-agents] enabled persisted id=${id} enabled=${enabled}`)
+    } catch (error) {
+      setState("cliAgents", id, "enabled", !enabled)
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setState("cliAgents", id, "saving", false)
+    }
+  }
+
   function setCliAgent(
     id: CliAgentID,
     key: "enabled" | "binaryPath" | "configHome" | "provider" | "model" | "baseURL" | "apiKey" | "clearApiKey",
@@ -9798,7 +9836,6 @@ export default function ConfigPage() {
                               sourceUrl={selectedClaw()?.sourceUrl}
                               onSave={async (patch) => {
                                 await patchConfig(patch)
-                                setState("cliAgents", descriptor().id, "enabled", true)
                               }}
                             />
                           )}
@@ -9818,7 +9855,11 @@ export default function ConfigPage() {
                           pluginsQuery={descriptor().id === "dsh" ? dshPlugins.query : ""}
                           pluginsShowDisabled={descriptor().id === "dsh" ? dshPlugins.showDisabled : true}
                           pluginsExpandedId={descriptor().id === "dsh" ? dshPlugins.expandedId : undefined}
-                          onChange={(key, value) => setCliAgent(descriptor().id, key, value)}
+                          onChange={(key, value) =>
+                            key === "enabled"
+                              ? void persistCliAgentEnabled(descriptor().id, value === true)
+                              : setCliAgent(descriptor().id, key, value)
+                          }
                           onSave={() => void saveCliAgent(descriptor().id)}
                           onTest={() => void testCliAgent(descriptor().id)}
                           onRefresh={() => void refreshCliAgentInfo(descriptor().id)}

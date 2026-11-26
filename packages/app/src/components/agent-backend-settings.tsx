@@ -271,14 +271,6 @@ export function AgentBackendSettings(props: {
       submitted = { advisor, client: props.client, signature: backendSignature(backend, advisor) }
       await props.onSave({
         agent_backends: { ...props.config.agent_backends, [advisor]: backend },
-        ...(advisor === "pi"
-          ? { pi: { ...props.config.pi, enabled: true } }
-          : {
-              external_agents: {
-                ...props.config.external_agents,
-                [advisor]: { ...props.config.external_agents?.[advisor], enabled: true },
-              },
-            }),
       })
       console.info(`[agent-backend.settings] save completed advisor=${advisor} current=${current()}`)
       if (current()) setState("saved", true)
@@ -443,26 +435,27 @@ export function AgentBackendSettings(props: {
             </Show>
             <Show when={customMode()}>
               <AgentSettingsCard title={t("agentBackend.command")} badge={t("agentSettings.required")} size="wide">
-                <Show when={ACP_COMMAND_PRESETS[props.advisor]}>
-                  {(preset) => (
-                    <button
-                      type="button"
-                      class="self-start text-12-medium text-text-interactive-base hover:underline disabled:opacity-50"
-                      disabled={!!state.busy}
-                      onClick={() => change("command", JSON.stringify(preset()))}
-                    >
-                      {t("agentBackend.suggestedCommand", { command: JSON.stringify(preset()) })}
-                    </button>
-                  )}
-                </Show>
                 <TextField
-                  multiline
                   label={t("agentBackend.command")}
                   hideLabel
                   value={state.command}
                   disabled={!!state.busy}
                   onChange={(value) => change("command", value)}
                   placeholder={JSON.stringify(ACP_COMMAND_PRESETS[props.advisor] ?? ["/path/to/adapter", "--acp"])}
+                  suffix={
+                    <Show when={ACP_COMMAND_PRESETS[props.advisor]}>
+                      {(preset) => (
+                        <Button
+                          size="small"
+                          variant="secondary"
+                          disabled={!!state.busy || state.command.trim() === JSON.stringify(preset())}
+                          onClick={() => change("command", JSON.stringify(preset()))}
+                        >
+                          {t("agentBackend.suggestedCommand")}
+                        </Button>
+                      )}
+                    </Show>
+                  }
                 />
               </AgentSettingsCard>
             </Show>

@@ -16,6 +16,7 @@ import { Session } from "@/session/session"
 import { SessionStatus } from "@/session/status"
 import { makeTranscriptProjector } from "@/session/transcript-projector"
 import { isConsultMention } from "@/tool/consult-mention"
+import { resolveExternalAgentConfig } from "@/tool/external-cli"
 import { ToolRegistry } from "@/tool/registry"
 import type { PromptInput } from "@/session/prompt"
 import { AcpAgentClient, AcpAuthenticationRequired } from "./acp-client"
@@ -233,6 +234,11 @@ export const layer = Layer.effect(
         throw new Error(
           `${channel.advisor} is not configured for ACP; select a different channel or configure agent_backends`,
         )
+      const local =
+        channel.advisor === "pi"
+          ? info.pi
+          : resolveExternalAgentConfig(channel.advisor, info.external_agents?.[channel.advisor])
+      if (local?.enabled === false) throw new Error(`${channel.advisor} integration is disabled`)
       const managed = selection.managed
       if (managed && managed.advisor !== channel.advisor)
         throw new Error("Managed adapter does not match the selected channel advisor")

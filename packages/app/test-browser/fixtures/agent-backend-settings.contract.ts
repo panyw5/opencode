@@ -338,10 +338,6 @@ describe("AgentBackendSettings save and probe contracts", () => {
       expect(view.saves).toEqual([
         {
           agent_backends: { ...current.agent_backends, claude: normalized() },
-          external_agents: {
-            ...current.external_agents,
-            claude: { ...current.external_agents?.claude, enabled: true },
-          },
         },
       ])
       expect(button(view.container, "activate").disabled).toBe(true)
@@ -598,7 +594,7 @@ describe("AgentBackendSettings save and probe contracts", () => {
       const card = view.container.querySelector('section[aria-label="agentSettings.adapter"]')
       button(view.container, "refresh").click()
       expect(select(view.container, "source").textContent).toContain("agentBackend.managed")
-      expect(view.container.textContent).toContain("local-test-server")
+      expect(view.container.textContent).toContain("/test/agent-backends")
       pending.reject(new Error("Inspection unavailable"))
       await settle()
       expect(view.container.querySelector('section[aria-label="agentSettings.adapter"]')).toBe(card)
@@ -846,10 +842,6 @@ describe("AgentBackendSettings save and probe contracts", () => {
       expect(view.saves).toEqual([
         {
           agent_backends: { ...current.agent_backends, claude: { type: "cli-json" } },
-          external_agents: {
-            ...current.external_agents,
-            claude: { ...current.external_agents?.claude, enabled: true },
-          },
         },
       ])
     } finally {
@@ -857,7 +849,7 @@ describe("AgentBackendSettings save and probe contracts", () => {
     }
   })
 
-  test("Pi Native RPC saves directly, enables Pi, and never probes ACP", async () => {
+  test("Pi Native RPC saves directly and never probes ACP", async () => {
     const mock = clientMock()
     const current = configuration()
     const view = mount({ client: mock.client, config: current, advisor: "pi" })
@@ -872,10 +864,10 @@ describe("AgentBackendSettings save and probe contracts", () => {
       expect(view.saves).toEqual([
         {
           agent_backends: { ...current.agent_backends, pi: { type: "native-rpc" } },
-          pi: { ...current.pi, enabled: true },
         },
       ])
       expect(view.saves[0]).not.toHaveProperty("external_agents")
+      expect(view.saves[0]).not.toHaveProperty("pi")
     } finally {
       view.dispose()
     }

@@ -494,6 +494,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const hideChannelSelector = createMemo(() => !!extraAgentCaps()?.hideAgent)
   const [backendConfig, setBackendConfig] = createSignal<{
     agent_backends?: Record<string, { type?: string; command?: readonly string[] } | undefined>
+    external_agents?: Record<string, { enabled?: boolean } | undefined>
+    pi?: { enabled?: boolean }
   }>()
   const channelChoices = createMemo(() => readyChannels(backendConfig()))
   let editorRef!: HTMLDivElement
