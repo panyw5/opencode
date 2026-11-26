@@ -443,9 +443,6 @@ export function AgentBackendSettings(props: {
             </Show>
             <Show when={customMode()}>
               <AgentSettingsCard title={t("agentBackend.command")} badge={t("agentSettings.required")} size="wide">
-                <Show when={status.latest && !recipe()}>
-                  <p class="text-12-regular text-text-weak">{t("agentBackend.customOnly")}</p>
-                </Show>
                 <Show when={ACP_COMMAND_PRESETS[props.advisor]}>
                   {(preset) => (
                     <button
@@ -461,6 +458,7 @@ export function AgentBackendSettings(props: {
                 <TextField
                   multiline
                   label={t("agentBackend.command")}
+                  hideLabel
                   value={state.command}
                   disabled={!!state.busy}
                   onChange={(value) => change("command", value)}
