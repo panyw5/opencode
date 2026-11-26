@@ -473,7 +473,15 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
       title={
         <span class="flex items-center gap-2.5">
           <span>{language.t("prompt.channel.sessions")}</span>
-          <Tag class="inline-flex items-center gap-1.5">
+          <Tag
+            size="large"
+            class="inline-flex items-center gap-1.5 rounded-full"
+            style={{
+              "border-color": `color-mix(in srgb, ${CHANNEL_COLORS[props.advisor] ?? "var(--icon-weak-base)"} 40%, transparent)`,
+              "background-color": `color-mix(in srgb, ${CHANNEL_COLORS[props.advisor] ?? "var(--icon-weak-base)"} 10%, transparent)`,
+              color: CHANNEL_COLORS[props.advisor] ?? "var(--text-weak)",
+            }}
+          >
             <ChannelIcon id={props.advisor} class="size-4 shrink-0" />
             <span>{CHANNEL_LABELS[props.advisor] ?? props.advisor}</span>
           </Tag>
