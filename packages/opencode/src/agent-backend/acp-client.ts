@@ -99,7 +99,14 @@ export class AcpAgentClient {
 
   async start(
     signal: AbortSignal,
-    options: { initializeOnly?: boolean; authMethod?: string; resumeSessionID?: string } = {},
+    options: {
+      initializeOnly?: boolean
+      authMethod?: string
+      resumeSessionID?: string
+      /** Stop right after session/load — used by history previews that must not
+         select models or fall back to session/new. */
+      loadOnly?: boolean
+    } = {},
   ) {
     if (signal.aborted) throw new Error("ACP startup aborted")
     if (this.child) throw new Error("ACP client already started")
@@ -204,8 +211,10 @@ export class AcpAgentClient {
               ? this.options.mcpServers(init.agentCapabilities)
               : (this.options.mcpServers ?? [])
           const resumable = Boolean(options.resumeSessionID && init.agentCapabilities?.loadSession)
-          if (options.resumeSessionID && !resumable)
+          if (options.resumeSessionID && !resumable) {
+            if (options.loadOnly) throw new Error("The agent does not support loading existing sessions")
             log.warn(`agent does not support loadSession; starting a new session requested=${options.resumeSessionID}`)
+          }
           const session = resumable
             ? await connection.loadSession({
                 sessionId: options.resumeSessionID!,
@@ -218,6 +227,7 @@ export class AcpAgentClient {
           this.models = session.models ?? undefined
           this.modes = session.modes ?? undefined
           log.info(`session ready id=${this.sessionID} resumed=${resumable} mcp=${mcpServers.length}`)
+          if (options.loadOnly) return
 
           const model = this.options.model ?? this.options.config.model
           if (model && !(await this.selectConfigOption("model", model))) {

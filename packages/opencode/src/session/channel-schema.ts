@@ -54,3 +54,19 @@ export const AgentSessionList = Schema.Struct({
   sessions: Schema.Array(AgentSession),
 }).annotate({ identifier: "AgentSessionList" })
 export type AgentSessionList = Schema.Schema.Type<typeof AgentSessionList>
+
+/** One replayed message from an agent session history preview. */
+export const AgentSessionPreviewMessage = Schema.Struct({
+  /** Transcript item kind: user, message, reasoning or tool. */
+  kind: Schema.String,
+  text: Schema.String,
+}).annotate({ identifier: "AgentSessionPreviewMessage" })
+export type AgentSessionPreviewMessage = Schema.Schema.Type<typeof AgentSessionPreviewMessage>
+
+export const AgentSessionPreview = Schema.Struct({
+  /** False when the agent does not advertise the ACP session/load capability. */
+  supported: Schema.Boolean,
+  /** The first replayed transcript messages, already truncated. */
+  messages: Schema.Array(AgentSessionPreviewMessage),
+}).annotate({ identifier: "AgentSessionPreview" })
+export type AgentSessionPreview = Schema.Schema.Type<typeof AgentSessionPreview>
