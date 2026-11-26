@@ -1,22 +1,26 @@
 import type { AcpConfig } from "./schema"
-import { AcpAgentClient, AcpAuthenticationRequired } from "./acp-client"
+import { AcpAgentClient, AcpAuthenticationRequired, AcpSessionNotFound } from "./acp-client"
 import { AcpTranscript } from "./acp-transcript"
 import { applyAdapterLease, managedAgents, type AgentInstallManager } from "./install"
 import type { ProbeResult } from "./install-schema"
 import { channelOptions } from "./options"
 import type { Advisor } from "@/session/external-schema"
-import type {
-  AgentSession,
-  AgentSessionList,
-  AgentSessionPreview,
-  ChannelOptions,
-} from "@/session/channel-schema"
+import type { AgentSession, AgentSessionList, AgentSessionPreview, ChannelOptions } from "@/session/channel-schema"
 import * as Log from "@opencode-ai/core/util/log"
+import { realpathSync } from "node:fs"
 
 const log = Log.create({ service: "agent-backend.probe" })
 
 const AGENT_SESSIONS_PAGE_LIMIT = 5
 const AGENT_SESSIONS_LIMIT = 200
+
+const normalized = (dir: string) => {
+  try {
+    return realpathSync(dir)
+  } catch {
+    return dir
+  }
+}
 
 /** Read a channel's models and modes without a session: spawns the ACP agent, negotiates, then stops it. */
 export async function probeChannelOptions(
@@ -72,16 +76,19 @@ export async function probeAgentSessions(
       return { supported: false, loadable, sessions: [] }
     }
     const sessions: AgentSession[] = []
+    const home = normalized(input.cwd)
     let cursor: string | null | undefined
     for (let page = 0; page < AGENT_SESSIONS_PAGE_LIMIT && sessions.length < AGENT_SESSIONS_LIMIT; page++) {
       const result = await client.listSessions(input.cwd, cursor)
       sessions.push(
-        ...result.sessions.map((session) => ({
-          id: session.sessionId,
-          ...(session.title ? { title: session.title } : {}),
-          cwd: session.cwd,
-          ...(session.updatedAt ? { updated: session.updatedAt } : {}),
-        })),
+        ...result.sessions
+          .filter((session) => !session.cwd || normalized(session.cwd) === home)
+          .map((session) => ({
+            id: session.sessionId,
+            ...(session.title ? { title: session.title } : {}),
+            cwd: session.cwd,
+            ...(session.updatedAt ? { updated: session.updatedAt } : {}),
+          })),
       )
       cursor = result.nextCursor ?? null
       if (!cursor) break
@@ -146,6 +153,14 @@ export async function probeAgentSessionPreview(
       `preview ready advisor=${input.advisor} agentSession=${input.sessionID} messages=${messages.length} ms=${Date.now() - started}`,
     )
     return { supported: true, messages }
+  } catch (error) {
+    if (error instanceof AcpSessionNotFound) {
+      log.info(
+        `preview unavailable advisor=${input.advisor} agentSession=${input.sessionID} reason=${error.message} ms=${Date.now() - started}`,
+      )
+      return { supported: true, messages: [], unavailable: error.message }
+    }
+    throw error
   } finally {
     await client.stop()
     await lease?.release()
