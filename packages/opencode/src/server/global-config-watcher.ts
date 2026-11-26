@@ -17,6 +17,15 @@ const DEBOUNCE_MS = 500
 
 let started = false
 
+// Serialized Config.Info that clients were last notified about. Writers that
+// publish `global.config.updated` themselves mark it so the watcher does not
+// re-emit the same disk state as an external edit.
+let lastEmittedInfo: string | undefined
+
+export function markGlobalConfigEmitted(info: Config.Info) {
+  lastEmittedInfo = JSON.stringify(info)
+}
+
 /**
  * Watch the global config files for hand edits and publish `global.config.updated`.
  *
@@ -34,7 +43,6 @@ export function startGlobalConfigWatcher() {
 
   const dir = Global.Path.config
   const mtimes = new Map<string, number>()
-  let lastInfo: string | undefined
   let debounce: ReturnType<typeof setTimeout> | undefined
 
   const flush = () => {
@@ -63,8 +71,8 @@ export function startGlobalConfigWatcher() {
       const serialized = JSON.stringify(info)
       // Comment/formatting-only edits parse to the same config — skip the
       // client notification (and the provider re-fetch it triggers).
-      if (serialized === lastInfo) return
-      lastInfo = serialized
+      if (serialized === lastEmittedInfo) return
+      lastEmittedInfo = serialized
       const command = yield* Command.Service
       yield* command.invalidate()
       GlobalBus.emit("event", {

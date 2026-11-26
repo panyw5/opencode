@@ -5,6 +5,7 @@ import { Bus } from "@/bus"
 import { mergePartDeltas } from "@/server/event-merge"
 import { Installation } from "@/installation"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
+import { markGlobalConfigEmitted } from "@/server/global-config-watcher"
 import { Event } from "@/server/event"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import * as Log from "@opencode-ai/core/util/log"
@@ -109,6 +110,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
         log.info("global config provider deletion received", { providerIDs: providerDeletes.join(",") })
       }
       const result = yield* config.updateGlobal(ctx.payload)
+      markGlobalConfigEmitted(result.info)
       if (providerDeletes.length > 0) {
         log.info("global config provider deletion completed", {
           providerIDs: providerDeletes.join(","),
@@ -134,6 +136,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     }) {
       log.info("global provider config remove requested", { providerID: ctx.params.providerID })
       const result = yield* config.removeGlobalProvider(ctx.params.providerID)
+      markGlobalConfigEmitted(result.info)
       log.info("global provider config remove completed", {
         providerID: ctx.params.providerID,
         changed: result.changed,
@@ -153,6 +156,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     const configRefresh = Effect.fn("GlobalHttpApi.configRefresh")(function* () {
       log.info("global config runtime refresh requested")
       const result = yield* config.refreshGlobal()
+      markGlobalConfigEmitted(result)
       // Command/MCP/skill listings are cached per-instance from config; drop them so
       // a config refresh also makes newly written command files visible without a restart.
       yield* command.invalidate()

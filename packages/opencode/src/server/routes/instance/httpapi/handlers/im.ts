@@ -15,6 +15,7 @@ import { channelStatus } from "@/channel/wechat"
 import { WechatStorage } from "@/channel/wechat-storage"
 import { GlobalBus } from "@/bus/global"
 import { Event } from "@/server/event"
+import { markGlobalConfigEmitted } from "@/server/global-config-watcher"
 import { refreshWechatChannel } from "@/channel/manager"
 
 const log = Log.create({ service: "httpapi.im" })
@@ -89,6 +90,7 @@ export const imHandlers = HttpApiBuilder.group(InstanceHttpApi, "im", (handlers)
             const updated = yield* config.updateGlobal({
               channels: { ...all.channels, [ctx.payload.channelName]: channel },
             })
+            markGlobalConfigEmitted(updated.info)
             if (!updated.changed) yield* wechatRequest(() => refreshWechatChannel(ctx.payload.channelName, channel))
             if (updated.changed)
               GlobalBus.emit("event", {

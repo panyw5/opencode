@@ -7266,6 +7266,7 @@ export default function ConfigPage() {
     setState("cliAgents", id, "enabled", enabled)
     setState("cliAgents", id, "test", undefined)
     setState("cliAgents", id, "saving", true)
+    const perfStart = performance.now()
     console.info(`[config-cli-agents] persist enabled id=${id} enabled=${enabled}`)
     try {
       if (id === "pi") {
@@ -7278,6 +7279,8 @@ export default function ConfigPage() {
           },
         })
       }
+      const perfPatch = performance.now()
+      console.info(`[config-cli-agents] patch done id=${id} ms=${(perfPatch - perfStart).toFixed(1)}`)
       if (platform.cliAgents) {
         const stored = await platform.cliAgents.get(id)
         const overlay = id === "pi" ? cfg().pi : cfg().external_agents?.[id]
@@ -7287,7 +7290,9 @@ export default function ConfigPage() {
       } else {
         setCliAgentConfigs(id, { ...cliAgentConfigs[id], enabled })
       }
-      console.info(`[config-cli-agents] enabled persisted id=${id} enabled=${enabled}`)
+      console.info(
+        `[config-cli-agents] enabled persisted id=${id} enabled=${enabled} patchMs=${(perfPatch - perfStart).toFixed(1)} storeMs=${(performance.now() - perfPatch).toFixed(1)}`,
+      )
     } catch (error) {
       setState("cliAgents", id, "enabled", !enabled)
       showToast({
