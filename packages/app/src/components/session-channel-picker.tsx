@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, createSignal } from "solid-js"
+import { Show, createEffect, createMemo, createSignal, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { JSX } from "solid-js"
 import { Popover as Kobalte } from "@kobalte/core/popover"
@@ -6,6 +6,8 @@ import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { List } from "@opencode-ai/ui/list"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
+import { Dialog } from "@opencode-ai/ui/dialog"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { useNavigate } from "@solidjs/router"
 import type { AgentSession, Session } from "@opencode-ai/sdk/v2/client"
@@ -340,7 +342,7 @@ export function ChannelModelSelect(props: {
 
 type AgentSessionItem = { id: string; name: string; updated?: string }
 
-/** Load one of the agent's existing sessions: creates a bound channel session and opens it. */
+/** Button that opens a floating dialog listing the agent's existing sessions. */
 export function ChannelSessionPicker(props: {
   advisor: string
   model?: string
@@ -348,6 +350,26 @@ export function ChannelSessionPicker(props: {
   triggerStyle?: JSX.CSSProperties
   compact?: boolean
 }) {
+  const dialog = useDialog()
+  const language = useLanguage()
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size={props.compact ? "small" : "normal"}
+      class={props.class ?? "prompt-pick"}
+      style={props.triggerStyle}
+      aria-label={language.t("prompt.channel.sessions")}
+      onClick={() => dialog.show(() => <AgentSessionDialog advisor={props.advisor} model={props.model} />)}
+    >
+      <Icon name="clock" size="small" class="shrink-0" />
+      <span class="truncate">{language.t("prompt.channel.sessions")}</span>
+    </Button>
+  )
+}
+
+function AgentSessionDialog(props: { advisor: string; model?: string }) {
+  const dialog = useDialog()
   const sdk = useSDK()
   const language = useLanguage()
   const navigate = useNavigate()
@@ -357,32 +379,27 @@ export function ChannelSessionPicker(props: {
   const { params } = useSessionLayout()
   const [state, setState] = createStore<{
     loading: boolean
-    loaded: boolean
     supported: boolean
     busy?: string
     sessions: AgentSession[]
-  }>({ loading: false, loaded: false, supported: true, sessions: [] })
-  const [open, setOpen] = createSignal(false)
+  }>({ loading: true, supported: true, sessions: [] })
 
-  const load = async () => {
-    if (state.loading) return
-    setState("loading", true)
+  onMount(async () => {
     try {
       const result = await sdk.client.agentBackend.agentSessions({ advisor: props.advisor as ChannelID })
       const data = result.data
       setState({
         supported: !!data?.supported && !!data?.loadable,
         sessions: data?.sessions ?? [],
-        loaded: true,
       })
       console.debug(`[channel] loaded agent sessions advisor=${props.advisor} count=${data?.sessions?.length ?? 0}`)
     } catch (error) {
       console.warn(`[channel] agent sessions failed advisor=${props.advisor} error=${String(error)}`)
-      setState({ loaded: true, supported: false, sessions: [] })
+      setState({ supported: false, sessions: [] })
     } finally {
       setState("loading", false)
     }
-  }
+  })
 
   const pick = async (item: AgentSessionItem) => {
     if (state.busy) return
@@ -424,7 +441,7 @@ export function ChannelSessionPicker(props: {
       } else {
         sessionTabs.ensureOpen({ directory, id: session.id })
       }
-      setOpen(false)
+      dialog.close()
       navigate(`/${base64Encode(directory)}/session/${session.id}`)
     } catch (error) {
       console.warn(`[channel] load agent session failed advisor=${props.advisor} error=${String(error)}`)
@@ -450,83 +467,43 @@ export function ChannelSessionPicker(props: {
         : language.t("prompt.channel.sessions.unsupported")
 
   return (
-    <Kobalte
-      open={open()}
-      onOpenChange={(next) => {
-        setOpen(next)
-        if (next && !state.loaded) void load()
-      }}
-      modal={false}
-      placement="top-start"
-      flip
-      gutter={4}
+    <Dialog
+      title={
+        <span class="flex items-center gap-2.5">
+          <ChannelIcon id={props.advisor} class="size-5 shrink-0" />
+          <span>{language.t("prompt.channel.sessions")}</span>
+          <span class="text-12-regular text-text-weak">{CHANNEL_LABELS[props.advisor] ?? props.advisor}</span>
+        </span>
+      }
+      containerStyle={{ height: "min(calc(100vh - 16px), 560px)" }}
+      class="flex min-h-0 flex-col"
     >
-      <Kobalte.Trigger
-        as={Button}
-        type="button"
-        variant="ghost"
-        size={props.compact ? "small" : "normal"}
-        class={props.class ?? "prompt-pick"}
-        style={props.triggerStyle}
-        aria-label={language.t("prompt.channel.sessions")}
+      <List
+        class="flex-1 min-h-0 [&_[data-slot=list-viewport]]:flex-1 [&_[data-slot=list-viewport]]:min-h-0"
+        virtual={false}
+        search={{ placeholder: language.t("prompt.channel.sessions.search"), autofocus: true }}
+        emptyMessage={emptyMessage()}
+        key={(item) => item.id}
+        items={items()}
+        filterKeys={["name"]}
+        onSelect={(item) => {
+          if (item) void pick(item)
+        }}
       >
-        <Icon name="clock" size="small" class="shrink-0" />
-        <span class="truncate">{language.t("prompt.channel.sessions")}</span>
-      </Kobalte.Trigger>
-      <Kobalte.Portal>
-        <Kobalte.Content
-          data-component="popover-content"
-          data-kb-top-layer=""
-          class="w-[390px] max-w-[calc(100vw-24px)] h-[39rem] max-h-[calc(100vh-96px)] flex flex-col p-2 overflow-hidden"
-          style={{ "z-index": 100 }}
-        >
-          <Kobalte.Title class="sr-only">{language.t("prompt.channel.sessions")}</Kobalte.Title>
-          <div
-            class="mb-2 rounded-lg border px-3 py-2.5"
-            style={{ "background-color": "var(--apple-light-alpha-5)", "border-color": "var(--border-weak-base)" }}
-          >
-            <div class="flex min-w-0 items-start gap-2.5">
-              <ChannelIcon id={props.advisor} class="mt-0.5 size-6 shrink-0" />
-              <div class="min-w-0 flex-1">
-                <div class="truncate text-16-medium font-semibold text-text-strong">
-                  {language.t("prompt.channel.sessions")}
-                </div>
-                <div class="mt-0.5 truncate text-12-regular text-text-weak">
-                  {CHANNEL_LABELS[props.advisor] ?? props.advisor}
-                </div>
-              </div>
+        {(item) => (
+          <div class="w-full flex items-center justify-start gap-x-2 text-left text-13-regular">
+            <div class="min-w-0 flex-1 text-left">
+              <div class="truncate">{item.name}</div>
+              <Show when={item.updated}>
+                <div class="truncate text-11-regular text-text-weak">{new Date(item.updated!).toLocaleString()}</div>
+              </Show>
             </div>
+            <Show when={state.busy === item.id}>
+              <Icon name="refresh" size="small" class="shrink-0 animate-spin" />
+            </Show>
           </div>
-          <List
-            class="model-selector-list flex-1 min-h-0 [&_[data-slot=list-viewport]]:flex-1 [&_[data-slot=list-viewport]]:min-h-0 p-1"
-            virtual={false}
-            search={{ placeholder: language.t("prompt.channel.sessions.search"), autofocus: true }}
-            emptyMessage={emptyMessage()}
-            key={(item) => item.id}
-            items={items()}
-            filterKeys={["name"]}
-            onSelect={(item) => {
-              if (item) void pick(item)
-            }}
-          >
-            {(item) => (
-              <div class="w-full flex items-center gap-x-2 text-13-regular">
-                <div class="min-w-0 flex-1">
-                  <div class="truncate">{item.name}</div>
-                  <Show when={item.updated}>
-                    <div class="truncate text-11-regular text-text-weak">
-                      {new Date(item.updated!).toLocaleString()}
-                    </div>
-                  </Show>
-                </div>
-                <Show when={state.busy === item.id}>
-                  <Icon name="refresh" size="small" class="shrink-0 animate-spin" />
-                </Show>
-              </div>
-            )}
-          </List>
-        </Kobalte.Content>
-      </Kobalte.Portal>
-    </Kobalte>
+        )}
+      </List>
+    </Dialog>
   )
 }
