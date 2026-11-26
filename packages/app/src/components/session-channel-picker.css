@@ -22,9 +22,8 @@
       background-size:
         var(--text-shimmer-size) 100%,
         100% 100% !important;
-      background-position:
-        100% 0,
-        0 0 !important;
+      /* background-position stays unset: an !important declaration would pin
+         the sweep and beat the keyframes. */
       background-repeat: no-repeat !important;
       -webkit-background-clip: text !important;
       background-clip: text !important;
