@@ -5,12 +5,14 @@ import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { AgentInstallError, managedAgents } from "@/agent-backend/install"
 import { probeAdapter, probeAgentSessionPreview, probeAgentSessions, probeChannelOptions } from "@/agent-backend/probe"
-import type { AgentSessionPreview, ChannelOptions } from "@/session/channel-schema"
+import type { AgentSessionList, AgentSessionPreview, ChannelOptions } from "@/session/channel-schema"
 import { InstanceHttpApi } from "../api"
 import { InvalidRequestError, ConflictError, UpstreamError, ForbiddenError } from "../errors"
 
 const CHANNEL_OPTIONS_TTL_MS = 5 * 60 * 1000
 const channelOptionsCache = new Map<string, { at: number; value: ChannelOptions }>()
+const AGENT_SESSIONS_TTL_MS = 60 * 1000
+const agentSessionsCache = new Map<string, { at: number; value: AgentSessionList }>()
 const AGENT_PREVIEW_TTL_MS = 5 * 60 * 1000
 const agentPreviewCache = new Map<string, { at: number; value: AgentSessionPreview }>()
 
@@ -83,7 +85,10 @@ export const agentBackendHandlers = HttpApiBuilder.group(InstanceHttpApi, "agent
               message: `${ctx.payload.advisor} is not configured for ACP`,
             })
           const cwd = yield* InstanceState.directory
-          return yield* run((signal) =>
+          const key = `${cwd}\n${ctx.payload.advisor}`
+          const cached = agentSessionsCache.get(key)
+          if (cached && Date.now() - cached.at < AGENT_SESSIONS_TTL_MS) return cached.value
+          const value = yield* run((signal) =>
             probeAgentSessions(
               {
                 advisor: ctx.payload.advisor,
@@ -94,6 +99,8 @@ export const agentBackendHandlers = HttpApiBuilder.group(InstanceHttpApi, "agent
               manager,
             ),
           )
+          agentSessionsCache.set(key, { at: Date.now(), value })
+          return value
         }),
       )
       .handle("agentSessionPreview", (ctx) =>
