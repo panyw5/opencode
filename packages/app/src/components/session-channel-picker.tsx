@@ -577,8 +577,8 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
               onSelect={(item) => void select(item)}
             >
               {(item) => (
-                <div class="flex min-w-0 flex-1 items-center gap-x-2.5 text-left">
-                  <ChannelIcon id={props.advisor} class="size-4 shrink-0" />
+                <div class="flex min-w-0 flex-1 items-start gap-x-2.5 text-left">
+                  <ChannelIcon id={props.advisor} class="mt-0.5 size-4 shrink-0" />
                   <div class="min-w-0 flex-1 text-left">
                     <div class="truncate text-14-medium text-text-strong">{item.name}</div>
                     <Show when={item.updated}>
