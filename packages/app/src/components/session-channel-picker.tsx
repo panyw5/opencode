@@ -544,7 +544,7 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
       description={<span class="truncate">{sdk.directory}</span>}
       containerStyle={{
         height: "min(calc(100vh - 16px), 600px)",
-        width: selected() ? "min(calc(100vw - 32px), 880px)" : "min(calc(100vw - 32px), 440px)",
+        width: selected() ? "min(calc(100vw - 32px), 1080px)" : "min(calc(100vw - 32px), 520px)",
       }}
       class="flex min-h-0 flex-col"
     >
@@ -561,7 +561,7 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
             data-component="agent-sessions-list"
             classList={{
               "flex min-w-0 flex-col": true,
-              "w-[300px] shrink-0 border-r border-border-weak-base": !!selected(),
+              "w-[520px] shrink-0 border-r border-border-weak-base": !!selected(),
               "flex-1": !selected(),
             }}
           >
@@ -578,7 +578,7 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
             >
               {(item) => (
                 <div class="flex min-w-0 flex-1 items-center gap-x-2.5 text-left">
-                  <Icon name="speech-bubble" size="small" class="shrink-0 text-icon-weak" />
+                  <ChannelIcon id={props.advisor} class="size-4 shrink-0" />
                   <div class="min-w-0 flex-1 text-left">
                     <div class="truncate text-14-medium text-text-strong">{item.name}</div>
                     <Show when={item.updated}>
@@ -642,7 +642,7 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
                     </Show>
                   </Show>
                 </div>
-                <div class="flex items-center justify-end gap-2 border-t border-border-weak-base px-4 py-3">
+                <div class="flex items-center justify-end gap-2 px-4 py-3">
                   <Button type="button" variant="primary" disabled={!!state.busy} onClick={() => void pick(item())}>
                     <Show when={state.busy === item().id}>
                       <Icon name="refresh" size="small" class="shrink-0 animate-spin" />
