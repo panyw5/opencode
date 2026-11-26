@@ -626,13 +626,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const currentChannel = createMemo(() => sessionChannel() ?? draftChannel())
   const isChannel = createMemo(() => !!currentChannel())
   const setChannel = (advisor: string | undefined) => local.channel.set(advisor ? { advisor } : undefined)
-  const draftAgentSessionID = createMemo(() => local.channel.current()?.agentSessionID)
-  const draftAgentSessionTitle = createMemo(() => local.channel.current()?.agentSessionTitle)
-  const setChannelSession = (session: { id: string; title?: string } | undefined) => {
-    const channel = local.channel.current()
-    if (!channel) return
-    local.channel.set({ ...channel, agentSessionID: session?.id, agentSessionTitle: session?.title })
-  }
   const setChannelModel = (model: string) => {
     const advisor = draftChannel()
     if (advisor) local.channel.set({ ...local.channel.current(), advisor, model })
@@ -2945,9 +2938,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       <Show when={!params.id}>
                         <ChannelSessionPicker
                           advisor={advisor}
-                          sessionID={draftAgentSessionID()}
-                          sessionTitle={draftAgentSessionTitle()}
-                          onSelect={setChannelSession}
+                          model={draftChannelModel()}
                           compact
                           class="mobile-model-trigger min-w-0 flex-1 h-11 justify-start gap-1 px-2"
                         />
@@ -3360,9 +3351,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                               <Show when={!params.id}>
                                 <ChannelSessionPicker
                                   advisor={advisor}
-                                  sessionID={draftAgentSessionID()}
-                                  sessionTitle={draftAgentSessionTitle()}
-                                  onSelect={setChannelSession}
+                                  model={draftChannelModel()}
                                   triggerStyle={control()}
                                 />
                               </Show>

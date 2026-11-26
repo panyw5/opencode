@@ -996,14 +996,12 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           const createBody = {
             ...(early && firstSessionID ? { id: firstSessionID } : {}),
             ...(genericagent && sessionCwd ? { cwd: sessionCwd } : {}),
-            ...(channel?.agentSessionTitle ? { title: channel.agentSessionTitle } : {}),
             ...(channel
               ? {
                   channel: {
                     kind: "acp" as const,
                     advisor: channel.advisor,
                     ...(channel.model ? { model: channel.model } : {}),
-                    ...(channel.agentSessionID ? { acpSessionID: channel.agentSessionID } : {}),
                   },
                 }
               : {}),

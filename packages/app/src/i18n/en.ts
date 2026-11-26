@@ -32,7 +32,7 @@ export const dict = {
   "agentBackend.transportAcp": "ACP · standalone sessions",
   "agentBackend.source": "ACP installation",
   "agentBackend.managed": "OpenCode-managed adapter",
-  "agentBackend.custom": "Existing installation / custom command",
+  "agentBackend.custom": "Use installed agent CLI",
   "agentBackend.customOnly":
     "No reviewed installer is available for this advisor. Configure an existing ACP executable.",
   "agentBackend.dependencies": "Dependencies on target",
@@ -281,7 +281,6 @@ export const dict = {
   "prompt.channel.loading": "Loading models",
   "prompt.channel.empty": "No models available",
   "prompt.channel.sessions": "Load session",
-  "prompt.channel.sessions.new": "Start a new session",
   "prompt.channel.sessions.search": "Search sessions",
   "prompt.channel.sessions.loading": "Loading sessions",
   "prompt.channel.sessions.empty": "No sessions to load",

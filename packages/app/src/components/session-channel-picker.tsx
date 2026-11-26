@@ -6,8 +6,14 @@ import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { List } from "@opencode-ai/ui/list"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
-import type { AgentSession } from "@opencode-ai/sdk/v2/client"
+import { base64Encode } from "@opencode-ai/core/util/encode"
+import { useNavigate } from "@solidjs/router"
+import type { AgentSession, Session } from "@opencode-ai/sdk/v2/client"
 import { useLanguage } from "@/context/language"
+import { useLayout } from "@/context/layout"
+import { useSessionTabs } from "@/context/session-tabs"
+import { useSync } from "@/context/sync"
+import { useSessionLayout } from "@/pages/session/session-layout"
 import { useSDK } from "@/context/sdk"
 
 export const CHANNEL_IDS = ["codex", "claude", "grok", "dsh", "pi", "cline", "droid", "qoder", "antigravity"] as const
@@ -325,25 +331,28 @@ export function ChannelModelSelect(props: {
   )
 }
 
-const NEW_SESSION_ID = "__new__"
 type AgentSessionItem = { id: string; name: string; updated?: string }
 
-/** Pick one of the agent's existing sessions to load into the new channel session. */
+/** Load one of the agent's existing sessions: creates a bound channel session and opens it. */
 export function ChannelSessionPicker(props: {
   advisor: string
-  sessionID?: string
-  sessionTitle?: string
-  onSelect: (session: { id: string; title?: string } | undefined) => void
+  model?: string
   class?: string
   triggerStyle?: JSX.CSSProperties
   compact?: boolean
 }) {
   const sdk = useSDK()
   const language = useLanguage()
+  const navigate = useNavigate()
+  const layout = useLayout()
+  const sessionTabs = useSessionTabs()
+  const sync = useSync()
+  const { params } = useSessionLayout()
   const [state, setState] = createStore<{
     loading: boolean
     loaded: boolean
     supported: boolean
+    busy?: string
     sessions: AgentSession[]
   }>({ loading: false, loaded: false, supported: true, sessions: [] })
   const [open, setOpen] = createSignal(false)
@@ -368,21 +377,63 @@ export function ChannelSessionPicker(props: {
     }
   }
 
-  const items = createMemo<AgentSessionItem[]>(() => {
-    const sessions = state.sessions
+  const pick = async (item: AgentSessionItem) => {
+    if (state.busy) return
+    setState("busy", item.id)
+    try {
+      const directory = sdk.directory
+      const createSession = sdk.client.session.create.bind(sdk.client.session) as (
+        parameters?: undefined,
+        options?: {
+          body?: {
+            title?: string
+            channel?: { kind: "acp"; advisor: string; model?: string; acpSessionID?: string }
+          }
+        },
+      ) => Promise<{ data?: Session }>
+      const session = await createSession(undefined, {
+        body: {
+          title: item.name,
+          channel: {
+            kind: "acp",
+            advisor: props.advisor,
+            acpSessionID: item.id,
+            ...(props.model ? { model: props.model } : {}),
+          },
+        },
+      }).then((x) => x.data)
+      if (!session) return
+      console.debug(`[channel] bound agent session advisor=${props.advisor} agentSession=${item.id} session=${session.id}`)
+      sync.session.created({ directory, info: session })
+      // Warm the channel process so `session/load` replays the agent history into messages.
+      void sdk.client.session
+        .channel({ sessionID: session.id })
+        .catch((error) => console.warn(`[channel] warm failed session=${session.id} error=${String(error)}`))
+      const draft = layout.sessionBar.drafts().find((item) => item.id === params.draftID)
+      if (draft) {
+        const active = !params.id && params.draftID === draft.id
+        if (active) layout.handoff.setTabs(base64Encode(directory), session.id, draft.id, base64Encode(directory))
+        sessionTabs.promoteDraft({ directory, id: session.id }, draft)
+      } else {
+        sessionTabs.ensureOpen({ directory, id: session.id })
+      }
+      setOpen(false)
+      navigate(`/${base64Encode(directory)}/session/${session.id}`)
+    } catch (error) {
+      console.warn(`[channel] load agent session failed advisor=${props.advisor} error=${String(error)}`)
+      setState("busy", undefined)
+    }
+  }
+
+  const items = createMemo<AgentSessionItem[]>(() =>
+    state.sessions
       .map((session) => ({
         id: session.id,
         name: session.title ?? session.id,
         updated: session.updated,
       }))
-      .sort((a, b) => (b.updated ?? "").localeCompare(a.updated ?? ""))
-    return [{ id: NEW_SESSION_ID, name: language.t("prompt.channel.sessions.new") }, ...sessions]
-  })
-  const current = createMemo(() => {
-    if (!props.sessionID) return items()[0]
-    return items().find((item) => item.id === props.sessionID)
-  })
-  const label = () => props.sessionTitle ?? props.sessionID ?? language.t("prompt.channel.sessions")
+      .sort((a, b) => (b.updated ?? "").localeCompare(a.updated ?? "")),
+  )
 
   const emptyMessage = () =>
     state.loading
@@ -413,8 +464,7 @@ export function ChannelSessionPicker(props: {
         aria-label={language.t("prompt.channel.sessions")}
       >
         <Icon name="clock" size="small" class="shrink-0" />
-        <span class="truncate">{label()}</span>
-        <Icon name="chevron-down" size="small" class="shrink-0" />
+        <span class="truncate">{language.t("prompt.channel.sessions")}</span>
       </Kobalte.Trigger>
       <Kobalte.Portal>
         <Kobalte.Content
@@ -431,7 +481,9 @@ export function ChannelSessionPicker(props: {
             <div class="flex min-w-0 items-start gap-2.5">
               <ChannelIcon id={props.advisor} class="mt-0.5 size-6 shrink-0" />
               <div class="min-w-0 flex-1">
-                <div class="truncate text-16-medium font-semibold text-text-strong">{label()}</div>
+                <div class="truncate text-16-medium font-semibold text-text-strong">
+                  {language.t("prompt.channel.sessions")}
+                </div>
                 <div class="mt-0.5 truncate text-12-regular text-text-weak">
                   {CHANNEL_LABELS[props.advisor] ?? props.advisor}
                 </div>
@@ -445,15 +497,9 @@ export function ChannelSessionPicker(props: {
             emptyMessage={emptyMessage()}
             key={(item) => item.id}
             items={items()}
-            current={current()}
             filterKeys={["name"]}
             onSelect={(item) => {
-              setOpen(false)
-              if (!item || item.id === NEW_SESSION_ID) {
-                props.onSelect(undefined)
-                return
-              }
-              props.onSelect({ id: item.id, title: state.sessions.find((s) => s.id === item.id)?.title })
+              if (item) void pick(item)
             }}
           >
             {(item) => (
@@ -466,6 +512,9 @@ export function ChannelSessionPicker(props: {
                     </div>
                   </Show>
                 </div>
+                <Show when={state.busy === item.id}>
+                  <Icon name="refresh" size="small" class="shrink-0 animate-spin" />
+                </Show>
               </div>
             )}
           </List>
