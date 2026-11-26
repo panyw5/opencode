@@ -407,6 +407,7 @@ export function AgentBackendSettings(props: {
                 variant="secondary"
                 size="small"
                 triggerVariant="settings"
+                triggerStyle={{ height: "2.25rem", "justify-content": "space-between" }}
               />
             </AgentSettingsCard>
             <Show when={managedMode()}>
