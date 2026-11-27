@@ -18,15 +18,15 @@ vite.config.ts        # extensionKit() 插件一行接入
 
 ## 对照作者指南看代码
 
-| 主题（kit README 节） | 代码位置 |
-|---|---|
-| 扩展包结构与 manifest | `package.json`：`exports`、`opencode.*`（含 `server.isolation:"process"`、`permissions`） |
-| 贡献点与激活事件 | `opencode.contributes.fileViewers` + `activation:["onFileViewer:hello"]`；web.tsx 注册同名 `id:"hello"` |
-| Server API | `server.ts`：`activate(host)` 返回 `{rpc, dispose}`；`server(input)` 返回 `{tool:{greet}}` |
-| RPC 与事件 | `contract.ts` 共享契约；`server.ts` `rpc.handlers({...})`（`echo`/`greet`/`child.*`）；`web.tsx` `rpc.bind(context.rpc)`；`host.emit` ↔ `context.events.on`（`example.hello-viewer/greeting`） |
-| `host.spawn` | `server.ts` `startChild`/`stopChild`/`pingChild`：懒启动、行协议 stdin/stdout、`onExit/onError`、TERM 回收 |
-| 工具命名空间 | `server.ts` 工具裸名 `greet` → 对 Agent 暴露为 `hello_viewer_greet` |
-| 共享模块/构建 | `vite.config.ts` 用 `extensionKit()`；`web.tsx` 直接 import `solid-js` 与 `@opencode-ai/ui/*`（构建期改 shim） |
+| 主题（kit README 节） | 代码位置                                                                                                                                                                                        |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 扩展包结构与 manifest | `package.json`：`exports`、`opencode.*`（含 `server.isolation:"process"`、`permissions`）                                                                                                       |
+| 贡献点与激活事件      | `opencode.contributes.fileViewers` + `activation:["onFileViewer:hello"]`；web.tsx 注册同名 `id:"hello"`                                                                                         |
+| Server API            | `server.ts`：`activate(host)` 返回 `{rpc, dispose}`；`server(input)` 返回 `{tool:{greet}}`                                                                                                      |
+| RPC 与事件            | `contract.ts` 共享契约；`server.ts` `rpc.handlers({...})`（`echo`/`greet`/`child.*`）；`web.tsx` `rpc.bind(context.rpc)`；`host.emit` ↔ `context.events.on`（`example.hello-viewer/greeting`） |
+| `host.spawn`          | `server.ts` `startChild`/`stopChild`/`pingChild`：懒启动、行协议 stdin/stdout、`onExit/onError`、TERM 回收                                                                                      |
+| 工具命名空间          | `server.ts` 工具裸名 `greet` → 对 Agent 暴露为 `hello_viewer_greet`                                                                                                                             |
+| 共享模块/构建         | `vite.config.ts` 用 `extensionKit()`；`web.tsx` 直接 import `solid-js` 与 `@opencode-ai/ui/*`（构建期改 shim）                                                                                  |
 
 注意 `web.tsx` 对 `context.rpc`/`context.events` 做了**可用性降级**：宿主不提供桥接时查看器仍可纯渲染——这是个好习惯，server 部分并非所有宿主都启用。
 

@@ -82,14 +82,14 @@ gpt-pro 与 bridge 调用方。
 
 ### B. 冗余与死代码（中优先级）
 
-| # | 位置 | 问题 |
-|---|------|------|
-| B1 | ipc.ts / preload / types.ts 的 `setBounds`、`setVisible` | 前端已不调用，只在无租约时生效；仍会写 protection（见 A2） |
-| B2 | display.ts 与 updateDisplay 的 `partition` 别名分支 | 面板总传 pageID，`pageID===undefined` 遗留分支走不到 |
-| B3 | openPage | 导航前后各调一次 applyBounds，第一次多余 |
-| B4 | tabs.ts 的 `pending` 与 `state.navigating` | 同一导航请求记两份 {id,url}，需手动同步 |
-| B5 | captureScreenshot | 直接调 native 接口 + 手动失效缓存，绕开 applyBounds 唯一出口 |
-| B6 | browser-spike.ts | 无任何导入，死文件 |
+| #   | 位置                                                     | 问题                                                         |
+| --- | -------------------------------------------------------- | ------------------------------------------------------------ |
+| B1  | ipc.ts / preload / types.ts 的 `setBounds`、`setVisible` | 前端已不调用，只在无租约时生效；仍会写 protection（见 A2）   |
+| B2  | display.ts 与 updateDisplay 的 `partition` 别名分支      | 面板总传 pageID，`pageID===undefined` 遗留分支走不到         |
+| B3  | openPage                                                 | 导航前后各调一次 applyBounds，第一次多余                     |
+| B4  | tabs.ts 的 `pending` 与 `state.navigating`               | 同一导航请求记两份 {id,url}，需手动同步                      |
+| B5  | captureScreenshot                                        | 直接调 native 接口 + 手动失效缓存，绕开 applyBounds 唯一出口 |
+| B6  | browser-spike.ts                                         | 无任何导入，死文件                                           |
 
 ### C. 演化痕迹
 

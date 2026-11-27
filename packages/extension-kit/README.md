@@ -2,12 +2,12 @@
 
 OpenCode 扩展开发工具包（SDK）。提供四个入口：
 
-| 导入路径 | 用途 |
-|---|---|
-| `@opencode-ai/extension-kit/web` | web 入口类型与 `defineWebExtension` |
-| `@opencode-ai/extension-kit/server` | server 入口类型、`defineServerExtension`、`ManagedProcess` 契约 |
-| `@opencode-ai/extension-kit/rpc` | `defineRpc` 类型化 RPC 契约、`ExtensionRpcError`、Standard Schema |
-| `@opencode-ai/extension-kit/vite` | web 构建插件（共享模块 shim、CSS 作用域、solid 版本戳） |
+| 导入路径                            | 用途                                                              |
+| ----------------------------------- | ----------------------------------------------------------------- |
+| `@opencode-ai/extension-kit/web`    | web 入口类型与 `defineWebExtension`                               |
+| `@opencode-ai/extension-kit/server` | server 入口类型、`defineServerExtension`、`ManagedProcess` 契约   |
+| `@opencode-ai/extension-kit/rpc`    | `defineRpc` 类型化 RPC 契约、`ExtensionRpcError`、Standard Schema |
+| `@opencode-ai/extension-kit/vite`   | web 构建插件（共享模块 shim、CSS 作用域、solid 版本戳）           |
 
 官方示例见 [`packages/extensions/hello-viewer`](../extensions/hello-viewer)：覆盖本指南大部分主题（fileViewer 贡献点、typed RPC、事件、`host.spawn`、LLM 工具、process 隔离 manifest）。
 
@@ -55,30 +55,30 @@ my-ext/
 
 ### `package.json` 顶层字段
 
-| 字段 | 必填 | 说明 |
-|---|---|---|
-| `name` | 是 | npm 包名 |
-| `version` | 是 | 合法 semver；扩展版本独立维护，不跟随主仓库 |
-| `engines.opencode` | 否 | 宿主版本范围（semver range）；不满足时加载即 `incompatible`。宿主 dev 版号（如 `1.18.64-local.5`）按去掉 prerelease 段的基版本比较 |
-| `exports["./web"]` / `exports["./server"]` | 至少一个 | 入口文件；`./web` 存在时 manifest 必须声明 `opencode.web`，反之亦然 |
-| `files` | 建议 | 打包白名单；缺失时 `validate` 警告并按全目录预演 |
+| 字段                                       | 必填     | 说明                                                                                                                               |
+| ------------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                                     | 是       | npm 包名                                                                                                                           |
+| `version`                                  | 是       | 合法 semver；扩展版本独立维护，不跟随主仓库                                                                                        |
+| `engines.opencode`                         | 否       | 宿主版本范围（semver range）；不满足时加载即 `incompatible`。宿主 dev 版号（如 `1.18.64-local.5`）按去掉 prerelease 段的基版本比较 |
+| `exports["./web"]` / `exports["./server"]` | 至少一个 | 入口文件；`./web` 存在时 manifest 必须声明 `opencode.web`，反之亦然                                                                |
+| `files`                                    | 建议     | 打包白名单；缺失时 `validate` 警告并按全目录预演                                                                                   |
 
 ### `opencode.*` 字段
 
-| 字段 | 必填 | 默认 | 说明 |
-|---|---|---|---|
-| `manifestVersion` | 是 | — | 恒为 `1`；其他值**硬拒绝**（`incompatible`） |
-| `id` | 是 | — | `publisher.name` 形式：`^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$`，≤64 字符；`opencode.` 前缀保留给官方 |
-| `displayName` | 是 | — | UI 显示名 |
-| `description` | 否 | — | 描述文本 |
-| `icon` | 否 | — | 图标路径；有 web 部分时必须位于 web 根目录内，否则在包目录内 |
-| `web.apiVersion` | 有 web 必填 | — | 当前恒为 `1`；未知值只**丢弃 web 部分**并告警（`web.apiVersion:<n>`），server 部分照常 |
-| `web.styles` | 否 | `[]` | CSS 文件路径数组，必须位于 web 根目录内 |
-| `server.isolation` | 否 | `"process"` | server 执行后端，见下文"隔离模式"节 |
-| `server.apiVersion` | 否 | `1` | 恒为 `1`；未知值丢弃 server 部分并告警（`server.apiVersion:<n>`） |
-| `activation` | 否 | `["onStartup"]` | 激活事件，见下文 |
-| `contributes` | 否 | — | 贡献点，见下文 |
-| `permissions` | 否 | `[]` | 固定词表自述权限，见下文 |
+| 字段                | 必填        | 默认            | 说明                                                                                                       |
+| ------------------- | ----------- | --------------- | ---------------------------------------------------------------------------------------------------------- |
+| `manifestVersion`   | 是          | —               | 恒为 `1`；其他值**硬拒绝**（`incompatible`）                                                               |
+| `id`                | 是          | —               | `publisher.name` 形式：`^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$`，≤64 字符；`opencode.` 前缀保留给官方 |
+| `displayName`       | 是          | —               | UI 显示名                                                                                                  |
+| `description`       | 否          | —               | 描述文本                                                                                                   |
+| `icon`              | 否          | —               | 图标路径；有 web 部分时必须位于 web 根目录内，否则在包目录内                                               |
+| `web.apiVersion`    | 有 web 必填 | —               | 当前恒为 `1`；未知值只**丢弃 web 部分**并告警（`web.apiVersion:<n>`），server 部分照常                     |
+| `web.styles`        | 否          | `[]`            | CSS 文件路径数组，必须位于 web 根目录内                                                                    |
+| `server.isolation`  | 否          | `"process"`     | server 执行后端，见下文"隔离模式"节                                                                        |
+| `server.apiVersion` | 否          | `1`             | 恒为 `1`；未知值丢弃 server 部分并告警（`server.apiVersion:<n>`）                                          |
+| `activation`        | 否          | `["onStartup"]` | 激活事件，见下文                                                                                           |
+| `contributes`       | 否          | —               | 贡献点，见下文                                                                                             |
+| `permissions`       | 否          | `[]`            | 固定词表自述权限，见下文                                                                                   |
 
 ### `permissions` 词表与语义
 
@@ -90,13 +90,13 @@ my-ext/
 
 ### `contributes` 类型
 
-| 贡献点 | 条目字段 | 说明 |
-|---|---|---|
-| `fileViewers[]` | `id`、`title`、`extensions?`、`filenames?`、`mime?`、`priority?`、`mode?`（`replace`/`preview`）、`content?`（`text`/`self`） | 文件查看器；三个 matcher 至少一个 |
-| `toolRenderers[]` | `tool` | 为某个（本扩展的）工具定制渲染器；`tool` 写**未加前缀的裸名** |
-| `commands[]` | `id`、`title`、`category?`、`keybind?`、`slash?` | 命令 |
-| `panels[]` | `id`、`title`、`icon?` | 会话侧栏面板 |
-| `settings`（record） | `{type,title,description?,default?,enum?,secret?}` | 设置项，见"Settings 与 secrets"节 |
+| 贡献点               | 条目字段                                                                                                                      | 说明                                                          |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `fileViewers[]`      | `id`、`title`、`extensions?`、`filenames?`、`mime?`、`priority?`、`mode?`（`replace`/`preview`）、`content?`（`text`/`self`） | 文件查看器；三个 matcher 至少一个                             |
+| `toolRenderers[]`    | `tool`                                                                                                                        | 为某个（本扩展的）工具定制渲染器；`tool` 写**未加前缀的裸名** |
+| `commands[]`         | `id`、`title`、`category?`、`keybind?`、`slash?`                                                                              | 命令                                                          |
+| `panels[]`           | `id`、`title`、`icon?`                                                                                                        | 会话侧栏面板                                                  |
+| `settings`（record） | `{type,title,description?,default?,enum?,secret?}`                                                                            | 设置项，见"Settings 与 secrets"节                             |
 
 校验规则：viewer/command/panel 的 `id` 在扩展内唯一；`default`/`enum` 必须与 `type` 匹配。
 
@@ -172,7 +172,7 @@ export const rpc = defineRpc<Contract>()
 在 `contributes.settings` 声明 schema（`string`/`number`/`boolean`、`title`、`default`、`enum`、`secret`），用户值存注册表、按 key 覆盖 default。
 
 - **server 侧**：`host.settings.get()` 拿到解析后的**明文**（扩展有权读自己的 secret）；`onDidChange` 监听变更。
-- **web 侧**：`context.settings.get(key)` 返回响应式 `Accessor`；**secret 值永远是掩码 `********`**，扩展看不到明文。`context.settings.update(patch)` 局部更新：`null` 删除该键回到 manifest default；patch 里的掩码值会被剥离、不回写。
+- **web 侧**：`context.settings.get(key)` 返回响应式 `Accessor`；**secret 值永远是掩码 `**\*\*****`**，扩展看不到明文。`context.settings.update(patch)` 局部更新：`null` 删除该键回到 manifest default；patch 里的掩码值会被剥离、不回写。
 - 声明 `secret: true` 的设置建议同时声明 `settings:secret` 权限（自述约定）。
 
 ## `host.spawn` 托管子进程
@@ -198,10 +198,10 @@ const child = host.spawn("wolframscript", ["-file", "bridge.wls"], { stdio: ["pi
 
 ## 隔离模式（`server.isolation`）
 
-| 值 | 语义 |
-|---|---|
-| `"process"`（默认） | server 入口在独立的 `extension-host` worker 进程中运行，每扩展一进程、按需启动；崩溃只影响本扩展 |
-| `"inline"` | 在 sidecar 进程内执行，**仅限本地 `path` 来源**（开发调试）；受管来源声明 inline 仍按 inline 运行（回退兼容）但携带稳定告警码 `server.isolation:inline` |
+| 值                  | 语义                                                                                                                                                    |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"process"`（默认） | server 入口在独立的 `extension-host` worker 进程中运行，每扩展一进程、按需启动；崩溃只影响本扩展                                                        |
+| `"inline"`          | 在 sidecar 进程内执行，**仅限本地 `path` 来源**（开发调试）；受管来源声明 inline 仍按 inline 运行（回退兼容）但携带稳定告警码 `server.isolation:inline` |
 
 **边界声明**：process 隔离提供**故障隔离 + API 级限制，不是安全沙箱**。worker 内代码仍可自行 `import("node:child_process")`、读任意文件——`host.spawn` 的拒绝只封代理通道。信任模型不变：只安装你信任的扩展。
 

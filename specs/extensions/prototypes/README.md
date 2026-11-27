@@ -60,8 +60,6 @@ OPENCODE_EXTENSION_FD_ROUNDS=300 bun run test:fd
 
 证据：`/tmp/ext-fd-complete.log`、`/tmp/ext-fd-verified-process{1,2,3}.log`、`/tmp/ext-fd-verified-electron.log`、`/tmp/ext-fd-repo-stress300.log`、`/tmp/ext-fd-stress-node100.log`。这些是macOS开发原型证据，不证明Linux/Windows支持、发行打包或完整进程树退出；原型仍未接生产。
 
-
-
 - 新增10项确定性控制测试：停止的 drain/dispose/exit 阶段出现 transport/protocol fatal、未收到 dispose ack 的提前退出、正常 ack→exit0。修前9 fail/1 pass，修后10/0；unit现 **34 pass / 0 fail**，typecheck通过，Electron仍 **7 pass / 0 fail**。
 - supervisor 不再只保存stop入口时的fatal；未ack异常根退出保留 `exited`，不把提前EOF伪装成 `disposeDeadline`。rootExited仍tree=unproven，不授权删除资源。
 - transport 的spawn/stdio获取统一错误边界、保留原cause并对控制通道失败fail-close；worker和host增加PID/stage/code/path/cause字符串诊断。这不是Bun底层修复。
@@ -77,4 +75,3 @@ bun ./scripts/fd-transport-probe.mjs "$(command -v node)" 20
 ```
 
 日志证据：`/tmp/execution-a06c-final-process-{1,2,3}.log`、`/tmp/execution-a06c-process-{2,3}.log`（含ENOENT），以及主工作区 `/tmp/ext-followup-prototype-process.log` / `ext-followup-prototype-electron.log`。未做runtime升级、Socket盲替换、skip或超时放宽；原型仍不得接入生产。
-

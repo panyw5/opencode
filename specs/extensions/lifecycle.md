@@ -59,12 +59,12 @@
 
 ## 6. 历史文档索引
 
-| 文档 | 内容 | 位置 |
-|---|---|---|
-| 事实审计与目标契约 | 2026-11 安装失败链路、retained/lease/双重状态问题清单，installation/generation/operation 目标身份模型与验收矩阵 | `archive/lifecycle-rebuild.md` |
-| 重构实施计划 | 阶段 0–7 任务拆分、退出门槛、故障注入矩阵 | `archive/lifecycle-rebuild-plan.md` |
-| 阶段 0 执行记录 | 资源归属清单、跨进程 API 矩阵、目标红灯测试 | `archive/lifecycle-foundation.md` |
-| 阶段 1 执行记录 | 描述符所有权提供者、平台锁适配、Electron 探针 | `archive/lifecycle-ownership.md` |
-| 执行实例与准入模型 | 原型 AdmissionSnapshot / 控制协议 / 单执行根 supervisor（T5.x 设计基础，**现行有效**） | `lifecycle-supervisor.md` |
-| 隔离加固交付 | 现行 slot/timeout/retry/timer 语义的实施与验证记录 | `isolation-hardening-delivery.md` |
-| 原型现状 | 独立原型测试记录与已知边界 | `prototypes/README.md` |
+| 文档               | 内容                                                                                                            | 位置                                |
+| ------------------ | --------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| 事实审计与目标契约 | 2026-11 安装失败链路、retained/lease/双重状态问题清单，installation/generation/operation 目标身份模型与验收矩阵 | `archive/lifecycle-rebuild.md`      |
+| 重构实施计划       | 阶段 0–7 任务拆分、退出门槛、故障注入矩阵                                                                       | `archive/lifecycle-rebuild-plan.md` |
+| 阶段 0 执行记录    | 资源归属清单、跨进程 API 矩阵、目标红灯测试                                                                     | `archive/lifecycle-foundation.md`   |
+| 阶段 1 执行记录    | 描述符所有权提供者、平台锁适配、Electron 探针                                                                   | `archive/lifecycle-ownership.md`    |
+| 执行实例与准入模型 | 原型 AdmissionSnapshot / 控制协议 / 单执行根 supervisor（T5.x 设计基础，**现行有效**）                          | `lifecycle-supervisor.md`           |
+| 隔离加固交付       | 现行 slot/timeout/retry/timer 语义的实施与验证记录                                                              | `isolation-hardening-delivery.md`   |
+| 原型现状           | 独立原型测试记录与已知边界                                                                                      | `prototypes/README.md`              |

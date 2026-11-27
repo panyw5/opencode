@@ -9,16 +9,16 @@
 
 ## 0. 已确认问题（按严重度）
 
-| # | 问题 | 位置 | 实测结果 | 影响面 |
-|---|---|---|---|---|
-| P1 | 后端 `activate()` / `server()` 无超时，`instanceHooks` 串行 await | `extension/runtime.ts` `ensureService` / `callServerInternal` / `instanceHooks` | A 的 activate 永不返回 → `instanceHooks` >2s 未返回 | 整个实例的 `Plugin.state` 挂起，所有会话、所有插件和扩展被卡住 |
-| P2 | 单扩展 blocked（needsRestart）导致 `instanceHooks` 整体抛错 | `runtime.ts` `instanceHooks` 中的 `available()` + 末尾全量复查 | A 清理失败后，B 的 hooks/tools 也加载不了 | 重启前所有扩展钩子不可用，同时拖垮普通插件 |
-| P3 | Plugin 管道无逐条目隔离 | `plugin/index.ts` `trigger`（`Effect.promise`）、event 订阅（`Effect.sync` 循环） | 推断：同步抛错 → defect，中断触发链或终止事件 fiber；变更期间 `bindHook` 会同步抛 `ExtensionMutationError` | 普通安装/更新也可能打断该实例的事件流 |
-| P4 | 前端工具渲染器无 ErrorBoundary；命令 `onSelect` 无 try/catch | `app/src/extensions/mount.ts`、`host.tsx` `registerCommand` | 代码审查 | 渲染错误冒泡到页面级边界 |
-| P5 | 运行时状态对外不可见 | `registry.ts` `info()`：`state` 只由 enabled 决定；`describe()` 只有 hasService/hasInstanceHooks | 代码审查 | UI/API 看不到 activate 失败、超时、needsRestart |
-| P6 | 后端状态分散在十余个模块级集合 | `runtime.ts`（1233 行） | 代码审查 | 难以推理、难以扩展，修改容易引入回归 |
-| P7 | 同进程运行：扩展的 `uncaughtException` 会让桌面端 sidecar `exit(1)` | `desktop/src/main/sidecar.ts:69` | 代码审查 | 任何扩展计时器抛错都会拖垮整个后端 |
-| P8 | lifecycle 重构原型（`lifecycle-state`、`execution-*`、`ownership*`）未提交且未接入 | `extension/` 下 `??` 文件 | git status | 两套架构并存，方向不明 |
+| #   | 问题                                                                               | 位置                                                                                             | 实测结果                                                                                                   | 影响面                                                         |
+| --- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| P1  | 后端 `activate()` / `server()` 无超时，`instanceHooks` 串行 await                  | `extension/runtime.ts` `ensureService` / `callServerInternal` / `instanceHooks`                  | A 的 activate 永不返回 → `instanceHooks` >2s 未返回                                                        | 整个实例的 `Plugin.state` 挂起，所有会话、所有插件和扩展被卡住 |
+| P2  | 单扩展 blocked（needsRestart）导致 `instanceHooks` 整体抛错                        | `runtime.ts` `instanceHooks` 中的 `available()` + 末尾全量复查                                   | A 清理失败后，B 的 hooks/tools 也加载不了                                                                  | 重启前所有扩展钩子不可用，同时拖垮普通插件                     |
+| P3  | Plugin 管道无逐条目隔离                                                            | `plugin/index.ts` `trigger`（`Effect.promise`）、event 订阅（`Effect.sync` 循环）                | 推断：同步抛错 → defect，中断触发链或终止事件 fiber；变更期间 `bindHook` 会同步抛 `ExtensionMutationError` | 普通安装/更新也可能打断该实例的事件流                          |
+| P4  | 前端工具渲染器无 ErrorBoundary；命令 `onSelect` 无 try/catch                       | `app/src/extensions/mount.ts`、`host.tsx` `registerCommand`                                      | 代码审查                                                                                                   | 渲染错误冒泡到页面级边界                                       |
+| P5  | 运行时状态对外不可见                                                               | `registry.ts` `info()`：`state` 只由 enabled 决定；`describe()` 只有 hasService/hasInstanceHooks | 代码审查                                                                                                   | UI/API 看不到 activate 失败、超时、needsRestart                |
+| P6  | 后端状态分散在十余个模块级集合                                                     | `runtime.ts`（1233 行）                                                                          | 代码审查                                                                                                   | 难以推理、难以扩展，修改容易引入回归                           |
+| P7  | 同进程运行：扩展的 `uncaughtException` 会让桌面端 sidecar `exit(1)`                | `desktop/src/main/sidecar.ts:69`                                                                 | 代码审查                                                                                                   | 任何扩展计时器抛错都会拖垮整个后端                             |
+| P8  | lifecycle 重构原型（`lifecycle-state`、`execution-*`、`ownership*`）未提交且未接入 | `extension/` 下 `??` 文件                                                                        | git status                                                                                                 | 两套架构并存，方向不明                                         |
 
 ## 1. 原则
 
@@ -45,6 +45,7 @@
 日志：`activate start/ok/fail/timeout`、`server start/ok/fail/timeout`、`late activation disposed`。
 
 测试（`test/extension/runtime.test.ts` 新增 describe "cross-extension isolation"）：
+
 - A 的 activate 挂起 → `instanceHooks` 在超时内返回 `[B]`；A 的状态为 error，并收到 `extension.status=error`。
 - A 迟到 resolve → service 被 dispose，不会出现在 entries 中。
 - A 的 server 挂起 → 返回 `[B]`；下一个实例会重试 A。
@@ -56,11 +57,11 @@
 
 新语义：
 
-| 扩展状态 | 处理 |
-|---|---|
+| 扩展状态                           | 处理                                                                                                   |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `blockers.has(id)`（needsRestart） | **跳过**，记录 error 日志 + 发布状态事件（见 A5/B1）；不抛出。重启前它不会再变好，缓存它的缺席是正确的 |
-| fence / quiescing（瞬态变更） | **跳过**，并把本次结果标记为 `stale` |
-| 结束时检测到 mutationEpoch 变化 | 同样标记为 `stale` |
+| fence / quiescing（瞬态变更）      | **跳过**，并把本次结果标记为 `stale`                                                                   |
+| 结束时检测到 mutationEpoch 变化    | 同样标记为 `stale`                                                                                     |
 
 - `stale` 的处理：`instanceHooks` 照常返回健康扩展的结果，然后在 microtask 中调用 `invalidateHooks()`，触发一次重建。
 - 需要确认：`install-service.ts` `stop()` 释放 fence 后已经会调用 `invalidateHooks()`。A2 的兜底失效用来覆盖"instanceHooks 跨越 release 才结束"的竞态，两者是幂等的。
@@ -69,6 +70,7 @@
 - 保留：已产出 hooks 的扩展如果在返回前进入变更，仍然 dispose 它的 hooks 并从结果中移除。
 
 测试：
+
 - 探针用例转正：A 为 blocked → 返回 `[B]`，不抛出。
 - A 处于 fence 中 → 返回 `[B]`；release 后 `invalidateHooks` 被调用，下一次返回 `[A, B]`。
 - 现有用例 `rejects ... instanceHooks` 中断言 `.rejects.toThrow(ExtensionMutationError)` 的部分（约第 275 行）需要按新语义更新，并在 PR 中说明行为变化。
@@ -85,6 +87,7 @@
 - `config` 钩子已经有 catch，不需要改。
 
 测试（`test/plugin/`）：
+
 - 扩展的 event 钩子同步抛错 → 后续事件仍能送达其他插件。
 - 扩展处于变更中时 `trigger("chat.message")` → 跳过该扩展，流程继续。
 - 普通插件在 `tool.execute.before` 抛错 → 仍然能阻止工具执行（不回归）。
@@ -163,14 +166,14 @@ const slots = new Map<string, Slot>()
 
 ## 5. 交付顺序与 PR 划分
 
-| PR | 内容 | 依赖 |
-|---|---|---|
-| 1 | A1 + A2 + 回归测试（runtime） | — |
-| 2 | A3（plugin 管道）+ 测试 | D1 |
-| 3 | A4（前端 boundary/command）+ browser 测试 + CDP 验证 | — |
-| 4 | B1（schema/SDK/UI 状态）+ CDP 验证 | PR1, D2 |
-| 5 | B2 纯重构 | PR1–4 |
-| 6 | C1 原型处置 / C2 短期 | D3 |
+| PR  | 内容                                                 | 依赖    |
+| --- | ---------------------------------------------------- | ------- |
+| 1   | A1 + A2 + 回归测试（runtime）                        | —       |
+| 2   | A3（plugin 管道）+ 测试                              | D1      |
+| 3   | A4（前端 boundary/command）+ browser 测试 + CDP 验证 | —       |
+| 4   | B1（schema/SDK/UI 状态）+ CDP 验证                   | PR1, D2 |
+| 5   | B2 纯重构                                            | PR1–4   |
+| 6   | C1 原型处置 / C2 短期                                | D3      |
 
 每个 PR 合并前都要完成：定向测试、typecheck、sidecar 自测（自己发消息并检查日志）；涉及 UI 的 PR 还要做 CDP 截图验证。只推送到 `panyw5/opencode`。
 

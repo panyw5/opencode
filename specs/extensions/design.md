@@ -200,17 +200,17 @@ web 部分和 server 部分都是可选的，但至少要有一个。
 
 ### 3.3 字段规则
 
-| 字段                                      | 规则                                                                                                                                 |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `opencode.manifestVersion`                | 必填，当前为 `1`                                                                                                                     |
-| `opencode.id`                             | 必填；小写，`publisher.name` 形式，正则 `^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$`，长度不超过 64；`opencode.` 前缀保留给官方扩展 |
-| `version`                                 | 取 `package.json` 的 `version`，必须是合法 semver                                                                                    |
-| `engines.opencode`                        | 可选；沿用 `checkPluginCompatibility` 的语义，不满足时标记为 `incompatible`，不加载                                                  |
-| `opencode.web.apiVersion`                 | 有 web 部分时必填；宿主不支持该版本时跳过 web 部分并报告                                                                             |
-| `exports["./server"]`、`exports["./web"]` | 入口解析沿用 plugin 的规则，路径必须位于包目录内                                                                                     |
-| web 资源根目录                            | `./web` 入口所在的目录；资源路由只提供该目录内的文件；`styles`、`icon` 必须在其中                                                    |
-| `opencode.activation`                     | 省略时等价于 `["onStartup"]`；语义见 §7.4：仅 `onStartup` 有运行时含义，其余事件是声明性提示                                          |
-| `opencode.contributes.*[].id`             | 在扩展内唯一；全局 ID 为 `<extensionID>:<id>`；命令的全局 ID 为 `ext.<extensionID>.<id>`                                             |
+| 字段                                      | 规则                                                                                                                                                                              |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `opencode.manifestVersion`                | 必填，当前为 `1`                                                                                                                                                                  |
+| `opencode.id`                             | 必填；小写，`publisher.name` 形式，正则 `^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$`，长度不超过 64；`opencode.` 前缀保留给官方扩展                                              |
+| `version`                                 | 取 `package.json` 的 `version`，必须是合法 semver                                                                                                                                 |
+| `engines.opencode`                        | 可选；沿用 `checkPluginCompatibility` 的语义，不满足时标记为 `incompatible`，不加载                                                                                               |
+| `opencode.web.apiVersion`                 | 有 web 部分时必填；宿主不支持该版本时跳过 web 部分并报告                                                                                                                          |
+| `exports["./server"]`、`exports["./web"]` | 入口解析沿用 plugin 的规则，路径必须位于包目录内                                                                                                                                  |
+| web 资源根目录                            | `./web` 入口所在的目录；资源路由只提供该目录内的文件；`styles`、`icon` 必须在其中                                                                                                 |
+| `opencode.activation`                     | 省略时等价于 `["onStartup"]`；语义见 §7.4：仅 `onStartup` 有运行时含义，其余事件是声明性提示                                                                                      |
+| `opencode.contributes.*[].id`             | 在扩展内唯一；全局 ID 为 `<extensionID>:<id>`；命令的全局 ID 为 `ext.<extensionID>.<id>`                                                                                          |
 | `opencode.permissions`                    | 固定词表：`fs:read`、`fs:write`、`process:spawn`、`network`、`tools`（向 LLM 暴露工具）、`settings:secret`；**声明不强制**，词表外条目不阻止安装、UI 标"未知权限"；执行路线见 §12 |
 
 manifest 中的静态文本（`displayName`、`title` 等）首个版本只支持单一语言，本地化放到后续版本。

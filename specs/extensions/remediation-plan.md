@@ -45,6 +45,7 @@
    ```
 
    需要模拟快捷键时，先读用户的键位覆盖设置（见根目录 AGENTS.md）。
+
 4. 自己读后端日志，自己做 sidecar 功能测试：发消息、触发扩展工具、核对返回结果。
 
 ### 0.4 交付物
@@ -60,17 +61,17 @@
 
 ## 1. 待确认决策（Phase 0，实施前由用户拍板）
 
-| 编号 | 决策 | 推荐 | 影响任务 |
-|---|---|---|---|
-| D1 | 扩展工具名的命名空间格式 | `<extName>_<tool>`。`extName` 取 id 最后一段，`-` 转成 `_`；完整 id 写进工具元数据 | T2.1 |
-| D2 | 声明的激活事件：严格执行，还是只作提示 | **作提示并写进文档**：贡献点被用到就激活，这和 VS Code 的隐式激活一致；只有 `onStartup` 有额外语义 | T2.2 |
-| D3 | `permissions` 的处置方式 | 改成固定词表做校验，UI 标注"声明，不强制"；进程隔离之后对 `tools` 和 `process:spawn` 做粗粒度执行 | T2.4、T5.9 |
-| D4 | 描述符签名方案 | **Ed25519 签名 `stable.json`**（Node `crypto.verify` 原生支持，不加依赖），宿主内置可信公钥列表；GitHub attestation 作为补充 | T3.1 |
-| D5 | `open-extensions` 仓库的定位 | **只放分发内容**：`stable.json`、签名、README，产物放在 Release；不再同步源码。若保留源码，则标记为只读镜像 | T3.3 |
-| D6 | `extension-kit` 的发布渠道 | 发布到 npm（`@opencode-ai/extension-kit`），或以 `.tgz` 形式放到 `open-extensions` 的 Release。现有规则没有授权 npm 发布，**需要用户明确授权** | T4.2 |
-| D7 | 进程隔离的粒度 | **每个扩展一个宿主进程**，按需启动；崩溃只影响该扩展 | T5.* |
-| D8 | 进程隔离上线后，进程内模式是否保留 | 保留 `isolation: "inline"`，只用于本地 `path` 来源的开发调试；生产安装一律 `process` | T5.10 |
-| D9 | 扩展版本号 | 每个扩展独立 semver，从 `sync-version.ts` 中排除；`extension-kit` 继续跟随主版本，直到正式发布 | T1.3 |
+| 编号 | 决策                                   | 推荐                                                                                                                                           | 影响任务   |
+| ---- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| D1   | 扩展工具名的命名空间格式               | `<extName>_<tool>`。`extName` 取 id 最后一段，`-` 转成 `_`；完整 id 写进工具元数据                                                             | T2.1       |
+| D2   | 声明的激活事件：严格执行，还是只作提示 | **作提示并写进文档**：贡献点被用到就激活，这和 VS Code 的隐式激活一致；只有 `onStartup` 有额外语义                                             | T2.2       |
+| D3   | `permissions` 的处置方式               | 改成固定词表做校验，UI 标注"声明，不强制"；进程隔离之后对 `tools` 和 `process:spawn` 做粗粒度执行                                              | T2.4、T5.9 |
+| D4   | 描述符签名方案                         | **Ed25519 签名 `stable.json`**（Node `crypto.verify` 原生支持，不加依赖），宿主内置可信公钥列表；GitHub attestation 作为补充                   | T3.1       |
+| D5   | `open-extensions` 仓库的定位           | **只放分发内容**：`stable.json`、签名、README，产物放在 Release；不再同步源码。若保留源码，则标记为只读镜像                                    | T3.3       |
+| D6   | `extension-kit` 的发布渠道             | 发布到 npm（`@opencode-ai/extension-kit`），或以 `.tgz` 形式放到 `open-extensions` 的 Release。现有规则没有授权 npm 发布，**需要用户明确授权** | T4.2       |
+| D7   | 进程隔离的粒度                         | **每个扩展一个宿主进程**，按需启动；崩溃只影响该扩展                                                                                           | T5.\*      |
+| D8   | 进程隔离上线后，进程内模式是否保留     | 保留 `isolation: "inline"`，只用于本地 `path` 来源的开发调试；生产安装一律 `process`                                                           | T5.10      |
+| D9   | 扩展版本号                             | 每个扩展独立 semver，从 `sync-version.ts` 中排除；`extension-kit` 继续跟随主版本，直到正式发布                                                 | T1.3       |
 
 ---
 
@@ -450,7 +451,7 @@ Phase 0 决策
   - 扩展死循环 → RPC 超时，stop 时外部终止进程，sidecar 正常；
   - disable、uninstall、update 流程与 inline 模式行为一致（复用 `lifecycle-api-matrix.test.ts`，按两种模式参数化运行）。
 - **验收**：后端测试全绿；在 sidecar 中实测：故意让 hello-viewer 的 process 模式副本崩溃，确认后端和其他扩展不受影响。
-- **实施记录**：`dfd9b14bf7`。验证：`bun test test/extension` 874 pass；tool/registry+路由 77 pass；**编译产物 sidecar 全链路实测**（hello→init→import→activate→rpc→host.spawn→dispose→exit 0）。实现：`server.isolation`/`apiVersion` schema + Q10 告警；`runtime/host-worker.ts`（supervisor 驱动 + 全代理面 + proc.* 接 T2.5 进程作用域）；崩溃重启/耗尽粘性错误/retry 恢复；`lifecycle-api-matrix`+`e2e-lifecycle` 双后端参数化（38+全生命周期一致）；`OPENCODE_EXTENSION_HOST_ARGV`/`isolationOf` kill-switch。修复：fixture settings schema、worker 错误消息保真、e2e ownership 清理。遗留：`opencode serve` 启动崩 `parseModels` SchemaError——**仓库既有问题**（models.dev 数据与 schema 不兼容，空 config 复现），与隔离无关；linux/win extra-fd（Q8）。
+- **实施记录**：`dfd9b14bf7`。验证：`bun test test/extension` 874 pass；tool/registry+路由 77 pass；**编译产物 sidecar 全链路实测**（hello→init→import→activate→rpc→host.spawn→dispose→exit 0）。实现：`server.isolation`/`apiVersion` schema + Q10 告警；`runtime/host-worker.ts`（supervisor 驱动 + 全代理面 + proc.\* 接 T2.5 进程作用域）；崩溃重启/耗尽粘性错误/retry 恢复；`lifecycle-api-matrix`+`e2e-lifecycle` 双后端参数化（38+全生命周期一致）；`OPENCODE_EXTENSION_HOST_ARGV`/`isolationOf` kill-switch。修复：fixture settings schema、worker 错误消息保真、e2e ownership 清理。遗留：`opencode serve` 启动崩 `parseModels` SchemaError——**仓库既有问题**（models.dev 数据与 schema 不兼容，空 config 复现），与隔离无关；linux/win extra-fd（Q8）。
 
 ### T5.4 Desktop 集成与打包
 
@@ -549,17 +550,17 @@ Phase 0 决策
 
 ## 3. 子智能体派发建议
 
-| 批次 | 并行任务（文件互不重叠） | 前置条件 |
-|---|---|---|
-| B1 | T1.1、T1.2、T1.4、T1.5、T1.6 | 无 |
-| B2 | T1.3、T6.1 | D9 |
-| B3 | T2.1、T2.3、T2.6（都涉及 runtime/manifest，**串行**或由同一子智能体完成）；T2.2、T2.4、T2.7（前端为主，可并行） | B1，D1–D3 |
-| B4 | T2.5（kit、runtime、三个扩展） | B3 中的 runtime 任务已完成 |
-| B5 | T3.1、T3.2（同一子智能体）；T3.4；T3.5；T4.1；T4.5 | D4，D5 |
-| B6 | T3.3、T4.2、T4.3、T4.4、T4.6 | B5，D6 |
-| B7 | T5.0 → 用户确认 → T5.1 → T5.2 → T5.3 → T5.4 → T5.5 → T5.6 → T5.7 → T5.8（**严格串行**） | B4，T6.1 |
-| B8 | T6.2、T6.3、T6.4 | B7 主要部分完成 |
-| B9 | T7.1、T7.2 | 全部 |
+| 批次 | 并行任务（文件互不重叠）                                                                                        | 前置条件                   |
+| ---- | --------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| B1   | T1.1、T1.2、T1.4、T1.5、T1.6                                                                                    | 无                         |
+| B2   | T1.3、T6.1                                                                                                      | D9                         |
+| B3   | T2.1、T2.3、T2.6（都涉及 runtime/manifest，**串行**或由同一子智能体完成）；T2.2、T2.4、T2.7（前端为主，可并行） | B1，D1–D3                  |
+| B4   | T2.5（kit、runtime、三个扩展）                                                                                  | B3 中的 runtime 任务已完成 |
+| B5   | T3.1、T3.2（同一子智能体）；T3.4；T3.5；T4.1；T4.5                                                              | D4，D5                     |
+| B6   | T3.3、T4.2、T4.3、T4.4、T4.6                                                                                    | B5，D6                     |
+| B7   | T5.0 → 用户确认 → T5.1 → T5.2 → T5.3 → T5.4 → T5.5 → T5.6 → T5.7 → T5.8（**严格串行**）                         | B4，T6.1                   |
+| B8   | T6.2、T6.3、T6.4                                                                                                | B7 主要部分完成            |
+| B9   | T7.1、T7.2                                                                                                      | 全部                       |
 
 ### 子智能体任务说明模板
 
@@ -575,10 +576,10 @@ Phase 0 决策
 
 ## 4. 风险与回退
 
-| 风险 | 缓解 |
-|---|---|
-| T2.1 改工具名后，历史会话或已训练提示词引用的旧名失效 | 渲染器兼容旧名一个版本，并在 progress.md 中记录变更 |
-| T3.1 签名上线后，未签名的旧描述符装不上 | 现有已安装扩展不受影响；更新时提示重新从签名来源安装 |
-| Phase 5 改动面大 | `isolation` 字段按扩展灰度；`inline` 路径一直保留到 T5.8；每个子任务单独提交，便于 revert |
-| Bun 和 Node 的 fd 传输差异 | T5.1 两种运行时都要测；打包后的二进制在 T5.4 实测 |
-| 自动安全模式误触发 | 计数只在页面级错误边界触发时累加；正常启动后清零 |
+| 风险                                                  | 缓解                                                                                      |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| T2.1 改工具名后，历史会话或已训练提示词引用的旧名失效 | 渲染器兼容旧名一个版本，并在 progress.md 中记录变更                                       |
+| T3.1 签名上线后，未签名的旧描述符装不上               | 现有已安装扩展不受影响；更新时提示重新从签名来源安装                                      |
+| Phase 5 改动面大                                      | `isolation` 字段按扩展灰度；`inline` 路径一直保留到 T5.8；每个子任务单独提交，便于 revert |
+| Bun 和 Node 的 fd 传输差异                            | T5.1 两种运行时都要测；打包后的二进制在 T5.4 实测                                         |
+| 自动安全模式误触发                                    | 计数只在页面级错误边界触发时累加；正常启动后清零                                          |

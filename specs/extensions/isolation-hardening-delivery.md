@@ -35,17 +35,17 @@
 
 先红后绿：A1/A2 新回归 0/8→绿；B1 runtime 0/3→绿；API 0/3→绿；A4 四项 mount 先红；真实缓存 1/2→3/0，后到请求回归3/1→4/0；timer 接线1/6→7/0；目录超时可见性3/1→4/0；跨连接 UI 4/2→6/0。
 
-| 验证 | 结果 |
-|---|---|
+| 验证                                                          | 结果                                                                                         |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | opencode `test/extension test/plugin`（原型迁出后的最终套件） | **798 pass / 6 skip / 0 fail**，804 tests / 48 files；6 skip 为显式目标/平台条件，不记作通过 |
-| HTTP/API/SDK/OpenAPI 与隔离回归组合 | **58 pass / 0 fail**，5 files |
-| App extensions unit | **165 pass / 0 fail**，19 files |
-| 定向 browser：mount/runtime-status/config-actions | **11 pass / 0 fail**，包含独立 JSX contract 子进程（runtime-status 内6项） |
-| timers 纯模块 | **16 pass / 0 fail** |
-| desktop sidecar-error + server | 已执行通过，含真实 fatal 子进程 exit=1 |
-| extension-kit browser-condition | **19 pass / 0 fail** |
-| opencode/App/desktop/SDK/extension-kit typecheck | 五包均通过 |
-| 独立原型 typecheck + unit | 通过；unit **24 pass / 0 fail** |
+| HTTP/API/SDK/OpenAPI 与隔离回归组合                           | **58 pass / 0 fail**，5 files                                                                |
+| App extensions unit                                           | **165 pass / 0 fail**，19 files                                                              |
+| 定向 browser：mount/runtime-status/config-actions             | **11 pass / 0 fail**，包含独立 JSX contract 子进程（runtime-status 内6项）                   |
+| timers 纯模块                                                 | **16 pass / 0 fail**                                                                         |
+| desktop sidecar-error + server                                | 已执行通过，含真实 fatal 子进程 exit=1                                                       |
+| extension-kit browser-condition                               | **19 pass / 0 fail**                                                                         |
+| opencode/App/desktop/SDK/extension-kit typecheck              | 五包均通过                                                                                   |
+| 独立原型 typecheck + unit                                     | 通过；unit **24 pass / 0 fail**                                                              |
 
 **完整套件最初未全绿；后续用户选择继续排查，当前结果已更新（不抹去历史失败）：**
 
