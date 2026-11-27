@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from "@solidjs/router"
-import { createEffect, createMemo, createSignal, For, Show, type Accessor, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onCleanup, Show, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSortable } from "@thisbeyond/solid-dnd"
 import { createMediaQuery } from "@solid-primitives/media"
@@ -461,7 +461,10 @@ export const SortableWorkspace = (props: {
   }
 
   createEffect(() => {
-    if (!boot()) return
+    // Only bootstrap the active worktree's full directory state (agents, commands,
+    // providers, mcp, lsp). Expanded non-active worktrees in the sidebar only need
+    // their session list (loaded below) and cached VCS branch.
+    if (!active()) return
     globalSync.child(props.directory, { bootstrap: true })
   })
 
@@ -794,10 +797,12 @@ export const LocalWorkspace = (props: {
   }
   createEffect(() => {
     const root = props.project.worktree
-    for (const directory of dirs()) {
+    const activeKey = workspaceKey(props.ctx.currentDir())
+    const deferred: string[] = []
+    const loadDir = (directory: string) => {
       const [store] = globalSync.child(directory, { bootstrap: false })
-      if (store.sessions === "loading") continue
-      if (initialFullRequested.has(directory)) continue
+      if (store.sessions === "loading") return
+      if (initialFullRequested.has(directory)) return
       console.debug(`[sidebar-project] session-list load start root=${root} directory=${directory}`)
       void globalSync.project.loadSessions(directory, { silent: true }).finally(() => {
         initialFullRequested.add(directory)
@@ -807,6 +812,28 @@ export const LocalWorkspace = (props: {
         )
       })
     }
+    for (const directory of dirs()) {
+      if (workspaceKey(directory) === activeKey || workspaceKey(directory) === workspaceKey(root)) {
+        loadDir(directory)
+      } else {
+        deferred.push(directory)
+      }
+    }
+    if (deferred.length === 0) return
+    const runDeferred = () => {
+      for (const directory of deferred) loadDir(directory)
+    }
+    const requestIdle = Reflect.get(window, "requestIdleCallback") as typeof window.requestIdleCallback | undefined
+    if (requestIdle) {
+      const idleID = requestIdle.call(window, runDeferred, { timeout: 600 })
+      onCleanup(() => {
+        const cancelIdle = Reflect.get(window, "cancelIdleCallback") as typeof window.cancelIdleCallback | undefined
+        cancelIdle?.call(window, idleID)
+      })
+      return
+    }
+    const timer = window.setTimeout(runDeferred, 250)
+    onCleanup(() => window.clearTimeout(timer))
   })
 
   return (

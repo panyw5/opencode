@@ -3772,11 +3772,36 @@ export default function Layout(props: ParentProps) {
           return
         }
 
+        const activeKey = dir ? workspaceKey(dir) : ""
+        const deferred: string[] = []
         for (const directory of dirs) {
           const [child] = globalSync.child(directory, { bootstrap: false })
           if (child.sessions === "ready" || child.sessions === "loading") continue
-          globalSync.project.loadSessions(directory, { silent: true })
+          if (activeKey && workspaceKey(directory) === activeKey) {
+            globalSync.project.loadSessions(directory, { silent: true })
+          } else {
+            deferred.push(directory)
+          }
         }
+        if (deferred.length === 0) return
+        const loadDeferred = () => {
+          for (const directory of deferred) {
+            const [child] = globalSync.child(directory, { bootstrap: false })
+            if (child.sessions === "ready" || child.sessions === "loading") continue
+            globalSync.project.loadSessions(directory, { silent: true })
+          }
+        }
+        const requestIdle = Reflect.get(window, "requestIdleCallback") as typeof window.requestIdleCallback | undefined
+        if (requestIdle) {
+          const idleID = requestIdle.call(window, loadDeferred, { timeout: 600 })
+          onCleanup(() => {
+            const cancelIdle = Reflect.get(window, "cancelIdleCallback") as typeof window.cancelIdleCallback | undefined
+            cancelIdle?.call(window, idleID)
+          })
+          return
+        }
+        const timer = window.setTimeout(loadDeferred, 250)
+        onCleanup(() => window.clearTimeout(timer))
       },
       { defer: true },
     ),

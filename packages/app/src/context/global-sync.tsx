@@ -1010,7 +1010,13 @@ function createGlobalSync() {
         directory: logical,
         store,
         setStore,
-        push: queueFor(resolvedDomain).push,
+        push: (dir: string) => {
+          // Only re-bootstrap directories that were actually bootstrapped; cold
+          // sidebar worktrees opened with `{ bootstrap: false }` for session lists
+          // must not trigger full 11-request directory bootstraps on dispose events.
+          if (!loaded.dir[storeKey(dir)]) return
+          queueFor(resolvedDomain).push(dir)
+        },
         vcsCache: children.vcsCache.get(key),
         loadLsp: () => {
           sdkFor(logical)

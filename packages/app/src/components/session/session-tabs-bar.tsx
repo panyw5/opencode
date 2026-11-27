@@ -297,7 +297,10 @@ export function SessionTabsBar() {
             return { tab, state: "unknown" as const }
           }
           try {
-            const result = await client.session.get({ sessionID: tab.id })
+            const overview = globalSync.session.overview.current(tab.directory, tab.id)
+            const result = overview
+              ? { data: (await overview).session, response: undefined }
+              : await client.session.get({ sessionID: tab.id })
             const value = result.data
             if (!value) {
               const status = result.response?.status
@@ -354,21 +357,35 @@ export function SessionTabsBar() {
       if (found) found.tabs.push(tab)
       else byDirectory.set(key, { directory: tab.directory, tabs: [tab] })
     }
-    for (const value of byDirectory.values()) {
-      try {
-        const runtime = globalSDK.forDomain(domainFromDirectory(value.directory))
-        const marker = `${runtime.url}:${runtime.version}`
-        void reconcilePersistedTabs(
-          value.directory,
-          marker,
-          value.tabs.map((tab) => ({ ...tab })),
-        )
-      } catch (error) {
-        console.debug(
-          `[session-tabs] persisted reconcile unavailable directory=${value.directory} error=${String(error)}`,
-        )
+    const run = () => {
+      for (const value of byDirectory.values()) {
+        try {
+          const runtime = globalSDK.forDomain(domainFromDirectory(value.directory))
+          const marker = `${runtime.url}:${runtime.version}`
+          void reconcilePersistedTabs(
+            value.directory,
+            marker,
+            value.tabs.map((tab) => ({ ...tab })),
+          )
+        } catch (error) {
+          console.debug(
+            `[session-tabs] persisted reconcile unavailable directory=${value.directory} error=${String(error)}`,
+          )
+        }
       }
     }
+    if (byDirectory.size === 0) return
+    const requestIdle = Reflect.get(window, "requestIdleCallback") as typeof window.requestIdleCallback | undefined
+    if (requestIdle) {
+      const idleID = requestIdle.call(window, run, { timeout: 800 })
+      onCleanup(() => {
+        const cancelIdle = Reflect.get(window, "cancelIdleCallback") as typeof window.cancelIdleCallback | undefined
+        cancelIdle?.call(window, idleID)
+      })
+      return
+    }
+    const timer = window.setTimeout(run, 300)
+    onCleanup(() => window.clearTimeout(timer))
   })
 
   const fetchTabMeta = (tab: SessionBarTab) => {
