@@ -117,14 +117,57 @@ export function progress(db: TxOrDb): IndexProgress {
   return toStatus(readProgressRow(db))
 }
 
+const ensuredRowMap = new WeakSet<object>()
+
+function ensureRowMap(db: TxOrDb) {
+  const client = (db as { $client?: object }).$client ?? (db as object)
+  if (ensuredRowMap.has(client)) return
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS session_content_fts_row (
+      part_id text PRIMARY KEY,
+      row_id integer NOT NULL
+    )
+  `)
+  ensuredRowMap.add(client)
+}
+
+function deletePartFromFTS(db: TxOrDb, partID: string): boolean {
+  ensureRowMap(db)
+  const mapped = db.all(sql`SELECT row_id AS rowID FROM session_content_fts_row WHERE part_id = ${partID} LIMIT 1`)[0] as
+    | { rowID: number }
+    | undefined
+  if (mapped) {
+    db.run(sql`DELETE FROM session_content_fts WHERE rowid = ${mapped.rowID}`)
+    db.run(sql`DELETE FROM session_content_fts_row WHERE part_id = ${partID}`)
+    return true
+  }
+  const legacy = db.all(sql`SELECT rowid AS rowID FROM session_content_fts WHERE part_id = ${partID} LIMIT 1`)[0] as
+    | { rowID: number }
+    | undefined
+  if (!legacy) return false
+  db.run(sql`DELETE FROM session_content_fts WHERE rowid = ${legacy.rowID}`)
+  return true
+}
+
+function insertPartIntoFTS(db: TxOrDb, input: { partID: string; messageID: string; sessionID: string; text: string }) {
+  ensureRowMap(db)
+  db.run(sql`
+    INSERT INTO session_content_fts (part_id, message_id, session_id, text)
+    VALUES (${input.partID}, ${input.messageID}, ${input.sessionID}, ${input.text})
+  `)
+  db.run(sql`
+    INSERT OR REPLACE INTO session_content_fts_row (part_id, row_id)
+    VALUES (${input.partID}, last_insert_rowid())
+  `)
+}
+
 export function upsert(db: TxOrDb, part: MessageV2.Part) {
-  const existed =
-    (db.all(sql`SELECT 1 AS ok FROM session_content_fts WHERE part_id = ${part.id} LIMIT 1`)[0] as
-      | { ok: number }
-      | undefined) !== undefined
-  db.run(sql`DELETE FROM session_content_fts WHERE part_id = ${part.id}`)
+  // Only text parts are ever indexed in session_content_fts; tool/reasoning/step
+  // updates must short-circuit without touching FTS.
+  if (part.type !== "text") return
   const row = readProgressRow(db)
   if (!row || row.enabled !== 1) return
+  const existed = deletePartFromFTS(db, part.id)
   const text = searchableText(part)
   if (!text) {
     if (existed) {
@@ -136,10 +179,12 @@ export function upsert(db: TxOrDb, part: MessageV2.Part) {
     }
     return
   }
-  db.run(sql`
-    INSERT INTO session_content_fts (part_id, message_id, session_id, text)
-    VALUES (${part.id}, ${part.messageID}, ${part.sessionID}, ${text})
-  `)
+  insertPartIntoFTS(db, {
+    partID: part.id,
+    messageID: part.messageID,
+    sessionID: part.sessionID,
+    text,
+  })
   if (!existed) {
     db.run(sql`
       UPDATE session_content_search_progress
@@ -151,15 +196,18 @@ export function upsert(db: TxOrDb, part: MessageV2.Part) {
 
 // Fresh part IDs cannot have FTS rows, so do not scan the UNINDEXED part_id column.
 export function insertNew(db: TxOrDb, part: MessageV2.Part) {
+  if (part.type !== "text") return
   const row = readProgressRow(db)
   if (!row || row.enabled !== 1) return
   const text = searchableText(part)
   if (!text) return
 
-  db.run(sql`
-    INSERT INTO session_content_fts (part_id, message_id, session_id, text)
-    VALUES (${part.id}, ${part.messageID}, ${part.sessionID}, ${text})
-  `)
+  insertPartIntoFTS(db, {
+    partID: part.id,
+    messageID: part.messageID,
+    sessionID: part.sessionID,
+    text,
+  })
   db.run(sql`
     UPDATE session_content_search_progress
     SET indexed = indexed + 1
@@ -168,11 +216,9 @@ export function insertNew(db: TxOrDb, part: MessageV2.Part) {
 }
 
 export function remove(db: TxOrDb, partID: PartID) {
-  const existed =
-    (db.all(sql`SELECT 1 AS ok FROM session_content_fts WHERE part_id = ${partID} LIMIT 1`)[0] as
-      | { ok: number }
-      | undefined) !== undefined
-  db.run(sql`DELETE FROM session_content_fts WHERE part_id = ${partID}`)
+  const row = readProgressRow(db)
+  if (!row || row.enabled !== 1) return
+  const existed = deletePartFromFTS(db, partID)
   if (!existed) return
   db.run(sql`
     UPDATE session_content_search_progress
@@ -205,7 +251,9 @@ export function pause(db: TxOrDb) {
 
 export function rebuild(db: TxOrDb) {
   const total = countSearchableParts(db)
+  ensureRowMap(db)
   db.run(sql`DELETE FROM session_content_fts`)
+  db.run(sql`DELETE FROM session_content_fts_row`)
   db.run(sql`
     INSERT INTO session_content_search_progress (id, enabled, state, indexed, total, cursor, complete, generation)
     VALUES (1, 1, 'running', 0, ${total}, NULL, 0, 1)
@@ -222,7 +270,9 @@ export function rebuild(db: TxOrDb) {
 }
 
 export function clear(db: TxOrDb) {
+  ensureRowMap(db)
   db.run(sql`DELETE FROM session_content_fts`)
+  db.run(sql`DELETE FROM session_content_fts_row`)
   db.run(sql`
     INSERT INTO session_content_search_progress (id, enabled, state, indexed, total, cursor, complete, generation)
     VALUES (1, 0, 'disabled', 0, 0, NULL, 0, 1)
@@ -262,8 +312,10 @@ export function writeBackfillBatch(db: TxOrDb, generation: number, parts: Backfi
     existing: existing.length,
     durationMs: Date.now() - started,
   })
+  ensureRowMap(db)
   for (const part of existing) {
     db.run(sql`DELETE FROM session_content_fts WHERE rowid = ${part.rowID}`)
+    db.run(sql`DELETE FROM session_content_fts_row WHERE part_id = ${part.partID}`)
   }
 
   let added = 0
@@ -274,10 +326,12 @@ export function writeBackfillBatch(db: TxOrDb, generation: number, parts: Backfi
       if (existed) added -= 1
       continue
     }
-    db.run(sql`
-      INSERT INTO session_content_fts (part_id, message_id, session_id, text)
-      VALUES (${part.id}, ${part.messageID}, ${part.sessionID}, ${text})
-    `)
+    insertPartIntoFTS(db, {
+      partID: part.id,
+      messageID: part.messageID,
+      sessionID: part.sessionID,
+      text,
+    })
     if (!existed) added += 1
   }
 
@@ -379,20 +433,23 @@ export const backfill = Effect.fn("SessionContentSearch.backfill")(function* () 
 })
 
 export const clearSession = (db: TxOrDb, sessionID: string) => {
-  const removed =
-    (
-      db.all(sql`SELECT count(*) AS count FROM session_content_fts WHERE session_id = ${sessionID}`)[0] as
-        | { count: number }
-        | undefined
-    )?.count ?? 0
-  db.run(sql`DELETE FROM session_content_fts WHERE session_id = ${sessionID}`)
-  if (removed > 0) {
-    db.run(sql`
-      UPDATE session_content_search_progress
-      SET indexed = max(indexed - ${removed}, 0)
-      WHERE id = 1 AND enabled = 1
-    `)
+  const row = readProgressRow(db)
+  if (!row || row.enabled !== 1) return
+  ensureRowMap(db)
+  const rows = db.all(sql`SELECT rowid AS rowID, part_id AS partID FROM session_content_fts WHERE session_id = ${sessionID}`) as {
+    rowID: number
+    partID: string
+  }[]
+  if (rows.length === 0) return
+  for (const item of rows) {
+    db.run(sql`DELETE FROM session_content_fts WHERE rowid = ${item.rowID}`)
+    db.run(sql`DELETE FROM session_content_fts_row WHERE part_id = ${item.partID}`)
   }
+  db.run(sql`
+    UPDATE session_content_search_progress
+    SET indexed = max(indexed - ${rows.length}, 0)
+    WHERE id = 1 AND enabled = 1
+  `)
 }
 
 export function search(input: {

@@ -69,7 +69,7 @@ describe("session content search index management", () => {
             expect(all).toHaveBeenCalledTimes(1)
             const dialect = new SQLiteSyncDialect()
             const queries = run.mock.calls.map(([query]) => dialect.sqlToQuery(query as ReturnType<typeof sql>).sql)
-            const deletes = queries.filter((query) => query.includes("DELETE FROM session_content_fts"))
+            const deletes = queries.filter((query) => query.includes("DELETE FROM session_content_fts "))
             expect(deletes).toHaveLength(3)
             expect(deletes.every((query) => query.includes("WHERE rowid ="))).toBe(true)
           } finally {
@@ -127,6 +127,42 @@ describe("session content search index management", () => {
           { part_id: "part_fresh" },
         ])
         expect(Database.use((db) => SessionContentSearch.progress(db))).toMatchObject({ indexed: 1, total: 1 })
+
+        // Updating a non-text part must short-circuit without touching FTS, and
+        // updating a mapped text part must delete by rowid without scanning FTS.
+        Database.transaction((db) => {
+          const all = spyOn(db, "all")
+          const run = spyOn(db, "run")
+          try {
+            SessionContentSearch.upsert(db, {
+              id: "part_tool" as never,
+              messageID: "msg_fresh" as never,
+              sessionID: session.id,
+              type: "tool",
+              callID: "call_1",
+              tool: "bash",
+              state: { status: "running", input: {}, time: { start: Date.now() } },
+            })
+            expect(all).toHaveBeenCalledTimes(0)
+            expect(run).toHaveBeenCalledTimes(0)
+
+            SessionContentSearch.upsert(db, {
+              id: "part_fresh" as never,
+              messageID: "msg_fresh" as never,
+              sessionID: session.id,
+              type: "text",
+              text: "updated searchable text",
+            })
+            const dialect = new SQLiteSyncDialect()
+            const allSql = all.mock.calls.map(([query]) => dialect.sqlToQuery(query as ReturnType<typeof sql>).sql)
+            expect(allSql.some((query) => query.includes("FROM session_content_fts "))).toBe(false)
+            expect(allSql.some((query) => query.includes("FROM session_content_fts_row"))).toBe(true)
+          } finally {
+            all.mockRestore()
+            run.mockRestore()
+          }
+        })
+
         yield* Session.use.remove(session.id)
         Database.transaction((db) => SessionContentSearch.clear(db))
       }),

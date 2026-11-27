@@ -1088,6 +1088,9 @@ export default function Page() {
         const timer = window.setTimeout(() => {
           if (params.id !== id) return
           if (sync.status === "loading") return
+          // Avoid triggering heavy full-repo `git diff` and session diff fetches
+          // while the review panel is closed; opening the panel fetches on demand.
+          if (!wantsReview()) return
           if ((info()?.summary?.files ?? 0) > 0 && globalSync.session.diff.get(sdk.directory, id) === undefined) {
             void sync.session.diff(id)
           }

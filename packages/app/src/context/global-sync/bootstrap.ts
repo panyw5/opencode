@@ -53,6 +53,37 @@ function waitForPaint() {
   })
 }
 
+// Yield past the active session's first-page `/overview` fetch so secondary
+// directory metadata (agents, commands, providers, mcp, lsp) does not saturate
+// Chromium's 6-connection HTTP/1.1 per-origin pool during a session switch.
+function waitForSlowBootstrap() {
+  return new Promise<void>((resolve) => {
+    if (typeof window === "undefined") {
+      resolve()
+      return
+    }
+    let done = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const finish = () => {
+      if (done) return
+      done = true
+      if (timer !== undefined) clearTimeout(timer)
+      resolve()
+    }
+    const requestIdle = Reflect.get(window, "requestIdleCallback") as typeof window.requestIdleCallback | undefined
+    if (requestIdle) {
+      const id = requestIdle.call(window, finish, { timeout: 450 })
+      timer = setTimeout(() => {
+        const cancelIdle = Reflect.get(window, "cancelIdleCallback") as typeof window.cancelIdleCallback | undefined
+        cancelIdle?.call(window, id)
+        finish()
+      }, 500)
+      return
+    }
+    timer = setTimeout(finish, 250)
+  })
+}
+
 // Shared with global-sync's directory-unavailable handling: bootstrapping a
 // directory that no longer exists on the current server (removed remote,
 // deleted local folder, stale history) is expected noise, not an error to
@@ -392,7 +423,7 @@ export async function bootstrapDirectory(input: {
     })
   }
 
-  await waitForPaint()
+  await waitForSlowBootstrap()
   const slowErrs = errors(await runAll(slow))
   if (slowErrs.length > 0) {
     logBootstrapErrors("slow", input.directory, slowErrs)

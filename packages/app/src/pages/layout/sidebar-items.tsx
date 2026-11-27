@@ -523,8 +523,11 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
 
     console.debug(`[sidebar-session] user-message-count load-start directory=${directory} sid=${sessionID}`)
     userMessageCountInflight.add(key)
-    void globalSDK.client.session
-      .userMessageIndex({ sessionID, directory })
+    const overview = globalSync.session.overview.current(directory, sessionID)
+    const request = overview
+      ? overview.then((data) => ({ data: data.userMessageIndex }))
+      : globalSDK.client.session.userMessageIndex({ sessionID, directory })
+    void request
       .then((response) => {
         const count = (response.data ?? []).length
         setUserMessageCountByKey((current) => ({ ...current, [key]: count }))

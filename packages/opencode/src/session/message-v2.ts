@@ -1119,6 +1119,7 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
   sessionID: SessionID
   limit: number
   before?: string
+  includeMissingParents?: boolean
 }) {
   const before = input.before ? cursor.decode(input.before) : undefined
   const where = before
@@ -1148,6 +1149,30 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
   const slice = more ? rows.slice(0, input.limit) : rows
   const items = hydrate(slice)
   items.reverse()
+  if (input.includeMissingParents) {
+    const present = new Set(items.map((item) => item.info.id))
+    const missingParentIDs = [
+      ...new Set(
+        items.flatMap((item) =>
+          item.info.role === "assistant" && item.info.parentID && !present.has(item.info.parentID)
+            ? [item.info.parentID]
+            : [],
+        ),
+      ),
+    ]
+    if (missingParentIDs.length > 0) {
+      const parentRows = Database.use((db) =>
+        db
+          .select()
+          .from(MessageTable)
+          .where(and(eq(MessageTable.session_id, input.sessionID), inArray(MessageTable.id, missingParentIDs)))
+          .orderBy(asc(MessageTable.time_created), asc(MessageTable.id))
+          .all(),
+      )
+      const parents = hydrate(parentRows).filter((item) => item.info.role === "user")
+      if (parents.length > 0) items.unshift(...parents)
+    }
+  }
   const tail = slice.at(-1)
   return {
     items,

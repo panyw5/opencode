@@ -3597,7 +3597,14 @@ export default function Layout(props: ParentProps) {
         )
         if (workspaceKey(dir) === quickAssistant) return
         if (session?.parentID) openAncestorSessionTabs(dir, session.parentID, child.session)
-        else if (!session) void ensureSessionBarMeta(dir, id)
+        else if (!session) {
+          // Defer by one microtask so the child Session page's route effect can
+          // kick off `/session/{id}/overview` first; ensureSessionBarMeta then
+          // joins that in-flight overview instead of firing a duplicate session.get.
+          queueMicrotask(() => {
+            if (!globalSync.session.info.get(dir, id)) void ensureSessionBarMeta(dir, id)
+          })
+        }
       },
     ),
   )

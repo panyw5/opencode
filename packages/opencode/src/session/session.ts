@@ -751,15 +751,14 @@ export const layer: Layer.Layer<
 
     const get = Effect.fn("Session.get")(function* (id: SessionID) {
       const row = yield* db((d) => d.select().from(SessionTable).where(eq(SessionTable.id, id)).get())
-      log.info("session.get.diagnostic", {
-        sessionID: id,
-        found: Boolean(row),
-        projectID: row?.project_id,
-        parentID: row?.parent_id,
-        directory: row?.directory,
-        ...readDiagnostic(id),
-      })
-      if (!row) return yield* Effect.fail(new NotFoundError({ message: `Session not found: ${id}` }))
+      if (!row) {
+        log.info("session.get.diagnostic", {
+          sessionID: id,
+          found: false,
+          ...readDiagnostic(id),
+        })
+        return yield* Effect.fail(new NotFoundError({ message: `Session not found: ${id}` }))
+      }
       return fromRow(row)
     })
 

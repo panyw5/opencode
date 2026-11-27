@@ -4,7 +4,7 @@ import type { SessionControllerDeps } from "./session-service-types"
 // The overview endpoint always fetches the canonical first page size. Callers
 // needing a different limit or a `before` cursor use the plain messages route.
 export const SESSION_OVERVIEW_PAGE_LIMIT = 80
-const RESOLVED_TTL_MS = 2_000
+const RESOLVED_TTL_MS = 10_000
 
 /**
  * Shares one `/session/{id}/overview` response across the per-slice services

@@ -1026,7 +1026,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
             ? SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID })).pipe(
                 Effect.map((items) => ({ items, cursor: undefined })),
               )
-            : SessionError.mapStorageNotFound(MessageV2.page({ sessionID: ctx.params.sessionID, limit })).pipe(
+            : SessionError.mapStorageNotFound(
+                MessageV2.page({ sessionID: ctx.params.sessionID, limit, includeMissingParents: true }),
+              ).pipe(
                 Effect.map((page) => {
                   const stripped = MessageV2.stripInlineMediaAttachments(page.items)
                   if (stripped.stripped > 0) {
