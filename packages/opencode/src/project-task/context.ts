@@ -1,10 +1,10 @@
 import type { Detail } from "./schema"
 import type { TaskWorkspaceFile } from "./description-file"
 import { descriptionRelativePath, taskWorkspaceRelativePath } from "./description-file"
-import { projectTaskContextCopy, projectTaskContextLocale } from "./context-copy"
+import { projectTaskContextCopy, projectTaskContextLocale, projectTaskExternalContextCopy } from "./context-copy"
 
-/** Who receives the inject brief — main session vs task/subagent child. */
-export type ProjectTaskInjectAudience = "parent" | "subagent"
+/** Who receives the inject brief — main session, task/subagent child, or external consult advisor. */
+export type ProjectTaskInjectAudience = "parent" | "subagent" | "external"
 
 /** Fingerprint of last injected project-task context for a session. */
 export type TaskContextSnapshot = {
@@ -225,13 +225,18 @@ function parentIntroLines(): string[] {
   ]
 }
 
-function formatSubagentTaskContext(detail: Detail, mode: "full" | "delta", locale?: string): string {
-  const copy = projectTaskContextCopy(locale)
+function formatSubagentTaskContext(
+  detail: Detail,
+  mode: "full" | "delta",
+  locale?: string,
+  audience: "subagent" | "external" = "subagent",
+): string {
+  const copy = audience === "external" ? projectTaskExternalContextCopy(locale) : projectTaskContextCopy(locale)
   const chinese = projectTaskContextLocale(locale) === "zh"
   const separator = chinese ? "：" : ": "
   const period = chinese ? "。" : ". "
   return [
-    `<project-task-state mode="${mode}" audience="subagent">`,
+    `<project-task-state mode="${mode}" audience="${audience}">`,
     `# ${copy.heading}`,
     "",
     `## ${copy.scope}`,
@@ -324,7 +329,7 @@ export function formatProjectTaskFullContext(
   const workspaceFiles = input.workspaceFiles ?? []
   const audience = input.audience ?? "parent"
 
-  if (audience === "subagent") return formatSubagentTaskContext(detail, "full", input.locale)
+  if (audience !== "parent") return formatSubagentTaskContext(detail, "full", input.locale, audience)
 
   const lines: string[] = [
     `<project-task-state mode="full" audience="${audience}">`,
@@ -356,7 +361,7 @@ export function formatProjectTaskDeltaContext(
 ): string | null {
   const next = buildTaskContextSnapshot(detail, workspaceFiles, locale)
   // Only changes to the subagent's visible background should trigger another inject.
-  if (audience === "subagent") {
+  if (audience !== "parent") {
     if (
       prev.taskID === next.taskID &&
       prev.title === next.title &&
@@ -365,7 +370,7 @@ export function formatProjectTaskDeltaContext(
       prev.locale === next.locale
     )
       return null
-    return formatSubagentTaskContext(detail, "delta", locale)
+    return formatSubagentTaskContext(detail, "delta", locale, audience)
   }
   if (snapshotsEqual(prev, next)) return null
 

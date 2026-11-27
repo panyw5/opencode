@@ -45,10 +45,46 @@ const copies: Record<"en" | "zh", Copy> = {
   },
 }
 
+const externalCopies: Record<"en" | "zh", Copy> = {
+  en: {
+    heading: "Project Task Context",
+    scope: "Purpose and Scope",
+    intro:
+      "You are an external advisor consulted by OpenCode. Answer the consultation request directly; you are not expected to modify files.",
+    background:
+      "The following is shared background for the project being discussed, not an additional assignment. Use only what is relevant to the question.",
+    preserve:
+      "The project may contain work by the user and other agents; describe conflicts in your answer instead of changing anything.",
+    info: "Parent Project Task Information",
+    task: "Project task",
+    id: "Project task ID",
+    lookup: "This ID identifies the task when asking the user follow-up questions.",
+    root: "Project root",
+    description: "Parent Project Task Description",
+  },
+  zh: {
+    heading: "项目任务上下文",
+    scope: "用途与边界",
+    intro: "你是 OpenCode 咨询的外部顾问。直接回答咨询请求即可，不需要修改任何文件。",
+    background: "以下内容是所讨论项目的公共背景，不是对你的额外委派。仅使用与问题相关的部分。",
+    preserve: "项目中可能包含用户和其他智能体的已有成果；发现冲突时在回答中说明，不要改动。",
+    info: "父级项目任务信息",
+    task: "项目任务",
+    id: "项目任务 ID",
+    lookup: "向用户追问该任务时，用此 ID 指代",
+    root: "项目根目录",
+    description: "父级项目任务描述",
+  },
+}
+
 export function projectTaskContextLocale(locale?: string): "en" | "zh" {
   return locale === "zh" || locale === "zht" ? "zh" : "en"
 }
 
 export function projectTaskContextCopy(locale?: string): Copy {
   return copies[projectTaskContextLocale(locale)]
+}
+
+export function projectTaskExternalContextCopy(locale?: string): Copy {
+  return externalCopies[projectTaskContextLocale(locale)]
 }

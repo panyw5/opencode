@@ -1,9 +1,10 @@
-import { Cause, Effect } from "effect"
+import { Cause, Effect, Option } from "effect"
 import { ulid } from "ulid"
 import * as Log from "@opencode-ai/core/util/log"
 import type { ModelID, ProviderID } from "@/provider/schema"
 import { Permission } from "@/permission"
 import type { Plugin } from "@/plugin"
+import { Config } from "@/config/config"
 import {
   buildConsultFollowupSynthetic,
   buildConsultPromptFromParts,
@@ -12,6 +13,7 @@ import {
 } from "@/tool/consult-mention"
 import type { ToolRegistry } from "@/tool/registry"
 import type { Tool } from "@/tool/tool"
+import { ConsultContext } from "./consult-context"
 import { MessageV2 } from "./message-v2"
 import { MessageID, PartID } from "./schema"
 import type { Session } from "./session"
@@ -76,6 +78,8 @@ export function runConsultMentions(
 
     const allTools = yield* deps.registry.all()
     const toolByID = new Map(allTools.map((tool) => [tool.id, tool] as const))
+    const configService = Option.getOrUndefined(yield* Effect.serviceOption(Config.Service))
+    const cfg = configService ? yield* configService.get() : undefined
     const consultOutcomes = new Map<string, { returned: boolean; error?: string; output?: string }>()
 
     const assistantMessage: MessageV2.Assistant = yield* sessions.updateMessage({
@@ -111,8 +115,17 @@ export function runConsultMentions(
         "The user requested an external consultation. Review the project context and provide structured analysis."
       const gptProAttachmentParts =
         name === "gpt-pro" ? lastUserParts.filter((part): part is MessageV2.FilePart => part.type === "file") : []
+      const contextPackage = yield* ConsultContext.build({
+        session,
+        msgs,
+        // gpt-pro forwards attachments through its own channel; do not inline them as text.
+        fileParts: name === "gpt-pro" ? [] : lastUserParts,
+        excludeMessageID: lastUser.id,
+        level: ConsultContext.levelFor(cfg, name),
+        directory: deps.directory,
+      })
       const toolArgs = {
-        prompt: promptText,
+        prompt: ConsultContext.serialize(contextPackage, promptText),
         ...(name === "gpt-pro" && backgroundChoice?.type === "text"
           ? { background: backgroundChoice.metadata!.gptProBackground as boolean }
           : {}),

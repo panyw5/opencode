@@ -85,6 +85,7 @@ export function consultMentionFor(name: string) {
 export function buildConsultPromptFromParts(parts: readonly unknown[], includeFileReferences = true): string {
   const texts: string[] = []
   const files: string[] = []
+  const mentionTokens: string[] = []
 
   for (const raw of parts) {
     const part = raw as {
@@ -93,8 +94,9 @@ export function buildConsultPromptFromParts(parts: readonly unknown[], includeFi
       synthetic?: boolean
       ignored?: boolean
       filename?: string
-      source?: { path?: string }
+      source?: { path?: string; value?: string }
     }
+    if (part.type === "agent" && part.source?.value?.trim()) mentionTokens.push(part.source.value)
     if (part.type === "text" && !part.synthetic && !part.ignored) {
       const text = part.text?.trim()
       if (text) texts.push(text)
@@ -105,7 +107,19 @@ export function buildConsultPromptFromParts(parts: readonly unknown[], includeFi
     }
   }
 
-  const body = texts.join("\n\n").trim()
+  // Mention parts already carry the routing target; strip the literal "@name"
+  // tokens so the external agent sees only the question itself.
+  const stripped = texts.map((text) => {
+    let result = text
+    for (const token of mentionTokens) result = result.split(token).join("")
+    return result
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .join("\n")
+      .trim()
+  })
+
+  const body = stripped.filter(Boolean).join("\n\n").trim()
   if (files.length === 0) return body
   const fileBlock = ["Referenced files:", ...files.map((path) => `- ${path}`)].join("\n")
   return body ? `${body}\n\n${fileBlock}` : fileBlock
