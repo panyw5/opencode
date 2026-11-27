@@ -42,9 +42,7 @@ describe("extension id pattern parity", () => {
 
   test("the exported length cap matches the ExtensionID schema bound", () => {
     // `ExtensionID` in schema.ts = ID_PATTERN plus `value.length <= 64`.
-    expect(read("../../../opencode/src/extension/schema.ts")).toContain(
-      `value.length <= ${EXTENSION_ID_MAX}`,
-    )
+    expect(read("../../../opencode/src/extension/schema.ts")).toContain(`value.length <= ${EXTENSION_ID_MAX}`)
   })
 
   test("isExtensionID applies pattern and cap together", () => {

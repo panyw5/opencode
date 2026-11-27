@@ -151,12 +151,7 @@ export function toggleCodeExpand(wrapper: HTMLElement, button: HTMLButtonElement
   setExpandButtonState(button, labels, expanded)
 }
 
-export function updateCodeCollapse(
-  root: HTMLElement,
-  streaming: boolean,
-  labels: CopyLabels,
-  viewportHeight?: number,
-) {
+export function updateCodeCollapse(root: HTMLElement, streaming: boolean, labels: CopyLabels, viewportHeight?: number) {
   const wrappers = Array.from(root.querySelectorAll<HTMLElement>('[data-component="markdown-code"]'))
   if (!wrappers.length) return
   // Measure first, mutate second: the first scrollHeight read pays the forced
@@ -164,7 +159,10 @@ export function updateCodeCollapse(
   // one markdown root share the scroll viewport, so the collapse window is
   // computed a single time — from the caller's pre-write snap when available
   // (the viewport's own size doesn't change when content does).
-  let maxHeight = viewportHeight !== undefined ? Math.max(Math.round(viewportHeight * codeCollapseWindowRatio), codeCollapseFallbackHeight) : 0
+  let maxHeight =
+    viewportHeight !== undefined
+      ? Math.max(Math.round(viewportHeight * codeCollapseWindowRatio), codeCollapseFallbackHeight)
+      : 0
   const measured: { wrapper: HTMLElement; pre: HTMLElement; height: number }[] = []
   for (const wrapper of wrappers) {
     const pre = wrapper.querySelector("pre")
@@ -1181,9 +1179,7 @@ export function Markdown(
         },
       })
       const safe =
-        input.mode === "plain" || (input.streaming && !rendered.fallback)
-          ? rendered.html
-          : sanitize(rendered.html)
+        input.mode === "plain" || (input.streaming && !rendered.fallback) ? rendered.html : sanitize(rendered.html)
       mark("parse", {
         key: input.cacheKey ?? input.key,
         mode: input.mode,

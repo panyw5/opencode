@@ -87,7 +87,8 @@ type Token = {
 
 function isOperandLike(token: Token): boolean {
   if (OPERAND_KINDS.has(token.kind) || CLOSERS.has(token.text)) return true
-  if (POSTFIX.has(token.text) || (token.text === "++" || token.text === "--" || token.text === "!") && !token.unary) return true
+  if (POSTFIX.has(token.text) || ((token.text === "++" || token.text === "--" || token.text === "!") && !token.unary))
+    return true
   return false
 }
 
@@ -273,11 +274,7 @@ export function formatWolfram(source: string, options: FormatOptions = {}): stri
     if (next.text === "!" || next.text === "&") return isOperandLike(prev) ? "" : " "
     // `a_b` is a named pattern but `a_ b` is a product — the only pair where
     // the original adjacency must be preserved.
-    if (
-      prev.kind === "pattern" &&
-      /^_+$/.test(prev.text) &&
-      (next.kind === "symbol" || next.kind === "function")
-    )
+    if (prev.kind === "pattern" && /^_+$/.test(prev.text) && (next.kind === "symbol" || next.kind === "function"))
       return next.adjacent ? "" : " "
     if ((prev.kind === "symbol" || prev.kind === "function") && next.kind === "pattern" && next.text.startsWith("_"))
       return next.adjacent ? "" : " "

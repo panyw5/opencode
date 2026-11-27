@@ -19,7 +19,10 @@ export function userMessageRailMarkWidth(
   let base = 20
   if (hovered !== undefined) base = railWidths[Math.abs(index - hovered)] ?? 20
   else if (active !== undefined && index === active) base = USER_MESSAGE_RAIL_ACTIVE_WIDTH
-  const cap = Math.max(space + userMessageRailPad(space) + rowPadding - railMarkStart - railMarkClearance, railMarkMinWidth)
+  const cap = Math.max(
+    space + userMessageRailPad(space) + rowPadding - railMarkStart - railMarkClearance,
+    railMarkMinWidth,
+  )
   return Math.min(base, cap)
 }
 

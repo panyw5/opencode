@@ -20,7 +20,11 @@ test("separates statements after semicolons", () => {
 test("breaks long groups but keeps short ones inline", () => {
   expect(formatWolfram("g={1,2,3};")).toBe("g = {1, 2, 3};\n")
   const long = `list={${Array.from({ length: 26 }, (_, i) => i + 1).join(",")}};`
-  expect(formatWolfram(long)).toBe(`list = {\n${Array.from({ length: 26 }, (_, i) => `  ${i + 1},`).join("\n").slice(0, -1)}\n};\n`)
+  expect(formatWolfram(long)).toBe(
+    `list = {\n${Array.from({ length: 26 }, (_, i) => `  ${i + 1},`)
+      .join("\n")
+      .slice(0, -1)}\n};\n`,
+  )
 })
 
 test("keeps patterns attached and preserves named-blank adjacency", () => {

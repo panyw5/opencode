@@ -224,9 +224,7 @@ export const SettingsUpdates: Component = () => {
                       onClick={() => void updateAction("download")}
                     >
                       {language.t(
-                        available().error
-                          ? "settings.updates.action.redownload"
-                          : "settings.updates.action.download",
+                        available().error ? "settings.updates.action.redownload" : "settings.updates.action.download",
                       )}
                     </Button>
                   </div>
@@ -320,7 +318,10 @@ export const SettingsUpdates: Component = () => {
                       variant="primary"
                       data-action="settings-update-install"
                       disabled={
-                        updater.busy || updater.installing || ready().status === "installing" || !platform.updateAndRestart
+                        updater.busy ||
+                        updater.installing ||
+                        ready().status === "installing" ||
+                        !platform.updateAndRestart
                       }
                       onClick={() => void updateAction("install")}
                     >

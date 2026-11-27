@@ -727,11 +727,8 @@ export class GptProController {
       if (!events?.length) continue
       const separator = job.owner.lastIndexOf("\n")
       const routable = separator > 0
-      const ownerMissing =
-        routable && checkOwnerDirectory && !existsSync(job.owner.slice(0, separator))
-      const next = events.filter(
-        (event) => routable && !ownerMissing && now - event.at <= NOTIFICATION_TTL_MS,
-      )
+      const ownerMissing = routable && checkOwnerDirectory && !existsSync(job.owner.slice(0, separator))
+      const next = events.filter((event) => routable && !ownerMissing && now - event.at <= NOTIFICATION_TTL_MS)
       if (next.length === events.length) continue
       evicted += events.length - next.length
       job.notifications = next.length ? next : undefined

@@ -199,9 +199,7 @@ describe("sidebar browser presentation", () => {
     await controller.open("agent", "https://example.com/")
     const bounds = { x: 800, y: 150, width: 500, height: 700 }
     const lease = controller.acquireDisplay()
-    expect(await controller.updateDisplay({ lease, revision: 1, pageID: "user", partition: "user", bounds })).toBe(
-      true,
-    )
+    expect(await controller.updateDisplay({ lease, revision: 1, pageID: "user", partition: "user", bounds })).toBe(true)
     expect(children.map((view) => view.visible)).toEqual([true, false])
     expect(await controller.updateDisplay({ lease, revision: NaN, pageID: "agent", partition: "agent", bounds })).toBe(
       false,
@@ -235,9 +233,7 @@ describe("sidebar browser presentation", () => {
     expect(children.every((view) => !view.visible)).toBe(true)
     // Hidden views park on a 1px sliver at the window's left edge, keeping
     // their last requested layout size (see parkedBounds).
-    expect(
-      children.every((view) => JSON.stringify(view.bounds) === JSON.stringify(parked(500, 700))),
-    ).toBe(true)
+    expect(children.every((view) => JSON.stringify(view.bounds) === JSON.stringify(parked(500, 700)))).toBe(true)
     controller.releaseDisplay(nextLease)
     expect(
       await controller.updateDisplay({ lease: nextLease, revision: 3, pageID: "agent", partition: "agent", bounds }),

@@ -696,7 +696,6 @@ export const dict = {
   "settings.general.row.wayland.tooltip":
     "På Linux med skærme med blandet opdateringshastighed kan native Wayland være mere stabilt.",
 
-
   "settings.updates.row.startup.title": "Tjek for opdateringer ved opstart",
   "settings.updates.row.startup.description": "Tjek automatisk for opdateringer, når OpenCode starter",
   "settings.updates.row.check.title": "Tjek for opdateringer",
@@ -711,7 +710,8 @@ export const dict = {
   "settings.updates.download.paused": "Download sat på pause ({{version}})",
   "settings.updates.download.progress": "Status på opdateringsdownload",
   "settings.updates.download.ready": "OpenCode {{version}} er downloadet og klar til installation",
-  "settings.updates.download.resumeHint": "Genoptagelse starter downloadet forfra; delvise downloads kan ikke genoptages.",
+  "settings.updates.download.resumeHint":
+    "Genoptagelse starter downloadet forfra; delvise downloads kan ikke genoptages.",
   "settings.updates.toast.latest.title": "Du er opdateret",
   "settings.updates.toast.latest.description": "Du kører den nyeste version af OpenCode.",
 

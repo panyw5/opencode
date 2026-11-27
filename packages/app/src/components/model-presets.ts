@@ -96,12 +96,10 @@ export function findModelPresets(catalog: ModelCatalog, providerID: string, mode
     familyMatch: Number(item.familyKey === family),
   }))
   const exactMatches = matches.filter((item) => item.exact)
-  const candidates = (exactMatches.length ? exactMatches : matches.filter((item) => item.familyMatch)).map(
-    (item) => {
-      const rows = modelConfig(item.model)
-      return { ...item, rows, populated: rows.filter((row) => row.value !== "").length }
-    },
-  )
+  const candidates = (exactMatches.length ? exactMatches : matches.filter((item) => item.familyMatch)).map((item) => {
+    const rows = modelConfig(item.model)
+    return { ...item, rows, populated: rows.filter((row) => row.value !== "").length }
+  })
   if (!candidates.length) return
   // Choose one reference record, not a consensus across resellers with different limits.
   // A family match is only a fallback for model aliases such as gpt-5.6-astra.

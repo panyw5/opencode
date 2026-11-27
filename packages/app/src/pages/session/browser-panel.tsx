@@ -102,7 +102,8 @@ export function BrowserPanel(props: { class?: string; size?: Sizing }) {
       } else if (resize.width !== undefined && resize.width !== bounds.width) {
         setResize("frozen", true)
       }
-      if (resize.frozen) return { pageID: tab.pageID, partition: tab.pageID, bounds: null, overlay: overlay ?? "resize" }
+      if (resize.frozen)
+        return { pageID: tab.pageID, partition: tab.pageID, bounds: null, overlay: overlay ?? "resize" }
       return {
         pageID: tab.pageID,
         partition: tab.pageID,

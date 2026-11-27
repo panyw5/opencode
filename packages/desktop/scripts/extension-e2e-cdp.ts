@@ -144,7 +144,13 @@ function evaluate<T>(client: CdpClient, expression: string) {
  * source must be a self-contained expression evaluating to a value (or
  * promise of one); the resolved value is returned.
  */
-async function waitFor<T>(client: CdpClient, phase: string, label: string, expression: string, timeout = DEFAULT_TIMEOUT_MS) {
+async function waitFor<T>(
+  client: CdpClient,
+  phase: string,
+  label: string,
+  expression: string,
+  timeout = DEFAULT_TIMEOUT_MS,
+) {
   const deadline = Date.now() + timeout
   let last: unknown
   while (Date.now() < deadline) {
@@ -199,8 +205,20 @@ async function clickAtCenter(client: CdpClient, phase: string, selector: string,
     })()`,
   )
   if (!rect) throw new StepError(phase, `Element not visible for click: ${label} (${selector})`)
-  await client.call("Input.dispatchMouseEvent", { type: "mousePressed", x: rect.x, y: rect.y, button: "left", clickCount: 1 })
-  await client.call("Input.dispatchMouseEvent", { type: "mouseReleased", x: rect.x, y: rect.y, button: "left", clickCount: 1 })
+  await client.call("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: rect.x,
+    y: rect.y,
+    button: "left",
+    clickCount: 1,
+  })
+  await client.call("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x: rect.x,
+    y: rect.y,
+    button: "left",
+    clickCount: 1,
+  })
 }
 
 async function typeText(client: CdpClient, text: string) {
@@ -378,14 +396,19 @@ async function preclean(client: CdpClient, archive: string, sha256: string) {
   }
   const removed = await evaluate<{ ok: boolean; status: number; body?: string }>(client, UNINSTALL_JS)
   if (!removed?.ok) throw new StepError(phase, `Failed to uninstall stale extension: ${JSON.stringify(removed)}`)
-  await waitFor(client, phase, `extension ${EXTENSION_ID} absent from list`, `(async () => {
+  await waitFor(
+    client,
+    phase,
+    `extension ${EXTENSION_ID} absent from list`,
+    `(async () => {
     const ready = await window.api.awaitInitialization()
     const auth = "Basic " + btoa("opencode:" + ready.password)
     const res = await fetch(ready.url + "/global/extension", { headers: { authorization: auth } })
     if (!res.ok) return false
     const list = await res.json()
     return !list.some((entry) => entry.id === ${JSON.stringify(EXTENSION_ID)})
-  })()`)
+  })()`,
+  )
   log(phase, "stale installation removed")
 }
 
@@ -418,8 +441,11 @@ async function reconcileTombstone(client: CdpClient, archive: string, sha256: st
   try {
     await readFile(candidate)
   } catch {
-    log(phase, `stale tombstone references sha256 ${retainedSha.slice(0, 12)}… with no retained artifact; ` +
-      `install will rely on the deferred purge or fail with a tombstone conflict`)
+    log(
+      phase,
+      `stale tombstone references sha256 ${retainedSha.slice(0, 12)}… with no retained artifact; ` +
+        `install will rely on the deferred purge or fail with a tombstone conflict`,
+    )
     return
   }
   log(phase, `stale tombstone sha=${retainedSha.slice(0, 12)}…; bootstrap-installing matching artifact`)
@@ -453,9 +479,13 @@ async function reconcileTombstone(client: CdpClient, archive: string, sha256: st
 async function install(client: CdpClient, archive: string, sha256: string) {
   const phase = "install"
   log(phase, `preparing local archive install from ${archive}`)
-  const prepared = await archiveOp<{ operationId: string; token: string; id: string; version: string }>(client, "prepare", {
-    request: { kind: "install", source: { type: "local", path: archive, sha256 } },
-  })
+  const prepared = await archiveOp<{ operationId: string; token: string; id: string; version: string }>(
+    client,
+    "prepare",
+    {
+      request: { kind: "install", source: { type: "local", path: archive, sha256 } },
+    },
+  )
   if (!prepared?.ok || !prepared.value) {
     throw new StepError(
       phase,
@@ -463,7 +493,10 @@ async function install(client: CdpClient, archive: string, sha256: string) {
         `(check the sidecar build version supports this archive)`,
     )
   }
-  log(phase, `prepared operationId=${prepared.value.operationId} id=${prepared.value.id} version=${prepared.value.version}`)
+  log(
+    phase,
+    `prepared operationId=${prepared.value.operationId} id=${prepared.value.id} version=${prepared.value.version}`,
+  )
   // A retained tombstone from a previous uninstall whose purge is still in
   // flight can briefly reject commits; retry the known conflict a few times.
   let committed: { ok: boolean; error?: { code?: string; message?: string } } | undefined
@@ -488,7 +521,11 @@ async function install(client: CdpClient, archive: string, sha256: string) {
     )
   }
   log(phase, "commit succeeded; waiting for the extension to appear enabled")
-  await waitFor(client, phase, `extension ${EXTENSION_ID} enabled`, `(async () => {
+  await waitFor(
+    client,
+    phase,
+    `extension ${EXTENSION_ID} enabled`,
+    `(async () => {
     const ready = await window.api.awaitInitialization()
     const auth = "Basic " + btoa("opencode:" + ready.password)
     const res = await fetch(ready.url + "/global/extension", { headers: { authorization: auth } })
@@ -496,7 +533,8 @@ async function install(client: CdpClient, archive: string, sha256: string) {
     const list = await res.json()
     const item = list.find((entry) => entry.id === ${JSON.stringify(EXTENSION_ID)})
     return !!item && item.enabled === true
-  })()`)
+  })()`,
+  )
   log(phase, "extension installed and enabled")
 }
 
@@ -610,7 +648,13 @@ async function detectSearchDirectory(client: CdpClient, fallback: string) {
     await clearPrompt(client)
     if (!(await focusPrompt(client))) throw new StepError(phase, "prompt editor did not take focus")
     await typeText(client, "/open")
-    await waitFor(client, phase, "file.open slash item", `!!document.querySelector('[data-slash-id="file.open"]')`, 8000)
+    await waitFor(
+      client,
+      phase,
+      "file.open slash item",
+      `!!document.querySelector('[data-slash-id="file.open"]')`,
+      8000,
+    )
     await clickElement(client, phase, '[data-slash-id="file.open"]', "file.open slash command")
     await waitFor(
       client,
@@ -711,7 +755,12 @@ async function openFixtureFile(client: CdpClient) {
   log(phase, `typing fixture filename ${FIXTURE_NAME}`)
   await typeText(client, FIXTURE_NAME)
   const keySelector = `[data-slot="list-item"][data-key="file:${FIXTURE_NAME}"]`
-  await waitFor(client, phase, `file result ${FIXTURE_NAME}`, `!!document.querySelector(${JSON.stringify(keySelector)})`)
+  await waitFor(
+    client,
+    phase,
+    `file result ${FIXTURE_NAME}`,
+    `!!document.querySelector(${JSON.stringify(keySelector)})`,
+  )
   await clickElement(client, phase, keySelector, `file result ${FIXTURE_NAME}`)
   await waitFor(client, phase, "hello viewer DOM", `!!document.querySelector(".oc-hello-viewer-root")`)
   log(phase, "fixture file opened")
@@ -755,14 +804,19 @@ async function uninstallExtension(client: CdpClient) {
   const result = await evaluate<{ ok: boolean; status: number; body?: string }>(client, UNINSTALL_JS)
   if (!result?.ok) throw new StepError(phase, `Uninstall failed: ${JSON.stringify(result)}`)
   log(phase, "uninstall committed; waiting for registry cleanup")
-  await waitFor(client, phase, `extension ${EXTENSION_ID} absent from list`, `(async () => {
+  await waitFor(
+    client,
+    phase,
+    `extension ${EXTENSION_ID} absent from list`,
+    `(async () => {
     const ready = await window.api.awaitInitialization()
     const auth = "Basic " + btoa("opencode:" + ready.password)
     const res = await fetch(ready.url + "/global/extension", { headers: { authorization: auth } })
     if (!res.ok) return false
     const list = await res.json()
     return !list.some((entry) => entry.id === ${JSON.stringify(EXTENSION_ID)})
-  })()`)
+  })()`,
+  )
   const state = await evaluate<{ viewer: boolean; style: boolean }>(client, VIEWER_STATE_JS)
   if (state?.viewer || state?.style) {
     throw new StepError(

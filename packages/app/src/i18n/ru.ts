@@ -703,7 +703,6 @@ export const dict = {
   "settings.general.row.wayland.tooltip":
     "На Linux с мониторами разной частоты обновления нативный Wayland может быть стабильнее.",
 
-
   "settings.updates.row.startup.title": "Проверять обновления при запуске",
   "settings.updates.row.startup.description": "Автоматически проверять обновления при запуске OpenCode",
   "settings.updates.row.check.title": "Проверить обновления",
@@ -718,7 +717,8 @@ export const dict = {
   "settings.updates.download.paused": "Загрузка приостановлена ({{version}})",
   "settings.updates.download.progress": "Прогресс загрузки обновления",
   "settings.updates.download.ready": "OpenCode {{version}} загружен и готов к установке",
-  "settings.updates.download.resumeHint": "При возобновлении загрузка начнётся заново; частичные загрузки нельзя возобновить.",
+  "settings.updates.download.resumeHint":
+    "При возобновлении загрузка начнётся заново; частичные загрузки нельзя возобновить.",
   "settings.updates.toast.latest.title": "У вас последняя версия",
   "settings.updates.toast.latest.description": "Вы используете последнюю версию OpenCode.",
   "font.option.ibmPlexMono": "IBM Plex Mono",

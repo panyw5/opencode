@@ -27,7 +27,13 @@ test("shares only identical regular font and image files at the same asset URL",
 
 test("restricts the renderer's shared route to flat static asset paths", () => {
   expect(isShareableRendererAsset("assets/font-Abc_123.woff2")).toBe(true)
-  for (const path of ["index.html", "assets/script.js", "assets/a/../font.woff2", "assets/..\\font.woff2", "//assets/icon.svg"]) {
+  for (const path of [
+    "index.html",
+    "assets/script.js",
+    "assets/a/../font.woff2",
+    "assets/..\\font.woff2",
+    "//assets/icon.svg",
+  ]) {
     expect(isShareableRendererAsset(path)).toBe(false)
   }
 })

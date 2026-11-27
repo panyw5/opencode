@@ -702,7 +702,6 @@ export const dict = {
   "settings.general.row.wayland.tooltip":
     "Na Linuxu sa monitorima miješanih stopa osvježavanja, nativni Wayland može biti stabilniji.",
 
-
   "settings.updates.row.startup.title": "Provjeri ažuriranja pri pokretanju",
   "settings.updates.row.startup.description": "Automatski provjerava ažuriranja kada se OpenCode pokrene",
   "settings.updates.row.check.title": "Provjeri ažuriranja",
@@ -717,7 +716,8 @@ export const dict = {
   "settings.updates.download.paused": "Preuzimanje pauzirano ({{version}})",
   "settings.updates.download.progress": "Napredak preuzimanja ažuriranja",
   "settings.updates.download.ready": "OpenCode {{version}} je preuzet i spreman za instalaciju",
-  "settings.updates.download.resumeHint": "Nastavak ponovo pokreće preuzimanje; djelimična preuzimanja se ne mogu nastaviti.",
+  "settings.updates.download.resumeHint":
+    "Nastavak ponovo pokreće preuzimanje; djelimična preuzimanja se ne mogu nastaviti.",
   "settings.updates.toast.latest.title": "Sve je ažurno",
   "settings.updates.toast.latest.description": "Koristiš najnoviju verziju OpenCode-a.",
   "font.option.ibmPlexMono": "IBM Plex Mono",

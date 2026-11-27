@@ -386,7 +386,10 @@ export function registerRendererProtocol() {
     const manifest = join(process.resourcesPath, "shared-renderer-assets.json")
     try {
       const assets: unknown = JSON.parse(readFileSync(manifest, "utf8"))
-      if (!Array.isArray(assets) || !assets.every((asset) => typeof asset === "string" && isShareableRendererAsset(asset))) {
+      if (
+        !Array.isArray(assets) ||
+        !assets.every((asset) => typeof asset === "string" && isShareableRendererAsset(asset))
+      ) {
         throw new Error("Invalid shared renderer asset manifest")
       }
       for (const asset of assets) sharedAssets.add(asset)

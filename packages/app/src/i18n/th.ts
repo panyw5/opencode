@@ -693,7 +693,6 @@ export const dict = {
   "settings.general.row.wayland.description": "ปิดใช้งาน X11 fallback บน Wayland ต้องรีสตาร์ท",
   "settings.general.row.wayland.tooltip": "บน Linux ที่มีจอภาพรีเฟรชเรตแบบผสม Wayland แบบเนทีฟอาจเสถียรกว่า",
 
-
   "settings.updates.row.startup.title": "ตรวจสอบการอัปเดตเมื่อเริ่มต้น",
   "settings.updates.row.startup.description": "ตรวจสอบการอัปเดตโดยอัตโนมัติเมื่อ OpenCode เปิดใช้งาน",
   "settings.updates.row.check.title": "ตรวจสอบการอัปเดต",
@@ -708,7 +707,8 @@ export const dict = {
   "settings.updates.download.paused": "หยุดดาวน์โหลดชั่วคราวแล้ว ({{version}})",
   "settings.updates.download.progress": "ความคืบหน้าการดาวน์โหลดอัปเดต",
   "settings.updates.download.ready": "ดาวน์โหลด OpenCode {{version}} เสร็จแล้ว พร้อมติดตั้ง",
-  "settings.updates.download.resumeHint": "การดำเนินการต่อจะเริ่มดาวน์โหลดใหม่ ไม่สามารถดาวน์โหลดต่อจากจุดที่ค้างไว้ได้",
+  "settings.updates.download.resumeHint":
+    "การดำเนินการต่อจะเริ่มดาวน์โหลดใหม่ ไม่สามารถดาวน์โหลดต่อจากจุดที่ค้างไว้ได้",
   "settings.updates.toast.latest.title": "คุณเป็นเวอร์ชันล่าสุดแล้ว",
   "settings.updates.toast.latest.description": "คุณกำลังใช้งาน OpenCode เวอร์ชันล่าสุด",
 

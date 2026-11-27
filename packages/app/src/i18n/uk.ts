@@ -373,7 +373,6 @@ export const dict = {
   "dialog.project.edit.worktree.startup.description": "Виконується після створення нової робочої області (worktree).",
   "dialog.project.edit.worktree.startup.placeholder": "напр. bun install",
 
-
   "context.breakdown.title": "Розподіл контексту",
   "context.breakdown.note":
     'Приблизний розподіл вхідних токенів. "Інше" включає визначення інструментів і накладні витрати.',
@@ -796,7 +795,6 @@ export const dict = {
   "settings.general.row.wayland.tooltip":
     "На Linux з моніторами з різною частотою оновлення нативний Wayland може бути більш стабільним.",
 
-
   "settings.updates.row.startup.title": "Перевіряти оновлення під час запуску",
   "settings.updates.row.startup.description": "Автоматично перевіряти наявність оновлень під час запуску OpenCode",
   "settings.updates.row.check.title": "Перевірити оновлення",
@@ -811,7 +809,8 @@ export const dict = {
   "settings.updates.download.paused": "Завантаження призупинено ({{version}})",
   "settings.updates.download.progress": "Прогрес завантаження оновлення",
   "settings.updates.download.ready": "OpenCode {{version}} завантажено й готово до встановлення",
-  "settings.updates.download.resumeHint": "Після відновлення завантаження розпочнеться заново; часткові завантаження відновити неможливо.",
+  "settings.updates.download.resumeHint":
+    "Після відновлення завантаження розпочнеться заново; часткові завантаження відновити неможливо.",
   "settings.updates.toast.latest.title": "У вас актуальна версія",
   "settings.updates.toast.latest.description": "Ви використовуєте останню версію OpenCode.",
   "sound.option.none": "Немає",

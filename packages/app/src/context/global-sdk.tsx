@@ -226,7 +226,10 @@ export function GlobalSDKProvider(props: ParentProps) {
       }
       const dispatch = (event: Queued) => {
         if (event.payload.type === "permission.replied") {
-          permissionPerf("dispatch-replied", `request=${(event.payload.properties as { requestID?: string }).requestID}`)
+          permissionPerf(
+            "dispatch-replied",
+            `request=${(event.payload.properties as { requestID?: string }).requestID}`,
+          )
         }
         if (flushSkip && event.payload.type === "message.part.delta") {
           const props = event.payload.properties
@@ -353,7 +356,10 @@ export function GlobalSDKProvider(props: ParentProps) {
               const directory = event.directory ?? "global"
               const payload = event.payload
               if (payload.type === "permission.replied" || payload.type === "permission.asked") {
-                permissionPerf("sse-arrived", `type=${payload.type} queue=${queue.length} flushing=${flushing ? flushing.length - flushIndex : 0}`)
+                permissionPerf(
+                  "sse-arrived",
+                  `type=${payload.type} queue=${queue.length} flushing=${flushing ? flushing.length - flushIndex : 0}`,
+                )
               }
               lastEventType = payload.type
               if (eventCount === 1) {

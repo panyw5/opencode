@@ -35,11 +35,7 @@ export function createSessionOverviewCache(deps: Pick<SessionControllerDeps, "ke
     return
   }
 
-  const load = (
-    directory: string,
-    sessionID: string,
-    opts?: { fresh?: boolean },
-  ): Promise<SessionOverviewResponse> => {
+  const load = (directory: string, sessionID: string, opts?: { fresh?: boolean }): Promise<SessionOverviewResponse> => {
     const hit = opts?.fresh ? pending(directory, sessionID) : current(directory, sessionID)
     if (hit) return hit
     const key = keyFor(directory, sessionID)

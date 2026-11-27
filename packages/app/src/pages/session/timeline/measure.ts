@@ -98,8 +98,7 @@ export function resolveObserverMeasurement(input: {
   // deferred content mounts between the border-box sample and the commit
   // frame — so a large jump from the last committed size re-reads the live
   // layout instead of committing a transient value.
-  const suspicious =
-    !stale && input.previousSize !== undefined && Math.abs(input.sampleSize - input.previousSize) >= 64
+  const suspicious = !stale && input.previousSize !== undefined && Math.abs(input.sampleSize - input.previousSize) >= 64
   const size = stale || suspicious ? input.readCurrentSize() : input.sampleSize
   return Number.isFinite(size) && size > 0 ? { stale, size } : undefined
 }

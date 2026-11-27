@@ -96,8 +96,10 @@ export function ExtensionInstallationForm(props: ExtensionInstallationProps) {
   const initialConnection = props.connection()
   const intentIdentity = () => JSON.stringify(props.intent)
   const initialIntent = intentIdentity()
-  const t = (key: InstallationTranslationKey | InstallationWarningKey, params?: Record<string, string | number | boolean>) =>
-    props.language.t(key, params)
+  const t = (
+    key: InstallationTranslationKey | InstallationWarningKey,
+    params?: Record<string, string | number | boolean>,
+  ) => props.language.t(key, params)
   const sourceOptions = createMemo(() => [
     { value: "release", label: t("config.extensions.install.release") },
     { value: "npm", label: t("config.extensions.install.npm") },

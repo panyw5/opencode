@@ -101,10 +101,7 @@ import { createReviewDataService } from "@/pages/session/review-data-service"
 import { DraftWorkspaceReview } from "@/pages/session/draft-workspace-review"
 import { SessionSidePanel } from "@/pages/session/session-side-panel"
 import { SessionUserMessageRail, type SessionUserMessageEntry } from "@/pages/session/session-user-message-rail"
-import {
-  userMessageRailPad,
-  userMessageRailPreview,
-} from "@/pages/session/session-user-message-rail-model"
+import { userMessageRailPad, userMessageRailPreview } from "@/pages/session/session-user-message-rail-model"
 import { createSessionContentGap } from "@/pages/session/session-content-gap"
 import { working } from "@/pages/session/session-working"
 import { TerminalPanel } from "@/pages/session/terminal-panel"
@@ -338,9 +335,7 @@ export default function Page() {
     )
   })
   const statusPadRight = createMemo(() =>
-    platform.platform === "desktop" && statusCompact()
-      ? Math.max(0, statusWidth.compact - 2 - contentGap().right)
-      : 0,
+    platform.platform === "desktop" && statusCompact() ? Math.max(0, statusWidth.compact - 2 - contentGap().right) : 0,
   )
   const pendingSubmission = createMemo(() => pendingSessionSubmissions.get(sdk.url, sdk.directory, params))
   // The pending banner bridges the gap between the route commit and the

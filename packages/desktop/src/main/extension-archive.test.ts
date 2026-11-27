@@ -3,20 +3,12 @@ import { createHash, generateKeyPairSync } from "node:crypto"
 import { mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, dirname, join } from "node:path"
-import {
-  MAX_ARCHIVE_BYTES,
-  MAX_DESCRIPTOR_BYTES,
-  MAX_SIGNATURE_BYTES,
-} from "@opencode-ai/util/extension-release"
+import { MAX_ARCHIVE_BYTES, MAX_DESCRIPTOR_BYTES, MAX_SIGNATURE_BYTES } from "@opencode-ai/util/extension-release"
 // The desktop main process only re-validates shape/size/digest; the sidecar
 // (opencode server) performs the Ed25519 check. These tests drive the shared
 // trust implementation inside the fake sidecar so the IPC boundary is covered
 // against the real T3.1 semantics with a generated publisher key.
-import {
-  signDescriptor,
-  verifyDescriptorSignature,
-  type TrustedKey,
-} from "../../../opencode/src/extension/trust"
+import { signDescriptor, verifyDescriptorSignature, type TrustedKey } from "../../../opencode/src/extension/trust"
 
 import type { IpcMain, Net } from "electron"
 import {
@@ -90,7 +82,11 @@ async function staged(bytes: Uint8Array = new TextEncoder().encode("fake tgz pay
   dirs.push(dirname(result.path))
   return result.path
 }
-const exists = (path: string) => stat(path).then(() => true, () => false)
+const exists = (path: string) =>
+  stat(path).then(
+    () => true,
+    () => false,
+  )
 async function waitForGone(path: string) {
   for (let i = 0; i < 100; i++) {
     if (!(await exists(path))) return
@@ -171,7 +167,15 @@ describe("stage archive bytes", () => {
   })
 
   test("there is no caller-controlled filename: path-like payloads are rejected as bytes", async () => {
-    for (const bytes of [undefined, null, "", "../../etc/passwd", "/tmp/evil.tgz", { path: "../x.tgz" }, new Uint8Array(0)]) {
+    for (const bytes of [
+      undefined,
+      null,
+      "",
+      "../../etc/passwd",
+      "/tmp/evil.tgz",
+      { path: "../x.tgz" },
+      new Uint8Array(0),
+    ]) {
       const result = await invoke("extension-archive-stage", bytes)
       expect(result.ok).toBe(false)
     }
@@ -309,7 +313,15 @@ describe("prepare staged archive descriptor re-validation", () => {
       { request: {}, release: { url: 42, descriptor: "{}", signature: undefined, path } },
       { request: {}, release: { url: `${SIGN_ORIGIN}v/stable.json`, descriptor: 42, path } },
       { request: {}, release: { url: `${SIGN_ORIGIN}v/stable.json`, descriptor: "{}", signature: 42, path } },
-      { request: {}, release: { url: `${SIGN_ORIGIN}v/stable.json`, descriptor: "{}", signature: "x".repeat(MAX_SIGNATURE_BYTES + 1), path } },
+      {
+        request: {},
+        release: {
+          url: `${SIGN_ORIGIN}v/stable.json`,
+          descriptor: "{}",
+          signature: "x".repeat(MAX_SIGNATURE_BYTES + 1),
+          path,
+        },
+      },
       { request: {}, release: { url: `${SIGN_ORIGIN}v/stable.json`, descriptor: "{}", signature: null, path } },
     ]
     for (const payload of cases) {
@@ -380,7 +392,10 @@ describe("prepare staged archive descriptor re-validation", () => {
     current = fake.server
     expect(await op("status", { operationId: "op-1" })).toEqual({
       ok: false,
-      error: { code: "signature_invalid", message: "Extension release signature: signature does not match the descriptor" },
+      error: {
+        code: "signature_invalid",
+        message: "Extension release signature: signature does not match the descriptor",
+      },
     })
   })
 

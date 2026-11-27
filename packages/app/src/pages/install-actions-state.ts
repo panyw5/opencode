@@ -189,13 +189,7 @@ export function installationRequest(
   } else if (input.sourceType === "local") {
     const path = input.localPath.trim()
     const sha256 = input.sha256.trim()
-    if (
-      intent.kind !== "install" ||
-      !path ||
-      path.length > 4096 ||
-      !/\.tgz$/i.test(path) ||
-      !isSha256Hex(sha256)
-    )
+    if (intent.kind !== "install" || !path || path.length > 4096 || !/\.tgz$/i.test(path) || !isSha256Hex(sha256))
       return
     source = { type: "local", path, sha256: sha256.toLowerCase() }
   } else return

@@ -102,8 +102,7 @@ type ViewEntry = {
   appliedVisible?: boolean
 }
 
-const sameProtection = (a: Set<string>, b: Set<string>) =>
-  a.size === b.size && [...a].every((pageID) => b.has(pageID))
+const sameProtection = (a: Set<string>, b: Set<string>) => a.size === b.size && [...a].every((pageID) => b.has(pageID))
 
 type ControllerEvents = {
   onViewState?: (state: ViewState) => void
@@ -172,8 +171,7 @@ export class BrowserController {
    * pending presentation — so every consumer sees the same truth. */
   private protectedPageIDs() {
     const protectedPages = new Set<string>()
-    for (const [pageID, entry] of this.views)
-      if (entry.visible || entry.transientShow) protectedPages.add(pageID)
+    for (const [pageID, entry] of this.views) if (entry.visible || entry.transientShow) protectedPages.add(pageID)
     if (this.protectedPageID) protectedPages.add(this.protectedPageID)
     if (this.pendingPresentationPageID) protectedPages.add(this.pendingPresentationPageID)
     return protectedPages

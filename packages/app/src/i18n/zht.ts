@@ -881,7 +881,8 @@ export const dict = {
   "config.extensions.warnings.title": "警告",
   "config.extensions.warnings.webApiVersion": "前端部分需要較新版本的 OpenCode（web.apiVersion {{version}}）。",
   "config.extensions.warnings.serverApiVersion": "伺服器部分需要較新版本的 OpenCode（server.apiVersion {{version}}）。",
-  "config.extensions.warnings.inlineIsolation": "伺服器部分宣告了 inline 隔離，該後端僅用於本機開發安裝。目前仍在處理程序內執行；封裝的擴充功能應改用 process 隔離。",
+  "config.extensions.warnings.inlineIsolation":
+    "伺服器部分宣告了 inline 隔離，該後端僅用於本機開發安裝。目前仍在處理程序內執行；封裝的擴充功能應改用 process 隔離。",
   "config.extensions.toggle.enable": "啟用",
   "config.extensions.toggle.disable": "停用",
   "config.extensions.toggle.busy": "更新中…",
@@ -967,7 +968,6 @@ export const dict = {
   "settings.general.row.wayland.title": "使用原生 Wayland",
   "settings.general.row.wayland.description": "在 Wayland 上停用 X11 後備模式。需要重新啟動。",
   "settings.general.row.wayland.tooltip": "在混合更新率螢幕的 Linux 系統上，原生 Wayland 可能更穩定。",
-
 
   "settings.updates.row.startup.title": "啟動時檢查更新",
   "settings.updates.row.startup.description": "在 OpenCode 啟動時自動檢查更新",

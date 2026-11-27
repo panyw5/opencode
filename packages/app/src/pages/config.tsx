@@ -2491,10 +2491,7 @@ function GenericAgentEditor(props: {
                   />
                 </AgentSettingsField>
               </AgentSettingsCard>
-              <AgentSettingsCard
-                title={language.t("agentSettings.runtimeOverrides")}
-                size="standard"
-              >
+              <AgentSettingsCard title={language.t("agentSettings.runtimeOverrides")} size="standard">
                 <AgentSettingsField wide>
                   <TextField
                     type="text"
@@ -9610,7 +9607,9 @@ export default function ConfigPage() {
                                 title={item.displayName}
                                 subtitle={`${item.id} · v${item.version}`}
                                 note={t(`config.extensions.state.${extensionRuntimeState(item)}`)}
-                                warn={extensionRuntimeState(item) !== "ready" && extensionRuntimeState(item) !== "disabled"}
+                                warn={
+                                  extensionRuntimeState(item) !== "ready" && extensionRuntimeState(item) !== "disabled"
+                                }
                                 onSelect={() => selectMiddlePick(extensionPick(item.id))}
                               />
                             )}

@@ -47,7 +47,9 @@ export function createDesktopArchiveOperations(input: {
       if (release) {
         const compat = hostCompatibility(release.descriptor.engines, input.hostVersion?.())
         if (!compat.ok) {
-          console.warn(`[extension-install] release incompatible id=${release.descriptor.id} range=${compat.range ?? "?"}`)
+          console.warn(
+            `[extension-install] release incompatible id=${release.descriptor.id} range=${compat.range ?? "?"}`,
+          )
           throw new ExtensionInstallationError(
             `Extension requires opencode ${compat.range}; this build is ${input.hostVersion?.() ?? "unknown"}`,
           )

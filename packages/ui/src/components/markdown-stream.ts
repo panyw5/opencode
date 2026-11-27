@@ -30,8 +30,7 @@ type BlockScan = {
 }
 
 function scanLine(line: string, state: BlockScan) {
-  const fence =
-    state.codeSpan === 0 && !state.math ? line.match(/^[ \t]{0,3}(`{3,}|~{3,})/)?.[1] : undefined
+  const fence = state.codeSpan === 0 && !state.math ? line.match(/^[ \t]{0,3}(`{3,}|~{3,})/)?.[1] : undefined
   if (fence) {
     if (!state.fenceChar) {
       state.fenceChar = fence[0]!

@@ -647,7 +647,8 @@ export const dict = {
   "settings.updates.download.paused": "ダウンロードを一時停止しました ({{version}})",
   "settings.updates.download.progress": "更新のダウンロード進行状況",
   "settings.updates.download.ready": "OpenCode {{version}} のダウンロードが完了し、インストール可能です",
-  "settings.updates.download.resumeHint": "再開するとダウンロードが最初からやり直されます。部分的なダウンロードは再開できません。",
+  "settings.updates.download.resumeHint":
+    "再開するとダウンロードが最初からやり直されます。部分的なダウンロードは再開できません。",
   "settings.updates.toast.latest.title": "最新です",
   "settings.updates.toast.latest.description": "OpenCode は最新バージョンです。",
   "font.option.ibmPlexMono": "IBM Plex Mono",

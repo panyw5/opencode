@@ -67,7 +67,10 @@ export function FillAllModelPresetsButton(props: {
   onChange: (index: number, value: string) => void
 }) {
   const language = useLanguage()
-  const { catalog, preset } = useModelPreset(() => props.providerID, () => props.model.id)
+  const { catalog, preset } = useModelPreset(
+    () => props.providerID,
+    () => props.model.id,
+  )
   const fills = createMemo(() => {
     const values = preset()?.values ?? {}
     return props.model.config.flatMap((row, index) => {
@@ -120,7 +123,10 @@ export function ModelConfigFields(props: {
   onChange: (index: number, value: string) => void
 }) {
   const language = useLanguage()
-  const { catalog, preset } = useModelPreset(() => props.providerID, () => props.model.id)
+  const { catalog, preset } = useModelPreset(
+    () => props.providerID,
+    () => props.model.id,
+  )
   createEffect(() => {
     console.info(
       "[model-presets] match",

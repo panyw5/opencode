@@ -708,7 +708,6 @@ export const dict = {
   "settings.general.row.wayland.tooltip":
     "En Linux con monitores de frecuencia de actualización mixta, Wayland nativo puede ser más estable.",
 
-
   "settings.updates.row.startup.title": "Buscar actualizaciones al iniciar",
   "settings.updates.row.startup.description": "Buscar actualizaciones automáticamente cuando se inicia OpenCode",
   "settings.updates.row.check.title": "Buscar actualizaciones",
@@ -723,7 +722,8 @@ export const dict = {
   "settings.updates.download.paused": "Descarga en pausa ({{version}})",
   "settings.updates.download.progress": "Progreso de descarga de la actualización",
   "settings.updates.download.ready": "OpenCode {{version}} se ha descargado y está listo para instalar",
-  "settings.updates.download.resumeHint": "Reanudar reinicia la descarga; las descargas parciales no se pueden reanudar.",
+  "settings.updates.download.resumeHint":
+    "Reanudar reinicia la descarga; las descargas parciales no se pueden reanudar.",
   "settings.updates.toast.latest.title": "Estás al día",
   "settings.updates.toast.latest.description": "Estás usando la última versión de OpenCode.",
   "font.option.ibmPlexMono": "IBM Plex Mono",

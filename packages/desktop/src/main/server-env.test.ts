@@ -49,9 +49,7 @@ describe("sidecar environment", () => {
       },
     })
 
-    expect(env.OPENCODE_CLI_PATH).toBe(
-      "/Applications/OpenCode.app/Contents/Resources/sidecars/opencode-cli",
-    )
+    expect(env.OPENCODE_CLI_PATH).toBe("/Applications/OpenCode.app/Contents/Resources/sidecars/opencode-cli")
   })
 
   test("does not override an explicit BACKGROUND_SUBAGENTS env", () => {

@@ -19,9 +19,7 @@ export function TitlebarActionsPlaceholder(props: { surface: string }) {
   onMount(() => {
     queueMicrotask(() => {
       const width = rightMount()?.getBoundingClientRect().width ?? 0
-      console.debug(
-        `[titlebar-actions] placeholder mounted surface=${props.surface} width=${width.toFixed(1)}`,
-      )
+      console.debug(`[titlebar-actions] placeholder mounted surface=${props.surface} width=${width.toFixed(1)}`)
     })
   })
 
@@ -82,14 +80,14 @@ export function TitlebarActionsPlaceholder(props: { surface: string }) {
                 </Button>
               </Show>
 
-               <div data-slot="session-panel-actions" class="hidden md:flex items-center shrink-0">
-                 <Button
-                   variant="ghost"
-                   class={sessionPanelTriggerClass + " disabled:!cursor-default"}
-                   disabled
-                   aria-label={language.t("session.panel.reviewAndFiles")}
-                 >
-                   <SessionPanelTriggerIcon />
+              <div data-slot="session-panel-actions" class="hidden md:flex items-center shrink-0">
+                <Button
+                  variant="ghost"
+                  class={sessionPanelTriggerClass + " disabled:!cursor-default"}
+                  disabled
+                  aria-label={language.t("session.panel.reviewAndFiles")}
+                >
+                  <SessionPanelTriggerIcon />
                 </Button>
               </div>
             </div>

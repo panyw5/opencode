@@ -351,7 +351,10 @@ $$`
 
   test("renders bold wrapping backslash-paren math", async () => {
     const marked = new Marked()
-    const html = renderMathExpressions(await marked.parse(prepareMarkdown("**八个共形权 \\(3/2\\) 的奇场**可以写为")), "html")
+    const html = renderMathExpressions(
+      await marked.parse(prepareMarkdown("**八个共形权 \\(3/2\\) 的奇场**可以写为")),
+      "html",
+    )
 
     expect(html).toContain("<strong>")
     expect(html).toContain("katex")
@@ -711,7 +714,9 @@ describe("markdown punctuation emphasis", () => {
   test("opens strong when a letter precedes the marker and CJK punctuation follows", async () => {
     const marked = new Marked()
     const html = await marked.parse(
-      prepareMarkdown("这里的**「共振」就是：乘在待求 OPE 系数前面的数恰好为零。** 因此，这一步不能像平常那样用除法求出该系数。"),
+      prepareMarkdown(
+        "这里的**「共振」就是：乘在待求 OPE 系数前面的数恰好为零。** 因此，这一步不能像平常那样用除法求出该系数。",
+      ),
     )
 
     expect(html).toContain("<strong>「共振」就是：乘在待求 OPE 系数前面的数恰好为零。</strong>")

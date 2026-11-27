@@ -34,7 +34,9 @@ function normalizeDirectory(directory: string) {
   return directory.replace(/\\/g, "/")
 }
 
-export function createOpencodeClient(config?: Config & { directory?: string }): OpencodeClient & { directory?: string } {
+export function createOpencodeClient(
+  config?: Config & { directory?: string },
+): OpencodeClient & { directory?: string } {
   if (!config?.fetch) {
     const customFetch: any = (req: any) => {
       // @ts-ignore

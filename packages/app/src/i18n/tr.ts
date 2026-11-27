@@ -711,7 +711,6 @@ export const dict = {
   "settings.general.row.wayland.tooltip":
     "Karışık yenileme hızlı monitörlere sahip Linux'ta yerel Wayland daha kararlı olabilir.",
 
-
   "settings.updates.row.startup.title": "Başlangıçta güncellemeleri kontrol et",
   "settings.updates.row.startup.description": "OpenCode başladığında otomatik güncelleme kontrolü yap",
   "settings.updates.row.check.title": "Güncellemeleri kontrol et",

@@ -60,8 +60,7 @@ export function SessionGitPanel(props: { directory: string; close: () => void })
   onMount(() => void loadStatus("open"))
 
   const repo = () => status.repo
-  const selected = (file: Change) =>
-    form.overrides[`/${file.path}`] ?? !file.untracked
+  const selected = (file: Change) => form.overrides[`/${file.path}`] ?? !file.untracked
   const files = () => repo()?.files ?? []
   const selectedFiles = () => files().filter(selected)
   const available = () => !form.busy && !status.loading && status.error === undefined && !!repo()?.branch
@@ -200,7 +199,13 @@ export function SessionGitPanel(props: { directory: string; close: () => void })
             </span>
             <span class="text-11-regular text-text-weak">{t("session.git.title")}</span>
           </div>
-          <IconButton icon="refresh" variant="ghost" aria-label={t("session.git.refresh")} disabled={status.loading || form.busy} onClick={refresh} />
+          <IconButton
+            icon="refresh"
+            variant="ghost"
+            aria-label={t("session.git.refresh")}
+            disabled={status.loading || form.busy}
+            onClick={refresh}
+          />
           <IconButton icon="close" variant="ghost" aria-label={t("session.panel.collapse")} onClick={props.close} />
         </div>
         <Show when={repo()}>
@@ -214,9 +219,12 @@ export function SessionGitPanel(props: { directory: string; close: () => void })
                 {data().upstream ?? t("session.git.noUpstream")}
               </span>
               <Show when={data().upstream}>
-                <span class="shrink-0 tabular-nums text-text-weak">↓{data().behind} ↑{data().ahead}</span>
+                <span class="shrink-0 tabular-nums text-text-weak">
+                  ↓{data().behind} ↑{data().ahead}
+                </span>
                 <Button size="small" variant="ghost" disabled={!canPush()} onClick={() => void run("push")}>
-                  <Icon name="arrow-up" size="small" />{t("session.git.push")}
+                  <Icon name="arrow-up" size="small" />
+                  {t("session.git.push")}
                 </Button>
               </Show>
             </div>
@@ -226,10 +234,16 @@ export function SessionGitPanel(props: { directory: string; close: () => void })
 
       <div class="min-h-0 flex-1 overflow-auto py-1">
         <Show when={status.loading && repo() === undefined}>
-          <div class="grid p-6 place-items-center"><Spinner /></div>
+          <div class="grid p-6 place-items-center">
+            <Spinner />
+          </div>
         </Show>
         <Show when={status.error}>
-          {(error) => <p role="alert" class="m-3 break-words text-12-regular text-text-weak">{t("session.git.statusError")}: {error()}</p>}
+          {(error) => (
+            <p role="alert" class="m-3 break-words text-12-regular text-text-weak">
+              {t("session.git.statusError")}: {error()}
+            </p>
+          )}
         </Show>
         <Show when={repo() === null && !status.error}>
           <p class="m-3 text-12-regular text-text-weak">{t("session.git.noRepository")}</p>
@@ -245,7 +259,10 @@ export function SessionGitPanel(props: { directory: string; close: () => void })
         <footer class="shrink-0 border-t border-border-weaker-base p-3">
           <Show when={form.notice}>
             {(notice) => (
-              <div role={notice().error ? "alert" : "status"} class="mb-2 max-h-24 overflow-auto break-words text-12-regular text-text-weak">
+              <div
+                role={notice().error ? "alert" : "status"}
+                class="mb-2 max-h-24 overflow-auto break-words text-12-regular text-text-weak"
+              >
                 <span class="text-text-strong">{notice().text}</span>
                 <Show when={notice().error}>{(error) => <div class="mt-1 whitespace-pre-wrap">{error()}</div>}</Show>
               </div>
@@ -253,7 +270,10 @@ export function SessionGitPanel(props: { directory: string; close: () => void })
           </Show>
           <form
             class="rounded-lg border border-border-base bg-surface-panel p-2 focus-within:border-border-strong-base"
-            onSubmit={(event) => { event.preventDefault(); void run("commit") }}
+            onSubmit={(event) => {
+              event.preventDefault()
+              void run("commit")
+            }}
           >
             <textarea
               aria-label={t("session.git.message")}
@@ -273,10 +293,17 @@ export function SessionGitPanel(props: { directory: string; close: () => void })
               <Button type="submit" variant="primary" disabled={!canCommit()}>
                 {t("session.git.commit", { count: selectedFiles().length })}
               </Button>
-              <Button type="button" variant="secondary" disabled={!canCommit() || !canPush()} onClick={() => void run("commitPush")}>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={!canCommit() || !canPush()}
+                onClick={() => void run("commitPush")}
+              >
                 {t("session.git.commitPush")}
               </Button>
-              <Show when={form.busy}><Spinner /></Show>
+              <Show when={form.busy}>
+                <Spinner />
+              </Show>
             </div>
           </form>
           <Show when={repo()?.lastCommit}>

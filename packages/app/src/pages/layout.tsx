@@ -365,7 +365,9 @@ export default function Layout(props: ParentProps) {
   // resolvers keep working, but the icon should not look "selected".
   const onConfigRoute = createMemo(() => /\/config(?:\/|$)/.test(location.pathname))
   const onSessionRoute = createMemo(() => /\/session(?:\/|$)/.test(location.pathname))
-  const sessionDockVisible = createMediaQuery(platform.platform === "web" ? "(min-width: 1024px)" : "(min-width: 768px)")
+  const sessionDockVisible = createMediaQuery(
+    platform.platform === "web" ? "(min-width: 1024px)" : "(min-width: 768px)",
+  )
   // Bottom-right floating actions (notification bell + quick assistant) hide
   // when the session content column reaches the viewport edge and would run
   // underneath them. Hidden only while the quick-assistant panel is closed —
@@ -2553,12 +2555,7 @@ export default function Layout(props: ParentProps) {
     prepare: prepareSessionTabsTarget,
     navigate(target, options) {
       const href = sessionTabsTargetHref(target)
-      if (
-        options?.source &&
-        options.source !== "activate" &&
-        target.type !== "home" &&
-        layout.sidebar.opened()
-      ) {
+      if (options?.source && options.source !== "activate" && target.type !== "home" && layout.sidebar.opened()) {
         if (!sidebarProjectRoot()) {
           const current = sidebarProject()?.root
           if (current) setSidebarProjectRoot(current)

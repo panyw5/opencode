@@ -88,9 +88,7 @@ export default function Home() {
     return latest ? [latest] : []
   })
   const newSessionDirectory = createMemo(() => warmed()[0])
-  const newSessionLabel = createMemo(() =>
-    newSessionProjectLabel(newSessionDirectory(), layout.projects.list()),
-  )
+  const newSessionLabel = createMemo(() => newSessionProjectLabel(newSessionDirectory(), layout.projects.list()))
   const centerProjectMount = createMemo(() => document.getElementById("opencode-titlebar-center-project"))
   function newSessionIn(directory: string) {
     console.debug(`[home] new-session directory=${directory}`)

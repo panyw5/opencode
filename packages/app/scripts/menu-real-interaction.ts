@@ -157,7 +157,9 @@ try {
 
     const panels = page.getByRole("button", { name: "Review and files", exact: true }).first()
     await panels.click()
-    const filesToggle = page.locator('[data-slot="session-panel-menu"]').getByRole("button", { name: "Toggle file tree" })
+    const filesToggle = page
+      .locator('[data-slot="session-panel-menu"]')
+      .getByRole("button", { name: "Toggle file tree" })
     await expect(filesToggle).toBeVisible()
     if ((await filesToggle.getAttribute("aria-pressed")) !== "true") await filesToggle.click()
     else await panels.click()

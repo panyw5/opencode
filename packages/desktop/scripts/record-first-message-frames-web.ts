@@ -132,11 +132,7 @@ try {
     `!!document.querySelector('[data-component="session-page"]')?.getAttribute('data-session-id')`,
     20_000,
   )
-  await wait(
-    "handoff finished",
-    `!document.querySelector('[data-component="pending-session"]')`,
-    20_000,
-  )
+  await wait("handoff finished", `!document.querySelector('[data-component="pending-session"]')`, 20_000)
   await Bun.sleep(1200)
   const result = await cdp.evaluate<{ frames: any[]; ids: string[]; creates: number; prompts: number }>(`(() => {
     const state=window.__frameQA;state.sampling=false;
@@ -144,7 +140,9 @@ try {
   })()`)
   created.push(...result.ids)
   await Bun.write("/tmp/first-message-frames-web.json", JSON.stringify(result.frames, null, 2))
-  log(`recorded ${result.frames.length} frames → /tmp/first-message-frames-web.json creates=${result.creates} prompts=${result.prompts}`)
+  log(
+    `recorded ${result.frames.length} frames → /tmp/first-message-frames-web.json creates=${result.creates} prompts=${result.prompts}`,
+  )
   const shot = await cdp.call<{ data: string }>("Page.captureScreenshot", { format: "png" })
   await Bun.write("/tmp/first-message-final-web.png", Buffer.from(shot.data, "base64"))
   const logs = await cdp.evaluate<string[]>(
@@ -152,11 +150,15 @@ try {
   )
   for (const line of logs) log(line)
 } finally {
-  await cdp.evaluate(`(() => {
+  await cdp
+    .evaluate(
+      `(() => {
     const state=window.__frameQA;if(!state)return;
     state.sampling=false;window.fetch=state.originalFetch;console.debug=state.originalDebug;
     delete window.__frameQA;
-  })()`).catch(() => undefined)
+  })()`,
+    )
+    .catch(() => undefined)
   for (const id of new Set(created)) {
     await request(`/session/${id}/abort`, "POST").catch(() => undefined)
     await request(`/session/${id}`, "PATCH", { time: { archived: Date.now() } }).catch(() => undefined)

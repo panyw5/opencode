@@ -477,7 +477,11 @@
     opacity: 0.82;
   }
 
-  :is([data-slot="user-message-queued-send"], [data-slot="user-message-queued-edit"], [data-slot="user-message-queued-cancel"]) {
+  :is(
+    [data-slot="user-message-queued-send"],
+    [data-slot="user-message-queued-edit"],
+    [data-slot="user-message-queued-cancel"]
+  ) {
     appearance: none;
     background: transparent;
     border: none;

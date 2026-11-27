@@ -703,7 +703,6 @@ export const dict = {
   "settings.general.row.wayland.tooltip":
     "På Linux med skjermer med blandet oppdateringsfrekvens kan innebygd Wayland være mer stabilt.",
 
-
   "settings.updates.row.startup.title": "Se etter oppdateringer ved oppstart",
   "settings.updates.row.startup.description": "Se automatisk etter oppdateringer når OpenCode starter",
   "settings.updates.row.check.title": "Se etter oppdateringer",
@@ -718,7 +717,8 @@ export const dict = {
   "settings.updates.download.paused": "Nedlasting satt på pause ({{version}})",
   "settings.updates.download.progress": "Fremdrift for oppdateringsnedlasting",
   "settings.updates.download.ready": "OpenCode {{version}} er lastet ned og klar for installasjon",
-  "settings.updates.download.resumeHint": "Fortsetter starter nedlastingen på nytt; delvise nedlastinger kan ikke fortsettes.",
+  "settings.updates.download.resumeHint":
+    "Fortsetter starter nedlastingen på nytt; delvise nedlastinger kan ikke fortsettes.",
   "settings.updates.toast.latest.title": "Du er oppdatert",
   "settings.updates.toast.latest.description": "Du bruker den nyeste versjonen av OpenCode.",
   "font.option.ibmPlexMono": "IBM Plex Mono",
