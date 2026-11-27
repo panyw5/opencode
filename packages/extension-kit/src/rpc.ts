@@ -42,9 +42,7 @@ export type StandardSchemaV1<Input = unknown, Output = Input> = {
   readonly "~standard": {
     readonly version: 1
     readonly vendor: string
-    readonly validate: (
-      value: unknown,
-    ) => StandardSchemaV1Result<Output> | Promise<StandardSchemaV1Result<Output>>
+    readonly validate: (value: unknown) => StandardSchemaV1Result<Output> | Promise<StandardSchemaV1Result<Output>>
     readonly types?: { readonly input: Input; readonly output: Output } | undefined
   }
 }
@@ -156,10 +154,7 @@ function wrapMethod(method: string, definition: RpcMethod<unknown, unknown>): Rp
       const result = await schema["~standard"].validate(input)
       if (result.issues) {
         const detail = formatIssues(result.issues)
-        throw new ExtensionRpcError(
-          "invalid_input",
-          `invalid input for "${method}"${detail ? `: ${detail}` : ""}`,
-        )
+        throw new ExtensionRpcError("invalid_input", `invalid input for "${method}"${detail ? `: ${detail}` : ""}`)
       }
       value = result.value
     }

@@ -63,8 +63,7 @@ export async function spawnBunWorker(options: {
   env?: NodeJS.ProcessEnv
 }): Promise<OwnedWorkerChild> {
   // Validated on macOS and Linux; Windows has no fd-based extra-stdio channel.
-  if (process.platform === "win32")
-    throw new Error("Bun host-process control descriptors are unsupported on Windows")
+  if (process.platform === "win32") throw new Error("Bun host-process control descriptors are unsupported on Windows")
   const { cc } = await import("bun:ffi")
   // Darwin arm64 passes fcntl's variadic argument on the stack. A fixed FFI
   // signature is not ABI-compatible; compile a tiny fixed-argument C wrapper.

@@ -27,13 +27,19 @@ describe("prettyLines", () => {
     expect(line("(a+b)/2")).toEqual([{ frac: [["a", "+", "b"], ["2"]] }])
   })
   test("fraction unwraps both parenthesized operands", () => {
-    expect(line("(x+y)/(x-y)")).toEqual([{ frac: [["x", "+", "y"], ["x", "-", "y"]] }])
+    expect(line("(x+y)/(x-y)")).toEqual([
+      {
+        frac: [
+          ["x", "+", "y"],
+          ["x", "-", "y"],
+        ],
+      },
+    ])
     // unclosed or non-paren wrappers stay put
     expect(line("x/[a+b]")[0]).toEqual({ frac: [["x"], [["[", "a", "+", "b", "]"]]] })
   })
   test("groups carrying fractions are marked tall", () => {
-    const hasTall = (src: string): boolean =>
-      prettyLines(src)[0].some((n) => n.kind === "group" && n.tall)
+    const hasTall = (src: string): boolean => prettyLines(src)[0].some((n) => n.kind === "group" && n.tall)
     expect(hasTall("f[(a/b)]")).toBe(true)
     expect(hasTall("f[a/b]")).toBe(true)
     expect(hasTall("g[h[(a/b)]]")).toBe(true)
@@ -81,9 +87,7 @@ describe("prettyLines", () => {
   })
   test("calls and lists stay linear", () => {
     const out = line("Sum[hh[j], {j, i, 2 r}]")
-    expect(flat(out)).toBe(
-      '["Sum",["[","hh",["[","j","]"],","," ",["{","j",","," ","i",","," ","2"," ","r","}"],"]"]]',
-    )
+    expect(flat(out)).toBe('["Sum",["[","hh",["[","j","]"],","," ",["{","j",","," ","i",","," ","2"," ","r","}"],"]"]]')
   })
   test("patterns stay linear", () => {
     expect(flat(line("HH[i_ /; i <= 2 r]"))).toContain('"/;"')

@@ -235,7 +235,11 @@ export async function load(directory: string, options: { opencodeVersion?: strin
   // whole server contribution — entry, isolation declaration and fingerprint —
   // while the web part stays usable and a stable warning code is reported.
   let serverSkipped = false
-  if (manifest.server && manifest.server.apiVersion !== undefined && manifest.server.apiVersion !== SERVER_API_VERSION) {
+  if (
+    manifest.server &&
+    manifest.server.apiVersion !== undefined &&
+    manifest.server.apiVersion !== SERVER_API_VERSION
+  ) {
     serverSkipped = true
     warnings.push(`server.apiVersion:${manifest.server.apiVersion}`)
     log.warn("extension server apiVersion is not supported; skipping server part", {

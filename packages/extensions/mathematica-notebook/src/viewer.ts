@@ -43,18 +43,20 @@ export function viewerContent(next: ViewerDocument): ViewerContent {
     path: next.path,
     revision: next.revision,
     // Project fields explicitly, even if an older server ignores view: true.
-    cells: next.cells.map(({ index, style, text, editable, runnable, characters, deferred, parent, group, closed }) => ({
-      index,
-      style,
-      text,
-      editable,
-      runnable,
-      ...(characters === undefined ? {} : { characters }),
-      ...(deferred === undefined ? {} : { deferred }),
-      ...(parent === undefined ? {} : { parent }),
-      ...(group === undefined ? {} : { group }),
-      ...(closed === undefined ? {} : { closed }),
-    })),
+    cells: next.cells.map(
+      ({ index, style, text, editable, runnable, characters, deferred, parent, group, closed }) => ({
+        index,
+        style,
+        text,
+        editable,
+        runnable,
+        ...(characters === undefined ? {} : { characters }),
+        ...(deferred === undefined ? {} : { deferred }),
+        ...(parent === undefined ? {} : { parent }),
+        ...(group === undefined ? {} : { group }),
+        ...(closed === undefined ? {} : { closed }),
+      }),
+    ),
   }
 }
 

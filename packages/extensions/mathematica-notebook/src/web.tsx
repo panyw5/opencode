@@ -402,7 +402,10 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
         // save (same path, stable cell indexes).
         const base: Record<number, boolean> = {}
         for (const cell of next.cells) if (cell.closed) base[cell.index] = true
-        setFolded({ ...base, ...(storedFolds(next.path, next.revision) ?? (previousPath === next.path ? folded() : {})) })
+        setFolded({
+          ...base,
+          ...(storedFolds(next.path, next.revision) ?? (previousPath === next.path ? folded() : {})),
+        })
       }
     })
     props.setDirty?.(false)
@@ -719,11 +722,7 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
                     >
                       −
                     </button>
-                    <button
-                      class="oc-nb-fontvalue"
-                      title="Reset line spacing"
-                      onClick={() => setSpacing(1)}
-                    >
+                    <button class="oc-nb-fontvalue" title="Reset line spacing" onClick={() => setSpacing(1)}>
                       {Math.round(lineSpacing() * 100)}%
                     </button>
                     <button
@@ -847,9 +846,7 @@ export function NotebookViewer(props: FileViewerProps & { context: ExtensionCont
                             return { text: item?.text ?? "", total: item?.total ?? 0 }
                           }}
                           onEdit={
-                            cell.style === "Input" || cell.style === "Code"
-                              ? () => void beginRawEdit(cell)
-                              : undefined
+                            cell.style === "Input" || cell.style === "Code" ? () => void beginRawEdit(cell) : undefined
                           }
                         />
                       }

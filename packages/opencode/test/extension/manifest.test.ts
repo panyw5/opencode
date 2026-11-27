@@ -131,10 +131,7 @@ describe("extension manifest", () => {
       expect(manifest.styles).toEqual([])
       expect(manifest.warnings).toEqual(["web.apiVersion:2"])
       expect(skipped()).toEqual([
-        [
-          "extension web apiVersion is not supported; skipping web part",
-          { extension: "test.web-v2", apiVersion: 2 },
-        ],
+        ["extension web apiVersion is not supported; skipping web part", { extension: "test.web-v2", apiVersion: 2 }],
       ])
 
       // A web-only package with an unsupported apiVersion still loads: the
@@ -176,8 +173,7 @@ describe("extension manifest", () => {
     // `service: "extension"` loggers are cached process-wide, so spying on the
     // shared instance observes manifest.ts's calls regardless of import order.
     const warn = spyOn(Log.create({ service: "extension" }), "warn")
-    const unknown = () =>
-      warn.mock.calls.filter(([message]) => message === "extension declares an unknown permission")
+    const unknown = () => warn.mock.calls.filter(([message]) => message === "extension declares an unknown permission")
     try {
       const root = await extensionPackage(tmp.path, {
         id: "test.unknown-permission",
@@ -188,7 +184,10 @@ describe("extension manifest", () => {
       const manifest = await load(root)
       expect(manifest.permissions).toEqual(["fs:read", "unknown:thing"])
       expect(unknown()).toEqual([
-        ["extension declares an unknown permission", { extension: "test.unknown-permission", permission: "unknown:thing" }],
+        [
+          "extension declares an unknown permission",
+          { extension: "test.unknown-permission", permission: "unknown:thing" },
+        ],
       ])
 
       // Every vocabulary entry is accepted silently.

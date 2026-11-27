@@ -516,10 +516,10 @@ for (const backend of backends) {
 
     test("instance rpc receives directory/worktree/serverUrl/project", async () => {
       const whoami = hooks!.rpc!.whoami as RpcHandler
-      const result = (await whoami(null, { directory: input.directory, signal: new AbortController().signal })) as Record<
-        string,
-        unknown
-      >
+      const result = (await whoami(null, {
+        directory: input.directory,
+        signal: new AbortController().signal,
+      })) as Record<string, unknown>
       expect(result).toEqual({
         directory: input.directory,
         worktree: input.worktree,
@@ -579,10 +579,14 @@ for (const backend of backends) {
       }
       const result = await hooks!.tool!.meta.execute({}, ctx as ToolContext)
       expect(result).toBe("meta-done")
-      await poll(async () => {
-        const value = await Promise.race([observed.promise, Promise.resolve(undefined)])
-        return value
-      }, "ctx.metadata never reached the host", 5_000)
+      await poll(
+        async () => {
+          const value = await Promise.race([observed.promise, Promise.resolve(undefined)])
+          return value
+        },
+        "ctx.metadata never reached the host",
+        5_000,
+      )
       const value = await observed.promise
       expect(value).toEqual({ title: "from-tool", metadata: { k: "v" } })
     })

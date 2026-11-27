@@ -204,7 +204,10 @@ describe("extension installation transactions", () => {
       },
     })
     await expect(
-      context.installer.prepare({ kind: "install", source: { type: "release", url: "https://example.com/stable.json" } }),
+      context.installer.prepare({
+        kind: "install",
+        source: { type: "release", url: "https://example.com/stable.json" },
+      }),
     ).rejects.toThrow("not compatible")
     expect(downloads).toBe(0)
     const compatible = await setup({
@@ -237,8 +240,12 @@ describe("extension installation transactions", () => {
       download: async () => payload.bytes,
     })
     expect(
-      (await undeclared.installer.prepare({ kind: "install", source: { type: "release", url: "https://example.com/stable.json" } }))
-        .version,
+      (
+        await undeclared.installer.prepare({
+          kind: "install",
+          source: { type: "release", url: "https://example.com/stable.json" },
+        })
+      ).version,
     ).toBe("1.0.0")
   })
 

@@ -224,7 +224,14 @@ test("foreign-fenced commands and a duplicate init fail closed", async () => {
   })
   await c.event("hello")
   // A frame for another runtime generation is discarded, not answered.
-  c.emit({ ...envelope, identity: { ...identity, epoch: 7 }, type: "request", requestId: requestId(), method: "x", value: null })
+  c.emit({
+    ...envelope,
+    identity: { ...identity, epoch: 7 },
+    type: "request",
+    requestId: requestId(),
+    method: "x",
+    value: null,
+  })
   await Promise.resolve()
   expect(c.events).toHaveLength(0)
   c.emit({ ...envelope, type: "init", value: null })

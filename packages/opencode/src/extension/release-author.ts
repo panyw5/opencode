@@ -1,16 +1,6 @@
 import path from "node:path"
 import { constants } from "node:fs"
-import {
-  copyFile,
-  lstat,
-  mkdir,
-  mkdtemp,
-  readdir,
-  readFile,
-  realpath,
-  rm,
-  writeFile,
-} from "node:fs/promises"
+import { copyFile, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { tmpdir } from "node:os"
 import { fileURLToPath } from "node:url"
@@ -166,9 +156,7 @@ export async function validatePackage(directory: string): Promise<PackageValidat
       if (stat.isFile()) files.push(entry)
     }
   } else {
-    warnings.push(
-      'package.json has no "files" whitelist; every unignored file in the directory will be packed',
-    )
+    warnings.push('package.json has no "files" whitelist; every unignored file in the directory will be packed')
     files.push(...(await scanPackable(dir, "", matcher)))
   }
 
@@ -182,7 +170,9 @@ export async function validatePackage(directory: string): Promise<PackageValidat
     if (loaded.icon) required.push(webPrefix ? `${webPrefix}/${loaded.icon}` : loaded.icon)
     for (const rel of required) {
       if (!covered(rel, roots))
-        throw new Error(`Required extension file ${rel} is not covered by package.json "files" and would be missing from the archive`)
+        throw new Error(
+          `Required extension file ${rel} is not covered by package.json "files" and would be missing from the archive`,
+        )
     }
   }
 
@@ -256,8 +246,7 @@ export async function packPackage(directory: string): Promise<PackResult> {
     } finally {
       clearTimeout(timer)
     }
-    if (code !== 0)
-      throw new Error(`npm pack failed: ${stderr.trim().split(/\r?\n/).at(-1) || `exit code ${code}`}`)
+    if (code !== 0) throw new Error(`npm pack failed: ${stderr.trim().split(/\r?\n/).at(-1) || `exit code ${code}`}`)
     if (!(await readFile(path.join(dir, "package.json"))).equals(snapshot))
       throw new Error("package.json changed during npm pack; release aborted")
 
@@ -268,7 +257,13 @@ export async function packPackage(directory: string): Promise<PackResult> {
       throw new Error("npm pack did not return valid JSON")
     }
     if (!Array.isArray(items) || items.length !== 1) throw new Error("npm pack must return exactly one package")
-    const item = items[0] as { name?: unknown; version?: unknown; filename?: unknown; integrity?: unknown; files?: unknown }
+    const item = items[0] as {
+      name?: unknown
+      version?: unknown
+      filename?: unknown
+      integrity?: unknown
+      files?: unknown
+    }
     if (item.name !== pkg.json.name || item.version !== loaded.version || item.filename !== filename)
       throw new Error("npm pack identity does not match the package.json metadata")
     if (typeof item.integrity !== "string" || !/^sha512-[A-Za-z0-9+/]{86}==$/.test(item.integrity))
@@ -350,7 +345,8 @@ function sanitizeName(base: string) {
     .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/^[._-]+/, "")
     .replace(/-{2,}/g, "-")
-  if (!/^[a-z0-9][a-z0-9._-]*$/.test(name)) throw new Error("Cannot derive a package name from the directory name; pass --name")
+  if (!/^[a-z0-9][a-z0-9._-]*$/.test(name))
+    throw new Error("Cannot derive a package name from the directory name; pass --name")
   return name
 }
 

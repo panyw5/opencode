@@ -307,7 +307,8 @@ export async function spawnHostWorker(deps: HostWorkerDeps): Promise<HostWorker>
         const level = optionalString(body.level)
         const message = optionalString(body.message) ?? ""
         const extra = typeof body.extra === "object" && body.extra !== null ? (body.extra as object) : {}
-        const write = level === "error" ? log.error : level === "warn" ? log.warn : level === "info" ? log.info : log.debug
+        const write =
+          level === "error" ? log.error : level === "warn" ? log.warn : level === "info" ? log.info : log.debug
         write(`extension worker: ${message}`, { extension: id, ...extra })
         return
       }
@@ -377,62 +378,64 @@ export async function spawnHostWorker(deps: HostWorkerDeps): Promise<HostWorker>
       : template.slice(1).map((arg) => (arg === "@OPENCODE_EXTENSION_IDENTITY@" ? JSON.stringify(identity) : arg))
 
   let workerScope: Scope.Closeable | undefined
-  const worker = await supervisorRuntime.runPromise((svc) =>
-    Effect.gen(function* () {
-      const spawnScope = yield* Scope.make()
-      const spawned = yield* svc
-        .spawn({
-          extension: id,
-          fence: {
-            store: deps.registry,
-            installation: deps.installation,
-            generation: deps.gen,
-            epoch: deps.epoch,
-          },
-          executable,
-          args: args as SpawnInput["args"],
-          limits: deps.limits(),
-          hooks: {
-            init: {
-              id: deps.manifest.id,
-              version: deps.manifest.version,
-              dir: deps.manifest.dir,
-              entry: deps.entry.source!,
-              dataDir: deps.dataDir,
-              cacheDir: deps.cacheDir,
-              ...(deps.serverUrl ? { serverUrl: deps.serverUrl.href } : {}),
-              settings: deps.entry.settings as Schema.Json,
+  const worker = await supervisorRuntime
+    .runPromise((svc) =>
+      Effect.gen(function* () {
+        const spawnScope = yield* Scope.make()
+        const spawned = yield* svc
+          .spawn({
+            extension: id,
+            fence: {
+              store: deps.registry,
+              installation: deps.installation,
+              generation: deps.gen,
+              epoch: deps.epoch,
             },
-            onNotify,
-            onHostCall,
-            onCrash(exit) {
-              if (!deps.available() || stopped) return
-              for (const proc of processes.values()) proc.dead = true
-              processes.clear()
-              scopeDisposal()
-              deps.crashed(exit)
+            executable,
+            args: args as SpawnInput["args"],
+            limits: deps.limits(),
+            hooks: {
+              init: {
+                id: deps.manifest.id,
+                version: deps.manifest.version,
+                dir: deps.manifest.dir,
+                entry: deps.entry.source!,
+                dataDir: deps.dataDir,
+                cacheDir: deps.cacheDir,
+                ...(deps.serverUrl ? { serverUrl: deps.serverUrl.href } : {}),
+                settings: deps.entry.settings as Schema.Json,
+              },
+              onNotify,
+              onHostCall,
+              onCrash(exit) {
+                if (!deps.available() || stopped) return
+                for (const proc of processes.values()) proc.dead = true
+                processes.clear()
+                scopeDisposal()
+                deps.crashed(exit)
+              },
+              onReady() {
+                if (!deps.available() || stopped || worker.info().crashes === 0) return
+                // A fresh generation scope: the crashed one's scope is closed.
+                scopeClosed = false
+                scope = openScope()
+                deps.entry.resources.add(scopeDisposal)
+                deps.restarted()
+              },
+              onExhausted(exit) {
+                if (!deps.available() || stopped) return
+                deps.exhausted(exit)
+              },
             },
-            onReady() {
-              if (!deps.available() || stopped || worker.info().crashes === 0) return
-              // A fresh generation scope: the crashed one's scope is closed.
-              scopeClosed = false
-              scope = openScope()
-              deps.entry.resources.add(scopeDisposal)
-              deps.restarted()
-            },
-            onExhausted(exit) {
-              if (!deps.available() || stopped) return
-              deps.exhausted(exit)
-            },
-          },
-        })
-        .pipe(Scope.provide(spawnScope))
-      return { spawned, scope: spawnScope }
-    }),
-  ).then(({ spawned, scope: spawnScope }) => {
-    workerScope = spawnScope
-    return spawned
-  })
+          })
+          .pipe(Scope.provide(spawnScope))
+        return { spawned, scope: spawnScope }
+      }),
+    )
+    .then(({ spawned, scope: spawnScope }) => {
+      workerScope = spawnScope
+      return spawned
+    })
 
   /**
    * Worker-death errors are normalized to `extension_crashed` (duck-typed on
@@ -440,7 +443,9 @@ export async function spawnHostWorker(deps: HostWorkerDeps): Promise<HostWorker>
    * those because a dead worker already ran teardown.
    */
   const workerGone = (error: unknown) =>
-    error instanceof Error && error.name === "ExtensionRpcError" && (error as { code?: unknown }).code === "extension_crashed"
+    error instanceof Error &&
+    error.name === "ExtensionRpcError" &&
+    (error as { code?: unknown }).code === "extension_crashed"
 
   function normalize(cause: unknown, method: string): Error {
     if (cause instanceof HostProcessError) {

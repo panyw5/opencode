@@ -26,7 +26,14 @@ function Delim(props: { text: string }) {
   return (
     <Show when={d()} fallback={<span data-token="punctuation">{props.text}</span>}>
       <svg class="oc-nb-d" data-d={props.text} viewBox="0 0 10 100" preserveAspectRatio="none" aria-hidden="true">
-        <path d={d()} fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" vector-effect="non-scaling-stroke" />
+        <path
+          d={d()}
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.3"
+          stroke-linecap="round"
+          vector-effect="non-scaling-stroke"
+        />
       </svg>
     </Show>
   )
@@ -71,7 +78,14 @@ function Node(props: { node: Pretty }) {
       return (
         <span class="oc-nb-sqrt">
           <svg class="oc-nb-radsign" viewBox="0 0 14 100" preserveAspectRatio="none" aria-hidden="true">
-            <path d={RADSIGN} fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" vector-effect="non-scaling-stroke" />
+            <path
+              d={RADSIGN}
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.3"
+              stroke-linecap="round"
+              vector-effect="non-scaling-stroke"
+            />
           </svg>
           <span class="oc-nb-rad">
             <Items items={props.node.arg} />
@@ -107,9 +121,7 @@ export function PrettyCode(props: { value: string }) {
   const lines = createMemo(() => prettyLines(props.value))
   return (
     <div class="oc-nb-pretty" aria-hidden="true">
-      <For each={lines()}>
-        {(line) => <div class="oc-nb-pl">{line.length ? <Items items={line} /> : "​"}</div>}
-      </For>
+      <For each={lines()}>{(line) => <div class="oc-nb-pl">{line.length ? <Items items={line} /> : "​"}</div>}</For>
     </div>
   )
 }

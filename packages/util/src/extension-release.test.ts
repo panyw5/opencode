@@ -71,9 +71,9 @@ describe("extension id pattern parity", () => {
 
 describe("release URL normalization", () => {
   test("uses standard WHATWG normalization", () => {
-    expect(normalizeReleaseHttpsUrl("HTTPS://Releases.Example.Test:443/a/../Viewer/%7e/stable.json", { descriptor: true })).toBe(
-      "https://releases.example.test/Viewer/%7e/stable.json",
-    )
+    expect(
+      normalizeReleaseHttpsUrl("HTTPS://Releases.Example.Test:443/a/../Viewer/%7e/stable.json", { descriptor: true }),
+    ).toBe("https://releases.example.test/Viewer/%7e/stable.json")
     expect(normalizeReleaseHttpsUrl("https://example.test", { descriptor: true })).toBe("https://example.test/")
     expect(normalizeReleaseHttpsUrl("https://example.test:8443/viewer", { descriptor: true })).toBe(
       "https://example.test:8443/viewer",
@@ -186,9 +186,9 @@ describe("release descriptor parsing", () => {
 
   test("applies the optional host version check", () => {
     const semverish = (version: string) => /^\d+\.\d+\.\d+$/.test(version)
-    expect(reason(() => parseReleaseDescriptor({ ...descriptor(), version: "latest" }, { isValidVersion: semverish }))).toBe(
-      "version",
-    )
+    expect(
+      reason(() => parseReleaseDescriptor({ ...descriptor(), version: "latest" }, { isValidVersion: semverish })),
+    ).toBe("version")
     expect(parseReleaseDescriptor(descriptor(), { isValidVersion: semverish }).version).toBe("1.2.3")
     expect(reason(() => parseReleaseDescriptor({ ...descriptor(), version: "" }))).toBe("version")
     expect(reason(() => parseReleaseDescriptor({ ...descriptor(), version: 1 }))).toBe("version")
@@ -196,7 +196,8 @@ describe("release descriptor parsing", () => {
 
   test.each([undefined, null, [], "artifact", {}, { url: "https://cdn.example.test/x.tgz" }].map((v) => [v] as const))(
     "rejects missing and malformed artifact objects (%#)",
-    (artifact) => expect(reason(() => parseReleaseDescriptor({ ...descriptor(), artifact }))).toMatch(/structure|fields/),
+    (artifact) =>
+      expect(reason(() => parseReleaseDescriptor({ ...descriptor(), artifact }))).toMatch(/structure|fields/),
   )
 
   test("distinguishes artifact field type, URL and digest failures", () => {
@@ -205,7 +206,10 @@ describe("release descriptor parsing", () => {
     ).toBe("artifactUrlType")
     expect(
       reason(() =>
-        parseReleaseDescriptor({ ...descriptor(), artifact: { url: "http://cdn.example.test/x.tgz", sha256: "ab".repeat(32) } }),
+        parseReleaseDescriptor({
+          ...descriptor(),
+          artifact: { url: "http://cdn.example.test/x.tgz", sha256: "ab".repeat(32) },
+        }),
       ),
     ).toBe("artifactUrl")
     expect(
@@ -255,10 +259,12 @@ describe("release descriptor parsing", () => {
     ).toBe("engines")
   })
 
-  test.each([{}, { opencode: 1 }, { opencode: "" }, { opencode: ">=1.0.0", node: ">=18" }, "1.0.0", []].map((v) => [v] as const))(
-    "rejects malformed engines declarations (%#)",
-    (engines) =>
-      expect(reason(() => parseReleaseDescriptor({ ...descriptor(), engines }))).toMatch(/engines|fields|structure/),
+  test.each(
+    [{}, { opencode: 1 }, { opencode: "" }, { opencode: ">=1.0.0", node: ">=18" }, "1.0.0", []].map(
+      (v) => [v] as const,
+    ),
+  )("rejects malformed engines declarations (%#)", (engines) =>
+    expect(reason(() => parseReleaseDescriptor({ ...descriptor(), engines }))).toMatch(/engines|fields|structure/),
   )
 
   test("keeps a declared source.commit provenance hash and normalizes it", () => {
@@ -266,16 +272,22 @@ describe("release descriptor parsing", () => {
     expect(parseReleaseDescriptor({ ...descriptor(), source: { commit } }).source).toEqual({
       commit: commit.toLowerCase(),
     })
-    expect(
-      parseReleaseDescriptor({ ...descriptor(), source: { commit: "cd".repeat(32) } }).source?.commit,
-    ).toBe("cd".repeat(32))
+    expect(parseReleaseDescriptor({ ...descriptor(), source: { commit: "cd".repeat(32) } }).source?.commit).toBe(
+      "cd".repeat(32),
+    )
     expect(parseReleaseDescriptor(descriptor()).source).toBeUndefined()
   })
 
   test.each(
-    [{}, { commit: "abc" }, { commit: "g".repeat(40) }, { commit: 42 }, { commit: "ab".repeat(20), tag: "v1" }, "abc", []].map(
-      (v) => [v] as const,
-    ),
+    [
+      {},
+      { commit: "abc" },
+      { commit: "g".repeat(40) },
+      { commit: 42 },
+      { commit: "ab".repeat(20), tag: "v1" },
+      "abc",
+      [],
+    ].map((v) => [v] as const),
   )("rejects malformed source declarations (%#)", (source) =>
     expect(reason(() => parseReleaseDescriptor({ ...descriptor(), source }))).toMatch(/source|fields|structure/),
   )

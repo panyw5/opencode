@@ -172,13 +172,11 @@ test("viewer read/save use slim DTOs while legacy read keeps raw text and offset
   expect(view.cells[2]).toMatchObject({ parent: 1 })
   const optional = new Set(["parent", "group", "closed"])
   for (const cell of view.cells)
-    expect(Object.keys(cell).filter((key) => !optional.has(key)).sort()).toEqual([
-      "editable",
-      "index",
-      "runnable",
-      "style",
-      "text",
-    ])
+    expect(
+      Object.keys(cell)
+        .filter((key) => !optional.has(key))
+        .sort(),
+    ).toEqual(["editable", "index", "runnable", "style", "text"])
   expect(logs.at(-1)?.data.cacheHits).toBe(1)
   expect(logs.at(-1)?.data.parseMs).toBe(0)
   expect(logs.at(-1)?.data.bytes).toBe(Buffer.byteLength(fixture))

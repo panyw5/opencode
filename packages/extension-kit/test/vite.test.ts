@@ -135,10 +135,7 @@ describe("extension kit vite build", () => {
     // solid-js version the extension resolved at build time. Minification
     // may rewrite the local binding, so the namespace export is the contract.
     const expected = JSON.parse(
-      fs.readFileSync(
-        createRequire(path.join(fixtureDir, "package.json")).resolve("solid-js/package.json"),
-        "utf8",
-      ),
+      fs.readFileSync(createRequire(path.join(fixtureDir, "package.json")).resolve("solid-js/package.json"), "utf8"),
     ).version
     const code = fs.readFileSync(path.join(outDir, "index.js"), "utf8")
     expect(code).toContain("__opencodeBuild")

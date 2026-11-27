@@ -14,8 +14,8 @@ let previousRegistry: string | undefined
 let module: ServerExtension
 
 beforeEach(async () => {
-    options = {}
-    rt = ExtensionRuntime.make(options)
+  options = {}
+  rt = ExtensionRuntime.make(options)
   temp = await tmpdir()
   previousRegistry = process.env.OPENCODE_EXTENSION_REGISTRY_FILE
   process.env.OPENCODE_EXTENSION_REGISTRY_FILE = path.join(temp.path, "registry.json")
@@ -54,7 +54,7 @@ beforeEach(async () => {
     }),
   )
   module = { activate: async () => ({ rpc: { ping: () => "ok" } }) }
-  options.importer = (async () => module)
+  options.importer = async () => module
 })
 
 afterEach(async () => {

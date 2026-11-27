@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  defineRpc,
-  ExtensionRpcError,
-  type RpcHandlerContext,
-  type StandardSchemaV1,
-} from "../src/rpc"
+import { defineRpc, ExtensionRpcError, type RpcHandlerContext, type StandardSchemaV1 } from "../src/rpc"
 import type { ExtensionService } from "../src/server"
 import type { ExtensionRpc, ExtensionRpcOptions } from "../src/web"
 
@@ -47,7 +42,7 @@ describe("extension-kit defineRpc", () => {
   test("typed call binds method input and output to the bridge", async () => {
     const calls: Array<{ method: string; input: unknown; options?: ExtensionRpcOptions }> = []
     const bridge: ExtensionRpc = {
-      call: async <T,>(method: string, input?: unknown, options?: ExtensionRpcOptions): Promise<T> => {
+      call: async <T>(method: string, input?: unknown, options?: ExtensionRpcOptions): Promise<T> => {
         calls.push({ method, input, options })
         const result =
           method === "echo" ? { echo: "hi" } : method === "greet" ? { greeting: "hi ada" } : { running: true }

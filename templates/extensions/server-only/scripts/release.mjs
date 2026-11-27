@@ -213,11 +213,11 @@ export async function release(options = {}) {
     // those hooks removed so package scripts never execute, on any npm.
     const stage = join(temporary, "stage")
     await cp(cwd, stage, { recursive: true })
-    for (const name of ["node_modules", ".git", "artifacts"]) await rm(join(stage, name), { recursive: true, force: true })
+    for (const name of ["node_modules", ".git", "artifacts"])
+      await rm(join(stage, name), { recursive: true, force: true })
     if (destination) {
       const inside = relative(cwd, destination)
-      if (inside && !inside.startsWith("..") && !isAbsolute(inside))
-        await rm(join(stage, inside), { force: true })
+      if (inside && !inside.startsWith("..") && !isAbsolute(inside)) await rm(join(stage, inside), { force: true })
     }
     const stagedManifestPath = join(stage, "package.json")
     const stagedManifest = JSON.parse(await readFile(stagedManifestPath, "utf8"))

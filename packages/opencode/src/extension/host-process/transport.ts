@@ -245,7 +245,8 @@ export async function spawnWorkerTransport(options: {
       }
     if (bunChild?.failure) throw bunChild.failure
     if (failure) throw failure
-    if (!(stdio[4] instanceof Readable) || !(stdio[3] instanceof Writable)) throw new HostProcessError({ code: "transport" })
+    if (!(stdio[4] instanceof Readable) || !(stdio[3] instanceof Writable))
+      throw new HostProcessError({ code: "transport" })
     input = stdio[4]
     output = stdio[3]
     stage = `control child=${pid ?? "none"}`

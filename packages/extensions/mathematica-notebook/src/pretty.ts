@@ -109,9 +109,7 @@ const trim = (items: Pretty[]) => {
 // Mathematica's typeset input.
 const unparen = (items: Pretty[]) => {
   const t = trim(items)
-  return t.length === 1 && t[0].kind === "group" && t[0].open === "(" && t[0].close === ")"
-    ? t[0].inner
-    : t
+  return t.length === 1 && t[0].kind === "group" && t[0].open === "(" && t[0].close === ")" ? t[0].inner : t
 }
 
 type PGroup = {
@@ -159,7 +157,7 @@ class Parser {
   tok(t: Tok, cls?: string): Pretty {
     return { kind: "tok", cls: cls ?? t.kind, text: namedCharacters(GLYPHS[t.text] ?? t.text) }
   }
-  // (...) {...} [...] [[...]] 
+  // (...) {...} [...] [[...]]
   // Bracketed group with comma-separated arguments.
   group(): PGroup {
     const open = this.next()!

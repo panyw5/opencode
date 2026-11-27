@@ -38,8 +38,8 @@ async function load(name: string) {
   return entries
 }
 beforeEach(async () => {
-    options = {}
-    rt = ExtensionRuntime.make(options)
+  options = {}
+  rt = ExtensionRuntime.make(options)
   temp = await tmpdir()
   previous = process.env.OPENCODE_EXTENSION_REGISTRY_FILE
   process.env.OPENCODE_EXTENSION_REGISTRY_FILE = path.join(temp.path, "registry.json")
@@ -69,7 +69,7 @@ test("instance timers stop with their hooks without clearing the process or sibl
   const siblingTick = deferred()
   let processHost!: ExtensionHost
   let firstHost!: ExtensionHost
-  options.importer = (async () => ({
+  options.importer = async () => ({
     id,
     activate: async (host) => {
       processHost = host
@@ -80,7 +80,7 @@ test("instance timers stop with their hooks without clearing the process or sibl
       else value.extension.setTimeout(() => siblingTick.resolve(), 20)
       return {}
     },
-  }))
+  })
   const [first] = await load("one")
   await load("two")
   processHost.setTimeout(() => processTick.resolve(), 20)
@@ -98,13 +98,13 @@ test.each(["disable", "reload", "quiesce"] as const)(
   async (action) => {
     let ticks = 0
     let host!: ExtensionHost
-    options.importer = (async () => ({
+    options.importer = async () => ({
       id,
       activate: async (value) => {
         host = value
         return {}
       },
-    }))
+    })
     await rt.rpc({ id, method: "missing" }).catch(() => {})
     host.setTimeout(() => {
       ticks++
@@ -122,7 +122,7 @@ test.each(["disable", "reload", "quiesce"] as const)(
 
 test("activation failure revokes timers before their first tick", async () => {
   let ticks = 0
-  options.importer = (async () => ({
+  options.importer = async () => ({
     id,
     activate: async (host) => {
       host.setTimeout(() => {
@@ -130,7 +130,7 @@ test("activation failure revokes timers before their first tick", async () => {
       }, 0)
       throw new Error("activation failed")
     },
-  }))
+  })
   await rt.rpc({ id, method: "missing" }).catch(() => {})
   await new Promise<void>((resolve) => setTimeout(resolve, 20))
   expect(ticks).toBe(0)
@@ -143,13 +143,13 @@ test("a timed-out activation cannot schedule more timers through a retained host
   let host!: ExtensionHost
   let ticks = 0
   Object.assign(options, { activateMs: 30 })
-  options.importer = (async () => ({
+  options.importer = async () => ({
     id,
     activate: async (value) => {
       host = value
       return gate.promise
     },
-  }))
+  })
   await load("late")
   host.setTimeout(() => {
     ticks++
@@ -163,7 +163,7 @@ test("timer promises remain tracked after disposal until quiesce drains them", a
   const started = deferred()
   const gate = deferred()
   releases.push(() => gate.resolve())
-  options.importer = (async () => ({
+  options.importer = async () => ({
     id,
     activate: async (host) => {
       host.setTimeout(async () => {
@@ -172,7 +172,7 @@ test("timer promises remain tracked after disposal until quiesce drains them", a
       }, 0)
       return {}
     },
-  }))
+  })
   await rt.rpc({ id, method: "missing" }).catch(() => {})
   await started.promise
   let stopped = false

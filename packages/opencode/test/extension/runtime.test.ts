@@ -277,10 +277,10 @@ describe("extension mutation gate", () => {
 
   test("rejects duplicate mutations and RPC without importing, then loads after release", async () => {
     let imports = 0
-    options.importer = (async () => {
+    options.importer = async () => {
       imports++
       return { activate: async () => ({ rpc: { ping: () => "new" } }) }
-    })
+    }
     const release = rt.beginMutation("test.srv")
     expect(() => rt.beginMutation("test.srv")).toThrow(ExtensionMutationError)
     await expect(rt.rpc({ id: "test.srv", method: "ping" })).rejects.toThrow(ExtensionMutationError)
@@ -297,10 +297,10 @@ describe("extension mutation gate", () => {
   })
 
   test("a skipped mutation expires the production InstanceState cache after release", async () => {
-    options.importer = (async () => ({
+    options.importer = async () => ({
       activate: async () => ({}),
       server: async () => ({ tool: { example: { description: "example", args: {}, execute: async () => "new" } } }),
-    }))
+    })
     const input = pluginInput()
     const context = { directory: input.directory, directoryKey: input.directory } as InstanceContext
     await Effect.runPromise(
@@ -353,7 +353,7 @@ describe("extension mutation gate", () => {
       const started = deferred()
       const gate = deferred()
       let receiver: unknown
-      options.importer = (async () => ({
+      options.importer = async () => ({
         activate: async () => ({}),
         server: async () => {
           async function run(this: unknown) {
@@ -369,7 +369,7 @@ describe("extension mutation gate", () => {
             dispose: async () => {},
           }
         },
-      }))
+      })
       const [entry] = await rt.instanceHooks(pluginInput())
       const hooks = entry!.hooks
       const invoke = () =>
@@ -402,7 +402,7 @@ describe("extension mutation gate", () => {
   test("tool calls receive a mutation abort signal without altering the caller's context", async () => {
     let received: AbortSignal | undefined
     let syncThis: unknown
-    options.importer = (async () => ({
+    options.importer = async () => ({
       activate: async () => ({}),
       server: async () => ({
         tool: {
@@ -425,7 +425,7 @@ describe("extension mutation gate", () => {
           },
         },
       }),
-    }))
+    })
     const [entry] = await rt.instanceHooks(pluginInput())
     const tools = entry!.hooks.tool!
     expect(tools.synchronous!.execute({}, {} as never) as unknown).toBe("sync")
@@ -448,7 +448,7 @@ describe("extension mutation gate", () => {
 
   test("noncooperative tool work blocks strict replacement even after its hooks dispose", async () => {
     const gate = deferred()
-    options.importer = (async () => ({
+    options.importer = async () => ({
       activate: async () => ({}),
       server: async () => ({
         tool: {
@@ -462,7 +462,7 @@ describe("extension mutation gate", () => {
           },
         },
       }),
-    }))
+    })
     const [entry] = await rt.instanceHooks(pluginInput())
     const running = entry!.hooks.tool!.example!.execute({}, {} as never)
     const release = rt.beginMutation("test.srv")
@@ -481,7 +481,7 @@ describe("extension mutation gate", () => {
     const started = deferred()
     const gate = deferred()
     let calls = 0
-    options.importer = (async () => {
+    options.importer = async () => {
       started.resolve()
       await gate.promise
       return {
@@ -494,7 +494,7 @@ describe("extension mutation gate", () => {
           },
         }),
       }
-    })
+    }
     const pending = rt.rpc({ id: "test.srv", method: "ping" }).catch((error) => error)
     await started.promise
     const release = rt.beginMutation("test.srv")
@@ -518,7 +518,7 @@ describe("extension mutation gate", () => {
     let disposed = 0
     let activated = 0
     let calls = 0
-    options.importer = (async () => ({
+    options.importer = async () => ({
       activate: async () => {
         if (++activated === 1) {
           started.resolve()
@@ -536,7 +536,7 @@ describe("extension mutation gate", () => {
           },
         }
       },
-    }))
+    })
     const pending = rt.rpc({ id: "test.srv", method: "ping" }).catch((error) => error)
     await started.promise
     const release = rt.beginMutation("test.srv")
@@ -553,7 +553,7 @@ describe("extension mutation gate", () => {
   test("bounds hanging dispose and preserves needsRestart across release and reload", async () => {
     const hang = deferred()
     let disposed = 0
-    options.importer = (async () => ({
+    options.importer = async () => ({
       activate: async () => ({
         rpc: { ping: () => "ok" },
         dispose: () => {
@@ -561,7 +561,7 @@ describe("extension mutation gate", () => {
           return hang.promise
         },
       }),
-    }))
+    })
     await rt.rpc({ id: "test.srv", method: "ping" })
     const release = rt.beginMutation("test.srv")
     const time = Date.now()
@@ -579,14 +579,14 @@ describe("extension mutation gate", () => {
   })
 
   test("marks throwing disposal blocked instead of reporting a clean stop", async () => {
-    options.importer = (async () => ({
+    options.importer = async () => ({
       activate: async () => ({
         rpc: { ping: () => "ok" },
         dispose: () => {
           throw new Error("dispose failed")
         },
       }),
-    }))
+    })
     await rt.rpc({ id: "test.srv", method: "ping" })
     const release = rt.beginMutation("test.srv")
     expect(await rt.quiesce("test.srv", { timeoutMs: 50 })).toEqual({
@@ -603,7 +603,7 @@ describe("extension mutation gate", () => {
     const started = deferred()
     const gate = deferred()
     let signal: AbortSignal | undefined
-    options.importer = (async () => ({
+    options.importer = async () => ({
       activate: async () => ({
         rpc: {
           wait: async (_input, ctx) => {
@@ -614,7 +614,7 @@ describe("extension mutation gate", () => {
           },
         },
       }),
-    }))
+    })
     const pending = rt.rpc({ id: "test.srv", method: "wait" }).catch((error) => error)
     await started.promise
     await rt.disable("test.srv")
@@ -633,7 +633,7 @@ describe("extension mutation gate", () => {
   test("drains cooperative abort and reloads only after release", async () => {
     const started = deferred()
     let activations = 0
-    options.importer = (async () => ({
+    options.importer = async () => ({
       activate: async () => {
         const version = ++activations
         return {
@@ -647,7 +647,7 @@ describe("extension mutation gate", () => {
           },
         }
       },
-    }))
+    })
     const pending = rt.rpc({ id: "test.srv", method: "wait" }).catch((error) => error)
     await started.promise
     const release = rt.beginMutation("test.srv")
@@ -666,7 +666,7 @@ describe("extension mutation gate", () => {
     const gate = deferred()
     let disposed = 0
     let servers = 0
-    options.importer = (async () => ({
+    options.importer = async () => ({
       activate: async () => ({}),
       server: async () => {
         if (++servers === 1) {
@@ -679,7 +679,7 @@ describe("extension mutation gate", () => {
           },
         }
       },
-    }))
+    })
     const pending = rt.instanceHooks(pluginInput()).catch((error) => error)
     await started.promise
     let release = rt.beginMutation("test.srv")
@@ -755,7 +755,7 @@ describe("extension runtime process pins", () => {
       }
       return { proof, release, [Symbol.asyncDispose]: release }
     }
-    options.leases = ({
+    options.leases = {
       acquire: async (target, id) => {
         expect(target).toBe(registryFile())
         return lease(id)
@@ -764,11 +764,11 @@ describe("extension runtime process pins", () => {
         expect(target).toBe(registryFile())
         return lease(`data:${id}`)
       },
-    })
-    options.importer = (async () => {
+    }
+    options.importer = async () => {
       events.push("import")
       return { activate: async () => ({ rpc: { ping: () => "ok" } }) }
-    })
+    }
     return { events, lease }
   }
 
@@ -803,14 +803,14 @@ describe("extension runtime process pins", () => {
     const { events, lease } = driver()
     const started = deferred()
     const gate = deferred()
-    options.leases = ({
+    options.leases = {
       acquireData: async () => lease("data:test.srv"),
       acquire: async () => {
         started.resolve()
         await gate.promise
         return lease(installId)
       },
-    })
+    }
     const pending = rt.rpc({ id: "test.srv", method: "ping" }).catch((error) => error)
     await started.promise
     const release = rt.beginMutation("test.srv")
@@ -834,7 +834,7 @@ describe("extension runtime process pins", () => {
     const { events } = driver()
     const started = deferred()
     const gate = deferred()
-    options.importer = (async () => ({
+    options.importer = async () => ({
       activate: async () => ({
         rpc: {
           wait: async () => {
@@ -844,7 +844,7 @@ describe("extension runtime process pins", () => {
           },
         },
       }),
-    }))
+    })
     const pending = rt.rpc({ id: "test.srv", method: "wait" }).catch((error) => error)
     await started.promise
     const release = rt.beginMutation("test.srv")
@@ -871,13 +871,13 @@ describe("extension runtime process pins", () => {
   test("revalidates managed ownership after acquisition before importing", async () => {
     await managed()
     const { events, lease } = driver()
-    options.leases = ({
+    options.leases = {
       acquireData: async () => lease("data:test.srv"),
       acquire: async () => {
         await rm(path.join(path.dirname(registryFile()), "packages", installId), { recursive: true, force: true })
         return lease(installId)
       },
-    })
+    }
     await expect(rt.rpc({ id: "test.srv", method: "ping" })).rejects.toThrow("owned installation")
     expect(events).not.toContain("import")
   })
@@ -886,13 +886,13 @@ describe("extension runtime process pins", () => {
     await managed()
     const { events, lease } = driver()
     let busy = true
-    options.leases = ({
+    options.leases = {
       acquireData: async () => lease("data:test.srv"),
       acquire: async () => {
         if (busy) throw new ExtensionLeases.LeaseError("busy", "lease busy")
         return lease(installId)
       },
-    })
+    }
     await expect(rt.rpc({ id: "test.srv", method: "ping" })).rejects.toThrow("lease busy")
     expect(await rt.instanceHooks(pluginInput())).toEqual([])
     expect(events).not.toContain("import")
@@ -910,7 +910,7 @@ describe("extension runtime limits", () => {
     let running = 0
     let busy = 0
     let other = 0
-    options.importer = (async () => ({
+    options.importer = async () => ({
       id: "test.srv",
       async activate() {
         return {
@@ -923,7 +923,7 @@ describe("extension runtime limits", () => {
           },
         }
       },
-    }))
+    })
     // Concurrent callers resume in microtask order, not initiation order: any
     // one of the three may lose the admission race, and a straggler could even
     // reach admission after the gate released. Hold the gate until every call
@@ -947,7 +947,15 @@ describe("extension runtime limits", () => {
     expect(settled.filter((value) => value instanceof ExtensionRpcError && value.code === "busy")).toHaveLength(1)
     // Admission frees up as handlers settle; the next call goes through.
     expect(await rt.rpc({ id: "test.srv", method: "wait" })).toBe("done")
-    Object.assign(options, { rpcConcurrency: undefined, emitRatePerSecond: undefined, emitBurst: undefined, emitWindowMs: undefined, killGraceMs: undefined, workerRequestMs: undefined, procCreditBytes: undefined })
+    Object.assign(options, {
+      rpcConcurrency: undefined,
+      emitRatePerSecond: undefined,
+      emitBurst: undefined,
+      emitWindowMs: undefined,
+      killGraceMs: undefined,
+      workerRequestMs: undefined,
+      procCreditBytes: undefined,
+    })
   })
 
   test("drops host.emit bursts beyond the token bucket and logs an aggregated warning", async () => {
@@ -961,18 +969,27 @@ describe("extension runtime limits", () => {
       try {
         for (let i = 0; i < 15; i++) host.emit("tick", i)
         expect(bus.seen).toHaveLength(10)
-        for (let i = 0; i < 5000 && !warn.mock.calls.some(([m]) => m === "extension emit rate limit dropped events"); i++)
+        for (
+          let i = 0;
+          i < 5000 && !warn.mock.calls.some(([m]) => m === "extension emit rate limit dropped events");
+          i++
+        )
           await Bun.sleep(1)
         const summaries = warn.mock.calls.filter(([message]) => message === "extension emit rate limit dropped events")
         expect(summaries).toEqual([
-          [
-            "extension emit rate limit dropped events",
-            expect.objectContaining({ extension: "test.srv", dropped: 5 }),
-          ],
+          ["extension emit rate limit dropped events", expect.objectContaining({ extension: "test.srv", dropped: 5 })],
         ])
       } finally {
         bus.stop()
-        Object.assign(options, { rpcConcurrency: undefined, emitRatePerSecond: undefined, emitBurst: undefined, emitWindowMs: undefined, killGraceMs: undefined, workerRequestMs: undefined, procCreditBytes: undefined })
+        Object.assign(options, {
+          rpcConcurrency: undefined,
+          emitRatePerSecond: undefined,
+          emitBurst: undefined,
+          emitWindowMs: undefined,
+          killGraceMs: undefined,
+          workerRequestMs: undefined,
+          procCreditBytes: undefined,
+        })
       }
     } finally {
       warn.mockRestore()
@@ -1048,10 +1065,7 @@ describe("extension runtime", () => {
   test("deduplicates concurrent activations", async () => {
     await link("test.srv", path.join(root, "test-srv"))
     counters().activateSlow = 1
-    const [a, b] = await Promise.all([
-      rt.instanceHooks(pluginInput()),
-      rt.instanceHooks(pluginInput()),
-    ])
+    const [a, b] = await Promise.all([rt.instanceHooks(pluginInput()), rt.instanceHooks(pluginInput())])
     expect(a).toHaveLength(1)
     expect(b).toHaveLength(1)
     expect(counters().activate).toBe(1)
@@ -1078,9 +1092,10 @@ describe("extension runtime", () => {
     expect(fromSecond).toEqual({ directory: second.directory })
 
     // Unknown directory falls through to the process-level handler.
-    expect(
-      await rt.rpc({ id: "test.srv", method: "ping", directory: "/does/not/exist", input: 1 }),
-    ).toEqual({ pong: 1, from: "process" })
+    expect(await rt.rpc({ id: "test.srv", method: "ping", directory: "/does/not/exist", input: 1 })).toEqual({
+      pong: 1,
+      from: "process",
+    })
     expect(await rt.rpc({ id: "test.srv", method: "ping" })).toEqual({ pong: undefined, from: "process" })
   })
 
@@ -1126,11 +1141,13 @@ describe("extension runtime", () => {
     const controller = new AbortController()
     controller.abort()
 
-    const error = await rt.rpc({
-      id: "test.srv",
-      method: "count",
-      signal: controller.signal,
-    }).catch((error) => error)
+    const error = await rt
+      .rpc({
+        id: "test.srv",
+        method: "count",
+        signal: controller.signal,
+      })
+      .catch((error) => error)
     expect(error).toBeInstanceOf(ExtensionRpcAbortedError)
     expect((error as Error).name).toBe("AbortError")
     expect(counters().rpcCalls).toBeUndefined()
@@ -1140,11 +1157,13 @@ describe("extension runtime", () => {
     await link("test.srv", path.join(root, "test-srv"))
     counters().activateGate = 1
     const controller = new AbortController()
-    const pending = rt.rpc({
-      id: "test.srv",
-      method: "count",
-      signal: controller.signal,
-    }).catch((error) => error)
+    const pending = rt
+      .rpc({
+        id: "test.srv",
+        method: "count",
+        signal: controller.signal,
+      })
+      .catch((error) => error)
     controller.abort()
     counters().activateGateRelease?.()
     const error = await pending
@@ -1185,7 +1204,7 @@ describe("extension runtime", () => {
       started = resolve
     })
     let observed: AbortSignal | undefined
-    options.importer = (async () => ({
+    options.importer = async () => ({
       id: "test.srv",
       async activate() {
         return {
@@ -1200,7 +1219,7 @@ describe("extension runtime", () => {
           },
         }
       },
-    }))
+    })
     await rt.reload("test.srv")
     const pending = rt.rpc({ id: "test.srv", method: "wait" })
     await ready
@@ -1284,12 +1303,12 @@ describe("extension runtime", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve
     })
-    options.importer = (async (source) => {
+    options.importer = async (source) => {
       entered()
       await gate
       const module = await import(pathToFileURL(source).href)
       return module.default as never
-    })
+    }
 
     const pending = rt.instanceHooks(pluginInput())
     await entering
@@ -1304,7 +1323,7 @@ describe("extension runtime", () => {
       needsRestart: false,
     })
 
-    options.importer = (undefined)
+    options.importer = undefined
     const hooks = await rt.instanceHooks(pluginInput())
     expect(hooks).toHaveLength(1)
     expect(counters().activate).toBe(1)
@@ -1329,7 +1348,7 @@ describe("extension runtime", () => {
       releaseFresh = resolve
     })
     let imports = 0
-    options.importer = (async (source) => {
+    options.importer = async (source) => {
       const invocation = ++imports
       if (invocation === 1) {
         enteredFirst()
@@ -1341,7 +1360,7 @@ describe("extension runtime", () => {
       }
       const module = await import(pathToFileURL(source).href)
       return module.default as never
-    })
+    }
 
     const withTimeout = <T>(promise: Promise<T>, ms: number) => {
       let timer: ReturnType<typeof setTimeout> | undefined
@@ -1386,7 +1405,7 @@ describe("extension runtime", () => {
     } finally {
       releaseStale()
       releaseFresh()
-      options.importer = (undefined)
+      options.importer = undefined
     }
   })
 
@@ -1405,7 +1424,7 @@ describe("extension runtime", () => {
       releaseStale = resolve
     })
     let imports = 0
-    options.importer = (async (source) => {
+    options.importer = async (source) => {
       const invocation = ++imports
       if (invocation === 1) {
         enteredFirst()
@@ -1414,7 +1433,7 @@ describe("extension runtime", () => {
       if (invocation === 2) enteredSecond()
       const module = await import(pathToFileURL(source).href)
       return module.default as never
-    })
+    }
 
     const withTimeout = <T>(promise: Promise<T>, ms: number) => {
       let timer: ReturnType<typeof setTimeout> | undefined
@@ -1456,7 +1475,7 @@ describe("extension runtime", () => {
       expect(counters().activate).toBe(1)
     } finally {
       releaseStale()
-      options.importer = (undefined)
+      options.importer = undefined
     }
   })
 
@@ -1503,11 +1522,11 @@ describe("extension runtime", () => {
   test("re-imports when the server fingerprint changes and disposes the old service", async () => {
     await link("test.srv", path.join(root, "test-srv"))
     const imports: string[] = []
-    options.importer = (async (source, fingerprint) => {
+    options.importer = async (source, fingerprint) => {
       imports.push(fingerprint ?? "")
       const module = await import(pathToFileURL(source).href)
       return module.default
-    })
+    }
     await rt.instanceHooks(pluginInput())
     expect(imports).toHaveLength(1)
     expect(counters().dispose).toBeUndefined()
@@ -1520,7 +1539,7 @@ describe("extension runtime", () => {
     expect(imports).toHaveLength(2)
     expect(imports[0]).not.toEqual(imports[1])
     expect(counters().dispose).toBe(1)
-    options.importer = (undefined)
+    options.importer = undefined
   })
 
   test("hot reload imports a fresh module from a new copy without a fake importer", async () => {
@@ -1771,12 +1790,12 @@ export default {
     const gate = new Promise<void>((resolve) => {
       release = resolve
     })
-    options.importer = (async (source) => {
+    options.importer = async (source) => {
       entered()
       await gate
       const module = await import(pathToFileURL(source).href)
       return module.default as never
-    })
+    }
 
     const pending = rt.instanceHooks(pluginInput())
     await entering

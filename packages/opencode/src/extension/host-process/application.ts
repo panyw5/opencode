@@ -386,7 +386,9 @@ export async function loadExtensionApplication(
     // `env` may carry undefined values, which are not Schema.Json — strip them
     // at the boundary rather than failing the frame.
     const env = options.env
-      ? Object.fromEntries(Object.entries(options.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+      ? Object.fromEntries(
+          Object.entries(options.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+        )
       : null
     // Permission checkpoint (T5.6): the host-side host.call admission rejects
     // spawn requests with "denied" when the manifest lacks "process:spawn";
@@ -562,7 +564,8 @@ export async function loadExtensionApplication(
     const name = string(value.tool, "tool.execute tool")
     const call = string(value.call, "tool.execute call")
     const instance = instances.get(directory)
-    if (!instance) throw new HostProcessError({ code: "requestFailed", detail: `no instance for directory ${directory}` })
+    if (!instance)
+      throw new HostProcessError({ code: "requestFailed", detail: `no instance for directory ${directory}` })
     const definition = instance.tools.get(name)
     if (!definition) throw new HostProcessError({ code: "requestFailed", detail: `unknown tool ${payload.id}.${name}` })
     const context = record(value.ctx ?? {}, "tool.execute ctx")

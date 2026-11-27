@@ -23,13 +23,7 @@ import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { resolveNpm, materializeNpm, validateNpmRoot, type PreparedNpm } from "./npm"
 import { normalizeReleaseUrl, parseReleaseDescriptor, releaseCompatible, resolveRelease } from "./release"
 import { MAX_DESCRIPTOR_BYTES, MAX_SIGNATURE_BYTES, isSha256Hex } from "@opencode-ai/util/extension-release"
-import {
-  SignatureError,
-  TRUSTED_KEYS,
-  trustedKeysFor,
-  verifyDescriptorSignature,
-  type TrustedKey,
-} from "./trust"
+import { SignatureError, TRUSTED_KEYS, trustedKeysFor, verifyDescriptorSignature, type TrustedKey } from "./trust"
 
 const log = Log.create({ service: "extension" })
 const TTL = 10 * 60 * 1000
@@ -755,9 +749,7 @@ export function createInstaller(options: InstallerOptions = {}) {
             contributes: manifest.contributes,
             source: pub,
             ...(warnings.length ? { warnings } : {}),
-            ...(release
-              ? { signatureStatus: release.signature ? ("verified" as const) : ("unsigned" as const) }
-              : {}),
+            ...(release ? { signatureStatus: release.signature ? ("verified" as const) : ("unsigned" as const) } : {}),
             ...((release?.sequence ?? previous?.releaseSequence) === undefined
               ? {}
               : { releaseSequence: release?.sequence ?? previous?.releaseSequence }),

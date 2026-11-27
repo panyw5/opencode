@@ -148,8 +148,7 @@ async function main() {
       ? undefined
       : (() => {
           const parsed = Number(values.sequence)
-          if (!Number.isSafeInteger(parsed) || parsed < 0)
-            throw new Error("--sequence must be a non-negative integer")
+          if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error("--sequence must be a non-negative integer")
           return parsed
         })()
   const commit =

@@ -158,7 +158,7 @@ describe("extension runtime process mode", () => {
     await rt.testing.reset()
     process.env.OPENCODE_EXTENSION_REGISTRY_FILE = registry
     await link(dir)
-    options.workerLimits = ({ restartBackoffMs: [50, 100, 200] })
+    options.workerLimits = { restartBackoffMs: [50, 100, 200] }
   })
 
   test("a crashed worker restarts automatically with fresh state and a new pid", async () => {
@@ -222,7 +222,7 @@ describe("extension runtime process mode", () => {
   }, 20_000)
 
   test("a crash loop exhausts the restart budget into a sticky error; retry recovers", async () => {
-    options.workerLimits = ({ restartBackoffMs: [50] })
+    options.workerLimits = { restartBackoffMs: [50] }
     const first = await rpc("echo")
     await rpc("die").catch(() => {})
     // One restart attempt fits inside the [50] skeleton.

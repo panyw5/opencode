@@ -99,8 +99,7 @@ function envelope(value: unknown): { keyId: string; signature: Buffer } {
   if (typeof document.signature !== "string") fail("invalid signature encoding")
   const signature = Buffer.from(document.signature, "base64")
   // Round-tripping enforces canonical base64 (no whitespace, comments or odd padding).
-  if (signature.length !== 64 || signature.toString("base64") !== document.signature)
-    fail("invalid signature encoding")
+  if (signature.length !== 64 || signature.toString("base64") !== document.signature) fail("invalid signature encoding")
   return { keyId: document.keyId, signature }
 }
 

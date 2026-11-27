@@ -170,7 +170,11 @@ for (const entry of cases) {
       const input = await copy(entry.template)
       expect(input.pkg).toMatchObject(entry.packageJSON)
       const runtime = await run(
-        [node, "--eval", "process.stdout.write(JSON.stringify({name:process.release.name,bun:!!process.versions.bun}))"],
+        [
+          node,
+          "--eval",
+          "process.stdout.write(JSON.stringify({name:process.release.name,bun:!!process.versions.bun}))",
+        ],
         input.directory,
       )
       expect(JSON.parse(runtime.stdout)).toEqual({ name: "node", bun: false })
@@ -192,9 +196,7 @@ for (const entry of cases) {
           )
         ).stdout,
       )
-      expect(released.archive).toBe(
-        path.join(input.directory, `artifacts/${input.pkg.name}-${input.pkg.version}.tgz`),
-      )
+      expect(released.archive).toBe(path.join(input.directory, `artifacts/${input.pkg.name}-${input.pkg.version}.tgz`))
       expect(released.output).toBe(path.join(input.directory, "artifacts/stable.json"))
       const bytes = await inspect(released.archive, expected(input.pkg))
       const descriptor = JSON.parse(await readFile(released.output, "utf8"))
@@ -228,9 +230,7 @@ for (const entry of cases) {
       }
       await writeFile(path.join(input.directory, "package.json"), JSON.stringify(pkg, null, 2) + "\n")
       const packed = result((await run([node, npm, "run", "pack"], input.directory)).stdout)
-      expect(packed.archive).toBe(
-        path.join(input.directory, "artifacts/standalone-fixture-renamed-server-2.3.4.tgz"),
-      )
+      expect(packed.archive).toBe(path.join(input.directory, "artifacts/standalone-fixture-renamed-server-2.3.4.tgz"))
       expect(packed.output).toBeNull()
       expect(packed.descriptor).toBeNull()
       await inspect(packed.archive, expected(pkg))

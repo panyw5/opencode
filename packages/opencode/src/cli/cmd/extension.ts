@@ -105,13 +105,11 @@ export function extensionInstallSource(
   if (url?.protocol === "https:") {
     if (!/^https:\/\//i.test(value) || url.username || url.password || !/\.tgz$/i.test(url.pathname))
       throw new Error("A credential-free HTTPS .tgz URL is required")
-    if (sha256 !== undefined && !isSha256Hex(sha256))
-      throw new Error("--sha256 must contain 64 hexadecimal digits")
+    if (sha256 !== undefined && !isSha256Hex(sha256)) throw new Error("--sha256 must contain 64 hexadecimal digits")
     return { type: "archive", url: value, ...(sha256 === undefined ? {} : { sha256: sha256.toLowerCase() }) }
   }
   if (/\.tgz$/i.test(value) && !/^\w+:/.test(value)) {
-    if (sha256 !== undefined && !isSha256Hex(sha256))
-      throw new Error("--sha256 must contain 64 hexadecimal digits")
+    if (sha256 !== undefined && !isSha256Hex(sha256)) throw new Error("--sha256 must contain 64 hexadecimal digits")
     return {
       type: "local",
       path: path.resolve(value),
@@ -204,7 +202,8 @@ function installFailure(error: unknown) {
     expired: "Extension operation expired; prepare it again",
     conflict: "Extension changed or cannot be replaced safely; prepare again or restart the server",
     failed: "Extension installation failed; no registry change was confirmed",
-    signature_invalid: "Release descriptor signature verification failed; the publisher signature is missing or invalid",
+    signature_invalid:
+      "Release descriptor signature verification failed; the publisher signature is missing or invalid",
     rollback_detected: "The published release moved backwards; a rolled-back descriptor was refused",
   }
   return typeof code === "string" && Object.hasOwn(messages, code)
@@ -494,9 +493,7 @@ const PackCommand = effectCmd({
     UI.println(`${text(result.id)}@${text(result.version)} packed (${result.files} files)`)
     UI.println(`Archive: ${text(result.archive)}`)
     UI.println(`sha256: ${result.sha256}`)
-    UI.println(
-      `Install locally: opencode extension install ${text(result.archive)} --sha256 ${result.sha256} --yes`,
-    )
+    UI.println(`Install locally: opencode extension install ${text(result.archive)} --sha256 ${result.sha256} --yes`)
   }),
 })
 
@@ -529,9 +526,7 @@ const CreateCommand = effectCmd({
         ...(args.displayName === undefined ? {} : { displayName: args.displayName }),
       }),
     )
-    UI.println(
-      `${UI.Style.TEXT_SUCCESS_BOLD}Created${UI.Style.TEXT_NORMAL} ${result.id} in ${text(result.dir)}`,
-    )
+    UI.println(`${UI.Style.TEXT_SUCCESS_BOLD}Created${UI.Style.TEXT_NORMAL} ${result.id} in ${text(result.dir)}`)
     UI.println(`Files: ${result.files.length}`)
     UI.println("Next: edit the generated files, then run `opencode extension validate` and `opencode extension pack`")
   }),

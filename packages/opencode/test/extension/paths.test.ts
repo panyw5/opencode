@@ -117,10 +117,10 @@ test("managed copies cannot be newly linked or loaded through another registry's
   let imported = false
   process.env.OPENCODE_EXTENSION_REGISTRY_FILE = registryB
   const options: Options = {}
-  options.importer = (async () => {
+  options.importer = async () => {
     imported = true
     return { activate: async () => ({ rpc: { ping: () => "wrong" } }) }
-  })
+  }
   const rt = ExtensionRuntime.make(options)
   try {
     await expect(rt.rpc({ id, method: "ping" })).rejects.toThrow("Managed extension copies")

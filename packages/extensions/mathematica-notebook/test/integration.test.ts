@@ -33,10 +33,11 @@ test.skipIf(process.env.WOLFRAM_INTEGRATION !== "1")(
       expect(plot.printed).toContain("hello notebook")
       expect(plot.image?.startsWith("iVBOR")).toBe(true)
       const hooks = await extension.server!({ directory: dir, extension: { ...h, service } } as ExtensionPluginInput)
-      const output = await hooks.tool!.cells.execute(
-        { path, action: "run", index: 1, revision: document.revision },
-        { directory: dir, abort: ctx.signal, ask: async () => {} } as never,
-      )
+      const output = await hooks.tool!.cells.execute({ path, action: "run", index: 1, revision: document.revision }, {
+        directory: dir,
+        abort: ctx.signal,
+        ask: async () => {},
+      } as never)
       expect(JSON.parse(output as string).text).toBe("42")
       settings.timeoutSeconds = 1
       expect((await run(0, "Pause[5]")).ok).toBe(false)

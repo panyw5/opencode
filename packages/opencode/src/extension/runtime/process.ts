@@ -1,10 +1,6 @@
 import { spawn as spawnChild, type ChildProcess } from "node:child_process"
 import * as Log from "@opencode-ai/core/util/log"
-import type {
-  ExtensionProcessStdio,
-  ExtensionSpawnOptions,
-  ManagedProcess,
-} from "@opencode-ai/extension-kit/server"
+import type { ExtensionProcessStdio, ExtensionSpawnOptions, ManagedProcess } from "@opencode-ai/extension-kit/server"
 
 const log = Log.create({ service: "extension" })
 

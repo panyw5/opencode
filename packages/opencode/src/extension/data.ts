@@ -33,9 +33,7 @@ function record(identity: DataIdentity, legacyLocation = false) {
   // legacy form only recognises records written while lineage hashed the
   // acquisition location.
   const lineage =
-    source.type === "archive"
-      ? `archive:${legacyLocation ? source.location : source.sha256}`
-      : sourceIdentity(source)
+    source.type === "archive" ? `archive:${legacyLocation ? source.location : source.sha256}` : sourceIdentity(source)
   return {
     version: 1,
     owner: OWNER,

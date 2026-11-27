@@ -11,6 +11,9 @@
     "id": "test.e2e-ext",
     "displayName": "E2E Lifecycle Fixture",
     "description": "Minimal server-only fixture extension for test/extension/e2e-lifecycle.test.ts.",
-    "permissions": ["tools", "process:spawn"]
+    "permissions": [
+      "tools",
+      "process:spawn"
+    ]
   }
 }

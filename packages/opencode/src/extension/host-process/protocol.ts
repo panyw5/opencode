@@ -12,9 +12,7 @@ import { Schema } from "effect"
  */
 export const PROTOCOL_VERSION = 1
 
-const uuid = Schema.String.check(
-  Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
-)
+const uuid = Schema.String.check(Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/))
 /** Request identity scoped to one worker; no command is replayed after disconnection. */
 export const RequestID = uuid.pipe(Schema.brand("ExtensionHostProcessRequestID"))
 /** Reverse-channel identity scoped to one worker; counted independently of {@link RequestID}. */

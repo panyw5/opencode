@@ -285,9 +285,17 @@ describe("release descriptor parser", () => {
     expect(parseReleaseDescriptor(descriptor()).engines).toBeUndefined()
   })
 
-  test.each([{}, { opencode: 1 }, { opencode: "" }, { opencode: "latest" }, { opencode: ">=1.0.0", node: ">=18" }, "1.0.0", []].map(
-    (value) => [value] as const,
-  ))("rejects malformed engines declarations (%#)", (engines) =>
+  test.each(
+    [
+      {},
+      { opencode: 1 },
+      { opencode: "" },
+      { opencode: "latest" },
+      { opencode: ">=1.0.0", node: ">=18" },
+      "1.0.0",
+      [],
+    ].map((value) => [value] as const),
+  )("rejects malformed engines declarations (%#)", (engines) =>
     expect(() => parseReleaseDescriptor({ ...descriptor(), engines })).toThrow(),
   )
 })

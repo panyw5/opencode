@@ -242,116 +242,116 @@ function alive(pid: number) {
 // semantics while process isolation drives the identical sequence through the
 // extension-host worker (T5.3).
 for (const isolation of ["inline", "process"] as const) {
-it.instance(
-  `extension lifecycle [${isolation}]: install → rpc → tool → emit → disable → enable → update → uninstall`,
-  () =>
-    Effect.gen(function* () {
-      const env = yield* Effect.promise(() => setup(isolation))
-      try {
-        const { service, seen } = env
-        const test = yield* TestInstance
-        const rpc = (method: string, input: Record<string, unknown> = {}) =>
-          ExtensionRuntime.rpc({ id, method, input, directory: test.directory })
+  it.instance(
+    `extension lifecycle [${isolation}]: install → rpc → tool → emit → disable → enable → update → uninstall`,
+    () =>
+      Effect.gen(function* () {
+        const env = yield* Effect.promise(() => setup(isolation))
+        try {
+          const { service, seen } = env
+          const test = yield* TestInstance
+          const rpc = (method: string, input: Record<string, unknown> = {}) =>
+            ExtensionRuntime.rpc({ id, method, input, directory: test.directory })
 
-        // ── install ────────────────────────────────────────────────────────
-        const source1 = yield* Effect.promise(() => env.source("1.0.0"))
-        const prepared = yield* Effect.promise(() => service.prepare({ kind: "install", source: source1 }))
-        const installed = yield* Effect.promise(() =>
-          service.commit(prepared.operationId, prepared.token, { enable: true }),
-        )
-        expect(installed).toMatchObject({ committed: true, synced: true })
+          // ── install ────────────────────────────────────────────────────────
+          const source1 = yield* Effect.promise(() => env.source("1.0.0"))
+          const prepared = yield* Effect.promise(() => service.prepare({ kind: "install", source: source1 }))
+          const installed = yield* Effect.promise(() =>
+            service.commit(prepared.operationId, prepared.token, { enable: true }),
+          )
+          expect(installed).toMatchObject({ committed: true, synced: true })
 
-        // ── first RPC triggers activation ──────────────────────────────────
-        const echo = yield* Effect.promise(() => rpc("echo", { message: "hello" }))
-        expect(echo).toMatchObject({ echo: "hello", extension: id, version: "1.0.0" })
-        expect(ExtensionRuntime.describe(id)).toMatchObject({ hasService: true, runtime: "ready" })
-        expect(yield* Effect.promise(() => Bun.file(env.dataFile).exists())).toBe(true)
+          // ── first RPC triggers activation ──────────────────────────────────
+          const echo = yield* Effect.promise(() => rpc("echo", { message: "hello" }))
+          expect(echo).toMatchObject({ echo: "hello", extension: id, version: "1.0.0" })
+          expect(ExtensionRuntime.describe(id)).toMatchObject({ hasService: true, runtime: "ready" })
+          expect(yield* Effect.promise(() => Bun.file(env.dataFile).exists())).toBe(true)
 
-        // ── extension tool through the real ToolRegistry ───────────────────
-        const registry = yield* ToolRegistry.Service
-        const tools1 = yield* registry.all()
-        const tool = tools1.find((item) => item.id === TOOL_ID)
-        expect(tool).toBeDefined()
-        const agent = (yield* (yield* Agent.Service).defaultInfo()).name
-        const executed = yield* tool!.execute({ text: "lifecycle" }, toolCtx(agent))
-        expect(executed.output).toBe("e2e-pong:lifecycle")
-        expect(executed.metadata).toMatchObject({ echoed: "lifecycle" })
+          // ── extension tool through the real ToolRegistry ───────────────────
+          const registry = yield* ToolRegistry.Service
+          const tools1 = yield* registry.all()
+          const tool = tools1.find((item) => item.id === TOOL_ID)
+          expect(tool).toBeDefined()
+          const agent = (yield* (yield* Agent.Service).defaultInfo()).name
+          const executed = yield* tool!.execute({ text: "lifecycle" }, toolCtx(agent))
+          expect(executed.output).toBe("e2e-pong:lifecycle")
+          expect(executed.metadata).toMatchObject({ echoed: "lifecycle" })
 
-        // ── host.emit events reach the bus (tool + rpc paths) ──────────────
-        expect(seen.some((e) => e.name === PING_EVENT && (e.data as any)?.source === "tool")).toBe(true)
-        yield* Effect.promise(() => rpc("emit.ping", { message: "bus" }))
-        expect(seen.some((e) => e.name === PING_EVENT && (e.data as any)?.source === "rpc")).toBe(true)
+          // ── host.emit events reach the bus (tool + rpc paths) ──────────────
+          expect(seen.some((e) => e.name === PING_EVENT && (e.data as any)?.source === "tool")).toBe(true)
+          yield* Effect.promise(() => rpc("emit.ping", { message: "bus" }))
+          expect(seen.some((e) => e.name === PING_EVENT && (e.data as any)?.source === "rpc")).toBe(true)
 
-        // ── managed child process ──────────────────────────────────────────
-        const started = (yield* Effect.promise(() => rpc("child.start"))) as { running: boolean; pid: number }
-        expect(started.running).toBe(true)
-        expect(started.pid).toBeGreaterThan(0)
-        expect(alive(started.pid)).toBe(true)
+          // ── managed child process ──────────────────────────────────────────
+          const started = (yield* Effect.promise(() => rpc("child.start"))) as { running: boolean; pid: number }
+          expect(started.running).toBe(true)
+          expect(started.pid).toBeGreaterThan(0)
+          expect(alive(started.pid)).toBe(true)
 
-        // ── disable: hooks withdrawn, service + child stopped ──────────────
-        // Mirrors Extension.Service.setEnabled (registry write → invalidate →
-        // disable) without the watcher, which is not part of this test.
-        yield* Effect.promise(() => ExtensionRegistry.setEnabled(id, false))
-        yield* Effect.promise(() => ExtensionRuntime.invalidateHooks())
-        yield* Effect.promise(() => ExtensionRuntime.disable(id))
-        expect((yield* registry.all()).some((item) => item.id === TOOL_ID)).toBe(false)
-        expect(ExtensionRuntime.describe(id)).toMatchObject({ hasService: false, runtime: "idle" })
-        expect(alive(started.pid)).toBe(false)
-        const disabled = yield* Effect.promise(() =>
-          rpc("echo").then(
-            () => "ok",
-            () => "rejected",
-          ),
-        )
-        expect(disabled).toBe("rejected")
+          // ── disable: hooks withdrawn, service + child stopped ──────────────
+          // Mirrors Extension.Service.setEnabled (registry write → invalidate →
+          // disable) without the watcher, which is not part of this test.
+          yield* Effect.promise(() => ExtensionRegistry.setEnabled(id, false))
+          yield* Effect.promise(() => ExtensionRuntime.invalidateHooks())
+          yield* Effect.promise(() => ExtensionRuntime.disable(id))
+          expect((yield* registry.all()).some((item) => item.id === TOOL_ID)).toBe(false)
+          expect(ExtensionRuntime.describe(id)).toMatchObject({ hasService: false, runtime: "idle" })
+          expect(alive(started.pid)).toBe(false)
+          const disabled = yield* Effect.promise(() =>
+            rpc("echo").then(
+              () => "ok",
+              () => "rejected",
+            ),
+          )
+          expect(disabled).toBe("rejected")
 
-        // ── enable: hooks and service come back ────────────────────────────
-        yield* Effect.promise(() => ExtensionRegistry.setEnabled(id, true))
-        yield* Effect.promise(() => ExtensionRuntime.invalidateHooks())
-        expect((yield* registry.all()).some((item) => item.id === TOOL_ID)).toBe(true)
-        const echo2 = yield* Effect.promise(() => rpc("echo", { message: "back" }))
-        expect(echo2).toMatchObject({ echo: "back", version: "1.0.0" })
-        const restarted = (yield* Effect.promise(() => rpc("child.start"))) as { pid: number }
-        expect(restarted.pid).toBeGreaterThan(0)
-        expect(alive(restarted.pid)).toBe(true)
+          // ── enable: hooks and service come back ────────────────────────────
+          yield* Effect.promise(() => ExtensionRegistry.setEnabled(id, true))
+          yield* Effect.promise(() => ExtensionRuntime.invalidateHooks())
+          expect((yield* registry.all()).some((item) => item.id === TOOL_ID)).toBe(true)
+          const echo2 = yield* Effect.promise(() => rpc("echo", { message: "back" }))
+          expect(echo2).toMatchObject({ echo: "back", version: "1.0.0" })
+          const restarted = (yield* Effect.promise(() => rpc("child.start"))) as { pid: number }
+          expect(restarted.pid).toBeGreaterThan(0)
+          expect(alive(restarted.pid)).toBe(true)
 
-        // ── update to 2.0.0 while running ──────────────────────────────────
-        const source2 = yield* Effect.promise(() => env.source("2.0.0"))
-        const update = yield* Effect.promise(() => service.prepare({ kind: "update", id, source: source2 }))
-        const updated = yield* Effect.promise(() => service.commit(update.operationId, update.token))
-        expect(updated).toMatchObject({ committed: true, synced: true })
-        const row = (yield* Effect.promise(() => ExtensionRegistry.snapshot(id))).row
-        expect(row?.version).toBe("2.0.0")
-        expect(row?.enabled).toBe(true)
-        // The previous generation was quiesced: its child must be reaped.
-        expect(alive(restarted.pid)).toBe(false)
-        const version = yield* Effect.promise(() => rpc("version"))
-        expect(version).toBe("2.0.0")
-        const echo3 = yield* Effect.promise(() => rpc("echo", { message: "v2" }))
-        expect(echo3).toMatchObject({ echo: "v2", version: "2.0.0" })
-        expect((yield* registry.all()).some((item) => item.id === TOOL_ID)).toBe(true)
+          // ── update to 2.0.0 while running ──────────────────────────────────
+          const source2 = yield* Effect.promise(() => env.source("2.0.0"))
+          const update = yield* Effect.promise(() => service.prepare({ kind: "update", id, source: source2 }))
+          const updated = yield* Effect.promise(() => service.commit(update.operationId, update.token))
+          expect(updated).toMatchObject({ committed: true, synced: true })
+          const row = (yield* Effect.promise(() => ExtensionRegistry.snapshot(id))).row
+          expect(row?.version).toBe("2.0.0")
+          expect(row?.enabled).toBe(true)
+          // The previous generation was quiesced: its child must be reaped.
+          expect(alive(restarted.pid)).toBe(false)
+          const version = yield* Effect.promise(() => rpc("version"))
+          expect(version).toBe("2.0.0")
+          const echo3 = yield* Effect.promise(() => rpc("echo", { message: "v2" }))
+          expect(echo3).toMatchObject({ echo: "v2", version: "2.0.0" })
+          expect((yield* registry.all()).some((item) => item.id === TOOL_ID)).toBe(true)
 
-        // ── uninstall: row removed, non-purge data retained ────────────────
-        const remove = yield* Effect.promise(() => service.prepare({ kind: "uninstall", id }))
-        const removed = yield* Effect.promise(() => service.commit(remove.operationId, remove.token))
-        expect(removed.committed).toBe(true)
-        const snapshot = yield* Effect.promise(() => ExtensionRegistry.snapshot(id))
-        expect(snapshot.row).toBeUndefined()
-        // The default uninstall keeps a retained tombstone (settings/data lineage).
-        expect(snapshot.retained).toBeDefined()
-        const gone = yield* Effect.promise(() =>
-          rpc("echo").then(
-            () => "ok",
-            () => "rejected",
-          ),
-        )
-        expect(gone).toBe("rejected")
-        // Non-purge uninstall must not have touched the extension's data dir.
-        expect(yield* Effect.promise(() => Bun.file(env.dataFile).exists())).toBe(true)
-      } finally {
-        yield* Effect.promise(() => env.teardown())
-      }
-    }),
-  120_000,
-)
+          // ── uninstall: row removed, non-purge data retained ────────────────
+          const remove = yield* Effect.promise(() => service.prepare({ kind: "uninstall", id }))
+          const removed = yield* Effect.promise(() => service.commit(remove.operationId, remove.token))
+          expect(removed.committed).toBe(true)
+          const snapshot = yield* Effect.promise(() => ExtensionRegistry.snapshot(id))
+          expect(snapshot.row).toBeUndefined()
+          // The default uninstall keeps a retained tombstone (settings/data lineage).
+          expect(snapshot.retained).toBeDefined()
+          const gone = yield* Effect.promise(() =>
+            rpc("echo").then(
+              () => "ok",
+              () => "rejected",
+            ),
+          )
+          expect(gone).toBe("rejected")
+          // Non-purge uninstall must not have touched the extension's data dir.
+          expect(yield* Effect.promise(() => Bun.file(env.dataFile).exists())).toBe(true)
+        } finally {
+          yield* Effect.promise(() => env.teardown())
+        }
+      }),
+    120_000,
+  )
 }

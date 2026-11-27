@@ -673,50 +673,44 @@ export function WlsViewer(props: FileViewerProps) {
           }}
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         >
-              <div
-                class="oc-wls-code-window"
-                style={
-                  virtual()
-                    ? {
-                        "padding-top": `${range().start * lineHeight()}px`,
-                        "padding-bottom": `${(lines().length - range().end) * lineHeight()}px`,
-                        "min-width": `calc(${columns()}ch + 64px)`,
-                      }
-                    : undefined
-                }
-              >
-                <Index each={visibleLines()}>
-                  {(row) => {
-                    const number = () => row().number
-                    return (
-                      <div
-                        class="oc-wls-line"
-                        data-line={number()}
-                        classList={{ "is-paused": pausedLine() === number() }}
-                      >
-                        <button
-                          type="button"
-                          class="oc-wls-gutter"
-                          classList={{ "has-breakpoint": breakpoints().includes(number()) }}
-                          title={t().breakpoint}
-                          onClick={() => toggleBreakpoint(number())}
-                        >
-                          <span class="oc-wls-line-number">{number()}</span>
-                          <span class="oc-wls-bp-dot" />
-                        </button>
-                        <pre class="oc-wls-line-text">
-                          <Show when={row().text !== ""} fallback=" ">
-                            <For each={row().tokens}>
-                              {(token) => <span data-token={token.kind}>{token.text}</span>}
-                            </For>
-                          </Show>
-                        </pre>
-                      </div>
-                    )
-                  }}
-                </Index>
-              </div>
-            </div>
+          <div
+            class="oc-wls-code-window"
+            style={
+              virtual()
+                ? {
+                    "padding-top": `${range().start * lineHeight()}px`,
+                    "padding-bottom": `${(lines().length - range().end) * lineHeight()}px`,
+                    "min-width": `calc(${columns()}ch + 64px)`,
+                  }
+                : undefined
+            }
+          >
+            <Index each={visibleLines()}>
+              {(row) => {
+                const number = () => row().number
+                return (
+                  <div class="oc-wls-line" data-line={number()} classList={{ "is-paused": pausedLine() === number() }}>
+                    <button
+                      type="button"
+                      class="oc-wls-gutter"
+                      classList={{ "has-breakpoint": breakpoints().includes(number()) }}
+                      title={t().breakpoint}
+                      onClick={() => toggleBreakpoint(number())}
+                    >
+                      <span class="oc-wls-line-number">{number()}</span>
+                      <span class="oc-wls-bp-dot" />
+                    </button>
+                    <pre class="oc-wls-line-text">
+                      <Show when={row().text !== ""} fallback=" ">
+                        <For each={row().tokens}>{(token) => <span data-token={token.kind}>{token.text}</span>}</For>
+                      </Show>
+                    </pre>
+                  </div>
+                )
+              }}
+            </Index>
+          </div>
+        </div>
 
         <Show when={isPaused()}>
           <aside class="oc-wls-variables">

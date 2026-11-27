@@ -88,12 +88,12 @@ async function fixture(id: string, module: ServerExtension) {
 }
 
 beforeEach(async () => {
-    options = {}
-    rt = ExtensionRuntime.make(options)
+  options = {}
+  rt = ExtensionRuntime.make(options)
   temp = await tmpdir()
   previousRegistry = process.env.OPENCODE_EXTENSION_REGISTRY_FILE
   process.env.OPENCODE_EXTENSION_REGISTRY_FILE = path.join(temp.path, "registry.json")
-  options.importer = (async (_source, _fingerprint, context) => modules.get(context.id)!)
+  options.importer = async (_source, _fingerprint, context) => modules.get(context.id)!
   Object.assign(options, { activateMs: 150, serverMs: 150 })
 })
 
@@ -332,17 +332,17 @@ describe("cross-extension isolation", () => {
     let badImports = 0
     await fixture("test.a", { activate: async () => ({}), server: async () => ({}) })
     await fixture("test.b", { activate: async () => ({}), server: async () => ({}) })
-    options.importer = (async (_source, _fingerprint, context) => {
+    options.importer = async (_source, _fingerprint, context) => {
       if (context.id === "test.a") badImports++
       return modules.get(context.id)!
-    })
-    options.leases = ({
+    }
+    options.leases = {
       acquire: ExtensionLeases.acquire,
       acquireData: async (registry, id) => {
         if (id === "test.a") throw new ExtensionLeases.LeaseError("busy", "fixture lease busy")
         return ExtensionLeases.acquireData(registry, id)
       },
-    })
+    }
     expect((await hooks("lease")).map((entry) => entry.id)).toEqual(["test.b"])
     expect(badImports).toBe(0)
   })

@@ -113,7 +113,11 @@ const fail = (step: string, cause?: unknown) => {
 try {
   await worker.ready()
   console.log(`probe ready pid=${worker.pid}`)
-  const echo = await worker.request("service.rpc", { method: "echo", input: { message: "compiled-ok" }, directory: null })
+  const echo = await worker.request("service.rpc", {
+    method: "echo",
+    input: { message: "compiled-ok" },
+    directory: null,
+  })
   const echoValue = (echo as { status?: string; value?: { echo?: string } }).value?.echo
   console.log(`probe rpc echo=${JSON.stringify(echo)}`)
   if (echoValue !== "compiled-ok") throw new Error(`unexpected echo: ${JSON.stringify(echo)}`)
@@ -121,7 +125,8 @@ try {
   const started = await worker.request("service.rpc", { method: "child.start", input: null, directory: null })
   const childPid = (started as { status?: string; value?: { pid?: number } }).value?.pid
   console.log(`probe host.spawn pid=${childPid}`)
-  if (typeof childPid !== "number" || childPid <= 0) throw new Error(`host.spawn did not report a pid: ${JSON.stringify(started)}`)
+  if (typeof childPid !== "number" || childPid <= 0)
+    throw new Error(`host.spawn did not report a pid: ${JSON.stringify(started)}`)
   try {
     process.kill(childPid, 0)
   } catch {

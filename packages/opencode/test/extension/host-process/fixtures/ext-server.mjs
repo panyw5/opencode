@@ -77,7 +77,9 @@ export default {
         },
         "spawn.fail": async () => {
           const child = host.spawn("/nonexistent-fixture-binary-xyz", [], {})
-          const error = await new Promise((resolve) => child.onError((cause) => resolve(String(cause.message ?? cause))))
+          const error = await new Promise((resolve) =>
+            child.onError((cause) => resolve(String(cause.message ?? cause))),
+          )
           return { error, exited: child.exited }
         },
         "spawn.many": async (input) => {

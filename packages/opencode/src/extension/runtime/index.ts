@@ -185,7 +185,6 @@ export interface Interface {
  * by the same reasoning as the supervisor.
  */
 function makeService(options: Options): Interface {
-
   // Imported code can retain unmanaged timers/raw closures after dispose. Pin
   // every imported managed generation until process exit, not merely strict stop.
   const generationPins = new Map<string, Lease>()
@@ -249,7 +248,11 @@ function makeService(options: Options): Interface {
   const PROC_CREDIT_BYTES = 256 * 1024
   const workerRequestMs = () => options.workerRequestMs ?? WORKER_REQUEST_MS
   const workerLimits = () => options.workerLimits
-  const procCreditBytes = () => options.procCreditBytes ?? (Number(process.env.OPENCODE_EXT_PROC_CREDIT) > 0 ? Number(process.env.OPENCODE_EXT_PROC_CREDIT) : PROC_CREDIT_BYTES)
+  const procCreditBytes = () =>
+    options.procCreditBytes ??
+    (Number(process.env.OPENCODE_EXT_PROC_CREDIT) > 0
+      ? Number(process.env.OPENCODE_EXT_PROC_CREDIT)
+      : PROC_CREDIT_BYTES)
 
   /**
    * Effective server isolation backend. Undeclared manifests run `process`
@@ -709,7 +712,9 @@ function makeService(options: Options): Interface {
     slots.transition(id, {
       type: "blocked",
       error:
-        error instanceof Error ? error.message : String(error ?? "Extension cleanup did not complete; restart required"),
+        error instanceof Error
+          ? error.message
+          : String(error ?? "Extension cleanup did not complete; restart required"),
     })
     log.error("extension runtime blocked", {
       extension: id,
@@ -865,7 +870,10 @@ function makeService(options: Options): Interface {
       return entry
     }
     try {
-      const module = await (options.importer ?? defaultImporter)(source, manifest.serverFingerprint, { id: manifest.id, dir: manifest.dir })
+      const module = await (options.importer ?? defaultImporter)(source, manifest.serverFingerprint, {
+        id: manifest.id,
+        dir: manifest.dir,
+      })
       if (!module || typeof module !== "object")
         throw new Error(`Extension server entry has no default export: ${manifest.id}`)
       if (module.id && module.id !== manifest.id)
@@ -941,7 +949,14 @@ function makeService(options: Options): Interface {
         const available = () => !gated(id) && generationOf(id) === gen
         if (!available()) return
         if (row.source.type === "path") await assertDevelopmentDirectory(manifest.dir)
-        if (!(await acquirePin(dataPins, pinKey(registry, id), () => (options.leases ?? ExtensionLeases).acquireData(registry, id), available)))
+        if (
+          !(await acquirePin(
+            dataPins,
+            pinKey(registry, id),
+            () => (options.leases ?? ExtensionLeases).acquireData(registry, id),
+            available,
+          ))
+        )
           return
         if (row.source.type !== "path" && row.installId) {
           if (
@@ -1051,8 +1066,10 @@ function makeService(options: Options): Interface {
           const shape = await worker.ready()
           const service: ExtensionService = {
             rpc: Object.fromEntries(
-              shape.rpc.map((method) => [method, (input: unknown, ctx: { directory?: string; signal: AbortSignal }) =>
-                worker.serviceRpc(method, input, ctx),
+              shape.rpc.map((method) => [
+                method,
+                (input: unknown, ctx: { directory?: string; signal: AbortSignal }) =>
+                  worker.serviceRpc(method, input, ctx),
               ]),
             ),
           }
@@ -1070,7 +1087,9 @@ function makeService(options: Options): Interface {
       const bounded = phaseDeadline(activation, "activation", activateTimeoutMs())
         .catch((error) => {
           log.error(
-            error instanceof ExtensionPhaseTimeoutError ? "extension worker spawn timeout" : "extension worker spawn failed",
+            error instanceof ExtensionPhaseTimeoutError
+              ? "extension worker spawn timeout"
+              : "extension worker spawn failed",
             { ...detail(), error },
           )
           if (!gated(id) && generationOf(id) === gen && slots.get(id).entry === entry) {
@@ -1538,7 +1557,6 @@ function makeService(options: Options): Interface {
     assertAvailable(id)
     return reload(id).then(() => invalidateHooks())
   }
-
 
   /**
    * Test teardown: disposes all entries, resets slots/hook owner and releases

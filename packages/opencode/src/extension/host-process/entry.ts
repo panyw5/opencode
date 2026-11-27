@@ -100,7 +100,9 @@ export async function runExtensionHost(argv: string[]): Promise<number> {
   try {
     identity = Schema.decodeUnknownSync(RuntimeIdentity)(JSON.parse(parsed.identity))
   } catch (cause) {
-    process.stderr.write(`extension-host invalid --identity: ${cause instanceof Error ? cause.message : String(cause)}\n`)
+    process.stderr.write(
+      `extension-host invalid --identity: ${cause instanceof Error ? cause.message : String(cause)}\n`,
+    )
     return 1
   }
   const channel = openWorkerChannel({ frameBytes: parsed.frameBytes })

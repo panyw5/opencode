@@ -45,8 +45,8 @@ async function activate() {
 }
 
 beforeEach(async () => {
-    options = {}
-    rt = ExtensionRuntime.make(options)
+  options = {}
+  rt = ExtensionRuntime.make(options)
   temp = await tmpdir()
   previous = process.env.OPENCODE_EXTENSION_REGISTRY_FILE
   process.env.OPENCODE_EXTENSION_REGISTRY_FILE = path.join(temp.path, "registry.json")
@@ -73,13 +73,13 @@ afterEach(async () => {
 
 test("disable terminates a spawned child process and observes its exit", async () => {
   let spawned: ManagedProcess | undefined
-  options.importer = (async () => ({
+  options.importer = async () => ({
     id,
     activate: async (host: ExtensionHost) => {
       spawned = host.spawn(process.execPath, ["-e", SLEEPER])
       return {}
     },
-  }))
+  })
   await activate()
   const child = spawned!
   expect(child.pid).toBeGreaterThan(0)
@@ -91,13 +91,13 @@ test("disable terminates a spawned child process and observes its exit", async (
 
 test.each(["disable", "reload", "quiesce"] as const)("%s reaps spawned children", async (action) => {
   let spawned: ManagedProcess | undefined
-  options.importer = (async () => ({
+  options.importer = async () => ({
     id,
     activate: async (host: ExtensionHost) => {
       spawned = host.spawn(process.execPath, ["-e", SLEEPER])
       return {}
     },
-  }))
+  })
   await activate()
   const pid = spawned!.pid
   await rt[action](id, { timeoutMs: 5_000 })
@@ -107,13 +107,13 @@ test.each(["disable", "reload", "quiesce"] as const)("%s reaps spawned children"
 test("a child ignoring SIGTERM is escalated to SIGKILL after the configured grace period", async () => {
   Object.assign(options, { killGraceMs: 100 })
   let spawned: ManagedProcess | undefined
-  options.importer = (async () => ({
+  options.importer = async () => ({
     id,
     activate: async (host: ExtensionHost) => {
       spawned = host.spawn(process.execPath, ["-e", TERM_PROOF])
       return {}
     },
-  }))
+  })
   await activate()
   const started = Date.now()
   await rt.disable(id)
@@ -134,13 +134,13 @@ test("process-group teardown also reaps grandchildren", async () => {
     ${SLEEPER}
   `
   let spawned: ManagedProcess | undefined
-  options.importer = (async () => ({
+  options.importer = async () => ({
     id,
     activate: async (host: ExtensionHost) => {
       spawned = host.spawn(process.execPath, ["-e", parent])
       return {}
     },
-  }))
+  })
   await activate()
   const child = spawned!
   let grandchildPid = 0
@@ -159,14 +159,14 @@ test("process-group teardown also reaps grandchildren", async () => {
 test("ManagedProcess.kill terminates the child and spawn on a disposed host throws", async () => {
   let host!: ExtensionHost
   let spawned: ManagedProcess | undefined
-  options.importer = (async () => ({
+  options.importer = async () => ({
     id,
     activate: async (value: ExtensionHost) => {
       host = value
       spawned = host.spawn(process.execPath, ["-e", SLEEPER])
       return {}
     },
-  }))
+  })
   await activate()
   const child = spawned!
   const exited = new Promise<void>((resolve) => child.onExit(() => resolve()))

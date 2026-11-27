@@ -70,16 +70,16 @@ async function installFixture() {
 }
 
 beforeEach(async () => {
-    options = {}
-    rt = ExtensionRuntime.make(options)
+  options = {}
+  rt = ExtensionRuntime.make(options)
   temp = await tmpdir()
   previousRegistry = process.env.OPENCODE_EXTENSION_REGISTRY_FILE
   process.env.OPENCODE_EXTENSION_REGISTRY_FILE = path.join(temp.path, "registry.json")
   await Bun.write(process.env.OPENCODE_EXTENSION_REGISTRY_FILE, JSON.stringify({ version: 1, extensions: {} }))
-  options.importer = (async () => ({
+  options.importer = async () => ({
     activate: async () => ({}),
     server: async () => ({ tool: { example: { description: "cache", args: {}, execute: async () => "healthy" } } }),
-  }))
+  })
 })
 
 afterEach(async () => {

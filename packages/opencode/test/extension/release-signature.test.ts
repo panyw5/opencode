@@ -168,7 +168,10 @@ describe("release descriptor signature", () => {
   test("an unknown keyId fails even when the signature itself is well formed", async () => {
     const text = descriptor()
     const other = generateKeyPairSync("ed25519")
-    const forged = signDescriptor(Buffer.from(text), other.privateKey.export({ format: "pem", type: "pkcs8" }).toString())
+    const forged = signDescriptor(
+      Buffer.from(text),
+      other.privateKey.export({ format: "pem", type: "pkcs8" }).toString(),
+    )
     const f = serve({
       "/viewer/stable.json": Buffer.from(text),
       "/viewer/stable.json.sig": Buffer.from(forged.document),
@@ -259,9 +262,13 @@ describe("staged release signature verification", () => {
       path: payload.file,
     })
     expect(prepared.signatureStatus).toBe("verified")
-    expect((await context.installer.commit(prepared.operationId, prepared.token, {
-      acceptRegistryUpgrade: true,
-    })).committed).toBe(true)
+    expect(
+      (
+        await context.installer.commit(prepared.operationId, prepared.token, {
+          acceptRegistryUpgrade: true,
+        })
+      ).committed,
+    ).toBe(true)
   })
 
   test("a trusted-origin staged release without a signature is rejected", async () => {
@@ -322,8 +329,7 @@ describe("release sequence rollback protection", () => {
     })
     expect(prepared.releaseSequence).toBe(sequence)
     expect(
-      (await context.installer.commit(prepared.operationId, prepared.token, { acceptRegistryUpgrade: true }))
-        .committed,
+      (await context.installer.commit(prepared.operationId, prepared.token, { acceptRegistryUpgrade: true })).committed,
     ).toBe(true)
     return payload
   }

@@ -32,11 +32,7 @@ import { closeControlPipes, readControlFrames } from "./transport.ts"
 export interface WorkerChannel {
   /** Validate and write one event frame; resolves once the frame is flushed. */
   send(event: WorkerEvent): Promise<void>
-  listen(
-    message: (value: unknown) => void,
-    failure: (error: Error) => void,
-    disconnected: () => void,
-  ): () => void
+  listen(message: (value: unknown) => void, failure: (error: Error) => void, disconnected: () => void): () => void
   close(): Promise<void>
 }
 
@@ -326,7 +322,11 @@ export async function serveWorker(options: {
 
   // Attach the listener before hello so the host's init reply can never land
   // in a window with no receiver.
-  const remove = options.channel.listen(dispatch, () => disconnectedChannel(), () => disconnectedChannel())
+  const remove = options.channel.listen(
+    dispatch,
+    () => disconnectedChannel(),
+    () => disconnectedChannel(),
+  )
 
   void (async () => {
     try {

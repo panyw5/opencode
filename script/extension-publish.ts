@@ -96,7 +96,11 @@ monorepo; do not hand-edit generated \`stable.json\` files.
  * source sync; now an existing file is kept untouched and only a missing one
  * gets a generated stub, so docs never silently go stale against the source.
  */
-function extensionReadme(dir: string, name: string, pkg: { opencode?: { displayName?: string; description?: string } }) {
+function extensionReadme(
+  dir: string,
+  name: string,
+  pkg: { opencode?: { displayName?: string; description?: string } },
+) {
   const file = path.join(dir, "README.md")
   if (fs.existsSync(file)) return
   const title = pkg.opencode?.displayName ?? name
@@ -150,10 +154,7 @@ function staleEntries(repoDir: string) {
  * in the published <name>/stable.json descriptor.
  */
 async function publishedSha256(name: string, tag: string, asset: string) {
-  const release = await $`gh api ${`repos/${RELEASE_REPO}/releases/tags/${tag}`}`
-    .nothrow()
-    .quiet()
-    .text()
+  const release = await $`gh api ${`repos/${RELEASE_REPO}/releases/tags/${tag}`}`.nothrow().quiet().text()
   try {
     const { assets } = JSON.parse(release) as { assets?: { name?: string; digest?: string }[] }
     const digest = assets?.find((item) => item.name === asset)?.digest
@@ -161,10 +162,7 @@ async function publishedSha256(name: string, tag: string, asset: string) {
   } catch {
     // fall through to the descriptor lookup
   }
-  const file = await $`gh api ${`repos/${RELEASE_REPO}/contents/${name}/stable.json`}`
-    .nothrow()
-    .quiet()
-    .text()
+  const file = await $`gh api ${`repos/${RELEASE_REPO}/contents/${name}/stable.json`}`.nothrow().quiet().text()
   try {
     const { content, encoding } = JSON.parse(file) as { content?: string; encoding?: string }
     if (encoding !== "base64" || !content) return undefined

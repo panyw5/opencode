@@ -276,7 +276,14 @@ test("host.call without a handler is denied, with a handler it round-trips", asy
   denied.event("hello")
   denied.event("ready")
   await deniedSupervisor.ready()
-  denied.emit({ version: 1, identity: denied.identity, type: "host.call", callId: randomUUID(), method: "tool.ask", value: null })
+  denied.emit({
+    version: 1,
+    identity: denied.identity,
+    type: "host.call",
+    callId: randomUUID(),
+    method: "tool.ask",
+    value: null,
+  })
   await Promise.resolve()
   expect(denied.commands.find((entry) => entry.type === "host.rejected")).toMatchObject({ code: "denied" })
   await deniedSupervisor.stop()

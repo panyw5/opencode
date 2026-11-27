@@ -203,8 +203,7 @@ async function gated<T>(layout: Layout, create: boolean, fn: () => Promise<T>): 
       if (create) await new Promise((resolve) => setTimeout(resolve, 5))
     }
   }
-  if (!acquired)
-    throw new LeaseError("busy", "Extension lease gate is busy (never TTL-reclaimed)", layout.namespace)
+  if (!acquired) throw new LeaseError("busy", "Extension lease gate is busy (never TTL-reclaimed)", layout.namespace)
   // A crash at any point leaves a fail-closed gate. Only this owner's verified metadata is removed.
   const owned = await directory(layout.gate)
   const token = randomUUID()
@@ -378,11 +377,7 @@ async function acquireReference(registry: string, namespace: Namespace, id: stri
     throw new LeaseError("unsafe", reason(error))
   }
 }
-async function acquireReferenceUnsafe(
-  registry: string,
-  namespace: Namespace,
-  id: string,
-): Promise<Lease> {
+async function acquireReferenceUnsafe(registry: string, namespace: Namespace, id: string): Promise<Lease> {
   const layout = await locations(registry, namespace, id)
   return gated(layout, true, async () => {
     // Creators acquire before mkdir/materialization. Readers must revalidate their package after acquiring.
@@ -412,8 +407,7 @@ async function acquireReferenceUnsafe(
       }
     }
     try {
-      if (native && !native.lock(handle.fd))
-        throw new LeaseError("busy", "Extension process lease is busy")
+      if (native && !native.lock(handle.fd)) throw new LeaseError("busy", "Extension process lease is busy")
       if (created) {
         await handle.writeFile(JSON.stringify({ ...metadata(layout), nonce, proof }))
         await handle.sync()

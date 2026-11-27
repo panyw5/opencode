@@ -157,7 +157,9 @@ export function superviseWorker(options: {
   })
   const report = (event: string) => {
     log.debug("extension host process", detail(event))
-    hooks?.report?.(`extension.host-process extension=${options.extension} runtime=${identity.runtime} epoch=${identity.epoch} ${event}`)
+    hooks?.report?.(
+      `extension.host-process extension=${options.extension} runtime=${identity.runtime} epoch=${identity.epoch} ${event}`,
+    )
   }
   const rejectPending = (error: HostProcessError) => {
     for (const request of pending.values()) {
@@ -213,18 +215,21 @@ export function superviseWorker(options: {
             report("discarded-late-ready")
             return
           }
-          if (!hello || phase !== "starting") return fail(new HostProcessError({ code: "protocol", detail: "unexpected ready" }))
+          if (!hello || phase !== "starting")
+            return fail(new HostProcessError({ code: "protocol", detail: "unexpected ready" }))
           phase = "ready"
           ready.resolve({ ok: true })
           report("ready")
           return
         case "drained":
-          if (phase !== "closing" || !drainSent) return fail(new HostProcessError({ code: "protocol", detail: "unsolicited drained" }))
+          if (phase !== "closing" || !drainSent)
+            return fail(new HostProcessError({ code: "protocol", detail: "unsolicited drained" }))
           drained.resolve({ ok: true })
           report("drained")
           return
         case "disposed":
-          if (phase !== "closing" || !disposeSent) return fail(new HostProcessError({ code: "protocol", detail: "unsolicited disposed" }))
+          if (phase !== "closing" || !disposeSent)
+            return fail(new HostProcessError({ code: "protocol", detail: "unsolicited disposed" }))
           disposeAcknowledged = true
           disposed.resolve({ ok: true })
           report("disposed")
@@ -264,7 +269,13 @@ export function superviseWorker(options: {
           }
           const handler = hooks?.onHostCall
           if (!handler) {
-            reply({ ...envelope, type: "host.rejected", callId: event.callId, code: "denied", message: "host.call unsupported" })
+            reply({
+              ...envelope,
+              type: "host.rejected",
+              callId: event.callId,
+              code: "denied",
+              message: "host.call unsupported",
+            })
             return
           }
           void handler(event.method, event.value).then(
@@ -519,10 +530,9 @@ export interface Interface {
  * spawned worker runtime; each record may cycle through several generations
  * (one transport + engine per `identity.runtime`) under the restart backoff.
  */
-export class HostProcessSupervisor extends Context.Service<
-  HostProcessSupervisor,
-  Interface
->()("@opencode/HostProcessSupervisor") {
+export class HostProcessSupervisor extends Context.Service<HostProcessSupervisor, Interface>()(
+  "@opencode/HostProcessSupervisor",
+) {
   static layer = Layer.effect(
     HostProcessSupervisor,
     Effect.gen(function* () {
@@ -614,7 +624,12 @@ export class HostProcessSupervisor extends Context.Service<
         // Release this generation's control pipes before scheduling anything.
         void engine.stop()
         record.crashes++
-        log.error("extension host process crashed", { ...detail(record), code: exit.code, signal: exit.signal, crashes: record.crashes })
+        log.error("extension host process crashed", {
+          ...detail(record),
+          code: exit.code,
+          signal: exit.signal,
+          crashes: record.crashes,
+        })
         record.input.hooks?.onCrash?.(exit)
         const backoffs = record.limits.restartBackoffMs
         if (record.input.restart === false || record.crashes > backoffs.length) {
@@ -624,7 +639,11 @@ export class HostProcessSupervisor extends Context.Service<
         }
         record.status = "restarting"
         const delay = backoffs[record.crashes - 1]!
-        log.info("extension host process restart scheduled", { ...detail(record), attempt: record.crashes, delayMs: delay })
+        log.info("extension host process restart scheduled", {
+          ...detail(record),
+          attempt: record.crashes,
+          delayMs: delay,
+        })
         record.timer = setTimeout(() => {
           record.timer = undefined
           if (record.stopping) return
@@ -709,9 +728,7 @@ export class HostProcessSupervisor extends Context.Service<
                   pid: record.engine?.pid,
                   crashes: record.crashes,
                 }),
-                ready: () =>
-                  record.engine?.ready() ??
-                  Promise.reject(new HostProcessError({ code: "closed" })),
+                ready: () => record.engine?.ready() ?? Promise.reject(new HostProcessError({ code: "closed" })),
                 request: (method, value, signal) =>
                   record.engine
                     ? record.engine.request(method, value, signal)
@@ -728,13 +745,16 @@ export class HostProcessSupervisor extends Context.Service<
               return worker
             }),
           ),
-        workers: () => Effect.sync(() => [...records].map((record) => ({
-          extension: record.input.extension,
-          status: record.status,
-          identity: record.identity,
-          pid: record.engine?.pid,
-          crashes: record.crashes,
-        }))),
+        workers: () =>
+          Effect.sync(() =>
+            [...records].map((record) => ({
+              extension: record.input.extension,
+              status: record.status,
+              identity: record.identity,
+              pid: record.engine?.pid,
+              crashes: record.crashes,
+            })),
+          ),
         testing: {
           setLimits: (next) => {
             defaults = { ...DEFAULT_LIMITS, ...next }
@@ -743,9 +763,7 @@ export class HostProcessSupervisor extends Context.Service<
             Effect.sync(() => {
               defaults = DEFAULT_LIMITS
             }).pipe(
-              Effect.andThen(
-                Effect.promise(() => Promise.allSettled([...records].map((record) => stop(record)))),
-              ),
+              Effect.andThen(Effect.promise(() => Promise.allSettled([...records].map((record) => stop(record))))),
               Effect.asVoid,
             ),
         },

@@ -120,7 +120,11 @@
   cursor: pointer;
   background: var(--button-secondary-base, transparent);
   color: var(--text-strong, inherit);
-  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
 }
 .oc-nb button:not(:disabled):hover,
 .oc-nb-toolbar button:not(:disabled):hover {
@@ -517,14 +521,32 @@
 .oc-nb-gt > .oc-nb-d[data-d="|>"] {
   width: 0.52em;
 }
-.oc-nb-gt[data-o="("], .oc-nb-gt[data-o="{"] { padding-left: 0.4em }
-.oc-nb-gt[data-o="["] { padding-left: 0.34em }
-.oc-nb-gt[data-o="[["] { padding-left: 0.48em }
-.oc-nb-gt[data-o="\3c |"] { padding-left: 0.6em }
-.oc-nb-gt[data-c=")"], .oc-nb-gt[data-c="}"] { padding-right: 0.4em }
-.oc-nb-gt[data-c="]"] { padding-right: 0.34em }
-.oc-nb-gt[data-c="]]"] { padding-right: 0.48em }
-.oc-nb-gt[data-c="|>"] { padding-right: 0.6em }
+.oc-nb-gt[data-o="("],
+.oc-nb-gt[data-o="{"] {
+  padding-left: 0.4em;
+}
+.oc-nb-gt[data-o="["] {
+  padding-left: 0.34em;
+}
+.oc-nb-gt[data-o="[["] {
+  padding-left: 0.48em;
+}
+.oc-nb-gt[data-o="\3c |"] {
+  padding-left: 0.6em;
+}
+.oc-nb-gt[data-c=")"],
+.oc-nb-gt[data-c="}"] {
+  padding-right: 0.4em;
+}
+.oc-nb-gt[data-c="]"] {
+  padding-right: 0.34em;
+}
+.oc-nb-gt[data-c="]]"] {
+  padding-right: 0.48em;
+}
+.oc-nb-gt[data-c="|>"] {
+  padding-right: 0.6em;
+}
 .oc-nb [data-token="comment"] {
   color: var(--syntax-comment, #888);
 }

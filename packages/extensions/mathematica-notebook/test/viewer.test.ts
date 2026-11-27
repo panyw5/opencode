@@ -89,7 +89,10 @@ test("the style fallback outlines ungrouped notebooks and only heads content", (
   expect(isFoldable(outlined[5])).toBe(false)
   // Once parsed or inferred grouping exists, the fallback never rewrites it.
   expect(applyOutline(outlined)).toEqual(outlined)
-  const grouped = [{ ...cell(0), group: true }, { ...cell(1), parent: 0 }]
+  const grouped = [
+    { ...cell(0), group: true },
+    { ...cell(1), parent: 0 },
+  ]
   expect(applyOutline(grouped)).toEqual(grouped)
   // Non-heading group headers (e.g. Input) are never foldable.
   expect(isFoldable({ ...cell(0), group: true })).toBe(false)

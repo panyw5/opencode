@@ -82,11 +82,7 @@ const CANONICAL_IPV4 = /^(\d{1,3}\.){3}\d{1,3}$/
 export function normalizeReleaseHttpsUrl(value: unknown, options: { descriptor: boolean }): string {
   // Reject backslashes, encoded hosts and unusual spellings before parsing,
   // rather than accidentally accepting a canonicalized rewrite of the host.
-  if (
-    typeof value !== "string" ||
-    value.length > MAX_RELEASE_URL_LENGTH ||
-    /[\s\\\u0000-\u001f\u007f]/.test(value)
-  )
+  if (typeof value !== "string" || value.length > MAX_RELEASE_URL_LENGTH || /[\s\\\u0000-\u001f\u007f]/.test(value))
     fail("url", "invalid HTTPS URL")
   if (value.includes("#") || (options.descriptor && value.includes("?")))
     fail(
@@ -107,9 +103,7 @@ export function normalizeReleaseHttpsUrl(value: unknown, options: { descriptor: 
   if (url.protocol !== "https:" || url.username || url.password || !url.hostname)
     fail("url", "URL must use HTTPS without credentials")
   // Reject obfuscated numeric IP spellings whose raw form differs from the canonical IPv4 host.
-  const rawHost = authority.startsWith("[")
-    ? authority.slice(0, authority.indexOf("]") + 1)
-    : authority.split(":")[0]
+  const rawHost = authority.startsWith("[") ? authority.slice(0, authority.indexOf("]") + 1) : authority.split(":")[0]
   if (CANONICAL_IPV4.test(url.hostname) && rawHost.toLowerCase() !== url.hostname)
     fail("url", "encoded IP addresses are not allowed")
   if (url.href.length > MAX_RELEASE_URL_LENGTH) fail("url", "invalid HTTPS URL")
@@ -146,8 +140,7 @@ function record(value: unknown, fields: readonly string[], optional: readonly st
   if (!value || typeof value !== "object" || Array.isArray(value))
     return fail("structure", "invalid descriptor structure")
   const prototype = Object.getPrototypeOf(value)
-  if (prototype !== Object.prototype && prototype !== null)
-    return fail("structure", "invalid descriptor structure")
+  if (prototype !== Object.prototype && prototype !== null) return fail("structure", "invalid descriptor structure")
   const keys = Reflect.ownKeys(value)
   if (
     keys.some((key) => typeof key !== "string" || (!fields.includes(key) && !optional.includes(key))) ||
@@ -158,10 +151,7 @@ function record(value: unknown, fields: readonly string[], optional: readonly st
 }
 
 /** Validate data only: parsing neither fetches artifacts nor loads extension code. */
-export function parseReleaseDescriptor(
-  value: unknown,
-  options: ReleaseDescriptorOptions = {},
-): ReleaseDescriptorShape {
+export function parseReleaseDescriptor(value: unknown, options: ReleaseDescriptorOptions = {}): ReleaseDescriptorShape {
   const descriptor = record(value, ["schemaVersion", "id", "version", "artifact"], ["engines", "sequence", "source"])
   if (descriptor.schemaVersion !== 1) fail("schemaVersion", "unsupported descriptor schema version")
   if (
@@ -181,11 +171,7 @@ export function parseReleaseDescriptor(
   if (engines !== undefined) {
     const declared = record(engines, ["opencode"])
     const range = declared.opencode
-    if (
-      typeof range !== "string" ||
-      !range ||
-      (options.isValidRange !== undefined && !options.isValidRange(range))
-    )
+    if (typeof range !== "string" || !range || (options.isValidRange !== undefined && !options.isValidRange(range)))
       fail("engines", "invalid opencode engine range")
     opencode = range
   }
