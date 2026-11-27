@@ -47,7 +47,13 @@ const instanceStoreLayer = InstanceStore.defaultLayer.pipe(
   ),
 )
 const it = testEffect(
-  Layer.mergeAll(instanceStoreLayer, Project.defaultLayer, Session.defaultLayer, workspaceLayer, SessionStatus.defaultLayer),
+  Layer.mergeAll(
+    instanceStoreLayer,
+    Project.defaultLayer,
+    Session.defaultLayer,
+    workspaceLayer,
+    SessionStatus.defaultLayer,
+  ),
 )
 
 function app() {

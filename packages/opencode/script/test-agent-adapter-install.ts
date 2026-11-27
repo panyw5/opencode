@@ -27,15 +27,18 @@ try {
     )
     const lease = await manager.acquire(recipe.advisor, recipe.recommended)
     const client = new AcpAgentClient({
-      config: applyAdapterLease({
-        type: "acp",
-        command: lease.command,
-        env: {
-          CODEX_HOME: path.join(root, "codex"),
-          CLAUDE_CONFIG_DIR: path.join(root, "claude"),
-          PI_CODING_AGENT_DIR: path.join(root, "pi"),
+      config: applyAdapterLease(
+        {
+          type: "acp",
+          command: lease.command,
+          env: {
+            CODEX_HOME: path.join(root, "codex"),
+            CLAUDE_CONFIG_DIR: path.join(root, "claude"),
+            PI_CODING_AGENT_DIR: path.join(root, "pi"),
+          },
         },
-      }, lease),
+        lease,
+      ),
       cwd: path.join(root, "home"),
       onEvent: () => {},
       requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),

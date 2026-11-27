@@ -233,7 +233,11 @@ export function applyClineJsonlLine(state: ClineLiveState, rawLine: string): boo
   if (type === "tool_call" || type === "tool_use" || type === "tool") {
     closeThinking(state)
     closeAssistant(state)
-    const id = string(payload.toolCallId) ?? string(payload.tool_use_id) ?? string(payload.id) ?? `tool:${state.transcript.length}`
+    const id =
+      string(payload.toolCallId) ??
+      string(payload.tool_use_id) ??
+      string(payload.id) ??
+      `tool:${state.transcript.length}`
     const title = string(payload.title) ?? string(payload.toolName) ?? string(payload.name) ?? "Tool"
     upsertTranscript(state, {
       id,
@@ -582,8 +586,7 @@ export const ClineConsultTool = Tool.define(
               yield* publishMetadata(true)
             }
             if (result.exit.kind === "abort") throw new Error("Cline consultation was aborted")
-            if (result.exit.kind === "timeout")
-              throw new Error(`Cline consultation timed out after ${timeoutMs}ms`)
+            if (result.exit.kind === "timeout") throw new Error(`Cline consultation timed out after ${timeoutMs}ms`)
             const next = parseClineJsonl(result.stdout)
             const nextBody = next.finalResponse
             const nextError = externalTurnFailure({

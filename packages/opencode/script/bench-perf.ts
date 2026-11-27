@@ -113,7 +113,9 @@ function sqliteBatchedMs() {
     db.exec("CREATE TABLE seq (id TEXT PRIMARY KEY, seq INTEGER)")
     db.exec("CREATE TABLE ev (id TEXT PRIMARY KEY, agg TEXT, seq INTEGER, data TEXT)")
     const select = db.prepare("SELECT seq FROM seq WHERE id = ?")
-    const upsert = db.prepare("INSERT INTO seq (id, seq) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET seq = excluded.seq")
+    const upsert = db.prepare(
+      "INSERT INTO seq (id, seq) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET seq = excluded.seq",
+    )
     const insert = db.prepare("INSERT INTO ev (id, agg, seq, data) VALUES (?, ?, ?, ?)")
     db.exec("BEGIN IMMEDIATE")
     const start = performance.now()
@@ -167,8 +169,11 @@ for (const [name, fn] of benches) {
   const best = Math.min(...timings)
   const worst = Math.max(...timings)
   const budget = Number(Bun.env[`PERF_BUDGET_${name.toUpperCase()}`] ?? BUDGETS[name])
-  const verdict = budget === undefined ? "" : med <= budget ? ` (budget ${budget}ms ok)` : ` (budget ${budget}ms EXCEEDED)`
-  console.log(`bench:perf ${name} median=${med.toFixed(1)}ms best=${best.toFixed(1)}ms worst=${worst.toFixed(1)}ms${verdict}`)
+  const verdict =
+    budget === undefined ? "" : med <= budget ? ` (budget ${budget}ms ok)` : ` (budget ${budget}ms EXCEEDED)`
+  console.log(
+    `bench:perf ${name} median=${med.toFixed(1)}ms best=${best.toFixed(1)}ms worst=${worst.toFixed(1)}ms${verdict}`,
+  )
   console.log(`METRIC ${name}=${med.toFixed(1)}`)
   if (check && budget !== undefined && med > budget) violations.push(`${name} ${med.toFixed(1)}ms > ${budget}ms`)
 }

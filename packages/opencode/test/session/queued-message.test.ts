@@ -15,7 +15,9 @@ describe("isQueuedPrompt", () => {
   })
 
   test("does not treat it as queued once the session is idle", () => {
-    expect(isQueuedPrompt({ status: { type: "idle" } as SessionStatus.Info, message: user({ created: 1 }) })).toBe(false)
+    expect(isQueuedPrompt({ status: { type: "idle" } as SessionStatus.Info, message: user({ created: 1 }) })).toBe(
+      false,
+    )
   })
 
   test("rejects assistant messages", () => {

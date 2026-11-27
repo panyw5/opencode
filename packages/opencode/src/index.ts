@@ -199,31 +199,119 @@ let cli = yargs(args)
   })
   .usage("")
   .completion("completion", "generate shell completion script")
-  .command(lazy({ command: "acp", describe: "start ACP (Agent Client Protocol) server" }, () => import("./cli/cmd/acp").then((m) => m.AcpCommand)))
-  .command(lazy({ command: "mcp", describe: "manage MCP (Model Context Protocol) servers" }, () => import("./cli/cmd/mcp").then((m) => m.McpCommand)))
-  .command(lazy({ command: "extension", describe: "manage OpenCode extensions", aliases: ["ext"] }, () => import("./cli/cmd/extension").then((m) => m.ExtensionCommand)))
-  .command(lazy({ command: "math", describe: "math mode (fact graph MCP + detached workers)" }, () => import("./cli/cmd/math").then((m) => m.MathCommand)))
-  .command(lazy({ command: "run [message..]", describe: "run opencode with a message" }, () => import("./cli/cmd/run").then((m) => m.RunCommand)))
+  .command(
+    lazy({ command: "acp", describe: "start ACP (Agent Client Protocol) server" }, () =>
+      import("./cli/cmd/acp").then((m) => m.AcpCommand),
+    ),
+  )
+  .command(
+    lazy({ command: "mcp", describe: "manage MCP (Model Context Protocol) servers" }, () =>
+      import("./cli/cmd/mcp").then((m) => m.McpCommand),
+    ),
+  )
+  .command(
+    lazy({ command: "extension", describe: "manage OpenCode extensions", aliases: ["ext"] }, () =>
+      import("./cli/cmd/extension").then((m) => m.ExtensionCommand),
+    ),
+  )
+  .command(
+    lazy({ command: "math", describe: "math mode (fact graph MCP + detached workers)" }, () =>
+      import("./cli/cmd/math").then((m) => m.MathCommand),
+    ),
+  )
+  .command(
+    lazy({ command: "run [message..]", describe: "run opencode with a message" }, () =>
+      import("./cli/cmd/run").then((m) => m.RunCommand),
+    ),
+  )
   .command(lazy({ command: "generate" }, () => import("./cli/cmd/generate").then((m) => m.GenerateCommand)))
-  .command(lazy({ command: "debug", describe: "debugging and troubleshooting tools" }, () => import("./cli/cmd/debug").then((m) => m.DebugCommand)))
-  .command(lazy({ command: "console", describe: false }, () => import("./cli/cmd/account").then((m) => m.ConsoleCommand)))
-  .command(lazy({ command: "providers", describe: "manage AI providers and credentials", aliases: ["auth"] }, () => import("./cli/cmd/providers").then((m) => m.ProvidersCommand)))
-  .command(lazy({ command: "agent", describe: "manage agents" }, () => import("./cli/cmd/agent").then((m) => m.AgentCommand)))
-  .command(lazy({ command: "upgrade [target]", describe: "upgrade opencode to the latest or a specific version" }, () => import("./cli/cmd/upgrade").then((m) => m.UpgradeCommand)))
-  .command(lazy({ command: "uninstall", describe: "uninstall opencode and remove all related files" }, () => import("./cli/cmd/uninstall").then((m) => m.UninstallCommand)))
-  .command(lazy({ command: "serve", describe: "starts a headless opencode server" }, () => import("./cli/cmd/serve").then((m) => m.ServeCommand)))
-  .command(lazy({ command: "web", describe: "start opencode server and open web interface" }, () => import("./cli/cmd/web").then((m) => m.WebCommand)))
-  .command(lazy({ command: "models [provider]", describe: "list all available models" }, () => import("./cli/cmd/models").then((m) => m.ModelsCommand)))
-  .command(lazy({ command: "stats", describe: "show token usage and cost statistics" }, () => import("./cli/cmd/stats").then((m) => m.StatsCommand)))
-  .command(lazy({ command: "export [sessionID]", describe: "export session data as JSON" }, () => import("./cli/cmd/export").then((m) => m.ExportCommand)))
-  .command(lazy({ command: "import <file>", describe: "import session data from JSON file or URL" }, () => import("./cli/cmd/import").then((m) => m.ImportCommand)))
-  .command(lazy({ command: "github", describe: "manage GitHub agent" }, () => import("./cli/cmd/github").then((m) => m.GithubCommand)))
-  .command(lazy({ command: "pr <number>", describe: "fetch and checkout a GitHub PR branch, then run opencode" }, () => import("./cli/cmd/pr").then((m) => m.PrCommand)))
-  .command(lazy({ command: "session", describe: "manage sessions" }, () => import("./cli/cmd/session").then((m) => m.SessionCommand)))
-  .command(lazy({ command: "desktop [directory]", describe: "open OpenCode desktop app with specified directory" }, () => import("./cli/cmd/desktop").then((m) => m.DesktopCommand)))
+  .command(
+    lazy({ command: "debug", describe: "debugging and troubleshooting tools" }, () =>
+      import("./cli/cmd/debug").then((m) => m.DebugCommand),
+    ),
+  )
+  .command(
+    lazy({ command: "console", describe: false }, () => import("./cli/cmd/account").then((m) => m.ConsoleCommand)),
+  )
+  .command(
+    lazy({ command: "providers", describe: "manage AI providers and credentials", aliases: ["auth"] }, () =>
+      import("./cli/cmd/providers").then((m) => m.ProvidersCommand),
+    ),
+  )
+  .command(
+    lazy({ command: "agent", describe: "manage agents" }, () => import("./cli/cmd/agent").then((m) => m.AgentCommand)),
+  )
+  .command(
+    lazy({ command: "upgrade [target]", describe: "upgrade opencode to the latest or a specific version" }, () =>
+      import("./cli/cmd/upgrade").then((m) => m.UpgradeCommand),
+    ),
+  )
+  .command(
+    lazy({ command: "uninstall", describe: "uninstall opencode and remove all related files" }, () =>
+      import("./cli/cmd/uninstall").then((m) => m.UninstallCommand),
+    ),
+  )
+  .command(
+    lazy({ command: "serve", describe: "starts a headless opencode server" }, () =>
+      import("./cli/cmd/serve").then((m) => m.ServeCommand),
+    ),
+  )
+  .command(
+    lazy({ command: "web", describe: "start opencode server and open web interface" }, () =>
+      import("./cli/cmd/web").then((m) => m.WebCommand),
+    ),
+  )
+  .command(
+    lazy({ command: "models [provider]", describe: "list all available models" }, () =>
+      import("./cli/cmd/models").then((m) => m.ModelsCommand),
+    ),
+  )
+  .command(
+    lazy({ command: "stats", describe: "show token usage and cost statistics" }, () =>
+      import("./cli/cmd/stats").then((m) => m.StatsCommand),
+    ),
+  )
+  .command(
+    lazy({ command: "export [sessionID]", describe: "export session data as JSON" }, () =>
+      import("./cli/cmd/export").then((m) => m.ExportCommand),
+    ),
+  )
+  .command(
+    lazy({ command: "import <file>", describe: "import session data from JSON file or URL" }, () =>
+      import("./cli/cmd/import").then((m) => m.ImportCommand),
+    ),
+  )
+  .command(
+    lazy({ command: "github", describe: "manage GitHub agent" }, () =>
+      import("./cli/cmd/github").then((m) => m.GithubCommand),
+    ),
+  )
+  .command(
+    lazy({ command: "pr <number>", describe: "fetch and checkout a GitHub PR branch, then run opencode" }, () =>
+      import("./cli/cmd/pr").then((m) => m.PrCommand),
+    ),
+  )
+  .command(
+    lazy({ command: "session", describe: "manage sessions" }, () =>
+      import("./cli/cmd/session").then((m) => m.SessionCommand),
+    ),
+  )
+  .command(
+    lazy({ command: "desktop [directory]", describe: "open OpenCode desktop app with specified directory" }, () =>
+      import("./cli/cmd/desktop").then((m) => m.DesktopCommand),
+    ),
+  )
   .command(lazy({ command: "db", describe: "database tools" }, () => import("./cli/cmd/db").then((m) => m.DbCommand)))
-  .command(lazy({ command: "openclaw-serve", describe: "start an OpenClaw gateway adapter server" }, () => import("./cli/cmd/openclaw-serve").then((m) => m.OpenClawServeCommand)))
-  .command(lazy({ command: "extra-agent-serve", describe: "start an extra-agent bridge server by id" }, () => import("./cli/cmd/extra-agent-serve").then((m) => m.ExtraAgentServeCommand)))
+  .command(
+    lazy({ command: "openclaw-serve", describe: "start an OpenClaw gateway adapter server" }, () =>
+      import("./cli/cmd/openclaw-serve").then((m) => m.OpenClawServeCommand),
+    ),
+  )
+  .command(
+    lazy({ command: "extra-agent-serve", describe: "start an extra-agent bridge server by id" }, () =>
+      import("./cli/cmd/extra-agent-serve").then((m) => m.ExtraAgentServeCommand),
+    ),
+  )
 
 cli = cli
   .fail((msg, err) => {

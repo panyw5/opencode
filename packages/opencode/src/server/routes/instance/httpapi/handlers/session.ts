@@ -1486,9 +1486,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       // A queued user prompt is not consumed by the running turn yet. Removing it
       // while the session is busy is safe and is what "cancel queued prompt"
       // does in the UI, so only guard turns that already started.
-      const target = (yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))).find(
-        (item) => item.info.id === ctx.params.messageID,
-      )
+      const target = (yield* SessionError.mapStorageNotFound(
+        session.messages({ sessionID: ctx.params.sessionID }),
+      )).find((item) => item.info.id === ctx.params.messageID)
       const status = yield* statusSvc.get(ctx.params.sessionID)
       if (SessionQueuedMessage.isQueuedPrompt({ status, message: target?.info })) {
         log.info("deleteMessage queued prompt", {

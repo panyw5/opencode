@@ -43,7 +43,13 @@ function eventResponse(bus: Bus.Interface) {
             // on a ~16ms frame cadence, so sub-frame granularity is invisible)
             // and merge adjacent per-token deltas into a single payload.
             Stream.groupedWithin(1024, "32 millis"),
-            Stream.map((chunk) => mergePartDeltas(chunk, (p) => p, (_p, payload) => payload)),
+            Stream.map((chunk) =>
+              mergePartDeltas(
+                chunk,
+                (p) => p,
+                (_p, payload) => payload,
+              ),
+            ),
             Stream.flattenIterable,
           ),
         ),

@@ -217,8 +217,9 @@ describe("background Pro inbox delivery", () => {
         truncated: false,
       }
       // No directory separator in owner — nothing can ever route this event.
-      expect(yield* service.receive({ ...base, id: `${consultationID}:notification:no-owner`, owner: "anonymous" }))
-        .toMatchObject({ ack: true })
+      expect(
+        yield* service.receive({ ...base, id: `${consultationID}:notification:no-owner`, owner: "anonymous" }),
+      ).toMatchObject({ ack: true })
       // Event id does not match its consultation id — permanently malformed.
       expect(yield* service.receive({ ...base, id: "other:notification:1" })).toMatchObject({ ack: true })
       expect(yield* inbox.pending(parent.id)).toHaveLength(0)

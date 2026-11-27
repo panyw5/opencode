@@ -361,9 +361,7 @@ export const QoderConsultTool = Tool.define(
               if (!force && now - lastMetaAt < METADATA_THROTTLE_MS) return
               lastMetaAt = now
               yield* ctx.metadata({
-                title: live.preview
-                  ? `Qoder: ${clip(live.preview, 80).replace(/\s+/g, " ")}`
-                  : "Running Qoder",
+                title: live.preview ? `Qoder: ${clip(live.preview, 80).replace(/\s+/g, " ")}` : "Running Qoder",
                 metadata: {
                   bin,
                   config_home: runtime.home,
@@ -556,8 +554,7 @@ export const QoderConsultTool = Tool.define(
               yield* publishMetadata(true)
             }
             if (result.exit.kind === "abort") throw new Error("Qoder consultation was aborted")
-            if (result.exit.kind === "timeout")
-              throw new Error(`Qoder consultation timed out after ${timeoutMs}ms`)
+            if (result.exit.kind === "timeout") throw new Error(`Qoder consultation timed out after ${timeoutMs}ms`)
             const next = parseQoderJsonl(result.stdout)
             const nextBody = next.finalResponse
             const nextError = externalTurnFailure({

@@ -170,14 +170,16 @@ try {
 
   // The packed exports must point at dist while keeping the development→src
   // condition; check the tarball's package.json before installing it.
-  const unpackedPkg = JSON.parse(
-    (await $`tar -xOf ${tarball} package/package.json`.text()),
-  ) as { exports: Record<string, Record<string, string>> }
+  const unpackedPkg = JSON.parse(await $`tar -xOf ${tarball} package/package.json`.text()) as {
+    exports: Record<string, Record<string, string>>
+  }
   for (const subpath of ["./web", "./rpc", "./server"] as const) {
     const conditions = unpackedPkg.exports[subpath]
     if (!conditions) fail(`packed exports is missing ${subpath}`)
-    if (!conditions.types?.startsWith("./dist/")) fail(`packed ${subpath} types does not point at dist: ${JSON.stringify(conditions)}`)
-    if (!conditions.import?.startsWith("./dist/")) fail(`packed ${subpath} import does not point at dist: ${JSON.stringify(conditions)}`)
+    if (!conditions.types?.startsWith("./dist/"))
+      fail(`packed ${subpath} types does not point at dist: ${JSON.stringify(conditions)}`)
+    if (!conditions.import?.startsWith("./dist/"))
+      fail(`packed ${subpath} import does not point at dist: ${JSON.stringify(conditions)}`)
     if (conditions.development !== `./src/${subpath.slice(2)}.ts`)
       fail(`packed ${subpath} development does not point at src: ${JSON.stringify(conditions)}`)
   }
@@ -204,10 +206,12 @@ try {
   console.log("web bundle: host shim applied, css scoped")
 
   console.log("== bun build (server) ==")
-  await $`${process.execPath} build src/server.ts --outfile dist/server.js --target=node --format=esm`.cwd(project).env({
-    ...process.env,
-    NODE_ENV: "production",
-  })
+  await $`${process.execPath} build src/server.ts --outfile dist/server.js --target=node --format=esm`
+    .cwd(project)
+    .env({
+      ...process.env,
+      NODE_ENV: "production",
+    })
   const serverJs = path.join(project, "dist", "server.js")
   await assert(existsSync(serverJs), "bun build did not emit dist/server.js")
   const server = await readFile(serverJs, "utf8")

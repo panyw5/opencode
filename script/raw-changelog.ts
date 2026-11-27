@@ -137,7 +137,8 @@ async function commits(from: string, to: string) {
       else if (file.startsWith("packages/opencode/")) areas.add("core")
       else if (file.startsWith("packages/desktop/") || file.startsWith("packages/app/")) areas.add("app")
       else if (file.startsWith("packages/sdk/") || file.startsWith("packages/plugin/")) areas.add("sdk")
-      else if (file.startsWith("packages/extensions/") || file.startsWith("packages/zed-extension/")) areas.add("extensions")
+      else if (file.startsWith("packages/extensions/") || file.startsWith("packages/zed-extension/"))
+        areas.add("extensions")
       else if (file.startsWith("sdks/vscode/") || file.startsWith("github/")) areas.add("extensions/vscode")
     }
 

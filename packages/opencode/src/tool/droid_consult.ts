@@ -198,8 +198,7 @@ function contentBlock(state: DroidLiveState, block: unknown, messageID: unknown,
   if (!block || typeof block !== "object") return false
   const item = block as Record<string, unknown>
   const type = string(item.type) ?? ""
-  const id =
-    string(item.id) ?? `${type}:${string(messageID) ?? state.transcript.length}:${index}`
+  const id = string(item.id) ?? `${type}:${string(messageID) ?? state.transcript.length}:${index}`
 
   if ((type === "text" || type === "output_text") && string(item.text)?.trim()) {
     const text = item.text as string
@@ -513,9 +512,7 @@ export const DroidConsultTool = Tool.define(
               if (!force && now - lastMetaAt < METADATA_THROTTLE_MS) return
               lastMetaAt = now
               yield* ctx.metadata({
-                title: live.preview
-                  ? `Droid: ${clip(live.preview, 80).replace(/\s+/g, " ")}`
-                  : "Running Factory Droid",
+                title: live.preview ? `Droid: ${clip(live.preview, 80).replace(/\s+/g, " ")}` : "Running Factory Droid",
                 metadata: {
                   bin,
                   config_home: runtime.home,
@@ -540,7 +537,9 @@ export const DroidConsultTool = Tool.define(
             Effect.scoped(
               Effect.gen(function* () {
                 beginDroidTurn(live)
-                log.info("process starting advisor=droid run=" + live.runSeq + " resume=" + args.includes("--session-id"))
+                log.info(
+                  "process starting advisor=droid run=" + live.runSeq + " resume=" + args.includes("--session-id"),
+                )
                 const handle = yield* spawner.spawn(
                   ChildProcess.make(bin, args, { cwd: workingDirectory, extendEnv: true, env, stdin: "ignore" }),
                 )
@@ -665,8 +664,7 @@ export const DroidConsultTool = Tool.define(
               yield* publishMetadata(true)
             }
             if (result.exit.kind === "abort") throw new Error("Droid consultation was aborted")
-            if (result.exit.kind === "timeout")
-              throw new Error(`Droid consultation timed out after ${timeoutMs}ms`)
+            if (result.exit.kind === "timeout") throw new Error(`Droid consultation timed out after ${timeoutMs}ms`)
             const next = parseDroidJsonl(result.stdout)
             const nextBody = next.finalResponse
             const nextError = externalTurnFailure({

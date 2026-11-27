@@ -114,15 +114,17 @@ const createEmbeddedExtensionTemplates = async () => {
   const entries: string[] = []
   let index = 0
   for (const name of names) {
-    const files = (await Array.fromAsync(
-      new Bun.Glob("**/*").scan({ cwd: path.join(root, name), dot: true, onlyFiles: true }),
-    ))
+    const files = (
+      await Array.fromAsync(new Bun.Glob("**/*").scan({ cwd: path.join(root, name), dot: true, onlyFiles: true }))
+    )
       .map((file) => file.replaceAll("\\", "/"))
       .sort()
     const items = files.map((file) => {
       const spec = path.relative(dir, path.join(root, name, file)).replaceAll("\\", "/")
       const alias = `file_${index++}`
-      imports.push(`import ${alias} from ${JSON.stringify(spec.startsWith(".") ? spec : `./${spec}`)} with { type: "file" };`)
+      imports.push(
+        `import ${alias} from ${JSON.stringify(spec.startsWith(".") ? spec : `./${spec}`)} with { type: "file" };`,
+      )
       return `    ${JSON.stringify(file)}: ${alias},`
     })
     entries.push(`  ${JSON.stringify(name)}: {\n${items.join("\n")}\n  },`)

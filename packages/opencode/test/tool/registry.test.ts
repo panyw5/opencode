@@ -789,18 +789,15 @@ describe("tool.registry extension tool namespacing (D1)", () => {
       const tool = (yield* registry.all()).find((item) => item.id === "alpha_ext_eval")
       if (!tool) throw new Error("alpha_ext_eval was not registered")
       const agent = yield* (yield* Agent.Service).defaultInfo()
-      const result = yield* tool.execute(
-        {},
-        {
-          sessionID: SessionID.make("ses_ext"),
-          messageID: MessageID.make("msg_ext"),
-          agent: agent.name,
-          abort: new AbortController().signal,
-          messages: [],
-          metadata: () => Effect.void,
-          ask: () => Effect.void,
-        } satisfies Tool.Context,
-      )
+      const result = yield* tool.execute({}, {
+        sessionID: SessionID.make("ses_ext"),
+        messageID: MessageID.make("msg_ext"),
+        agent: agent.name,
+        abort: new AbortController().signal,
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      } satisfies Tool.Context)
       expect(result.metadata).toMatchObject({ extension: "test.alpha-ext", extensionTool: "eval" })
     }),
   )
