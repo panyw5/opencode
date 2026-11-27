@@ -376,6 +376,7 @@ export const layer = Layer.effect(
             status: "error",
             input: match.part.state.input,
             error: errorMessage(error),
+            ...(match.part.state.metadata === undefined ? {} : { metadata: match.part.state.metadata }),
             time: { start: match.part.state.time.start, end: Date.now() },
           },
         })
@@ -1026,6 +1027,9 @@ export const layer = Layer.effect(
                 status: "error",
                 input: match.part.state.input,
                 error: message + excerpt,
+                ...(match.part.state.status === "running" && match.part.state.metadata !== undefined
+                  ? { metadata: match.part.state.metadata }
+                  : {}),
                 time: { start: match.part.state.status === "running" ? match.part.state.time.start : now, end: now },
               },
             })

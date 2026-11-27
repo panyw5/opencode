@@ -76,6 +76,7 @@ export function acpBackend(advisor: Advisor, config: AcpConfig): AgentBackend {
                 })
             }, 120)
           }
+          let deniedPermissions = 0
           const client = new AcpAgentClient({
             config,
             cwd,
@@ -91,8 +92,10 @@ export function acpBackend(advisor: Advisor, config: AcpConfig): AgentBackend {
               const cancelled = { outcome: { outcome: "cancelled" as const } }
               if (signal.aborted || ctx.abort.aborted || request.sessionId !== client.sessionID) return cancelled
               const reject = request.options.find((item) => item.kind === "reject_once")
-              const deny = () =>
-                reject ? { outcome: { outcome: "selected" as const, optionId: reject.optionId } } : cancelled
+              const deny = () => {
+                deniedPermissions++
+                return reject ? { outcome: { outcome: "selected" as const, optionId: reject.optionId } } : cancelled
+              }
               // Never choose allow_always: remembered decisions belong to the agent.
               const allow = request.options.find((item) => item.kind === "allow_once")
               if (config.permission !== "ask" || !allow) return deny()
@@ -150,16 +153,47 @@ export function acpBackend(advisor: Advisor, config: AcpConfig): AgentBackend {
               )
               if (response.stopReason !== "end_turn") throw new Error(`ACP turn stopped: ${response.stopReason}`)
               if (publicationError) throw publicationError
-              if (!live.text.trim()) throw new Error("ACP agent returned an empty response")
             })
-          yield* run(`You are an external advisor consulted by OpenCode. Do not modify files.\n\n${prompt}`)
+          const emptyResponseError = () => {
+            const tools = live.transcript.filter((item) => item.kind === "tool")
+            const last = tools.at(-1)
+            const detail = last
+              ? ` Last tool call "${last.title ?? last.id}"${last.status ? ` (${last.status})` : ""}: ${(last.text ?? "").slice(0, 300).trim() || "no output"}.`
+              : live.transcript.length
+                ? ` Transcript recorded ${live.transcript.length} event(s) but no agent message.`
+                : ""
+            const denied = deniedPermissions
+              ? ` ${deniedPermissions} permission request(s) denied by policy "${config.permission ?? "deny"}".`
+              : ""
+            return new Error(`ACP agent ended the turn without a response.${detail}${denied}`)
+          }
+          // Some agents end the turn silently after a denied tool call. Give them
+          // one explicit chance to answer without tools before failing.
+          const runExpectingAnswer = (message: string) =>
+            Effect.gen(function* () {
+              const deniedBefore = deniedPermissions
+              yield* run(message)
+              if (live.text.trim()) return
+              if (deniedPermissions > deniedBefore) {
+                log.info(`empty answer after denied tools advisor=${advisor}; nudging`)
+                yield* run(
+                  "Your tool calls were denied by the host permission policy. Answer the request directly from the provided context without using tools.",
+                )
+              }
+              if (!live.text.trim()) throw emptyResponseError()
+            })
+          yield* runExpectingAnswer(
+            `You are an external advisor consulted by OpenCode. Do not modify files.\n\n${prompt}`,
+          )
           while (intervention?.isActive()) {
             log.info(`waiting advisor=${advisor} backend=acp session=${client.sessionID}`)
             const command = yield* Effect.promise(() => intervention.wait(ctx.abort))
             if (command.type === "abort") throw new Error("ACP consultation aborted")
             if (command.type !== "message") break
             intervention.setBusy(true)
-            yield* run(command.message).pipe(Effect.ensuring(Effect.sync(() => intervention.setBusy(false))))
+            yield* runExpectingAnswer(command.message).pipe(
+              Effect.ensuring(Effect.sync(() => intervention.setBusy(false))),
+            )
           }
           log.info(`finished advisor=${advisor} backend=acp session=${client.sessionID} chars=${live.text.length}`)
           return { title: `${advisor} consultation (ACP)`, output: live.text, metadata: metadata() }
