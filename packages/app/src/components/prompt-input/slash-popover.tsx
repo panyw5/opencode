@@ -1,8 +1,10 @@
 import { Component, createEffect, For, Match, onCleanup, Show, Switch } from "solid-js"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
+import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { ProviderChip, type ProviderChipProps } from "../provider-chip"
 import { ChannelBrandIcon } from "../channel-brand-icon"
+import { ExtraAgentBrandIcon } from "../extra-agent-brand-icon"
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 import { atCategories, type AtCategory, type AtReference } from "./at-references"
 
@@ -265,6 +267,17 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                       onMouseEnter={() => props.setSlashActive(cmd.id)}
                     >
                       <div class="flex items-center gap-2 min-w-0">
+                        <span
+                          class="size-[18px] shrink-0 flex items-center justify-center overflow-hidden"
+                          title={cmd.type === "extra-agent" ? cmd.agentId : "OpenCode"}
+                        >
+                          <Show
+                            when={cmd.type === "extra-agent" && cmd.agentId}
+                            fallback={<ProviderIcon id="opencode" class="size-4" aria-hidden="true" />}
+                          >
+                            {(agentId) => <ExtraAgentBrandIcon id={agentId()} />}
+                          </Show>
+                        </span>
                         <span class="whitespace-nowrap">/{cmd.trigger}</span>
                         <Show when={cmd.description}>
                           <span class="text-12-regular text-text-weak truncate">{cmd.description}</span>
