@@ -400,7 +400,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
 
 type PromptSubmitInput = {
   gptProBackground?: Accessor<boolean>
-  info: Accessor<{ id: string } | undefined>
+  info: Accessor<{ id: string; channel?: Session["channel"] } | undefined>
   imageAttachments: Accessor<ImageAttachmentPart[]>
   commentCount: Accessor<number>
   autoAccept: Accessor<boolean>
@@ -677,7 +677,22 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     const openclaw = server.current?.integration === "openclaw"
     const genericagent = server.current?.integration === "genericagent"
+    const activeChannel = input.info()?.channel ?? (!params.id ? local.channel.current() : undefined)
+    if (activeChannel) {
+      diagnose("channel-resolved", {
+        advisor: activeChannel.advisor,
+        model: activeChannel.model ?? "default",
+        source: input.info()?.channel ? "session" : "draft",
+      })
+    }
     const currentModel =
+      (activeChannel
+        ? {
+            id: activeChannel.model ?? "default",
+            name: activeChannel.model ?? "default",
+            provider: { id: `external-${activeChannel.advisor}`, name: activeChannel.advisor, models: {} },
+          }
+        : undefined) ??
       local.model.current() ??
       (openclaw
         ? {
@@ -686,13 +701,17 @@ export function createPromptSubmit(input: PromptSubmitInput) {
             provider: { id: "openclaw", name: "OpenClaw", models: {} },
           }
         : undefined)
-    const currentAgent = local.agent.current() ?? (openclaw ? { name: "claw" } : undefined)
-    const variant = local.model.variant.current()
+    const currentAgent =
+      (activeChannel ? { name: activeChannel.advisor } : undefined) ??
+      local.agent.current() ??
+      (openclaw ? { name: "claw" } : undefined)
+    const variant = activeChannel ? undefined : local.model.variant.current()
     if (!currentModel || !currentAgent) {
       diagnose("skip", {
         reason: "missing-model-or-agent",
         hasModel: !!currentModel,
         hasAgent: !!currentAgent,
+        hasChannel: !!activeChannel,
       })
       showToast({
         title: language.t("prompt.toast.modelAgentRequired.title"),

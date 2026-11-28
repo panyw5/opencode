@@ -52,6 +52,19 @@ let selected = "/repo/worktree-a"
 let variant: string | undefined
 let integration: string | undefined
 let channel: { advisor: string; model?: string } | undefined
+let localModel: { id: string; provider: { id: string } } | undefined = { id: "model", provider: { id: "provider" } }
+let localAgent: { name: string } | undefined = { name: "agent" }
+let sessionInfo:
+  | {
+      id: string
+      channel?: {
+        kind: "acp"
+        advisor: "antigravity"
+        model?: string
+        acpSessionID?: string
+      }
+    }
+  | undefined
 let sessionCreateGate: { promise: Promise<void>; resolve: () => void } | undefined
 let sessionCreateError: Error | undefined
 let sessionCreateCalls = 0
@@ -155,11 +168,11 @@ beforeAll(async () => {
   mock.module("@/context/local", () => ({
     useLocal: () => ({
       model: {
-        current: () => ({ id: "model", provider: { id: "provider" } }),
+        current: () => localModel,
         variant: { current: () => variant },
       },
       agent: {
-        current: () => ({ name: "agent" }),
+        current: () => localAgent,
       },
       channel: { current: () => channel },
       session: {
@@ -377,6 +390,9 @@ beforeEach(() => {
   variant = undefined
   integration = undefined
   channel = undefined
+  localModel = { id: "model", provider: { id: "provider" } }
+  localAgent = { name: "agent" }
+  sessionInfo = undefined
   sessionCreateGate = undefined
   sessionCreateError = undefined
   sessionCreateCalls = 0
@@ -391,7 +407,7 @@ beforeEach(() => {
 describe("prompt submit worktree selection", () => {
   const newPromptSubmit = () =>
     createPromptSubmit({
-      info: () => undefined,
+      info: () => sessionInfo,
       imageAttachments: () => [],
       commentCount: () => 0,
       autoAccept: () => false,
@@ -467,6 +483,43 @@ describe("prompt submit worktree selection", () => {
         body: {
           id: expect.stringMatching(/^ses_/),
           channel: { kind: "acp", advisor: "claude", model: "test-channel-model" },
+        },
+      },
+    ])
+    expect(sentPrompts).toEqual([{ directory: current, sessionID: sessionCreateOptions[0]!.body!.id! }])
+  })
+
+  test("sends prompts on a loaded external channel session even when no local model is selected", async () => {
+    params = { dir: current, id: "ses_loaded_external" }
+    localModel = undefined
+    localAgent = undefined
+    sessionInfo = {
+      id: "ses_loaded_external",
+      channel: { kind: "acp", advisor: "antigravity", model: "gemini-4-neon", acpSessionID: "acp-123" },
+    }
+    await newPromptSubmit().handleSubmit({ preventDefault() {} } as Event)
+    await Bun.sleep(0)
+    expect(toasts).toEqual([])
+    expect(sentPrompts).toEqual([{ directory: current, sessionID: "ses_loaded_external" }])
+    expect(optimistic[0]?.message).toMatchObject({
+      agent: "antigravity",
+      model: { providerID: "external-antigravity", modelID: "gemini-4-neon" },
+    })
+  })
+
+  test("sends prompts on a draft external channel session even when no local model is selected", async () => {
+    localModel = undefined
+    localAgent = undefined
+    channel = { advisor: "antigravity", model: "gemini-4-neon" }
+    await newPromptSubmit().handleSubmit({ preventDefault() {} } as Event)
+    await Bun.sleep(0)
+    expect(toasts).toEqual([])
+    expect(sessionCreateOptions).toEqual([
+      {
+        directory: current,
+        body: {
+          id: expect.stringMatching(/^ses_/),
+          channel: { kind: "acp", advisor: "antigravity", model: "gemini-4-neon" },
         },
       },
     ])
