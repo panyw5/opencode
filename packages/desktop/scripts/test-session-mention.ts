@@ -9,7 +9,7 @@ const editor = '[data-component="prompt-input"][role="textbox"]'
 const capsule = `${editor} [data-type="session"]`
 
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   const connection = await cdp.evaluate<{ url: string; username: string; password: string }>(
     "window.api.awaitInitialization(() => {})",
   )

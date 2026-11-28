@@ -119,7 +119,7 @@ To test UI changes during development:
 bun run --cwd packages/app dev
 ```
 
-This starts a local dev server at http://localhost:5173 (or similar port shown in output). Most UI changes can be tested here, but the server must be running for full functionality.
+This starts a local dev server at http://localhost:5199 (or similar port shown in output). Most UI changes can be tested here, but the server must be running for full functionality.
 
 ### Running the Desktop App
 

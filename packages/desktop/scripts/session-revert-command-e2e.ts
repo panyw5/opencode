@@ -5,7 +5,7 @@ const directory = fileURLToPath(new URL("../../../", import.meta.url)).replace(/
 const log = (value: string) => console.log(`[revert-command-e2e] ${value}`)
 
 await withCdp(async (cdp, target) => {
-  if (!target.url.includes("localhost:5173")) throw new Error("Expected the development renderer")
+  if (!target.url.includes("localhost:5199")) throw new Error("Expected the development renderer")
   const navigation = `${new URL(target.url).origin}/@fs${fileURLToPath(new URL("../../app/src/utils/notification-click.ts", import.meta.url))}`
   const connection = await cdp.evaluate<{ url: string; username: string; password: string }>(
     "window.api.awaitInitialization(() => {})",

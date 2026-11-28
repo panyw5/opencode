@@ -23,7 +23,7 @@ const log = (message: string) => console.log(`[gpt-pro-auth-e2e] ${message}`)
 let fixtureIDs: { parent: string; child: string } | undefined
 let failureJob: Pick<GptProJob, "id" | "phase" | "errorCode" | "submitted" | "sendAttempted"> | undefined
 try {
-  if (!target.url.includes("localhost:5173")) throw Error("This test requires the dev renderer on 9222")
+  if (!target.url.includes("localhost:5199")) throw Error("This test requires the dev renderer on 9222")
   const binding = requireGptProLiveProfile(
     await client.evaluate<GptProRuntimeStatus>("window.api.gptPro.runtimeStatus()"),
   )

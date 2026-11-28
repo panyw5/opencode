@@ -57,7 +57,7 @@ function inspect() {
 
 await mkdir(output, { recursive: true })
 await withCdp(async (cdp, target) => {
-  if (!target.url.includes("localhost:5173")) throw new Error("Use the development Electron renderer only")
+  if (!target.url.includes("localhost:5199")) throw new Error("Use the development Electron renderer only")
   await cdp.call("Page.bringToFront")
   await cdp.call("Emulation.setFocusEmulationEnabled", { enabled: true })
   const original = await cdp.evaluate<{ theme: string; mode: string }>(

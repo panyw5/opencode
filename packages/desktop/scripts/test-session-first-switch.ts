@@ -22,7 +22,7 @@ type Sample = {
 type Profile = { sessionID: string; stage: string; detail?: string }
 
 await withCdp(async (cdp, target) => {
-  assert.ok(target.url.includes("localhost:5173"), "only operate the development renderer")
+  assert.ok(target.url.includes("localhost:5199"), "only operate the development renderer")
   const navigate = (id: string) =>
     cdp.evaluate(`(() => {
     const href = ${JSON.stringify(prefix)} + ${JSON.stringify(id)};

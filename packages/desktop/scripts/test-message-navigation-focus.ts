@@ -3,7 +3,7 @@ import { resolve } from "node:path"
 import { withCdp } from "./cdp"
 
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   const commandSource = `/@fs${resolve(import.meta.dir, "../../app/src/context/command.tsx")}`
   const bindings = await cdp.evaluate<
     Record<

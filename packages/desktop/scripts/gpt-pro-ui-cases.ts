@@ -467,7 +467,7 @@ async function main() {
     return
   }
   const { client, target } = await connectCdp(endpoint)
-  if (!target.url.includes("localhost:5173") && !target.url.startsWith("oc://")) {
+  if (!target.url.includes("localhost:5199") && !target.url.startsWith("oc://")) {
     client.close()
     throw new Error("CDP target is not the OpenCode development renderer")
   }

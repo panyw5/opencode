@@ -9,7 +9,7 @@ const prompt =
   "OpenCode integration test. Return OPENCODE_GPT_PRO_P0_OK, a two-column Markdown table, a JavaScript code block and the equation x^2 + y^2 = z^2."
 const request = <T>(expression: string) =>
   withCdp(async (client, target) => {
-    if (!target.url.includes("localhost:5173")) throw Error("Requires the development renderer on 9222")
+    if (!target.url.includes("localhost:5199")) throw Error("Requires the development renderer on 9222")
     return client.evaluate<T>(expression)
   })
 async function watch(id: string) {

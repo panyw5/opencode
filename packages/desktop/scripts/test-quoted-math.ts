@@ -10,7 +10,7 @@ const tex = [
 const text = tex.map((formula) => `> Contour\n> $$\n> ${formula}\n> $$\n> **After**`).join("\n\n")
 
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   const markdownPath = `/@fs${resolve(import.meta.dir, "../../ui/src/components/markdown.tsx")}`
   const markedPath = `/@fs${resolve(import.meta.dir, "../../ui/src/context/marked.tsx")}`
   try {

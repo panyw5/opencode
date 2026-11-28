@@ -4,7 +4,7 @@ import { withCdp } from "./cdp"
 // Run against the dev renderer with a regular project session open and at
 // least one enabled IM channel. Only list selections and existing tabs change.
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   const state = () =>
     cdp.evaluate<{
       tabs: { id: string | null; directory: string | null; active: string | null }[]

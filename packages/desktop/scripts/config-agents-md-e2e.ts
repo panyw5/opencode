@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 const log = (message: string) => console.log(`[config-agents-md-e2e] ${message}`)
 
 await withCdp(async (cdp, target) => {
-  if (!target.url.includes("localhost:5173")) throw new Error("Expected development Electron")
+  if (!target.url.includes("localhost:5199")) throw new Error("Expected development Electron")
   const directory = fileURLToPath(new URL("../../../", import.meta.url)).replace(/\/$/, "")
   const navigation = `${new URL(target.url).origin}/@fs${fileURLToPath(new URL("../../app/src/utils/notification-click.ts", import.meta.url))}`
   const token = `qa-agents-md-${Date.now()}`

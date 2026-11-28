@@ -19,7 +19,7 @@ type State = {
 }
 
 await withCdp(async (cdp, target) => {
-  assert.ok(target.url.includes("localhost:5173"), "development renderer only")
+  assert.ok(target.url.includes("localhost:5199"), "development renderer only")
   let temporarySession: string | undefined
   const request = (path: string, method = "GET", body?: unknown) =>
     cdp.evaluate<unknown>(`(async () => {

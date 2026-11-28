@@ -18,7 +18,7 @@ if (watchIndex >= 0 && !watch) throw new Error("--watch requires a saved run.jso
 const output = watch ? watch.replace(/\/run\.json$/, "") : await mkdtemp(join(tmpdir(), "opencode-multipage-e2e-"))
 const log = (message: string) => console.log(`[gpt-pro-multipage-e2e] ${message}`)
 const { client, target } = await connectCdp()
-if (!target.url.includes("localhost:5173") && !target.url.startsWith("oc://")) {
+if (!target.url.includes("localhost:5199") && !target.url.startsWith("oc://")) {
   client.close()
   throw new Error("9222 is not the development renderer; refusing app operations")
 }

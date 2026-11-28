@@ -205,7 +205,7 @@ Verification recorded so far:
   final media-capable code. The explicit real send returned `sent`; backend
   logs independently recorded `private send accepted` and completion.
 
-Initial development renderer: http://localhost:5173/index.html, CDP 9222.
+Initial development renderer: http://localhost:5199/index.html, CDP 9222.
 Initial working tree includes ongoing IM message-format changes across channel,
 IM storage/service, HTTP API, tests, and generated SDK. These are not ours to
 revert. Research agents are read-only until ownership/contracts are agreed.

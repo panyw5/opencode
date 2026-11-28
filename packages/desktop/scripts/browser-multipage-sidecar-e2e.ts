@@ -8,7 +8,7 @@ const output = await mkdtemp(join(tmpdir(), "opencode-agent-pages-e2e-"))
 await mkdir(join(output, "project"))
 const directory = await realpath(join(output, "project"))
 const { client, target } = await connectCdp()
-if (!target.url.includes("localhost:5173") && !target.url.startsWith("oc://")) {
+if (!target.url.includes("localhost:5199") && !target.url.startsWith("oc://")) {
   client.close()
   throw new Error("Only the development renderer may run this integration test")
 }

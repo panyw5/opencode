@@ -10,7 +10,7 @@ try {
   await mkdir(`${directory}/parent/child/empty`, { recursive: true })
   await mkdir(`${directory}/parent/sibling`)
   await withCdp(async (cdp, target) => {
-    assert.ok(target.url.includes("localhost:5173"), "Only test the development renderer")
+    assert.ok(target.url.includes("localhost:5199"), "Only test the development renderer")
     async function wait(expression: string) {
       const deadline = Date.now() + 10_000
       while (Date.now() < deadline) {

@@ -164,8 +164,8 @@ const require = __cjs_mod__.createRequire(import.meta.url);
   renderer: {
     server: {
       // Strict port so a colliding foreign dev server (e.g. another project
-      // bound to *:5173) can never silently serve stale modules to the app.
-      port: Number(process.env.OPENCODE_RENDERER_PORT) || 5173,
+      // bound to *:5199) can never silently serve stale modules to the app.
+      port: Number(process.env.OPENCODE_RENDERER_PORT) || 5199,
       strictPort: true,
     },
     resolve: {

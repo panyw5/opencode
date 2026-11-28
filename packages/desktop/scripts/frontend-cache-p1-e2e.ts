@@ -78,7 +78,7 @@ async function checkRequestOwnership(cdp: CdpClient) {
 }
 
 await withCdp(async (cdp, target) => {
-  assert(target.url.includes("localhost:5173"), "Refusing to operate outside development Electron")
+  assert(target.url.includes("localhost:5199"), "Refusing to operate outside development Electron")
   const connection = await cdp.evaluate<{ url: string; username: string; password: string }>(
     "window.api.awaitInitialization()",
   )

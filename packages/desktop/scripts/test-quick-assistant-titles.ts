@@ -3,7 +3,7 @@ import { withCdp } from "./cdp"
 
 // Uses only new test assistants and restores the original active tab and viewport.
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   const panel = `document.querySelector('[data-component="quick-assistant-panel"]:not([hidden])')`
   const initial = await cdp.evaluate<{ open: boolean; id?: string }>(
     `({open: ${panel}?.dataset.state === 'open', id: ${panel}?.dataset.windowId})`,

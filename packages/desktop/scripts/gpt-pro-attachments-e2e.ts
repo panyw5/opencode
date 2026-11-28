@@ -118,7 +118,7 @@ function pdf(marker: string) {
 }
 
 const { client, target } = await connectCdp(endpoint)
-if (!target.url.includes("localhost:5173") && !target.url.startsWith("oc://")) {
+if (!target.url.includes("localhost:5199") && !target.url.startsWith("oc://")) {
   client.close()
   throw new Error("9222 is not the OpenCode development renderer; refusing all app operations")
 }

@@ -1705,7 +1705,7 @@ async function main() {
     await withCdp(async (client, target) => {
       cdp = client
       try {
-        assert(target.url.includes("localhost:5173"), "Refusing non-development renderer target")
+        assert(target.url.includes("localhost:5199"), "Refusing non-development renderer target")
         uiTarget = true
         const initial = await client.evaluate<{ url: string; username: string; password: string }>(
           "window.api.awaitInitialization(()=>{})",

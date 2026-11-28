@@ -89,7 +89,7 @@ async function checkModules(cdp: CdpClient) {
 }
 
 await withCdp(async (cdp, target) => {
-  assert(target.url.includes("localhost:5173"), "Expected development Electron")
+  assert(target.url.includes("localhost:5199"), "Expected development Electron")
   await checkModules(cdp)
   const directory = await mkdtemp("/private/tmp/opencode-cache-p2-")
   const filename = "cache-p2-proof.txt"

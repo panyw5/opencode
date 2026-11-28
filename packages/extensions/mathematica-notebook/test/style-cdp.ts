@@ -48,7 +48,7 @@ try {
   await cdp.call("Network.enable")
   await cdp.call("Network.setCacheDisabled", { cacheDisabled: true })
   await cdp.call("Network.setBlockedURLs", { urls: ["*extension-asset*local.mathematica-notebook*index.css*"] })
-  await cdp.call("Page.navigate", { url: "http://localhost:5173/index.html?styleRegression=" + Date.now() })
+  await cdp.call("Page.navigate", { url: "http://localhost:5199/index.html?styleRegression=" + Date.now() })
   await wait(
     "location.search.includes('styleRegression=') && document.readyState==='complete' && !!window.api && !!document.querySelector('[data-component=app-root]')",
   )

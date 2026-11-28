@@ -9,7 +9,7 @@ const log = (message: string) => console.log(`[gpt-login-regression] ${message}`
 const { client, target } = await connectCdp()
 let socket: WebSocket | undefined
 try {
-  if (!target.url.includes("localhost:5173")) throw Error("Requires the dev renderer on 9222")
+  if (!target.url.includes("localhost:5199")) throw Error("Requires the dev renderer on 9222")
   const preflight = await client.evaluate<{
     authentication: string
     login: string

@@ -3,7 +3,7 @@ import { withCdp } from "./cdp"
 
 // Open a file preview in the dev renderer before running this regression test.
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /localhost:5173|^oc:\/\//)
+  assert.match(target.url, /localhost:5199|^oc:\/\//)
   const selector = '[data-slot="file-markdown-actions"]'
   const trigger = `${selector} button[data-icon="dot-grid"]`
   const rect = (query: string) =>

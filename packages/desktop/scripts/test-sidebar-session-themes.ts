@@ -54,7 +54,7 @@ function inspect(hover: boolean) {
 }
 
 await withCdp(async (cdp, target) => {
-  assert.ok(target.url.includes("localhost:5173"), "development renderer only")
+  assert.ok(target.url.includes("localhost:5199"), "development renderer only")
   const original = await cdp.evaluate<{ theme: string; mode: string }>(
     `({theme:document.documentElement.dataset.theme,mode:document.documentElement.dataset.colorScheme})`,
   )

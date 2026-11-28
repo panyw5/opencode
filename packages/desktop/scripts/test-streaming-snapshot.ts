@@ -73,7 +73,7 @@ await Bun.write(
 
 try {
   await withCdp(async (cdp, target) => {
-    assert.match(target.url, /^http:\/\/localhost:5173\//)
+    assert.match(target.url, /^http:\/\/localhost:5199\//)
     const server = await cdp.evaluate<{ url: string; username?: string; password: string }>(
       "window.api.awaitInitialization(()=>{})",
     )

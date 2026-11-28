@@ -31,7 +31,7 @@ const sourceReads = async () =>
     ).length
 const before = await listTargets()
 const original = pickPageTarget(before)
-assert.ok(original?.url.includes("localhost:5173"), "Development Electron on 9222 is required")
+assert.ok(original?.url.includes("localhost:5199"), "Development Electron on 9222 is required")
 const main = await CdpClient.connect(original.webSocketDebuggerUrl)
 await main.evaluate('window.api.runDesktopMenuAction("window.new")')
 main.close()

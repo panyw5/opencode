@@ -9,7 +9,7 @@ const marker = "NEW_SESSION_UI_QA_OK"
 const prompt = `Reply with only ${marker}. Do not call tools or modify files.`
 
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   await cdp.call("Runtime.enable")
   const previous =
     new URL(target.url).pathname === "/index.html" ? "/" : new URL(target.url).pathname + new URL(target.url).search

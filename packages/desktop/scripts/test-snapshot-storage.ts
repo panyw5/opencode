@@ -38,7 +38,7 @@ const scenarios = [
 
 try {
   await withCdp(async (cdp, target) => {
-    assert(target.url.includes("localhost:5173"), "Only use the development Electron renderer on CDP 9222")
+    assert(target.url.includes("localhost:5199"), "Only use the development Electron renderer on CDP 9222")
     const storage = await cdp.evaluate<string>(`(async () => {
       const server = await window.api.awaitInitialization(() => {});
       const response = await fetch(new URL('/path', server.url), { headers: { Authorization: 'Basic ' + btoa(server.username + ':' + server.password) } });

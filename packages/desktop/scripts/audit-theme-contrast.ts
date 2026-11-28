@@ -121,7 +121,7 @@ function inspect() {
 
 await mkdir(output, { recursive: true })
 await withCdp(async (cdp, target) => {
-  if (!target.url.includes("localhost:5173")) throw new Error("Refusing to audit outside the development renderer")
+  if (!target.url.includes("localhost:5199")) throw new Error("Refusing to audit outside the development renderer")
   const original = await cdp.evaluate<{ theme: string; scheme: string }>(
     `({theme:document.documentElement.dataset.theme,scheme:document.documentElement.dataset.colorScheme})`,
   )

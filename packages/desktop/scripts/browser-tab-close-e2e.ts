@@ -2,7 +2,7 @@ import { connectCdp } from "./cdp"
 
 const log = (message: string) => console.log(`[browser-tab-close-e2e] ${message}`)
 const { client, target } = await connectCdp()
-if (!target.url.includes("localhost:5173")) throw new Error("Only the development renderer may be tested")
+if (!target.url.includes("localhost:5199")) throw new Error("Only the development renderer may be tested")
 const partitions: string[] = []
 const pause = (ms = 100) => new Promise((resolve) => setTimeout(resolve, ms))
 async function wait(expression: string, label: string) {

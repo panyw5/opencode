@@ -7,7 +7,7 @@ const log = (message: string) => console.log(`[session-task-open-test] ${message
 const source = `/@fs${resolve(import.meta.dir, "../../app/src")}`
 
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   const directory = await realpath(await mkdtemp("/tmp/opencode-task-open-"))
   const slug = Buffer.from(directory).toString("base64url")
   const connection = await cdp.evaluate<{ url: string; username: string; password: string }>(

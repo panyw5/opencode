@@ -4,7 +4,7 @@ import { withCdp } from "./cdp"
 
 // Run with a populated project-task list open in the dev renderer.
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   const iconPath = `/@fs${resolve(import.meta.dir, "../../ui/src/components/icon.tsx")}`
   const cards = await cdp.evaluate<
     {

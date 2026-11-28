@@ -3,7 +3,7 @@ import { resolve } from "node:path"
 import { withCdp } from "./cdp"
 
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   const markdownPath = `/@fs${resolve(import.meta.dir, "../../ui/src/components/markdown.tsx")}`
   const markedPath = `/@fs${resolve(import.meta.dir, "../../ui/src/context/marked.tsx")}`
   try {

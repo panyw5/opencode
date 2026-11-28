@@ -13,7 +13,7 @@ const variants = Object.entries(DEFAULT_THEMES).flatMap(([id, theme]) =>
 )
 
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   log(`checking ${variants.length} variants in the development Electron renderer`)
   await cdp.call("DOM.enable")
   await cdp.call("CSS.enable")

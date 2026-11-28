@@ -12,7 +12,7 @@ const output = await mkdtemp(join(tmpdir(), "opencode-error-guidance-e2e-"))
 const title = `GPT-Pro error guidance QA ${randomUUID().slice(0, 8)}`
 const missingID = `gpt_${randomUUID()}`
 const { client, target } = await connectCdp()
-if (!target.url.includes("localhost:5173")) {
+if (!target.url.includes("localhost:5199")) {
   client.close()
   throw new Error("Only the development renderer may run this test")
 }

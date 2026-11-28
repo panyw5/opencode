@@ -2,7 +2,7 @@ import { withCdp } from "./cdp"
 
 // Run against the dev renderer: bun packages/desktop/scripts/verify-popup-surfaces.ts
 await withCdp(async (cdp, target) => {
-  if (!target.url.includes("localhost:5173")) throw new Error("Expected the development desktop renderer")
+  if (!target.url.includes("localhost:5199")) throw new Error("Expected the development desktop renderer")
   console.info("[popup-surfaces] checking desktop backgrounds across themes, schemes and operating systems")
   const result = await cdp.evaluate<{ checks: number; failures: string[] }>(String.raw`(() => {
     const root = document.documentElement

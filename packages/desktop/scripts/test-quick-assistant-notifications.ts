@@ -5,7 +5,7 @@ import { withCdp } from "./cdp"
 // Sends a real sidecar prompt, then seeds historical bell notifications because
 // new quick-assistant completion notifications are intentionally suppressed.
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   const panel = `document.querySelector('[data-component="quick-assistant-panel"]:not([hidden])')`
   const initial = await cdp.evaluate<{ open: boolean; id?: string }>(
     `({open: ${panel}?.dataset.state === 'open', id: ${panel}?.dataset.windowId})`,

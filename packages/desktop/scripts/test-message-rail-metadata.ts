@@ -10,7 +10,7 @@ const route = `/${Buffer.from(directory).toString("base64url")}/session/${sessio
 const selector = `[data-testid="session-user-message-rail-item"][data-message-id="${messageID}"]`
 
 await withCdp(async (cdp, target) => {
-  assert.ok(target.url.includes("localhost:5173"), "development renderer only")
+  assert.ok(target.url.includes("localhost:5199"), "development renderer only")
   await cdp.call("Page.enable")
   const wait = async (expression: string) => {
     const deadline = Date.now() + 20_000

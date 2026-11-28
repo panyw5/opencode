@@ -37,7 +37,7 @@ FINAL_MARKER completed proof.
 database?.close()
 
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   const markdown = `/@fs${resolve(import.meta.dir, "../../ui/src/components/markdown.tsx")}`
   const marked = `/@fs${resolve(import.meta.dir, "../../ui/src/context/marked.tsx")}`
   try {

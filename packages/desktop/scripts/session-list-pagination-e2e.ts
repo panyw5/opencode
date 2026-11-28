@@ -9,7 +9,7 @@ if (!first || !second || first === second) {
 const log = (value: string) => console.log(`[session-list-pagination-e2e] ${value}`)
 
 await withCdp(async (cdp, target) => {
-  if (!target.url.includes("localhost:5173")) throw new Error("Expected the development renderer")
+  if (!target.url.includes("localhost:5199")) throw new Error("Expected the development renderer")
   const snapshot = () =>
     cdp.evaluate<{ project?: string; rows: number; more: boolean }>(`(() => {
       const panel = [...document.querySelectorAll('[data-component="sidebar-panel"]')]

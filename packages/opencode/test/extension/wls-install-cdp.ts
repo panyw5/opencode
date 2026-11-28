@@ -33,7 +33,7 @@ export async function confirmThroughRenderer(
     port: 0,
     async fetch(req) {
       const headers = {
-        "Access-Control-Allow-Origin": "http://localhost:5173",
+        "Access-Control-Allow-Origin": "http://localhost:5199",
         "Access-Control-Allow-Headers": "authorization,content-type",
         "Access-Control-Allow-Methods": "POST,OPTIONS",
       }

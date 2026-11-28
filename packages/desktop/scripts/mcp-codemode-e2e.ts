@@ -271,7 +271,7 @@ const isolatedConnection = sidecar
   : undefined
 try {
   await withCdp(async (cdp, target) => {
-    assert.ok(target.url.includes("localhost:5173"), "Only development Electron may be tested")
+    assert.ok(target.url.includes("localhost:5199"), "Only development Electron may be tested")
     const desktopConnection = await cdp.evaluate<{ url: string; username: string; password: string }>(
       "window.api.awaitInitialization(() => {})",
     )

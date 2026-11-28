@@ -3,7 +3,7 @@ import { resolve } from "node:path"
 import { withCdp } from "./cdp"
 
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   const source = (path: string) => `/@fs${resolve(import.meta.dir, path)}`
   const originalTheme = await cdp.evaluate<string | null>('document.documentElement.getAttribute("data-theme")')
   try {

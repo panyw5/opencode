@@ -9,7 +9,7 @@ const log = (message: string) => console.log(`[question-custom-test] ${message}`
 const source = `/@fs${resolve(import.meta.dir, "../../app/src")}`
 
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   const directory = await realpath(await mkdtemp("/tmp/opencode-question-custom-"))
   const connection = await cdp.evaluate<{ url: string; username: string; password: string }>(
     "window.api.awaitInitialization(() => {})",

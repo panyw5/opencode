@@ -8,7 +8,7 @@ const created: string[] = []
 let previousStyle: string | null = null
 let previousPage = ""
 let previouslyOpened = false
-if (!target.url.includes("localhost:5173")) {
+if (!target.url.includes("localhost:5199")) {
   client.close()
   throw new Error("Only the development renderer may be tested")
 }

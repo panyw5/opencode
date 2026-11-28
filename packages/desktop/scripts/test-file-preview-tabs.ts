@@ -14,7 +14,7 @@ try {
   for (const file of files)
     await Bun.write(resolve(directory, file.path), `# ${file.heading}\n\nDistinct ${file.heading} content.\n`)
   await withCdp(async (cdp, target) => {
-    assert.match(target.url, /^http:\/\/localhost:5173\//)
+    assert.match(target.url, /^http:\/\/localhost:5199\//)
     const selector = (path: string) => `.session-file-tab-trigger[data-value=${JSON.stringify(`file://${path}`)}]`
     const tab = (path: string) => `${selector(path)} [role="tab"]`
     const wait = async (expression: string, label: string) => {

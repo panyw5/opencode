@@ -3,7 +3,7 @@ import { withCdp } from "./cdp"
 
 // Exercise the shipped CSS cascade, including theme overrides and desktop rules.
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   const result = await cdp.evaluate<{ checks: number; failures: string[] }>(String.raw`(() => {
     const root = document.documentElement;
     const attributes = ["data-theme", "data-color-scheme", "data-platform", "data-os", "style"];

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { withCdp } from "./cdp"
 
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/(?:localhost|127\.0\.0\.1):5173\//)
+  assert.match(target.url, /^http:\/\/(?:localhost|127\.0\.0\.1):5199\//)
   assert.equal(await cdp.evaluate("!!window.api"), true)
   const directory = await mkdtemp(join(tmpdir(), "opencode-image-preview-"))
   const filename = `preview-${Date.now()}.png`

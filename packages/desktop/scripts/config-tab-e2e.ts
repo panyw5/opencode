@@ -2,7 +2,7 @@ import { connectCdp } from "./cdp"
 
 const log = (message: string) => console.log(`[config-tab-e2e] ${message}`)
 const { client, target } = await connectCdp()
-if (!target.url.includes("localhost:5173")) throw new Error("Only the development renderer may be tested")
+if (!target.url.includes("localhost:5199")) throw new Error("Only the development renderer may be tested")
 const config = '[data-component="config-tab"]'
 const close = '[data-action="config-tab-close"]'
 const page = '[data-component="config-page"]'

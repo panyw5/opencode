@@ -4,7 +4,7 @@ import { withCdp } from "./cdp"
 
 // Exercise the real component in the dev renderer without changing session data.
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   const component = `/@fs${resolve(import.meta.dir, "../../app/src/pages/session/composer/session-todo-list.tsx")}`
   try {
     await cdp.evaluate(`(async () => {

@@ -18,7 +18,7 @@ await Bun.write(file, svg("red"))
 await Bun.write(hiddenFile, svg("red"))
 
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   const wait = async (condition: () => Promise<boolean>, reason: string, timeout = 15_000) => {
     const deadline = Date.now() + timeout
     while (!(await condition())) {

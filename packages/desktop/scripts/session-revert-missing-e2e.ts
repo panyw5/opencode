@@ -5,7 +5,7 @@ const directory = fileURLToPath(new URL("../../../", import.meta.url)).replace(/
 const log = (text: string) => console.log(`[revert-missing-e2e] ${text}`)
 
 await withCdp(async (cdp, target) => {
-  if (!target.url.includes("localhost:5173")) throw new Error("Expected development renderer")
+  if (!target.url.includes("localhost:5199")) throw new Error("Expected development renderer")
   const connection = await cdp.evaluate<{ url: string; username: string; password: string }>(
     "window.api.awaitInitialization(() => {})",
   )

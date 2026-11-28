@@ -8,7 +8,7 @@ import { shareImageLayouts } from "../../app/src/components/session/session-shar
 const folder = process.argv[2] ?? "/tmp/opencode-share-layout"
 await mkdir(folder, { recursive: true })
 await withCdp(async (client, target) => {
-  assert.ok(target.url.includes("localhost:5173"), "development renderer only")
+  assert.ok(target.url.includes("localhost:5199"), "development renderer only")
   assert.ok(await client.evaluate(`!!document.querySelector('.session-share-paper')`), "Open Share session first")
   const toggleMenu = async () => {
     const point = await client.evaluate<{ x: number; y: number }>(`(async () => {

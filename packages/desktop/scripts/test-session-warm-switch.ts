@@ -12,7 +12,7 @@ type Profile = { sessionID: string; stage: string; detail?: string }
 const runs: Array<{ frames: Frame[]; profiles: Profile[] }> = []
 
 await withCdp(async (cdp, target) => {
-  assert.ok(target.url.includes("localhost:5173"), "development renderer only")
+  assert.ok(target.url.includes("localhost:5199"), "development renderer only")
   const navigate = (id: string) =>
     cdp.evaluate(`(() => {
     const a = document.createElement('a'); a.href = ${JSON.stringify(prefix)} + ${JSON.stringify(id)};

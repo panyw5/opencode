@@ -7,7 +7,7 @@ import type { BrowserDisplayState } from "@opencode-ai/app/browser/types"
 
 const directory = await mkdtemp(join(tmpdir(), "opencode-right-panel-"))
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /localhost:5173/)
+  assert.match(target.url, /localhost:5199/)
   const labels = ["审查", "文件预览", "浏览器"]
   const background = `agent-browser-right-panel-smoke-${Date.now()}`
   const created: string[] = []

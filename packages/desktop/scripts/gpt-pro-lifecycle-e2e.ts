@@ -13,7 +13,7 @@ if (!id || !restoreID || id === restoreID)
   throw new Error("Provide distinct --id QA-result and --restore-id viewed-result")
 const output = await mkdtemp(join(tmpdir(), "opencode-lifecycle-e2e-"))
 const { client, target } = await connectCdp()
-if (!target.url.includes("localhost:5173")) {
+if (!target.url.includes("localhost:5199")) {
   client.close()
   throw new Error("Only the development renderer may run lifecycle integration tests")
 }

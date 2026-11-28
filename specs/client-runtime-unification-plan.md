@@ -444,7 +444,7 @@ This is an inventory of remaining migration work, not a claim these callers alre
 
 ### Verification Evidence
 
-Commands ran from the owning package except CDP/build harnesses. Development Electron was already running at `http://localhost:5173/index.html` on CDP 9222; no second Electron or installed app was launched/stopped. No keybinds were dispatched.
+Commands ran from the owning package except CDP/build harnesses. Development Electron was already running at `http://localhost:5199/index.html` on CDP 9222; no second Electron or installed app was launched/stopped. No keybinds were dispatched.
 
 | Check                                           | Result                                                                                                                                                                                                                                                                                                                                                           |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -4,7 +4,7 @@ import { withCdp } from "./cdp"
 
 // Mount the real tool card without changing the user's sessions or todos.
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   const ui = `/@fs${resolve(import.meta.dir, "../../ui/src")}`
   try {
     await cdp.evaluate(`(async () => {

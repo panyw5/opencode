@@ -7,7 +7,7 @@ const log = (message: string) => console.log(`[project-task-editor-test] ${messa
 const source = `/@fs${resolve(import.meta.dir, "../../app/src")}`
 
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   const directory = await realpath(await mkdtemp("/tmp/opencode-progress-editor-"))
   const connection = await cdp.evaluate<{ url: string; username: string; password: string }>(
     "window.api.awaitInitialization(() => {})",

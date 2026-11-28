@@ -422,7 +422,7 @@ const STATE_ROWS: Record<State, string[] | null> = {
 }
 
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   log(`chatgpt dark state matrix${baseline ? " (baseline, report only)" : ""}`)
   await cdp.call("DOM.enable")
   await cdp.call("CSS.enable")

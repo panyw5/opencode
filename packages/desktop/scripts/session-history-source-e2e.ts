@@ -10,7 +10,7 @@ await mkdir(directory)
 await Bun.$`git init -q ${directory}`.quiet()
 let provider: unknown
 await withCdp(async (cdp, target) => {
-  if (!target.url.includes("localhost:5173")) throw new Error("Expected development Electron")
+  if (!target.url.includes("localhost:5199")) throw new Error("Expected development Electron")
   const connection = await cdp.evaluate<{ url: string; username: string; password: string }>(
     "window.api.awaitInitialization(() => {})",
   )

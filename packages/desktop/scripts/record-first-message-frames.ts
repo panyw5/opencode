@@ -18,7 +18,7 @@ const prompt = [
 ].join("\n")
 
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /localhost:5173|oc:\/\//)
+  assert.match(target.url, /localhost:5199|oc:\/\//)
   await cdp.call("Runtime.enable")
   const connection = await cdp.evaluate<{ url: string; username: string; password: string }>(
     "window.__frameConnection = window.api.awaitInitialization(() => {}).then(s=>({url:s.url,username:s.username,password:s.password}))",

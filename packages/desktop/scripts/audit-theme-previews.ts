@@ -54,7 +54,7 @@ function inspect(id: string) {
 
 await mkdir(output, { recursive: true })
 await withCdp(async (cdp, target) => {
-  if (!target.url.includes("localhost:5173")) throw new Error("Only test the development renderer")
+  if (!target.url.includes("localhost:5199")) throw new Error("Only test the development renderer")
   const original = await cdp.evaluate<{ id: string; mode: string }>(
     `({id:document.documentElement.dataset.theme,mode:document.documentElement.dataset.colorScheme})`,
   )

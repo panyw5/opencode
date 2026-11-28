@@ -3,7 +3,7 @@ import { resolve } from "node:path"
 import { withCdp } from "./cdp"
 
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   const sanitizer = `/@fs${resolve(import.meta.dir, "../../ui/src/components/markdown-sanitize.ts")}`
   const rows = `/@fs${resolve(import.meta.dir, "../../app/src/pages/session/timeline/rows.ts")}`
   const result = await cdp.evaluate<{

@@ -14,7 +14,7 @@ const svg = (color: string) =>
 await mkdir(resolve(directory, "node_modules/.cache"), { recursive: true })
 await Bun.write(fixture, svg("red"))
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   const inspect = () =>
     cdp.evaluate<{ source?: string; disabled?: boolean; logs: string[] }>(`(() => {
     const button = document.querySelector('[data-action="file-preview-refresh"]');

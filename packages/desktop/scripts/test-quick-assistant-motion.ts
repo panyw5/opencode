@@ -3,7 +3,7 @@ import { withCdp } from "./cdp"
 
 // Run against the already-running dev renderer: bun packages/desktop/scripts/test-quick-assistant-motion.ts
 await withCdp(async (cdp, target) => {
-  assert.match(target.url, /^http:\/\/localhost:5173\//)
+  assert.match(target.url, /^http:\/\/localhost:5199\//)
   const panel = `document.querySelector('[data-component="quick-assistant-panel"]:not([hidden])')`
   const launcher = `document.querySelector('[data-component="quick-assistant-launcher"]')`
   const initial = await cdp.evaluate<{ open: boolean; id?: string }>(

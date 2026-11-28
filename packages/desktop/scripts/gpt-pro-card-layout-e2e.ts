@@ -5,7 +5,7 @@ import { withCdp } from "./cdp"
 const source = fileURLToPath(new URL("../../ui/src/components/gpt-pro-tool.tsx", import.meta.url))
 
 await withCdp(async (cdp, target) => {
-  if (!target.url.includes("localhost:5173")) throw new Error("Expected the development Electron renderer")
+  if (!target.url.includes("localhost:5199")) throw new Error("Expected the development Electron renderer")
   const result = await cdp.evaluate(`(async () => {
     const webURL = performance.getEntriesByType("resource").map(x => x.name).find(x => x.includes("/solid-js_web.js?"))
     if (!webURL) throw new Error("Solid runtime not loaded")

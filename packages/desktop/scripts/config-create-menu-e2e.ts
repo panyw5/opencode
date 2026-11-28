@@ -6,7 +6,7 @@ const directory = fileURLToPath(new URL("../../../", import.meta.url)).replace(/
 const log = (message: string) => console.log(`[config-create-e2e] ${message}`)
 
 await withCdp(async (cdp, target) => {
-  if (!target.url.includes("localhost:5173")) throw new Error("Expected the development Electron renderer")
+  if (!target.url.includes("localhost:5199")) throw new Error("Expected the development Electron renderer")
   const navigation = `${new URL(target.url).origin}/@fs${fileURLToPath(new URL("../../app/src/utils/notification-click.ts", import.meta.url))}`
   const wait = async (label: string, predicate: () => Promise<boolean>) => {
     for (let i = 0; i < 200; i++) {

@@ -2,7 +2,7 @@ import { CdpClient, connectCdp, listTargets } from "./cdp"
 
 const log = (message: string) => console.log(`[browser-maximize-e2e] ${message}`)
 const { client, target } = await connectCdp()
-if (!target.url.includes("localhost:5173")) throw new Error("Only the development renderer may be tested")
+if (!target.url.includes("localhost:5199")) throw new Error("Only the development renderer may be tested")
 let partition: string | undefined
 let page: CdpClient | undefined
 const pause = () => new Promise((resolve) => setTimeout(resolve, 100))
