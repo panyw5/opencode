@@ -7,13 +7,14 @@ import { formatProjectTaskFullContext } from "@/project-task/context"
 import { projectTaskContextLocale } from "@/project-task/context-copy"
 import { ProjectTask } from "@/project-task/service"
 import { getContextLocale } from "./context-locale"
+import { Skill } from "@/skill"
 import type { MessageV2 } from "./message-v2"
 import { Session } from "./session"
 
 const log = Log.create({ service: "session.consult-context" })
 
 /** How much session context a direct @-mention consult forwards to the external agent. */
-export const LEVELS = ["none", "files", "task", "recent"] as const
+export const LEVELS = ["none", "files", "skills", "task", "recent"] as const
 export type Level = (typeof LEVELS)[number]
 export const DEFAULT_LEVEL: Level = "task"
 
@@ -52,10 +53,17 @@ export interface DigestEntry {
   text: string
 }
 
+export interface SkillEntry {
+  name: string
+  description?: string
+  location: string
+}
+
 export interface Package {
   directory?: string
   sessionTitle?: string
   files: FileEntry[]
+  skills: SkillEntry[]
   taskBrief?: string
   digest: DigestEntry[]
 }
@@ -232,7 +240,7 @@ export const build = Effect.fn("ConsultContext.build")(function* (input: {
   level: Level
   directory: string
 }) {
-  const pkg: Package = { files: [], digest: [] }
+  const pkg: Package = { files: [], skills: [], digest: [] }
   const level = rank(input.level)
   if (level === 0) return pkg
 
@@ -241,6 +249,20 @@ export const build = Effect.fn("ConsultContext.build")(function* (input: {
 
   if (level >= rank("files") && input.fileParts.length) {
     pkg.files = yield* materializeFiles(input.fileParts)
+  }
+  if (level >= rank("skills")) {
+    const skills = Option.getOrUndefined(yield* Effect.serviceOption(Skill.Service))
+    if (skills) {
+      pkg.skills = (yield* skills
+        .available()
+        .pipe(Effect.catch(() => Effect.succeed([] as Skill.Info[]))))
+        .filter((skill) => skill.location !== "<built-in>")
+        .map((skill) => ({
+          name: skill.name,
+          ...(skill.description ? { description: skill.description } : {}),
+          location: skill.location,
+        }))
+    }
   }
   if (level >= rank("task")) {
     pkg.taskBrief = yield* taskBrief(input.session).pipe(
@@ -254,7 +276,7 @@ export const build = Effect.fn("ConsultContext.build")(function* (input: {
     pkg.digest = digestMessages(input.msgs, input.excludeMessageID)
   }
   log.info(
-    `built level=${input.level} files=${pkg.files.length} brief=${!!pkg.taskBrief} digest=${pkg.digest.length} session=${input.session.id}`,
+    `built level=${input.level} files=${pkg.files.length} skills=${pkg.skills.length} brief=${!!pkg.taskBrief} digest=${pkg.digest.length} session=${input.session.id}`,
   )
   return pkg
 })
@@ -281,6 +303,18 @@ export function serialize(pkg: Package, prompt: string): string {
       return `<file path="${file.path}"${file.truncated ? ' truncated="true"' : ""}>\n${body}\n</file>`
     })
     sections.push(`<referenced-files>\n${blocks.join("\n")}\n</referenced-files>`)
+  }
+
+  if (pkg.skills.length) {
+    const lines = pkg.skills
+      .map(
+        (skill) =>
+          `  <skill>\n    <name>${skill.name}</name>\n    <description>${skill.description ?? ""}</description>\n    <location>${skill.location}</location>\n  </skill>`,
+      )
+      .join("\n")
+    sections.push(
+      `Skills discovered in this workspace. Read a skill's SKILL.md at its location when the task matches its description.\n<available-skills>\n${lines}\n</available-skills>`,
+    )
   }
 
   if (pkg.taskBrief) sections.push(pkg.taskBrief)

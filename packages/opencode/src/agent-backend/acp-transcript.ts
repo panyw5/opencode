@@ -1,9 +1,8 @@
-import type { SessionNotification } from "@agentclientprotocol/sdk"
+import type { AvailableCommand, SessionNotification } from "@agentclientprotocol/sdk"
 import type { AgentEvent } from "./backend"
 
 /** Session updates that only carry adapter metadata; they have no transcript content. */
 const metadataUpdate = new Set([
-  "available_commands_update",
   "config_option_update",
   "current_mode_update",
   "session_info_update",
@@ -13,6 +12,8 @@ const metadataUpdate = new Set([
 /** Adapts ACP updates to the same append/patch stream consumed by external child sessions. */
 export class AcpTranscript {
   readonly transcript: AgentEvent[] = []
+  /** Slash commands the agent advertises via available_commands_update. */
+  commands: AvailableCommand[] = []
   onTranscript?: (item: AgentEvent) => void
   text = ""
   private turn = 0
@@ -56,6 +57,11 @@ export class AcpTranscript {
 
   apply({ update }: SessionNotification) {
     const type = update.sessionUpdate
+    if (type === "available_commands_update") {
+      // Advertised slash commands are capability metadata, not transcript content.
+      this.commands = update.availableCommands
+      return
+    }
     if (type === "user_message_chunk") {
       // History replays (session/load) stream the user's side as chunks. Opt in
       // so live turns keep ignoring them — OpenCode owns live user messages.

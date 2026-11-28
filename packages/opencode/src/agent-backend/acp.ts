@@ -7,14 +7,20 @@ import { attachExternalTranscript } from "@/session/external"
 import { registerAdvisorIntervention } from "@/tool/advisor-intervention"
 import { assertExternalDirectoryEffect } from "@/tool/external-directory"
 import type { Advisor } from "@/session/external-schema"
+import type { Config } from "@/config/config"
 import type { AgentBackend } from "./backend"
 import type { AcpConfig } from "./schema"
 import { AcpAgentClient } from "./acp-client"
 import { AcpTranscript } from "./acp-transcript"
+import { acpMcpServers, type McpConfig } from "./mcp-servers"
 
 const log = Log.create({ service: "agent-backend" })
 
-export function acpBackend(advisor: Advisor, config: AcpConfig): AgentBackend {
+export function acpBackend(
+  advisor: Advisor,
+  config: AcpConfig,
+  info?: Pick<Config.Info, "mcp" | "agent_channels">,
+): AgentBackend {
   return {
     advisor,
     kind: "acp",
@@ -59,6 +65,7 @@ export function acpBackend(advisor: Advisor, config: AcpConfig): AgentBackend {
             timeout_ms: timeout,
             permission: config.permission ?? "deny",
             capabilities: client.capabilities,
+            commands: live.commands.map((item) => ({ name: item.name, description: item.description })),
             preview: live.text.slice(-8000),
             transcript: live.transcript.slice(-80),
             intervention: intervention?.snapshot(),
@@ -81,6 +88,12 @@ export function acpBackend(advisor: Advisor, config: AcpConfig): AgentBackend {
             config,
             cwd,
             model: input.model?.trim() || undefined,
+            mcpServers: (capabilities) =>
+              acpMcpServers({
+                servers: info?.mcp as McpConfig | undefined,
+                allow: info?.agent_channels?.mcp,
+                capabilities,
+              }),
             onEvent: (event) => {
               live.apply(event)
               queuePublish()
@@ -196,7 +209,11 @@ export function acpBackend(advisor: Advisor, config: AcpConfig): AgentBackend {
             )
           }
           log.info(`finished advisor=${advisor} backend=acp session=${client.sessionID} chars=${live.text.length}`)
-          return { title: `${advisor} consultation (ACP)`, output: live.text, metadata: metadata() }
+          const commands = live.commands.slice(0, 24)
+          const hint = commands.length
+            ? `\n\n<${advisor}-commands>\n${commands.map((item) => `/${item.name}${item.description ? ` — ${item.description}` : ""}`).join("\n")}\nInvoke these by including "/name args" in a future ${advisor} consult prompt.\n</${advisor}-commands>`
+            : ""
+          return { title: `${advisor} consultation (ACP)`, output: live.text + hint, metadata: metadata() }
         }),
       ).pipe(
         Effect.tapCause((cause) =>

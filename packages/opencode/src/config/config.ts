@@ -141,7 +141,7 @@ const LogLevelRef = Schema.Literals(["DEBUG", "INFO", "WARN", "ERROR"]).annotate
   description: "Log level",
 })
 
-const ConsultContextLevel = Schema.Literals(["none", "files", "task", "recent"])
+const ConsultContextLevel = Schema.Literals(["none", "files", "skills", "task", "recent"])
 
 const ExternalAgentConfig = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean),
@@ -149,7 +149,7 @@ const ExternalAgentConfig = Schema.Struct({
   configHome: Schema.optional(Schema.String),
   context: Schema.optional(ConsultContextLevel).annotate({
     description:
-      "Session context forwarded to the external agent on @-mention consults: none (mention text only), files (+ referenced file contents and workspace facts), task (+ mounted project-task brief, the default), recent (+ recent conversation digest).",
+      "Session context forwarded to the external agent on @-mention consults: none (mention text only), files (+ referenced file contents and workspace facts), skills (+ discovered skill manifest), task (+ mounted project-task brief, the default), recent (+ recent conversation digest).",
   }),
 })
 
