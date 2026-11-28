@@ -268,6 +268,7 @@ export const dict = {
   "prompt.channel.native": "OpenCode",
   "prompt.channel.locked": "会话创建后不能切换渠道",
   "prompt.channel.model": "模型",
+  "prompt.channel.mode": "模式",
   "prompt.channel.loading": "正在加载模型",
   "prompt.channel.empty": "暂无可用模型",
   "prompt.channel.sessions": "载入会话",

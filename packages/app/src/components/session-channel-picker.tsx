@@ -7,6 +7,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { List } from "@opencode-ai/ui/list"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Dialog } from "@opencode-ai/ui/dialog"
+import { Select } from "@opencode-ai/ui/select"
 import { Tag } from "@opencode-ai/ui/tag"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -173,8 +174,11 @@ export function ChannelModelSelect(props: {
   advisor?: string
   draftModel?: string
   onSelectModel?: (model: string) => void
+  draftMode?: string
+  onSelectMode?: (mode: string) => void
   triggerStyle?: JSX.CSSProperties
   class?: string
+  modeClass?: string
   compact?: boolean
 }) {
   const sdk = useSDK()
@@ -184,7 +188,9 @@ export function ChannelModelSelect(props: {
     loaded: boolean
     current?: string
     options: Array<{ id: string; name: string }>
-  }>({ loading: false, loaded: false, options: [] })
+    currentMode?: string
+    modes: Array<{ id: string; name: string }>
+  }>({ loading: false, loaded: false, options: [], modes: [] })
   const [revision, setRevision] = createSignal(0)
 
   const load = async () => {
@@ -192,7 +198,7 @@ export function ChannelModelSelect(props: {
     if (!props.sessionID && !props.advisor) return
     setState("loading", true)
     const target = props.sessionID ? `session=${props.sessionID}` : `advisor=${props.advisor}`
-    console.debug(`[channel] loading model options ${target}`)
+    console.debug(`[channel] loading options ${target}`)
     try {
       const result = props.sessionID
         ? await sdk.client.session.channel({ sessionID: props.sessionID })
@@ -202,12 +208,16 @@ export function ChannelModelSelect(props: {
         setState({
           options: data.models ?? [],
           current: props.sessionID ? data.model : (props.draftModel ?? data.model),
+          modes: data.modes ?? [],
+          currentMode: props.sessionID ? data.mode : (props.draftMode ?? data.mode),
           loaded: true,
         })
-        console.debug(`[channel] loaded model options ${target} count=${data.models?.length ?? 0}`)
+        console.debug(
+          `[channel] loaded options ${target} models=${data.models?.length ?? 0} modes=${data.modes?.length ?? 0} mode=${data.mode ?? "none"}`,
+        )
       }
     } catch (error) {
-      console.warn(`[channel] model options failed ${target} error=${String(error)}`)
+      console.warn(`[channel] options failed ${target} error=${String(error)}`)
       setState("loaded", true)
     } finally {
       setState("loading", false)
@@ -235,9 +245,33 @@ export function ChannelModelSelect(props: {
     }
   }
 
+  const selectMode = async (mode: string | undefined) => {
+    if (!mode) return
+    if (!props.sessionID) {
+      props.onSelectMode?.(mode)
+      return
+    }
+    const previous = state.currentMode
+    setState("currentMode", mode)
+    try {
+      await sdk.client.session.channelUpdate({
+        sessionID: props.sessionID,
+        channelUpdateInput: { mode },
+      })
+      console.debug(`[channel] mode updated session=${props.sessionID} mode=${mode}`)
+    } catch (error) {
+      console.warn(`[channel] mode update failed session=${props.sessionID} mode=${mode} error=${String(error)}`)
+      setState("currentMode", previous)
+    }
+  }
+
   const models = createMemo(() => {
     revision()
     return state.options
+  })
+  const modes = createMemo(() => {
+    revision()
+    return state.modes
   })
   // Load before the menu opens so the list is ready when the popover shows.
   createEffect(() => {
@@ -255,6 +289,14 @@ export function ChannelModelSelect(props: {
       list.find((item) => value.startsWith(`${item.id}[`))
     )
   })
+  const selectedMode = () => (props.sessionID ? state.currentMode : (props.draftMode ?? state.currentMode))
+  const currentMode = createMemo(() => {
+    revision()
+    const list = modes()
+    if (list.length === 0) return undefined
+    const value = selectedMode()
+    return (value ? list.find((item) => item.id === value) : undefined) ?? list[0]
+  })
   const [open, setOpen] = createSignal(false)
   // Retry a failed or empty load when the menu is opened again.
   const retry = () => {
@@ -265,8 +307,27 @@ export function ChannelModelSelect(props: {
   const label = () => CHANNEL_LABELS[props.advisor!] ?? props.advisor
 
   return (
-    <Show
-      when={props.advisor}
+    <>
+      <Show when={props.advisor && modes().length > 0}>
+        <Select
+          size={props.compact ? "small" : "normal"}
+          options={modes()}
+          current={currentMode()}
+          value={(item) => item.id}
+          label={(item) => item.name}
+          onSelect={(item) => void selectMode(item?.id)}
+          class={props.modeClass ?? props.class ?? "prompt-pick prompt-agent"}
+          valueClass="truncate"
+          triggerStyle={props.triggerStyle}
+          variant="ghost"
+          triggerProps={{
+            "aria-label": language.t("prompt.channel.mode"),
+            "data-slot": "prompt-channel-mode",
+          }}
+        />
+      </Show>
+      <Show
+        when={props.advisor}
       fallback={
         <Button
           type="button"
@@ -357,6 +418,7 @@ export function ChannelModelSelect(props: {
         </Kobalte.Portal>
       </Kobalte>
     </Show>
+    </>
   )
 }
 
@@ -366,6 +428,7 @@ type AgentSessionItem = { id: string; name: string; updated?: string }
 export function ChannelSessionPicker(props: {
   advisor: string
   model?: string
+  mode?: string
   class?: string
   triggerStyle?: JSX.CSSProperties
   compact?: boolean
@@ -380,7 +443,9 @@ export function ChannelSessionPicker(props: {
       class={props.class ?? "prompt-pick"}
       style={props.triggerStyle}
       aria-label={language.t("prompt.channel.sessions")}
-      onClick={() => dialog.show(() => <AgentSessionDialog advisor={props.advisor} model={props.model} />)}
+      onClick={() =>
+        dialog.show(() => <AgentSessionDialog advisor={props.advisor} model={props.model} mode={props.mode} />)
+      }
     >
       <Icon name="clock" size="small" class="shrink-0" />
       <span class="truncate">{language.t("prompt.channel.sessions")}</span>
@@ -390,7 +455,7 @@ export function ChannelSessionPicker(props: {
 
 type PreviewMessage = { kind: string; text: string }
 
-function AgentSessionDialog(props: { advisor: string; model?: string }) {
+function AgentSessionDialog(props: { advisor: string; model?: string; mode?: string }) {
   const dialog = useDialog()
   const sdk = useSDK()
   const language = useLanguage()
@@ -471,7 +536,7 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
         options?: {
           body?: {
             title?: string
-            channel?: { kind: "acp"; advisor: string; model?: string; acpSessionID?: string }
+            channel?: { kind: "acp"; advisor: string; model?: string; mode?: string; acpSessionID?: string }
           }
         },
       ) => Promise<{ data?: Session }>
@@ -483,6 +548,7 @@ function AgentSessionDialog(props: { advisor: string; model?: string }) {
             advisor: props.advisor,
             acpSessionID: item.id,
             ...(props.model ? { model: props.model } : {}),
+            ...(props.mode ? { mode: props.mode } : {}),
           },
         },
       }).then((x) => x.data)

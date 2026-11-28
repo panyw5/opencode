@@ -286,6 +286,7 @@ export const dict = {
   "prompt.channel.native": "OpenCode",
   "prompt.channel.locked": "The channel is fixed after the session starts",
   "prompt.channel.model": "Model",
+  "prompt.channel.mode": "Mode",
   "prompt.channel.loading": "Loading models",
   "prompt.channel.empty": "No models available",
   "prompt.channel.sessions": "Load session",

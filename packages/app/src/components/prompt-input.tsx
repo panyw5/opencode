@@ -625,12 +625,17 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const sessionChannel = createMemo(() => info()?.channel?.advisor)
   const draftChannel = createMemo(() => local.channel.current()?.advisor)
   const draftChannelModel = createMemo(() => local.channel.current()?.model)
+  const draftChannelMode = createMemo(() => local.channel.current()?.mode)
   const currentChannel = createMemo(() => sessionChannel() ?? draftChannel())
   const isChannel = createMemo(() => !!currentChannel())
   const setChannel = (advisor: string | undefined) => local.channel.set(advisor ? { advisor } : undefined)
   const setChannelModel = (model: string) => {
     const advisor = draftChannel()
     if (advisor) local.channel.set({ ...local.channel.current(), advisor, model })
+  }
+  const setChannelMode = (mode: string) => {
+    const advisor = draftChannel()
+    if (advisor) local.channel.set({ ...local.channel.current(), advisor, mode })
   }
   const status = createMemo(
     () =>
@@ -2934,6 +2939,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         advisor={advisor}
                         draftModel={draftChannelModel()}
                         onSelectModel={setChannelModel}
+                        draftMode={draftChannelMode()}
+                        onSelectMode={setChannelMode}
                         compact
                         class="mobile-model-trigger min-w-0 flex-1 h-11 justify-start gap-1 px-2"
                       />
@@ -2941,6 +2948,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         <ChannelSessionPicker
                           advisor={advisor}
                           model={draftChannelModel()}
+                          mode={draftChannelMode()}
                           compact
                           class="mobile-model-trigger min-w-0 flex-1 h-11 justify-start gap-1 px-2"
                         />
@@ -3348,12 +3356,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                                 advisor={advisor}
                                 draftModel={draftChannelModel()}
                                 onSelectModel={setChannelModel}
+                                draftMode={draftChannelMode()}
+                                onSelectMode={setChannelMode}
                                 triggerStyle={control()}
                               />
                               <Show when={!params.id}>
                                 <ChannelSessionPicker
                                   advisor={advisor}
                                   model={draftChannelModel()}
+                                  mode={draftChannelMode()}
                                   triggerStyle={control()}
                                 />
                               </Show>

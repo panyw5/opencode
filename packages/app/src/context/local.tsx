@@ -17,7 +17,7 @@ import { workspacePathContext } from "@/pages/layout/helpers"
 
 export type ModelKey = { providerID: string; modelID: string }
 
-export type ChannelChoice = { advisor: string; model?: string }
+export type ChannelChoice = { advisor: string; model?: string; mode?: string }
 
 type State = {
   agent?: string

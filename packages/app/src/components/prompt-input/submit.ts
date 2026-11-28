@@ -1021,6 +1021,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
                     kind: "acp" as const,
                     advisor: channel.advisor,
                     ...(channel.model ? { model: channel.model } : {}),
+                    ...(channel.mode ? { mode: channel.mode } : {}),
                   },
                 }
               : {}),

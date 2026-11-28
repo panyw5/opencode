@@ -15,7 +15,7 @@ const createdSessions: string[] = []
 type SessionCreateBody = {
   id?: string
   cwd?: string
-  channel?: { kind: "acp"; advisor: string; model?: string }
+  channel?: { kind: "acp"; advisor: string; model?: string; mode?: string }
 }
 const sessionCreateOptions: Array<{ directory: string; body?: SessionCreateBody }> = []
 const enabledAutoAccept: Array<{ sessionID: string; directory: string }> = []
@@ -51,7 +51,7 @@ let root = "/repo/main"
 let selected = "/repo/worktree-a"
 let variant: string | undefined
 let integration: string | undefined
-let channel: { advisor: string; model?: string } | undefined
+let channel: { advisor: string; model?: string; mode?: string } | undefined
 let localModel: { id: string; provider: { id: string } } | undefined = { id: "model", provider: { id: "provider" } }
 let localAgent: { name: string } | undefined = { name: "agent" }
 let sessionInfo:
@@ -474,7 +474,7 @@ describe("prompt submit worktree selection", () => {
   })
 
   test("passes the selected external channel into the first session without changing its directory", async () => {
-    channel = { advisor: "claude", model: "test-channel-model" }
+    channel = { advisor: "claude", model: "test-channel-model", mode: "plan" }
     await newPromptSubmit().handleSubmit({ preventDefault() {} } as Event)
     await Bun.sleep(0)
     expect(sessionCreateOptions).toEqual([
@@ -482,7 +482,7 @@ describe("prompt submit worktree selection", () => {
         directory: current,
         body: {
           id: expect.stringMatching(/^ses_/),
-          channel: { kind: "acp", advisor: "claude", model: "test-channel-model" },
+          channel: { kind: "acp", advisor: "claude", model: "test-channel-model", mode: "plan" },
         },
       },
     ])
